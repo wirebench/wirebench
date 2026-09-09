@@ -1,5 +1,6 @@
 pnpm-lock.yaml
 dist
+dist-test
 out
 coverage
 .superpowers

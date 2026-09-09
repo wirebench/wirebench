@@ -1,0 +1,21 @@
+{
+  "name": "@wirebench/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --project engine-unit --project engine-integration",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8"
+  }
+}

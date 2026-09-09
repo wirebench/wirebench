@@ -1,3 +1,4 @@
 {
-  "references": []
+  "files": [],
+  "references": [{ "path": "packages/engine" }, { "path": "packages/engine/tsconfig.test.json" }]
 }

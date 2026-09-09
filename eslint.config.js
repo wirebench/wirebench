@@ -3,14 +3,24 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'out', 'coverage', 'node_modules', '.superpowers', 'fixtures'],
+    ignores: [
+      '**/dist/**',
+      '**/dist-test/**',
+      '**/out/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '.superpowers/**',
+      '**/fixtures/**',
+    ],
   },
   {
     files: ['**/*.{ts,tsx,mts,cts}'],
     extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['vitest.config.ts'],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },

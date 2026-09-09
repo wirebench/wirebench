@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:e2e": "pnpm --filter @wirebench/e2e test",
-    "test:interop": "WIREBENCH_NETWORK_TESTS=1 vitest run --project engine-interop --passWithNoTests || echo 'no engine-interop vitest project yet (Task TBD)'",
+    "test:interop": "WIREBENCH_NETWORK_TESTS=1 vitest run --project engine-interop --passWithNoTests",
     "test:wss-xmlsec": "echo 'not yet implemented (Task 38)' && exit 0",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
