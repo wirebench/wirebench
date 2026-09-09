@@ -1,0 +1,10 @@
+pnpm-lock.yaml
+dist
+out
+coverage
+.superpowers
+fixtures
+CHANGELOG.md
+docs
+.idea
+.claude

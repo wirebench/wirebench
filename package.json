@@ -1,0 +1,31 @@
+{
+  "name": "wirebench-monorepo",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.13.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @wirebench/desktop dev",
+    "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
+    "package": "pnpm --filter @wirebench/desktop package",
+    "package:mac": "pnpm --filter @wirebench/desktop package:mac",
+    "package:win": "pnpm --filter @wirebench/desktop package:win",
+    "package:linux": "pnpm --filter @wirebench/desktop package:linux",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint . --max-warnings 0 && prettier --check .",
+    "typecheck": "tsc -b",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@vitest/coverage-v8": "^5.0.0",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  }
+}
