@@ -15,9 +15,16 @@
     "package:win": "pnpm --filter @wirebench/desktop package:win",
     "package:linux": "pnpm --filter @wirebench/desktop package:linux",
     "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --passWithNoTests",
+    "test:e2e": "pnpm --filter @wirebench/e2e test",
+    "test:interop": "WIREBENCH_NETWORK_TESTS=1 vitest run --project engine-interop --passWithNoTests || echo 'no engine-interop vitest project yet (Task TBD)'",
+    "test:wss-xmlsec": "echo 'not yet implemented (Task 38)' && exit 0",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc -b",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "fixtures:refresh": "echo 'not yet implemented (Task 4)' && exit 0"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",
