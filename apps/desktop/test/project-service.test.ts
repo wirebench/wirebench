@@ -662,6 +662,58 @@ describe('ProjectService attachments', () => {
     await service.close();
   });
 
+  describe('send-time resolver containment', () => {
+    it('refuses an unpicked outside path-source attachment and never reads the file', async () => {
+      const { service, dir, requestId, pick } = await withProject('Send Resolver Declared Project');
+      const declared = pick(join(tempDir('files'), 'declared.bin'));
+      await writeFile(declared, 'declared-bytes');
+      await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      // A new session: the project file still names `declared`, but nothing here has any
+      // evidence the *user* chose it this session, so a send must refuse to read it.
+      const reopened = newService(root!, undefined, new DialogPicks());
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      const readSpy = vi.spyOn(nodeFs, 'readFile');
+      try {
+        const send = reopened.sendAttachmentsFor(requestId)!;
+        await expect(send.attachmentOptions.resolver(send.attachments[0]!)).rejects.toMatchObject({
+          code: 'attachment-outside-project',
+        });
+        expect(readSpy).not.toHaveBeenCalledWith(declared);
+      } finally {
+        readSpy.mockRestore();
+      }
+
+      await reopened.close();
+    });
+
+    it('resolves the same attachment once its path has been picked this session', async () => {
+      const { service, dir, requestId, pick } = await withProject('Send Resolver Picked Project');
+      const declared = pick(join(tempDir('files'), 'declared.bin'));
+      await writeFile(declared, 'declared-bytes');
+      await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      const picks = new DialogPicks();
+      const reopened = newService(root!, undefined, picks);
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+      picks.remember(declared);
+
+      const send = reopened.sendAttachmentsFor(requestId)!;
+      expect(await send.attachmentOptions.resolver(send.attachments[0]!)).toEqual(
+        new Uint8Array(Buffer.from('declared-bytes')),
+      );
+
+      await reopened.close();
+    });
+  });
+
   it('sendAttachmentsFor is undefined for an unknown request', async () => {
     const { service } = await withProject('Attach Unknown Project');
     expect(service.sendAttachmentsFor('nope')).toBeUndefined();

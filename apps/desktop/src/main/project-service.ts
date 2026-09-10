@@ -307,7 +307,7 @@ export class ProjectService {
       ...(this.prefs() !== undefined ? { preferences: this.prefs() as Preferences } : {}),
       projectSettings: this.open.project.settings,
       attachments: request.attachments,
-      attachmentResolvers: this.attachmentResolvers(this.open, request.attachments),
+      attachmentResolvers: this.attachmentResolvers(this.open),
     });
     if (input.attachmentOptions === undefined) {
       return undefined;
@@ -318,28 +318,45 @@ export class ProjectService {
   /**
    * The resolvers a send reads attachment (and inline-file) bytes through.
    *
-   * `resolver` is the engine's own project-folder resolver. `resolveFile` is the guarded one:
-   * the renderer can put any `file:<path>` it likes into an envelope, so a read is allowed only
-   * inside the project folder or its attachment cache, or at the exact absolute path one of
-   * this request's own `path`-source attachments already names. That last exemption is safe
-   * because `add-attachment` will not record such a path in the first place unless it was
-   * contained or user-picked (see {@link allowsAttachmentPath}), so it names a file the user
-   * already chose to attach. Anything else is refused rather than silently read.
+   * Both closures are guarded by the same predicate as `add-attachment` and
+   * `resolveAttachmentPath`, {@link allowsAttachmentPath}: a read is allowed only when the
+   * resolved path is inside the project folder (or its attachment cache) or was picked by the
+   * *user* through a native dialog this session.
+   *
+   * `resolver` wraps the engine's own project-folder resolver (`createFileAttachmentResolver`):
+   * a `cache` source is untouched (its digest already confines it to `attachments/`), but a
+   * `path` source is checked *before* the engine resolver ever touches the file system — a
+   * project file restored from another session, a repo, or a person who shared the project can
+   * declare any absolute path, and without this guard a send would read and transmit it. The
+   * engine's own `attachment-unreadable` (missing file) is still reachable for anything that
+   * passes the guard.
+   *
+   * `resolveFile` handles `file:<path>` references the renderer put into the envelope; a read
+   * is allowed only inside the project folder or its attachment cache, or at a user-picked
+   * path — never merely because some attachment on the request happens to declare it, since
+   * that declaration might itself be an unpicked, cross-session one.
    */
-  private attachmentResolvers(open: OpenProject, attachments: readonly Attachment[]): AttachmentResolvers {
+  private attachmentResolvers(open: OpenProject): AttachmentResolvers {
     const projectDir = open.dir;
-    const roots = [projectDir, attachmentsDir(projectDir)];
-    const declared = new Set(
-      attachments.flatMap((attachment) =>
-        attachment.source.kind === 'path' ? [resolvePath(projectDir, attachment.source.path)] : [],
-      ),
-    );
     const resourceRoot = open.project.settings.resourceRoot;
+    const readFileAttachment = createFileAttachmentResolver(projectDir, resourceRoot);
     return {
-      resolver: createFileAttachmentResolver(projectDir, resourceRoot),
+      resolver: async (attachment: Attachment): Promise<Uint8Array> => {
+        if (attachment.source.kind === 'path') {
+          const resolved = resolvePath(projectDir, attachment.source.path);
+          if (!(await this.allowsAttachmentPath(projectDir, resolved))) {
+            throw new ProjectError(
+              'attachment-outside-project',
+              `The attachment "${attachment.name}" is outside the project`,
+              { details: { attachmentId: attachment.id, path: attachment.source.path } },
+            );
+          }
+        }
+        return readFileAttachment(attachment);
+      },
       resolveFile: async (path: string): Promise<Uint8Array> => {
         const resolved = resolvePath(projectDir, path);
-        if (!declared.has(resolved) && !(await isInsideAny(roots, resolved))) {
+        if (!(await this.allowsAttachmentPath(projectDir, resolved))) {
           throw new ProjectError(
             'inline-file-outside-project',
             `The file "${path}" resolves outside the project folder`,
