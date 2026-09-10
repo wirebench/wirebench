@@ -1,6 +1,7 @@
 import { EnvironmentsSection } from '../features/environments/environments-section.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
+import { PreferencesSectionList } from '../features/preferences/section-list.js';
 import type { SidebarView } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -29,7 +30,7 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
   settings: {
     title: 'Settings',
     headline: 'Preferences',
-    body: 'Proxy, TLS, timeouts, and editor preferences arrive with the settings editor.',
+    body: 'HTTP, proxy, TLS, WSDL, editor and UI preferences.',
   },
 };
 
@@ -54,6 +55,8 @@ export function Sidebar() {
         </>
       ) : view === 'history' ? (
         <HistoryView />
+      ) : view === 'settings' ? (
+        <PreferencesSectionList />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
           <p className="text-md text-fg-muted">{copy.headline}</p>

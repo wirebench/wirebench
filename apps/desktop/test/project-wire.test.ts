@@ -1,3 +1,4 @@
+import { REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
 import { describe, expect, it } from 'vitest';
 import { createInterface, createProject, createRequest } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
@@ -93,6 +94,7 @@ describe('project-wire', () => {
         endpointId: 'ep-1',
         headers: [{ name: 'X-Trace', value: 'on' }],
         order: 0,
+        properties: REQUEST_PROPERTIES,
       },
     ]);
   });

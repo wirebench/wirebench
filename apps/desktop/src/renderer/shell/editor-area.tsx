@@ -4,6 +4,7 @@ import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.
 import { WelcomeScreen } from '../features/welcome/welcome-screen.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
+import type { PreferencesSectionWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
 // thing that pulls it in — is split out and fetched the first time a request tab is opened.
@@ -22,11 +23,23 @@ const DiffView = lazy(async () => {
   return { default: module.DiffView };
 });
 
+const PreferencesEditor = lazy(async () => {
+  const module = await import('../features/preferences/preferences-editor.js');
+  return { default: module.PreferencesEditor };
+});
+
 export interface EditorAreaProps {
   readonly onImportDefinition: () => void;
 }
 
 const WELCOME_ID = 'welcome';
+
+const PREFERENCES_SECTIONS = ['http', 'proxy', 'ssl', 'wsdl', 'wsi', 'editor', 'ui', 'shortcuts'] as const;
+
+/** Narrows the tab's free-form section string to a real section id. */
+function isPreferencesSection(value: string | undefined): value is PreferencesSectionWire {
+  return value !== undefined && (PREFERENCES_SECTIONS as readonly string[]).includes(value);
+}
 
 /**
  * The tabbed editor area. A Welcome tab is always present; opening a request from the
@@ -98,6 +111,14 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <HistoryEntryView historyId={activeTab.historyId} />
+          </Suspense>
+        ) : activeTab.kind === 'preferences' ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <PreferencesEditor
+              {...(isPreferencesSection(activeTab.preferencesSection)
+                ? { initialSection: activeTab.preferencesSection }
+                : {})}
+            />
           </Suspense>
         ) : activeTab.kind === 'diff' && activeTab.diff !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

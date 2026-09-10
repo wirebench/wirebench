@@ -1,5 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PropertyScopes } from '@wirebench/engine';
+import type { RequestSendRequest } from '../src/shared/wire-types.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
@@ -70,6 +74,10 @@ vi.mock('electron', () => ({
   },
 }));
 
+/** A real file, used as the parent of an impossible dump path. */
+const existingFile = join(mkdtempSync(join(tmpdir(), 'wirebench-dump-fail-')), 'blocker');
+writeFileSync(existingFile, 'not a directory', 'utf8');
+
 const scopes: PropertyScopes = { project: { stage: 'dev' }, global: {}, env: { who: 'ada' } };
 
 const preflight: PreflightResult = {
@@ -92,6 +100,9 @@ const noActionSupport = {
   mutate: (): never => {
     throw new Error('mutate is not stubbed in this test');
   },
+  // No saved request behind these sends, so the property mapping is a pass-through.
+  sendInputFor: (): undefined => undefined,
+  dumpFileFor: (): undefined => undefined,
 };
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
@@ -228,5 +239,143 @@ describe('registerRequestChannels', () => {
     });
 
     expect(await invoke('request.preflight', {})).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
+  });
+});
+
+describe('request.send applies the saved request properties', () => {
+  beforeEach(() => {
+    handlers.clear();
+  });
+
+  /** An engine whose `send` records what it was handed and answers with a tiny exchange. */
+  function recordingEngine(): { engine: EngineService; sent: RequestSendRequest[] } {
+    const engine = new EngineService();
+    const sent: RequestSendRequest[] = [];
+    vi.spyOn(engine, 'send').mockImplementation((request) => {
+      sent.push(request);
+      return Promise.resolve({
+        sendId: request.sendId,
+        durationMs: 1,
+        http: {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          rawHeaders: [],
+          bodyBase64: Buffer.from('<ok/>').toString('base64'),
+          rawBodyBase64: Buffer.from('<ok/>').toString('base64'),
+          rawRequestBase64: '',
+          rawResponseBase64: '',
+          truncated: false,
+          timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
+          redirects: [],
+          request: { url: request.input.endpoint, method: 'POST', headers: {} },
+        },
+        problems: [],
+      });
+    });
+    return { engine, sent };
+  }
+
+  it('replaces the renderer input with the property-mapped one', async () => {
+    const { engine, sent } = recordingEngine();
+    const mapped = {
+      endpoint: 'http://mapped.test/soap',
+      envelopeXml: '<mapped/>',
+      soapVersion: '1.1' as const,
+      timeoutMs: 100,
+      encoding: 'ISO-8859-1',
+    };
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        sendInputFor: () => mapped,
+      },
+    });
+
+    await invoke('request.send', {
+      sendId: 'send-mapped',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    });
+
+    expect(sent[0]?.input).toEqual(mapped);
+  });
+
+  it('sends an ad-hoc request exactly as the renderer built it', async () => {
+    const { engine, sent } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+      },
+    });
+
+    await invoke('request.send', {
+      sendId: 'send-adhoc',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    });
+
+    expect(sent[0]?.input.envelopeXml).toBe('<raw/>');
+  });
+
+  it("writes the response body to the request's dump file, resolving it against the project dir", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        dumpFileFor: () => ({ path: join('dumps', 'last.xml'), projectDir: dir }),
+      },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([]);
+    expect(readFileSync(join(dir, 'dumps', 'last.xml'), 'utf8')).toBe('<ok/>');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports a dump-failed problem instead of failing the send', async () => {
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        // A path whose parent is a file, so `mkdir` cannot create it.
+        dumpFileFor: () => ({ path: join(existingFile, 'nested', 'out.xml'), projectDir: '/' }),
+      },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump-fail',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-failed' })]);
   });
 });

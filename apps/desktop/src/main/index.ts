@@ -5,6 +5,7 @@ import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
+import { PreferencesService, toPreferencesWire } from './preferences.js';
 import { ProjectService } from './project-service.js';
 import { RecentProjects } from './recent-projects.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
@@ -19,6 +20,7 @@ import { registerXmlChannels } from './ipc/xml.js';
 import { registerXpathChannels } from './ipc/xpath.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerHistoryChannels } from './ipc/history.js';
+import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
@@ -68,8 +70,11 @@ function applyWindowTitle(project: ProjectWire | null): void {
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
 
+/** The user's application preferences, shared by every project and every window. */
+const preferencesService = new PreferencesService(app.getPath('userData'));
+
 /** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
-const historyService = new HistoryService(app.getPath('userData'));
+const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
 
 const projectService = new ProjectService(
   engineService,
@@ -105,6 +110,7 @@ const projectService = new ProjectService(
   undefined,
   globalProperties,
   secretStore,
+  preferencesService,
 );
 
 void app.whenReady().then(() => {
@@ -122,6 +128,7 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
+    preferences: preferencesService,
   });
   registerHistoryChannels(engineService, historyService, {
     project: projectService,
@@ -131,6 +138,9 @@ void app.whenReady().then(() => {
   registerProjectChannels(projectService);
   registerGlobalsChannels(globalProperties, (properties) => {
     broadcast(events.globals.changed, { properties });
+  });
+  registerPreferencesChannels(preferencesService, (preferences) => {
+    broadcast(events.preferences.changed, { preferences });
   });
   registerDialogsChannels();
   registerFsChannels();
@@ -142,6 +152,11 @@ void app.whenReady().then(() => {
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then((properties) => {
     broadcast(events.globals.changed, { properties });
+  });
+  // Same warm-up for preferences: the send path reads them synchronously, and any renderer that
+  // asked before the load finished is corrected by the broadcast.
+  void preferencesService.load().then((preferences) => {
+    broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();
   applyWindowTitle(projectService.snapshot());

@@ -3,11 +3,13 @@ import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { selectRequestEndpoint, selectRequestEndpointUrl } from '../../src/renderer/state/project-endpoint.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { PROJECT_SETTINGS, REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const BINDING = '{tns}CalculatorSoap';
 
 function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
   return {
+    settings: PROJECT_SETTINGS,
     id: 'proj-1',
     name: 'Demo',
     dir: '/tmp/demo',
@@ -44,6 +46,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
     ],
     requests: [
       {
+        properties: REQUEST_PROPERTIES,
         id: 'req-1',
         interfaceId: 'iface-1',
         bindingName: BINDING,

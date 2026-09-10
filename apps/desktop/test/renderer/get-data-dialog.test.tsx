@@ -5,8 +5,10 @@ import { GetDataDialog } from '../../src/renderer/features/request-editor/views/
 import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { ProjectWire } from '../../src/renderer/../shared/wire-types.js';
+import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 
 const PROJECT: ProjectWire = {
+  settings: PROJECT_SETTINGS,
   id: 'p1',
   name: 'Demo',
   dir: '/tmp/demo',

@@ -5,8 +5,10 @@ import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const draft: RequestDraft = {
+  properties: REQUEST_PROPERTIES,
   id: 'r1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',
@@ -93,6 +95,7 @@ describe('useExchangesStore', () => {
 
   it('send() reports missing-endpoint without calling the IPC layer', async () => {
     const draftWithoutEndpoint: RequestDraft = {
+      properties: REQUEST_PROPERTIES,
       id: draft.id,
       interfaceId: draft.interfaceId,
       bindingName: draft.bindingName,

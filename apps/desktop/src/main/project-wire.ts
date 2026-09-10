@@ -118,6 +118,8 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     headers: request.headers.map((header) => ({ name: header.name, value: header.value })),
     order: request.order,
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    properties: { ...request.properties },
   };
 }
 
@@ -155,6 +157,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     environments: project.environments.map(toEnvironmentWire),
     ...(project.activeEnvironmentId !== undefined ? { activeEnvironmentId: project.activeEnvironmentId } : {}),
     problems: [...context.problems],
+    settings: { ...project.settings },
   };
 }
 

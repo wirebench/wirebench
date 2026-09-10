@@ -130,9 +130,13 @@ function toEngineSendInput(input: SoapSendInputWire, signal: AbortSignal): SoapS
     ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
     ...(input.headers !== undefined ? { headers: input.headers } : {}),
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+    ...(input.encoding !== undefined ? { encoding: input.encoding } : {}),
     ...(input.followRedirects !== undefined ? { followRedirects: input.followRedirects } : {}),
     ...(input.maxSizeBytes !== undefined ? { maxSizeBytes: input.maxSizeBytes } : {}),
     ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
+    ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
+    ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
+    ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
     ...(input.tls !== undefined ? { tls: toEngineTls(input.tls) } : {}),
     signal,
   };

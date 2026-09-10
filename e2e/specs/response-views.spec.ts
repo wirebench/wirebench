@@ -97,7 +97,7 @@ test.describe('Response views (Raw, Query, Fault)', () => {
     await openFirstRequest(page);
 
     // Point this request at the test server's /fault route via the endpoint's Custom… option.
-    await page.getByLabel('Endpoint').selectOption('__custom__');
+    await page.getByLabel('Endpoint', { exact: true }).selectOption('__custom__');
     await page.getByLabel('Custom endpoint URL').fill(`${server.url}/fault`);
 
     await page.locator('[data-testid="request-send"]').click();

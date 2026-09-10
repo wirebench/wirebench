@@ -3,6 +3,7 @@ import { Check, MoreHorizontal } from 'lucide-react';
 import { getActiveRequestEditor, getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { loadXmlFrom, saveXmlAs } from '../../editor/xml-file-ops.js';
 import { gotoLine } from '../../editor/xml-language.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 
 const ITEM_CLASS =
@@ -22,7 +23,9 @@ export interface OverflowMenuProps {
  */
 export function OverflowMenu({ onLoaded, currentText }: OverflowMenuProps) {
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
-  const toggleLineNumbers = useUiStore((state) => state.toggleEditorLineNumbers);
+  const toggleLineNumbers = (): void => {
+    void usePreferencesStore.getState().update({ editor: { lineNumbers: !lineNumbers } });
+  };
 
   return (
     <DropdownMenu.Root>

@@ -4,10 +4,12 @@ import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { flipMode, flipOrientation, setEditorLayout } from '../features/request-editor/layout.js';
+import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
+import { usePreferencesStore } from '../state/preferences.js';
 import { useProjectStore } from '../state/project.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { useUiStore } from '../state/ui.js';
@@ -97,7 +99,18 @@ export function registerShellCommands(openPalette: () => void): void {
     category: 'View',
     shortcut: 'Mod+Comma',
     run: () => {
+      // The sidebar lists the sections; the editable forms live in the Preferences tab, so the
+      // familiar ⌘, opens both rather than only revealing a table of contents.
       ui().showSidebarView('settings');
+      openPreferencesTab();
+    },
+  });
+  registerCommand({
+    id: 'preferences.open',
+    label: 'Open Preferences',
+    category: 'General',
+    run: () => {
+      openPreferencesTab();
     },
   });
   registerCommand({
@@ -105,7 +118,9 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Toggle Light/Dark Theme',
     category: 'View',
     run: () => {
-      ui().toggleTheme();
+      // The persisted truth is `preferences.ui.theme`; the ui store mirrors it for rendering.
+      const next = ui().theme === 'light' ? 'dark' : 'light';
+      void usePreferencesStore.getState().update({ ui: { theme: next } });
     },
   });
 
@@ -268,7 +283,7 @@ export function registerShellCommands(openPalette: () => void): void {
     category: 'Editor',
     when: () => activeRequestId() !== undefined,
     run: () => {
-      ui().toggleEditorLineNumbers();
+      void usePreferencesStore.getState().update({ editor: { lineNumbers: !ui().editorLineNumbers } });
     },
   });
   registerCommand({

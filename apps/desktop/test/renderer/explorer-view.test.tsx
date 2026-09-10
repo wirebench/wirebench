@@ -5,6 +5,7 @@ import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { InterfaceWire } from '../../src/shared/wire-types.js';
+import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const summary: InterfaceWire = {
   id: 'iface-1',
@@ -70,6 +71,7 @@ describe('ExplorerView', () => {
       order: [summary.id],
       requests: {
         'req-1': {
+          properties: REQUEST_PROPERTIES,
           id: 'req-1',
           interfaceId: 'iface-1',
           bindingName: '{tns}B',

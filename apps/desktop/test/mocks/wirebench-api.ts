@@ -1,4 +1,6 @@
 import { vi } from 'vitest';
+import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
+import type { PreferencesWire } from '../../src/shared/wire-types.js';
 import type { WirebenchApi } from '../../src/preload/build-api.js';
 
 /** A deep-partial of the preload API: every channel may be replaced with a mock. */
@@ -12,6 +14,15 @@ type ApiOverrides = {
  * which is far easier to debug than `undefined is not a function`. Domain overrides are
  * merged with the defaults, so stubbing `project.mutate` leaves its siblings in place.
  */
+/** The defaults with one patch merged in, section by section — what main would answer. */
+function mergedPreferences(patch: Record<string, Record<string, unknown>>): PreferencesWire {
+  const merged = { ...DEFAULT_PREFERENCES_WIRE } as unknown as Record<string, unknown>;
+  for (const [section, values] of Object.entries(patch)) {
+    merged[section] = { ...(merged[section] as object), ...values };
+  }
+  return merged as unknown as PreferencesWire;
+}
+
 export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
   const fail = (channel: string): unknown =>
     vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-stubbed', message: `${channel} was not stubbed` } });
@@ -44,7 +55,22 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       addInterface: fail('project.addInterface'),
       reload: fail('project.reload'),
     },
-    dialogs: { openFile: fail('dialogs.openFile'), openFolder: fail('dialogs.openFolder') },
+    dialogs: {
+      openFile: fail('dialogs.openFile'),
+      openFolder: fail('dialogs.openFolder'),
+      saveFile: fail('dialogs.saveFile'),
+    },
+    // Preferences resolve to the defaults rather than a failure: the shell loads them on mount,
+    // so every renderer test would otherwise have to stub a channel it does not care about.
+    preferences: {
+      get: vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULT_PREFERENCES_WIRE } }),
+      // Mirrors main's deep merge rather than always echoing the defaults: the renderer treats
+      // the reply as authoritative, so a stub that forgot the patch would silently undo it.
+      update: vi.fn((request: { patch: Record<string, Record<string, unknown>> }) =>
+        Promise.resolve({ ok: true as const, value: { preferences: mergedPreferences(request.patch) } }),
+      ),
+      reset: vi.fn().mockResolvedValue({ ok: true, value: { preferences: DEFAULT_PREFERENCES_WIRE } }),
+    },
     secrets: {
       set: fail('secrets.set'),
       replace: fail('secrets.replace'),

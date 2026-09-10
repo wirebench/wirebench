@@ -29,7 +29,12 @@ export interface ResponseStatusProps {
 export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
   if (error !== undefined) {
     return (
-      <p role="status" className="truncate px-2 font-mono text-xs text-status-danger" title={error.message}>
+      <p
+        role="status"
+        data-testid="response-status"
+        className="truncate px-2 font-mono text-xs text-status-danger"
+        title={error.message}
+      >
         <span className="font-medium">{error.code}</span> · {error.message}
       </p>
     );

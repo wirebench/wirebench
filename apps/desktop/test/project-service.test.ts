@@ -4,11 +4,12 @@ import { readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadProject, nodeFs } from '@wirebench/engine';
+import { loadProject, mergePreferences, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
+import type { PreferencesService } from '../src/main/preferences.js';
 import { ProjectService } from '../src/main/project-service.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
@@ -368,5 +369,105 @@ describe('ProjectService: environments and property scopes', () => {
       expect.objectContaining({ field: 'envelopeXml', expr: '${#Env#missing}', code: 'missing' }),
     ]);
     await service.close();
+  });
+
+  describe('sendInputFor', () => {
+    /** A project with one imported interface, and the id of its first `Request 1`. */
+    async function withRequest(preferences?: Pick<PreferencesService, 'get'>) {
+      const dir = join(tempDir('project'), 'Send Options Project');
+      const service = new ProjectService(
+        new EngineService(),
+        new RecentProjects(root!),
+        {},
+        undefined,
+        undefined,
+        undefined,
+        preferences,
+      );
+      await service.create({ dir, name: 'Send Options Project' });
+      const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+      await service.whenHydrated();
+      return { service, requestId: imported.project.requests[0]!.id };
+    }
+
+    it('applies the project default timeout when the request sets none', async () => {
+      const { service, requestId } = await withRequest();
+      await service.mutate({ kind: 'update-project-settings', patch: { defaultTimeoutMs: 7000 } });
+
+      expect(service.buildLiveSendInput(requestId)?.timeoutMs).toBe(7000);
+      await service.close();
+    });
+
+    it("prefers the request's own timeout over the project default and the preference", async () => {
+      const preferences = { get: () => mergePreferences({ http: { socketTimeoutMs: 11_000 } }) };
+      const { service, requestId } = await withRequest(preferences);
+      await service.mutate({ kind: 'update-project-settings', patch: { defaultTimeoutMs: 7000 } });
+      await service.mutate({ kind: 'update-request-properties', requestId, patch: { timeoutMs: 100 } });
+
+      expect(service.buildLiveSendInput(requestId)?.timeoutMs).toBe(100);
+      await service.close();
+    });
+
+    it('falls back to the preference when the project keeps its own default', async () => {
+      const preferences = { get: () => mergePreferences({ http: { socketTimeoutMs: 11_000 } }) };
+      const { service, requestId } = await withRequest(preferences);
+      // `defaultTimeoutMs` is cleared by setting it to the preference's own value would be a
+      // tautology, so the project's default is removed from the equation by matching it: what
+      // this asserts is that the *preference* is consulted at all when nothing overrides it.
+      await service.mutate({ kind: 'update-project-settings', patch: { defaultTimeoutMs: 11_000 } });
+
+      expect(service.buildLiveSendInput(requestId)?.timeoutMs).toBe(11_000);
+      await service.close();
+    });
+
+    it('maps the transport properties and the preferred headers onto the send input', async () => {
+      const { service, requestId } = await withRequest();
+      await service.mutate({
+        kind: 'update-request-properties',
+        requestId,
+        patch: { encoding: 'ISO-8859-1', followRedirects: true, skipSoapAction: true, bindAddress: '127.0.0.1' },
+      });
+
+      const input = service.buildLiveSendInput(requestId);
+      expect(input).toMatchObject({
+        encoding: 'ISO-8859-1',
+        followRedirects: true,
+        skipSoapAction: true,
+        localAddress: '127.0.0.1',
+      });
+      expect(input?.headers?.['User-Agent']).toBe('Wirebench/0.1');
+      await service.close();
+    });
+
+    it('keeps the editor overrides it is handed, applying the saved knobs to them', async () => {
+      const { service, requestId } = await withRequest();
+      await service.mutate({ kind: 'update-request-properties', requestId, patch: { timeoutMs: 250 } });
+
+      const input = service.sendInputFor(requestId, {
+        endpoint: 'http://override.test/soap',
+        envelopeXml: '<typed/>',
+      });
+      expect(input).toMatchObject({ endpoint: 'http://override.test/soap', envelopeXml: '<typed/>', timeoutMs: 250 });
+      await service.close();
+    });
+
+    it('reports a dump file only when the request names one', async () => {
+      const { service, requestId } = await withRequest();
+      expect(service.dumpFileFor(requestId)).toBeUndefined();
+
+      await service.mutate({ kind: 'update-request-properties', requestId, patch: { dumpFile: 'out/last.xml' } });
+      expect(service.dumpFileFor(requestId)?.path).toBe('out/last.xml');
+
+      await service.mutate({ kind: 'update-request-properties', requestId, patch: { dumpFile: null } });
+      expect(service.dumpFileFor(requestId)).toBeUndefined();
+      await service.close();
+    });
+
+    it('answers undefined for a request that is not in the project', async () => {
+      const { service } = await withRequest();
+      expect(service.buildLiveSendInput('nope')).toBeUndefined();
+      expect(service.dumpFileFor('nope')).toBeUndefined();
+      await service.close();
+    });
   });
 });

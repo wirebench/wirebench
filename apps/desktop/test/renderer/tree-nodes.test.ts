@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { InterfaceSummary } from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { buildExplorerTree } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
   return {
@@ -41,6 +42,7 @@ function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
 
 function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
   return {
+    properties: REQUEST_PROPERTIES,
     id: 'req-1',
     interfaceId: 'iface-1',
     bindingName: '{tns}CalculatorSoap',

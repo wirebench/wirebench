@@ -8,6 +8,7 @@ import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
 import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '../../editor/xml-language.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
@@ -120,7 +121,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const formatAndCommit = useCallback(() => {
     const editor = editorRef.current;
     if (editor !== undefined) {
-      formatEditorInPlace(editor);
+      formatEditorInPlace(editor, usePreferencesStore.getState().preferences.editor.tabSize);
       const value = editor.getModel()?.getValue();
       if (value !== undefined) {
         commitNow(value);

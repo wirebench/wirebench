@@ -1,5 +1,6 @@
 import { showToast } from '../../components/toast.js';
 import { openRequestTab, recreateRequest } from '../request-editor/request-actions.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingRequest } from './explorer-api.js';
@@ -9,6 +10,11 @@ import { startRenamingRequest } from './explorer-api.js';
  * mirrors). Kept here, shared by both, so the palette and the context menu can never drift.
  */
 
+/** Whether deleting should prompt first — `preferences.ui.confirmOnDelete`. */
+function confirmsDeletes(): boolean {
+  return usePreferencesStore.getState().preferences.ui.confirmOnDelete;
+}
+
 export const explorerActions = {
   importAnother(): void {
     useUiStore.getState().openImportDialog();
@@ -16,6 +22,10 @@ export const explorerActions = {
 
   removeInterface(interfaceId: string | undefined): void {
     if (interfaceId === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeInterface(interfaceId);
       return;
     }
     useUiStore.getState().requestRemoveInterface(interfaceId);
@@ -89,6 +99,10 @@ export const explorerActions = {
 
   deleteRequest(requestId: string | undefined): void {
     if (requestId === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeRequest(requestId);
       return;
     }
     useUiStore.getState().requestDeleteRequest(requestId);

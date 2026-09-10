@@ -11,6 +11,7 @@ import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
 import { subscribeToGlobals } from '../state/globals.js';
+import { subscribeToPreferences } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { NewProjectDialog } from '../features/welcome/new-project-dialog.js';
@@ -63,6 +64,7 @@ export function AppShell() {
 
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
+  useEffect(() => subscribeToPreferences(), []);
   useEffect(() => subscribeToHistory(), []);
 
   const openPalette = useCallback(() => {

@@ -4,8 +4,10 @@ import { ImportDialog } from '../../src/renderer/features/explorer/import-dialog
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 
 const project: ProjectWire = {
+  settings: PROJECT_SETTINGS,
   id: 'proj-1',
   name: 'Demo',
   dir: '/tmp/demo',

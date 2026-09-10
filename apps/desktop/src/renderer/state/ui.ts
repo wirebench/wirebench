@@ -54,6 +54,8 @@ export interface UiStore extends UiSnapshot {
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
   readonly toggleEditorLineNumbers: () => void;
+  /** Sets the gutter preference directly — how the preferences mirror pushes its value in. */
+  readonly setEditorLineNumbers: (lineNumbers: boolean) => void;
   /** Replaces the default request-editor layout (persisted); see `request-editor/layout.ts`. */
   readonly setEditorLayout: (layout: EditorLayoutSnapshot) => void;
   /** The layout without the actions — what commands and keybindings receive as context. */
@@ -158,6 +160,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     toggleEditorLineNumbers: () =>
       update((draft) => {
         draft.editorLineNumbers = !draft.editorLineNumbers;
+      }),
+    setEditorLineNumbers: (lineNumbers) =>
+      update((draft) => {
+        draft.editorLineNumbers = lineNumbers;
       }),
 
     setEditorLayout: (layout) =>

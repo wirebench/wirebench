@@ -8,6 +8,7 @@ import { decodeBase64Text } from '../../lib/format-size.js';
 import { prettyPrintXml } from '../../editor/xml-language.js';
 import type { ExchangeState } from '../../state/exchanges.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import type { ResponseViewType } from '../../state/editors.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
@@ -53,15 +54,20 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const pendingSelectionRef = useRef<TextRange | undefined>(undefined);
 
+  // "Format responses" is a preference: with it off the envelope is shown exactly as it came
+  // off the wire, which is what you want when the server's own formatting is the thing under
+  // inspection.
+  const autoFormat = usePreferencesStore((state) => state.preferences.editor.autoFormatResponses);
+  const tabSize = usePreferencesStore((state) => state.preferences.editor.tabSize);
   const body = useMemo(() => {
     if (exchange === undefined) {
       return '';
     }
     if (response?.isSoap === true) {
-      return prettyPrintXml(response.envelopeXml);
+      return autoFormat ? prettyPrintXml(response.envelopeXml, tabSize) : response.envelopeXml;
     }
     return decodeBase64Text(exchange.http.bodyBase64) ?? '';
-  }, [exchange, response]);
+  }, [exchange, response, autoFormat, tabSize]);
 
   // A fault just arrived: switch to the Fault tab, unless the user already pinned another one.
   // `status` is in the deps (not just `sendId`) because a send's `sendId` is assigned once, at

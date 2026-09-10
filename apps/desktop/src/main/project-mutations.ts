@@ -10,8 +10,22 @@
  */
 
 import { createRequest, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
-import type { Endpoint, EndpointAuth, Interface, OperationDef, Project, RequestDef } from '@wirebench/engine';
-import type { ProjectChange, RequestPatchWire } from '../shared/wire-types.js';
+import type {
+  Endpoint,
+  EndpointAuth,
+  Interface,
+  OperationDef,
+  Project,
+  ProjectSettings,
+  RequestDef,
+  RequestProperties,
+} from '@wirebench/engine';
+import type {
+  ProjectChange,
+  ProjectSettingsPatchWire,
+  RequestPatchWire,
+  RequestPropertiesPatchWire,
+} from '../shared/wire-types.js';
 import {
   addEnvironment,
   deleteEnvironment,
@@ -164,7 +178,9 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
   const name = patch.name ?? request.name;
   const slug = patch.name === undefined || patch.name === request.name ? request.slug : uniqueSlug(name, takenSlugs);
 
-  const optional = <K extends 'endpointId' | 'endpointUrl' | 'soapAction'>(key: K): Partial<Pick<RequestDef, K>> => {
+  const optional = <K extends 'endpointId' | 'endpointUrl' | 'soapAction' | 'description'>(
+    key: K,
+  ): Partial<Pick<RequestDef, K>> => {
     const value = patch[key];
     if (value === undefined) {
       return request[key] === undefined ? {} : ({ [key]: request[key] } as Pick<RequestDef, K>);
@@ -178,7 +194,7 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     name,
     slug,
     order: request.order,
-    ...(request.description !== undefined ? { description: request.description } : {}),
+    ...optional('description'),
     ...optional('endpointId'),
     ...optional('endpointUrl'),
     soapVersion: request.soapVersion,
@@ -275,6 +291,53 @@ function updateRequestAuth(project: Project, requestId: string, auth: EndpointAu
   };
   const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));
   return { project: replaceInterface(project, replaceOperation(iface, { ...operation, requests })) };
+}
+
+/**
+ * Merges a {@link RequestPropertiesPatchWire} into a request's properties. A `null` clears an
+ * optional property back to "inherit" (no value); `undefined` leaves it alone. Only the keys
+ * the patch actually names are touched, so two panels editing different rows never fight.
+ */
+function mergeRequestProperties(current: RequestProperties, patch: RequestPropertiesPatchWire): RequestProperties {
+  const next: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value === null) {
+      delete next[key];
+      continue;
+    }
+    next[key] = value;
+  }
+  return next as unknown as RequestProperties;
+}
+
+function updateRequestProperties(
+  project: Project,
+  requestId: string,
+  patch: RequestPropertiesPatchWire,
+): MutationResult {
+  const { iface, operation, request } = findRequest(project, requestId) ?? notFound('request', requestId);
+  const next: RequestDef = { ...request, properties: mergeRequestProperties(request.properties, patch) };
+  const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));
+  return { project: replaceInterface(project, replaceOperation(iface, { ...operation, requests })) };
+}
+
+/** Merges a settings patch into the project's settings; `resourceRoot: null` clears it. */
+function updateProjectSettings(project: Project, patch: ProjectSettingsPatchWire): MutationResult {
+  const settings: Record<string, unknown> = { ...project.settings };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value === null) {
+      delete settings[key];
+      continue;
+    }
+    settings[key] = value;
+  }
+  return { project: { ...project, settings: settings as unknown as ProjectSettings } };
 }
 
 /** Applies one {@link ProjectChange}, returning the next model. Never mutates its input. */
@@ -417,6 +480,22 @@ export async function applyChange(
       const properties = { ...project.properties };
       delete properties[change.name];
       return { project: { ...project, properties } };
+    }
+
+    case 'update-request-properties':
+      return updateRequestProperties(project, change.requestId, change.patch);
+
+    case 'update-project-settings':
+      return updateProjectSettings(project, change.patch);
+
+    case 'update-interface': {
+      const iface = requireInterface(project, change.interfaceId);
+      return {
+        project: replaceInterface(project, {
+          ...iface,
+          ...(change.patch.cacheDefinition !== undefined ? { cacheDefinition: change.patch.cacheDefinition } : {}),
+        }),
+      };
     }
   }
 }

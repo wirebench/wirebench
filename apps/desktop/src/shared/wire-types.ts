@@ -151,9 +151,16 @@ const soapSendInputWireSchema = z.object({
   soapAction: z.string().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().optional(),
+  encoding: z.string().optional(),
   followRedirects: z.boolean().optional(),
   maxSizeBytes: z.number().optional(),
   skipSoapAction: z.boolean().optional(),
+  /** Local interface address to bind the outgoing socket to (the request's "Bind Address"). */
+  localAddress: z.string().optional(),
+  /** Compress the request body before sending it. */
+  compressBody: z.literal('gzip').optional(),
+  /** XML-escape substituted property values inside the envelope. */
+  entitize: z.boolean().optional(),
   tls: tlsOptionsSchema.optional(),
 });
 export type SoapSendInputWire = z.infer<typeof soapSendInputWireSchema>;
@@ -362,6 +369,14 @@ export const dialogsOpenFileRequestSchema = z.object({
 });
 export const dialogsOpenFileResponseSchema = z.object({ path: z.string().optional() });
 
+/** Request/response for `dialogs.saveFile`: a native Save-as picker returning the chosen path. */
+export const dialogsSaveFileRequestSchema = z.object({
+  filters: z.array(dialogFilterSchema).optional(),
+  title: z.string().optional(),
+  defaultPath: z.string().optional(),
+});
+export const dialogsSaveFileResponseSchema = z.object({ path: z.string().optional() });
+
 /** Request/response for `dialogs.openFolder`. */
 export const dialogsOpenFolderRequestSchema = z.object({ title: z.string().optional() });
 export const dialogsOpenFolderResponseSchema = z.object({ path: z.string().optional() });
@@ -429,6 +444,80 @@ export const interfaceWireSchema = interfaceSummarySchema.extend({
 });
 export type InterfaceWire = z.infer<typeof interfaceWireSchema>;
 
+/**
+ * The per-request knobs of the Details panel (§6.3): transport, envelope transforms, MTOM
+ * flags and the WS-Security defaults. Mirrors the engine's `RequestProperties` one for one.
+ */
+export const requestPropertiesSchema = z.object({
+  encoding: z.string(),
+  timeoutMs: z.number().optional(),
+  bindAddress: z.string().optional(),
+  followRedirects: z.boolean(),
+  skipSoapAction: z.boolean(),
+  enableMtom: z.boolean(),
+  forceMtom: z.boolean(),
+  inlineResponseAttachments: z.boolean(),
+  expandMtomAttachments: z.boolean(),
+  disableMultiparts: z.boolean(),
+  encodeAttachments: z.boolean(),
+  enableInlineFiles: z.boolean(),
+  removeEmptyContent: z.boolean(),
+  entitizeProperties: z.boolean(),
+  prettyPrint: z.boolean(),
+  stripWhitespaces: z.boolean(),
+  dumpFile: z.string().optional(),
+  maxSizeBytes: z.number().optional(),
+  wssPasswordType: z.enum(['text', 'digest']).optional(),
+  wssTimeToLive: z.number().optional(),
+});
+export type RequestPropertiesWire = z.infer<typeof requestPropertiesSchema>;
+
+/**
+ * A patch over {@link requestPropertiesSchema}: every field optional, and every optional field
+ * additionally nullable so "clear this back to inherit" is expressible (a `null` removes it).
+ */
+export const requestPropertiesPatchSchema = z.object({
+  encoding: z.string().optional(),
+  timeoutMs: z.number().nullable().optional(),
+  bindAddress: z.string().nullable().optional(),
+  followRedirects: z.boolean().optional(),
+  skipSoapAction: z.boolean().optional(),
+  enableMtom: z.boolean().optional(),
+  forceMtom: z.boolean().optional(),
+  inlineResponseAttachments: z.boolean().optional(),
+  expandMtomAttachments: z.boolean().optional(),
+  disableMultiparts: z.boolean().optional(),
+  encodeAttachments: z.boolean().optional(),
+  enableInlineFiles: z.boolean().optional(),
+  removeEmptyContent: z.boolean().optional(),
+  entitizeProperties: z.boolean().optional(),
+  prettyPrint: z.boolean().optional(),
+  stripWhitespaces: z.boolean().optional(),
+  dumpFile: z.string().nullable().optional(),
+  maxSizeBytes: z.number().nullable().optional(),
+  wssPasswordType: z.enum(['text', 'digest']).nullable().optional(),
+  wssTimeToLive: z.number().nullable().optional(),
+});
+export type RequestPropertiesPatchWire = z.infer<typeof requestPropertiesPatchSchema>;
+
+/** Project-wide settings, as mirrored by the renderer. */
+export const projectSettingsSchema = z.object({
+  cacheDefinitions: z.boolean(),
+  defaultTimeoutMs: z.number(),
+  resourceRoot: z.string().optional(),
+  prettyPrintResponses: z.boolean(),
+});
+export type ProjectSettingsWire = z.infer<typeof projectSettingsSchema>;
+
+/** The fields of {@link projectSettingsSchema} the renderer may patch. */
+export const projectSettingsPatchSchema = z.object({
+  cacheDefinitions: z.boolean().optional(),
+  defaultTimeoutMs: z.number().optional(),
+  resourceRoot: z.string().nullable().optional(),
+  prettyPrintResponses: z.boolean().optional(),
+});
+export type ProjectSettingsPatchWire = z.infer<typeof projectSettingsPatchSchema>;
+
 /** A saved request, flattened out of its owning operation so the renderer can index it by id. */
 export const requestWireSchema = z.object({
   id: z.string(),
@@ -445,6 +534,8 @@ export const requestWireSchema = z.object({
   headers: z.array(headerEntrySchema),
   order: z.number(),
   auth: endpointAuthSchema.optional(),
+  description: z.string().optional(),
+  properties: requestPropertiesSchema,
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;
 
@@ -485,6 +576,7 @@ export const projectWireSchema = z.object({
   /** The environment endpoints/properties resolve against, or absent when none is active. */
   activeEnvironmentId: z.string().optional(),
   problems: z.array(projectProblemSchema),
+  settings: projectSettingsSchema,
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
 
@@ -496,6 +588,7 @@ export const requestPatchSchema = z.object({
   endpointUrl: z.string().nullable().optional(),
   headers: z.array(headerEntrySchema).optional(),
   soapAction: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 export type RequestPatchWire = z.infer<typeof requestPatchSchema>;
 
@@ -561,6 +654,17 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('set-active-environment'), environmentId: z.string().nullable() }),
   z.object({ kind: z.literal('set-project-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-project-property'), name: z.string() }),
+  z.object({
+    kind: z.literal('update-request-properties'),
+    requestId: z.string(),
+    patch: requestPropertiesPatchSchema,
+  }),
+  z.object({ kind: z.literal('update-project-settings'), patch: projectSettingsPatchSchema }),
+  z.object({
+    kind: z.literal('update-interface'),
+    interfaceId: z.string(),
+    patch: z.object({ cacheDefinition: z.boolean().optional() }),
+  }),
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
@@ -1019,3 +1123,100 @@ export const xpathNamespacesResponseSchema = z.object({
   namespaces: z.record(z.string(), z.string()),
   suggestions: z.record(z.string(), z.string()),
 });
+
+// ---------------------------------------------------------------------------
+// Preferences (Task 30): user-scoped settings, persisted in `userData`.
+// ---------------------------------------------------------------------------
+
+/**
+ * The whole preferences document, mirroring the engine's `Preferences`. Sections whose
+ * behaviour lands in a later task (`proxy`, `ssl`, `shortcuts`) are still carried here, so a
+ * file written today survives those tasks unchanged.
+ */
+export const preferencesWireSchema = z.object({
+  http: z.object({
+    version: z.literal('1.1'),
+    userAgent: z.string(),
+    requestCompression: z.enum(['none', 'gzip']),
+    responseCompression: z.boolean(),
+    closeConnections: z.boolean(),
+    chunkingThreshold: z.number(),
+    socketTimeoutMs: z.number(),
+    maxConnections: z.number(),
+  }),
+  proxy: z.object({
+    mode: z.enum(['none', 'system', 'manual']),
+    host: z.string().optional(),
+    port: z.number().optional(),
+    username: z.string().optional(),
+    passwordRef: z.string().optional(),
+    excludes: z.array(z.string()),
+  }),
+  ssl: z.object({
+    minVersion: z.enum(['TLSv1.2', 'TLSv1.3']),
+    caBundlePath: z.string().optional(),
+    clientKeystoreRef: z.string().optional(),
+    trustAll: z.literal(false),
+  }),
+  wsdl: z.object({
+    cacheDefinitions: z.boolean(),
+    prettyPrint: z.boolean(),
+    sampleValues: z.boolean(),
+    typeComments: z.boolean(),
+    includeOptional: z.boolean(),
+    strictSchema: z.boolean(),
+    compression: z.boolean(),
+    nameWithBinding: z.boolean(),
+  }),
+  wsi: z.object({ verbose: z.boolean(), profile: z.literal('BP1.1') }),
+  editor: z.object({
+    fontFamily: z.string().optional(),
+    fontSize: z.number(),
+    tabSize: z.number(),
+    lineNumbers: z.boolean(),
+    wordWrap: z.boolean(),
+    autoValidateOnSend: z.boolean(),
+    autoFormatResponses: z.boolean(),
+  }),
+  ui: z.object({
+    theme: z.enum(['dark', 'light', 'system']),
+    defaultLayout: z.object({
+      orientation: z.enum(['side-by-side', 'stacked']),
+      mode: z.enum(['split', 'tabs']),
+    }),
+    confirmOnDelete: z.boolean(),
+    historyCap: z.number(),
+  }),
+  shortcuts: z.record(z.string(), z.string()),
+});
+export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
+
+/** The section names `preferences.reset` accepts. */
+export const preferencesSectionSchema = z.enum(['http', 'proxy', 'ssl', 'wsdl', 'wsi', 'editor', 'ui', 'shortcuts']);
+export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
+
+/**
+ * A partial preferences document. Deliberately loose (`z.unknown()` per section, merged and
+ * validated by the engine's `mergePreferences`) so the renderer can send one field without
+ * restating a whole section, and so an unknown key is ignored rather than rejected.
+ */
+export const preferencesPatchWireSchema = z.object({
+  http: z.record(z.string(), z.unknown()).optional(),
+  proxy: z.record(z.string(), z.unknown()).optional(),
+  ssl: z.record(z.string(), z.unknown()).optional(),
+  wsdl: z.record(z.string(), z.unknown()).optional(),
+  wsi: z.record(z.string(), z.unknown()).optional(),
+  editor: z.record(z.string(), z.unknown()).optional(),
+  ui: z.record(z.string(), z.unknown()).optional(),
+  shortcuts: z.record(z.string(), z.string()).optional(),
+});
+export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
+
+/** Response for every `preferences.*` channel, and the payload of `preferences.changed`. */
+export const preferencesResponseSchema = z.object({ preferences: preferencesWireSchema });
+export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
+
+/** Request payload for `preferences.update`. */
+export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
+/** Request payload for `preferences.reset`. */
+export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });

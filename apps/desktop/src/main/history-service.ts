@@ -112,14 +112,24 @@ export class HistoryService {
   private current: HistoryFile | undefined;
   private currentProjectId: string | undefined;
 
-  constructor(private readonly userDataDir: string) {}
+  constructor(
+    private readonly userDataDir: string,
+    /**
+     * How many entries to keep per project. A function rather than a number so a change to
+     * `preferences.ui.historyCap` takes effect on the next append instead of at next launch.
+     */
+    private readonly cap?: () => number,
+  ) {}
 
   /** Opens (or reuses, if already open for this project) the history file for `projectId`. */
   async open(projectId: string): Promise<void> {
     if (this.currentProjectId === projectId && this.current !== undefined) {
       return;
     }
-    this.current = await openHistory(historyFilePath(this.userDataDir, projectId));
+    const cap = this.cap?.();
+    this.current = await openHistory(historyFilePath(this.userDataDir, projectId), {
+      ...(cap !== undefined ? { cap } : {}),
+    });
     this.currentProjectId = projectId;
   }
 

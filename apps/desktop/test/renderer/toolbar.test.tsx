@@ -158,6 +158,8 @@ describe('EndpointSelect', () => {
 
 describe('RequestToolbar actions', () => {
   beforeEach(() => {
+    // Layout toggles persist through `preferences.update`, so the API has to be in place.
+    installWirebenchApi();
     useEditorsStore.setState({ editorLayouts: {} });
     useUiStore.getState().setEditorLayout({ orientation: 'side-by-side', mode: 'split' });
     useProjectStore.setState({ requests: { 'req-1': makeDraft() } });

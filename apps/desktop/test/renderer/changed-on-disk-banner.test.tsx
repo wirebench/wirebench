@@ -5,9 +5,11 @@ import { ChangedOnDiskBanner } from '../../src/renderer/features/project/changed
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 
 function project(dirty: boolean): ProjectWire {
   return {
+    settings: PROJECT_SETTINGS,
     id: 'p',
     name: 'Demo',
     dir: '/tmp/demo',

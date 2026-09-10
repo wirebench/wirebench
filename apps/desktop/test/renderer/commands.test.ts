@@ -4,6 +4,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
@@ -162,6 +163,8 @@ describe('environment commands', () => {
 
 describe('editor layout commands', () => {
   beforeEach(() => {
+    // Layout toggles persist the new default through `preferences.update`.
+    installWirebenchApi();
     resetCommands();
     registerShellCommands(vi.fn());
     useEditorsStore.setState({

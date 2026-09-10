@@ -12,6 +12,7 @@ export type CommandId =
   | 'view.showHistory'
   | 'view.showSettings'
   | 'view.toggleTheme'
+  | 'preferences.open'
   | 'definition.import'
   | 'project.new'
   | 'project.open'

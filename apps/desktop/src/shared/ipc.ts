@@ -8,6 +8,11 @@ import {
   dialogsOpenFileRequestSchema,
   dialogsOpenFileResponseSchema,
   dialogsOpenFolderRequestSchema,
+  dialogsSaveFileRequestSchema,
+  dialogsSaveFileResponseSchema,
+  preferencesResetRequestSchema,
+  preferencesResponseSchema,
+  preferencesUpdateRequestSchema,
   dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
@@ -178,6 +183,12 @@ export const channels = {
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
     openFolder: defineChannel('dialogs.openFolder', dialogsOpenFolderRequestSchema, dialogsOpenFolderResponseSchema),
+    saveFile: defineChannel('dialogs.saveFile', dialogsSaveFileRequestSchema, dialogsSaveFileResponseSchema),
+  },
+  preferences: {
+    get: defineChannel('preferences.get', z.undefined(), preferencesResponseSchema),
+    update: defineChannel('preferences.update', preferencesUpdateRequestSchema, preferencesResponseSchema),
+    reset: defineChannel('preferences.reset', preferencesResetRequestSchema, preferencesResponseSchema),
   },
   // No `secrets.get`: the renderer may create/replace/check/delete/list secret refs, but can
   // never read a value back — resolution happens only in main, at send/import time.
@@ -249,6 +260,9 @@ export const events = {
   },
   globals: {
     changed: defineEvent('globals.changed', globalsPropertiesResponseSchema),
+  },
+  preferences: {
+    changed: defineEvent('preferences.changed', preferencesResponseSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),

@@ -12,9 +12,11 @@ import type {
   ProjectChangedEvent,
   ProjectChangedOnDiskEvent,
   ProjectMutateResponse,
+  ProjectSettingsPatchWire,
   ProjectWire,
   RecentProject,
   RequestPatchWire,
+  RequestPropertiesPatchWire,
   RequestWire,
 } from '../../shared/wire-types.js';
 import { useEditorsStore } from './editors.js';
@@ -74,6 +76,16 @@ export interface ProjectStore extends ProjectSnapshot {
   ) => Promise<InterfaceWire>;
   readonly removeInterface: (interfaceId: string) => Promise<void>;
   readonly updateRequest: (requestId: string, patch: RequestPatchWire) => void;
+  /**
+   * Merges a patch into one request's §6.3 properties. Applied optimistically (so a checkbox
+   * does not lag the click) and then confirmed by main's snapshot. A `null` clears an optional
+   * property back to "inherit".
+   */
+  readonly updateRequestProperties: (requestId: string, patch: RequestPropertiesPatchWire) => void;
+  /** Merges a patch into the project's settings (`wirebench.yaml`). */
+  readonly updateProjectSettings: (patch: ProjectSettingsPatchWire) => Promise<void>;
+  /** Turns the definition cache on or off for one interface. */
+  readonly setCacheDefinition: (interfaceId: string, cacheDefinition: boolean) => Promise<void>;
   readonly setEndpoint: (requestId: string, url: string) => void;
   /** Replaces a request's envelope in the mirror ONLY: for changes main has already saved
    * itself (`request.recreate`), where a second `update-request` would just rewrite the file. */
@@ -139,10 +151,27 @@ function withEnvironmentPatch(environment: EnvironmentWire, patch: EnvironmentPa
   };
 }
 
+/** Applies a properties patch to a mirrored request; `null` clears the property. */
+function withPropertiesPatch(request: RequestDraft, patch: RequestPropertiesPatchWire): RequestDraft {
+  const properties: Record<string, unknown> = { ...request.properties };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value === null) {
+      delete properties[key];
+      continue;
+    }
+    properties[key] = value;
+  }
+  return { ...request, properties: properties as unknown as RequestDraft['properties'] };
+}
+
 function withPatch(request: RequestDraft, patch: RequestPatchWire): RequestDraft {
   return {
     ...request,
     ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description ?? undefined } : {}),
     ...(patch.envelopeXml !== undefined ? { envelopeXml: patch.envelopeXml } : {}),
     ...(patch.headers !== undefined ? { headers: patch.headers } : {}),
     ...(patch.endpointId !== undefined ? { endpointId: patch.endpointId ?? undefined } : {}),
@@ -482,6 +511,38 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     setActiveEnvironment: async (environmentId) => {
       await mutate({ kind: 'set-active-environment', environmentId });
+    },
+
+    updateRequestProperties: (requestId, patch) => {
+      update((draft) => {
+        const request = draft.requests[requestId];
+        if (request !== undefined) {
+          draft.requests[requestId] = withPropertiesPatch(request, patch);
+        }
+      });
+      void ipc()
+        .project.mutate({ change: { kind: 'update-request-properties', requestId, patch } })
+        .then((result) => {
+          if (result.ok) {
+            apply(result.value.project);
+            return;
+          }
+          // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
+          apply(get().project);
+          showToast(asError(result.error).message);
+        })
+        .catch((error: unknown) => {
+          apply(get().project);
+          showToast(error instanceof Error ? error.message : 'Could not save the change');
+        });
+    },
+
+    updateProjectSettings: async (patch) => {
+      await mutate({ kind: 'update-project-settings', patch });
+    },
+
+    setCacheDefinition: async (interfaceId, cacheDefinition) => {
+      await mutate({ kind: 'update-interface', interfaceId, patch: { cacheDefinition } });
     },
 
     setProjectProperty: async (name, value) => {

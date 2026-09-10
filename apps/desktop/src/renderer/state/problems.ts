@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import type { ImportProblemWire } from '../../shared/wire-types.js';
 
-/** Where a problem came from: importing a definition, or expanding properties before a send. */
-export type ProblemSource = 'import' | 'expansion';
+/**
+ * Where a problem came from: importing a definition, expanding properties before a send, or
+ * the send itself failing at the transport level (a timeout, a refused connection, …).
+ */
+export type ProblemSource = 'import' | 'expansion' | 'send';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

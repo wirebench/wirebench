@@ -26,11 +26,13 @@ import {
   resolveScopes,
   projectFiles,
   saveProject,
+  toSendInput,
   uniqueSlug,
 } from '@wirebench/engine';
 import type {
   Endpoint,
   FsLike,
+  Preferences,
   Interface,
   OperationDef,
   Project,
@@ -52,6 +54,7 @@ import type {
 import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
+import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
@@ -149,7 +152,94 @@ export class ProjectService {
     private readonly globals?: Pick<GlobalProperties, 'get'>,
     /** Resolves `passwordRef`s at import time. Omitted in tests that never import with auth. */
     private readonly secrets?: Pick<SecretStore, 'get'>,
+    /**
+     * The user's preferences, folded into every send input. Omitted in tests, where the
+     * engine's built-in defaults stand in.
+     */
+    private readonly preferences?: Pick<PreferencesService, 'get'>,
   ) {}
+
+  /** The current preferences, or the engine defaults when none were injected. */
+  private prefs(): Preferences | undefined {
+    return this.preferences?.get();
+  }
+
+  /**
+   * Folds a request's saved properties, the project's settings and the user's preferences into
+   * the send input for `requestId` — the single place those three layers meet (see the engine's
+   * `toSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
+   * has typed but that has not been autosaved yet, and the endpoint the renderer resolved), so
+   * a send always puts the visible request on the wire, with the saved knobs applied to it.
+   *
+   * `undefined` when no project is open, the request is unknown, or no endpoint resolves.
+   */
+  sendInputFor(
+    requestId: string,
+    overrides?: {
+      readonly endpoint?: string;
+      readonly envelopeXml?: string;
+      readonly headers?: Record<string, string>;
+    },
+  ): SoapSendInputWire | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const { iface, request } = location;
+    const endpoint =
+      overrides?.endpoint ??
+      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, iface, request).url;
+    if (endpoint === undefined) {
+      return undefined;
+    }
+    const headers =
+      overrides?.headers !== undefined
+        ? Object.entries(overrides.headers).map(([name, value]) => ({ name, value }))
+        : request.headers;
+    const input = toSendInput({
+      request: {
+        properties: request.properties,
+        soapVersion: request.soapVersion,
+        ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+        headers,
+        envelopeXml: overrides?.envelopeXml ?? request.envelopeXml,
+      },
+      endpoint,
+      ...(this.prefs() !== undefined ? { preferences: this.prefs() as Preferences } : {}),
+      projectSettings: this.open.project.settings,
+    });
+    return {
+      endpoint: input.endpoint,
+      envelopeXml: input.envelopeXml,
+      soapVersion: input.soapVersion,
+      ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+      ...(input.headers !== undefined ? { headers: { ...input.headers } } : {}),
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.encoding !== undefined ? { encoding: input.encoding } : {}),
+      ...(input.followRedirects !== undefined ? { followRedirects: input.followRedirects } : {}),
+      ...(input.maxSizeBytes !== undefined ? { maxSizeBytes: input.maxSizeBytes } : {}),
+      ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
+      ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
+      ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
+      ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
+    };
+  }
+
+  /** The `dumpFile` path a request asks its responses to be written to, if any. */
+  dumpFileFor(requestId: string): { path: string; projectDir: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    const path = location?.request.properties.dumpFile;
+    if (path === undefined || path.trim().length === 0) {
+      return undefined;
+    }
+    return { path: path.trim(), projectDir: this.open.dir };
+  }
 
   /**
    * The property scopes a send (or a preflight) expands against: the open project's own
@@ -232,25 +322,7 @@ export class ProjectService {
    * copy captured in the history entry at send time.
    */
   buildLiveSendInput(requestId: string): SoapSendInputWire | undefined {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const location = findRequest(this.open.project, requestId);
-    if (location === undefined) {
-      return undefined;
-    }
-    const { iface, request } = location;
-    const resolved = resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, iface, request);
-    if (resolved.url === undefined) {
-      return undefined;
-    }
-    return {
-      endpoint: resolved.url,
-      envelopeXml: request.envelopeXml,
-      soapVersion: request.soapVersion,
-      ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
-      headers: Object.fromEntries(request.headers.map((header) => [header.name, header.value])),
-    };
+    return this.sendInputFor(requestId);
   }
 
   /**
@@ -534,6 +606,9 @@ export class ProjectService {
         definitionUrl: summary.definitionUrl,
         targetNamespace: summary.targetNamespace,
         order: open.project.interfaces.length,
+        // The WSDL preference is the default for a newly imported interface; the Details
+        // panel's "Cache definition" toggle is what changes it afterwards, per interface.
+        cacheDefinition: this.prefs()?.wsdl.cacheDefinitions ?? true,
         endpoints,
         operations: operationsFrom(summary),
       }),

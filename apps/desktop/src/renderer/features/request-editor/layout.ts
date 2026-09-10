@@ -1,14 +1,15 @@
 /**
  * How a request editor arranges its two panes.
  *
- * The *default* lives in the `ui` store (persisted to `localStorage`, so it survives a
- * relaunch); a per-request *override* lives in the `editors` store (session only, never saved
- * to the project). Toggling from the toolbar or the palette writes both: the override so the
- * flip is scoped to the request being looked at, and the default so the next request — and the
- * next launch — starts the way the user last left it.
+ * The *default* lives in `preferences.ui.defaultLayout` (mirrored into the `ui` store, which
+ * is what renders); a per-request *override* lives in the `editors` store (session only, never
+ * saved to the project). Toggling from the toolbar or the palette writes both: the override so
+ * the flip is scoped to the request being looked at, and the default so the next request — and
+ * the next launch — starts the way the user last left it.
  */
 
 import { useEditorsStore } from '../../state/editors.js';
+import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 
 /** Where the response pane sits, and whether both panes are visible at once. */
@@ -56,6 +57,9 @@ export function editorLayoutFor(requestId: string): EditorLayout {
 export function setEditorLayout(requestId: string, change: (layout: EditorLayout) => EditorLayout): EditorLayout {
   const next = change(editorLayoutFor(requestId));
   useEditorsStore.getState().setEditorLayout(requestId, next);
+  // The ui store is the render-time mirror; `preferences.ui.defaultLayout` is what actually
+  // persists (and what the preferences mirror pushes back down on the next launch).
   useUiStore.getState().setEditorLayout(next);
+  void usePreferencesStore.getState().update({ ui: { defaultLayout: next } });
   return next;
 }

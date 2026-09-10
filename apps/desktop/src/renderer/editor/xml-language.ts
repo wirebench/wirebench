@@ -26,8 +26,8 @@ export interface FormatEdit {
  * Computes the format edit for `text`, or `undefined` when formatting would not change
  * anything or the document could not be safely reformatted (unbalanced tags).
  */
-export function computeFormatEdit(text: string): FormatEdit | undefined {
-  const result = formatXml(text);
+export function computeFormatEdit(text: string, indentWidth?: number): FormatEdit | undefined {
+  const result = formatXml(text, indentWidth === undefined ? {} : { indent: ' '.repeat(indentWidth) });
   if (result.problem !== undefined || !result.changed) {
     return undefined;
   }
@@ -137,8 +137,11 @@ export function registerXmlLanguageFeatures(
   readonly dispose: () => void;
 } {
   const formatDisposable = monacoNS.languages.registerDocumentFormattingEditProvider(XML_LANGUAGE_ID, {
-    provideDocumentFormattingEdits(model) {
-      const edit = computeFormatEdit(model.getValue());
+    provideDocumentFormattingEdits(model, options) {
+      // Monaco hands the model's own tab size in, which the editor already takes from the
+      // user's `editor.tabSize` preference — so "Format Document" and the palette's Format XML
+      // agree without this module reaching into a store.
+      const edit = computeFormatEdit(model.getValue(), options.tabSize);
       if (edit === undefined) {
         return [];
       }
@@ -230,12 +233,12 @@ export function registerXmlLanguageFeaturesOnce(
 }
 
 /** Formats `editor`'s current content in place via `executeEdits`, preserving the cursor position. */
-export function formatEditorInPlace(editor: Monaco.editor.IStandaloneCodeEditor): void {
+export function formatEditorInPlace(editor: Monaco.editor.IStandaloneCodeEditor, indentWidth?: number): void {
   const model = editor.getModel();
   if (model === null) {
     return;
   }
-  const edit = computeFormatEdit(model.getValue());
+  const edit = computeFormatEdit(model.getValue(), indentWidth);
   if (edit === undefined) {
     return;
   }
@@ -251,8 +254,8 @@ export function formatEditorInPlace(editor: Monaco.editor.IStandaloneCodeEditor)
  * itself when formatting made no change or the markup could not be safely reformatted). The
  * simple string-in/string-out shape the response pane, history view, and diff view all want.
  */
-export function prettyPrintXml(text: string): string {
-  return formatXml(text).text;
+export function prettyPrintXml(text: string, indentWidth?: number): string {
+  return formatXml(text, indentWidth === undefined ? {} : { indent: ' '.repeat(indentWidth) }).text;
 }
 
 /** Runs Monaco's built-in "go to line" action. */

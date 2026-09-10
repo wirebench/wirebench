@@ -90,8 +90,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       }
 
       // Every send starts from a clean slate for this request: last time's unresolved
-      // references say nothing about the model as it stands now.
+      // references (and last time's transport failure) say nothing about the model as it
+      // stands now.
       useProblemsStore.getState().clearSource('expansion', requestId);
+      useProblemsStore.getState().clearSource('send', requestId);
 
       // `sending` is entered before the preflight round trip, so the UI reacts to the click
       // rather than to the reply, and a cancel issued in between still finds this send.
@@ -141,6 +143,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.byRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
+        // A failed send is not just a red status line that the next send erases: it belongs in
+        // Problems alongside everything else that went wrong with this request.
+        useProblemsStore.getState().add([
+          {
+            groupId: `send:${requestId}`,
+            source: 'send',
+            severity: 'error',
+            requestId,
+            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
+          },
+        ]);
         return;
       }
 

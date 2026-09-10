@@ -2,6 +2,7 @@ import { Editor } from '@monaco-editor/react';
 import type { OnMount } from '@monaco-editor/react';
 import { useMemo } from 'react';
 import { resolveTheme } from '../lib/theme.js';
+import { usePreferencesStore } from '../state/preferences.js';
 import { useUiStore } from '../state/ui.js';
 import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
 
@@ -35,16 +36,23 @@ export function XmlEditor({
 }: XmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(resolveTheme(preference));
+  const editorPreferences = usePreferencesStore((state) => state.preferences.editor);
 
   const options = useMemo(
     () => ({
       ...BASE_EDITOR_OPTIONS,
+      ...(editorPreferences.fontFamily !== undefined && editorPreferences.fontFamily.length > 0
+        ? { fontFamily: editorPreferences.fontFamily }
+        : {}),
+      fontSize: editorPreferences.fontSize,
+      tabSize: editorPreferences.tabSize,
+      wordWrap: editorPreferences.wordWrap ? ('on' as const) : ('off' as const),
       readOnly,
       domReadOnly: readOnly,
       ariaLabel,
       lineNumbers: lineNumbers ? ('on' as const) : ('off' as const),
     }),
-    [readOnly, ariaLabel, lineNumbers],
+    [readOnly, ariaLabel, lineNumbers, editorPreferences],
   );
 
   return (
