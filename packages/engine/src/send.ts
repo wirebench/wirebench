@@ -10,12 +10,13 @@ import { sendHttp } from './http/client.js';
 import type { HttpRequest } from './http/types.js';
 import { expandSendInput } from './project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
+import { basicAuthorization, isBasicChallenge } from './http/auth/basic.js';
 import { headerValue, mergeHeaders } from './http/headers.js';
 import { charsetOf } from './soap/charset.js';
 import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
-import type { SoapExchange, SoapSendInput } from './types.js';
+import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
 
 /**
  * Sends `input.envelopeXml` to `input.endpoint` over HTTP, computing the
@@ -37,6 +38,12 @@ import type { SoapExchange, SoapSendInput } from './types.js';
  * {@link expandSendInput}; any expressions that could not be resolved are
  * left verbatim in the sent request and reported on the returned exchange's
  * `unresolved` field, rather than failing the send.
+ *
+ * When `input.auth` is Basic, the `Authorization` header is either sent up front
+ * (`preemptive`) or added on a single retry after the server answers the first attempt
+ * with a 401 `Basic` challenge; both attempts share the one `timeoutMs` budget and the
+ * returned exchange is the final attempt. A caller-supplied `Authorization` header always
+ * wins, and NTLM is not implemented yet (`auth-unsupported`).
  *
  * @param input the endpoint, envelope and transport options to send
  * @param options an injected `dispatcher` (tests), `now` clock, and/or property `scopes`
@@ -76,12 +83,23 @@ export async function sendSoapRequest(
     headers['content-encoding'] = 'gzip';
   }
 
+  const auth = effectiveInput.auth;
+  if (auth?.type === 'ntlm') {
+    throw new WirebenchError('auth-unsupported', 'NTLM authentication lands in the next release');
+  }
+  // A caller-supplied Authorization header is an explicit override; never send two.
+  const callerAuthorization = headerValue(headers, 'authorization') !== undefined;
+  if (auth !== undefined && !callerAuthorization && auth.preemptive) {
+    headers.Authorization = basicAuthorization(auth.username, auth.password);
+  }
+
+  const timeoutMs = effectiveInput.timeoutMs ?? 60_000;
   const request: HttpRequest = {
     url: effectiveInput.endpoint,
     method: 'POST',
     headers,
     body,
-    timeoutMs: effectiveInput.timeoutMs ?? 60_000,
+    timeoutMs,
     followRedirects: effectiveInput.followRedirects ?? false,
     ...(effectiveInput.maxSizeBytes !== undefined ? { maxSizeBytes: effectiveInput.maxSizeBytes } : {}),
     ...(effectiveInput.localAddress !== undefined ? { localAddress: effectiveInput.localAddress } : {}),
@@ -90,7 +108,27 @@ export async function sendSoapRequest(
     ...(effectiveInput.proxy !== undefined ? { proxy: effectiveInput.proxy } : {}),
   };
 
-  const http = await sendHttp(request, options);
+  const now = options?.now ?? Date.now;
+  const startedAt = now();
+  let http = await sendHttp(request, options);
+  let challenged = false;
+  let attempts: 1 | 2 = 1;
+  if (auth !== undefined && !callerAuthorization && !auth.preemptive && isBasicChallenge(http)) {
+    challenged = true;
+    attempts = 2;
+    // Both attempts share one timeout budget, so a challenged send cannot take twice as long.
+    const remainingMs = Math.max(1, timeoutMs - (now() - startedAt));
+    http = await sendHttp(
+      {
+        ...request,
+        headers: { ...headers, Authorization: basicAuthorization(auth.username, auth.password) },
+        timeoutMs: remainingMs,
+      },
+      options,
+    );
+  }
+  const authSummary: AuthSummary | undefined =
+    auth !== undefined ? { scheme: 'basic', challenged, attempts } : undefined;
 
   const { envelopeXml, attachments } = readResponseBody(
     http.body,
@@ -125,6 +163,7 @@ export async function sendSoapRequest(
     http,
     ...(response !== undefined ? { response } : {}),
     durationMs: http.timings.totalMs,
+    ...(authSummary !== undefined ? { auth: authSummary } : {}),
     problems,
     ...(unresolved !== undefined ? { unresolved } : {}),
   };

@@ -96,6 +96,36 @@ export interface ImportResult {
   readonly fromCache?: boolean;
 }
 
+/**
+ * Credentials for one send, already resolved to plaintext: the desktop app looks a
+ * `passwordRef` up in its secret store before calling the engine, so the engine never
+ * sees a secret reference (and never persists or logs the password).
+ */
+export type SendAuth =
+  | {
+      readonly type: 'basic';
+      readonly username: string;
+      readonly password: string;
+      /** Send the `Authorization` header on the first attempt instead of waiting for a 401. */
+      readonly preemptive: boolean;
+    }
+  | {
+      readonly type: 'ntlm';
+      readonly username: string;
+      readonly password: string;
+      readonly domain?: string;
+      readonly workstation?: string;
+    };
+
+/** What authentication actually did during one send, for the UI to explain the exchange. */
+export interface AuthSummary {
+  readonly scheme: 'basic' | 'ntlm';
+  /** True when the server answered the first attempt with a 401 challenge. */
+  readonly challenged: boolean;
+  /** How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a challenge. */
+  readonly attempts: 1 | 2;
+}
+
 /** Input to `sendSoapRequest`: an already-built envelope plus transport knobs. */
 export interface SoapSendInput {
   readonly endpoint: string;
@@ -124,6 +154,8 @@ export interface SoapSendInput {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly signal?: AbortSignal;
+  /** Resolved credentials; see {@link SendAuth}. A caller-supplied `Authorization` header wins. */
+  readonly auth?: SendAuth;
   /** Attachments to send; only acted on when {@link attachmentOptions} says how. */
   readonly attachments?: readonly Attachment[];
   /** MTOM/SwA/inline-file behaviour plus the resolvers that turn references into bytes. */
@@ -180,6 +212,8 @@ export interface SoapExchange {
     readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error' | 'mime-parse' | 'inline-file-missing';
     readonly message: string;
   }[];
+  /** What authentication did, when the send was given {@link SoapSendInput.auth}. */
+  readonly auth?: AuthSummary;
   /** Property expansions in the request that could not be resolved (set only when `options.scopes` was given). */
   readonly unresolved?: readonly UnresolvedRef[];
 }

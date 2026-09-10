@@ -297,6 +297,32 @@ export async function startTestSoapServer(options?: {
       return;
     }
 
+    // Basic-auth routes: `/auth/basic` challenges with `WWW-Authenticate`, `/auth/basic-nochallenge`
+    // answers 401 without one so a client must not retry.
+    if (method === 'POST' && (url.pathname === '/auth/basic' || url.pathname === '/auth/basic-nochallenge')) {
+      const expected = `Basic ${Buffer.from('user:pass', 'utf-8').toString('base64')}`;
+      if (req.headers.authorization !== expected) {
+        res.writeHead(401, {
+          'content-type': 'text/plain',
+          ...(url.pathname === '/auth/basic' ? { 'www-authenticate': 'Basic realm="wirebench"' } : {}),
+        });
+        res.end('Unauthorized');
+        return;
+      }
+      const contentType = req.headers['content-type'] ?? 'text/xml';
+      if ((options?.fixture ?? 'calculator') === 'calculator' && options?.respondToCalculatorAdd === true) {
+        const addResponse = buildCalculatorAddResponse(body.toString('utf-8'));
+        if (addResponse !== undefined) {
+          res.writeHead(200, { 'content-type': contentType, 'x-auth-scheme': 'basic' });
+          res.end(addResponse);
+          return;
+        }
+      }
+      res.writeHead(200, { 'content-type': contentType, 'x-auth-scheme': 'basic' });
+      res.end(body);
+      return;
+    }
+
     if (method === 'POST' && url.pathname === '/latin1') {
       res.writeHead(200, { 'content-type': 'text/xml; charset=ISO-8859-1' });
       res.end(Buffer.concat([Buffer.from('<root>', 'ascii'), Buffer.from([0xe9]), Buffer.from('</root>', 'ascii')]));

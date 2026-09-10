@@ -185,6 +185,8 @@ export type {
   TransferEncoding,
 } from './soap/mime/types.js';
 
+export { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from './http/auth/basic.js';
+export type { AuthChallenge } from './http/auth/basic.js';
 export { createDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
@@ -203,7 +205,9 @@ export type {
   ImportResult,
   ImportSource,
   OperationSummary,
+  AuthSummary,
   SendAttachmentOptions,
+  SendAuth,
   SoapExchange,
   SoapSendInput,
 } from './types.js';
@@ -331,6 +335,7 @@ export type {
 } from './project/history.js';
 export { expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
+export { effectiveAuth } from './project/endpoints.js';
 export {
   findEnvironment,
   removeEnvironment,
