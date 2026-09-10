@@ -1,7 +1,9 @@
+import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { z } from 'zod';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
+import { emitEvent } from '../src/main/ipc/events.js';
 import { channels, defineEvent } from '../src/shared/ipc.js';
 
 describe('wrapHandler', () => {
@@ -92,5 +94,48 @@ describe('validateEventPayload', () => {
       expect(err).toBeInstanceOf(WirebenchError);
       expect((err as WirebenchError).code).toBe('ipc-invalid-event');
     }
+  });
+});
+
+describe('emitEvent', () => {
+  const testEvent = defineEvent('test.event', z.object({ message: z.string() }));
+
+  it('does not call send when the target WebContents is destroyed', () => {
+    const sendMock = vi.fn();
+    const target: Partial<WebContents> = {
+      isDestroyed: () => true,
+      send: sendMock,
+    };
+
+    emitEvent(target as unknown as WebContents, testEvent, { message: 'hello' });
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('calls send with the event name and validated payload when the target is not destroyed', () => {
+    const sendMock = vi.fn();
+    const target: Partial<WebContents> = {
+      isDestroyed: () => false,
+      send: sendMock,
+    };
+
+    emitEvent(target as unknown as WebContents, testEvent, { message: 'hello' });
+
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock).toHaveBeenCalledWith('test.event', { message: 'hello' });
+  });
+
+  it('throws on invalid payload even when the target is destroyed (validates first)', () => {
+    const sendMock = vi.fn();
+    const target: Partial<WebContents> = {
+      isDestroyed: () => true,
+      send: sendMock,
+    };
+
+    const invalidPayload = { message: 123 };
+    expect(() =>
+      emitEvent(target as unknown as WebContents, testEvent, invalidPayload as unknown as { message: string }),
+    ).toThrowError(WirebenchError);
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });

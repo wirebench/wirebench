@@ -14,5 +14,6 @@ export function emitEvent<Payload extends z.ZodType>(
   payload: z.infer<Payload>,
 ): void {
   const parsed = validateEventPayload(event, payload);
+  if (target.isDestroyed()) return;
   target.send(event.name, parsed);
 }
