@@ -3,7 +3,7 @@ import { Group, Panel, Separator } from 'react-resizable-panels';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
-import { useProjectStore } from '../../state/project.js';
+import { selectRequestEndpoint, useProjectStore } from '../../state/project.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
 import { ResponsePane } from './response-pane.js';
 import { RequestToolbar } from './toolbar.js';
@@ -33,6 +33,7 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
   const summary = useProjectStore((state) => (draft === undefined ? undefined : state.interfaces[draft.interfaceId]));
   const updateRequest = useProjectStore((state) => state.updateRequest);
   const setEndpoint = useProjectStore((state) => state.setEndpoint);
+  const endpoint = useProjectStore((state) => selectRequestEndpoint(state, requestId));
   const exchange = useExchangesStore((state) => state.byRequest[requestId]);
   const send = useExchangesStore((state) => state.send);
   const cancel = useExchangesStore((state) => state.cancel);
@@ -87,6 +88,7 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
       <RequestToolbar
         draft={draft}
         summary={summary}
+        endpoint={endpoint}
         sending={sending}
         onSend={onSend}
         onCancel={onCancel}

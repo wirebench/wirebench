@@ -15,6 +15,8 @@ export type CommandId =
   | 'definition.import'
   | 'project.new'
   | 'project.open'
+  | 'project.save'
+  | 'project.close'
   | 'explorer.importAnother'
   | 'explorer.removeInterface'
   | 'explorer.copyDefinitionUrl'

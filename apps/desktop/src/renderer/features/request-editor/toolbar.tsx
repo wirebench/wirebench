@@ -7,6 +7,8 @@ import { EndpointSelect } from './endpoint-select.js';
 export interface RequestToolbarProps {
   readonly draft: RequestDraft;
   readonly summary: InterfaceSummary | undefined;
+  /** The URL the request resolves to today (see `selectRequestEndpoint`), if any. */
+  readonly endpoint: string | undefined;
   readonly sending: boolean;
   readonly onSend: () => void;
   readonly onCancel: () => void;
@@ -19,6 +21,7 @@ export interface RequestToolbarProps {
 export function RequestToolbar({
   draft,
   summary,
+  endpoint,
   sending,
   onSend,
   onCancel,
@@ -37,7 +40,7 @@ export function RequestToolbar({
           data-testid="request-send"
           variant="primary"
           onClick={onSend}
-          disabled={draft.endpoint === undefined || draft.endpoint.length === 0}
+          disabled={endpoint === undefined || endpoint.length === 0}
           {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
         >
           <Send size={12} aria-hidden="true" />
@@ -45,12 +48,7 @@ export function RequestToolbar({
         </Button>
       )}
 
-      <EndpointSelect
-        summary={summary}
-        bindingName={draft.bindingName}
-        value={draft.endpoint}
-        onChange={onEndpointChange}
-      />
+      <EndpointSelect summary={summary} bindingName={draft.bindingName} value={endpoint} onChange={onEndpointChange} />
 
       <div className="flex shrink-0 items-center gap-2 text-sm">
         <span className="font-mono text-fg-default">{draft.operationName}</span>

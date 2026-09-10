@@ -48,7 +48,8 @@ function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
     name: 'Request 1',
     envelopeXml: '<Envelope/>',
     soapVersion: '1.1',
-    headers: {},
+    headers: [],
+    order: 0,
     ...overrides,
   };
 }

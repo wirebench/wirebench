@@ -5,6 +5,7 @@ import { RequestEditor } from '../../src/renderer/features/request-editor/reques
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { makeDraft, makeExchange, makeInterface } from '../mocks/exchange-fixtures.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -13,9 +14,13 @@ const send = vi.fn();
 const cancel = vi.fn();
 
 function stubWirebench(): void {
-  Object.defineProperty(window, 'wirebench', {
-    configurable: true,
-    value: { request: { send, cancel } },
+  installWirebenchApi({
+    request: { send, cancel },
+    // Envelope edits are mutations now; the reply echoes back what the store already applied
+    // optimistically, so these tests can keep asserting on the store alone.
+    project: {
+      mutate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'ignored', message: 'not asserted here' } }),
+    },
   });
 }
 

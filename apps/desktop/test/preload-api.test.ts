@@ -16,7 +16,7 @@ describe('buildApi', () => {
   it('exposes only the channel/event surface, never ipcRenderer itself', () => {
     const api = buildApi(vi.fn(), vi.fn(), vi.fn());
 
-    expect(Object.keys(api).sort()).toEqual(['app', 'definition', 'dialogs', 'files', 'on', 'request']);
+    expect(Object.keys(api).sort()).toEqual(['app', 'definition', 'dialogs', 'files', 'on', 'project', 'request']);
     expect('ipcRenderer' in api).toBe(false);
   });
 

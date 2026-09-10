@@ -2,22 +2,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ImportDialog } from '../../src/renderer/features/explorer/import-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { InterfaceSummary } from '../../src/shared/wire-types.js';
+import type { ProjectWire } from '../../src/shared/wire-types.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
-const summary: InterfaceSummary = {
-  id: 'iface-1',
-  name: 'Calculator',
-  definitionUrl: 'http://example.test/service.wsdl',
-  targetNamespace: 'http://tempuri.org/',
-  soapVersions: ['1.1'],
-  services: [],
-  operations: [],
+const project: ProjectWire = {
+  id: 'proj-1',
+  name: 'Demo',
+  dir: '/tmp/demo',
+  dirty: false,
+  interfaces: [
+    {
+      id: 'iface-1',
+      name: 'Calculator',
+      slug: 'Calculator',
+      definitionUrl: 'http://example.test/service.wsdl',
+      cacheDefinition: true,
+      targetNamespace: 'http://tempuri.org/',
+      soapVersions: ['1.1'],
+      services: [],
+      operations: [],
+      problems: [],
+      documentCount: 1,
+      endpoints: [],
+      hydration: 'ready',
+    },
+  ],
+  requests: [],
+  properties: {},
+  environments: [],
   problems: [],
-  documentCount: 1,
 };
 
-function stubWirebench(overrides: Partial<Window['wirebench']> = {}): {
-  on: ReturnType<typeof vi.fn>;
+function stubWirebench(overrides: Parameters<typeof installWirebenchApi>[0] = {}): {
   emit: (name: string, payload: unknown) => void;
 } {
   const listeners = new Map<string, (payload: unknown) => void>();
@@ -25,32 +41,18 @@ function stubWirebench(overrides: Partial<Window['wirebench']> = {}): {
     listeners.set(name, listener);
     return () => listeners.delete(name);
   });
-  window.wirebench = {
-    definition: {
-      import: vi.fn(),
-      close: vi.fn(),
-      cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }),
-    },
-    request: {
-      generate: vi.fn().mockResolvedValue({
-        ok: true,
-        value: { envelopeXml: '<E/>', soapVersion: '1.1', contentType: 'text/xml', headers: {}, problems: [] },
-      }),
-      send: vi.fn(),
-      cancel: vi.fn(),
-    },
-    app: { version: vi.fn() },
-    dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
-    files: { pathFor: vi.fn() },
-    on,
+  installWirebenchApi({
+    definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    on: on as unknown as Window['wirebench']['on'],
     ...overrides,
-  } as Window['wirebench'];
-  return { on, emit: (name, payload) => listeners.get(name)?.(payload) };
+  });
+  return { emit: (name, payload) => listeners.get(name)?.(payload) };
 }
 
 describe('ImportDialog', () => {
   beforeEach(() => {
-    useProjectStore.setState({ interfaces: {}, requests: {}, order: [] });
+    // An import needs somewhere to land, so every test starts with a project already open.
+    useProjectStore.getState().applySnapshot({ ...project, interfaces: [], requests: [] });
   });
 
   afterEach(() => {
@@ -69,10 +71,8 @@ describe('ImportDialog', () => {
   });
 
   it('submits a URL source with a generated token', async () => {
-    const importFn = vi.fn().mockResolvedValue({ ok: true, value: summary });
-    const { emit } = stubWirebench({
-      definition: { import: importFn, close: vi.fn(), cancelImport: vi.fn() },
-    });
+    const importFn = vi.fn().mockResolvedValue({ ok: true, value: { project, interfaceId: 'iface-1' } });
+    const { emit } = stubWirebench({ project: { addInterface: importFn } });
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
@@ -92,7 +92,7 @@ describe('ImportDialog', () => {
     const importFn = vi
       .fn()
       .mockResolvedValue({ ok: false, error: { code: 'fetch-failed', message: 'Could not reach the server' } });
-    stubWirebench({ definition: { import: importFn, close: vi.fn(), cancelImport: vi.fn() } });
+    stubWirebench({ project: { addInterface: importFn } });
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 
@@ -111,7 +111,10 @@ describe('ImportDialog', () => {
         }),
     );
     const cancelImportFn = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } });
-    stubWirebench({ definition: { import: importFn, close: vi.fn(), cancelImport: cancelImportFn } });
+    stubWirebench({
+      project: { addInterface: importFn },
+      definition: { cancelImport: cancelImportFn },
+    });
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
 

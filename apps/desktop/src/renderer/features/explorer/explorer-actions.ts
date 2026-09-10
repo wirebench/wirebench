@@ -79,8 +79,13 @@ export const explorerActions = {
     if (requestId === undefined) {
       return;
     }
-    const newId = useProjectStore.getState().cloneRequest(requestId);
-    openRequestTab(newId);
+    void useProjectStore
+      .getState()
+      .cloneRequest(requestId)
+      .then(openRequestTab)
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Clone request failed');
+      });
   },
 
   renameRequest(requestId: string | undefined): void {

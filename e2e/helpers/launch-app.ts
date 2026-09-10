@@ -5,6 +5,16 @@ import { _electron as electron, expect, type ElectronApplication, type Page } fr
 import { MAIN_PATH } from '../global-setup.js';
 
 /** A launched app under test, plus a `close()` that also asserts the console stayed clean. */
+/** Per-launch overrides; everything is optional and defaults to a throwaway profile. */
+export interface LaunchOptions {
+  /** Reuse a profile across launches — what "relaunch and find it in Recent" needs. */
+  readonly userDataDir?: string;
+  /** Fixed answer for `dialogs.openFolder`, since a native picker cannot be driven. */
+  readonly folderDialogPath?: string;
+  /** Skip removing `userDataDir` on close (it is the caller's, not ours, when reused). */
+  readonly keepUserDataDir?: boolean;
+}
+
 export interface LaunchedApp {
   readonly app: ElectronApplication;
   readonly window: Page;
@@ -22,8 +32,8 @@ const BENIGN_CONSOLE_PATTERNS: readonly RegExp[] = [];
  * window to render the shell. Every renderer console error is collected; `close()` fails the
  * test if any were seen, unless they match {@link BENIGN_CONSOLE_PATTERNS}.
  */
-export async function launchApp(): Promise<LaunchedApp> {
-  const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-'));
+export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedApp> {
+  const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), 'wirebench-e2e-'));
   const consoleErrors: string[] = [];
   let app: ElectronApplication | undefined;
 
@@ -35,6 +45,9 @@ export async function launchApp(): Promise<LaunchedApp> {
         NODE_ENV: 'production',
         WIREBENCH_E2E: '1',
         WIREBENCH_USER_DATA_DIR: userDataDir,
+        // Playwright cannot drive a native folder picker, so specs that create or open a
+        // project pin what `dialogs.openFolder` returns (see `main/ipc/dialogs.ts`).
+        ...(options.folderDialogPath !== undefined ? { WIREBENCH_E2E_DIALOG_FOLDER: options.folderDialogPath } : {}),
       },
     });
 
@@ -53,7 +66,9 @@ export async function launchApp(): Promise<LaunchedApp> {
       userDataDir,
       async close(): Promise<void> {
         await app!.close();
-        rmSync(userDataDir, { recursive: true, force: true });
+        if (options.keepUserDataDir !== true) {
+          rmSync(userDataDir, { recursive: true, force: true });
+        }
         const unexpected = consoleErrors.filter(
           (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
         );
@@ -68,7 +83,9 @@ export async function launchApp(): Promise<LaunchedApp> {
         /* ignore */
       }
     }
-    rmSync(userDataDir, { recursive: true, force: true });
+    if (options.keepUserDataDir !== true) {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
     throw error;
   }
 }

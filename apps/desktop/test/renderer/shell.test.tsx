@@ -4,18 +4,19 @@ import userEvent from '@testing-library/user-event';
 import { App } from '../../src/renderer/app.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 function stubWirebench(): void {
-  Object.defineProperty(window, 'wirebench', {
-    configurable: true,
-    value: {
-      app: {
-        version: vi.fn().mockResolvedValue({
-          ok: true,
-          value: { version: '0.1.0', electron: '44.0.0', node: '24.0.0' },
-        }),
-      },
-      on: vi.fn().mockReturnValue(vi.fn()),
+  installWirebenchApi({
+    app: {
+      version: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { version: '0.1.0', electron: '44.0.0', node: '24.0.0' },
+      }),
+    },
+    project: {
+      snapshot: vi.fn().mockResolvedValue({ ok: true, value: { project: null } }),
+      recent: vi.fn().mockResolvedValue({ ok: true, value: { recent: [] } }),
     },
   });
 }
@@ -79,8 +80,8 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('tab', { name: 'Welcome' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Import WSDL' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open project' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open project…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New project…' })).toBeTruthy();
   });
 
   it('hides the sidebar on Mod+B and shows it again', async () => {

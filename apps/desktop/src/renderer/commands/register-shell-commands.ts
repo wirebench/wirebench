@@ -1,21 +1,15 @@
-import { showToast } from '../components/toast.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
+import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
+import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 
 /** The request draft behind the active editor tab, or `undefined` when none is a request tab. */
 function activeRequestId(): string | undefined {
   const { tabs, activeId } = useEditorsStore.getState();
   return tabs.find((tab) => tab.id === activeId && tab.kind === 'request')?.requestId;
-}
-
-/** Stubs announce their own task number so the gap is visible in the UI, not just the backlog. */
-function notImplemented(what: string, task: number): void {
-  // A deliberate breadcrumb in the dev console until the real handler lands.
-  console.info(`[wirebench] ${what}: not implemented yet (Task ${String(task)})`);
-  showToast(`${what} — not implemented yet (Task ${String(task)})`);
 }
 
 /**
@@ -120,11 +114,11 @@ export function registerShellCommands(openPalette: () => void): void {
   });
   registerCommand({
     id: 'project.new',
-    label: 'New Project',
+    label: 'New Project…',
     category: 'Project',
     shortcut: 'Mod+Shift+N',
     run: () => {
-      notImplemented('New project', 13);
+      void projectActions.newProject();
     },
   });
   registerCommand({
@@ -133,7 +127,26 @@ export function registerShellCommands(openPalette: () => void): void {
     category: 'Project',
     shortcut: 'Mod+O',
     run: () => {
-      notImplemented('Open project', 13);
+      void projectActions.openProject();
+    },
+  });
+  registerCommand({
+    id: 'project.save',
+    label: 'Save Project',
+    category: 'Project',
+    shortcut: 'Mod+S',
+    when: () => useProjectStore.getState().project !== null,
+    run: () => {
+      void projectActions.save();
+    },
+  });
+  registerCommand({
+    id: 'project.close',
+    label: 'Close Project',
+    category: 'Project',
+    when: () => useProjectStore.getState().project !== null,
+    run: () => {
+      void projectActions.close();
     },
   });
 

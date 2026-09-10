@@ -179,6 +179,67 @@ export class EngineService {
     return summary;
   }
 
+  /**
+   * Imports a definition on behalf of an open project: the caller supplies the interface id
+   * (the project model owns it) and the definition-cache directory, so a reopened project can
+   * re-hydrate from `interfaces/<slug>/definition/` without touching the network.
+   */
+  async importForProject(
+    input: {
+      readonly interfaceId: string;
+      readonly source: ImportSourceWire;
+      readonly cache: { readonly dir: string; readonly mode: 'prefer-cache' | 'refresh' | 'none' };
+      readonly auth?: { readonly username: string; readonly password: string };
+      readonly token?: string;
+    },
+    hooks: EngineServiceHooks = {},
+  ): Promise<InterfaceSummary> {
+    const controller = new AbortController();
+    if (input.token !== undefined) {
+      this.imports.set(input.token, controller);
+    }
+    let result: ImportResult;
+    try {
+      result = await engineImportDefinition(toEngineSource(input.source), {
+        ...(input.auth !== undefined ? { auth: input.auth } : {}),
+        cache: input.cache,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (progress.phase === 'done') {
+            return;
+          }
+          hooks.onProgress?.({
+            kind: 'import',
+            interfaceId: input.interfaceId,
+            ...(input.token !== undefined ? { token: input.token } : {}),
+            phase: progress.phase,
+            message: messageFor(progress),
+          });
+        },
+      });
+    } finally {
+      if (input.token !== undefined) {
+        this.imports.delete(input.token);
+      }
+    }
+    const definitionUrl = result.bundle.root.location;
+    this.definitions.set(input.interfaceId, { result, definitionUrl });
+    const summary = toInterfaceSummary(result, input.interfaceId, definitionUrl);
+    hooks.onProgress?.({
+      kind: 'import',
+      interfaceId: input.interfaceId,
+      ...(input.token !== undefined ? { token: input.token } : {}),
+      phase: 'done',
+      message: messageFor({ phase: 'done' }),
+    });
+    return summary;
+  }
+
+  /** True when a definition is loaded in memory for `interfaceId`. */
+  has(interfaceId: string): boolean {
+    return this.definitions.has(interfaceId);
+  }
+
   /** Aborts the in-flight import for `token`. Returns `false` when no such import is pending. */
   cancelImport(token: string): { cancelled: boolean } {
     const controller = this.imports.get(token);

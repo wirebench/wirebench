@@ -7,6 +7,8 @@ import { useUiStore } from '../state/ui.js';
 export interface TitleBarProps {
   readonly platform: Platform;
   readonly projectName: string;
+  /** True when the project has edits the autosave has not written out yet. */
+  readonly dirty?: boolean;
   readonly onOpenPalette: () => void;
   readonly onToggleTheme: () => void;
 }
@@ -15,7 +17,7 @@ export interface TitleBarProps {
  * The custom title bar. On macOS the window is `hiddenInset`, so this strip both drags the
  * window and carries the traffic lights' inset — hence the leading spacer.
  */
-export function TitleBar({ platform, projectName, onOpenPalette, onToggleTheme }: TitleBarProps) {
+export function TitleBar({ platform, projectName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
   const theme = useUiStore((state) => state.theme);
   const paletteShortcut = shortcutFor('palette.open', platform) ?? '';
 
@@ -27,6 +29,12 @@ export function TitleBar({ platform, projectName, onOpenPalette, onToggleTheme }
       {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
       <span className="shrink-0 text-sm text-fg-muted">
         wirebench <span className="text-fg-faint">·</span> <span className="text-fg-default">{projectName}</span>
+        {dirty && (
+          <span data-testid="title-bar-dirty" title="Unsaved changes" className="text-fg-muted">
+            {' '}
+            •
+          </span>
+        )}
       </span>
 
       <div className="flex flex-1 justify-center">

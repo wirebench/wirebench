@@ -8,6 +8,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
+import { projectActions } from '../welcome/project-actions.js';
 
 type SourceTab = 'url' | 'file' | 'paste';
 
@@ -36,6 +37,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [progress, setProgress] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [problems, setProblems] = useState<ImportProblemWire[]>([]);
+  // An import has to land somewhere: with no project open the dialog offers to make one first.
+  const [needsProject, setNeedsProject] = useState(false);
   const tokenRef = useRef<string | undefined>(undefined);
   // Tokens for imports the user cancelled — the in-flight promise still settles after `onCancel`
   // returns, so its resolution/rejection must be ignored rather than surfaced as an error.
@@ -57,6 +60,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setImportError(undefined);
     setProgress(undefined);
     setProblems([]);
+    setNeedsProject(false);
   }
 
   function buildSource(): ImportSourceWire | undefined {
@@ -102,6 +106,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     reset();
     const source = buildSource();
     if (source === undefined) {
+      return;
+    }
+    if (useProjectStore.getState().project === null) {
+      setNeedsProject(true);
       return;
     }
     const token = crypto.randomUUID();
@@ -246,6 +254,20 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
               />
             )}
           </div>
+
+          {needsProject && (
+            <div data-testid="import-needs-project" className="mt-3 rounded border border-hairline-strong p-2">
+              <p className="text-sm text-fg-default">
+                Interfaces are saved into a project folder. Create one to import into.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button variant="primary" onClick={() => void projectActions.newProject()}>
+                  Create a project folder…
+                </Button>
+                <Button onClick={() => void projectActions.openProject()}>Open an existing project…</Button>
+              </div>
+            </div>
+          )}
 
           {progress !== undefined && <p className="mt-3 text-sm text-fg-subtle">{progress}</p>}
           {importError !== undefined && <p className="mt-3 text-sm text-danger">{importError}</p>}

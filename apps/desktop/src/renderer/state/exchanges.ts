@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import type { ExchangeSummary } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
-import { useProjectStore } from './project.js';
+import { selectRequestEndpoint, useProjectStore } from './project.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
 const LOG_CAP = 500;
@@ -49,7 +49,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     log: [],
 
     send: async (requestId) => {
-      const draftRequest = useProjectStore.getState().requests[requestId];
+      const projectState = useProjectStore.getState();
+      const draftRequest = projectState.requests[requestId];
       if (draftRequest === undefined) {
         update((draft) => {
           draft.byRequest[requestId] = {
@@ -59,7 +60,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         });
         return;
       }
-      if (draftRequest.endpoint === undefined) {
+      const endpoint = selectRequestEndpoint(projectState, requestId);
+      if (endpoint === undefined || endpoint.length === 0) {
         update((draft) => {
           draft.byRequest[requestId] = {
             status: 'error',
@@ -77,11 +79,11 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       const result = await ipc().request.send({
         sendId,
         input: {
-          endpoint: draftRequest.endpoint,
+          endpoint,
           envelopeXml: draftRequest.envelopeXml,
           soapVersion: draftRequest.soapVersion,
           ...(draftRequest.soapAction !== undefined ? { soapAction: draftRequest.soapAction } : {}),
-          headers: draftRequest.headers,
+          headers: Object.fromEntries(draftRequest.headers.map((header) => [header.name, header.value])),
         },
       });
 

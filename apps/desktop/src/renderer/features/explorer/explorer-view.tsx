@@ -270,7 +270,7 @@ export function ExplorerView() {
                   className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
                   onClick={() => {
                     if (confirmDeleteRequestId !== undefined) {
-                      removeRequest(confirmDeleteRequestId);
+                      void removeRequest(confirmDeleteRequestId);
                     }
                   }}
                 >

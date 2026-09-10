@@ -10,6 +10,8 @@ import { useKeybindings } from '../lib/keybindings.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
+import { subscribeToProject, useProjectStore } from '../state/project.js';
+import { NewProjectDialog } from '../features/welcome/new-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { CommandPalette } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
@@ -49,9 +51,13 @@ export function AppShell() {
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
+  const project = useProjectStore((state) => state.project);
+
   useEffect(() => {
     hydrateUi();
   }, []);
+
+  useEffect(() => subscribeToProject(), []);
 
   const openPalette = useCallback(() => {
     setPaletteOpen(true);
@@ -81,7 +87,8 @@ export function AppShell() {
       <div className="flex h-full flex-col bg-surface-base text-fg-default">
         <TitleBar
           platform={platform}
-          projectName="No project"
+          projectName={project?.name ?? 'No project'}
+          dirty={project?.dirty ?? false}
           onOpenPalette={openPalette}
           onToggleTheme={dispatch('view.toggleTheme')}
         />
@@ -115,11 +122,7 @@ export function AppShell() {
             <Panel id="main-panel" minSize="30%">
               <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
                 <Panel id="editors-panel" minSize="20%">
-                  <EditorArea
-                    onImportDefinition={dispatch('definition.import')}
-                    onOpenProject={dispatch('project.open')}
-                    onNewProject={dispatch('project.new')}
-                  />
+                  <EditorArea onImportDefinition={dispatch('definition.import')} />
                 </Panel>
                 {consoleState.visible && (
                   <>
@@ -163,6 +166,7 @@ export function AppShell() {
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
       />
+      <NewProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

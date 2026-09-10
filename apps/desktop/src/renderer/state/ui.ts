@@ -27,12 +27,16 @@ export interface UiStore extends UiSnapshot {
   readonly selection: Selection | undefined;
   /** Whether the Import WSDL dialog is open. Transient — never persisted. */
   readonly importDialogOpen: boolean;
+  /** Folder chosen for a new project, awaiting its name in the New Project dialog. */
+  readonly newProjectDir: string | undefined;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
   readonly confirmRemoveInterfaceId: string | undefined;
   /** Request id pending a delete confirmation, from either the context menu or a command. */
   readonly confirmDeleteRequestId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
+  /** Opens (with a folder) or closes (with `undefined`) the New Project name prompt. */
+  readonly promptNewProject: (dir: string | undefined) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
@@ -68,6 +72,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     ...DEFAULT_UI_STATE,
     selection: undefined,
     importDialogOpen: false,
+    newProjectDir: undefined,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
 
@@ -76,6 +81,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     openImportDialog: () => {
       set({ importDialogOpen: true });
+    },
+    promptNewProject: (dir) => {
+      set({ newProjectDir: dir });
     },
     closeImportDialog: () => {
       set({ importDialogOpen: false });

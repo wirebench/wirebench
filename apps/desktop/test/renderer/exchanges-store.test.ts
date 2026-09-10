@@ -3,6 +3,7 @@ import type { ExchangeSummary } from '../../src/shared/wire-types.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const draft: RequestDraft = {
   id: 'r1',
@@ -12,8 +13,9 @@ const draft: RequestDraft = {
   name: 'Request 1',
   envelopeXml: '<Envelope/>',
   soapVersion: '1.1',
-  endpoint: 'http://example.test/soap',
-  headers: { SOAPAction: '"Add"' },
+  endpointUrl: 'http://example.test/soap',
+  headers: [{ name: 'SOAPAction', value: '"Add"' }],
+  order: 0,
 };
 
 function exchangeSummary(sendId: string): ExchangeSummary {
@@ -32,22 +34,14 @@ function exchangeSummary(sendId: string): ExchangeSummary {
       truncated: false,
       timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 10 },
       redirects: [],
-      request: { url: draft.endpoint ?? '', method: 'POST', headers: {} },
+      request: { url: draft.endpointUrl ?? '', method: 'POST', headers: {} },
     },
     problems: [],
   };
 }
 
-function stubIpc(overrides: Partial<typeof window.wirebench> = {}): void {
-  window.wirebench = {
-    definition: { import: vi.fn(), close: vi.fn(), cancelImport: vi.fn() },
-    request: { generate: vi.fn(), send: vi.fn(), cancel: vi.fn() },
-    app: { version: vi.fn() },
-    dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
-    files: { pathFor: vi.fn() },
-    on: vi.fn(),
-    ...overrides,
-  };
+function stubIpc(overrides: Parameters<typeof installWirebenchApi>[0] = {}): void {
+  installWirebenchApi(overrides);
 }
 
 describe('useExchangesStore', () => {
@@ -69,7 +63,7 @@ describe('useExchangesStore', () => {
     expect(state.byRequest['r1']?.exchange?.sendId).toBe('send-1');
     expect(state.log).toHaveLength(1);
     expect(sendFn).toHaveBeenCalledWith(
-      expect.objectContaining({ input: expect.objectContaining({ endpoint: draft.endpoint }) as unknown }),
+      expect.objectContaining({ input: expect.objectContaining({ endpoint: draft.endpointUrl }) as unknown }),
     );
   });
 
@@ -99,6 +93,7 @@ describe('useExchangesStore', () => {
       envelopeXml: draft.envelopeXml,
       soapVersion: draft.soapVersion,
       headers: draft.headers,
+      order: draft.order,
     };
     useProjectStore.setState({ interfaces: {}, requests: { r1: draftWithoutEndpoint }, order: [] });
     const sendFn = vi.fn();

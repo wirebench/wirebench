@@ -17,6 +17,7 @@ describe('RequestToolbar', () => {
       <RequestToolbar
         draft={makeDraft()}
         summary={makeInterface()}
+        endpoint="https://example.test/calc.asmx"
         sending={false}
         onSend={noop}
         onCancel={noop}
@@ -35,6 +36,7 @@ describe('RequestToolbar', () => {
       <RequestToolbar
         draft={makeDraft()}
         summary={makeInterface()}
+        endpoint="https://example.test/calc.asmx"
         sending={false}
         onSend={onSend}
         onCancel={noop}
@@ -46,11 +48,12 @@ describe('RequestToolbar', () => {
     expect(onSend).toHaveBeenCalledOnce();
   });
 
-  it('disables Send when the draft has no endpoint', () => {
+  it('disables Send when the request resolves to no endpoint', () => {
     render(
       <RequestToolbar
-        draft={makeDraft({ endpoint: undefined })}
+        draft={makeDraft({ endpointId: undefined })}
         summary={makeInterface()}
+        endpoint={undefined}
         sending={false}
         onSend={noop}
         onCancel={noop}
@@ -67,6 +70,7 @@ describe('RequestToolbar', () => {
       <RequestToolbar
         draft={makeDraft()}
         summary={makeInterface()}
+        endpoint="https://example.test/calc.asmx"
         sending
         onSend={noop}
         onCancel={onCancel}

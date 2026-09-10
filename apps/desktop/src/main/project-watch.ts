@@ -1,0 +1,192 @@
+/**
+ * Watches an open project folder for edits made outside Wirebench (a text editor, `git
+ * checkout`, a sync client) and reports them as a debounced batch of relative paths.
+ *
+ * Two things keep the signal useful rather than noisy:
+ *  - writes the app itself just made are suppressed, because `saveProject` fires the same
+ *    watcher it would take a reload to undo (see {@link ProjectWatcher.expect});
+ *  - events are coalesced over {@link DEFAULT_DEBOUNCE_MS}, since one logical save touches
+ *    several files and most platforms emit two events per file.
+ *
+ * macOS and Windows support `fs.watch(dir, { recursive: true })`; Linux does not, so the
+ * watcher falls back to one non-recursive watch per managed directory.
+ */
+
+import { watch, type FSWatcher } from 'node:fs';
+import { readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+
+/** How long events are coalesced before `onChange` fires. */
+export const DEFAULT_DEBOUNCE_MS = 300;
+
+/** How long a path written by the app itself stays suppressed. */
+export const SELF_WRITE_TTL_MS = 2_000;
+
+/** Options for {@link ProjectWatcher}. */
+export interface ProjectWatcherOptions {
+  /** Absolute path of the project folder. */
+  readonly dir: string;
+  /** Called with the changed paths, relative to `dir` and `/`-separated. Never called empty. */
+  readonly onChange: (paths: readonly string[]) => void;
+  readonly debounceMs?: number;
+  readonly selfWriteTtlMs?: number;
+  /** Injectable clock, so tests can drive the self-write TTL deterministically. */
+  readonly now?: () => number;
+}
+
+/**
+ * Every directory a non-recursive fallback watch has to cover: the project root and its
+ * subtree down to the operation folders (`interfaces/<slug>/operations/<slug>`), which is
+ * four levels — deep enough for the whole managed layout, shallow enough that a big
+ * definition cache never turns into thousands of watches.
+ */
+const MAX_WATCH_DEPTH = 4;
+
+function managedDirs(root: string, depth = 0): string[] {
+  if (depth > MAX_WATCH_DEPTH) {
+    return [];
+  }
+  const dirs = [root];
+  try {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        dirs.push(...managedDirs(join(root, entry.name), depth + 1));
+      }
+    }
+  } catch {
+    // The folder may not exist yet (a brand-new project has no `interfaces/`); nothing to watch.
+  }
+  return dirs;
+}
+
+/**
+ * True when `path` is one of the files the project format itself owns. Every other event is
+ * dropped: platforms report directory-level events (macOS names the watched folder itself)
+ * and a project folder may hold a README, notes or a `.git` directory, none of which a
+ * reload would change. The definition cache is excluded too — it is written by imports, not
+ * by hand, and re-reading it is hydration's job rather than the reload prompt's.
+ */
+export function isManagedPath(path: string): boolean {
+  if (path === 'wirebench.yaml') {
+    return true;
+  }
+  if (path.startsWith('interfaces/')) {
+    return !path.includes('/definition/') && (path.endsWith('.yaml') || path.endsWith('.xml'));
+  }
+  return (path.startsWith('environments/') || path.startsWith('wss/')) && path.endsWith('.yaml');
+}
+
+/** Watches one project folder; created per open project and disposed on close. */
+export class ProjectWatcher {
+  private readonly options: Required<Omit<ProjectWatcherOptions, 'onChange'>> & Pick<ProjectWatcherOptions, 'onChange'>;
+  private readonly watchers: FSWatcher[] = [];
+  private readonly pending = new Set<string>();
+  /** Relative path to the timestamp after which it is no longer treated as a self-write. */
+  private readonly selfWrites = new Map<string, number>();
+  private timer: NodeJS.Timeout | undefined;
+
+  constructor(options: ProjectWatcherOptions) {
+    this.options = {
+      dir: options.dir,
+      onChange: options.onChange,
+      debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
+      selfWriteTtlMs: options.selfWriteTtlMs ?? SELF_WRITE_TTL_MS,
+      now: options.now ?? Date.now,
+    };
+  }
+
+  /** Begins watching. Safe to call once; a second call is a no-op. */
+  start(): void {
+    if (this.watchers.length > 0) {
+      return;
+    }
+    try {
+      this.watchers.push(
+        watch(this.options.dir, { recursive: true }, (_event, filename) => {
+          this.record(filename);
+        }),
+      );
+      return;
+    } catch {
+      // Recursive watching is unsupported here (Linux); fall through to per-directory watches.
+    }
+    for (const dir of managedDirs(this.options.dir)) {
+      try {
+        this.watchers.push(
+          watch(dir, (_event, filename) => {
+            this.record(filename === null ? null : join(relative(this.options.dir, dir), filename));
+          }),
+        );
+      } catch {
+        // A directory that vanished between listing and watching is not an error.
+      }
+    }
+  }
+
+  /** Stops watching and drops any pending batch. */
+  stop(): void {
+    for (const watcher of this.watchers) {
+      watcher.close();
+    }
+    this.watchers.length = 0;
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.pending.clear();
+  }
+
+  /**
+   * Marks `paths` (relative to the project folder) as written by the app itself, so the
+   * events they are about to produce are ignored for the next `selfWriteTtlMs`.
+   */
+  expect(paths: readonly string[]): void {
+    const until = this.options.now() + this.options.selfWriteTtlMs;
+    for (const path of paths) {
+      this.selfWrites.set(this.normalise(path), until);
+    }
+  }
+
+  private normalise(path: string): string {
+    return path.split(sep).join('/');
+  }
+
+  private isSelfWrite(path: string): boolean {
+    const until = this.selfWrites.get(path);
+    if (until === undefined) {
+      return false;
+    }
+    if (this.options.now() > until) {
+      this.selfWrites.delete(path);
+      return false;
+    }
+    return true;
+  }
+
+  private record(filename: string | Buffer | null): void {
+    if (filename === null) {
+      return;
+    }
+    const path = this.normalise(typeof filename === 'string' ? filename : filename.toString('utf8'));
+    if (!isManagedPath(path) || this.isSelfWrite(path)) {
+      return;
+    }
+    this.pending.add(path);
+    this.schedule();
+  }
+
+  private schedule(): void {
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer);
+    }
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      const paths = [...this.pending].sort();
+      this.pending.clear();
+      if (paths.length > 0) {
+        this.options.onChange(paths);
+      }
+    }, this.options.debounceMs);
+    this.timer.unref?.();
+  }
+}

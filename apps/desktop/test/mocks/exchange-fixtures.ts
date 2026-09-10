@@ -1,4 +1,4 @@
-import type { ExchangeSummary, InterfaceSummary } from '../../src/shared/wire-types.js';
+import type { ExchangeSummary, InterfaceWire } from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
@@ -35,10 +35,18 @@ export function makeExchange(overrides: Partial<ExchangeSummary> = {}): Exchange
   };
 }
 
-/** The minimal interface summary the toolbar's endpoint picker reads. */
-export function makeInterface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
+/** The minimal interface the toolbar's endpoint picker and the explorer tree read. */
+export function makeInterface(overrides: Partial<InterfaceWire> = {}): InterfaceWire {
   return {
     id: 'if-1',
+    slug: 'Calculator',
+    cacheDefinition: true,
+    hydration: 'ready',
+    endpoints: [
+      { id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'https://example.test/calc.asmx' },
+      { id: 'ep-2', name: 'Calculator CalculatorSoap12', url: 'https://example.test/calc12.asmx' },
+    ],
+    defaultEndpointId: 'ep-1',
     name: 'Calculator',
     definitionUrl: 'https://example.test/calc.asmx?wsdl',
     targetNamespace: 'http://tempuri.org/',
@@ -70,8 +78,8 @@ export function makeInterface(overrides: Partial<InterfaceSummary> = {}): Interf
 }
 
 /**
- * A request draft pointing at the fixture interface's first port. `overrides` is deliberately
- * loose so a test can drop an optional field (`{ endpoint: undefined }`), which
+ * A request pointing at the fixture interface's first endpoint. `overrides` is deliberately
+ * loose so a test can drop an optional field (`{ endpointId: undefined }`), which
  * `exactOptionalPropertyTypes` forbids through `Partial<RequestDraft>`.
  */
 type DraftOverrides = { -readonly [K in keyof RequestDraft]?: RequestDraft[K] | undefined };
@@ -86,8 +94,9 @@ export function makeDraft(overrides: DraftOverrides = {}): RequestDraft {
     envelopeXml: '<soap:Envelope><soap:Body><Add/></soap:Body></soap:Envelope>',
     soapVersion: '1.1',
     soapAction: 'http://tempuri.org/Add',
-    endpoint: 'https://example.test/calc.asmx',
-    headers: {},
+    endpointId: 'ep-1',
+    headers: [],
+    order: 0,
     ...overrides,
   } as RequestDraft;
 }

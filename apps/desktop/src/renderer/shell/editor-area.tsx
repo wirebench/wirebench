@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { FileDown, FolderOpen, FilePlus } from 'lucide-react';
-import { Button } from '../components/button.js';
-import { EmptyState } from '../components/empty-state.js';
+import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
+import { WelcomeScreen } from '../features/welcome/welcome-screen.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 
@@ -14,8 +13,6 @@ const RequestEditor = lazy(async () => {
 
 export interface EditorAreaProps {
   readonly onImportDefinition: () => void;
-  readonly onOpenProject: () => void;
-  readonly onNewProject: () => void;
 }
 
 const WELCOME_ID = 'welcome';
@@ -24,7 +21,7 @@ const WELCOME_ID = 'welcome';
  * The tabbed editor area. A Welcome tab is always present; opening a request from the
  * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
-export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: EditorAreaProps) {
+export function EditorArea({ onImportDefinition }: EditorAreaProps) {
   const tabs = useEditorsStore((state) => state.tabs);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
@@ -36,6 +33,7 @@ export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: 
 
   return (
     <section data-testid="editor-area" aria-label="Editors" className="flex h-full min-h-0 flex-col bg-surface-base">
+      <ChangedOnDiskBanner />
       <div
         role="tablist"
         aria-label="Open editors"
@@ -78,25 +76,7 @@ export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: 
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {showingWelcome ? (
-          <EmptyState
-            title="Start with a definition"
-            description="Wirebench works from a WSDL: import one to get an interface, its operations, and a ready-to-send request."
-          >
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button variant="primary" onClick={onImportDefinition}>
-                <FileDown size={14} aria-hidden="true" />
-                Import WSDL
-              </Button>
-              <Button onClick={onOpenProject}>
-                <FolderOpen size={14} aria-hidden="true" />
-                Open project
-              </Button>
-              <Button onClick={onNewProject}>
-                <FilePlus size={14} aria-hidden="true" />
-                New project
-              </Button>
-            </div>
-          </EmptyState>
+          <WelcomeScreen onImportDefinition={onImportDefinition} />
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />

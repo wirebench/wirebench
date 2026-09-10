@@ -3,11 +3,19 @@ import { app, BrowserWindow, protocol } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { EngineService } from './engine-service.js';
+import { ProjectService } from './project-service.js';
+import { RecentProjects } from './recent-projects.js';
+import { events } from '../shared/ipc.js';
+import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
+import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { createMainWindow } from './windows.js';
+import type { IpcEvent } from '../shared/ipc.js';
+import type { z } from 'zod';
+import type { ProjectWire } from '../shared/wire-types.js';
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService();
@@ -25,6 +33,37 @@ if (e2eUserDataDir !== undefined) {
   app.setPath('userData', e2eUserDataDir);
 }
 
+/** Sends one event to every open window: project state is global, not per-invocation. */
+function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    emitEvent(window.webContents, event, payload);
+  }
+}
+
+/** Keeps the OS window title in step with the open project, as `name — Wirebench`. */
+function applyWindowTitle(project: ProjectWire | null): void {
+  const title = project === null ? 'Wirebench' : `${project.name} — Wirebench`;
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.setTitle(title);
+  }
+}
+
+const projectService = new ProjectService(engineService, new RecentProjects(app.getPath('userData')), {
+  onChanged: (project) => {
+    broadcast(events.project.changed, { project });
+    applyWindowTitle(project);
+  },
+  onChangedOnDisk: (paths) => {
+    broadcast(events.project.changedOnDisk, { paths: [...paths] });
+  },
+  onHydration: (event) => {
+    broadcast(events.project.hydration, event);
+  },
+  onProgress: (progress) => {
+    broadcast(events.engine.progress, progress);
+  },
+});
+
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
   registerAppProtocol();
@@ -36,14 +75,33 @@ void app.whenReady().then(() => {
   registerAppChannels();
   registerDefinitionChannels(engineService);
   registerRequestChannels(engineService);
+  registerProjectChannels(projectService);
   registerDialogsChannels();
   createMainWindow();
+  applyWindowTitle(projectService.snapshot());
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
     }
   });
+});
+
+// Unsaved work is never lost to a quit: the final save runs before the app exits, without a
+// prompt (an autosaving app that asks "save before quitting?" is just an autosave that failed).
+let quitSaveDone = false;
+app.on('before-quit', (event) => {
+  if (quitSaveDone) {
+    return;
+  }
+  event.preventDefault();
+  void projectService
+    .save({ reason: 'quit' })
+    .catch(() => undefined)
+    .finally(() => {
+      quitSaveDone = true;
+      app.quit();
+    });
 });
 
 app.on('window-all-closed', () => {

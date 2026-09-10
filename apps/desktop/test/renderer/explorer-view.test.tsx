@@ -4,11 +4,16 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { InterfaceSummary } from '../../src/shared/wire-types.js';
+import type { InterfaceWire } from '../../src/shared/wire-types.js';
 
-const summary: InterfaceSummary = {
+const summary: InterfaceWire = {
   id: 'iface-1',
   name: 'Calculator',
+  slug: 'Calculator',
+  cacheDefinition: true,
+  hydration: 'ready',
+  endpoints: [{ id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'http://example.test/soap' }],
+  defaultEndpointId: 'ep-1',
   definitionUrl: 'http://example.test/service.wsdl',
   targetNamespace: 'http://tempuri.org/',
   soapVersions: ['1.1'],
@@ -72,7 +77,8 @@ describe('ExplorerView', () => {
           name: 'Request 1',
           envelopeXml: '<Envelope/>',
           soapVersion: '1.1',
-          headers: {},
+          headers: [],
+          order: 0,
         },
       },
     });
