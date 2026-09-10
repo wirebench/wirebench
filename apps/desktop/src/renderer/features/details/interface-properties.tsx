@@ -1,3 +1,4 @@
+import { AuthFields } from '../../components/auth-fields.js';
 import { BooleanSetting, ReadOnlySetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { useProjectStore } from '../../state/project.js';
 
@@ -13,6 +14,7 @@ export interface InterfacePropertiesProps {
 export function InterfaceProperties({ interfaceId }: InterfacePropertiesProps) {
   const iface = useProjectStore((state) => state.interfaces[interfaceId]);
   const setCacheDefinition = useProjectStore((state) => state.setCacheDefinition);
+  const updateInterfaceAuth = useProjectStore((state) => state.updateInterfaceAuth);
 
   if (iface === undefined) {
     return <p className="text-md text-fg-muted">This interface is no longer in the project.</p>;
@@ -33,6 +35,20 @@ export function InterfaceProperties({ interfaceId }: InterfacePropertiesProps) {
             void setCacheDefinition(interfaceId, cacheDefinition);
           }}
         />
+      </SettingsGroup>
+      <SettingsGroup title="Authentication">
+        <div className="p-2">
+          <p className="mb-2 text-xs text-fg-subtle">
+            Used by every request of this interface that configures no credentials of its own.
+          </p>
+          <AuthFields
+            scope="Interface"
+            auth={iface.auth}
+            onChange={(auth) => {
+              void updateInterfaceAuth(interfaceId, auth);
+            }}
+          />
+        </div>
       </SettingsGroup>
     </div>
   );

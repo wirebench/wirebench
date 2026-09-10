@@ -5,6 +5,7 @@ import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
   AttachmentPatchWire,
+  EndpointAuthWire,
   EnvironmentPatchWire,
   EnvironmentWire,
   ImportSourceWire,
@@ -113,8 +114,18 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly updateEndpoint: (
     interfaceId: string,
     endpointId: string,
-    patch: { readonly name?: string; readonly url?: string },
+    patch: { readonly name?: string; readonly url?: string; readonly authMode?: 'override' | 'complement' },
   ) => Promise<void>;
+  /** Sets (or, with `null`, clears so it inherits) one request's own credentials. */
+  readonly updateRequestAuth: (requestId: string, auth: EndpointAuthWire | null) => void;
+  /** Sets (or clears) one endpoint's credentials. */
+  readonly updateEndpointAuth: (
+    interfaceId: string,
+    endpointId: string,
+    auth: EndpointAuthWire | null,
+  ) => Promise<void>;
+  /** Sets (or clears) one interface's fallback credentials. */
+  readonly updateInterfaceAuth: (interfaceId: string, auth: EndpointAuthWire | null) => Promise<void>;
   readonly removeEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   /** Makes one endpoint the interface's default, used by requests that pick none of their own. */
   readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
@@ -474,6 +485,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateEndpoint: async (interfaceId, endpointId, patch) => {
       await mutate({ kind: 'update-endpoint', interfaceId, endpointId, patch });
+    },
+
+    updateRequestAuth: (requestId, auth) => {
+      // Fire-and-report like the other request edits: the inspector must stay responsive, and
+      // a rejected mutation surfaces as a toast rather than an unhandled rejection.
+      void mutate({ kind: 'update-request-auth', requestId, auth }).catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Could not update the request credentials');
+      });
+    },
+
+    updateEndpointAuth: async (interfaceId, endpointId, auth) => {
+      await mutate({ kind: 'update-endpoint-auth', interfaceId, endpointId, auth });
+    },
+
+    updateInterfaceAuth: async (interfaceId, auth) => {
+      await mutate({ kind: 'update-interface-auth', interfaceId, auth });
     },
 
     removeEndpoint: async (interfaceId, endpointId) => {

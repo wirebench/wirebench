@@ -11,6 +11,7 @@ import { useExchangesStore } from '../../state/exchanges.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
+import { AuthInspector } from './inspectors/auth-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
 import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
@@ -293,7 +294,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           ) : inspector === 'attachments' ? (
             <AttachmentsInspector requestId={requestId} />
           ) : inspector === 'auth' ? (
-            <InspectorPlaceholder name="Auth" task={34} />
+            <AuthInspector requestId={requestId} />
           ) : (
             <InspectorPlaceholder name="WS-Addressing" task={41} />
           )

@@ -60,6 +60,12 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
           SOAP Fault: {fault.code}
         </span>
       )}
+      {exchange.auth?.challenged === true && (
+        <span data-testid="auth-challenge-note" className="text-fg-subtle">
+          {' · '}
+          Authenticated after 401 challenge
+        </span>
+      )}
       {exchange.http.truncated && <span className="text-status-warning"> · truncated</span>}
     </p>
   );

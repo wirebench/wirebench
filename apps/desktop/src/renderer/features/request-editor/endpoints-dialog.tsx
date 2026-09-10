@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, X } from 'lucide-react';
+import { AuthFields } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
@@ -37,6 +38,7 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
   const updateEndpoint = useProjectStore((state) => state.updateEndpoint);
   const removeEndpoint = useProjectStore((state) => state.removeEndpoint);
   const setDefaultEndpoint = useProjectStore((state) => state.setDefaultEndpoint);
+  const updateEndpointAuth = useProjectStore((state) => state.updateEndpointAuth);
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState<DraftEndpoint>(EMPTY);
   const [adding, setAdding] = useState<DraftEndpoint>(EMPTY);
@@ -78,27 +80,54 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
           <ul aria-label="Endpoints" className="mt-3 min-h-0 flex-1 overflow-auto">
             {endpoints.length === 0 && <li className="py-2 text-sm text-fg-subtle">No endpoints yet.</li>}
             {endpoints.map((endpoint) => (
-              <li key={endpoint.id} className="flex items-center gap-2 border-b border-hairline py-2">
+              <li key={endpoint.id} className="flex flex-col gap-2 border-b border-hairline py-2">
                 {editingId === endpoint.id ? (
                   <>
-                    <input
-                      aria-label="Endpoint name"
-                      value={draft.name}
-                      onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                      className="h-row w-40 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default"
+                    <div className="flex items-center gap-2">
+                      <input
+                        aria-label="Endpoint name"
+                        value={draft.name}
+                        onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                        className="h-row w-40 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default"
+                      />
+                      <input
+                        aria-label="Endpoint URL"
+                        value={draft.url}
+                        onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+                        className="h-row min-w-0 flex-1 rounded-md border border-hairline bg-surface-base px-2 font-mono text-sm text-fg-default"
+                      />
+                      <Button variant="primary" onClick={() => commitEdit(endpoint.id)}>
+                        Save
+                      </Button>
+                    </div>
+                    <label className="flex items-center gap-2">
+                      <span className="w-28 shrink-0 text-xs text-fg-subtle">Auth mode</span>
+                      <select
+                        aria-label="Auth mode"
+                        value={endpoint.authMode}
+                        onChange={(event) => {
+                          void updateEndpoint(interfaceId, endpoint.id, {
+                            authMode: event.target.value as 'override' | 'complement',
+                          }).catch((error: unknown) => report(error, 'Could not update the endpoint'));
+                        }}
+                        className="h-row w-full min-w-0 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default"
+                      >
+                        <option value="override">Override</option>
+                        <option value="complement">Complement</option>
+                      </select>
+                    </label>
+                    <AuthFields
+                      scope="Endpoint"
+                      auth={endpoint.auth}
+                      onChange={(auth) => {
+                        void updateEndpointAuth(interfaceId, endpoint.id, auth).catch((error: unknown) =>
+                          report(error, 'Could not update the endpoint credentials'),
+                        );
+                      }}
                     />
-                    <input
-                      aria-label="Endpoint URL"
-                      value={draft.url}
-                      onChange={(event) => setDraft({ ...draft, url: event.target.value })}
-                      className="h-row min-w-0 flex-1 rounded-md border border-hairline bg-surface-base px-2 font-mono text-sm text-fg-default"
-                    />
-                    <Button variant="primary" onClick={() => commitEdit(endpoint.id)}>
-                      Save
-                    </Button>
                   </>
                 ) : (
-                  <>
+                  <div className="flex items-center gap-2">
                     <span className="flex w-5 justify-center text-accent" aria-hidden="true">
                       {iface?.defaultEndpointId === endpoint.id ? <Check size={14} /> : null}
                     </span>
@@ -131,7 +160,7 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
                     ) : (
                       <Button onClick={() => setConfirmDeleteId(endpoint.id)}>Delete</Button>
                     )}
-                  </>
+                  </div>
                 )}
               </li>
             ))}
