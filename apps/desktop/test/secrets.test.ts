@@ -79,9 +79,54 @@ describe('SecretStore', () => {
     const ref = await store.set('a');
     await store.set('b');
     expect(await store.get(ref)).toBe('a');
-    const parsed = JSON.parse(fileText()) as { encrypted: boolean };
-    expect(parsed.encrypted).toBe(false);
+    const parsed = JSON.parse(fileText()) as { version: number; entries: Record<string, { encrypted: boolean }> };
+    expect(parsed.version).toBe(2);
+    expect(Object.values(parsed.entries).every((entry) => !entry.encrypted)).toBe(true);
     expect(warnings).toHaveLength(1);
+  });
+
+  it('keeps earlier entries readable when keyring availability changes between writes', async () => {
+    const unavailable = new SecretStore(dir, fakeCrypto(false), () => undefined);
+    const plainRef = await unavailable.set('plain-value');
+
+    // A later session finds the keyring available: the new entry is encrypted, the old one
+    // must keep its own `encrypted: false` flag rather than being relabelled by a file-global one.
+    const available = new SecretStore(dir, fakeCrypto(true));
+    const encryptedRef = await available.set('encrypted-value');
+
+    expect(await available.get(plainRef)).toBe('plain-value');
+    expect(await available.get(encryptedRef)).toBe('encrypted-value');
+
+    const reopened = new SecretStore(dir, fakeCrypto(true));
+    expect(await reopened.get(plainRef)).toBe('plain-value');
+    expect(await reopened.get(encryptedRef)).toBe('encrypted-value');
+  });
+
+  it('migrates a v1 file by applying its file-global encrypted flag to every entry', async () => {
+    const { writeFileSync } = await import('node:fs');
+    const v1 = {
+      version: 1,
+      encrypted: true,
+      entries: {
+        sec_one: {
+          value: Buffer.from('enc:one', 'utf8').toString('base64'),
+          createdAt: '2026-01-01T00:00:00.000Z',
+          label: 'db',
+        },
+      },
+    };
+    writeFileSync(join(dir, SECRETS_FILE), JSON.stringify(v1), 'utf8');
+
+    const store = new SecretStore(dir, fakeCrypto(true));
+    expect(await store.get('sec_one')).toBe('one');
+    const [entry] = await store.list();
+    expect(entry?.label).toBe('db');
+
+    // The migration is persisted on the next write.
+    await store.set('two');
+    const parsed = JSON.parse(fileText()) as { version: number; entries: Record<string, { encrypted: boolean }> };
+    expect(parsed.version).toBe(2);
+    expect(parsed.entries['sec_one']?.encrypted).toBe(true);
   });
 
   it('serialises concurrent writes so neither is lost', async () => {

@@ -38,6 +38,12 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly clearRequest: (requestId: string) => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
+  /**
+   * Re-reads one exchange from main (`exchanges.get`), which re-redacts it against the
+   * show-secrets flag as it stands now, and swaps the fresher copy into the log and the
+   * request's pane. A no-op when main has evicted the exchange.
+   */
+  readonly refreshExchange: (sendId: string) => Promise<void>;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -168,6 +174,25 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         return;
       }
       await ipc().request.cancel({ sendId: entry.sendId });
+    },
+
+    refreshExchange: async (sendId) => {
+      const result = await ipc().exchanges.get({ sendId });
+      if (!result.ok) {
+        return;
+      }
+      const fresh = result.value;
+      update((draft) => {
+        const index = draft.log.findIndex((entry) => entry.sendId === sendId);
+        if (index >= 0) {
+          draft.log[index] = fresh;
+        }
+        for (const [requestId, state] of Object.entries(draft.byRequest)) {
+          if (state.sendId === sendId && state.exchange !== undefined) {
+            draft.byRequest[requestId] = { ...state, exchange: fresh };
+          }
+        }
+      });
     },
 
     clearLog: () => {

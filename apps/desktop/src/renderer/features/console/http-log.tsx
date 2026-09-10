@@ -4,6 +4,7 @@ import { Button } from '../../components/button.js';
 import { base64ByteLength, decodeBase64Text, formatBytes, formatClockTime } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
 import { useExchangesStore } from '../../state/exchanges.js';
+import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { ExchangeSummary } from '../../../shared/wire-types.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
@@ -98,6 +99,9 @@ function Detail({ exchange }: { readonly exchange: ExchangeSummary }) {
 export function HttpLog() {
   const log = useExchangesStore((state) => state.log);
   const clearLog = useExchangesStore((state) => state.clearLog);
+  const refreshExchange = useExchangesStore((state) => state.refreshExchange);
+  const showSecrets = useSecretsVisibilityStore((state) => state.show);
+  const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -109,6 +113,15 @@ export function HttpLog() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
+
+  // Redaction is applied in main, once, at send time — so when the flag flips, the entry the
+  // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. Only the
+  // detail pane shows headers/raw bytes; the row columns carry nothing sensitive.
+  useEffect(() => {
+    if (selectedId !== undefined) {
+      void refreshExchange(selectedId);
+    }
+  }, [showSecrets, selectedId, refreshExchange]);
 
   // Newest is at the bottom, so follow it — but only while the user has not scrolled away.
   useEffect(() => {
@@ -135,6 +148,17 @@ export function HttpLog() {
           <span>ms</span>
           <span>size</span>
         </div>
+        <Button
+          variant="ghost"
+          aria-pressed={showSecrets}
+          title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
+          onClick={() => {
+            void toggleSecrets();
+          }}
+        >
+          <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
+          <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+        </Button>
         <Button variant="ghost" onClick={clearLog}>
           Clear
         </Button>

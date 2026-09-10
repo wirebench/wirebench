@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadProject, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
@@ -66,6 +66,43 @@ afterEach(async () => {
 });
 
 describe('ProjectService', () => {
+  it('re-sends the interface auth when hydrating a reopened project', async () => {
+    const userData = root!;
+    const dir = join(tempDir('project'), 'Auth Project');
+    const secrets = { get: (ref: string) => Promise.resolve(ref === 'sec_pw' ? 's3cret!' : undefined) };
+    const service = new ProjectService(
+      new EngineService((ref) => secrets.get(ref)),
+      new RecentProjects(userData),
+      {},
+      undefined,
+      undefined,
+      secrets,
+    );
+
+    await service.create({ dir, name: 'Auth Project' });
+    await service.addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { username: 'alice', passwordRef: 'sec_pw' },
+      useForRequests: true,
+    });
+    await service.close();
+
+    // Hydration re-imports in `prefer-cache` mode, so the credentials it resolves are what
+    // reaches the engine (a cache miss is what would put them back on the wire).
+    const engine = new EngineService((ref) => secrets.get(ref));
+    const importSpy = vi.spyOn(engine, 'importForProject');
+    const reopened = new ProjectService(engine, new RecentProjects(userData), {}, undefined, undefined, secrets);
+    await reopened.openProject(dir);
+    await reopened.whenHydrated();
+
+    expect(importSpy).toHaveBeenCalledTimes(1);
+    expect(importSpy.mock.calls[0]?.[0]).toMatchObject({
+      cache: { mode: 'prefer-cache' },
+      auth: { username: 'alice', password: 's3cret!' },
+    });
+    expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+  });
+
   it('creates, imports, mutates, saves and reopens a project from disk', async () => {
     const userData = root!;
     const dir = join(tempDir('project'), 'Calculator Project');

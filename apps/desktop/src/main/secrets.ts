@@ -1,6 +1,9 @@
 /**
- * Keychain-backed secret store: `userData/secrets.json` holding `{ version: 1, encrypted, entries }`
- * where every entry's value is an encrypted-then-base64 blob, never plaintext.
+ * Keychain-backed secret store: `userData/secrets.json` holding `{ version: 2, entries }` where
+ * every entry is `{ value, encrypted, label?, createdAt }` — an encrypted-then-base64 blob, never
+ * plaintext. The `encrypted` flag is per entry so a file written across a keyring-availability
+ * change stays fully readable (v1 files, which carried one file-global flag, are migrated on
+ * load by stamping that flag onto every entry).
  *
  * Values are encrypted with Electron's `safeStorage` (OS keychain / DPAPI / libsecret). When
  * `safeStorage.isEncryptionAvailable()` is `false` (some headless Linux CI/dev setups have no
@@ -31,14 +34,27 @@ export const SECRETS_FILE = 'secrets.json';
 interface SecretEntry {
   /** Base64 of the encrypted value (or of the raw plaintext bytes, when `encrypted` is false). */
   readonly value: string;
+  /**
+   * Whether THIS entry's bytes are `safeStorage`-encrypted. Per entry, not per file: keyring
+   * availability can change between two writes (a keyring that starts later, a profile moved
+   * between machines), and a file-global flag would then claim the wrong encoding for every
+   * previously written entry and corrupt them on read.
+   */
+  readonly encrypted: boolean;
   readonly label?: string;
   readonly createdAt: string;
 }
 
 interface SecretsFile {
+  readonly version: 2;
+  readonly entries: Record<string, SecretEntry>;
+}
+
+/** The v1 shape: one file-global `encrypted` flag, migrated onto every entry on load. */
+interface SecretsFileV1 {
   readonly version: 1;
   readonly encrypted: boolean;
-  readonly entries: Record<string, SecretEntry>;
+  readonly entries: Record<string, { value: string; label?: string; createdAt: string }>;
 }
 
 /** One entry as listed by {@link SecretStore.list}: never the value. */
@@ -48,16 +64,41 @@ export interface SecretListEntry {
   readonly createdAt: string;
 }
 
-function emptyFile(encrypted: boolean): SecretsFile {
-  return { version: 1, encrypted, entries: {} };
+function emptyFile(): SecretsFile {
+  return { version: 2, entries: {} };
 }
 
-function isSecretsFile(document: unknown): document is SecretsFile {
+function hasEntries(document: unknown, version: number): boolean {
   if (typeof document !== 'object' || document === null) {
     return false;
   }
   const candidate = document as { version?: unknown; entries?: unknown };
-  return candidate.version === 1 && typeof candidate.entries === 'object' && candidate.entries !== null;
+  return candidate.version === version && typeof candidate.entries === 'object' && candidate.entries !== null;
+}
+
+/** Migrates a v1 file (file-global `encrypted`) by stamping that flag onto every entry. */
+function migrateV1(file: SecretsFileV1): SecretsFile {
+  const entries: Record<string, SecretEntry> = {};
+  for (const [ref, entry] of Object.entries(file.entries)) {
+    entries[ref] = {
+      value: entry.value,
+      encrypted: file.encrypted,
+      createdAt: entry.createdAt,
+      ...(entry.label !== undefined ? { label: entry.label } : {}),
+    };
+  }
+  return { version: 2, entries };
+}
+
+/** Parses whatever is on disk into the current shape, migrating v1 and rejecting anything else. */
+function parseSecretsFile(document: unknown): SecretsFile | undefined {
+  if (hasEntries(document, 2)) {
+    return document as SecretsFile;
+  }
+  if (hasEntries(document, 1)) {
+    return migrateV1(document as SecretsFileV1);
+  }
+  return undefined;
 }
 
 async function writeAtomic(path: string, data: string): Promise<void> {
@@ -84,7 +125,7 @@ function generateRef(): string {
 export class SecretStore {
   private readonly file: string;
   private readonly crypto: CryptoBackend;
-  private data: SecretsFile = emptyFile(true);
+  private data: SecretsFile = emptyFile();
   private loaded = false;
   private loadPromise: Promise<void> | undefined;
   private warnedFallback = false;
@@ -110,15 +151,15 @@ export class SecretStore {
     try {
       text = await readFile(this.file, 'utf8');
     } catch {
-      this.data = emptyFile(this.crypto.available);
+      this.data = emptyFile();
       this.loaded = true;
       return;
     }
     try {
       const parsed: unknown = JSON.parse(text);
-      this.data = isSecretsFile(parsed) ? parsed : emptyFile(this.crypto.available);
+      this.data = parseSecretsFile(parsed) ?? emptyFile();
     } catch {
-      this.data = emptyFile(this.crypto.available);
+      this.data = emptyFile();
     }
     this.loaded = true;
   }
@@ -176,10 +217,11 @@ export class SecretStore {
       const { blob, encrypted } = this.encode(value);
       const entry: SecretEntry = {
         value: blob,
+        encrypted,
         createdAt: new Date().toISOString(),
         ...(opts?.label !== undefined ? { label: opts.label } : {}),
       };
-      this.data = { version: 1, encrypted, entries: { ...this.data.entries, [ref]: entry } };
+      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
       await this.persist();
       return ref;
     });
@@ -192,10 +234,11 @@ export class SecretStore {
       const { blob, encrypted } = this.encode(value);
       const entry: SecretEntry = {
         value: blob,
+        encrypted,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
         ...(existing?.label !== undefined ? { label: existing.label } : {}),
       };
-      this.data = { version: 1, encrypted, entries: { ...this.data.entries, [ref]: entry } };
+      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
       await this.persist();
       return ref;
     });
@@ -208,7 +251,7 @@ export class SecretStore {
     if (!entry) {
       return undefined;
     }
-    return this.decode(entry.value, this.data.encrypted);
+    return this.decode(entry.value, entry.encrypted);
   }
 
   async exists(ref: string): Promise<boolean> {

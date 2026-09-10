@@ -60,4 +60,49 @@ describe('SecretField', () => {
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
+
+  it('flush() stores a value the user typed but never pressed Save on', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'sec_flushed' } });
+    installWirebenchApi({ secrets: { set } });
+    const onChange = vi.fn();
+    let flush: (() => Promise<string | undefined>) | undefined;
+    render(
+      <SecretField
+        value={undefined}
+        onChange={onChange}
+        label="Password"
+        registerFlush={(fn) => {
+          flush = fn;
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'hunter2' } });
+
+    // The owning dialog submits without the user pressing Save: the draft must be stored, not
+    // silently dropped on the floor.
+    await expect(flush?.()).resolves.toBe('sec_flushed');
+    expect(set).toHaveBeenCalledWith({ value: 'hunter2', label: 'Password' });
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('sec_flushed'));
+  });
+
+  it('flush() keeps the existing ref when nothing was typed', async () => {
+    const set = vi.fn();
+    installWirebenchApi({ secrets: { set } });
+    let flush: (() => Promise<string | undefined>) | undefined;
+    render(
+      <SecretField
+        value="sec_abc"
+        onChange={vi.fn()}
+        label="Password"
+        registerFlush={(fn) => {
+          flush = fn;
+        }}
+      />,
+    );
+
+    await expect(flush?.()).resolves.toBe('sec_abc');
+    expect(set).not.toHaveBeenCalled();
+  });
 });

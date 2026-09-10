@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import type { EngineProgressEvent, ImportProblemWire, ImportSourceWire } from '../../../shared/wire-types.js';
@@ -31,6 +31,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [useAuth, setUseAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
+  const passwordFlushRef = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
+  const registerPasswordFlush = useCallback((flush: (() => Promise<string | undefined>) | undefined) => {
+    passwordFlushRef.current = flush;
+  }, []);
   const [useForRequests, setUseForRequests] = useState(false);
   const [filePath, setFilePath] = useState('');
   const [pasted, setPasted] = useState('');
@@ -114,13 +118,16 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       setNeedsProject(true);
       return;
     }
+    // A password typed but not Saved must not be silently dropped by pressing Import.
+    const flushedRef = (await passwordFlushRef.current?.()) ?? passwordRef;
+
     const token = crypto.randomUUID();
     tokenRef.current = token;
     setImporting(true);
     try {
       const options =
-        useAuth && username.length > 0 && passwordRef !== undefined
-          ? { auth: { username, passwordRef }, useForRequests }
+        useAuth && username.length > 0 && flushedRef !== undefined
+          ? { auth: { username, passwordRef: flushedRef }, useForRequests }
           : undefined;
       const summary = await useProjectStore.getState().importDefinition(source, options, token);
       if (cancelledTokensRef.current.has(token)) {
@@ -216,7 +223,12 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                         className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
                       />
                     </div>
-                    <SecretField value={passwordRef} onChange={setPasswordRef} label="Password" />
+                    <SecretField
+                      value={passwordRef}
+                      onChange={setPasswordRef}
+                      label="Password"
+                      registerFlush={registerPasswordFlush}
+                    />
                     <label className="flex items-center gap-2 text-sm text-fg-subtle">
                       <input
                         type="checkbox"

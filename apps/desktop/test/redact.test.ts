@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { redactHeaders, redactRawHttp, redactXml } from '../src/main/redact.js';
 
@@ -51,9 +52,39 @@ describe('redactRawHttp', () => {
     expect(result).toContain('Host: x');
   });
 
-  it('redacts wsse:Password in the body too', () => {
-    const raw = 'POST /svc HTTP/1.1\r\nHost: x\r\n\r\n<wsse:Password>s3cret!</wsse:Password>';
-    expect(redactRawHttp(raw)).not.toContain('s3cret!');
+  it('redacts wsse:Password in a SOAP body', () => {
+    const raw =
+      'POST /svc HTTP/1.1\r\nHost: x\r\nContent-Type: text/xml; charset=utf-8\r\n\r\n<wsse:Password>s3cret!</wsse:Password>';
+    const result = redactRawHttp(raw);
+    expect(result).not.toContain('s3cret!');
+    expect(result).toContain('<redacted>');
+  });
+
+  it('preserves CRLF line terminators exactly', () => {
+    const raw = 'POST /svc HTTP/1.1\r\nAuthorization: Basic xyz\r\nHost: x\r\n\r\nbody';
+    const result = redactRawHttp(raw);
+    expect(result).toBe('POST /svc HTTP/1.1\r\nAuthorization: <redacted>\r\nHost: x\r\n\r\nbody');
+  });
+
+  it('passes a gzip-encoded body through byte-identically', () => {
+    const body = gzipSync(Buffer.from('<wsse:Password>s3cret!</wsse:Password>', 'utf8'));
+    const head = Buffer.from(
+      'HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Encoding: gzip\r\nSet-Cookie: sid=abc\r\n\r\n',
+      'latin1',
+    );
+    const raw = Buffer.concat([head, body]);
+    const out = Buffer.from(redactRawHttp(raw.toString('base64'), { encoding: 'base64' }), 'base64');
+    const sep = out.indexOf('\r\n\r\n');
+    expect(out.subarray(sep + 4).equals(body)).toBe(true);
+    expect(out.subarray(0, sep).toString('latin1')).toContain('Set-Cookie: <redacted>');
+  });
+
+  it('leaves a binary body untouched when the content type is not textual', () => {
+    const body = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x80]);
+    const head = Buffer.from('HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\n', 'latin1');
+    const raw = Buffer.concat([head, body]);
+    const out = Buffer.from(redactRawHttp(raw.toString('base64'), { encoding: 'base64' }), 'base64');
+    expect(out.subarray(out.indexOf('\r\n\r\n') + 4).equals(body)).toBe(true);
   });
 
   it('round-trips base64-encoded raw HTTP', () => {

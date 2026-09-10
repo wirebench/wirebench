@@ -160,6 +160,26 @@ describe('toExchangeSummary', () => {
     expect(() => void JSON.parse(JSON.stringify(wire))).not.toThrow();
   });
 
+  it('redacts sensitive rawHeaders pairs (Set-Cookie) unless show is set', () => {
+    const http = fakeHttpExchange();
+    const withCookie: HttpExchange = {
+      ...http,
+      headers: { ...http.headers, 'set-cookie': 'sid=abc; HttpOnly' },
+      rawHeaders: [...http.rawHeaders, ['Set-Cookie', 'sid=abc; HttpOnly'], ['Set-Cookie', 'tok=xyz']],
+    };
+    const exchange: SoapExchange = { http: withCookie, durationMs: 1, problems: [] };
+
+    const wire = toExchangeSummary(exchange, 'send-3');
+    expect(wire.http.rawHeaders.filter(([name]) => name === 'Set-Cookie').map(([, value]) => value)).toEqual([
+      '<redacted>',
+      '<redacted>',
+    ]);
+    expect(JSON.stringify(wire)).not.toContain('sid=abc');
+
+    const shown = toExchangeSummary(exchange, 'send-4', { show: true });
+    expect(shown.http.rawHeaders).toContainEqual(['Set-Cookie', 'sid=abc; HttpOnly']);
+  });
+
   it('omits `response` when the exchange had none', () => {
     const wire = toExchangeSummary({ http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
     expect(wire.response).toBeUndefined();

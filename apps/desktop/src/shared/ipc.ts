@@ -11,6 +11,7 @@ import {
   dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
+  exchangesGetRequestSchema,
   globalsPropertiesResponseSchema,
   globalsRemoveRequestSchema,
   globalsSetRequestSchema,
@@ -157,6 +158,12 @@ export const channels = {
       secretsSetShowSecretsRequestSchema,
       secretsShowSecretsResponseSchema,
     ),
+    getShowSecrets: defineChannel('secrets.getShowSecrets', z.undefined(), secretsShowSecretsResponseSchema),
+  },
+  // Re-reads one cached exchange, redacted per the show-secrets flag as it stands *now*, so a
+  // toggle can reveal (or re-hide) an entry the HTTP log already holds.
+  exchanges: {
+    get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangeSummarySchema),
   },
 } as const;
 

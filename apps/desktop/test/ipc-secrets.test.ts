@@ -95,4 +95,14 @@ describe('registerSecretsChannels', () => {
     expect(result).toMatchObject({ ok: true, value: { show: true } });
     expect(flag.get()).toBe(true);
   });
+
+  it('getShowSecrets reads the flag back', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    const flag = new ShowSecretsFlag();
+    registerSecretsChannels(store, flag);
+
+    expect(await invoke('secrets.getShowSecrets', undefined)).toMatchObject({ ok: true, value: { show: false } });
+    flag.set(true);
+    expect(await invoke('secrets.getShowSecrets', undefined)).toMatchObject({ ok: true, value: { show: true } });
+  });
 });

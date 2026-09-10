@@ -1,13 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpLog } from '../../src/renderer/features/console/http-log.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
+import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
 import { b64, makeExchange } from '../mocks/exchange-fixtures.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 describe('HttpLog', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, log: [] });
+    useSecretsVisibilityStore.setState({ show: false });
+    installWirebenchApi();
   });
 
   afterEach(() => {
@@ -72,5 +76,39 @@ describe('HttpLog', () => {
 
     expect(useExchangesStore.getState().log).toHaveLength(0);
     expect(screen.getByText(/Sent requests appear here/)).toBeDefined();
+  });
+
+  it('re-fetches the open detail through exchanges.get when show-secrets is toggled', async () => {
+    const redacted = makeExchange({
+      sendId: 'a',
+      http: {
+        ...makeExchange().http,
+        rawRequestBase64: b64('POST /calc HTTP/1.1\r\nAuthorization: <redacted>\r\n\r\n<request/>'),
+      },
+    });
+    const revealed = makeExchange({
+      sendId: 'a',
+      http: {
+        ...makeExchange().http,
+        rawRequestBase64: b64('POST /calc HTTP/1.1\r\nAuthorization: Basic YWxpY2U6\r\n\r\n<request/>'),
+      },
+    });
+    const get = vi.fn().mockResolvedValue({ ok: true, value: redacted });
+    installWirebenchApi({
+      exchanges: { get },
+      secrets: { setShowSecrets: vi.fn().mockResolvedValue({ ok: true, value: { show: true } }) },
+    });
+    useExchangesStore.setState({ log: [redacted] });
+
+    render(<HttpLog />);
+    await userEvent.click(screen.getAllByTestId('http-log-row')[0]!);
+    expect(screen.getByLabelText('Raw request').textContent).toContain('Authorization: <redacted>');
+
+    // Main re-redacts the cached exchange against the new flag; the log swaps in its answer.
+    get.mockResolvedValue({ ok: true, value: revealed });
+    await userEvent.click(screen.getByRole('button', { name: 'Show secrets' }));
+
+    expect(get).toHaveBeenLastCalledWith({ sendId: 'a' });
+    expect(screen.getByLabelText('Raw request').textContent).toContain('Authorization: Basic YWxpY2U6');
   });
 });

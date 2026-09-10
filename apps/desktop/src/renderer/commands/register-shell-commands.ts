@@ -5,6 +5,7 @@ import { registerCommand, resetCommands } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
+import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { useUiStore } from '../state/ui.js';
 
 /** The request draft behind the active editor tab, or `undefined` when none is a request tab. */
@@ -178,6 +179,17 @@ export function registerShellCommands(openPalette: () => void): void {
     when: () => useProjectStore.getState().environments.length > 0,
     run: () => {
       void cycleEnvironment(1);
+    },
+  });
+
+  // No default shortcut: revealing credentials on screen should take a deliberate act, not a
+  // key one finger-slip away.
+  registerCommand({
+    id: 'secrets.toggleShowSecrets',
+    label: 'Toggle Show Secrets in HTTP Log',
+    category: 'Secrets',
+    run: () => {
+      void useSecretsVisibilityStore.getState().toggle();
     },
   });
 

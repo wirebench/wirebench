@@ -29,11 +29,13 @@ export type CommandId =
   | 'explorer.copyEndpointAddress'
   | 'env.switch'
   | 'env.next'
+  | 'secrets.toggleShowSecrets'
   | 'request.send'
   | 'request.cancel';
 
 /** Palette grouping for a command; also the heading shown in the command palette. */
-export type CommandCategory = 'General' | 'View' | 'Project' | 'Definition' | 'Explorer' | 'Environment' | 'Request';
+export type CommandCategory =
+  'General' | 'View' | 'Project' | 'Definition' | 'Explorer' | 'Environment' | 'Request' | 'Secrets';
 
 /**
  * The declarative half of a command: everything needed to render it in a palette or a menu,

@@ -5,7 +5,7 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
-import { redactHeaders, redactRawHttp } from './redact.js';
+import { redactHeaderPairs, redactHeaders, redactRawHttp } from './redact.js';
 import type {
   GeneratedRequest,
   HttpExchange,
@@ -134,7 +134,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     status: http.status,
     statusText: http.statusText,
     headers: redactHeaders(http.headers, { show }),
-    rawHeaders: http.rawHeaders.map(([name, value]) => [name, value]),
+    rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
     bodyBase64: toBase64(http.body),
     rawBodyBase64: toBase64(http.rawBody),
     rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { show, encoding: 'base64' }),
@@ -187,5 +187,28 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
       : {}),
     problems: exchange.problems.map((problem) => ({ code: problem.code, message: problem.message })),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
+  };
+}
+
+/**
+ * Re-applies redaction to an already-built `ExchangeSummary` (the unredacted one kept by
+ * `ExchangeCache`), so `exchanges.get` can answer with whatever the show-secrets flag says
+ * *now* rather than what it said at send time.
+ */
+export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: boolean }): ExchangeSummary {
+  const show = opts?.show ?? false;
+  if (show) {
+    return summary;
+  }
+  return {
+    ...summary,
+    http: {
+      ...summary.http,
+      headers: redactHeaders(summary.http.headers, { show }),
+      rawHeaders: redactHeaderPairs(summary.http.rawHeaders, { show }),
+      rawRequestBase64: redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+      rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
+      request: { ...summary.http.request, headers: redactHeaders(summary.http.request.headers, { show }) },
+    },
   };
 }

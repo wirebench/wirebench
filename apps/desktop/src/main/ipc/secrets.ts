@@ -41,4 +41,6 @@ export function registerSecretsChannels(
     showSecrets.set(request.show);
     return Promise.resolve({ show: showSecrets.get() });
   });
+
+  registerHandler(channels.secrets.getShowSecrets, () => Promise.resolve({ show: showSecrets.get() }));
 }

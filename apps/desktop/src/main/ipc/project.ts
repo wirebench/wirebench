@@ -31,6 +31,7 @@ export function registerProjectChannels(service: ProjectService): void {
     service.addInterface({
       source: request.source,
       ...(request.auth !== undefined ? { auth: request.auth } : {}),
+      ...(request.useForRequests !== undefined ? { useForRequests: request.useForRequests } : {}),
       ...(request.token !== undefined ? { token: request.token } : {}),
     }),
   );

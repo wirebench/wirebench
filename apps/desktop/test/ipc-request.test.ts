@@ -86,6 +86,32 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
   return handler({ sender: {} }, payload);
 }
 
+describe('plaintext credentials never validate', () => {
+  it('rejects a definition.import whose auth carries a plaintext password', () => {
+    const parsed = channels.definition.import.request.safeParse({
+      source: { kind: 'url', url: 'http://example.test/x?wsdl' },
+      options: { auth: { username: 'alice', passwordRef: 'sec_1', password: 's3cret!' } },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a project.addInterface whose auth carries a plaintext password', () => {
+    const parsed = channels.project.addInterface.request.safeParse({
+      source: { kind: 'url', url: 'http://example.test/x?wsdl' },
+      auth: { username: 'alice', passwordRef: 'sec_1', password: 's3cret!' },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('accepts the same payload once the plaintext password is gone', () => {
+    const parsed = channels.project.addInterface.request.safeParse({
+      source: { kind: 'url', url: 'http://example.test/x?wsdl' },
+      auth: { username: 'alice', passwordRef: 'sec_1' },
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
 describe('registerRequestChannels', () => {
   beforeEach(() => {
     handlers.clear();
@@ -123,6 +149,27 @@ describe('registerRequestChannels', () => {
 
     expect(result).toMatchObject({ ok: true });
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }), { scopes, showSecrets: false });
+  });
+
+  it('returns secret-missing (not an unhandled rejection) when auth references a deleted ref', async () => {
+    // The store no longer holds the ref the project's auth points at — a password cleared from
+    // the keychain while the project still references it.
+    const engine = new EngineService(() => Promise.resolve(undefined));
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => ({ type: 'basic', username: 'alice', passwordRef: 'sec_deleted' }),
+      },
+    });
+
+    const result = await invoke('request.send', {
+      sendId: 'send-missing',
+      requestId: 'req-1',
+      input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'secret-missing' } });
   });
 
   it('answers request.preflight from the project service', async () => {

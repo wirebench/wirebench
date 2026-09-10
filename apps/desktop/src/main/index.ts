@@ -12,6 +12,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
+import { registerExchangeChannels } from './ipc/exchanges.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
@@ -102,6 +103,7 @@ void app.whenReady().then(() => {
   });
   registerDialogsChannels();
   registerSecretsChannels(secretStore, showSecretsFlag);
+  registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then((properties) => {

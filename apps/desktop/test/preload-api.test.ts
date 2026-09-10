@@ -20,6 +20,7 @@ describe('buildApi', () => {
       'app',
       'definition',
       'dialogs',
+      'exchanges',
       'files',
       'globals',
       'on',
@@ -33,7 +34,15 @@ describe('buildApi', () => {
   it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {
     const api = buildApi(vi.fn(), vi.fn(), vi.fn());
 
-    expect(Object.keys(api.secrets).sort()).toEqual(['delete', 'exists', 'list', 'replace', 'set', 'setShowSecrets']);
+    expect(Object.keys(api.secrets).sort()).toEqual([
+      'delete',
+      'exists',
+      'getShowSecrets',
+      'list',
+      'replace',
+      'set',
+      'setShowSecrets',
+    ]);
     expect('get' in api.secrets).toBe(false);
   });
 

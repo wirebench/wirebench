@@ -35,7 +35,8 @@ import type {
   RequestSendRequest,
   SoapSendInputWire,
 } from '../shared/wire-types.js';
-import { toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
+import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
+import { ExchangeCache } from './exchange-cache.js';
 
 /** One imported definition kept in memory, alongside the location it was resolved from. */
 interface StoredDefinition {
@@ -159,6 +160,13 @@ export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
   private readonly imports = new Map<string, AbortController>();
+
+  /**
+   * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
+   * re-render an already-logged exchange (`exchanges.get`) without the renderer ever holding
+   * the unredacted bytes.
+   */
+  readonly exchanges = new ExchangeCache();
 
   /**
    * Resolves a `secretRef` for {@link importDefinition}'s Basic-auth fetch credentials. Omitted
@@ -339,7 +347,11 @@ export class EngineService {
       const exchange = await sendSoapRequest(toEngineSendInput(input, controller.signal), {
         ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
       });
-      return toExchangeSummary(exchange, request.sendId, { show: options.showSecrets ?? false });
+      // The cache keeps the unredacted summary in main only; what crosses IPC is redacted per
+      // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle).
+      const full = toExchangeSummary(exchange, request.sendId, { show: true });
+      this.exchanges.put(request.sendId, full);
+      return redactExchangeSummary(full, { show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);
     }

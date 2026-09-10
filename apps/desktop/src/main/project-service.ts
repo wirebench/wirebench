@@ -197,11 +197,6 @@ export class ProjectService {
     return effectiveAuth(location.request.auth, endpoint?.auth, location.iface.auth);
   }
 
-  /** Resolves a `secretRef` from the store, for the request.send handler's preemptive-auth header. */
-  resolveSecret(ref: string): Promise<string | undefined> {
-    return this.getSecret(ref);
-  }
-
   /** The current snapshot, or `null` when no project is open. */
   snapshot(): ProjectWire | null {
     if (this.open === undefined) {
@@ -508,10 +503,18 @@ export class ProjectService {
         return; // The project was closed or replaced while hydrating.
       }
       try {
+        // The interface's own auth must be resolved for hydration exactly as it is for the
+        // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
+        // whole interface fails to hydrate on reopen.
+        const resolvedAuth =
+          iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
         const summary = await this.engine.importForProject({
           interfaceId: iface.id,
           source: { kind: 'url', url: iface.definitionUrl },
           cache: { dir: definitionCacheDir(open.dir, iface.slug), mode: 'prefer-cache' },
+          ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
+            ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
+            : {}),
         });
         open.runtime.set(iface.id, { hydration: 'ready', summary });
         this.hooks.onHydration?.({ interfaceId: iface.id, status: 'ready' });

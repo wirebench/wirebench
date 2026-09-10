@@ -25,7 +25,12 @@ export type ImportSourceWire = z.infer<typeof importSourceSchema>;
  * absent from this schema — zod strips/rejects it, so a plaintext password sent by mistake
  * fails validation rather than silently reaching a project file or a log.
  */
-export const importAuthSchema = z.object({ username: z.string(), passwordRef: z.string() });
+export const importAuthSchema = z
+  .object({ username: z.string(), passwordRef: z.string() })
+  // `.strict()`: an unknown key is a hard error, not silently stripped — so a caller that
+  // sends a plaintext `password` fails validation loudly instead of having it quietly dropped
+  // (or, worse, one day passed through to a project file).
+  .strict();
 
 /** Request payload for `definition.import`. */
 export const definitionImportRequestSchema = z.object({
@@ -629,3 +634,6 @@ export type SecretListEntryWire = z.infer<typeof secretListEntrySchema>;
 /** Request/response for `secrets.setShowSecrets` — a session-only, unpersisted flag. */
 export const secretsSetShowSecretsRequestSchema = z.object({ show: z.boolean() });
 export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
+
+/** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
+export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
