@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -549,5 +549,142 @@ describe('ProjectService: WSDL generation preferences reach every generation pat
     expect(intAValue(addRequest!.envelopeXml)).toBe('?');
 
     await service.close();
+  });
+});
+
+describe('ProjectService attachments', () => {
+  /** A project with one imported interface and its `Request 1`, plus the folder it lives in. */
+  async function withProject(name: string): Promise<{ service: ProjectService; dir: string; requestId: string }> {
+    const service = newService(root!);
+    const dir = join(tempDir('project'), name);
+    await service.create({ dir, name });
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+    return { service, dir, requestId: imported.project.requests[0]!.id };
+  }
+
+  it('add-attachment with copyToCache writes the blob and records its digest', async () => {
+    const { service, dir, requestId } = await withProject('Attach Cache Project');
+    const source = join(tempDir('files'), 'logo.png');
+    await writeFile(source, Buffer.from([1, 2, 3, 4]));
+
+    const result = await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: true });
+    const attachment = result.project.requests.find((r) => r.id === requestId)!.attachments[0]!;
+
+    expect(result.createdAttachmentId).toBe(attachment.id);
+    expect(attachment).toMatchObject({ name: 'logo.png', contentType: 'image/png', size: 4, cached: true });
+    expect(attachment.source.kind).toBe('cache');
+    const digest = (attachment.source as { sha256: string }).sha256;
+    expect(await readFile(join(dir, 'attachments', digest))).toEqual(Buffer.from([1, 2, 3, 4]));
+
+    await service.close();
+  });
+
+  it('add-attachment without copyToCache stores the absolute path and leaves the cache empty', async () => {
+    const { service, dir, requestId } = await withProject('Attach Path Project');
+    const source = join(tempDir('files'), 'notes.txt');
+    await writeFile(source, 'hello');
+
+    const result = await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: false });
+    const attachment = result.project.requests.find((r) => r.id === requestId)!.attachments[0]!;
+
+    expect(attachment).toMatchObject({ contentType: 'text/plain', size: 5, cached: false });
+    expect(attachment.source).toEqual({ kind: 'path', path: source });
+    expect(existsSync(join(dir, 'attachments'))).toBe(false);
+
+    await service.close();
+  });
+
+  it('sendAttachmentsFor carries the attachments and the seven MTOM flags', async () => {
+    const { service, requestId } = await withProject('Attach Send Project');
+    const source = join(tempDir('files'), 'a.pdf');
+    await writeFile(source, 'pdf');
+    await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: true });
+    await service.mutate({
+      kind: 'update-request-properties',
+      requestId,
+      patch: {
+        enableMtom: true,
+        forceMtom: true,
+        disableMultiparts: true,
+        encodeAttachments: true,
+        enableInlineFiles: true,
+        inlineResponseAttachments: true,
+        expandMtomAttachments: true,
+      },
+    });
+
+    const send = service.sendAttachmentsFor(requestId);
+
+    expect(send?.attachments).toHaveLength(1);
+    expect(send?.attachmentOptions).toMatchObject({
+      enableMtom: true,
+      forceMtom: true,
+      disableMultiparts: true,
+      encodeAttachments: true,
+      enableInlineFiles: true,
+      inlineResponseAttachments: true,
+      expandMtomAttachments: true,
+    });
+    // Bytes are read through the engine's project-folder resolver, never by the renderer.
+    expect(await send!.attachmentOptions.resolver(send!.attachments[0]!)).toEqual(new Uint8Array(Buffer.from('pdf')));
+
+    await service.close();
+  });
+
+  it('sendAttachmentsFor is undefined for an unknown request', async () => {
+    const { service } = await withProject('Attach Unknown Project');
+    expect(service.sendAttachmentsFor('nope')).toBeUndefined();
+    await service.close();
+  });
+
+  describe('resolveFile containment', () => {
+    it('reads a file inside the project folder and the attachment cache', async () => {
+      const { service, dir, requestId } = await withProject('Inline Inside Project');
+      const inside = join(dir, 'payload.txt');
+      await writeFile(inside, 'inside');
+      const cached = join(tempDir('files'), 'cached.bin');
+      await writeFile(cached, 'cached-bytes');
+      const added = await service.mutate({ kind: 'add-attachment', requestId, path: cached, copyToCache: true });
+      const digest = (
+        added.project.requests.find((r) => r.id === requestId)!.attachments[0]!.source as { sha256: string }
+      ).sha256;
+
+      const resolveFile = service.sendAttachmentsFor(requestId)!.attachmentOptions.resolveFile!;
+
+      expect(await resolveFile(inside)).toEqual(new Uint8Array(Buffer.from('inside')));
+      expect(await resolveFile('payload.txt')).toEqual(new Uint8Array(Buffer.from('inside')));
+      expect(await resolveFile(join(dir, 'attachments', digest))).toEqual(new Uint8Array(Buffer.from('cached-bytes')));
+
+      await service.close();
+    });
+
+    it('refuses a traversal escape and an unrelated absolute path', async () => {
+      const { service, requestId } = await withProject('Inline Outside Project');
+      const outside = join(tempDir('files'), 'secret.txt');
+      await writeFile(outside, 'nope');
+
+      const resolveFile = service.sendAttachmentsFor(requestId)!.attachmentOptions.resolveFile!;
+
+      await expect(resolveFile('../../etc/passwd')).rejects.toThrow(/outside the project folder/);
+      await expect(resolveFile(outside)).rejects.toThrow(/outside the project folder/);
+
+      await service.close();
+    });
+
+    it('allows the exact absolute path a path-source attachment of this request names', async () => {
+      const { service, requestId } = await withProject('Inline Declared Project');
+      const declared = join(tempDir('files'), 'declared.bin');
+      await writeFile(declared, 'declared-bytes');
+      await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+
+      const resolveFile = service.sendAttachmentsFor(requestId)!.attachmentOptions.resolveFile!;
+
+      expect(await resolveFile(declared)).toEqual(new Uint8Array(Buffer.from('declared-bytes')));
+      // Its neighbours are still out of bounds: only the declared path itself is exempt.
+      await expect(resolveFile(join(tempDir('files'), 'other.bin'))).rejects.toThrow(/outside the project folder/);
+
+      await service.close();
+    });
   });
 });

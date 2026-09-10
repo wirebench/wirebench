@@ -15,12 +15,15 @@
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { basename, resolve as resolvePath } from 'node:path';
+import { isInsideAny } from './path-containment.js';
 import {
   createInterface,
   createProject,
   definitionCacheDir,
   generateId,
   interfaceDir,
+  attachmentsDir,
+  createFileAttachmentResolver,
   loadProject,
   ProjectError,
   putAttachment,
@@ -32,6 +35,8 @@ import {
   uniqueSlug,
 } from '@wirebench/engine';
 import type {
+  Attachment,
+  AttachmentResolvers,
   AttachmentSource,
   Endpoint,
   FsLike,
@@ -41,6 +46,7 @@ import type {
   Project,
   ProjectFiles,
   PropertyScopes,
+  SendAttachmentOptions,
 } from '@wirebench/engine';
 import type {
   EngineProgressEvent,
@@ -69,6 +75,16 @@ import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
 import type { RecentProjects } from './recent-projects.js';
+
+/**
+ * What a send needs to carry a request's attachments: the attachments themselves plus the
+ * fully-mapped engine options (the seven MTOM/SwA flags, and the resolvers that read bytes).
+ * Never serialised — the resolvers are closures over the main process's file system.
+ */
+export interface SendAttachmentInput {
+  readonly attachments: readonly Attachment[];
+  readonly attachmentOptions: SendAttachmentOptions;
+}
 
 /** How long an edit sits before autosave writes it out. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -229,6 +245,83 @@ export class ProjectService {
       ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
       ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
       ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
+    };
+  }
+
+  /**
+   * The attachments (and the MTOM/SwA options the request's properties ask for) that a send of
+   * `requestId` must carry. Deliberately NOT part of {@link SoapSendInputWire}: it holds the
+   * resolver closures that read bytes, which cannot — and must not — cross IPC.
+   *
+   * `undefined` when no project is open or the request is unknown (an ad-hoc send, which has
+   * no saved attachments and no project folder to read them from).
+   */
+  sendAttachmentsFor(requestId: string): SendAttachmentInput | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const { request } = location;
+    // Built through `toSendInput` rather than by mapping the seven MTOM flags here a second
+    // time: that mapping is the engine's, and duplicating it is how the two drift apart. Only
+    // the attachment fields of the result are used; the rest is rebuilt by `sendInputFor`.
+    const input = toSendInput({
+      request: {
+        properties: request.properties,
+        soapVersion: request.soapVersion,
+        ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+        headers: request.headers,
+        envelopeXml: request.envelopeXml,
+      },
+      endpoint: '',
+      ...(this.prefs() !== undefined ? { preferences: this.prefs() as Preferences } : {}),
+      projectSettings: this.open.project.settings,
+      attachments: request.attachments,
+      attachmentResolvers: this.attachmentResolvers(this.open, request.attachments),
+    });
+    if (input.attachmentOptions === undefined) {
+      return undefined;
+    }
+    return { attachments: input.attachments ?? [], attachmentOptions: input.attachmentOptions };
+  }
+
+  /**
+   * The resolvers a send reads attachment (and inline-file) bytes through.
+   *
+   * `resolver` is the engine's own project-folder resolver. `resolveFile` is the guarded one:
+   * the renderer can put any `file:<path>` it likes into an envelope, so a read is allowed only
+   * inside the project folder or its attachment cache, or at the exact absolute path one of
+   * this request's own `path`-source attachments already names — a path the user picked
+   * explicitly. Anything else is refused rather than silently read.
+   */
+  private attachmentResolvers(open: OpenProject, attachments: readonly Attachment[]): AttachmentResolvers {
+    const projectDir = open.dir;
+    const roots = [projectDir, attachmentsDir(projectDir)];
+    const declared = new Set(
+      attachments
+        .filter((attachment) => attachment.source.kind === 'path')
+        .map((attachment) => resolvePath(projectDir, (attachment.source as { path: string }).path)),
+    );
+    const resourceRoot = open.project.settings.resourceRoot;
+    return {
+      resolver: createFileAttachmentResolver(projectDir, resourceRoot),
+      resolveFile: async (path: string): Promise<Uint8Array> => {
+        const resolved = resolvePath(projectDir, path);
+        if (!declared.has(resolved) && !(await isInsideAny(roots, resolved))) {
+          throw new ProjectError(
+            'inline-file-outside-project',
+            `The file "${path}" resolves outside the project folder`,
+            { details: { path } },
+          );
+        }
+        return new Uint8Array(await readFile(resolved));
+      },
+      // Relative `file:` references resolve against the project folder, which is exactly the
+      // set `resolveFile` above is willing to read from.
+      resourceRoot: projectDir,
     };
   }
 

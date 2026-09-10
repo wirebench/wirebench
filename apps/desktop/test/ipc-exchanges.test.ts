@@ -64,6 +64,25 @@ describe('ExchangeCache', () => {
   it('defaults to a 500-entry cap, matching the renderer log', () => {
     expect(EXCHANGE_CACHE_CAP).toBe(500);
   });
+
+  it('keeps the response attachment bytes alongside the summary, evicted with it', () => {
+    const cache = new ExchangeCache(1);
+    const part = {
+      contentId: 'part1@wirebench',
+      contentType: 'image/png',
+      size: 3,
+      bytes: new Uint8Array([1, 2, 3]),
+      name: 'logo.png',
+    };
+    cache.put('a', unredactedExchange('a'), [part]);
+
+    expect(cache.getAttachment('a', 0)).toEqual(part);
+    expect(cache.getAttachment('a', 1)).toBeUndefined();
+
+    cache.put('b', unredactedExchange('b'));
+    expect(cache.getAttachment('a', 0)).toBeUndefined();
+    expect(cache.getAttachment('b', 0)).toBeUndefined();
+  });
 });
 
 describe('exchanges.get', () => {

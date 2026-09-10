@@ -76,6 +76,82 @@ describe('toInterfaceSummary', () => {
   });
 });
 
+describe('toExchangeSummary attachments', () => {
+  it('lists response attachments by index, with no bytes on the wire', () => {
+    const exchange = {
+      durationMs: 1,
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        rawHeaders: [],
+        body: new Uint8Array(),
+        rawBody: new Uint8Array(),
+        rawRequest: new Uint8Array(),
+        rawResponse: new Uint8Array(),
+        truncated: false,
+        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
+        redirects: [],
+        request: { url: 'http://example.test/soap', method: 'POST', headers: {} },
+      },
+      response: {
+        envelopeXml: '<a/>',
+        isSoap: true,
+        attachments: [
+          {
+            contentId: 'part1@wirebench',
+            contentType: 'image/png',
+            size: 3,
+            bytes: new Uint8Array([1, 2, 3]),
+            name: 'logo.png',
+          },
+          {
+            contentId: 'part2@wirebench',
+            contentType: 'application/octet-stream',
+            size: 1,
+            bytes: new Uint8Array([9]),
+          },
+        ],
+      },
+      problems: [],
+    } as unknown as SoapExchange;
+
+    const summary = toExchangeSummary(exchange, 'send-1', { show: true });
+
+    expect(summary.response?.attachments).toEqual([
+      { index: 0, contentId: 'part1@wirebench', contentType: 'image/png', size: 3, name: 'logo.png' },
+      { index: 1, contentId: 'part2@wirebench', contentType: 'application/octet-stream', size: 1 },
+    ]);
+    expect(JSON.stringify(summary)).not.toContain('bytes');
+  });
+
+  it('lists no attachments for a response that carried none', () => {
+    const summary = toExchangeSummary(
+      {
+        durationMs: 1,
+        http: {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          rawHeaders: [],
+          body: new Uint8Array(),
+          rawBody: new Uint8Array(),
+          rawRequest: new Uint8Array(),
+          rawResponse: new Uint8Array(),
+          truncated: false,
+          timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
+          redirects: [],
+          request: { url: 'http://example.test/soap', method: 'POST', headers: {} },
+        },
+        response: { envelopeXml: '<a/>', isSoap: true },
+        problems: [],
+      },
+      'send-2',
+    );
+    expect(summary.response?.attachments).toEqual([]);
+  });
+});
+
 describe('toGenerateResponse', () => {
   it('converts a GeneratedRequest into the wire response shape', async () => {
     const result = await importCalculator();

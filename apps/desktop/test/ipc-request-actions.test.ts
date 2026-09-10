@@ -47,6 +47,8 @@ class FakeProject {
   envelopeXml = '';
   endpointUrl = 'http://dev.test/calc.asmx';
   headers: Record<string, string> = {};
+  /** How many attachments the saved request carries; drives the cURL "not included" note. */
+  attachmentCount = 0;
   readonly changes: ProjectChange[] = [];
   auth: RequestChannelDeps['project'] extends never ? never : undefined = undefined;
 
@@ -89,6 +91,12 @@ class FakeProject {
       soapAction: `${TEM}Add`,
       headers: this.headers,
     };
+  }
+  sendAttachmentsFor(requestId: string): { attachments: unknown[] } | undefined {
+    if (requestId !== 'req-1' || this.attachmentCount === 0) {
+      return undefined;
+    }
+    return { attachments: Array.from({ length: this.attachmentCount }, () => ({})) };
   }
   mutate(change: ProjectChange): Promise<{ project: unknown; createdRequestId?: string }> {
     this.changes.push(change);
@@ -204,6 +212,18 @@ describe('request.recreate / curl / importCurl', () => {
     showSecrets = true;
     const shown = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
     expect(shown.command).toContain('s3cret');
+  });
+
+  it('curl notes the attachments it could not include, and says nothing when there are none', async () => {
+    const without = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(without.command).not.toContain('# note:');
+
+    project.attachmentCount = 2;
+    const withAttachments = unwrap<{ command: string }>(
+      await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }),
+    );
+    expect(withAttachments.command.split('\n')[0]).toBe('# note: 2 attachment(s) not included');
+    expect(withAttachments.command).toContain('curl');
   });
 
   it('curl builds a PowerShell command for the powershell shell', async () => {

@@ -196,6 +196,33 @@ describe('toSendInput envelope transforms', () => {
     expect(input.envelopeXml).toBe(ENVELOPE);
   });
 
+  it('passes every MTOM/attachment flag through in its OFF state too', () => {
+    // The all-on case above cannot tell a genuine pass-through from a hard-coded `true`.
+    const input = build({
+      request: request({
+        enableMtom: false,
+        forceMtom: false,
+        disableMultiparts: false,
+        encodeAttachments: false,
+        enableInlineFiles: false,
+        inlineResponseAttachments: false,
+        expandMtomAttachments: false,
+      }),
+      attachments: [ATTACHMENT],
+      attachmentResolvers: RESOLVERS,
+    });
+
+    expect(input.attachmentOptions).toMatchObject({
+      enableMtom: false,
+      forceMtom: false,
+      disableMultiparts: false,
+      encodeAttachments: false,
+      enableInlineFiles: false,
+      inlineResponseAttachments: false,
+      expandMtomAttachments: false,
+    });
+  });
+
   it('reports the flags even for a request with no attachments, so inline files still work', () => {
     const input = build({
       request: request({ enableInlineFiles: true }),

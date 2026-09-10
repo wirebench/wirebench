@@ -38,6 +38,7 @@ import type {
 } from '../shared/wire-types.js';
 import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
+import type { SendAttachmentInput } from './project-service.js';
 
 /** One imported definition kept in memory, alongside the location it was resolved from. */
 interface StoredDefinition {
@@ -122,7 +123,11 @@ export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth):
 }
 
 /** Converts the wire `SoapSendInputWire` (plus a controller's signal) to the engine's `SoapSendInput`. */
-function toEngineSendInput(input: SoapSendInputWire, signal: AbortSignal): SoapSendInput {
+function toEngineSendInput(
+  input: SoapSendInputWire,
+  signal: AbortSignal,
+  attachments?: SendAttachmentInput,
+): SoapSendInput {
   return {
     endpoint: input.endpoint,
     envelopeXml: input.envelopeXml,
@@ -138,6 +143,11 @@ function toEngineSendInput(input: SoapSendInputWire, signal: AbortSignal): SoapS
     ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
     ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
     ...(input.tls !== undefined ? { tls: toEngineTls(input.tls) } : {}),
+    // Attachments never cross IPC (the resolvers are closures over main's file system), so they
+    // are folded in here rather than carried on `SoapSendInputWire`.
+    ...(attachments !== undefined
+      ? { attachments: attachments.attachments, attachmentOptions: attachments.attachmentOptions }
+      : {}),
     signal,
   };
 }
@@ -377,7 +387,13 @@ export class EngineService {
    */
   async send(
     request: RequestSendRequest,
-    options: { scopes?: PropertyScopes; auth?: EndpointAuth; showSecrets?: boolean } = {},
+    options: {
+      scopes?: PropertyScopes;
+      auth?: EndpointAuth;
+      showSecrets?: boolean;
+      /** The saved request's attachments and MTOM options; absent for an ad-hoc send. */
+      attachments?: SendAttachmentInput;
+    } = {},
   ): Promise<ExchangeSummary> {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
@@ -387,13 +403,15 @@ export class EngineService {
           ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
           : undefined;
       const input = withResolvedAuth(request.input, resolvedAuth);
-      const exchange = await sendSoapRequest(toEngineSendInput(input, controller.signal), {
+      const exchange = await sendSoapRequest(toEngineSendInput(input, controller.signal, options.attachments), {
         ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
       });
       // The cache keeps the unredacted summary in main only; what crosses IPC is redacted per
-      // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle).
+      // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle). The
+      // response attachments' BYTES are kept alongside it, never on the wire — `attachments.*`
+      // reads them back from here by `sendId` + index.
       const full = toExchangeSummary(exchange, request.sendId, { show: true });
-      this.exchanges.put(request.sendId, full);
+      this.exchanges.put(request.sendId, full, exchange.response?.attachments);
       return redactExchangeSummary(full, { show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);

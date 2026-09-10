@@ -12,7 +12,10 @@ import type { ProjectService } from './project-service.js';
 import type { ExchangeSummary, HistoryEntryWire, RequestSendRequest } from '../shared/wire-types.js';
 
 /** What `sendAndRecordHistory` needs from `ProjectService`, so tests can stub a minimal object. */
-export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'>;
+export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
+  // Optional so the many test stubs (and any ad-hoc caller with no project) stay valid: a send
+  // without it simply carries no attachments, which is what an ad-hoc send should do anyway.
+  Partial<Pick<ProjectService, 'sendAttachmentsFor'>>;
 
 /** Dependencies for {@link sendAndRecordHistory}. */
 export interface SendWithHistoryDeps {
@@ -52,12 +55,15 @@ export async function sendAndRecordHistory(
   fallback: HistoryNameFallback = AD_HOC_NAME,
 ): Promise<ExchangeSummary> {
   const auth = request.requestId !== undefined ? deps.project.authFor(request.requestId) : undefined;
+  const attachments =
+    request.requestId !== undefined ? deps.project.sendAttachmentsFor?.(request.requestId) : undefined;
   const startedAt = Date.now();
   try {
     const result = await service.send(request, {
       scopes: deps.project.scopesFor(),
       showSecrets: deps.showSecrets?.get() ?? false,
       ...(auth !== undefined ? { auth } : {}),
+      ...(attachments !== undefined ? { attachments } : {}),
     });
     await record(service, deps, request, fallback, { durationMs: Date.now() - startedAt });
     return result;

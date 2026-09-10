@@ -1,6 +1,5 @@
-import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from 'node:path';
-import { existsSync } from 'node:fs';
-import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -8,6 +7,7 @@ import { generateOptionsFrom } from '../generate-options.js';
 import type { ProjectService } from '../project-service.js';
 import type { HistoryService } from '../history-service.js';
 import type { PreferencesService } from '../preferences.js';
+import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import type {
@@ -37,7 +37,10 @@ export type RequestChannelProject = Pick<
   | 'sendInputFor'
   | 'dumpFileFor'
   | 'mutate'
->;
+> &
+  // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
+  // has no saved request behind it has no attachments to carry either.
+  Partial<Pick<ProjectService, 'sendAttachmentsFor'>>;
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
@@ -86,34 +89,6 @@ function withRequestProperties(project: RequestChannelProject, request: RequestS
 }
 
 /**
- * `path`, with `realpath` resolved through whatever prefix of it already exists on disk —
- * e.g. for `/tmp/proj/dumps/out.xml` where only `/tmp/proj` exists, this is `realpath('/tmp/proj')`
- * joined back with the still-nonexistent `dumps/out.xml` tail. Neither `/tmp/proj` nor the tail
- * is created; this only computes the path a later `mkdir`+`writeFile` would actually land at,
- * so a symlink anywhere in the existing prefix cannot be used to escape the containment check
- * below.
- */
-async function realpathOfPrefix(path: string): Promise<string> {
-  const tail: string[] = [];
-  let current = path;
-  while (!existsSync(current)) {
-    const parent = dirname(current);
-    if (parent === current) {
-      // Hit the filesystem root without finding anything that exists; nothing to resolve.
-      return path;
-    }
-    tail.unshift(basename(current));
-    current = parent;
-  }
-  try {
-    const real = await realpath(current);
-    return tail.length === 0 ? real : join(real, ...tail);
-  } catch {
-    return path;
-  }
-}
-
-/**
  * Resolves a dump-file target against the project folder and refuses one that would land
  * outside it, unless the exact path was chosen through the Dump File "Browse…" picker this
  * session — SoapUI's dump file can point anywhere the *user* has explicitly picked, but a
@@ -132,8 +107,7 @@ async function resolveDumpPath(
     realpathOfPrefix(target.projectDir),
     realpathOfPrefix(resolved),
   ]);
-  const rel = relative(projectReal, candidateReal);
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  if (!isInsideReal(projectReal, candidateReal)) {
     return {
       problem: {
         code: 'dump-outside-project',
@@ -250,18 +224,23 @@ async function curl(
   const show = deps.showSecrets?.get() ?? false;
   const headers = redactHeaders(effective.headers ?? {}, { show });
   const envelopeXml = redactXml(effective.envelopeXml, { show });
+  const command = toCurl(
+    {
+      endpoint: effective.endpoint,
+      envelopeXml,
+      soapVersion: effective.soapVersion,
+      ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
+      headers,
+      ...(effective.skipSoapAction !== undefined ? { skipSoapAction: effective.skipSoapAction } : {}),
+    },
+    { shell: request.shell },
+  );
+  // `toCurl` builds a single-part request and gains no multipart support here, so a request
+  // with attachments would otherwise be silently exported as one without them. Saying so in a
+  // leading comment keeps the command paste-able while making the difference impossible to miss.
+  const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
   return {
-    command: toCurl(
-      {
-        endpoint: effective.endpoint,
-        envelopeXml,
-        soapVersion: effective.soapVersion,
-        ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
-        headers,
-        ...(effective.skipSoapAction !== undefined ? { skipSoapAction: effective.skipSoapAction } : {}),
-      },
-      { shell: request.shell },
-    ),
+    command: count === 0 ? command : `# note: ${String(count)} attachment(s) not included\n${command}`,
   };
 }
 
