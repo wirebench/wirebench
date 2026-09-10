@@ -257,7 +257,10 @@ describe('ProjectService keystores', () => {
     const tls = await service.tlsFor(requestId);
     expect(tls?.cert).toContain('BEGIN CERTIFICATE');
     expect(tls?.key).toContain('BEGIN PRIVATE KEY');
-    expect(tls?.ca).toHaveLength(1);
+    // A client identity is *only* an identity: `ca` would replace Node's trust store wholesale,
+    // so selecting a keystore must never change whom the send trusts.
+    expect(tls?.ca).toBeUndefined();
+    expect(Object.keys(tls ?? {}).sort()).toEqual(['cert', 'key']);
     // The live send input the renderer (and the cURL export) sees carries no key material.
     expect(JSON.stringify(service.buildLiveSendInput(requestId))).not.toContain('BEGIN');
 

@@ -28,6 +28,36 @@ export function commonNameOf(cert: forge.pki.Certificate): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Whether `key` is the private half of `cert`'s public key.
+ *
+ * Compares the RSA modulus, which is the only public-key field node-forge models for every key
+ * type it can parse. `false` whenever the comparison cannot be made at all (a non-RSA key, an
+ * unparsable PEM), so a caller pairing a key with a certificate never pairs them *by accident*:
+ * "cannot prove they match" and "they do not match" must both mean no.
+ *
+ * @param key the private key to test
+ * @param cert the certificate whose public key it should belong to
+ * @returns `true` only when both moduli are present and equal
+ */
+export function keyMatchesCertificate(key: forge.pki.PrivateKey, cert: forge.pki.Certificate): boolean {
+  const modulus = (key as { n?: { toString(radix: number): string } }).n;
+  const certModulus = (cert.publicKey as { n?: { toString(radix: number): string } }).n;
+  if (modulus === undefined || certModulus === undefined) {
+    return false;
+  }
+  return modulus.toString(16) === certModulus.toString(16);
+}
+
+/** {@link keyMatchesCertificate} for a key that is still PEM text; `false` when it will not parse. */
+export function keyPemMatchesCertificate(keyPem: string, cert: forge.pki.Certificate): boolean {
+  try {
+    return keyMatchesCertificate(forge.pki.privateKeyFromPem(keyPem), cert);
+  } catch {
+    return false;
+  }
+}
+
 /** A DER serial number as upper-case hex, with the leading unsigned-padding byte dropped. */
 function serialOf(cert: forge.pki.Certificate): string {
   const raw = cert.serialNumber.toUpperCase();

@@ -929,11 +929,9 @@ export class ProjectService {
     }
     const keystore = await this.loadKeystoreFor(def);
     const identity = toTlsClientIdentity(keystore, def.defaultAlias);
-    return {
-      cert: identity.cert,
-      key: identity.key,
-      ...(identity.ca !== undefined ? { ca: [...identity.ca] } : {}),
-    };
+    // `cert`/`key` only: a keystore says who *we* are. It never contributes `ca`, because Node
+    // reads `ca` as a replacement trust store — see `toTlsClientIdentity`.
+    return { cert: identity.cert, key: identity.key };
   }
 
   /**

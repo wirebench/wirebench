@@ -10,7 +10,7 @@
 
 import forge from 'node-forge';
 import { WssError } from '../../errors.js';
-import { buildChain, commonNameOf, describeCertificate } from './certificate.js';
+import { buildChain, commonNameOf, describeCertificate, keyMatchesCertificate } from './certificate.js';
 import type { Keystore, KeystoreAlias } from './model.js';
 
 /** forge's bag shape, narrowed to the fields this module reads. */
@@ -24,10 +24,16 @@ function invalid(cause: unknown): WssError {
   return new WssError('keystore-invalid', 'The file is not a readable PKCS#12 keystore.', { cause });
 }
 
-/** Wrong-password failures are the common case and must be distinguishable from a corrupt file. */
+/**
+ * Wrong-password failures are the common case and must be distinguishable from a corrupt file.
+ *
+ * Matched narrowly, on forge's MAC/password wording only: a broader pattern (anything mentioning
+ * "decrypt", say) swallows genuinely malformed files and reports them as a bad password, which
+ * sends the user round a retype loop no password can end.
+ */
 function looksLikeBadPassword(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /password|mac could not be verified|decrypt/i.test(message);
+  return /mac could not be verified|invalid password|wrong password|password is (?:invalid|incorrect)/i.test(message);
 }
 
 /** A key as an unencrypted PKCS#8 PEM — what Node's `tls` accepts without a passphrase. */
@@ -53,7 +59,8 @@ function bagsOfType(p12: forge.pkcs12.Pkcs12Pfx, bagType: string): Bag[] {
  * @param password the keystore password; an empty/absent password is tried as `''`
  * @returns the parsed keystore, one alias per key entry plus one per unused certificate
  * @throws WssError `keystore-bad-password` when the MAC does not verify, `keystore-invalid`
- * when the bytes are not a PKCS#12 file at all
+ * when the bytes are not a PKCS#12 file at all, or when a key it holds matches none of its
+ * certificates
  */
 export function loadPkcs12(bytes: Uint8Array, password?: string): Keystore {
   const binary = forge.util.createBuffer(Buffer.from(bytes).toString('binary'));
@@ -92,12 +99,16 @@ export function loadPkcs12(bytes: Uint8Array, password?: string): Keystore {
       return;
     }
     const localKeyId = attribute(keyBag, 'localKeyId');
+    // `localKeyId` is the file's own statement of which certificate belongs to this key, so it
+    // wins. Without one, the pairing is *proved* by the public key rather than guessed from bag
+    // order: a `.p12` written as [ca, leaf] would otherwise hand the client's key the CA's
+    // certificate and present an identity the key cannot sign for.
     const certBag =
       certBags.find((bag) => !!bag.cert && localKeyId !== undefined && attribute(bag, 'localKeyId') === localKeyId) ??
-      certBags.find((bag) => !!bag.cert && !used.has(bag.cert));
+      certBags.find((bag) => !!bag.cert && !used.has(bag.cert) && keyMatchesCertificate(key, bag.cert));
     const cert = certBag?.cert;
     if (!cert) {
-      return;
+      throw new WssError('keystore-invalid', 'The keystore holds a private key that matches none of its certificates.');
     }
     used.add(cert);
     const chain = buildChain(cert, certificates, used);

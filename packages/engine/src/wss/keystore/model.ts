@@ -55,13 +55,19 @@ export interface KeystoreDef {
   readonly defaultAlias?: string;
 }
 
-/** The client identity a TLS handshake needs, shaped for `TlsOptions`. */
+/**
+ * The client identity a TLS handshake needs, shaped for `TlsOptions`.
+ *
+ * Deliberately *only* `cert` and `key`. A keystore says who the client is; it says nothing about
+ * whom the client should trust, and Node treats `ca` as a **replacement** trust store — so
+ * handing the keystore's own chain over as `ca` would silently drop every public root and break
+ * ordinary HTTPS endpoints the moment a client identity was selected. Server trust is configured
+ * separately.
+ */
 export interface TlsClientIdentity {
   /** The leaf certificate with its chain concatenated after it. */
   readonly cert: string;
   readonly key: string;
-  /** The chain, also offered as trust anchors — a private CA usually signs both ends. */
-  readonly ca?: readonly string[];
 }
 
 /** Options for `loadKeystore`. */
@@ -77,7 +83,7 @@ export interface LoadKeystoreOptions {
  * every load.
  *
  * @param path the file name or path to classify
- * @returns `'pkcs12'` for `.p12`/`.pfx`, `'pem'` for `.pem`/`.crt`/`.key`, else `undefined`
+ * @returns `'pkcs12'` for `.p12`/`.pfx`, `'pem'` for `.pem`/`.crt`/`.cer`/`.key`, else `undefined`
  */
 export function keystoreTypeForPath(path: string): KeystoreType | undefined {
   const lower = path.toLowerCase();

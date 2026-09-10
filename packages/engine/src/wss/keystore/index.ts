@@ -74,9 +74,12 @@ export function selectAlias(keystore: Keystore, alias?: string): KeystoreAlias {
 }
 
 /**
- * The client identity for `alias`, shaped for `TlsOptions.cert`/`key`/`ca`: the leaf with its
- * chain concatenated after it (what OpenSSL expects a client to present), and the chain also
- * offered as trust anchors, since a private CA usually signs both ends of the connection.
+ * The client identity for `alias`, shaped for `TlsOptions.cert`/`key`: the leaf with its chain
+ * concatenated after it, which is what OpenSSL expects a client to present.
+ *
+ * The chain is **not** returned as `ca`: `ca` replaces Node's trust store wholesale, so offering
+ * a keystore's own issuers as trust anchors would make selecting a client identity quietly stop
+ * public certificates from verifying. Whom to trust is configured separately from who to be.
  *
  * @param keystore the parsed keystore
  * @param alias the alias to present, or `undefined` for the keystore's only identity
@@ -91,9 +94,5 @@ export function toTlsClientIdentity(keystore: Keystore, alias?: string): TlsClie
       details: { alias: entry.alias },
     });
   }
-  return {
-    cert: [entry.certPem, ...entry.chainPem].join('\n'),
-    key: entry.keyPem,
-    ...(entry.chainPem.length > 0 ? { ca: [...entry.chainPem] } : {}),
-  };
+  return { cert: [entry.certPem, ...entry.chainPem].join('\n'), key: entry.keyPem };
 }

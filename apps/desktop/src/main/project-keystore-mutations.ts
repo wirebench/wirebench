@@ -48,7 +48,7 @@ export function addKeystore(
   if (type === undefined) {
     throw new ProjectError(
       'keystore-type-unknown',
-      `"${basename(input.path)}" is not a recognised keystore (.p12, .pfx, .pem, .crt, .key).`,
+      `"${basename(input.path)}" is not a recognised keystore (.p12, .pfx, .pem, .crt, .cer, .key).`,
       { details: { path: input.path } },
     );
   }

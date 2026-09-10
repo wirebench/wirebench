@@ -73,7 +73,9 @@ describe('a keystore identity on the wire', () => {
     const keystore = loadKeystore(pkcs12Bytes(), { type: 'pkcs12', password: PASSWORD });
     const identity = toTlsClientIdentity(keystore, 'client');
 
-    const info = await tlsInfo(server, { cert: identity.cert, key: identity.key, ca: [...(identity.ca ?? [])] });
+    // Server trust comes from the caller, never from the identity: `toTlsClientIdentity` returns
+    // no `ca` precisely so that selecting a keystore cannot replace Node's trust store.
+    const info = await tlsInfo(server, { cert: identity.cert, key: identity.key, ca: [ca.certPem] });
 
     expect(info.peerAuthorized).toBe(true);
     expect(info.peerCN).toBe('wirebench-client');
@@ -84,7 +86,7 @@ describe('a keystore identity on the wire', () => {
     const bundle = new TextEncoder().encode(`${client.certPem}\n${ca.certPem}\n${client.keyPem}`);
     const identity = toTlsClientIdentity(loadKeystore(bundle, { type: 'pem' }));
 
-    const info = await tlsInfo(server, { cert: identity.cert, key: identity.key, ca: [...(identity.ca ?? [])] });
+    const info = await tlsInfo(server, { cert: identity.cert, key: identity.key, ca: [ca.certPem] });
 
     expect(info.peerAuthorized).toBe(true);
     expect(info.peerCN).toBe('wirebench-client');

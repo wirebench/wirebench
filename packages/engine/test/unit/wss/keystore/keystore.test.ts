@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import forge from 'node-forge';
 import { WssError } from '../../../../src/errors.js';
@@ -47,6 +48,7 @@ describe('keystoreTypeForPath', () => {
     expect(keystoreTypeForPath('/tmp/a.pem')).toBe('pem');
     expect(keystoreTypeForPath('/tmp/a.crt')).toBe('pem');
     expect(keystoreTypeForPath('/tmp/a.key')).toBe('pem');
+    expect(keystoreTypeForPath('/tmp/a.cer')).toBe('pem');
     expect(keystoreTypeForPath('/tmp/a.jks')).toBeUndefined();
   });
 });
@@ -81,6 +83,49 @@ describe('loadKeystore (pkcs12)', () => {
     const bytes = Uint8Array.from(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'));
     const keystore = loadKeystore(bytes, { type: 'pkcs12', password: PASSWORD });
     expect(keystore.aliases[0]?.alias).toBe('wirebench-client');
+  });
+
+  it('opens a keystore protected by an empty password', () => {
+    const bytes = buildPkcs12({ password: '' });
+    expect(loadKeystore(bytes, { type: 'pkcs12' }).aliases.some((alias) => alias.hasPrivateKey)).toBe(true);
+    expect(loadKeystore(bytes, { type: 'pkcs12', password: '' }).aliases[0]?.alias).toBe('client');
+  });
+
+  it('pairs a key with the certificate it actually signs for, not the first bag', () => {
+    // Bag order [ca, leaf] with no `localKeyId`: the only thing that can tell the two apart is
+    // the public key, so a bag-order fallback would hand the key the CA's certificate.
+    const ca = generateTestCa();
+    const client = generateClientCert(ca);
+    const asn1 = forge.pkcs12.toPkcs12Asn1(
+      forge.pki.privateKeyFromPem(client.keyPem),
+      [forge.pki.certificateFromPem(ca.certPem), forge.pki.certificateFromPem(client.certPem)],
+      PASSWORD,
+      { algorithm: '3des', generateLocalKeyId: false },
+    );
+    const bytes = Uint8Array.from(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'));
+
+    const keystore = loadKeystore(bytes, { type: 'pkcs12', password: PASSWORD });
+
+    const identity = keystore.aliases.find((alias) => alias.hasPrivateKey);
+    expect(identity?.certPem.trim()).toBe(client.certPem.trim());
+    expect(identity?.subject).toContain('CN=wirebench-client');
+  });
+
+  it('rejects a keystore whose key matches none of its certificates', () => {
+    const ca = generateTestCa();
+    const orphan = generateClientCert(generateTestCa());
+    const asn1 = forge.pkcs12.toPkcs12Asn1(
+      forge.pki.privateKeyFromPem(orphan.keyPem),
+      [forge.pki.certificateFromPem(ca.certPem)],
+      PASSWORD,
+      { algorithm: '3des', generateLocalKeyId: false },
+    );
+    const bytes = Uint8Array.from(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'));
+
+    const error = errorOf(() => loadKeystore(bytes, { type: 'pkcs12', password: PASSWORD }));
+
+    expect(error.code).toBe('keystore-invalid');
+    expect(error.message).toMatch(/matches none of its certificates/);
   });
 
   it('rejects a wrong password with keystore-bad-password', () => {
@@ -144,6 +189,36 @@ describe('loadKeystore (pem)', () => {
     );
   });
 
+  it('decrypts a legacy Proc-Type: 4,ENCRYPTED RSA key block', () => {
+    const encrypted = forge.pki.encryptRsaPrivateKey(forge.pki.privateKeyFromPem(client.keyPem), PASSWORD, {
+      legacy: true,
+      algorithm: 'aes256',
+    });
+    expect(encrypted).toContain('Proc-Type: 4,ENCRYPTED');
+
+    const keystore = loadKeystore(bytesOf(`${client.certPem}\n${encrypted}`), { type: 'pem', password: PASSWORD });
+
+    expect(keystore.aliases[0]?.keyPem).toContain('BEGIN PRIVATE KEY');
+    expect(keystore.aliases[0]?.hasPrivateKey).toBe(true);
+  });
+
+  it('reports keystore-invalid, naming the limitation, for an encrypted non-RSA key', () => {
+    const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const encrypted = privateKey.export({
+      type: 'pkcs8',
+      format: 'pem',
+      cipher: 'aes-256-cbc',
+      passphrase: PASSWORD,
+    }) as string;
+
+    const error = errorOf(() =>
+      loadKeystore(bytesOf(`${client.certPem}\n${encrypted}`), { type: 'pem', password: PASSWORD }),
+    );
+
+    expect(error.code).toBe('keystore-invalid');
+    expect(error.message).toMatch(/only encrypted RSA keys/i);
+  });
+
   it('reports keystore-invalid when the bundle holds no certificate', () => {
     expect(errorOf(() => loadKeystore(bytesOf(client.keyPem), { type: 'pem' })).code).toBe('keystore-invalid');
     expect(errorOf(() => loadKeystore(bytesOf('garbage'), { type: 'pem' })).code).toBe('keystore-invalid');
@@ -195,12 +270,18 @@ describe('selectAlias', () => {
 });
 
 describe('toTlsClientIdentity', () => {
-  it('concatenates the chain after the leaf and offers it as trust anchors', () => {
+  it('concatenates the chain after the leaf', () => {
     const keystore = loadKeystore(buildPkcs12(), { type: 'pkcs12', password: PASSWORD });
     const identity = toTlsClientIdentity(keystore, 'client');
     expect(identity.cert.match(/BEGIN CERTIFICATE/g)).toHaveLength(2);
     expect(identity.key).toContain('BEGIN PRIVATE KEY');
-    expect(identity.ca).toHaveLength(1);
+  });
+
+  it('never offers the keystore chain as a trust anchor', () => {
+    // `ca` replaces Node's trust store, so a client identity must not carry one: selecting a
+    // keystore would otherwise stop every publicly-signed endpoint from verifying.
+    const keystore = loadKeystore(buildPkcs12(), { type: 'pkcs12', password: PASSWORD });
+    expect(Object.keys(toTlsClientIdentity(keystore, 'client'))).toEqual(['cert', 'key']);
   });
 
   it('refuses an alias with no private key', () => {
