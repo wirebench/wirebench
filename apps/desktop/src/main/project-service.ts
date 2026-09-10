@@ -14,7 +14,7 @@
 
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { basename, resolve as resolvePath } from 'node:path';
+import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import {
   createInterface,
@@ -22,6 +22,7 @@ import {
   definitionCacheDir,
   generateId,
   interfaceDir,
+  attachmentFile,
   attachmentsDir,
   createFileAttachmentResolver,
   loadProject,
@@ -323,6 +324,38 @@ export class ProjectService {
       // set `resolveFile` above is willing to read from.
       resourceRoot: projectDir,
     };
+  }
+
+  /**
+   * The absolute file that holds one request attachment's bytes: the cache blob for a `cache`
+   * source, or the resolved `path` for a `path` one.
+   *
+   * The result is what `attachments.openRequest` hands to the OS, so it is allow-listed here
+   * rather than at the call site: a path inside the project folder or its attachment cache, or
+   * the exact absolute path the attachment itself declares (which the user picked). Throws
+   * rather than returning `undefined` so the renderer sees *why* an open was refused.
+   */
+  async resolveAttachmentPath(requestId: string, attachmentId: string): Promise<string> {
+    const open = this.require();
+    const location = findRequest(open.project, requestId);
+    if (location === undefined) {
+      throw new ProjectError('not-found', `No request with id "${requestId}"`, { details: { requestId } });
+    }
+    const attachment = location.request.attachments.find((candidate) => candidate.id === attachmentId);
+    if (attachment === undefined) {
+      throw new ProjectError('not-found', `No attachment with id "${attachmentId}"`, { details: { attachmentId } });
+    }
+    if (attachment.source.kind === 'cache') {
+      return attachmentFile(open.dir, attachment.source.sha256);
+    }
+    const declared = attachment.source.path;
+    const resolved = resolvePath(open.dir, declared);
+    if (isAbsolute(declared) || (await isInsideAny([open.dir, attachmentsDir(open.dir)], resolved))) {
+      return resolved;
+    }
+    throw new ProjectError('attachment-outside-project', `The attachment "${attachment.name}" is outside the project`, {
+      details: { attachmentId, path: declared },
+    });
   }
 
   /** The `dumpFile` path a request asks its responses to be written to, if any. */

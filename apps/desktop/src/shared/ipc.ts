@@ -73,6 +73,13 @@ import {
   xmlFormResponseSchema,
   xmlApplyFormEditRequestSchema,
   xmlApplyFormEditResponseSchema,
+  attachmentsOpenRequestRequestSchema,
+  attachmentsOpenResponseRequestSchema,
+  attachmentsOpenResponseSchema,
+  attachmentsPickFilesRequestSchema,
+  attachmentsPickFilesResponseSchema,
+  attachmentsSaveResponseRequestSchema,
+  attachmentsSaveResponseResponseSchema,
   fsSaveTextRequestSchema,
   fsSaveTextResponseSchema,
   fsOpenTextRequestSchema,
@@ -226,6 +233,30 @@ export const channels = {
   fs: {
     saveText: defineChannel('fs.saveText', fsSaveTextRequestSchema, fsSaveTextResponseSchema),
     openText: defineChannel('fs.openText', fsOpenTextRequestSchema, fsOpenTextResponseSchema),
+  },
+  // Attachment bytes never cross the context bridge: each of these moves them entirely inside
+  // main, addressed by a handle the renderer already holds (`sendId` + index, or ids).
+  attachments: {
+    saveResponse: defineChannel(
+      'attachments.saveResponse',
+      attachmentsSaveResponseRequestSchema,
+      attachmentsSaveResponseResponseSchema,
+    ),
+    openResponse: defineChannel(
+      'attachments.openResponse',
+      attachmentsOpenResponseRequestSchema,
+      attachmentsOpenResponseSchema,
+    ),
+    openRequest: defineChannel(
+      'attachments.openRequest',
+      attachmentsOpenRequestRequestSchema,
+      attachmentsOpenResponseSchema,
+    ),
+    pickFiles: defineChannel(
+      'attachments.pickFiles',
+      attachmentsPickFilesRequestSchema,
+      attachmentsPickFilesResponseSchema,
+    ),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

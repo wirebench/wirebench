@@ -46,3 +46,34 @@ describe('WSDL mime:multipartRelated parts', () => {
     expect(sendRef?.inputMimeParts).toEqual([]);
   });
 });
+
+describe('WSDL mime:content without a part attribute', () => {
+  // A `mime:content` names the `wsdl:part` it carries; one without that attribute has nothing
+  // to bind an attachment to, so it is skipped rather than surfaced as a nameless slot.
+  const wsdl = `<?xml version="1.0"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="urn:wb:nameless" targetNamespace="urn:wb:nameless">
+  <wsdl:message name="In"><wsdl:part name="body" type="xsd:string"/></wsdl:message>
+  <wsdl:portType name="PT"><wsdl:operation name="Op"><wsdl:input message="tns:In"/></wsdl:operation></wsdl:portType>
+  <wsdl:binding name="B" type="tns:PT">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Op">
+      <wsdl:input>
+        <mime:multipartRelated>
+          <mime:part><soap:body use="literal" parts="body"/></mime:part>
+          <mime:part><mime:content type="application/octet-stream"/></mime:part>
+        </mime:multipartRelated>
+      </wsdl:input>
+    </wsdl:operation>
+  </wsdl:binding>
+</wsdl:definitions>`;
+
+  it('skips it, leaving the message with an empty (but present) mimeParts', () => {
+    const location = 'inline://nameless.wsdl';
+    const definition = parseWsdlDocument(parseXml(wsdl, { location }), location);
+    expect(operationOf(definition, 'B', 'Op')?.input?.mimeParts).toEqual([]);
+  });
+});

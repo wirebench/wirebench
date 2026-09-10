@@ -13,6 +13,7 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
+import { registerAttachmentChannels } from './ipc/attachments.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerExchangeChannels } from './ipc/exchanges.js';
@@ -153,6 +154,11 @@ void app.whenReady().then(() => {
   registerXpathChannels();
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
+  registerAttachmentChannels({
+    exchanges: engineService.exchanges,
+    project: projectService,
+    userDataDir: app.getPath('userData'),
+  });
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then((properties) => {

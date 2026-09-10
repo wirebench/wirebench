@@ -18,6 +18,7 @@ describe('buildApi', () => {
 
     expect(Object.keys(api).sort()).toEqual([
       'app',
+      'attachments',
       'definition',
       'dialogs',
       'exchanges',
