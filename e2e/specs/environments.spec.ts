@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { setMonacoText } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -76,11 +77,21 @@ test.describe('environments', () => {
     expect(imported.requests.filter((request) => request.method === 'POST')).toHaveLength(0);
 
     // --- an unresolvable property reference is reported in Problems ---------
-    const line = page.locator('.view-line').filter({ hasText: 'intA' }).first();
-    await line.click();
-    await page.keyboard.press('End');
-    await page.keyboard.press('Shift+Home');
-    await page.keyboard.type('<tem:intA>${#Env#missing}</tem:intA>');
+    // Replace the whole envelope with one where `intA` references a nonexistent environment
+    // property, keeping the rest of the default Calculator `Add` skeleton intact.
+    await setMonacoText(
+      page,
+      'Request envelope XML',
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">\n' +
+        '   <soapenv:Header/>\n' +
+        '   <soapenv:Body>\n' +
+        '      <tem:Add>\n' +
+        '         <tem:intA>${#Env#missing}</tem:intA>\n' +
+        '         <tem:intB>?</tem:intB>\n' +
+        '      </tem:Add>\n' +
+        '   </soapenv:Body>\n' +
+        '</soapenv:Envelope>',
+    );
     await expect(page.getByTestId('request-editor')).toContainText('#Env#missing');
     // The debounced editor write has to reach disk before the pre-send dry run reads it back.
     await page.waitForTimeout(1_000);

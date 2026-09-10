@@ -1,4 +1,4 @@
-import { childrenAllowedAt, declarationOf, qnameToString } from '@wirebench/engine';
+import { attributesAllowedAt, childrenAllowedAt, declarationOf, qnameToString } from '@wirebench/engine';
 import type { QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -53,6 +53,21 @@ export function registerXmlChannels(service: EngineService): void {
   registerHandler(channels.xml.describeMany, (request) => {
     const schemaSet = service.schemaSetFor(request.interfaceId);
     const results = request.paths.map((clarkPath) => {
+      // An attribute segment is encoded as a trailing `@name` entry after the owning element's
+      // ancestor path — unambiguous since no Clark-notation element segment can start with `@`.
+      const last = clarkPath[clarkPath.length - 1];
+      if (last !== undefined && last.startsWith('@')) {
+        const attrName = last.slice(1);
+        const elementPath = clarkPath.slice(0, -1).map(parseClarkQName);
+        const attr = attributesAllowedAt(schemaSet, elementPath).find(
+          (candidate) => candidate.name.localName === attrName,
+        );
+        if (attr === undefined) {
+          return null;
+        }
+        const typeName = attr.type !== undefined ? qnameToString(attr.type) : '';
+        return { typeName, kind: 'attribute' as const };
+      }
       const path = clarkPath.map(parseClarkQName);
       const found = declarationOf(schemaSet, path);
       if (found === undefined) {

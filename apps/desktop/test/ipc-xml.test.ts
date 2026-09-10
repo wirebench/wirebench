@@ -128,4 +128,35 @@ describe('xml.* IPC', () => {
     expect(result.value.results[1]).toBeNull();
     expect(result.value.results[2]?.typeName).toBe('{http://www.w3.org/2001/XMLSchema}int');
   });
+
+  it('xml.describeMany resolves an attribute type via a trailing @name segment', async () => {
+    const SC = 'urn:wb:sc';
+    const constructsService = new EngineService();
+    registerXmlChannels(constructsService);
+    // Re-register on the shared `handlers` map (same channel names), then invoke via that map.
+    const summary = await constructsService.importDefinition({
+      source: {
+        kind: 'text',
+        text: readFileSync(`${process.cwd()}/fixtures/wsdl/crafted/schema-constructs/service.wsdl`, 'utf-8'),
+        location: 'inline://schema-constructs.wsdl',
+      },
+    });
+
+    const result = (await invoke('xml.describeMany', {
+      interfaceId: summary.id,
+      paths: [[`{${SC}}AmountEl`, '@currency']],
+    })) as { ok: true; value: { results: ({ typeName: string; kind: string } | null)[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.results).toEqual([{ typeName: '{http://www.w3.org/2001/XMLSchema}string', kind: 'attribute' }]);
+  });
+
+  it('xml.describeMany is null for an attribute that does not exist on the element', async () => {
+    const result = (await invoke('xml.describeMany', {
+      interfaceId,
+      paths: [[`{${TEM}}Add`, '@nope']],
+    })) as { ok: true; value: { results: unknown[] } };
+
+    expect(result.value.results).toEqual([null]);
+  });
 });
