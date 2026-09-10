@@ -272,6 +272,12 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm vitest run packages/engine/test/unit/soap/mime packages/engine/test/integration/mime`
   - Files: packages/engine/src/soap/mime/{multipart.ts,mtom.ts,swa.ts,inline-files.ts}, packages/engine/src/project/attachments-cache.ts, packages/engine/test/unit/soap/mime/*.test.ts, packages/engine/test/integration/mime.test.ts, packages/engine/test/helpers/test-soap-server.ts
 
+- [ ] **32b. Request toolbar: visible endpoint, right-click actions, Code panel** (inserted 2026-09-10 from user feedback)
+  - Endpoint becomes a full-width editable combobox (input + declared-address dropdown); Recreate/Clone/cURL move to a right-click context menu on the request pane (Monaco menu off) and palette `request.*` commands; Postman-style Code tab in the Details panel with live cURL preview, shell selector, Copy, Import; `</>` toolbar button opens it.
+  - Acceptance: long URL fully visible; right-click menu works in every request view; Code tab updates on edit.
+  - Verify: `pnpm check`; `pnpm test:e2e -- --grep "editor actions|preferences"`
+  - Files: apps/desktop/src/renderer/features/request-editor/{toolbar,endpoint-select,request-context-menu,request-editor}.tsx, apps/desktop/src/renderer/features/details/code-panel.tsx, apps/desktop/src/renderer/shell/details-panel.tsx, apps/desktop/src/renderer/state/ui.ts, e2e/specs/editor-actions.spec.ts
+
 - [ ] **33. Attachments inspector (UI)**
   - Table per §6.5 (Name, Content Type editable, Size, Part from WSDL mime parts, Type, ContentID, Cached), Add via dialog, drag-drop, Remove, double-click open (`shell.openPath` allow-listed to project + cache dirs), response Attachments tab with Save as…; request property flags wired (Enable/Force MTOM, Inline Response Attachments, Expand MTOM, Disable Multiparts, Encode Attachments, Enable Inline Files).
   - Acceptance: e2e: MTOM send with fixture PNG → echo → response attachment listed, saved file equals source.
