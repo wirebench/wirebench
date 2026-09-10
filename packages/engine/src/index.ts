@@ -120,3 +120,18 @@ export type { ParsedSoapResponse } from './soap/response-parser.js';
 export { createDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
+
+export { importDefinition } from './import.js';
+export { sendSoapRequest } from './send.js';
+export { generateEmptyRequest, generateRequest } from './generate.js';
+export { summarizeOperations } from './operations.js';
+export type {
+  ImportOptions,
+  ImportProblem,
+  ImportProgress,
+  ImportResult,
+  ImportSource,
+  OperationSummary,
+  SoapExchange,
+  SoapSendInput,
+} from './types.js';
