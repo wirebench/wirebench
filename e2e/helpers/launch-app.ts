@@ -25,9 +25,10 @@ const BENIGN_CONSOLE_PATTERNS: readonly RegExp[] = [];
 export async function launchApp(): Promise<LaunchedApp> {
   const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-'));
   const consoleErrors: string[] = [];
+  let app: ElectronApplication | undefined;
 
   try {
-    const app = await electron.launch({
+    app = await electron.launch({
       args: [MAIN_PATH],
       env: {
         ...process.env,
@@ -51,7 +52,7 @@ export async function launchApp(): Promise<LaunchedApp> {
       window,
       userDataDir,
       async close(): Promise<void> {
-        await app.close();
+        await app!.close();
         rmSync(userDataDir, { recursive: true, force: true });
         const unexpected = consoleErrors.filter(
           (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
@@ -60,6 +61,13 @@ export async function launchApp(): Promise<LaunchedApp> {
       },
     };
   } catch (error) {
+    if (app) {
+      try {
+        await app.close();
+      } catch {
+        /* ignore */
+      }
+    }
     rmSync(userDataDir, { recursive: true, force: true });
     throw error;
   }
