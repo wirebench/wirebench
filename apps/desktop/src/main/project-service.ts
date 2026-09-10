@@ -127,6 +127,22 @@ function errorMessage(error: unknown): string {
 }
 
 /**
+ * Cleans a dropped file's browser-reported name before it becomes the attachment's `name` and
+ * the source hint for `putAttachment`'s cached file name.
+ *
+ * A drop hands main a plain string, not a path the OS resolved, so nothing stops it from
+ * containing separators or control characters (a crafted `DataTransfer`, or just an odd OS). It
+ * is never used to address the file system — `addAttachmentBytes` always writes under
+ * `attachments/<sha256>` — but it is shown in the grid and offered back as a save/open default
+ * name, so it is stripped to a plain, safe display name here rather than downstream.
+ */
+function sanitizeDroppedName(name: string): string {
+  const withoutSeparators = name.replace(/[/\\]/g, '_');
+  const cleaned = withoutSeparators.replace(/[\x00-\x1f\x7f]/g, '').trim();
+  return cleaned.length > 0 ? cleaned : 'attachment';
+}
+
+/**
  * The absolute paths a `path`-source attachment's declared path could mean, in the exact order
  * `createFileAttachmentResolver` (`@wirebench/engine`'s `packages/engine/src/project/attachments-cache.ts`)
  * would try them: an absolute path is itself the only candidate; a relative one is tried under
@@ -807,13 +823,14 @@ export class ProjectService {
         { details: { name: input.name, size: input.bytes.byteLength, limit: MAX_DROPPED_ATTACHMENT_BYTES } },
       );
     }
-    const contentType = input.contentType.trim().length > 0 ? input.contentType : contentTypeForPath(input.name);
+    const name = sanitizeDroppedName(input.name);
+    const contentType = input.contentType.trim().length > 0 ? input.contentType : contentTypeForPath(name);
     const { sha256, size } = await putAttachment(open.dir, input.bytes, {
-      originalName: input.name,
+      originalName: name,
       contentType,
     });
     const result = appendAttachment(open.project, requestId, {
-      name: input.name,
+      name,
       contentType,
       size,
       source: { kind: 'cache', sha256 },

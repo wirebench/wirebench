@@ -6,12 +6,10 @@ import { useEditorsStore } from '../../../state/editors.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { useProjectStore } from '../../../state/project.js';
 import { useUiStore } from '../../../state/ui.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '../../../../shared/wire-types.js';
 import type { AttachmentPatchWire, MimePartWire } from '../../../../shared/wire-types.js';
-import { addAttachmentsThroughPicker } from '../attachment-actions.js';
+import { addAttachmentsThroughPicker, removeSelectedAttachment } from '../attachment-actions.js';
 import { AttachmentsTable } from './attachments-table.js';
-
-/** Per-file cap of `attachments.addDropped`, mirrored here only to word the toast. */
-const MAX_DROP_BYTES = 32 * 1024 * 1024;
 
 /** Base64 for a dropped file's bytes, chunked so a multi-MB file cannot blow the argument list. */
 function toBase64(bytes: Uint8Array): string {
@@ -42,7 +40,6 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
     request === undefined ? undefined : state.interfaces[request.interfaceId],
   );
   const updateAttachment = useProjectStore((state) => state.updateAttachment);
-  const removeAttachment = useProjectStore((state) => state.removeAttachment);
   const confirmOnDelete = usePreferencesStore((state) => state.preferences.ui.confirmOnDelete);
   const selectedId = useEditorsStore((state) => state.selectedAttachmentFor(requestId));
   const setSelectedAttachment = useEditorsStore((state) => state.setSelectedAttachment);
@@ -62,12 +59,12 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
       (operation) => operation.binding === request.bindingName && operation.name === request.operationName,
     )?.inputMimeParts ?? [];
 
-  const remove = (attachmentId: string): void => {
-    setSelectedAttachment(requestId, undefined);
+  // Goes through the same `removeSelectedAttachment` the `request.removeAttachment` command
+  // uses, so this button and the palette action can never drift apart — this is the only place
+  // that adds the confirm-before-remove step on top of it.
+  const remove = (): void => {
     setPendingRemoveId(undefined);
-    void removeAttachment(requestId, attachmentId).catch((error: unknown) => {
-      showToast(error instanceof Error ? error.message : 'Could not remove the attachment');
-    });
+    void removeSelectedAttachment(requestId);
   };
 
   const requestRemove = (): void => {
@@ -76,7 +73,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
       setPendingRemoveId(selectedId);
       return;
     }
-    remove(selectedId);
+    remove();
   };
 
   const open = async (attachmentId: string): Promise<void> => {
@@ -93,19 +90,32 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
   };
 
   const drop = async (files: readonly File[]): Promise<void> => {
-    const payload: { name: string; contentType: string; bytesBase64: string }[] = [];
+    // Validated in full — size cap, then count cap — before any file is read: a drop either
+    // sends the accepted files as one batch or none, rather than reading some of them only to
+    // discover later ones push the count over the limit.
+    const withinSize: File[] = [];
     for (const file of files) {
-      if (file.size > MAX_DROP_BYTES) {
-        showToast(`"${file.name}" is larger than the 32 MiB drop limit`);
+      if (file.size > MAX_DROPPED_ATTACHMENT_BYTES) {
+        showToast(
+          `"${file.name}" is larger than the ${String(MAX_DROPPED_ATTACHMENT_BYTES / (1024 * 1024))} MiB drop limit`,
+        );
         continue;
       }
-      payload.push({
+      withinSize.push(file);
+    }
+    if (withinSize.length > MAX_DROPPED_FILES) {
+      showToast(`Only the first ${String(MAX_DROPPED_FILES)} files of a drop are added`);
+    }
+    const accepted = withinSize.slice(0, MAX_DROPPED_FILES);
+    if (accepted.length === 0) return;
+
+    const payload = await Promise.all(
+      accepted.map(async (file) => ({
         name: file.name,
         contentType: file.type,
         bytesBase64: toBase64(new Uint8Array(await file.arrayBuffer())),
-      });
-    }
-    if (payload.length === 0) return;
+      })),
+    );
     const result = await ipc().attachments.addDropped({ requestId, files: payload });
     if (!result.ok) {
       showToast(result.error.message);
@@ -126,7 +136,10 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
         event.preventDefault();
         setDragging(true);
       }}
-      onDragLeave={() => {
+      onDragLeave={(event) => {
+        // Without the `contains` check, dragging over a child (a row, a select) fires a
+        // leave-then-enter on every pixel of movement inside the zone, flickering the highlight.
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
         setDragging(false);
       }}
       onDrop={(event) => {
@@ -230,7 +243,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
                   type="button"
                   className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
                   onClick={() => {
-                    if (pendingRemoveId !== undefined) remove(pendingRemoveId);
+                    if (pendingRemoveId !== undefined) remove();
                   }}
                 >
                   Remove

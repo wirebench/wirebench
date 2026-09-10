@@ -693,6 +693,30 @@ describe('ProjectService attachments', () => {
       await service.close();
     });
 
+    it('strips path separators and control characters from a dropped name', async () => {
+      const { service, requestId } = await withProject('Drop Name Project');
+
+      await service.addAttachmentBytes(requestId, {
+        name: '../../etc/passwd',
+        contentType: 'text/plain',
+        bytes: new Uint8Array([1]),
+      });
+
+      expect(service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments[0]!.name).toBe(
+        '.._.._etc_passwd',
+      );
+      await service.close();
+    });
+
+    it('falls back to "attachment" when a dropped name is left with nothing usable', async () => {
+      const { service, requestId } = await withProject('Drop Empty Name Project');
+
+      await service.addAttachmentBytes(requestId, { name: ' ', contentType: '', bytes: new Uint8Array([1]) });
+
+      expect(service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments[0]!.name).toBe('attachment');
+      await service.close();
+    });
+
     it('refuses an unknown request', async () => {
       const { service, requestId } = await withProject('Drop Unknown Project');
       expect(requestId).toBeDefined();

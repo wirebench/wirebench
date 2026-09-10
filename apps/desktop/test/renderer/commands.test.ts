@@ -219,6 +219,9 @@ describe('request action commands', () => {
   });
 
   it('offers every request action, only while a request tab is active', () => {
+    // `request.removeAttachment` also needs a selected attachment (covered on its own above),
+    // so it is selected here purely to bring it into this list's "with a request" half.
+    useEditorsStore.getState().setSelectedAttachment('req-1', 'att-9');
     const ids = [
       'request.recreateKeepValues',
       'request.recreateDiscardValues',
@@ -229,6 +232,7 @@ describe('request action commands', () => {
       'request.importCurl',
       'request.showCode',
       'request.addAttachment',
+      'request.removeAttachment',
     ];
     const listed = listCommands(context).map((command) => command.id);
     for (const id of ids) {

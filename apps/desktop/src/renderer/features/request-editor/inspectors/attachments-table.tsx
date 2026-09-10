@@ -35,17 +35,25 @@ const CELL_INPUT_CLASS =
 const SELECT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-1 text-xs text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
-/** A cell whose edits stay local until Enter or blur — a keystroke is never a project mutation. */
+/**
+ * A cell whose edits stay local until Enter or blur — a keystroke is never a project mutation.
+ *
+ * `onEnd` fires on every way out of edit mode (Enter, Escape, blur), whether or not the draft
+ * changed, so a caller using it to clear "currently renaming" state can never get stuck there —
+ * `onCommit` alone would skip it for a no-op edit or an Escape.
+ */
 function EditableCell({
   label,
   value,
   list,
   onCommit,
+  onEnd,
 }: {
   readonly label: string;
   readonly value: string;
   readonly list?: string;
   readonly onCommit: (next: string) => void;
+  readonly onEnd?: () => void;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => {
@@ -54,6 +62,7 @@ function EditableCell({
 
   const commit = (): void => {
     if (draft !== value) onCommit(draft);
+    onEnd?.();
   };
 
   return (
@@ -68,7 +77,10 @@ function EditableCell({
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === 'Enter') commit();
-        if (event.key === 'Escape') setDraft(value);
+        if (event.key === 'Escape') {
+          setDraft(value);
+          onEnd?.();
+        }
         // Otherwise Delete-in-a-field would detach the row the caret sits in.
         event.stopPropagation();
       }}
@@ -135,6 +147,10 @@ export function AttachmentsTable({
             event.preventDefault();
             move(-1);
           } else if (event.key === 'Delete' || event.key === 'Backspace') {
+            // Only when the grid itself has focus: a Part/Type `<select>` doesn't stop
+            // propagation, so without this a Delete meant for that control's own value would
+            // bubble up and detach the row it lives in.
+            if (event.target !== event.currentTarget) return;
             if (selectedId !== undefined && renamingId === undefined) {
               event.preventDefault();
               onRemoveSelected();
@@ -183,8 +199,10 @@ export function AttachmentsTable({
                         label={`Name of ${attachment.name}`}
                         value={attachment.name}
                         onCommit={(name) => {
-                          setRenamingId(undefined);
                           if (name.trim().length > 0) onPatch(attachment.id, { name: name.trim() });
+                        }}
+                        onEnd={() => {
+                          setRenamingId(undefined);
                         }}
                       />
                     ) : (

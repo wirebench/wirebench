@@ -198,3 +198,142 @@ describe('AttachmentsInspector', () => {
     expect(screen.getByText(/MTOM is off — attachments are sent as SwA parts/)).toBeDefined();
   });
 });
+
+describe('AttachmentsTable keyboard model', () => {
+  beforeEach(() => {
+    addAttachment.mockClear();
+    updateAttachment.mockClear();
+    removeAttachment.mockClear();
+    installWirebenchApi();
+    install([attachment(), attachment({ id: 'att-2', name: 'notes.txt', size: 5 })]);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('moves the selection with ArrowDown and ArrowUp', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(grid, { key: 'ArrowDown' });
+    expect(screen.getByText('notes.txt').closest('tr')?.getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.keyDown(grid, { key: 'ArrowUp' });
+    expect(screen.getByText('logo.png').closest('tr')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('detaches the selected row on Delete', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(grid, { key: 'Delete' });
+
+    expect(removeAttachment).toHaveBeenCalledWith('req-1', 'att-1');
+  });
+
+  it('enters rename mode on F2, and Enter with no change exits it without committing', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(grid, { key: 'F2' });
+    const field = screen.getByLabelText<HTMLInputElement>('Name of logo.png');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    expect(screen.queryByLabelText('Name of logo.png')).toBeNull();
+    expect(screen.getByText('logo.png')).toBeDefined();
+    expect(updateAttachment).not.toHaveBeenCalled();
+  });
+
+  it('F2 then Escape exits rename mode without committing the draft', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(grid, { key: 'F2' });
+    const field = screen.getByLabelText<HTMLInputElement>('Name of logo.png');
+    await userEvent.clear(field);
+    await userEvent.type(field, 'renamed');
+    fireEvent.keyDown(field, { key: 'Escape' });
+
+    expect(screen.queryByLabelText('Name of logo.png')).toBeNull();
+    expect(screen.getByText('logo.png')).toBeDefined();
+    expect(updateAttachment).not.toHaveBeenCalled();
+  });
+
+  it('does not remove the row when Delete is pressed inside the Type select', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(screen.getByLabelText('Type of logo.png'), { key: 'Delete' });
+
+    expect(removeAttachment).not.toHaveBeenCalled();
+  });
+
+  it('does not remove the row when Delete is pressed inside the Part select', async () => {
+    install(
+      [attachment(), attachment({ id: 'att-2', name: 'notes.txt', size: 5 })],
+      [{ part: 'file', type: 'application/octet-stream' }],
+    );
+    render(<AttachmentsInspector requestId="req-1" />);
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(screen.getByLabelText('Part of logo.png'), { key: 'Delete' });
+
+    expect(removeAttachment).not.toHaveBeenCalled();
+  });
+});
+
+describe('AttachmentsInspector confirm-on-delete', () => {
+  beforeEach(() => {
+    addAttachment.mockClear();
+    updateAttachment.mockClear();
+    removeAttachment.mockClear();
+    installWirebenchApi();
+    install([attachment()]);
+    usePreferencesStore.setState({
+      preferences: { ...usePreferencesStore.getState().preferences, ui: { confirmOnDelete: true } },
+    } as never);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('prompts before removing the Remove button’s row, and removes only on confirm', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    await userEvent.click(screen.getByText('logo.png'));
+
+    await userEvent.click(screen.getByTestId('attachments-remove'));
+    expect(removeAttachment).not.toHaveBeenCalled();
+    expect(screen.getByText('Remove attachment?')).toBeDefined();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(removeAttachment).toHaveBeenCalledWith('req-1', 'att-1');
+  });
+
+  it('prompts before removing on Delete from the grid too', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    await userEvent.click(screen.getByText('logo.png'));
+
+    fireEvent.keyDown(grid, { key: 'Delete' });
+
+    expect(removeAttachment).not.toHaveBeenCalled();
+    expect(screen.getByText('Remove attachment?')).toBeDefined();
+  });
+
+  it('cancelling the prompt leaves the attachment in place', async () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    await userEvent.click(screen.getByText('logo.png'));
+    await userEvent.click(screen.getByTestId('attachments-remove'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(removeAttachment).not.toHaveBeenCalled();
+    expect(screen.queryByText('Remove attachment?')).toBeNull();
+  });
+});
