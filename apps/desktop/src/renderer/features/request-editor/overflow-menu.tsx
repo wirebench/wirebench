@@ -1,8 +1,8 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, MoreHorizontal } from 'lucide-react';
-import { getActiveRequestEditor } from '../../editor/active-request-editor.js';
+import { getActiveRequestEditor, getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { loadXmlFrom, saveXmlAs } from '../../editor/xml-file-ops.js';
-import { formatEditorInPlace, gotoLine } from '../../editor/xml-language.js';
+import { gotoLine } from '../../editor/xml-language.js';
 import { useUiStore } from '../../state/ui.js';
 
 const ITEM_CLASS =
@@ -46,9 +46,9 @@ export function OverflowMenu({ onLoaded, currentText }: OverflowMenuProps) {
           <DropdownMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              const editor = getActiveRequestEditor();
-              if (editor !== undefined) {
-                formatEditorInPlace(editor);
+              const handle = getActiveRequestPaneHandle();
+              if (handle !== undefined) {
+                handle.formatAndCommit();
               }
             }}
           >

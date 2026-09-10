@@ -10,12 +10,15 @@ import { useEffect, useRef } from 'react';
 
 /** The subset of the Monaco API `@monaco-editor/react` hands to `onMount`, with real values. */
 export const fakeMonaco = {
-  KeyMod: { CtrlCmd: 2048 },
-  KeyCode: { Enter: 3 },
+  KeyMod: { CtrlCmd: 2048, Shift: 1024 },
+  KeyCode: { Enter: 3, KeyF: 33 },
 };
 
 /** Must match `editor/monaco.ts`'s `SEND_KEYBINDING`. */
 const SEND_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.Enter;
+
+/** Must match `editor/monaco.ts`'s `FORMAT_KEYBINDING`. */
+const FORMAT_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyMod.Shift | fakeMonaco.KeyCode.KeyF;
 
 type Handler = () => void;
 
@@ -29,10 +32,30 @@ export interface MockEditorProps {
 export function Editor({ value = '', onChange, options, onMount }: MockEditorProps) {
   const commands = useRef(new Map<number, Handler>());
   const mountRef = useRef(onMount);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
   mountRef.current = onMount;
+  valueRef.current = value;
+  onChangeRef.current = onChange;
 
   useEffect(() => {
-    mountRef.current?.({ addCommand: (binding, handler) => commands.current.set(binding, handler) }, fakeMonaco);
+    const mockEditor = {
+      addCommand: (binding: number, handler: Handler) => commands.current.set(binding, handler),
+      getModel: () => ({
+        getValue: () => valueRef.current,
+        getFullModelRange: () => ({}),
+      }),
+      executeEdits: (source: string, edits: readonly { readonly range?: unknown; readonly text: string }[]) => {
+        if (edits.length > 0) {
+          const newValue = edits[0]?.text ?? '';
+          valueRef.current = newValue;
+          onChangeRef.current?.(newValue);
+        }
+      },
+      getPosition: () => null,
+      setPosition: () => undefined,
+    };
+    mountRef.current?.(mockEditor, fakeMonaco);
   }, []);
 
   return (
@@ -42,13 +65,18 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
       onKeyDown={(event) => {
-        if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) {
-          return;
-        }
-        const handler = commands.current.get(SEND_KEYBINDING);
-        if (handler !== undefined) {
-          event.preventDefault();
-          handler();
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+          const handler = commands.current.get(SEND_KEYBINDING);
+          if (handler !== undefined) {
+            event.preventDefault();
+            handler();
+          }
+        } else if ((event.key === 'f' || event.key === 'F') && (event.metaKey || event.ctrlKey) && event.shiftKey) {
+          const handler = commands.current.get(FORMAT_KEYBINDING);
+          if (handler !== undefined) {
+            event.preventDefault();
+            handler();
+          }
         }
       }}
     />

@@ -1,5 +1,5 @@
-import { getActiveRequestEditor } from '../editor/active-request-editor.js';
-import { formatEditorInPlace, gotoLine } from '../editor/xml-language.js';
+import { getActiveRequestEditor, getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
+import { gotoLine } from '../editor/xml-language.js';
 import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
@@ -242,9 +242,9 @@ export function registerShellCommands(openPalette: () => void): void {
     // would run the command twice per keystroke.
     when: () => activeRequestId() !== undefined,
     run: () => {
-      const editor = getActiveRequestEditor();
-      if (editor !== undefined) {
-        formatEditorInPlace(editor);
+      const handle = getActiveRequestPaneHandle();
+      if (handle !== undefined) {
+        handle.formatAndCommit();
       }
     },
   });

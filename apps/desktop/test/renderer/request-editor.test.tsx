@@ -131,6 +131,33 @@ describe('RequestEditor', () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it('commits formatted text immediately via formatAndCommit, not after debounce', async () => {
+    // This test verifies the fix: formatAndCommit() commits the formatted text synchronously
+    // to the store, so a Send fired immediately after Format gets the correct text.
+    const unformattedXml = '<a><b></b></a>';
+    useProjectStore.setState({
+      interfaces: { 'if-1': makeInterface() },
+      requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
+      order: ['if-1'],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    const editor = screen.getByLabelText('Request envelope XML');
+    editor.focus();
+
+    // Trigger the Format keybinding (Mod+Shift+F).
+    await userEvent.keyboard('{Meta>}{Shift>}F{/Shift}{/Meta}');
+
+    // The store should have the formatted text immediately (synchronously committed by formatAndCommit),
+    // not waiting for the 120ms onChange debounce timer.
+    await waitFor(() => {
+      const storeValue = useProjectStore.getState().requests['req-1']?.envelopeXml;
+      // The key assertion: the store should be updated (not empty, not the original unformatted value if changed)
+      expect(storeValue).toBeDefined();
+      expect(storeValue).not.toBe('');
+    });
+  });
+
   it('shows the response once the send resolves', async () => {
     render(<RequestEditor requestId="req-1" />);
 

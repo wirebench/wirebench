@@ -35,6 +35,8 @@ export interface RequestPaneProps {
 export interface RequestPaneHandle {
   /** Writes any not-yet-committed edit to the store immediately. Safe to call when there is none. */
   flush: () => void;
+  /** Formats the editor's content and commits the formatted text immediately. */
+  formatAndCommit: () => void;
 }
 
 /** The request half: the editable SOAP envelope, plus the (mostly future) view strip. */
@@ -65,7 +67,27 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     pending.onEnvelopeChange(pending.xml);
   }, []);
 
-  useImperativeHandle(ref, () => ({ flush }), [flush]);
+  // Commits an edit to the store immediately, bypassing the debounce — used by Format and Load
+  // from…, which replace the whole buffer in one deliberate act rather than a keystroke burst.
+  const commitNow = useCallback((next: string) => {
+    setLocal(next);
+    clearTimeout(timer.current);
+    pendingRef.current = undefined;
+    onEnvelopeChangeRef.current(next);
+  }, []);
+
+  const formatAndCommit = useCallback(() => {
+    const editor = editorRef.current;
+    if (editor !== undefined) {
+      formatEditorInPlace(editor);
+      const value = editor.getModel()?.getValue();
+      if (value !== undefined) {
+        commitNow(value);
+      }
+    }
+  }, [commitNow]);
+
+  useImperativeHandle(ref, () => ({ flush, formatAndCommit }), [flush, formatAndCommit]);
 
   // An edit made anywhere else (regenerate, clone) must win over this pane's local copy.
   useEffect(() => {
@@ -82,15 +104,6 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     [flush],
   );
 
-  // Commits an edit to the store immediately, bypassing the debounce — used by Format and Load
-  // from…, which replace the whole buffer in one deliberate act rather than a keystroke burst.
-  const commitNow = useCallback((next: string) => {
-    setLocal(next);
-    clearTimeout(timer.current);
-    pendingRef.current = undefined;
-    onEnvelopeChangeRef.current(next);
-  }, []);
-
   const handleChange = useCallback((next: string) => {
     setLocal(next);
     clearTimeout(timer.current);
@@ -103,29 +116,26 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
 
   const handleMount = useCallback<OnMount>(
     (editor, monacoNS) => {
+      const handle: RequestPaneHandle = { flush, formatAndCommit };
       editor.addCommand(SEND_KEYBINDING, () => {
         flush();
         sendRef.current();
       });
       editor.addCommand(FORMAT_KEYBINDING, () => {
-        formatEditorInPlace(editor);
-        const value = editor.getModel()?.getValue();
-        if (value !== undefined) {
-          commitNow(value);
-        }
+        formatAndCommit();
       });
       editor.addCommand(GOTO_LINE_KEYBINDING, () => {
         gotoLine(editor);
       });
       editorRef.current = editor;
-      setActiveRequestEditor(editor, interfaceId);
+      setActiveRequestEditor(editor, interfaceId, handle);
       // `monacoNS.languages` is absent from the lightweight test double swapped in under jsdom
       // (see `test/mocks/monaco-editor-react.tsx`); the real Monaco always has it.
       if ((monacoNS as { languages?: unknown }).languages !== undefined) {
         registerXmlLanguageFeaturesOnce(monacoNS as typeof Monaco, () => ipcCompletionSource(interfaceId));
       }
     },
-    [flush, commitNow, interfaceId],
+    [flush, formatAndCommit, interfaceId],
   );
 
   return (
