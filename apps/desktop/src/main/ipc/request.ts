@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
@@ -75,6 +76,34 @@ export interface RequestChannelDeps {
 export type DumpFilePicks = { hasWrite(path: string): boolean };
 
 /**
+ * e2e-only: extra trust anchors for every send, as one PEM file named by
+ * `WIREBENCH_E2E_EXTRA_CA_FILE`.
+ *
+ * The Playwright suite talks to a TLS server signed by a CA it generates at run time, and
+ * Wirebench must trust it *the way a user would* — by configuring trust, not by turning
+ * verification off, and not by letting a client keystore double as a trust store (which is
+ * exactly the confusion `toTlsClientIdentity` was changed to avoid). So a test build takes the
+ * anchors from an env var no shipped build ever sets, alongside `WIREBENCH_E2E_OPEN_PATH`,
+ * `WIREBENCH_E2E_SAVE_PATH`, `WIREBENCH_E2E_DIALOG_FOLDER` and `WIREBENCH_E2E_DIALOG_SAVE`.
+ *
+ * TLS verification itself is untouched: these anchors are *added* to a send's `tls.ca`, and
+ * `rejectUnauthorized` keeps its default. The file is read once and remembered; an unset or
+ * unreadable variable simply yields no anchors, so an ordinary run pays nothing for it.
+ */
+let e2eTrustAnchors: readonly string[] | undefined;
+function extraTrustAnchors(): readonly string[] {
+  if (e2eTrustAnchors === undefined) {
+    const path = process.env['WIREBENCH_E2E_EXTRA_CA_FILE'];
+    try {
+      e2eTrustAnchors = path === undefined || path.length === 0 ? [] : [readFileSync(path, 'utf-8')];
+    } catch {
+      e2eTrustAnchors = [];
+    }
+  }
+  return e2eTrustAnchors;
+}
+
+/**
  * Applies the saved request's properties (and the user's preferences) to the input the
  * renderer sent. The renderer owns what is *in* the editor — the envelope being typed, the
  * endpoint it resolved — and the main process owns the knobs around it, so the two are folded
@@ -86,7 +115,7 @@ async function withRequestProperties(
   request: RequestSendRequest,
 ): Promise<RequestSendRequest> {
   if (request.requestId === undefined) {
-    return request;
+    return withExtraTrustAnchors(request);
   }
   const mapped = project.sendInputFor(request.requestId, {
     endpoint: request.input.endpoint,
@@ -100,7 +129,20 @@ async function withRequestProperties(
   // without the certificate the user asked for.
   const tls = await project.tlsFor?.(request.requestId);
   const input = mapped ?? request.input;
-  return { ...request, input: tls === undefined ? input : { ...input, tls: { ...input.tls, ...tls } } };
+  return withExtraTrustAnchors({
+    ...request,
+    input: tls === undefined ? input : { ...input, tls: { ...input.tls, ...tls } },
+  });
+}
+
+/** Appends {@link extraTrustAnchors} to a send's `tls.ca`; a no-op outside the e2e suite. */
+function withExtraTrustAnchors(request: RequestSendRequest): RequestSendRequest {
+  const anchors = extraTrustAnchors();
+  if (anchors.length === 0) {
+    return request;
+  }
+  const tls = request.input.tls;
+  return { ...request, input: { ...request.input, tls: { ...tls, ca: [...(tls?.ca ?? []), ...anchors] } } };
 }
 
 /**

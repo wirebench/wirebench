@@ -57,9 +57,13 @@ test.describe('keystores', () => {
     certsDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-certs-'));
     const keystorePath = join(certsDir, 'corp.p12');
     writeFileSync(keystorePath, generateClientPkcs12(ca, client, { password: PASSWORD }));
+    // The test CA is trusted the way a user configures trust — as an extra anchor, with
+    // verification left on. A keystore supplies a client *identity* and nothing else, so it can
+    // never make an otherwise-untrusted server verify.
+    const trustPath = join(certsDir, 'test-ca.pem');
+    writeFileSync(trustPath, ca.certPem);
 
-    // The WSDL is imported over plain HTTP; the *send* goes to the mutual-TLS server, whose CA
-    // the keystore itself supplies as a trust anchor.
+    // The WSDL is imported over plain HTTP; the *send* goes to the mutual-TLS server.
     plain = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     secure = await startTestSoapServer({
       fixture: 'calculator',
@@ -73,7 +77,7 @@ test.describe('keystores', () => {
       userDataDir,
       folderDialogPath: projectDir,
       keepUserDataDir: true,
-      extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
+      extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath, WIREBENCH_E2E_EXTRA_CA_FILE: trustPath },
     });
     const page = launched.window;
     await createProjectWithCalculator(page, plain, { expectProjectName: 'Keystore Project' });
