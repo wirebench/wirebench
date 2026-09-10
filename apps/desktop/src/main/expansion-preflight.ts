@@ -10,7 +10,7 @@
  * Pure: no `electron`, no `fs`, no network.
  */
 
-import { effectiveAuth, expand, ProjectError, resolveEndpoint } from '@wirebench/engine';
+import { effectiveAuth, expand, ProjectError, resolveAuthEndpoint, resolveEndpoint } from '@wirebench/engine';
 import type {
   Endpoint,
   EndpointAuth,
@@ -44,10 +44,14 @@ export interface PreflightResult {
 function authSourceFor(iface: Interface, request: RequestDef, endpoint: Endpoint | undefined): RequestAuthSourceWire {
   const authMode = endpoint?.authMode ?? 'override';
   const resolved: EndpointAuth | undefined = effectiveAuth(request.auth, endpoint?.auth, authMode, iface.auth);
+  // Under `complement`, an explicit `{ type: 'none' }` on the request is exactly like leaving it
+  // undefined: `effectiveAuth`'s `combine()` takes the endpoint's *type* too, so the endpoint is
+  // where the resolved type actually came from and the source line should say so.
+  const requestContributesNothing = request.auth === undefined || request.auth.type === 'none';
   const source: RequestAuthSourceWire['source'] =
     resolved === undefined
       ? 'none'
-      : endpoint?.auth !== undefined && (authMode === 'override' || request.auth === undefined)
+      : endpoint?.auth !== undefined && (authMode === 'override' || requestContributesNothing)
         ? 'endpoint'
         : request.auth !== undefined
           ? 'request'
@@ -96,10 +100,7 @@ export function preflightRequest(
   }
   const { iface, request } = location;
   const resolved = resolveEndpoint(project, envId, iface, request);
-  const endpoint =
-    request.endpointId !== undefined
-      ? iface.endpoints.find((candidate) => candidate.id === request.endpointId)
-      : undefined;
+  const endpoint = resolveAuthEndpoint(iface, request);
 
   const unresolved: UnresolvedRefWire[] = [];
   const check = (text: string, field: ExpansionField, headerName?: string): void => {

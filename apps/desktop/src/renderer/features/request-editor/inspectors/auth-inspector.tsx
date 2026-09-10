@@ -42,6 +42,15 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
   const [effective, setEffective] = useState<RequestAuthSourceWire | undefined>(undefined);
   const [username, setUsername] = useState(auth?.username ?? '');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The username debounce commits through this ref rather than closing over `patch` directly,
+  // so the unmount cleanup below (registered once) always calls the *current* patch/pending
+  // value instead of a stale one from whichever render first mounted the timer.
+  const pendingUsername = useRef<string | undefined>(undefined);
+  const patchRef = useRef<(next: Partial<EndpointAuthWire>) => void>(() => undefined);
+  // The password's `secretRef` as last reported by `auth`, so the unmount flush below can tell
+  // a fresh ref (something was typed but never saved) from the value SecretField already had.
+  const passwordRefSnapshot = useRef<string | undefined>(auth?.passwordRef);
+  const flushPassword = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
 
   // The inherited-source line comes from the main process's preflight, which is the one place
   // that knows the endpoint/interface fallbacks — and it answers without any secret in it.
@@ -63,13 +72,6 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
     setUsername(auth?.username ?? '');
   }, [auth?.username]);
 
-  useEffect(
-    () => () => {
-      if (timer.current !== undefined) clearTimeout(timer.current);
-    },
-    [],
-  );
-
   const patch = useCallback(
     (next: Partial<EndpointAuthWire>): void => {
       const base: EndpointAuthWire = auth ?? { type: 'none' };
@@ -77,6 +79,29 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
       updateRequestAuth(requestId, merged);
     },
     [auth, requestId, updateRequestAuth],
+  );
+  patchRef.current = patch;
+  passwordRefSnapshot.current = auth?.passwordRef;
+
+  useEffect(
+    () => () => {
+      // A username edit still sitting in the debounce timer would otherwise vanish silently:
+      // cancel the timer and commit it immediately instead of dropping it on the floor.
+      if (timer.current !== undefined) {
+        clearTimeout(timer.current);
+        if (pendingUsername.current !== undefined) {
+          patchRef.current({ username: pendingUsername.current });
+        }
+      }
+      // A password typed into SecretField but never explicitly saved is still just a local
+      // draft there; flush it so it is stored (and its ref committed) rather than lost.
+      void flushPassword.current?.().then((ref) => {
+        if (ref !== undefined && ref !== passwordRefSnapshot.current) {
+          patchRef.current({ passwordRef: ref });
+        }
+      });
+    },
+    [],
   );
 
   if (!exists) {
@@ -133,13 +158,16 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
                   onChange={(event) => {
                     const next = event.target.value;
                     setUsername(next);
+                    pendingUsername.current = next;
                     if (timer.current !== undefined) clearTimeout(timer.current);
                     timer.current = setTimeout(() => {
+                      pendingUsername.current = undefined;
                       patch({ username: next });
                     }, COMMIT_DEBOUNCE_MS);
                   }}
                   onBlur={() => {
                     if (timer.current !== undefined) clearTimeout(timer.current);
+                    pendingUsername.current = undefined;
                     patch({ username });
                   }}
                 />
@@ -154,8 +182,21 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
                   <SecretField
                     label="Password"
                     {...(auth?.passwordRef !== undefined ? { value: auth.passwordRef } : {})}
+                    registerFlush={(flush) => {
+                      flushPassword.current = flush;
+                    }}
                     onChange={(ref) => {
-                      patch(ref !== undefined ? { passwordRef: ref } : { passwordRef: undefined });
+                      const base: EndpointAuthWire = auth ?? { type: 'none' };
+                      const merged: EndpointAuthWire = {
+                        type: base.type,
+                        ...(base.username !== undefined ? { username: base.username } : {}),
+                        // A conditional spread (not `passwordRef: undefined`) so clearing the
+                        // password drops the field entirely rather than setting it to `undefined`.
+                        ...(ref !== undefined ? { passwordRef: ref } : {}),
+                        ...(base.domain !== undefined ? { domain: base.domain } : {}),
+                        ...(base.preemptive !== undefined ? { preemptive: base.preemptive } : {}),
+                      };
+                      updateRequestAuth(requestId, merged);
                     }}
                   />
                 </div>

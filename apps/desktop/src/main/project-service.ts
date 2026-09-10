@@ -29,6 +29,7 @@ import {
   loadProject,
   ProjectError,
   putAttachment,
+  resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
   projectFiles,
@@ -528,9 +529,7 @@ export class ProjectService {
     if (location === undefined) {
       return undefined;
     }
-    const endpoint = location.request.endpointId
-      ? location.iface.endpoints.find((candidate) => candidate.id === location.request.endpointId)
-      : undefined;
+    const endpoint = resolveAuthEndpoint(location.iface, location.request);
     return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
   }
 

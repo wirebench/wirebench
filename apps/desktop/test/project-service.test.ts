@@ -1110,3 +1110,30 @@ describe('ProjectService attachments', () => {
     ]);
   });
 });
+
+describe('ProjectService.authFor', () => {
+  it("uses the interface's default endpoint when the request has no endpointId of its own", async () => {
+    const picks = new DialogPicks();
+    const service = newService(root!, undefined, picks);
+    const dir = join(tempDir('project'), 'Default Endpoint Auth Project');
+    await service.create({ dir, name: 'Default Endpoint Auth Project' });
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+    const requestId = imported.project.requests[0]!.id;
+    const iface = imported.project.interfaces[0]!;
+    const endpoint = iface.endpoints[0]!;
+    // The just-imported request relies entirely on the interface's default endpoint.
+    expect(iface.defaultEndpointId).toBe(endpoint.id);
+
+    await service.mutate({
+      kind: 'update-endpoint-auth',
+      interfaceId: iface.id,
+      endpointId: endpoint.id,
+      auth: { type: 'basic', username: 'from-default-endpoint', preemptive: true },
+    });
+
+    expect(service.authFor(requestId)).toMatchObject({ type: 'basic', username: 'from-default-endpoint' });
+
+    await service.close();
+  });
+});

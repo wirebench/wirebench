@@ -128,4 +128,58 @@ describe('AuthInspector', () => {
     });
     expect(JSON.stringify(updateRequestAuth.mock.calls)).not.toContain('hunter2');
   });
+
+  it('flushes a still-debounced username edit on unmount instead of dropping it', async () => {
+    install({ type: 'basic', username: 'ada' }, { source: 'request', type: 'basic', username: 'ada' });
+    const { unmount } = render(<AuthInspector requestId="req-1" />);
+
+    await userEvent.type(screen.getByLabelText('Username'), 'x');
+    // Unmount well within the 300ms debounce window: nothing has committed yet.
+    expect(updateRequestAuth).not.toHaveBeenCalled();
+    unmount();
+
+    expect(updateRequestAuth).toHaveBeenCalledWith('req-1', { type: 'basic', username: 'adax' });
+  });
+
+  it('flushes an unsaved-but-typed password through SecretField on unmount', async () => {
+    install({ type: 'basic', username: 'ada' }, { source: 'request', type: 'basic', username: 'ada' });
+    installWirebenchApi({
+      request: {
+        preflight: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { endpointSource: 'interface-default', unresolved: [], auth: { source: 'request', type: 'basic' } },
+        }),
+      },
+      secrets: { set: vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-flushed' } }) },
+    });
+    const { unmount } = render(<AuthInspector requestId="req-1" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    await userEvent.type(screen.getByLabelText('Password'), 'hunter2');
+    // No Save click: the value is still only a local draft when the inspector unmounts.
+    unmount();
+
+    await waitFor(() => {
+      expect(updateRequestAuth).toHaveBeenCalledWith('req-1', {
+        type: 'basic',
+        username: 'ada',
+        passwordRef: 'ref-flushed',
+      });
+    });
+  });
+
+  it('clearing the password drops passwordRef entirely rather than setting it to undefined', async () => {
+    install(
+      { type: 'basic', username: 'ada', passwordRef: 'ref-old' },
+      { source: 'request', type: 'basic', username: 'ada' },
+    );
+    render(<AuthInspector requestId="req-1" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+    expect(updateRequestAuth).toHaveBeenCalledTimes(1);
+    const sent = updateRequestAuth.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect('passwordRef' in sent).toBe(false);
+    expect(sent).toEqual({ type: 'basic', username: 'ada' });
+  });
 });

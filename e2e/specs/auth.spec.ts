@@ -83,15 +83,40 @@ test.describe('auth', () => {
     await expect(page.getByTestId('response-status')).toContainText('Authenticated after 401 challenge');
 
     // --- the password never reaches disk in plaintext; only its ref is saved -----------------
+    const passwordRefPattern = /passwordRef:\s*['"]?([\w.-]+)['"]?/;
     await expect
-      .poll(() => listFiles(projectDir!).some((file) => readFileSync(file, 'utf8').includes('passwordRef')), {
-        timeout: 15_000,
-      })
-      .toBe(true);
-    for (const file of listFiles(projectDir)) {
-      const text = readFileSync(file, 'utf8');
-      expect(text, `${file} must not contain the plaintext password`).not.toMatch(/(^|[^a-zA-Z])pass([^a-zA-Z]|$)/);
-    }
+      .poll(
+        () => {
+          const match = listFiles(projectDir!)
+            .map((file) => readFileSync(file, 'utf8').match(passwordRefPattern))
+            .find((found) => found !== null);
+          return match?.[1];
+        },
+        { timeout: 15_000 },
+      )
+      .not.toBeUndefined();
+    const passwordRefFile = listFiles(projectDir).find((file) => passwordRefPattern.test(readFileSync(file, 'utf8')))!;
+    const passwordRefValue = readFileSync(passwordRefFile, 'utf8').match(passwordRefPattern)![1]!;
+    // A ref is a store lookup key, not the secret itself — it must not just be `pass` verbatim.
+    expect(passwordRefValue).not.toBe(PASSWORD);
+
+    const basicHeaderValue = Buffer.from(`user:${PASSWORD}`, 'utf-8').toString('base64');
+    const plaintextLeakChecks = (dir: string): void => {
+      for (const file of listFiles(dir)) {
+        const text = readFileSync(file, 'utf8');
+        // The literal ref this send is keyed on must actually be present in the project file
+        // (not just *some* passwordRef somewhere) — proving the save round-tripped this value.
+        if (file === passwordRefFile) {
+          expect(text, `${file} must contain the passwordRef it was saved under`).toContain(passwordRefValue);
+        }
+        expect(text, `${file} must not contain the plaintext password as a scalar`).not.toMatch(
+          /(^|[^a-zA-Z])pass([^a-zA-Z]|$)/,
+        );
+        expect(text, `${file} must not contain the preemptive Basic auth header`).not.toContain(basicHeaderValue);
+      }
+    };
+    plaintextLeakChecks(projectDir);
+    plaintextLeakChecks(userDataDir);
 
     // --- a wrong password surfaces the final 401 as a normal response ------------------------
     await panel.getByRole('button', { name: 'Replace…' }).click();

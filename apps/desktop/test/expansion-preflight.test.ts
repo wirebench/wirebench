@@ -201,4 +201,54 @@ describe('preflightRequest — auth source', () => {
       ).auth,
     ).toEqual({ source: 'request', type: 'basic', username: 'ada', preemptive: true });
   });
+
+  it("names the endpoint under complement when the request's auth is none and the type came from the endpoint", () => {
+    expect(
+      preflight(
+        withAuth({
+          request: { type: 'none' },
+          endpoint: { type: 'basic', username: 'end' },
+          authMode: 'complement',
+        }),
+      ).auth,
+    ).toEqual({ source: 'endpoint', type: 'basic', username: 'end', endpointName: 'Primary', authMode: 'complement' });
+  });
+
+  it('uses the interface default endpoint when the request has no endpointId of its own', () => {
+    const iface: Interface = createInterface('Calculator', {
+      id: 'iface-1',
+      slug: 'Calculator',
+      definitionUrl: 'http://example.test/service.wsdl',
+      endpoints: [
+        {
+          id: 'ep-1',
+          name: 'Default',
+          url: 'http://a.test/soap',
+          authMode: 'override',
+          auth: { type: 'basic', username: 'def' },
+        },
+      ],
+      defaultEndpointId: 'ep-1',
+      operations: [
+        {
+          name: 'Add',
+          bindingName: BINDING,
+          slug: 'Add',
+          order: 0,
+          requests: [createRequest('Request 1', { id: 'req-1', envelopeXml: '<Add/>', soapVersion: '1.1' })],
+        },
+      ],
+    });
+    const project = { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] };
+
+    const result = preflightRequest(project, 'req-1', resolveScopes(project, undefined, {}, {}));
+
+    expect(result.auth).toEqual({
+      source: 'endpoint',
+      type: 'basic',
+      username: 'def',
+      endpointName: 'Default',
+      authMode: 'override',
+    });
+  });
 });

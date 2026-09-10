@@ -8,6 +8,7 @@
  * accessible names would be ambiguous.
  */
 
+import { useEffect, useRef } from 'react';
 import { SecretField } from './secret-field.js';
 import type { EndpointAuthWire } from '../../shared/wire-types.js';
 
@@ -27,6 +28,28 @@ export function AuthFields({ scope, auth, onChange }: AuthFieldsProps) {
   const patch = (next: Partial<EndpointAuthWire>): void => {
     onChange({ ...(auth ?? { type: 'none' }), ...next });
   };
+  // Kept current every render (like SecretField's own `commitRef`) so the unmount effect below,
+  // registered once, always flushes through the latest `onChange`/`auth` rather than a stale one.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const authRef = useRef(auth);
+  authRef.current = auth;
+  const flushPassword = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      // A password typed into SecretField but never explicitly saved is still just a local
+      // draft there; flush it on unmount so it is stored (and its ref committed) rather than
+      // silently dropped.
+      void flushPassword.current?.().then((ref) => {
+        const current = authRef.current;
+        if (ref !== undefined && current !== undefined && ref !== current.passwordRef) {
+          onChangeRef.current({ ...current, passwordRef: ref });
+        }
+      });
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -72,8 +95,20 @@ export function AuthFields({ scope, auth, onChange }: AuthFieldsProps) {
               <SecretField
                 label={`${scope} password`}
                 {...(auth.passwordRef !== undefined ? { value: auth.passwordRef } : {})}
+                registerFlush={(flush) => {
+                  flushPassword.current = flush;
+                }}
                 onChange={(ref) => {
-                  patch({ passwordRef: ref });
+                  const merged: EndpointAuthWire = {
+                    type: auth.type,
+                    ...(auth.username !== undefined ? { username: auth.username } : {}),
+                    // A conditional spread (not `passwordRef: undefined`) so clearing the
+                    // password drops the field entirely rather than setting it to `undefined`.
+                    ...(ref !== undefined ? { passwordRef: ref } : {}),
+                    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+                    ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
+                  };
+                  onChange(merged);
                 }}
               />
             </div>
