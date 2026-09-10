@@ -115,6 +115,23 @@ function parseImport(importEl: Element, location: string): WsdlImport {
 }
 
 /**
+ * Collects the `xmlns:*` declarations on the root `wsdl:definitions` element.
+ * The default (unprefixed) `xmlns` declaration is deliberately excluded: the
+ * values these are used to resolve (`wsdl:arrayType`) are always prefixed.
+ */
+function readNamespaceDeclarations(root: Element): Readonly<Record<string, string>> {
+  const declarations: Record<string, string> = {};
+  const attributes = root.attributes;
+  for (let i = 0; i < attributes.length; i += 1) {
+    const attribute = attributes.item(i);
+    if (attribute !== null && attribute.name.startsWith('xmlns:')) {
+      declarations[attribute.name.slice('xmlns:'.length)] = attribute.value;
+    }
+  }
+  return declarations;
+}
+
+/**
  * Parses a single, already-loaded WSDL 1.1 `Document` into a {@link WsdlDefinition}.
  *
  * Pure and synchronous: it does not resolve `wsdl:import`s or fetch anything,
@@ -137,6 +154,7 @@ export function parseWsdlDocument(doc: Document, location: string): WsdlDefiniti
   }
 
   const targetNamespace = optionalAttribute(root, 'targetNamespace') ?? '';
+  const namespaceDeclarations = readNamespaceDeclarations(root);
   const documentation = readDocumentation(root, NS.WSDL);
 
   const typesEl = firstChildElement(root, NS.WSDL, 'types');
@@ -158,6 +176,7 @@ export function parseWsdlDocument(doc: Document, location: string): WsdlDefiniti
     services,
     schemaElements,
     imports,
+    namespaceDeclarations,
     problems: [],
   };
 }

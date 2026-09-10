@@ -429,3 +429,22 @@ describe('parseWsdlDocument — imports, faults, and remaining binding shapes', 
     });
   });
 });
+
+describe('parseWsdlDocument — namespaceDeclarations', () => {
+  it('records every xmlns:* declared on the definitions element', () => {
+    const def = parseFixture('calculator');
+    expect(def.namespaceDeclarations['tns']).toBe('http://tempuri.org/');
+    expect(def.namespaceDeclarations['soap']).toBe('http://schemas.xmlsoap.org/wsdl/soap/');
+    expect(def.namespaceDeclarations['s']).toBe('http://www.w3.org/2001/XMLSchema');
+    expect(def.namespaceDeclarations['wsdl']).toBe('http://schemas.xmlsoap.org/wsdl/');
+  });
+
+  it('excludes the default declaration and ordinary attributes', () => {
+    const doc = parseXml(
+      '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:t="urn:x" targetNamespace="urn:x" name="S"/>',
+      { location: 'inline.wsdl' },
+    );
+    const def = parseWsdlDocument(doc, 'inline.wsdl');
+    expect(def.namespaceDeclarations).toEqual({ t: 'urn:x' });
+  });
+});

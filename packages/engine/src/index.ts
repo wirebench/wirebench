@@ -102,3 +102,17 @@ export type {
   SourceRef,
   TypeDefinition,
 } from './xsd/model.js';
+
+export { createEnvelope, detectEnvelopeVersion, envelopeNamespace, SOAP_ENVELOPE_PREFIX } from './soap/envelope.js';
+export type { EnvelopeParts, SoapEnvelopeVersion } from './soap/envelope.js';
+export { prefixForNamespace, RESERVED_PREFIXES } from './soap/prefixes.js';
+export { NamespaceScope } from './soap/namespace-scope.js';
+export { soapActionHeaders } from './soap/soap-action.js';
+export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js';
+export type { BuildProblem, BuildProblemCode } from './soap/build-problems.js';
+export { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js';
+export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
+export { isSoapFault, parseFault } from './soap/fault.js';
+export type { FaultReason, SoapFault } from './soap/fault.js';
+export { parseSoapResponse } from './soap/response-parser.js';
+export type { ParsedSoapResponse } from './soap/response-parser.js';

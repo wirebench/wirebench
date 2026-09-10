@@ -1,0 +1,11 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:rpc="urn:wb:rpcenc" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <rpc:Sum soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+         <values soapenc:arrayType="xsd:int[1]">
+            <item>?</item>
+         </values>
+         <label xsi:type="xsd:string">?</label>
+      </rpc:Sum>
+   </soapenv:Body>
+</soapenv:Envelope>

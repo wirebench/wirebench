@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions name="SoapHeadersService"
+                  targetNamespace="urn:wb:headers"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+                  xmlns:tns="urn:wb:headers"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:headers"
+                elementFormDefault="qualified"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                xmlns:tns="urn:wb:headers">
+      <xsd:element name="Echo">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="EchoResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AuthHeader">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="user" type="xsd:string"/>
+            <xsd:element name="token" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="TraceHeader" type="xsd:string"/>
+      <xsd:element name="AuthFault" type="xsd:string"/>
+      <xsd:complexType name="LegacyPayload">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:int"/>
+          <xsd:element name="note" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest">
+    <wsdl:part name="body" element="tns:Echo"/>
+    <wsdl:part name="auth" element="tns:AuthHeader"/>
+  </wsdl:message>
+  <wsdl:message name="EchoResponse">
+    <wsdl:part name="body" element="tns:EchoResponse"/>
+  </wsdl:message>
+  <wsdl:message name="TraceMessage">
+    <wsdl:part name="trace" element="tns:TraceHeader"/>
+  </wsdl:message>
+  <wsdl:message name="AuthFaultMessage">
+    <wsdl:part name="fault" element="tns:AuthFault"/>
+  </wsdl:message>
+  <!-- A document-style part carrying a `type` rather than an `element` (non WS-I). -->
+  <wsdl:message name="LegacyRequest">
+    <wsdl:part name="payload" type="tns:LegacyPayload"/>
+  </wsdl:message>
+  <wsdl:message name="LegacyResponse">
+    <wsdl:part name="status" type="xsd:string"/>
+  </wsdl:message>
+
+  <wsdl:portType name="SoapHeadersPortType">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="Legacy">
+      <wsdl:input message="tns:LegacyRequest"/>
+      <wsdl:output message="tns:LegacyResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="SoapHeadersBinding" type="tns:SoapHeadersPortType">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap12:operation soapAction="urn:wb:headers:Echo" style="document"/>
+      <wsdl:input>
+        <soap12:body use="literal" parts="body"/>
+        <soap12:header message="tns:EchoRequest" part="auth" use="literal">
+          <soap12:headerfault message="tns:AuthFaultMessage" part="fault" use="literal"/>
+        </soap12:header>
+        <soap12:header message="tns:TraceMessage" part="trace" use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Legacy">
+      <soap12:operation soapAction="urn:wb:headers:Legacy" style="document"/>
+      <wsdl:input>
+        <soap12:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="SoapHeadersService">
+    <wsdl:port name="SoapHeadersPort" binding="tns:SoapHeadersBinding">
+      <soap12:address location="http://example.invalid/soap-headers"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -43,3 +43,25 @@ Each is deliberately tiny but structurally valid.
   `nillable="true"`, and a `soapenc:Array` restriction carrying `wsdl:arrayType`
   (`StringArray`). Ten `document/literal` operations expose the interesting elements so the
   sample-request generator can be driven from the same fixture.
+
+- **rpc-literal/** — a `rpc/literal` SOAP 1.1 binding (`urn:wb:rpclit`) with one operation,
+  `Multiply(a: xsd:int, b: xsd:int, opts: tns:Options) → result`. The port-type operation
+  declares `parameterOrder="b a"`, deliberately reversing the message's part order and omitting
+  `opts`, so the request builder's accessor ordering (parameter-order first, remaining parts in
+  message order) is observable. `opts` is typed by an inline `complexType`, exercising a
+  complex-typed rpc accessor. The binding sets `soapAction` and a `soap:body namespace`.
+
+- **rpc-encoded/** — a `rpc/encoded` SOAP 1.1 binding (`urn:wb:rpcenc`) with one operation,
+  `Sum(values: tns:ArrayOfInt, label: xsd:string) → total`. `ArrayOfInt` is the SOAP 1.1
+  section-5 array shape: a `complexContent restriction` of `soapenc:Array` whose
+  `soapenc:arrayType` attribute reference carries `wsdl:arrayType="xsd:int[]"`. `soap:body`
+  declares `use="encoded"` plus the SOAP encoding `encodingStyle`, so the builder emits the
+  `encodingStyle` wrapper attribute, `xsi:type` on simple accessors and a `soapenc:arrayType`
+  array accessor.
+
+- **soap-headers/** — a `document/literal` **SOAP 1.2** binding (`soap12:binding`,
+  `urn:wb:headers`). `Echo` restricts its `soap12:body` to the `body` part and adds two
+  `soap12:header`s: `auth` (an `AuthHeader` element part of the *same* input message, carrying a
+  `soap12:headerfault`) and `trace` (a `TraceHeader` part of a separate `TraceMessage`). A second
+  operation, `Legacy`, has a document-style part declared with `type` instead of `element` (a
+  non-WS-I shape seen in the wild), exercising the builder's type-part branch.

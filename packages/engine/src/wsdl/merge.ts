@@ -60,6 +60,7 @@ export function parseWsdlBundle(bundle: DefinitionBundle): WsdlDefinition {
       ...xsdSchemaElements,
     ],
     imports: rootDef.imports,
+    namespaceDeclarations: rootDef.namespaceDeclarations,
     problems: bundle.problems,
   };
 }

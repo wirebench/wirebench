@@ -1,0 +1,14 @@
+<soapenv:Envelope xmlns:soapenv="http://www.w3.org/2003/05/soap-envelope" xmlns:hea="urn:wb:headers">
+   <soapenv:Header>
+      <hea:AuthHeader>
+         <hea:user>?</hea:user>
+         <hea:token>?</hea:token>
+      </hea:AuthHeader>
+      <hea:TraceHeader>?</hea:TraceHeader>
+   </soapenv:Header>
+   <soapenv:Body>
+      <hea:Echo>
+         <hea:text>?</hea:text>
+      </hea:Echo>
+   </soapenv:Body>
+</soapenv:Envelope>

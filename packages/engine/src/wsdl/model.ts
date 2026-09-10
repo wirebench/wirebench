@@ -146,6 +146,13 @@ export interface WsdlDefinition {
   /** Raw `xs:schema` elements found under `wsdl:types`, consumed by Task 7's schema set. */
   readonly schemaElements: readonly Element[];
   readonly imports: readonly WsdlImport[];
+  /**
+   * Prefix → namespace URI for every `xmlns:*` declared on the root
+   * `wsdl:definitions` element. WSDL-scoped QName-valued *attribute values*
+   * that no parser resolves (notably `wsdl:arrayType` on a SOAP-encoded array)
+   * are resolved against these.
+   */
+  readonly namespaceDeclarations: Readonly<Record<string, string>>;
   /** Problems encountered resolving imports (empty for the single-document, `resolveImports: false` path). */
   readonly problems: readonly ResolveProblem[];
 }

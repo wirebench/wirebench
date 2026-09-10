@@ -1,0 +1,13 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:rpc="urn:wb:rpclit">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <rpc:Multiply>
+         <b>?</b>
+         <a>?</a>
+         <opts>
+            <rounding>?</rounding>
+            <scale>?</scale>
+         </opts>
+      </rpc:Multiply>
+   </soapenv:Body>
+</soapenv:Envelope>
