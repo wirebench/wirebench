@@ -40,7 +40,11 @@ export interface UiSnapshot {
 /** `localStorage` key holding the persisted layout. */
 export const UI_STORAGE_KEY = 'wirebench.ui';
 
-/** Bumped whenever {@link UiSnapshot} changes shape; older payloads are discarded, not migrated. */
+/**
+ * Bumped only when a stored payload can no longer be reconciled with the current shape. Adding a
+ * field to a section handled by a merge function (e.g. `details`, whose new `tab`/`codeShell`
+ * fall back to their defaults per key in {@link mergeDetails}) does not need a bump.
+ */
 export const UI_STORAGE_VERSION = 2;
 
 /** The layout a first run gets: everything visible, Explorer selected, dark theme. */

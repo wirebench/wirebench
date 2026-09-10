@@ -10,6 +10,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ImportCurlDialog } from '../request-editor/import-curl-dialog.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { useGlobalsStore } from '../../state/globals.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
@@ -49,7 +50,20 @@ export function CodePanel() {
   const setShell = useUiStore((state) => state.setDetailsCodeShell);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const draft = useProjectStore((state) => (requestId === undefined ? undefined : state.requests[requestId]));
+  // Main builds the command from `buildLiveSendInput` + `effectiveSendInput`, which resolve the
+  // active environment's endpoint override and expand `${...}` references against environment,
+  // project and global properties — so the preview must regenerate on any of those, not just on
+  // edits to the request draft itself.
+  const activeEnvironmentId = useProjectStore((state) => state.activeEnvironmentId);
+  const projectProperties = useProjectStore((state) => state.project?.properties);
+  const environments = useProjectStore((state) => state.environments);
+  const interfaceEndpoints = useProjectStore((state) =>
+    draft === undefined ? undefined : state.interfaces[draft.interfaceId]?.endpoints,
+  );
+  const globalProperties = useGlobalsStore((state) => state.properties);
   const [generated, setGenerated] = useState<Generated | undefined>(undefined);
+  // The panel owns its own dialog instance (rather than reusing the request editor's) because it
+  // must be able to follow an explorer-selected request whose editor tab is not mounted at all.
   const [importOpen, setImportOpen] = useState(false);
 
   // Every input the command depends on, flattened into one value the effect can compare — the
@@ -63,6 +77,11 @@ export function CodePanel() {
     draft?.headers,
     draft?.auth,
     draft?.properties,
+    activeEnvironmentId,
+    projectProperties,
+    environments,
+    interfaceEndpoints,
+    globalProperties,
   ]);
 
   // Answers can land out of order (a slow first call, a fast second); only the newest may win.
@@ -92,6 +111,9 @@ export function CodePanel() {
     };
 
     if (immediate) {
+      // Switching requests must not show (or let Copy hand out) the previous request's command
+      // even for the one round trip before the new one lands.
+      setGenerated(undefined);
       void generate();
       return;
     }

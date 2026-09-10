@@ -78,6 +78,42 @@ describe('RequestContextMenu', () => {
     });
   });
 
+  it('Create empty asks main to drop both values and headers', async () => {
+    const recreate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { envelopeXml: '<empty/>', kept: 0, added: 0, removed: 0 } });
+    installWirebenchApi({ request: { recreate } });
+    openMenu();
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Create empty' }));
+
+    await waitFor(() => {
+      expect(recreate).toHaveBeenCalledWith({
+        requestId: 'req-1',
+        keepValues: false,
+        keepHeaders: false,
+        empty: true,
+      });
+    });
+  });
+
+  it('Copy as cURL writes the POSIX command to the clipboard', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: "curl --request POST 'https://x'" } });
+    installWirebenchApi({ request: { curl } });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    openMenu();
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy as cURL' }));
+
+    await waitFor(() => {
+      expect(curl).toHaveBeenCalledWith({ requestId: 'req-1', shell: 'posix' });
+    });
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("curl --request POST 'https://x'");
+    });
+  });
+
   it('Copy as cURL (PowerShell) asks for the powershell quoting', async () => {
     const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: 'curl.exe --request POST' } });
     installWirebenchApi({ request: { curl } });

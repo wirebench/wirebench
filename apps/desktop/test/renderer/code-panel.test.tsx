@@ -126,4 +126,63 @@ describe('CodePanel', () => {
       expect(curl).toHaveBeenCalledWith({ requestId: 'req-2', shell: 'posix' });
     });
   });
+
+  it('regenerates when the active environment changes, since it can change the endpoint and properties', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: COMMAND } });
+    installWirebenchApi({ request: { curl } });
+    openRequestTab();
+    render(<CodePanel />);
+    await waitFor(() => {
+      expect(curl).toHaveBeenCalledTimes(1);
+    });
+
+    useProjectStore.setState({ activeEnvironmentId: 'env-1' });
+
+    await waitFor(
+      () => {
+        expect(curl).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('clears the stale command right away when switching to another request', async () => {
+    let resolveSecond: ((result: { ok: true; value: { command: string } }) => void) | undefined;
+    const curl = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { command: COMMAND } })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+    installWirebenchApi({ request: { curl } });
+    useProjectStore.setState({ requests: { 'req-1': makeDraft(), 'req-2': makeDraft({ id: 'req-2' }) } });
+    useEditorsStore.setState({
+      tabs: [
+        { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
+        { id: 'request:req-2', kind: 'request', title: 'Request 2', requestId: 'req-2' },
+      ],
+      activeId: 'request:req-1',
+    });
+    render(<CodePanel />);
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe(COMMAND);
+    });
+    expect(screen.getByTestId('code-panel-copy').hasAttribute('disabled')).toBe(false);
+
+    useEditorsStore.setState({ activeId: 'request:req-2' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe('');
+    });
+    expect(screen.getByTestId('code-panel-copy').hasAttribute('disabled')).toBe(true);
+
+    resolveSecond?.({ ok: true, value: { command: 'curl --request POST second' } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe('curl --request POST second');
+    });
+  });
 });
