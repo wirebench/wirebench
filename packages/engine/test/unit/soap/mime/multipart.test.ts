@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MultipartPart } from '../../../../src/soap/mime/types.js';
-import { buildMultipartRelated, parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
+import { buildMultipartRelated, mimeParameter, parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
 const text = (bytes: Uint8Array): string => Buffer.from(bytes).toString('utf-8');
@@ -52,6 +52,11 @@ describe('buildMultipartRelated', () => {
       boundary: 'B',
     });
     expect(text(built.body)).toContain('Content-Disposition: attachment; name="file"; filename="in voice.pdf"\r\n');
+  });
+
+  it('keeps an unescaped backslash in a third-party quoted filename', () => {
+    expect(mimeParameter(';attachment; filename="report\\notes.pdf"', 'filename')).toBe('report\\notes.pdf');
+    expect(mimeParameter(';attachment; filename="a\\"b\\\\c"', 'filename')).toBe('a"b\\c');
   });
 
   it('escapes a double quote in a filename and round-trips it through parse', () => {

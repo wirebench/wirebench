@@ -55,13 +55,15 @@ export function mediaTypeOf(contentType: string): string {
 export function mimeParameter(header: string, name: string): string | undefined {
   // The quoted-string branch follows RFC 2045's grammar: any character except `"` and `\`,
   // or a backslash-escaped pair, so a value written by {@link quoteParameter} round-trips.
+  // Only `\"` and `\\` are unescaped afterwards: a third-party part that carries an unescaped
+  // backslash (`filename="report\notes.pdf"`, common from Windows senders) keeps it.
   const pattern = new RegExp(`;\\s*${name}\\s*=\\s*(?:"((?:[^"\\\\]|\\\\.)*)"|([^;\\s]+))`, 'i');
   const match = pattern.exec(header);
   if (match === null) {
     return undefined;
   }
   const quoted = match[1];
-  return quoted !== undefined ? quoted.replace(/\\(.)/g, '$1') : match[2];
+  return quoted !== undefined ? quoted.replace(/\\(["\\])/g, '$1') : match[2];
 }
 
 /**
