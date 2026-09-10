@@ -208,22 +208,26 @@ export function toUnresolvedRefWire(ref: UnresolvedRef): UnresolvedRefWire {
  * the bytes stay in main (`ExchangeCache`) and reach disk only through `attachments.saveResponse`.
  * Routed through `redactResponseAttachments` for the same reason headers are — a future
  * `Content-Disposition` carrying a token has one place to be masked.
+ *
+ * `opts.show` is honoured like every other field's: this same builder fills the unredacted
+ * master copy the `ExchangeCache` keeps (`toExchangeSummary(..., { show: true })`), and masking
+ * that copy would make the masking irreversible — `exchanges.get` could never un-hide it again.
  */
 export function toResponseAttachmentWires(
   attachments: readonly ResponseAttachment[] | undefined,
+  opts?: { show?: boolean },
 ): ResponseAttachmentWire[] {
   if (attachments === undefined) {
     return [];
   }
-  return redactResponseAttachments(
-    attachments.map((attachment, index) => ({
-      index,
-      contentId: attachment.contentId,
-      contentType: attachment.contentType,
-      size: attachment.size,
-      ...(attachment.name !== undefined ? { name: attachment.name } : {}),
-    })),
-  );
+  const wires = attachments.map((attachment, index) => ({
+    index,
+    contentId: attachment.contentId,
+    contentType: attachment.contentType,
+    size: attachment.size,
+    ...(attachment.name !== undefined ? { name: attachment.name } : {}),
+  }));
+  return opts?.show === true ? wires : redactResponseAttachments(wires);
 }
 
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
@@ -239,7 +243,7 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
             ...(exchange.response.version !== undefined ? { version: exchange.response.version } : {}),
             isSoap: exchange.response.isSoap,
             ...(exchange.response.fault !== undefined ? { fault: toWireFault(exchange.response.fault) } : {}),
-            attachments: toResponseAttachmentWires(exchange.response.attachments),
+            attachments: toResponseAttachmentWires(exchange.response.attachments, opts),
           },
         }
       : {}),

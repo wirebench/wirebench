@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { generateRequest, importDefinition, parseFault, parseSoapResponse, parseXml } from '@wirebench/engine';
 import type { HttpExchange, SoapExchange } from '@wirebench/engine';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   toExchangeSummary,
   toGenerateResponse,
@@ -9,6 +9,7 @@ import {
   toWireFault,
   redactExchangeSummary,
 } from '../src/main/engine-wire.js';
+import * as redact from '../src/main/redact.js';
 import type { ExchangeSummary } from '../src/shared/wire-types.js';
 
 const CALCULATOR_URL = 'http://example.test/calculator/service.wsdl';
@@ -76,53 +77,72 @@ describe('toInterfaceSummary', () => {
   });
 });
 
+/** A completed exchange whose response carries two attachment parts (one unnamed). */
+function attachmentExchange(): SoapExchange {
+  return {
+    durationMs: 1,
+    http: {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      rawHeaders: [],
+      body: new Uint8Array(),
+      rawBody: new Uint8Array(),
+      rawRequest: new Uint8Array(),
+      rawResponse: new Uint8Array(),
+      truncated: false,
+      timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
+      redirects: [],
+      request: { url: 'http://example.test/soap', method: 'POST', headers: {} },
+    },
+    response: {
+      envelopeXml: '<a/>',
+      isSoap: true,
+      attachments: [
+        {
+          contentId: 'part1@wirebench',
+          contentType: 'image/png',
+          size: 3,
+          bytes: new Uint8Array([1, 2, 3]),
+          name: 'logo.png',
+        },
+        {
+          contentId: 'part2@wirebench',
+          contentType: 'application/octet-stream',
+          size: 1,
+          bytes: new Uint8Array([9]),
+        },
+      ],
+    },
+    problems: [],
+  };
+}
+
 describe('toExchangeSummary attachments', () => {
   it('lists response attachments by index, with no bytes on the wire', () => {
-    const exchange = {
-      durationMs: 1,
-      http: {
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        rawHeaders: [],
-        body: new Uint8Array(),
-        rawBody: new Uint8Array(),
-        rawRequest: new Uint8Array(),
-        rawResponse: new Uint8Array(),
-        truncated: false,
-        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
-        redirects: [],
-        request: { url: 'http://example.test/soap', method: 'POST', headers: {} },
-      },
-      response: {
-        envelopeXml: '<a/>',
-        isSoap: true,
-        attachments: [
-          {
-            contentId: 'part1@wirebench',
-            contentType: 'image/png',
-            size: 3,
-            bytes: new Uint8Array([1, 2, 3]),
-            name: 'logo.png',
-          },
-          {
-            contentId: 'part2@wirebench',
-            contentType: 'application/octet-stream',
-            size: 1,
-            bytes: new Uint8Array([9]),
-          },
-        ],
-      },
-      problems: [],
-    } as unknown as SoapExchange;
-
-    const summary = toExchangeSummary(exchange, 'send-1', { show: true });
+    const summary = toExchangeSummary(attachmentExchange(), 'send-1', { show: true });
 
     expect(summary.response?.attachments).toEqual([
       { index: 0, contentId: 'part1@wirebench', contentType: 'image/png', size: 3, name: 'logo.png' },
       { index: 1, contentId: 'part2@wirebench', contentType: 'application/octet-stream', size: 1 },
     ]);
     expect(JSON.stringify(summary)).not.toContain('bytes');
+  });
+
+  it('leaves the attachment list of the unredacted master copy unmasked', () => {
+    // `engine-service` builds the cached master with `{ show: true }`; running redaction over
+    // it would mask the only unmasked copy there is, and `exchanges.get` could never un-hide it
+    // on a later show-secrets toggle.
+    const exchange = attachmentExchange();
+    const spy = vi.spyOn(redact, 'redactResponseAttachments');
+
+    toExchangeSummary(exchange, 'send-1', { show: true });
+    expect(spy).not.toHaveBeenCalled();
+
+    toExchangeSummary(exchange, 'send-1');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
   });
 
   it('lists no attachments for a response that carried none', () => {

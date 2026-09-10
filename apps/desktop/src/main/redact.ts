@@ -51,8 +51,9 @@ export function redactHeaderPairs(
  * contentType, size, name}` carries a secret today, so this is a copy — it exists as the one
  * call site so that when a part's `Content-Disposition` (or a signed-URL-shaped name) does need
  * masking, it is masked everywhere the list is built, including on a show-secrets re-render.
- * It takes no `show` flag for that reason: the only caller that has one already returns early
- * when secrets are shown.
+ * It takes no `show` flag: both callers (`toResponseAttachmentWires` and
+ * `redactExchangeSummary`) decide for themselves whether to run it, because the summary built
+ * with `{ show: true }` is the unredacted master the `ExchangeCache` keeps.
  */
 export function redactResponseAttachments<T>(attachments: readonly T[]): T[] {
   return [...attachments];
