@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { monacoEditor } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -68,11 +69,9 @@ test.describe('XML editor features', () => {
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
 
-    const editor = page.locator('[aria-label="Request envelope XML"]');
+    const editor = monacoEditor(page, 'Request envelope XML');
     await expect(editor).toBeVisible({ timeout: 20_000 });
-    // Monaco's own rendered token spans sit on top of the (zero-size) textbox element and
-    // intercept a plain click; `force` skips Playwright's actionability check for that overlay.
-    await editor.click({ force: true });
+    await editor.click({ position: { x: 8, y: 8 } });
 
     const isMac = await launched.app.evaluate(() => process.platform === 'darwin');
     const mod = isMac ? 'Meta' : 'Control';
@@ -107,7 +106,7 @@ test.describe('XML editor features', () => {
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
 
-    const editor = page.locator('[aria-label="Request envelope XML"]');
+    const editor = monacoEditor(page, 'Request envelope XML');
     await expect(editor).toBeVisible({ timeout: 20_000 });
 
     // Click right after `<tem:Add>` on its own line, then open a fresh line inside it and type

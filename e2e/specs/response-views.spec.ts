@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { monacoEditor } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -109,7 +110,7 @@ test.describe('Response views (Raw, Query, Fault)', () => {
     const responseEditor = page.getByTestId('response-editor');
     await expect(responseEditor).toContainText('soapenv:Server');
     await expect(responseEditor).toContainText('Simulated fault');
-    const detail = page.getByLabel('Fault detail XML');
+    const detail = monacoEditor(page, 'Fault detail XML');
     await expect(detail).toBeVisible({ timeout: 10_000 });
     // Monaco's real editor renders text in `.view-line` spans, not as the container's own
     // textContent (see `editor.spec.ts`); assert against those instead.

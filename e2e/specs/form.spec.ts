@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { monacoEditor } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -57,7 +58,7 @@ test.describe('Form view', () => {
     // Switching back to XML shows the edits landed at exactly the right spans. Monaco renders
     // its own `.view-line` spans rather than exposing the text as container `textContent`.
     await page.getByRole('tab', { name: 'XML' }).first().click();
-    await expect(page.locator('[aria-label="Request envelope XML"]')).toBeVisible({ timeout: 10_000 });
+    await expect(monacoEditor(page, 'Request envelope XML')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.view-line', { hasText: 'intA' }).first()).toContainText('<tem:intA>20</tem:intA>', {
       timeout: 10_000,
     });

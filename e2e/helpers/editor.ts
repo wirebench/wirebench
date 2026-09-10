@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
  * Replaces the full contents of a Monaco editor identified by its `aria-label` (`testId`) with
@@ -13,14 +13,31 @@ import { expect, type Page } from '@playwright/test';
  * the editor's own rendered `.view-line` spans, which is what actually reflects committed
  * content rather than the framing container's text.
  */
+/**
+ * The visible Monaco widget carrying `label`.
+ *
+ * The `aria-label` itself lands on Monaco's edit-context host — a zero-size div that Playwright
+ * correctly reports as hidden — so every "the editor is on screen" assertion has to be made
+ * against the widget wrapped around it instead.
+ */
+export function monacoEditor(page: Page, label: string): Locator {
+  return page.locator(`[aria-label="${label}"]`).locator('xpath=ancestor::*[contains(@class, "monaco-editor")][1]');
+}
+
 export async function setMonacoText(page: Page, testId: string, text: string): Promise<void> {
   // `aria-label` lands on Monaco's own hidden input element, a sibling of the `.view-line` spans
   // it renders — not their ancestor — so the two are queried separately below.
   const editor = page.locator(`[aria-label="${testId}"]`);
-  await expect(editor).toBeVisible({ timeout: 20_000 });
-  // Monaco's own rendered token spans sit on top of the (zero-size) textbox element and
-  // intercept a plain click; `force` skips Playwright's actionability check for that overlay.
-  await editor.click({ force: true });
+  await editor.waitFor({ state: 'attached', timeout: 20_000 });
+  // The labelled element is Monaco's own edit-context host: a zero-size div, which Playwright
+  // rightly calls hidden. What has to be on screen (and is what a user clicks) is the editor
+  // widget around it, so wait on — and click — that instead.
+  const root = editor.locator('xpath=ancestor::*[contains(@class, "monaco-editor")][1]');
+  await expect(root).toBeVisible({ timeout: 20_000 });
+  // Click the visible widget (the host div has no box of its own to click), then focus the
+  // host so the keystrokes below reach Monaco's edit context.
+  await root.click({ position: { x: 8, y: 8 } });
+  await editor.focus();
 
   const isMac = process.platform === 'darwin';
   const mod = isMac ? 'Meta' : 'Control';
@@ -37,7 +54,7 @@ export async function setMonacoText(page: Page, testId: string, text: string): P
   // `.view-line` isn't a descendant of the aria-labelled input, so scope the read to the
   // nearest `.monaco-editor` root that wraps both it and the rendered lines — not `page` at
   // large, which would also see any other Monaco instance on screen (e.g. the response pane).
-  const monacoRoot = editor.locator('xpath=ancestor::*[contains(@class, "monaco-editor")][1]');
+  const monacoRoot = root;
   await expect
     .poll(
       async () => {
