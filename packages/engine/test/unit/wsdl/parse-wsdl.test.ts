@@ -122,6 +122,56 @@ describe('parseWsdlDocument — errors', () => {
       expect(isWirebenchError(e) && e.code).toBe('wsdl-invalid');
     }
   });
+
+  // Regression guards: `requireAttribute` (packages/engine/src/wsdl/dom-utils.ts)
+  // already attaches `details.location`/`details.line`/`details.column` via
+  // `getPosition`, and `parseWsdlDocument`'s `not-a-wsdl` throw already attaches
+  // the same for the root element — these tests just pin that behavior down.
+  it("throws wsdl-invalid with details.location and the offending element's line/column", () => {
+    // <input/> on line 4 (1-indexed), missing its required "message" attribute.
+    const wsdl = [
+      '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:x">',
+      '  <portType name="PT">',
+      '    <operation name="Op">',
+      '      <input/>',
+      '    </operation>',
+      '  </portType>',
+      '</definitions>',
+    ].join('\n');
+    const doc = parseXml(wsdl, { location: 'broken.wsdl' });
+    try {
+      parseWsdlDocument(doc, 'broken.wsdl');
+      expect.fail('expected parseWsdlDocument to throw');
+    } catch (e) {
+      expect(isWirebenchError(e)).toBe(true);
+      if (!isWirebenchError(e)) {
+        return;
+      }
+      expect(e.code).toBe('wsdl-invalid');
+      expect(e.details).toMatchObject({ location: 'broken.wsdl' });
+      expect((e.details as { line?: number }).line).toBe(4);
+      expect((e.details as { column?: number }).column).toBeGreaterThan(0);
+    }
+  });
+
+  it("throws not-a-wsdl with details.location and the root element's line/column", () => {
+    // Root <xs:schema> starts on line 2 (1-indexed).
+    const xsd = ['<?xml version="1.0"?>', '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>'].join('\n');
+    const doc = parseXml(xsd, { location: 'schema.xsd' });
+    try {
+      parseWsdlDocument(doc, 'schema.xsd');
+      expect.fail('expected parseWsdlDocument to throw');
+    } catch (e) {
+      expect(isWirebenchError(e)).toBe(true);
+      if (!isWirebenchError(e)) {
+        return;
+      }
+      expect(e.code).toBe('not-a-wsdl');
+      expect(e.details).toMatchObject({ location: 'schema.xsd' });
+      expect((e.details as { line?: number }).line).toBe(2);
+      expect((e.details as { column?: number }).column).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('parseWsdl', () => {
@@ -234,6 +284,56 @@ describe('parseWsdlDocument — rpc/encoded', () => {
       use: 'encoded',
       namespace: 'urn:x',
       encodingStyle: 'http://schemas.xmlsoap.org/soap/encoding/',
+    });
+  });
+});
+
+describe('parseWsdlDocument — unprefixed QName resolution', () => {
+  it('resolves an unprefixed binding type to the in-scope default namespace (the WSDL namespace)', () => {
+    // Default namespace on <definitions> is the WSDL namespace itself; "MyPortType"
+    // has no prefix, so per the controller's ruling it resolves to whatever default
+    // namespace is in scope (here, the WSDL namespace), not targetNamespace.
+    const wsdl = `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:x">
+  <portType name="MyPortType"/>
+  <binding name="B" type="MyPortType">
+  </binding>
+</definitions>`;
+    const doc = parseXml(wsdl, { location: 'default-ns.wsdl' });
+    const def = parseWsdlDocument(doc, 'default-ns.wsdl');
+    expect(def.bindings[0]?.type).toEqual({
+      namespaceUri: 'http://schemas.xmlsoap.org/wsdl/',
+      localName: 'MyPortType',
+    });
+  });
+
+  it('falls back to targetNamespace for an unprefixed message ref when no default namespace is declared', () => {
+    const wsdl = `<?xml version="1.0"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:x">
+  <wsdl:message name="MyMsg"/>
+  <wsdl:portType name="PT">
+    <wsdl:operation name="Op">
+      <wsdl:input message="MyMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+</wsdl:definitions>`;
+    const doc = parseXml(wsdl, { location: 'no-default-ns.wsdl' });
+    const def = parseWsdlDocument(doc, 'no-default-ns.wsdl');
+    expect(def.portTypes[0]?.operations[0]?.input?.message).toEqual({ namespaceUri: 'urn:x', localName: 'MyMsg' });
+  });
+
+  it('resolves an unprefixed part type to the XSD namespace when declared as the default namespace', () => {
+    const wsdl = `<?xml version="1.0"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:x">
+  <wsdl:message name="MyMsg">
+    <wsdl:part name="p" xmlns="http://www.w3.org/2001/XMLSchema" type="string"/>
+  </wsdl:message>
+</wsdl:definitions>`;
+    const doc = parseXml(wsdl, { location: 'xsd-default-ns.wsdl' });
+    const def = parseWsdlDocument(doc, 'xsd-default-ns.wsdl');
+    expect(def.messages[0]?.parts[0]?.type).toEqual({
+      namespaceUri: 'http://www.w3.org/2001/XMLSchema',
+      localName: 'string',
     });
   });
 });
