@@ -66,6 +66,10 @@ import {
   fsSaveTextResponseSchema,
   fsOpenTextRequestSchema,
   fsOpenTextResponseSchema,
+  xpathEvaluateRequestSchema,
+  xpathEvaluateResponseSchema,
+  xpathNamespacesRequestSchema,
+  xpathNamespacesResponseSchema,
 } from './wire-types.js';
 
 /**
@@ -202,6 +206,10 @@ export const channels = {
   fs: {
     saveText: defineChannel('fs.saveText', fsSaveTextRequestSchema, fsSaveTextResponseSchema),
     openText: defineChannel('fs.openText', fsOpenTextRequestSchema, fsOpenTextResponseSchema),
+  },
+  xpath: {
+    evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
+    namespaces: defineChannel('xpath.namespaces', xpathNamespacesRequestSchema, xpathNamespacesResponseSchema),
   },
 } as const;
 

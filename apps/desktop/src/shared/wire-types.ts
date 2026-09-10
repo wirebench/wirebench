@@ -922,3 +922,50 @@ export const fsOpenTextRequestSchema = z.object({
   filters: z.array(dialogFilterSchema).optional(),
 });
 export const fsOpenTextResponseSchema = z.object({ path: z.string().optional(), text: z.string().optional() });
+
+// ---------------------------------------------------------------------------
+// XPath 3.1 / XQuery 3.1 scratchpad (Task 28): evaluated in main so the
+// renderer never bundles `fontoxpath`.
+// ---------------------------------------------------------------------------
+
+/** Request payload for `xpath.evaluate`. Mirrors the engine's `EvaluateOptions`. */
+export const xpathEvaluateRequestSchema = z.object({
+  xml: z.string(),
+  expression: z.string(),
+  language: z.enum(['xpath', 'xquery']),
+  namespaces: z.record(z.string(), z.string()).optional(),
+});
+
+/** One node-shaped result item; mirrors the engine's `QueryNodeItem`. */
+const xpathQueryNodeItemSchema = z.object({
+  text: z.string(),
+  nodeKind: z.enum(['element', 'attribute', 'text', 'document', 'comment', 'pi']),
+  range: textRangeSchema.optional(),
+  path: z.string(),
+});
+
+/** One atomic-value result item; mirrors the engine's `QueryValueItem`. */
+const xpathQueryValueItemSchema = z.object({ text: z.string(), type: z.string() });
+
+/** Response for `xpath.evaluate`; mirrors the engine's `QueryResult`. */
+export const xpathEvaluateResponseSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('nodes'), items: z.array(xpathQueryNodeItemSchema), truncated: z.boolean() }),
+  z.object({ kind: z.literal('values'), items: z.array(xpathQueryValueItemSchema), truncated: z.boolean() }),
+  z.object({ kind: z.literal('empty') }),
+  z.object({
+    kind: z.literal('error'),
+    message: z.string(),
+    code: z.string().optional(),
+    position: z.object({ line: z.number(), column: z.number() }).optional(),
+  }),
+]);
+export type XpathEvaluateResponseWire = z.infer<typeof xpathEvaluateResponseSchema>;
+
+/** Request payload for `xpath.namespaces`. */
+export const xpathNamespacesRequestSchema = z.object({ xml: z.string() });
+
+/** Response for `xpath.namespaces`: in-scope bindings, plus suggestions for unbound URIs. */
+export const xpathNamespacesResponseSchema = z.object({
+  namespaces: z.record(z.string(), z.string()),
+  suggestions: z.record(z.string(), z.string()),
+});

@@ -30,6 +30,7 @@ describe('buildApi', () => {
       'request',
       'secrets',
       'xml',
+      'xpath',
     ]);
     expect('ipcRenderer' in api).toBe(false);
   });

@@ -7,6 +7,12 @@ export type FormViewType = 'full' | 'required' | 'non-empty';
 
 const DEFAULT_FORM_VIEW_TYPE: FormViewType = 'full';
 
+/** Which response tab is showing. Owned here for the same reason as {@link FormViewType}: it
+ * must survive a remount, but it is editor state, never saved to the project file. */
+export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
+
+const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
+
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
@@ -33,6 +39,11 @@ export interface EditorsStore {
   readonly activeId: string | undefined;
   /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
   readonly formViewTypes: Readonly<Record<string, FormViewType>>;
+  /** Selected response tab per request draft id. Editor state, not project data. */
+  readonly responseViewTypes: Readonly<Record<string, ResponseViewType>>;
+  /** Whether the user has explicitly picked a response tab for this request — once true, an
+   * arriving fault no longer auto-selects the Fault tab for them (see `setResponseView`). */
+  readonly responseViewPinned: Readonly<Record<string, boolean>>;
   readonly open: (tab: EditorTab) => void;
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
@@ -42,12 +53,22 @@ export interface EditorsStore {
   /** The Form view type for `requestId`, defaulting to `'full'` when never set. */
   readonly formViewTypeFor: (requestId: string) => FormViewType;
   readonly setFormViewType: (requestId: string, viewType: FormViewType) => void;
+
+  /** The selected response tab for `requestId`, defaulting to `'xml'` when never set. */
+  readonly responseViewFor: (requestId: string) => ResponseViewType;
+  /** Records the user's own tab choice — pins it, so a later fault no longer overrides it. */
+  readonly setResponseView: (requestId: string, viewType: ResponseViewType) => void;
+  /** Switches to the Fault tab when a fault just arrived, unless the user already pinned a
+   * different tab for this request (see `setResponseView`). */
+  readonly revealFaultTab: (requestId: string) => void;
 }
 
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
   tabs: [],
   activeId: undefined,
   formViewTypes: {},
+  responseViewTypes: {},
+  responseViewPinned: {},
 
   open: (tab) => {
     const { tabs } = get();
@@ -96,5 +117,21 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
 
   setFormViewType: (requestId, viewType) => {
     set({ formViewTypes: { ...get().formViewTypes, [requestId]: viewType } });
+  },
+
+  responseViewFor: (requestId) => get().responseViewTypes[requestId] ?? DEFAULT_RESPONSE_VIEW_TYPE,
+
+  setResponseView: (requestId, viewType) => {
+    set({
+      responseViewTypes: { ...get().responseViewTypes, [requestId]: viewType },
+      responseViewPinned: { ...get().responseViewPinned, [requestId]: true },
+    });
+  },
+
+  revealFaultTab: (requestId) => {
+    if (get().responseViewPinned[requestId] === true) {
+      return;
+    }
+    set({ responseViewTypes: { ...get().responseViewTypes, [requestId]: 'fault' } });
   },
 }));

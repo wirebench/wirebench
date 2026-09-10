@@ -12,17 +12,17 @@ describe('ResponsePane', () => {
   });
 
   it('invites a first send when nothing has been sent', () => {
-    render(<ResponsePane state={undefined} />);
+    render(<ResponsePane state={undefined} requestId="r1" />);
     expect(screen.getByText('No response yet')).toBeDefined();
   });
 
   it('shows the cancellable spinner while sending', () => {
-    render(<ResponsePane state={{ status: 'sending', sendId: 's' }} />);
+    render(<ResponsePane state={{ status: 'sending', sendId: 's' }} requestId="r2" />);
     expect(screen.getByRole('status').textContent).toContain('Sending… (Esc to cancel)');
   });
 
   it('renders the status line and the formatted envelope for a 200', () => {
-    render(<ResponsePane state={{ status: 'done', exchange: makeExchange() }} />);
+    render(<ResponsePane state={{ status: 'done', exchange: makeExchange() }} requestId="r3" />);
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('200 OK');
@@ -45,7 +45,7 @@ describe('ResponsePane', () => {
         fault: { version: '1.1', code: 'soap:Server', subcodes: [], reason: 'boom' },
       },
     });
-    render(<ResponsePane state={{ status: 'done', exchange: faulted }} />);
+    render(<ResponsePane state={{ status: 'done', exchange: faulted }} requestId="r4" />);
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('SOAP Fault: soap:Server');
@@ -53,7 +53,12 @@ describe('ResponsePane', () => {
   });
 
   it('shows the error code and message when the send itself failed', () => {
-    render(<ResponsePane state={{ status: 'error', error: { code: 'network-error', message: 'ECONNREFUSED' } }} />);
+    render(
+      <ResponsePane
+        state={{ status: 'error', error: { code: 'network-error', message: 'ECONNREFUSED' } }}
+        requestId="r5"
+      />,
+    );
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('network-error');
@@ -67,7 +72,7 @@ describe('ResponsePane', () => {
       http: { ...base.http, status: 404, statusText: 'Not Found', bodyBase64: b64('no such endpoint') },
       response: { envelopeXml: '', isSoap: false },
     });
-    render(<ResponsePane state={{ status: 'done', exchange: nonSoap }} />);
+    render(<ResponsePane state={{ status: 'done', exchange: nonSoap }} requestId="r6" />);
 
     expect(screen.getByText('no such endpoint')).toBeDefined();
     expect(screen.queryByLabelText('Response envelope XML')).toBeNull();

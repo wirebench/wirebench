@@ -16,6 +16,7 @@ import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerExchangeChannels } from './ipc/exchanges.js';
 import { registerFsChannels } from './ipc/fs.js';
 import { registerXmlChannels } from './ipc/xml.js';
+import { registerXpathChannels } from './ipc/xpath.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerProjectChannels } from './ipc/project.js';
@@ -134,6 +135,7 @@ void app.whenReady().then(() => {
   registerDialogsChannels();
   registerFsChannels();
   registerXmlChannels(engineService);
+  registerXpathChannels();
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects

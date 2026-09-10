@@ -7,23 +7,23 @@ import { XmlEditor } from '../../editor/xml-editor.js';
 import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
 import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '../../editor/xml-language.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { useExchangesStore } from '../../state/exchanges.js';
 import { useUiStore } from '../../state/ui.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
 import { FormView } from './views/form-view.js';
 import { OutlineView } from './views/outline-view.js';
+import { RawView } from './views/raw-view.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-const LATER = 'Arrives in Task 28';
-
 const VIEWS = [
   { id: 'xml', label: 'XML' },
   { id: 'form', label: 'Form' },
   { id: 'outline', label: 'Outline' },
-  { id: 'raw', label: 'Raw', disabledReason: LATER },
+  { id: 'raw', label: 'Raw' },
 ] as const;
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column, without pulling in the
@@ -72,6 +72,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const sendRef = useRef(onSend);
   sendRef.current = onSend;
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
+  const rawRequestBase64 = useExchangesStore((state) => state.byRequest[requestId]?.exchange?.http.rawRequestBase64);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
   // The Form view type is editor state, not project data — it never reaches the saved request
@@ -227,6 +228,13 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
             readOnly={false}
             onEdit={handleOutlineEdit}
             onSelectRange={handleOutlineSelectRange}
+          />
+        ) : view === 'raw' ? (
+          <RawView
+            base64={rawRequestBase64}
+            ariaLabel="Request raw bytes"
+            emptyTitle="No request sent yet"
+            emptyDescription="Send this request to see the raw bytes."
           />
         ) : (
           <XmlEditor
