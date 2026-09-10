@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ChameleonIncludeService"
+             targetNamespace="urn:wb:chameleon"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:wb:chameleon"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xs:schema targetNamespace="urn:wb:chameleon">
+      <xs:include schemaLocation="chameleon.xsd"/>
+      <xs:element name="Ping" type="tns:PingCode"/>
+    </xs:schema>
+  </types>
+
+  <message name="PingIn">
+    <part name="parameters" element="tns:Ping"/>
+  </message>
+
+  <portType name="PingPortType">
+    <operation name="Ping">
+      <input message="tns:PingIn"/>
+    </operation>
+  </portType>
+
+  <binding name="PingBinding" type="tns:PingPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Ping">
+      <soap:operation soapAction="urn:wb:chameleon/Ping"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+    </operation>
+  </binding>
+
+  <service name="PingService">
+    <port name="PingPort" binding="tns:PingBinding">
+      <soap:address location="http://example.invalid/ping"/>
+    </port>
+  </service>
+</definitions>

@@ -188,11 +188,31 @@ describe('parseWsdl', () => {
     expect(def.services).toHaveLength(1);
   });
 
-  it('throws not-implemented when resolveImports is true', async () => {
-    const text = readPublicFixture('calculator');
-    await expect(
-      parseWsdl({ location: 'calculator/service.wsdl', text }, { fetchDocument, resolveImports: true }),
-    ).rejects.toMatchObject({ code: 'not-implemented' });
+  it('resolves nested imports and merges the bundle', async () => {
+    const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/nested-imports/', import.meta.url));
+    const docs: Record<string, string> = {
+      'service.wsdl': readFileSync(`${craftedRoot}service.wsdl`, 'utf-8'),
+      'types.wsdl': readFileSync(`${craftedRoot}types.wsdl`, 'utf-8'),
+      'schemas/common.xsd': readFileSync(`${craftedRoot}schemas/common.xsd`, 'utf-8'),
+      'schemas/base.xsd': readFileSync(`${craftedRoot}schemas/base.xsd`, 'utf-8'),
+    };
+    const base = 'mem://nested-imports/';
+    const fetchNested = (location: string) => {
+      const key = location.slice(base.length);
+      const text = docs[key];
+      if (text === undefined) {
+        return Promise.reject(new Error(`no fixture for ${location}`));
+      }
+      return Promise.resolve({ location, bytes: new TextEncoder().encode(text), text });
+    };
+    const def = await parseWsdl(
+      { location: `${base}service.wsdl` },
+      { fetchDocument: fetchNested, resolveImports: true },
+    );
+    expect(def.problems).toEqual([]);
+    expect(def.schemaElements).toHaveLength(2);
+    const portType = def.portTypes.find((p) => p.name.localName === 'EchoPortType');
+    expect(portType?.operations.map((o) => o.name)).toEqual(['Echo']);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { Element } from '@xmldom/xmldom';
 import type { QName } from './qname.js';
 import { qnameEquals } from './qname.js';
+import type { ResolveProblem } from './resolver.js';
 
 /** A `wsdl:part` within a `wsdl:message`. Exactly one of `element`/`type` is normally present. */
 export interface Part {
@@ -145,6 +146,8 @@ export interface WsdlDefinition {
   /** Raw `xs:schema` elements found under `wsdl:types`, consumed by Task 7's schema set. */
   readonly schemaElements: readonly Element[];
   readonly imports: readonly WsdlImport[];
+  /** Problems encountered resolving imports (empty for the single-document, `resolveImports: false` path). */
+  readonly problems: readonly ResolveProblem[];
 }
 
 /** Finds a `wsdl:message` by expanded name, or `undefined` if not present in this document. */

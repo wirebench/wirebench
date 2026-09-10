@@ -9,22 +9,30 @@ import {
   readDocumentation,
   requireAttribute,
 } from './dom-utils.js';
+import { parseWsdlBundle } from './merge.js';
 import type { Fault, Message, MessageRef, Operation, Part, PortType, WsdlDefinition, WsdlImport } from './model.js';
 import { parseBinding, parseService } from './parse-binding.js';
 import type { QName } from './qname.js';
 import { parseQName } from './qname.js';
+import { resolveDefinition } from './resolver.js';
+import type { FetchDocument } from './resolver.js';
 
-/** Source of a WSDL document, either fetched or provided inline. */
+/**
+ * Source of a WSDL document. `text` is required when `resolveImports` is
+ * `false` (there is nothing to fetch it with); it is optional when
+ * `resolveImports` is `true`, in which case an absent `text` is fetched via
+ * `fetchDocument`.
+ */
 export interface WsdlDocumentSource {
   readonly location: string;
-  readonly text: string;
+  readonly text?: string;
 }
 
 /** Options for {@link parseWsdl}. */
 export interface ParseWsdlOptions {
   /** Fetches a WSDL/XSD document by location. Unused while `resolveImports` is `false`. */
-  readonly fetchDocument: (location: string, signal?: AbortSignal) => Promise<WsdlDocumentSource>;
-  /** Whether to follow `wsdl:import`/`xsd:import`/`xsd:include`. Only `false` is supported so far. */
+  readonly fetchDocument: FetchDocument;
+  /** Whether to follow `wsdl:import`/`xsd:import`/`xsd:include`/`xsd:redefine`. */
   readonly resolveImports: boolean;
   readonly signal?: AbortSignal;
 }
@@ -150,28 +158,33 @@ export function parseWsdlDocument(doc: Document, location: string): WsdlDefiniti
     services,
     schemaElements,
     imports,
+    problems: [],
   };
 }
 
 /**
- * Parses a WSDL 1.1 document, given its root source. This task supports only
- * single-document parsing (`resolveImports: false`); import resolution
- * (`resolveImports: true`) is implemented in Task 6.
+ * Parses a WSDL 1.1 document, given its root source.
  *
- * @throws {WsdlParseError} with code `not-implemented` when `options.resolveImports` is `true`
+ * When `options.resolveImports` is `false`, only `root.text` is parsed as a
+ * single document (`fetchDocument` is unused). When `true`, the full import
+ * graph (`wsdl:import`/`xsd:import`/`xsd:include`/`xsd:redefine`) is resolved
+ * via {@link resolveDefinition} and merged via {@link parseWsdlBundle}.
+ *
  * @throws {WsdlParseError} propagated from {@link parseWsdlDocument} for `not-a-wsdl`/`wsdl-invalid`
+ * @throws {WsdlParseError} with code `fetch-failed` if the root document cannot be fetched while resolving imports
  */
-export function parseWsdl(root: WsdlDocumentSource, options: ParseWsdlOptions): Promise<WsdlDefinition> {
-  void options.fetchDocument;
-  void options.signal;
-  if (options.resolveImports) {
-    return Promise.reject(
-      new WsdlParseError('not-implemented', 'import resolution arrives in Task 6', {
+export async function parseWsdl(root: WsdlDocumentSource, options: ParseWsdlOptions): Promise<WsdlDefinition> {
+  if (!options.resolveImports) {
+    if (root.text === undefined) {
+      throw new WsdlParseError('wsdl-invalid', 'root.text is required when resolveImports is false', {
         details: { location: root.location },
-      }),
-    );
+      });
+    }
+    return parseWsdlDocument(parseXml(root.text, { location: root.location }), root.location);
   }
-  return Promise.resolve().then(() =>
-    parseWsdlDocument(parseXml(root.text, { location: root.location }), root.location),
+  const bundle = await resolveDefinition(
+    { location: root.location, ...(root.text !== undefined ? { text: root.text } : {}) },
+    { fetchDocument: options.fetchDocument, ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   );
+  return parseWsdlBundle(bundle);
 }

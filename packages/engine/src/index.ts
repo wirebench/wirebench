@@ -44,3 +44,15 @@ export type {
 } from './wsdl/model.js';
 export { parseWsdl, parseWsdlDocument } from './wsdl/parse-wsdl.js';
 export type { ParseWsdlOptions, WsdlDocumentSource } from './wsdl/parse-wsdl.js';
+export { parseWsdlBundle } from './wsdl/merge.js';
+export { resolveDefinition } from './wsdl/resolver.js';
+export type {
+  BundledDocument,
+  DefinitionBundle,
+  DefinitionSource,
+  FetchDocument,
+  FetchedDocument,
+  ResolveOptions,
+  ResolveProblem,
+} from './wsdl/resolver.js';
+export { createDefaultFetchDocument } from './wsdl/fetch.js';

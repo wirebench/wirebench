@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="NestedImportsService"
+             targetNamespace="urn:wb:nested"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:wb:nested"
+             xmlns:types="urn:wb:nested-types">
+  <import namespace="urn:wb:nested-types" location="./types.wsdl"/>
+
+  <binding name="EchoBinding" type="types:EchoPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Echo">
+      <soap:operation soapAction="urn:wb:nested/Echo"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+
+  <service name="EchoService">
+    <port name="EchoPort" binding="tns:EchoBinding">
+      <soap:address location="http://example.invalid/echo"/>
+    </port>
+  </service>
+</definitions>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="CycleB"
+             targetNamespace="urn:wb:cycle-b"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:tns="urn:wb:cycle-b"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <import namespace="urn:wb:cycle-a" location="./a.wsdl"/>
+
+  <message name="MessageB">
+    <part name="value" type="xs:string"/>
+  </message>
+</definitions>

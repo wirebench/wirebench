@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema targetNamespace="urn:wb:common"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:common="urn:wb:common">
+  <xs:include schemaLocation="base.xsd"/>
+
+  <xs:element name="EchoRequest" type="common:BaseType"/>
+  <xs:element name="EchoResponse" type="common:BaseType"/>
+</xs:schema>

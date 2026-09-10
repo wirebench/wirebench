@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="NestedImportsTypes"
+             targetNamespace="urn:wb:nested-types"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:tns="urn:wb:nested-types"
+             xmlns:common="urn:wb:common"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xs:schema targetNamespace="urn:wb:nested-types">
+      <xs:import namespace="urn:wb:common" schemaLocation="schemas/common.xsd"/>
+    </xs:schema>
+  </types>
+
+  <message name="EchoIn">
+    <part name="parameters" element="common:EchoRequest"/>
+  </message>
+  <message name="EchoOut">
+    <part name="parameters" element="common:EchoResponse"/>
+  </message>
+
+  <portType name="EchoPortType">
+    <operation name="Echo">
+      <input message="tns:EchoIn"/>
+      <output message="tns:EchoOut"/>
+    </operation>
+  </portType>
+</definitions>
