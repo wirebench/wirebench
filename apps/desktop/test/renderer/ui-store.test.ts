@@ -51,6 +51,27 @@ describe('ui persistence', () => {
     expect(readUi(storage)).toEqual(DEFAULT_UI_STATE);
   });
 
+  it('defaults the Details tab and Code shell for state stored before they existed', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({ version: UI_STORAGE_VERSION, state: { details: { visible: false, size: 33 } } }),
+    );
+
+    expect(readUi(storage).details).toEqual({ visible: false, size: 33, tab: 'selection', codeShell: 'posix' });
+  });
+
+  it('rejects a stored Details tab or shell it does not recognise', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({ version: UI_STORAGE_VERSION, state: { details: { tab: 'nope', codeShell: 'fish' } } }),
+    );
+
+    expect(readUi(storage).details.tab).toBe('selection');
+    expect(readUi(storage).details.codeShell).toBe('posix');
+  });
+
   it('merges partial stored state over the defaults', () => {
     const storage = fakeStorage();
     storage.setItem(
@@ -139,6 +160,28 @@ describe('useUiStore', () => {
     useUiStore.getState().showConsoleTab('problems');
 
     expect(useUiStore.getState().console).toMatchObject({ visible: true, activeTab: 'problems' });
+  });
+
+  it('showDetails selects a tab and reveals the panel', () => {
+    useUiStore.getState().toggleDetails();
+    expect(useUiStore.getState().details.visible).toBe(false);
+
+    useUiStore.getState().showDetails('code');
+
+    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+  });
+
+  it('setDetailsTab changes the tab without revealing a hidden panel', () => {
+    useUiStore.getState().toggleDetails();
+    useUiStore.getState().setDetailsTab('globals');
+
+    expect(useUiStore.getState().details).toMatchObject({ visible: false, tab: 'globals' });
+  });
+
+  it('remembers the Code panel shell', () => {
+    useUiStore.getState().setDetailsCodeShell('powershell');
+
+    expect(useUiStore.getState().details.codeShell).toBe('powershell');
   });
 
   it('exposes a snapshot free of action functions', () => {

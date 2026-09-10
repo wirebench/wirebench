@@ -11,6 +11,7 @@ import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { getActiveRequestPaneHandle } from '../../src/renderer/editor/active-request-editor.js';
+import { useRequestDialogsStore } from '../../src/renderer/features/request-editor/request-dialogs.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -40,6 +41,7 @@ describe('RequestEditor', () => {
       order: ['if-1'],
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
+    useRequestDialogsStore.getState().close();
   });
 
   afterEach(() => {
@@ -189,7 +191,7 @@ describe('RequestEditor', () => {
       ui: {
         sidebar: { visible: true, view: 'explorer', size: 20 },
         console: { visible: true, activeTab: 'http-log', size: 25 },
-        details: { visible: true, size: 20 },
+        details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
         theme: 'dark',
         editorLineNumbers: true,
         editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -271,6 +273,18 @@ describe('RequestEditor', () => {
     });
   });
 
+  it('right-clicking the request pane opens the request actions, and Clone… opens its dialog', async () => {
+    render(<RequestEditor requestId="req-1" />);
+
+    fireEvent.contextMenu(screen.getByLabelText('Request envelope XML'));
+
+    expect(await screen.findByRole('menuitem', { name: 'Recreate request (keep values)' })).toBeDefined();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Clone…' }));
+
+    expect(await screen.findByRole('dialog')).toBeDefined();
+    expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'clone', requestId: 'req-1' });
+  });
+
   it('the response Outline renders no editable inputs', async () => {
     render(<RequestEditor requestId="req-1" />);
     await userEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -282,7 +296,8 @@ describe('RequestEditor', () => {
     // The second Outline tab belongs to the response pane.
     await userEvent.click(outlineTabs[1] as HTMLElement);
 
-    expect(screen.getByRole('tree', { name: 'Response outline' })).toBeDefined();
-    expect(document.querySelectorAll('input')).toHaveLength(0);
+    const tree = screen.getByRole('tree', { name: 'Response outline' });
+    // Scoped to the tree: the toolbar's endpoint field is an input too, and always present.
+    expect(tree.querySelectorAll('input')).toHaveLength(0);
   });
 });

@@ -1,7 +1,15 @@
 import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
-import type { ConsoleTab, EditorLayoutSnapshot, SidebarView, ThemePreference, UiSnapshot } from './ui-state.js';
+import type {
+  CodeShell,
+  ConsoleTab,
+  DetailsTab,
+  EditorLayoutSnapshot,
+  SidebarView,
+  ThemePreference,
+  UiSnapshot,
+} from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
 /** A selected node in the explorer tree, read by the details panel (Task 30) and explorer actions. */
@@ -48,6 +56,12 @@ export interface UiStore extends UiSnapshot {
   readonly toggleDetails: () => void;
   readonly showSidebarView: (view: SidebarView) => void;
   readonly showConsoleTab: (tab: ConsoleTab) => void;
+  /** Switches the Details panel's tab, leaving its visibility alone. */
+  readonly setDetailsTab: (tab: DetailsTab) => void;
+  /** Switches the Details panel's tab and reveals the panel — what "Show code" does. */
+  readonly showDetails: (tab: DetailsTab) => void;
+  /** Remembers which shell the Code panel quotes for. */
+  readonly setDetailsCodeShell: (shell: CodeShell) => void;
   readonly setSidebarSize: (size: number) => void;
   readonly setConsoleSize: (size: number) => void;
   readonly setDetailsSize: (size: number) => void;
@@ -134,6 +148,20 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.console.activeTab = tab;
         draft.console.visible = true;
+      }),
+
+    setDetailsTab: (tab) =>
+      update((draft) => {
+        draft.details.tab = tab;
+      }),
+    showDetails: (tab) =>
+      update((draft) => {
+        draft.details.tab = tab;
+        draft.details.visible = true;
+      }),
+    setDetailsCodeShell: (shell) =>
+      update((draft) => {
+        draft.details.codeShell = shell;
       }),
 
     setSidebarSize: (size) =>

@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { ChevronDown } from 'lucide-react';
 import type { InterfaceSummary } from '../../../shared/wire-types.js';
 
-const CUSTOM = '__custom__';
-const EDIT = '__edit__';
+const ITEM_CLASS =
+  'flex cursor-pointer flex-col items-start rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
 export interface EndpointSelectProps {
   readonly summary: InterfaceSummary | undefined;
@@ -43,54 +45,76 @@ function collectOptions(summary: InterfaceSummary | undefined, bindingName: stri
 }
 
 /**
- * Endpoint picker: the interface's declared addresses, then a free-text escape hatch. The
- * draft already carries the first matching port address, so this is normally a confirmation.
+ * The endpoint combobox: a text field that always shows the URL the request will be sent to and
+ * commits every keystroke, plus a caret that drops down the addresses the interface declares.
+ *
+ * The URL is the one thing a user checks before sending, so it is never hidden behind a select
+ * — a declared address is a shortcut into the same field, not a separate mode (the Task 32b
+ * feedback: the old select squeezed the URL down to a few characters).
  */
 export function EndpointSelect({ summary, bindingName, value, onChange, onEditEndpoints }: EndpointSelectProps) {
   const options = useMemo(() => collectOptions(summary, bindingName), [summary, bindingName]);
-  const known = value !== undefined && options.some((option) => option.address === value);
-  const [custom, setCustom] = useState(!known && value !== undefined);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
-      <select
+    <div className="flex min-w-[16rem] flex-1 items-center gap-1">
+      <input
+        type="url"
         aria-label="Endpoint"
-        className="h-row min-w-0 max-w-[26rem] flex-1 truncate rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
-        value={custom || !known ? CUSTOM : value}
+        data-testid="request-endpoint"
+        className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default"
+        placeholder="https://host/path"
+        value={value ?? ''}
         onChange={(event) => {
-          if (event.target.value === EDIT) {
-            onEditEndpoints?.();
-            return;
-          }
-          if (event.target.value === CUSTOM) {
-            setCustom(true);
-            return;
-          }
-          setCustom(false);
           onChange(event.target.value);
         }}
-      >
-        {options.map((option) => (
-          <option key={option.address} value={option.address}>
-            {option.address} — {option.label}
-          </option>
-        ))}
-        <option value={CUSTOM}>Custom…</option>
-        {onEditEndpoints !== undefined && <option value={EDIT}>Edit endpoints…</option>}
-      </select>
+      />
 
-      {(custom || !known) && (
-        <input
-          type="url"
-          aria-label="Custom endpoint URL"
-          className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default"
-          placeholder="https://host/path"
-          value={value ?? ''}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-        />
-      )}
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            aria-label="Endpoint options"
+            data-testid="request-endpoint-menu"
+            className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
+          >
+            <ChevronDown size={12} aria-hidden="true" />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            side="bottom"
+            align="end"
+            sideOffset={4}
+            className="max-w-[32rem] min-w-64 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          >
+            {options.map((option) => (
+              <DropdownMenu.Item
+                key={option.address}
+                className={ITEM_CLASS}
+                onSelect={() => {
+                  onChange(option.address);
+                }}
+              >
+                <span className="max-w-full truncate font-mono">{option.address}</span>
+                <span className="text-xs text-fg-subtle">{option.label}</span>
+              </DropdownMenu.Item>
+            ))}
+            {onEditEndpoints !== undefined && (
+              <>
+                {options.length > 0 && <DropdownMenu.Separator className="my-1 h-px bg-hairline" />}
+                <DropdownMenu.Item
+                  className={ITEM_CLASS}
+                  onSelect={() => {
+                    onEditEndpoints();
+                  }}
+                >
+                  Edit endpoints…
+                </DropdownMenu.Item>
+              </>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     </div>
   );
 }

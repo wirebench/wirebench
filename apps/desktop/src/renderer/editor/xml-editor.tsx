@@ -20,6 +20,11 @@ export interface XmlEditorProps {
   readonly onMount?: OnMount;
   /** Whether to show the gutter line-number column. Defaults to `true`. */
   readonly lineNumbers?: boolean;
+  /**
+   * Whether Monaco shows its own right-click menu. Defaults to `true`; the request pane turns
+   * it off so the pane's own `RequestContextMenu` (Recreate, cURL, Format…) gets the event.
+   */
+  readonly contextMenu?: boolean;
 }
 
 /**
@@ -33,6 +38,7 @@ export function XmlEditor({
   ariaLabel,
   onMount,
   lineNumbers = true,
+  contextMenu = true,
 }: XmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(resolveTheme(preference));
@@ -51,8 +57,9 @@ export function XmlEditor({
       domReadOnly: readOnly,
       ariaLabel,
       lineNumbers: lineNumbers ? ('on' as const) : ('off' as const),
+      contextmenu: contextMenu,
     }),
-    [readOnly, ariaLabel, lineNumbers, editorPreferences],
+    [readOnly, ariaLabel, lineNumbers, contextMenu, editorPreferences],
   );
 
   return (

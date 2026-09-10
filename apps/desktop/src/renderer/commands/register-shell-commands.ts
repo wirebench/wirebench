@@ -4,6 +4,8 @@ import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { flipMode, flipOrientation, setEditorLayout } from '../features/request-editor/layout.js';
+import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
+import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
@@ -241,6 +243,78 @@ export function registerShellCommands(openPalette: () => void): void {
       if (requestId !== undefined) {
         void useExchangesStore.getState().cancel(requestId);
       }
+    },
+  });
+
+  // The request.* actions the pane's context menu offers, so the palette can reach them too.
+  // All of them are gated the same way as `request.send`: they act on the active request tab.
+  const onActiveRequest = (run: (requestId: string) => void) => (): void => {
+    const requestId = activeRequestId();
+    if (requestId !== undefined) {
+      run(requestId);
+    }
+  };
+
+  registerCommand({
+    id: 'request.recreateKeepValues',
+    label: 'Request: Recreate (keep values)',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void recreateRequest(requestId, 'keep-values')),
+  });
+  registerCommand({
+    id: 'request.recreateDiscardValues',
+    label: 'Request: Recreate (discard values)',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void recreateRequest(requestId, 'discard-values')),
+  });
+  registerCommand({
+    id: 'request.createEmpty',
+    label: 'Request: Create Empty Envelope',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void recreateRequest(requestId, 'empty')),
+  });
+  registerCommand({
+    id: 'request.clone',
+    label: 'Request: Clone…',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => {
+      openRequestDialog('clone', requestId);
+    }),
+  });
+  registerCommand({
+    id: 'request.copyCurl',
+    label: 'Request: Copy as cURL',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'posix')),
+  });
+  registerCommand({
+    id: 'request.copyCurlPowerShell',
+    label: 'Request: Copy as cURL (PowerShell)',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'powershell')),
+  });
+  registerCommand({
+    id: 'request.importCurl',
+    label: 'Request: Import cURL…',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => {
+      openRequestDialog('import-curl', requestId);
+    }),
+  });
+  registerCommand({
+    id: 'request.showCode',
+    label: 'Request: Show Code',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      ui().showDetails('code');
     },
   });
 

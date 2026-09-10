@@ -5,7 +5,11 @@ import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { selectRequestEndpointSource, selectRequestEndpointUrl } from '../../state/project-endpoint.js';
 import { useProjectStore } from '../../state/project.js';
+import { CloneRequestDialog } from './clone-request-dialog.js';
+import { ImportCurlDialog } from './import-curl-dialog.js';
 import { groupOrientation, useEditorLayout } from './layout.js';
+import { RequestContextMenu } from './request-context-menu.js';
+import { useRequestDialogsStore } from './request-dialogs.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
 import { ViewTabs } from './view-tabs.js';
 import { ResponsePane } from './response-pane.js';
@@ -46,6 +50,11 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const exchange = useExchangesStore((state) => state.byRequest[requestId]);
   const send = useExchangesStore((state) => state.send);
   const cancel = useExchangesStore((state) => state.cancel);
+
+  // Clone and Import cURL are opened from the pane's context menu, the Code panel and the
+  // palette, so the flag lives in a store; this editor owns the mounting for its own request.
+  const dialog = useRequestDialogsStore((state) => (state.requestId === requestId ? state.kind : undefined));
+  const closeDialog = useRequestDialogsStore((state) => state.close);
 
   const sending = exchange?.status === 'sending';
   const platform = useMemo(() => detectPlatform(), []);
@@ -118,16 +127,18 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
           />
           <div className="min-h-0 flex-1">
             {pane === 'request' ? (
-              <RequestPane
-                ref={requestPaneRef}
-                requestId={requestId}
-                envelopeXml={draft.envelopeXml}
-                onEnvelopeChange={onEnvelopeChange}
-                onSend={onSend}
-                interfaceId={draft.interfaceId}
-                bindingName={draft.bindingName}
-                operationName={draft.operationName}
-              />
+              <RequestContextMenu draft={draft}>
+                <RequestPane
+                  ref={requestPaneRef}
+                  requestId={requestId}
+                  envelopeXml={draft.envelopeXml}
+                  onEnvelopeChange={onEnvelopeChange}
+                  onSend={onSend}
+                  interfaceId={draft.interfaceId}
+                  bindingName={draft.bindingName}
+                  operationName={draft.operationName}
+                />
+              </RequestContextMenu>
             ) : (
               <ResponsePane state={exchange} interfaceId={draft.interfaceId} requestId={requestId} />
             )}
@@ -139,16 +150,18 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
           className={`flex min-h-0 flex-1 ${orientation === 'horizontal' ? '' : 'flex-col'}`}
         >
           <Panel id="request-pane" defaultSize="50%" minSize="20%">
-            <RequestPane
-              ref={requestPaneRef}
-              requestId={requestId}
-              envelopeXml={draft.envelopeXml}
-              onEnvelopeChange={onEnvelopeChange}
-              onSend={onSend}
-              interfaceId={draft.interfaceId}
-              bindingName={draft.bindingName}
-              operationName={draft.operationName}
-            />
+            <RequestContextMenu draft={draft}>
+              <RequestPane
+                ref={requestPaneRef}
+                requestId={requestId}
+                envelopeXml={draft.envelopeXml}
+                onEnvelopeChange={onEnvelopeChange}
+                onSend={onSend}
+                interfaceId={draft.interfaceId}
+                bindingName={draft.bindingName}
+                operationName={draft.operationName}
+              />
+            </RequestContextMenu>
           </Panel>
           <Separator aria-label="Resize" className={`${SEPARATOR} ${orientation === 'horizontal' ? 'w-px' : 'h-px'}`} />
           <Panel id="response-pane" minSize="20%">
@@ -156,6 +169,30 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
           </Panel>
         </Group>
       )}
+
+      <CloneRequestDialog
+        open={dialog === 'clone'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+          }
+        }}
+        requestId={requestId}
+        requestName={draft.name}
+      />
+      <ImportCurlDialog
+        open={dialog === 'import-curl'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+          }
+        }}
+        operation={{
+          interfaceId: draft.interfaceId,
+          bindingName: draft.bindingName,
+          operationName: draft.operationName,
+        }}
+      />
     </section>
   );
 }

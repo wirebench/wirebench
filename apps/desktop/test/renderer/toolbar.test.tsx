@@ -6,6 +6,7 @@ import { EndpointSelect } from '../../src/renderer/features/request-editor/endpo
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft, makeInterface } from '../mocks/exchange-fixtures.js';
 
@@ -16,7 +17,7 @@ describe('RequestToolbar', () => {
     cleanup();
   });
 
-  it('shows the operation, SOAP version, and SOAPAction', () => {
+  it('shows the operation and SOAP version, with the SOAPAction in the badge title', () => {
     render(
       <RequestToolbar
         draft={makeDraft()}
@@ -29,9 +30,65 @@ describe('RequestToolbar', () => {
       />,
     );
 
-    expect(screen.getByText('Add')).toBeDefined();
-    expect(screen.getByText('SOAP 1.1')).toBeDefined();
-    expect(screen.getByText('SOAPAction: http://tempuri.org/Add')).toBeDefined();
+    const badge = screen.getByTestId('request-operation');
+    expect(badge.textContent).toContain('Add');
+    expect(badge.textContent).toContain('SOAP 1.1');
+    expect(badge.getAttribute('title')).toContain('http://tempuri.org/Add');
+  });
+
+  it('shows the whole endpoint URL in an always-visible field', () => {
+    const long = `https://services.example.test/very/long/path/that/keeps/going/Calculator.asmx?wsdl=1`;
+    render(
+      <RequestToolbar
+        draft={makeDraft()}
+        summary={makeInterface()}
+        endpoint={long}
+        sending={false}
+        onSend={noop}
+        onCancel={noop}
+        onEndpointChange={noop}
+      />,
+    );
+
+    expect(screen.getByTestId<HTMLInputElement>('request-endpoint').value).toBe(long);
+  });
+
+  it('keeps the environment override read-only, but still labelled as the endpoint', () => {
+    render(
+      <RequestToolbar
+        draft={makeDraft()}
+        summary={makeInterface()}
+        endpoint="https://uat.example.test/calc.asmx"
+        endpointSource="environment"
+        sending={false}
+        onSend={noop}
+        onCancel={noop}
+        onEndpointChange={noop}
+      />,
+    );
+
+    const field = screen.getByTestId<HTMLInputElement>('request-endpoint');
+    expect(field.value).toBe('https://uat.example.test/calc.asmx');
+    expect(field.readOnly).toBe(true);
+    expect(screen.getByTestId('endpoint-env-badge')).toBeDefined();
+  });
+
+  it('no longer carries Recreate, cURL or Clone controls', () => {
+    render(
+      <RequestToolbar
+        draft={makeDraft()}
+        summary={makeInterface()}
+        endpoint="https://example.test/calc.asmx"
+        sending={false}
+        onSend={noop}
+        onCancel={noop}
+        onEndpointChange={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId('request-recreate')).toBeNull();
+    expect(screen.queryByTestId('request-curl')).toBeNull();
+    expect(screen.queryByTestId('request-clone')).toBeNull();
   });
 
   it('sends on click', async () => {
@@ -93,21 +150,7 @@ describe('EndpointSelect', () => {
     cleanup();
   });
 
-  it("lists the operation's binding port first, then the rest, then Custom", () => {
-    render(
-      <EndpointSelect
-        summary={makeInterface()}
-        bindingName="{http://tempuri.org/}CalculatorSoap12"
-        value="https://example.test/calc12.asmx"
-        onChange={noop}
-      />,
-    );
-
-    const options = screen.getAllByRole('option').map((option) => option.getAttribute('value'));
-    expect(options).toEqual(['https://example.test/calc12.asmx', 'https://example.test/calc.asmx', '__custom__']);
-  });
-
-  it('reports the address chosen from the list', async () => {
+  it('shows the current URL in full and commits what is typed into it', async () => {
     const onChange = vi.fn();
     render(
       <EndpointSelect
@@ -118,31 +161,14 @@ describe('EndpointSelect', () => {
       />,
     );
 
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Endpoint' }),
-      'https://example.test/calc12.asmx',
-    );
-    expect(onChange).toHaveBeenCalledWith('https://example.test/calc12.asmx');
-  });
+    const field = screen.getByLabelText<HTMLInputElement>('Endpoint');
+    expect(field.value).toBe('https://example.test/calc.asmx');
 
-  it('offers a free-text field once Custom… is chosen', async () => {
-    const onChange = vi.fn();
-    render(
-      <EndpointSelect
-        summary={makeInterface()}
-        bindingName="{http://tempuri.org/}CalculatorSoap"
-        value="https://example.test/calc.asmx"
-        onChange={onChange}
-      />,
-    );
-
-    expect(screen.queryByLabelText('Custom endpoint URL')).toBeNull();
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Endpoint' }), '__custom__');
-    await userEvent.type(screen.getByLabelText('Custom endpoint URL'), '!');
+    await userEvent.type(field, '!');
     expect(onChange).toHaveBeenCalledWith('https://example.test/calc.asmx!');
   });
 
-  it('starts in custom mode when the draft endpoint is not a declared port', () => {
+  it('shows an endpoint that is not a declared port just as plainly', () => {
     render(
       <EndpointSelect
         summary={makeInterface()}
@@ -152,7 +178,60 @@ describe('EndpointSelect', () => {
       />,
     );
 
-    expect(screen.getByLabelText<HTMLInputElement>('Custom endpoint URL').value).toBe('https://localhost:8080/mock');
+    expect(screen.getByLabelText<HTMLInputElement>('Endpoint').value).toBe('https://localhost:8080/mock');
+  });
+
+  it("lists every declared address in its menu, the operation's own binding first", async () => {
+    render(
+      <EndpointSelect
+        summary={makeInterface()}
+        bindingName="{http://tempuri.org/}CalculatorSoap12"
+        value="https://example.test/calc12.asmx"
+        onChange={noop}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('request-endpoint-menu'));
+
+    const items = (await screen.findAllByRole('menuitem')).map((item) => item.textContent ?? '');
+    expect(items[0]).toContain('https://example.test/calc12.asmx');
+    expect(items[1]).toContain('https://example.test/calc.asmx');
+    expect(items[1]).toContain('Calculator · CalculatorSoap');
+  });
+
+  it('reports the address chosen from the menu', async () => {
+    const onChange = vi.fn();
+    render(
+      <EndpointSelect
+        summary={makeInterface()}
+        bindingName="{http://tempuri.org/}CalculatorSoap"
+        value="https://example.test/calc.asmx"
+        onChange={onChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('request-endpoint-menu'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /calc12\.asmx/ }));
+
+    expect(onChange).toHaveBeenCalledWith('https://example.test/calc12.asmx');
+  });
+
+  it('offers the endpoint manager only when there is one to open', async () => {
+    const onEditEndpoints = vi.fn();
+    render(
+      <EndpointSelect
+        summary={makeInterface()}
+        bindingName="{http://tempuri.org/}CalculatorSoap"
+        value="https://example.test/calc.asmx"
+        onChange={noop}
+        onEditEndpoints={onEditEndpoints}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('request-endpoint-menu'));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit endpoints…' }));
+
+    expect(onEditEndpoints).toHaveBeenCalledOnce();
   });
 });
 
@@ -161,6 +240,7 @@ describe('RequestToolbar actions', () => {
     // Layout toggles persist through `preferences.update`, so the API has to be in place.
     installWirebenchApi();
     useEditorsStore.setState({ editorLayouts: {} });
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
     useUiStore.getState().setEditorLayout({ orientation: 'side-by-side', mode: 'split' });
     useProjectStore.setState({ requests: { 'req-1': makeDraft() } });
   });
@@ -206,62 +286,12 @@ describe('RequestToolbar actions', () => {
     expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
   });
 
-  it('Recreate calls request.recreate with keepValues and replaces the envelope in the mirror', async () => {
-    const recreate = vi
-      .fn()
-      .mockResolvedValue({ ok: true, value: { envelopeXml: '<recreated/>', kept: 2, added: 1, removed: 0 } });
-    installWirebenchApi({ request: { recreate } });
+  it('Show code opens the Details panel on its Code tab', async () => {
+    useUiStore.getState().toggleDetails();
     renderToolbar();
 
-    await userEvent.click(screen.getByTestId('request-recreate'));
+    await userEvent.click(screen.getByTestId('request-code'));
 
-    expect(recreate).toHaveBeenCalledWith({
-      requestId: 'req-1',
-      keepValues: true,
-      keepHeaders: true,
-      empty: false,
-    });
-    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toBe('<recreated/>');
-  });
-
-  it('the Recreate menu offers discard-values and empty variants', async () => {
-    const recreate = vi
-      .fn()
-      .mockResolvedValue({ ok: true, value: { envelopeXml: '<empty/>', kept: 0, added: 0, removed: 0 } });
-    installWirebenchApi({ request: { recreate } });
-    renderToolbar();
-
-    await userEvent.click(screen.getByTestId('request-recreate-menu'));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Create empty' }));
-
-    expect(recreate).toHaveBeenCalledWith({ requestId: 'req-1', keepValues: false, keepHeaders: false, empty: true });
-  });
-
-  it('Copy as cURL writes the command main built to the clipboard', async () => {
-    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: "curl --request POST 'x'" } });
-    installWirebenchApi({ request: { curl } });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
-    renderToolbar();
-
-    await userEvent.click(screen.getByTestId('request-curl'));
-
-    expect(curl).toHaveBeenCalledWith({ requestId: 'req-1', shell: 'posix' });
-    expect(writeText).toHaveBeenCalledWith("curl --request POST 'x'");
-  });
-
-  it('Copy as cURL (PowerShell) asks for the powershell shell', async () => {
-    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: 'curl.exe --request POST' } });
-    installWirebenchApi({ request: { curl } });
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-    });
-    renderToolbar();
-
-    await userEvent.click(screen.getByTestId('request-curl-menu'));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Copy as cURL (PowerShell)' }));
-
-    expect(curl).toHaveBeenCalledWith({ requestId: 'req-1', shell: 'powershell' });
+    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
   });
 });

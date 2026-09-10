@@ -4,6 +4,12 @@ export type SidebarView = 'explorer' | 'search' | 'history' | 'settings';
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
 
+/** The Details panel's tabs: the selection inspector, the global property table, the Code panel. */
+export type DetailsTab = 'selection' | 'globals' | 'code';
+
+/** Which shell the Code panel quotes its `curl` command for. */
+export type CodeShell = 'posix' | 'powershell';
+
 /** How a request editor arranges its panes; see `features/request-editor/layout.ts`. */
 export interface EditorLayoutSnapshot {
   readonly orientation: 'side-by-side' | 'stacked';
@@ -17,7 +23,13 @@ export type ThemePreference = 'dark' | 'light' | 'system';
 export interface UiSnapshot {
   readonly sidebar: { readonly visible: boolean; readonly view: SidebarView; readonly size: number };
   readonly console: { readonly visible: boolean; readonly activeTab: ConsoleTab; readonly size: number };
-  readonly details: { readonly visible: boolean; readonly size: number };
+  readonly details: {
+    readonly visible: boolean;
+    readonly size: number;
+    readonly tab: DetailsTab;
+    /** The Code panel's shell choice, remembered across sessions. */
+    readonly codeShell: CodeShell;
+  };
   readonly theme: ThemePreference;
   /** Whether request/response Monaco editors show line numbers. */
   readonly editorLineNumbers: boolean;
@@ -35,7 +47,7 @@ export const UI_STORAGE_VERSION = 2;
 export const DEFAULT_UI_STATE: UiSnapshot = {
   sidebar: { visible: true, view: 'explorer', size: 20 },
   console: { visible: true, activeTab: 'http-log', size: 25 },
-  details: { visible: true, size: 20 },
+  details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -60,6 +72,26 @@ function mergeSection<T extends Record<string, unknown>>(defaults: T, stored: un
     }
   }
   return merged as T;
+}
+
+/**
+ * Reads the persisted Details section. `tab` and `codeShell` arrived after the first releases,
+ * so a payload written without them (or with a value no longer understood) keeps the default
+ * rather than being discarded — the panel must never open on a tab that does not exist.
+ */
+function mergeDetails(stored: unknown): UiSnapshot['details'] {
+  const merged = mergeSection(
+    { visible: DEFAULT_UI_STATE.details.visible, size: DEFAULT_UI_STATE.details.size },
+    stored,
+  );
+  const record = asRecord(stored);
+  const tab = record?.['tab'];
+  const codeShell = record?.['codeShell'];
+  return {
+    ...merged,
+    tab: tab === 'selection' || tab === 'globals' || tab === 'code' ? tab : DEFAULT_UI_STATE.details.tab,
+    codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.details.codeShell,
+  };
 }
 
 /** Reads a persisted editor layout, falling back per-field to the default for anything odd. */
@@ -97,7 +129,7 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
     return {
       sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
       console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
-      details: mergeSection(DEFAULT_UI_STATE.details, stored['details']),
+      details: mergeDetails(stored['details']),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,

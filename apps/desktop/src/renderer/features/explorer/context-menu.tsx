@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
+import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 
@@ -58,6 +59,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
   }
 
   if (node.kind === 'request') {
+    // The three Recreate variants call the shared action directly (the explorer action only
+    // covers "keep values"); the id is optional on the node type, so guard once here.
+    const recreate = (mode: RecreateMode) => (): void => {
+      if (node.requestId !== undefined) {
+        void recreateRequest(node.requestId, mode);
+      }
+    };
     items.push(
       <ContextMenu.Item key="open" className={ITEM_CLASS} onSelect={() => explorerActions.openRequest(node.requestId)}>
         Open
@@ -75,6 +83,12 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
         onSelect={() => explorerActions.recreateRequest(node.requestId)}
       >
         Recreate request (keep values)
+      </ContextMenu.Item>,
+      <ContextMenu.Item key="recreate-discard" className={ITEM_CLASS} onSelect={recreate('discard-values')}>
+        Recreate (discard values)
+      </ContextMenu.Item>,
+      <ContextMenu.Item key="recreate-empty" className={ITEM_CLASS} onSelect={recreate('empty')}>
+        Create empty
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="rename"

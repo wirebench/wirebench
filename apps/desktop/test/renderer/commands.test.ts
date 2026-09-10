@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
+import { useRequestDialogsStore } from '../../src/renderer/features/request-editor/request-dialogs.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -22,7 +23,7 @@ const context: CommandContext = {
   ui: {
     sidebar: { visible: true, view: 'explorer', size: 20 },
     console: { visible: true, activeTab: 'http-log', size: 25 },
-    details: { visible: true, size: 20 },
+    details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
     theme: 'dark',
     editorLineNumbers: true,
     editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -198,5 +199,75 @@ describe('editor layout commands', () => {
     await runCommand('editor.toggleLayoutMode', context);
     expect(useEditorsStore.getState().editorLayouts['req-1']?.mode).toBe('tabs');
     expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
+  });
+});
+
+describe('request action commands', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    resetCommands();
+    registerShellCommands(vi.fn());
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' }],
+      activeId: 'request:req-1',
+    });
+  });
+
+  afterEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useRequestDialogsStore.getState().close();
+  });
+
+  it('offers every request action, only while a request tab is active', () => {
+    const ids = [
+      'request.recreateKeepValues',
+      'request.recreateDiscardValues',
+      'request.createEmpty',
+      'request.clone',
+      'request.copyCurl',
+      'request.copyCurlPowerShell',
+      'request.importCurl',
+      'request.showCode',
+    ];
+    const listed = listCommands(context).map((command) => command.id);
+    for (const id of ids) {
+      expect(listed).toContain(id);
+    }
+
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    const withoutRequest = listCommands(context).map((command) => command.id);
+    for (const id of ids) {
+      expect(withoutRequest).not.toContain(id);
+    }
+  });
+
+  it('recreates the active request, discarding its values', async () => {
+    const recreate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { envelopeXml: '<fresh/>', kept: 0, added: 1, removed: 0 } });
+    installWirebenchApi({ request: { recreate } });
+
+    await runCommand('request.recreateDiscardValues', context);
+
+    expect(recreate).toHaveBeenCalledWith({
+      requestId: 'req-1',
+      keepValues: false,
+      keepHeaders: true,
+      empty: false,
+    });
+  });
+
+  it('opens the clone dialog for the active request', async () => {
+    await runCommand('request.clone', context);
+
+    expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'clone', requestId: 'req-1' });
+  });
+
+  it('reveals the Details panel on the Code tab', async () => {
+    useUiStore.setState({ details: { ...useUiStore.getState().details, visible: false, tab: 'selection' } });
+
+    await runCommand('request.showCode', context);
+
+    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
   });
 });
