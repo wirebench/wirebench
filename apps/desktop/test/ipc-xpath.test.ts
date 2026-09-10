@@ -92,3 +92,36 @@ describe('xpath.* IPC', () => {
     expect(result.error.code).toBeDefined();
   });
 });
+
+describe('xpath.evaluate wiring (mocked engine)', () => {
+  it('calls the time-bounded evaluateWithTimeout, not the synchronous evaluate', async () => {
+    vi.resetModules();
+    const evaluateWithTimeout = vi.fn().mockResolvedValue({ kind: 'empty' });
+    vi.doMock('@wirebench/engine', () => ({
+      evaluateWithTimeout,
+      collectNamespaces: vi.fn(),
+      suggestPrefixes: vi.fn(),
+    }));
+
+    const localHandlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+    vi.doMock('electron', () => ({
+      ipcMain: {
+        handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
+          localHandlers.set(name, handler);
+        },
+      },
+    }));
+
+    const { registerXpathChannels: register } = await import('../src/main/ipc/xpath.js');
+    register();
+    const handler = localHandlers.get('xpath.evaluate');
+    expect(handler).toBeDefined();
+    await handler?.({ sender: {} }, { xml: ADD_RESPONSE, expression: '//*', language: 'xpath' });
+
+    expect(evaluateWithTimeout).toHaveBeenCalledTimes(1);
+
+    vi.doUnmock('@wirebench/engine');
+    vi.doUnmock('electron');
+    vi.resetModules();
+  });
+});

@@ -72,8 +72,22 @@ interface NamespaceRow {
 
 let nextRowId = 0;
 
-function toRows(namespaces: Readonly<Record<string, string>>): NamespaceRow[] {
-  return Object.entries(namespaces).map(([prefix, uri]) => ({ id: String((nextRowId += 1)), prefix, uri }));
+/** Builds the namespace table's initial rows from `xpath.namespaces`'s two maps: `namespaces`
+ * (every prefix, or `''` for the default namespace, already bound in the document) and
+ * `suggestions` (a URI to conventional-prefix map for every namespace that has no *real* prefix
+ * bound to it — in practice, always at least the default namespace when the document has one).
+ * A default-namespace row's `prefix` is pre-filled with its suggestion (still editable) instead
+ * of being seeded empty, since an empty prefix can never be sent to `xpath.evaluate` — leaving
+ * it blank is how a namespace binding silently went unusable before this seeding existed. */
+function toRows(
+  namespaces: Readonly<Record<string, string>>,
+  suggestions: Readonly<Record<string, string>>,
+): NamespaceRow[] {
+  return Object.entries(namespaces).map(([prefix, uri]) => ({
+    id: String((nextRowId += 1)),
+    prefix: prefix === '' ? (suggestions[uri] ?? prefix) : prefix,
+    uri,
+  }));
 }
 
 export interface QueryViewProps {
@@ -105,7 +119,7 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
     let cancelled = false;
     void api.namespaces({ xml }).then((res) => {
       if (!cancelled && res.ok) {
-        setRows(toRows(res.value.namespaces));
+        setRows(toRows(res.value.namespaces, res.value.suggestions));
       }
     });
     return () => {
@@ -243,6 +257,11 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
         <button type="button" onClick={addRow} className="mt-1 text-xs text-accent hover:underline">
           + Add namespace
         </button>
+        {rows.some((row) => row.prefix === '' && row.uri !== '') && (
+          <p className="mt-1 text-xs text-status-warning" role="status">
+            Rows with no prefix can&apos;t be referenced in an expression — add one to query this namespace.
+          </p>
+        )}
 
         {history.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">

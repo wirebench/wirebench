@@ -20,6 +20,8 @@ export type { LinePosition } from './xml/positions.js';
 
 export { evaluate } from './xpath/evaluate.js';
 export type { EvaluateOptions, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export { evaluateWithTimeout } from './xpath/evaluate-async.js';
+export type { EvaluateWithTimeoutOptions } from './xpath/evaluate-async.js';
 export { collectNamespaces, suggestPrefixes } from './xpath/namespaces.js';
 
 export { parseQName, qnameEquals, qnameToString } from './wsdl/qname.js';

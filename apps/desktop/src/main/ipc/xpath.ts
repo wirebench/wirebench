@@ -1,4 +1,4 @@
-import { collectNamespaces, evaluate, suggestPrefixes } from '@wirebench/engine';
+import { collectNamespaces, evaluateWithTimeout, suggestPrefixes } from '@wirebench/engine';
 import type { QueryResult } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ChannelResponse } from '../../shared/ipc.js';
@@ -24,12 +24,12 @@ function toWire(result: QueryResult): ChannelResponse<typeof channels.xpath.eval
  * renderer bundle by running here instead.
  */
 export function registerXpathChannels(): void {
-  registerHandler(channels.xpath.evaluate, (request) => {
-    const result = evaluate(request.xml, request.expression, {
+  registerHandler(channels.xpath.evaluate, async (request) => {
+    const result = await evaluateWithTimeout(request.xml, request.expression, {
       language: request.language,
       ...(request.namespaces !== undefined ? { namespaces: request.namespaces } : {}),
     });
-    return Promise.resolve(toWire(result));
+    return toWire(result);
   });
 
   registerHandler(channels.xpath.namespaces, (request) => {

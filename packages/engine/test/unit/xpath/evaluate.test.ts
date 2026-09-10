@@ -148,3 +148,27 @@ describe('evaluate (XQuery 3.1)', () => {
     expect(result.items[0]?.text).toBe('<r>1</r>');
   });
 });
+
+// fontoxpath is a standalone XPath/XQuery processor, not a full XQuery runtime: it ships with no
+// document/file/environment I/O in its default function set at all (unlike, say, Saxon or
+// BaseX). Every one of these functions is simply unregistered, so calling any of them is an
+// XPST0017 "not registered" static error — verified against the real package (no mocking) so a
+// future fontoxpath upgrade that *does* start shipping one of these would fail this suite rather
+// than silently start reading the filesystem or environment from the scratchpad.
+describe('evaluate (sandboxing: no filesystem/network/environment access)', () => {
+  const DOC = '<a/>';
+
+  it.each([
+    ['doc("file:///etc/passwd")'],
+    ['unparsed-text("file:///etc/passwd")'],
+    ['collection(".")'],
+    ['environment-variable("HOME")'],
+    ['available-environment-variables()'],
+  ])('%s is rejected, not executed', (expression) => {
+    const result = evaluate(DOC, expression, { language: 'xpath' });
+    expect(result.kind).toBe('error');
+    if (result.kind !== 'error') throw new Error('expected error');
+    expect(result.code).toBe('XPST0017');
+    expect(result.message).not.toContain('root:');
+  });
+});

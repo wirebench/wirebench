@@ -35,6 +35,46 @@ describe('QueryView', () => {
     expect(screen.getByDisplayValue('http://tempuri.org/')).toBeDefined();
   });
 
+  it('seeds the default-namespace row with the suggested prefix and sends it on Run', async () => {
+    const { source, namespaces, evaluate } = stubSource({
+      namespaces: {
+        ok: true,
+        value: { namespaces: { '': 'http://tempuri.org/' }, suggestions: { 'http://tempuri.org/': 'tem' } },
+      },
+    });
+    render(<QueryView requestId="r5" xml={XML} source={source} />);
+
+    await waitFor(() => expect(namespaces).toHaveBeenCalled());
+    // The default namespace stays visible (its URI row is not dropped) and is pre-filled with
+    // the suggested prefix, editable rather than left blank.
+    expect(screen.getByDisplayValue('tem')).toBeDefined();
+    expect(screen.getByDisplayValue('http://tempuri.org/')).toBeDefined();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    const textarea = screen.getByLabelText('Query expression');
+    await userEvent.type(textarea, 'count(//tem:AddResult)');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() =>
+      expect(evaluate).toHaveBeenCalledWith(expect.objectContaining({ namespaces: { tem: 'http://tempuri.org/' } })),
+    );
+  });
+
+  it('shows a validation hint instead of silently dropping an empty-prefix row', async () => {
+    const { source, namespaces } = stubSource({
+      namespaces: {
+        ok: true,
+        // No suggestion available for this URI, so the row is seeded with an empty prefix.
+        value: { namespaces: { '': 'http://tempuri.org/' }, suggestions: {} },
+      },
+    });
+    render(<QueryView requestId="r6" xml={XML} source={source} />);
+    await waitFor(() => expect(namespaces).toHaveBeenCalled());
+
+    expect(screen.getByDisplayValue('http://tempuri.org/')).toBeDefined();
+    expect(screen.getByRole('status').textContent).toContain("can't be referenced");
+  });
+
   it('runs the query on Enter and renders node results', async () => {
     const { source, namespaces, evaluate } = stubSource();
     render(<QueryView requestId="r1" xml={XML} source={source} />);
