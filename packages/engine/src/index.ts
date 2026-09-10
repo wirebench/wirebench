@@ -187,6 +187,27 @@ export type {
 
 export { basicAuthorization, isBasicChallenge, parseWwwAuthenticate } from './http/auth/basic.js';
 export type { AuthChallenge } from './http/auth/basic.js';
+export {
+  AV_IDS,
+  DEFAULT_NEGOTIATE_FLAGS,
+  NTLM_FLAGS,
+  buildAvPairs,
+  createType1,
+  createType3,
+  encodeNtlmAuthorization,
+  lmv2Response,
+  ntProofString,
+  ntlmv2Blob,
+  ntowfv2,
+  offersNtlm,
+  parseAvPairs,
+  parseNtlmChallengeHeader,
+  parseType2,
+  parseType3,
+  toFileTime,
+} from './http/auth/ntlm.js';
+export type { Type1Options, Type2Message, Type3Message, Type3Params, Type3Result } from './http/auth/ntlm.js';
+export { md4 } from './http/auth/md4.js';
 export { createDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
