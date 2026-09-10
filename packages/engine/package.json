@@ -16,6 +16,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@xmldom/xmldom": "^0.9.12"
+    "@xmldom/xmldom": "^0.9.12",
+    "undici": "^8"
   }
 }

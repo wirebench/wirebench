@@ -81,6 +81,9 @@ importers:
       '@xmldom/xmldom':
         specifier: ^0.9.12
         version: 0.9.12
+      undici:
+        specifier: ^8
+        version: 8.10.2
 
 packages:
 

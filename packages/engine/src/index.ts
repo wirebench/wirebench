@@ -116,3 +116,7 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
+
+export { createDispatcher, sendHttp } from './http/client.js';
+export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
+export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
