@@ -82,8 +82,22 @@ export {
   generateType,
 } from './xsd/sample-generator.js';
 export type { GenerateOptions, GeneratedFragment } from './xsd/sample-generator.js';
-export { PLACEHOLDER, sampleValueFor, typeCommentFor } from './xsd/sample-values.js';
-export type { SampleValueContext, SampleValueOptions, SimpleTypeRef } from './xsd/sample-values.js';
+export { PLACEHOLDER, facetsOf, sampleValueFor, typeCommentFor } from './xsd/sample-values.js';
+export type { FormFacets, SampleValueContext, SampleValueOptions, SimpleTypeRef } from './xsd/sample-values.js';
+export { scanXml } from './xsd/xml-scan.js';
+export type { ScanXmlResult, ScannedAttribute, ScannedElement } from './xsd/xml-scan.js';
+export { applyForm, buildForm, buildFormForType } from './xsd/form-model.js';
+export type {
+  ApplyFormOptions,
+  BuildFormOptions,
+  FormExtraAttribute,
+  FormNode,
+  FormRepeat,
+  FormType,
+  FormValueBase,
+} from './xsd/form-model.js';
+export { applyFormEdit } from './xsd/form-edits.js';
+export type { FormEdit } from './xsd/form-edits.js';
 
 export type {
   All,
@@ -126,6 +140,8 @@ export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js
 export type { BuildProblem, BuildProblemCode } from './soap/build-problems.js';
 export { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js';
 export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
+export { buildRequestForm } from './soap/form-request.js';
+export type { RequestForm } from './soap/form-request.js';
 export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { parseSoapResponse } from './soap/response-parser.js';

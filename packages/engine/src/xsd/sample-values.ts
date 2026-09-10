@@ -143,6 +143,47 @@ function enumerationOf(
   return simple.variety === 'atomic' ? enumerationOf(ctx, simple.base ?? simple.baseType, visited) : undefined;
 }
 
+/** The constraining facets a form editor can act on, gathered from a restriction chain. */
+export interface FormFacets {
+  readonly enum?: readonly string[];
+  readonly pattern?: string;
+  /** Lexical `minInclusive`/`minExclusive` bound, whichever the chain declares first. */
+  readonly min?: string;
+  readonly max?: string;
+}
+
+/**
+ * Collects the facets a form field can enforce (`enumeration`, `pattern` and the
+ * numeric/date bounds) by walking a simple type's restriction chain, nearest
+ * declaration winning. Returns an empty object for built-ins and unresolvable
+ * references — the form never blocks on a facet it could not read.
+ */
+export function facetsOf(ctx: SampleValueContext, ref: SimpleTypeRef, visited = new Set<string>()): FormFacets {
+  const simple = resolveSimple(ctx, ref);
+  if (simple === undefined) {
+    return {};
+  }
+  if (ref !== undefined && isQName(ref)) {
+    const key = qnameToString(ref);
+    if (visited.has(key)) {
+      return {};
+    }
+    visited.add(key);
+  }
+  const inherited = simple.variety === 'atomic' ? facetsOf(ctx, simple.base ?? simple.baseType, visited) : {};
+  const values = enumerationFacet(simple.facets);
+  const pattern = simple.facets.find((f) => f.kind === 'pattern');
+  const min = boundFacet(simple.facets, 'minInclusive') ?? boundFacet(simple.facets, 'minExclusive');
+  const max = boundFacet(simple.facets, 'maxInclusive') ?? boundFacet(simple.facets, 'maxExclusive');
+  return {
+    ...inherited,
+    ...(values !== undefined && values.length > 0 ? { enum: values } : {}),
+    ...(pattern !== undefined && pattern.kind === 'pattern' ? { pattern: pattern.value } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
+  };
+}
+
 /** Adds `delta` to an integer bound, leaving non-integer bounds untouched. */
 function shiftBound(value: string, delta: number, integer: boolean): string {
   if (!integer) {

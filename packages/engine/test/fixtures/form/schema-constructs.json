@@ -1,0 +1,1023 @@
+{
+  "Level3El": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "Level3El"
+    },
+    "label": "ns1:Level3El",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "attr1"
+        },
+        "label": "attr1",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": true,
+        "children": []
+      },
+      {
+        "id": "r/@1",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "attr2"
+        },
+        "label": "attr2",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/@2",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "attr3"
+        },
+        "label": "attr3",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/3",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "a"
+        },
+        "label": "ns1:a",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/4",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "b"
+        },
+        "label": "ns1:b",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:int",
+          "base": "integer"
+        },
+        "value": "7",
+        "children": []
+      },
+      {
+        "id": "r/5",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "c"
+        },
+        "label": "ns1:c",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "{urn:wb:sc:other}ColorCode",
+          "base": "string",
+          "enum": [
+            "RED",
+            "GREEN",
+            "BLUE"
+          ]
+        },
+        "value": "RED",
+        "fixed": "RED",
+        "children": []
+      }
+    ]
+  },
+  "Level3RestrictedEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "Level3RestrictedEl"
+    },
+    "label": "ns1:Level3RestrictedEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "attr3"
+        },
+        "label": "attr3",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": true,
+        "children": []
+      },
+      {
+        "id": "r/@1",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "attr2"
+        },
+        "label": "attr2",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/2",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "a"
+        },
+        "label": "ns1:a",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/3",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "b"
+        },
+        "label": "ns1:b",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:int",
+          "base": "integer"
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/4",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "c"
+        },
+        "label": "ns1:c",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "{urn:wb:sc:other}ColorCode",
+          "base": "string",
+          "enum": [
+            "RED",
+            "GREEN",
+            "BLUE"
+          ]
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "ShapeEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "ShapeEl"
+    },
+    "label": "ns1:ShapeEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "extraAttributes": [
+      {
+        "name": "xsi:type",
+        "value": "ns1:Circle"
+      }
+    ],
+    "xsiType": "ns1:Circle",
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "name"
+        },
+        "label": "ns1:name",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/1",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "radius"
+        },
+        "label": "ns1:radius",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:double",
+          "base": "number"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "AmountEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "AmountEl"
+    },
+    "label": "ns1:AmountEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "field",
+    "type": {
+      "name": "xs:decimal",
+      "base": "number"
+    },
+    "value": "?",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "currency"
+        },
+        "label": "currency",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "EUR",
+        "present": true,
+        "fixed": "EUR",
+        "children": []
+      }
+    ]
+  },
+  "ChoiceEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "ChoiceEl"
+    },
+    "label": "ns1:ChoiceEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "kind": "choice",
+        "name": {
+          "namespaceUri": "",
+          "localName": "choice"
+        },
+        "label": "choice",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "choice": {
+          "selected": 0
+        },
+        "children": [
+          {
+            "id": "r/0!0/0",
+            "name": {
+              "namespaceUri": "urn:wb:sc",
+              "localName": "single"
+            },
+            "label": "ns1:single",
+            "required": true,
+            "occurs": {
+              "min": 1,
+              "max": 1
+            },
+            "present": true,
+            "kind": "field",
+            "type": {
+              "name": "xs:string",
+              "base": "string"
+            },
+            "value": "?",
+            "children": []
+          },
+          {
+            "id": "r/0!1/0",
+            "kind": "repeat",
+            "name": {
+              "namespaceUri": "",
+              "localName": "sequence"
+            },
+            "label": "",
+            "required": false,
+            "occurs": {
+              "min": 0,
+              "max": "unbounded"
+            },
+            "present": false,
+            "children": [],
+            "repeat": {
+              "canAdd": true,
+              "canRemove": false,
+              "instances": []
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "AllEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "AllEl"
+    },
+    "label": "ns1:AllEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "p"
+        },
+        "label": "ns1:p",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "present": false,
+        "kind": "field",
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/1",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "q"
+        },
+        "label": "ns1:q",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "xs:boolean",
+          "base": "boolean"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "GroupUserEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "GroupUserEl"
+    },
+    "label": "ns1:GroupUserEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "id"
+        },
+        "label": "id",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:ID",
+          "base": "string"
+        },
+        "value": "?",
+        "present": true,
+        "children": []
+      },
+      {
+        "id": "r/@1",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "lang"
+        },
+        "label": "lang",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "en",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/@2",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "version"
+        },
+        "label": "ns1:version",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/3",
+        "kind": "repeat",
+        "name": {
+          "namespaceUri": "",
+          "localName": "sequence"
+        },
+        "label": "",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 2
+        },
+        "present": true,
+        "children": [],
+        "repeat": {
+          "canAdd": true,
+          "canRemove": false,
+          "instances": [
+            {
+              "id": "r/3#0",
+              "kind": "group",
+              "name": {
+                "namespaceUri": "",
+                "localName": "sequence"
+              },
+              "label": "",
+              "required": false,
+              "occurs": {
+                "min": 1,
+                "max": 1
+              },
+              "present": true,
+              "children": [
+                {
+                  "id": "r/3#0/0",
+                  "name": {
+                    "namespaceUri": "",
+                    "localName": "first"
+                  },
+                  "label": "first",
+                  "required": true,
+                  "occurs": {
+                    "min": 1,
+                    "max": 1
+                  },
+                  "present": true,
+                  "kind": "field",
+                  "type": {
+                    "name": "xs:string",
+                    "base": "string"
+                  },
+                  "value": "?",
+                  "children": []
+                },
+                {
+                  "id": "r/3#0/1",
+                  "name": {
+                    "namespaceUri": "",
+                    "localName": "last"
+                  },
+                  "label": "last",
+                  "required": false,
+                  "occurs": {
+                    "min": 0,
+                    "max": 1
+                  },
+                  "present": false,
+                  "kind": "field",
+                  "type": {
+                    "name": "xs:string",
+                    "base": "string"
+                  },
+                  "value": "?",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "r/4",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "note"
+        },
+        "label": "ns1:note",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "present": false,
+        "kind": "field",
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "NodeEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "NodeEl"
+    },
+    "label": "ns1:NodeEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "label"
+        },
+        "label": "label",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "node",
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/1",
+        "kind": "repeat",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "child"
+        },
+        "label": "ns1:child",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": "unbounded"
+        },
+        "present": false,
+        "children": [],
+        "repeat": {
+          "canAdd": true,
+          "canRemove": false,
+          "instances": []
+        }
+      }
+    ]
+  },
+  "AnyHolderEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "AnyHolderEl"
+    },
+    "label": "ns1:AnyHolderEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "kind": "any",
+        "name": {
+          "namespaceUri": "",
+          "localName": "any"
+        },
+        "label": "any",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": "unbounded"
+        },
+        "present": false,
+        "children": []
+      },
+      {
+        "id": "r/1",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "blob"
+        },
+        "label": "ns1:blob",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "",
+          "base": "other"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "EmptyEl": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "EmptyEl"
+    },
+    "label": "ns1:EmptyEl",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/@0",
+        "kind": "attribute",
+        "name": {
+          "namespaceUri": "",
+          "localName": "only"
+        },
+        "label": "only",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "type": {
+          "name": "xs:string",
+          "base": "string"
+        },
+        "value": "?",
+        "present": false,
+        "children": []
+      }
+    ]
+  },
+  "NillableThing": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "NillableThing"
+    },
+    "label": "ns1:NillableThing",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "nillable": true,
+    "kind": "field",
+    "type": {
+      "name": "xs:string",
+      "base": "string"
+    },
+    "value": "?",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": []
+  },
+  "AnonRoot": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "AnonRoot"
+    },
+    "label": "ns1:AnonRoot",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "inner"
+        },
+        "label": "ns1:inner",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "present": false,
+        "kind": "field",
+        "type": {
+          "name": "",
+          "base": "string",
+          "enum": [
+            "ONE",
+            "TWO"
+          ]
+        },
+        "value": "?",
+        "children": []
+      },
+      {
+        "id": "r/1",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "pick"
+        },
+        "label": "ns1:pick",
+        "required": false,
+        "occurs": {
+          "min": 0,
+          "max": 1
+        },
+        "present": false,
+        "kind": "field",
+        "type": {
+          "name": "{urn:wb:sc:other}CodeOrNumber",
+          "base": "other"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  },
+  "Vehicle": {
+    "id": "r",
+    "name": {
+      "namespaceUri": "urn:wb:sc",
+      "localName": "Car"
+    },
+    "label": "ns1:Car",
+    "required": true,
+    "occurs": {
+      "min": 1,
+      "max": 1
+    },
+    "present": true,
+    "kind": "group",
+    "namespaces": {
+      "ns1": "urn:wb:sc"
+    },
+    "children": [
+      {
+        "id": "r/0",
+        "name": {
+          "namespaceUri": "urn:wb:sc",
+          "localName": "wheels"
+        },
+        "label": "ns1:wheels",
+        "required": true,
+        "occurs": {
+          "min": 1,
+          "max": 1
+        },
+        "present": true,
+        "kind": "field",
+        "type": {
+          "name": "{urn:wb:sc:other}SmallInt",
+          "base": "integer",
+          "min": "1",
+          "max": "100"
+        },
+        "value": "?",
+        "children": []
+      }
+    ]
+  }
+}
