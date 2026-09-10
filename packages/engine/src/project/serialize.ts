@@ -120,6 +120,7 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
         description: project.description,
         settings: compact({ ...project.settings }),
         properties: { ...project.properties },
+        activeEnvironmentId: project.activeEnvironmentId,
         writtenBy: writer,
       }),
     ),

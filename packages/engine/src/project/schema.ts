@@ -67,6 +67,7 @@ export const manifestSchema = z.looseObject({
     prettyPrintResponses: z.boolean(),
   }),
   properties: propertyMapSchema,
+  activeEnvironmentId: z.string().optional(),
   /** Name of the Wirebench build that last wrote this manifest; informational only. */
   writtenBy: z.string().optional(),
 });

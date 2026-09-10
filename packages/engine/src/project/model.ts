@@ -218,6 +218,8 @@ export interface Project {
   readonly properties: PropertyMap;
   readonly interfaces: readonly Interface[];
   readonly environments: readonly Environment[];
+  /** Id of the environment currently active for this project, if any. */
+  readonly activeEnvironmentId?: string;
   readonly wss: {
     readonly outgoing: readonly WssRef[];
     readonly incoming: readonly WssRef[];

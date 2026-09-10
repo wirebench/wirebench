@@ -290,6 +290,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     ...optional('description', manifest.description),
     settings: exact<ProjectSettings>(manifest.settings),
     properties: manifest.properties,
+    ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     interfaces: interfaces.sort(byOrder),
     environments: await loadEnvironments(fs, root),
     wss: {

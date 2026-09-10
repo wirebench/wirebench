@@ -432,6 +432,31 @@ describe('loadProject', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('round-trips activeEnvironmentId through save and load', async () => {
+    const dir = await tempProjectDir();
+    const project = { ...sampleProject(), activeEnvironmentId: sampleProject().environments[0]!.id };
+    await saveProject(project, dir);
+
+    expect((await readBytes(dir, 'wirebench.yaml')).toString('utf8')).toContain('activeEnvironmentId:');
+
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded.activeEnvironmentId).toBe(project.activeEnvironmentId);
+    expect(loaded).toEqual(project);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('omits activeEnvironmentId entirely when unset', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(sampleProject(), dir);
+
+    expect((await readBytes(dir, 'wirebench.yaml')).toString('utf8')).not.toContain('activeEnvironmentId');
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded.activeEnvironmentId).toBeUndefined();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('loads a project with no wss directory at all', async () => {
     const dir = await tempProjectDir();
     const project = sampleProject();
