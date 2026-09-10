@@ -3,19 +3,21 @@
  * has to travel over one socket: this module opens a dedicated single-connection dispatcher,
  * runs the legs sequentially over it, and closes it again.
  *
- *   leg 1  bare request, empty body   → 401 + `WWW-Authenticate: NTLM`
- *   leg 2  Type 1, empty body         → 401 + `WWW-Authenticate: NTLM <Type 2>`
- *   leg 3  Type 3 + the real body     → the final response
+ *   leg 1  bare request, the real body   → 200 (no auth needed), or 401 + `WWW-Authenticate: NTLM`
+ *   leg 2  Type 1, empty body            → 401 + `WWW-Authenticate: NTLM <Type 2>`
+ *   leg 3  Type 3, the real body again   → the final response
  *
- * Legs 1 and 2 send the caller's real headers but no body, so a large payload crosses the
- * wire once. A server that does not challenge answers leg 1 and the handshake stops there.
+ * Leg 1 *is* the caller's real request — most servers never challenge it, so the common
+ * case pays for the envelope exactly once. The empty-body optimisation applies only to leg
+ * 2, the Type 1 token, which never carries a body of its own; a server that does challenge
+ * causes the envelope to cross the wire a second time, on leg 3.
  */
 
 import { randomBytes } from 'node:crypto';
 import type { Dispatcher } from 'undici';
 import { createSingleConnectionDispatcher } from '../client.js';
 import { sendHttp } from '../client.js';
-import { headerValue } from '../headers.js';
+import { headerValue, withoutHeader } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
 import {
   createType1,
@@ -106,8 +108,9 @@ export async function ntlmHandshake(
   };
 
   try {
-    // Leg 1: bare, bodyless. A server that needs no auth answers here and we are done.
-    const first = await leg(request.headers, EMPTY_BODY);
+    // Leg 1: the real request, real body. A server that needs no auth answers here and we
+    // are done — the envelope has already made it, so nothing is resent.
+    const first = await leg(request.headers, request.body ?? EMPTY_BODY);
     if (first.status !== 401 || !offersNtlm(headerValue(first.headers, 'www-authenticate'))) {
       return { http: first, attempts: 1, challenged: false, durationMs };
     }

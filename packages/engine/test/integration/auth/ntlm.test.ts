@@ -39,7 +39,7 @@ function send(url: string, auth: SendAuth, extra?: { signal?: AbortSignal; timeo
 }
 
 describe('NTLM handshake over HTTP', () => {
-  it('authenticates in three legs over one connection and sends the body only on the last', async () => {
+  it('authenticates in three legs over one connection, carrying the body on legs 1 and 3', async () => {
     ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
 
     const exchange = await send(ntlm.url, CREDENTIALS);
@@ -51,10 +51,24 @@ describe('NTLM handshake over HTTP', () => {
 
     expect(ntlm.requests.map((entry) => entry.leg)).toEqual([1, 2, 3]);
     expect(ntlm.sameSocket()).toBe(true);
-    // Legs 1 and 2 carry no payload; only the authenticated leg pays for the envelope.
-    expect(ntlm.requests.map((entry) => entry.contentLength > 0)).toEqual([false, false, true]);
+    // Leg 1 is the real request (the common case never challenges, so it must carry the
+    // envelope); leg 2 (the Type 1 token) is bodyless; leg 3 (Type 3) carries the envelope
+    // again, since it was discarded once the server challenged leg 1.
+    expect(ntlm.requests.map((entry) => entry.contentLength > 0)).toEqual([true, false, true]);
     expect(ntlm.requests[1]?.authorization).toMatch(/^NTLM TlRMTVNTUAABAAAA/);
     expect(ntlm.requests[2]?.authorization).toMatch(/^NTLM TlRMTVNTUAADAAAA/);
+  });
+
+  it('sends leg 1 with the full body, leg 2 with Content-Length: 0, and leg 3 with the full body', async () => {
+    ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
+
+    await send(ntlm.url, CREDENTIALS);
+
+    expect(ntlm.requests).toHaveLength(3);
+    const envelopeLength = Buffer.byteLength(ENVELOPE, 'utf-8');
+    expect(ntlm.requests[0]?.contentLength).toBe(envelopeLength);
+    expect(ntlm.requests[1]?.contentLength).toBe(0);
+    expect(ntlm.requests[2]?.contentLength).toBe(envelopeLength);
   });
 
   it('sums every leg into durationMs and reports the final leg as the exchange', async () => {

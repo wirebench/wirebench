@@ -90,11 +90,15 @@ describe('send — HTTP Basic authentication', () => {
 
   // Task 34 rejected NTLM with `auth-unsupported`; Task 35 implements it, so what this
   // asserts now is that NTLM no longer throws and reports itself as the NTLM scheme.
-  it('runs NTLM instead of rejecting it, short-circuiting when the server never challenges', async () => {
+  // Fix round 1: leg 1 is the real request, so a server that never challenges must still
+  // have received the envelope — short-circuiting must not have discarded the body.
+  it('runs NTLM instead of rejecting it, sending the envelope when the server never challenges', async () => {
     server = await startTestSoapServer();
     const exchange = await send('/soap', { auth: { type: 'ntlm', username: 'user', password: 'pass' } });
     expect(exchange.http.status).toBe(200);
     expect(exchange.auth).toEqual({ scheme: 'ntlm', challenged: false, attempts: 1 });
+    expect(server.requests).toHaveLength(1);
+    expect(server.requests[0]?.body.toString('utf-8')).toBe(ENVELOPE);
   });
 
   it('honours an abort raised during the challenge retry', async () => {
