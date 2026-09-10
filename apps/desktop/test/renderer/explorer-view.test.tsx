@@ -87,10 +87,13 @@ describe('ExplorerView', () => {
     expect(screen.getByText('Endpoints')).toBeTruthy();
     expect(screen.getByText('Operations')).toBeTruthy();
 
-    // react-arborist's row click handler both selects and activates a node; double-clicking
-    // is the user gesture the explorer exposes for it, but a plain click already triggers it.
     const requestRow = screen.getByText('Request 1');
+
+    // A single click only selects the node — it must not open an editor tab.
     fireEvent.click(requestRow);
+    expect(useEditorsStore.getState().tabs).toHaveLength(0);
+
+    fireEvent.doubleClick(requestRow);
 
     expect(useEditorsStore.getState().tabs).toHaveLength(1);
     expect(useEditorsStore.getState().tabs[0]?.requestId).toBe('req-1');

@@ -101,4 +101,32 @@ describe('ImportDialog', () => {
 
     expect(await screen.findByText('Could not reach the server')).toBeTruthy();
   });
+
+  it('cancelling produces no error and returns the dialog to idle', async () => {
+    let resolveImport: (value: { ok: false; error: { code: string; message: string } }) => void = () => {};
+    const importFn = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveImport = resolve;
+        }),
+    );
+    const cancelImportFn = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } });
+    stubWirebench({ definition: { import: importFn, close: vi.fn(), cancelImport: cancelImportFn } });
+
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(importFn).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(cancelImportFn).toHaveBeenCalled());
+
+    // The in-flight import resolves as aborted after the cancel — this must not surface an error.
+    resolveImport({ ok: false, error: { code: 'aborted', message: 'Import was cancelled' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy());
+    expect(screen.queryByText('Import was cancelled')).toBeNull();
+  });
 });

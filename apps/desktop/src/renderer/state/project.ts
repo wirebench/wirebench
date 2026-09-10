@@ -2,6 +2,7 @@ import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type { ImportSourceWire, InterfaceSummary, RequestGenerateResponse } from '../../shared/wire-types.js';
+import { useEditorsStore } from './editors.js';
 import { ipc } from './ipc-client.js';
 
 /** One request tab: an operation's generated envelope, plus whatever the user has edited. */
@@ -39,6 +40,12 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeInterface: (interfaceId: string) => Promise<void>;
   readonly updateRequest: (requestId: string, patch: Partial<Omit<RequestDraft, 'id' | 'interfaceId'>>) => void;
   readonly setEndpoint: (requestId: string, url: string) => void;
+  /** Generates another draft for the operation (same path `definition.import` uses), named `Request N`. */
+  readonly addRequest: (interfaceId: string, bindingName: string, operationName: string) => Promise<string>;
+  /** Copies an existing draft, named `<name> (copy)`. Returns the new draft's id. */
+  readonly cloneRequest: (requestId: string) => string;
+  /** Deletes a draft and closes its open editor tab, if any. */
+  readonly removeRequest: (requestId: string) => void;
 }
 
 type Mutate = (draft: Draft<ProjectSnapshot>) => void;
@@ -56,6 +63,7 @@ function draftFromGenerated(
   operationName: string,
   summary: InterfaceSummary,
   generated: RequestGenerateResponse,
+  name = 'Request 1',
 ): RequestDraft {
   const endpoint = firstAddress(summary, bindingLocal);
   return {
@@ -63,7 +71,7 @@ function draftFromGenerated(
     interfaceId,
     bindingName: binding,
     operationName,
-    name: 'Request 1',
+    name,
     envelopeXml: generated.envelopeXml,
     soapVersion: generated.soapVersion,
     ...(generated.soapAction !== undefined ? { soapAction: generated.soapAction } : {}),
@@ -163,6 +171,58 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     setEndpoint: (requestId, url) => {
       get().updateRequest(requestId, { endpoint: url });
+    },
+
+    addRequest: async (interfaceId, bindingName, operationName) => {
+      const summary = get().interfaces[interfaceId];
+      if (summary === undefined) {
+        throw new Error(`unknown-interface: ${interfaceId}`);
+      }
+      const operation = summary.operations.find((op) => op.binding === bindingName && op.name === operationName);
+      if (operation === undefined) {
+        throw new Error(`unknown-operation: ${bindingName} ${operationName}`);
+      }
+      const existingCount = Object.values(get().requests).filter(
+        (r) => r.interfaceId === interfaceId && r.bindingName === bindingName && r.operationName === operationName,
+      ).length;
+      const name = `Request ${String(existingCount + 1)}`;
+
+      const generated = await ipc().request.generate({ interfaceId, bindingName, operationName });
+      const draftRequest = generated.ok
+        ? draftFromGenerated(
+            interfaceId,
+            bindingName,
+            operation.bindingLocal,
+            operationName,
+            summary,
+            generated.value,
+            name,
+          )
+        : failedDraft(interfaceId, bindingName, operationName, generated.error.message);
+      const finalDraft = { ...draftRequest, name };
+      update((draft) => {
+        draft.requests[finalDraft.id] = finalDraft;
+      });
+      return finalDraft.id;
+    },
+
+    cloneRequest: (requestId) => {
+      const source = get().requests[requestId];
+      if (source === undefined) {
+        throw new Error(`unknown-request: ${requestId}`);
+      }
+      const clone: RequestDraft = { ...source, id: crypto.randomUUID(), name: `${source.name} (copy)` };
+      update((draft) => {
+        draft.requests[clone.id] = clone;
+      });
+      return clone.id;
+    },
+
+    removeRequest: (requestId) => {
+      update((draft) => {
+        delete draft.requests[requestId];
+      });
+      useEditorsStore.getState().close(`request:${requestId}`);
     },
   };
 });

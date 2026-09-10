@@ -4,10 +4,11 @@ import { Tree } from 'react-arborist';
 import { FileDown, Folder, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { IconButton } from '../../components/icon-button.js';
-import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { ExplorerContextMenu } from './context-menu.js';
+import { explorerActions } from './explorer-actions.js';
+import { registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode } from './tree-nodes.js';
 import { buildExplorerTree } from './tree-nodes.js';
 
@@ -44,26 +45,43 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   binding: Network,
 };
 
-interface NodeRowProps extends NodeRendererProps<ExplorerNode> {
-  readonly onRequestRemoval: (interfaceId: string | undefined) => void;
-}
-
-function NodeRow({ node, style, dragHandle, onRequestRemoval }: NodeRowProps) {
+function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
   return (
-    <ExplorerContextMenu node={node.data} onRemoveInterface={() => onRequestRemoval(node.data.interfaceId)}>
+    <ExplorerContextMenu node={node.data}>
       <div
         ref={dragHandle}
         style={style}
         role="treeitem"
         aria-selected={node.isSelected}
         tabIndex={-1}
-        onClick={node.handleClick}
+        // A single click only selects (feeds the details panel / palette `when` gates); opening
+        // a request tab needs a double-click or Enter. react-arborist's default row wrapper
+        // calls `node.handleClick` (which both selects AND activates) on any click that bubbles
+        // to it, so both handlers here stop propagation to keep that default from also firing.
+        onClick={(e) => {
+          e.stopPropagation();
+          node.select();
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          node.activate();
+        }}
         className={`flex h-full items-center gap-1.5 px-1 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
-        {node.isInternal && <span className="w-3 shrink-0 text-fg-subtle">{node.isOpen ? '▾' : '▸'}</span>}
+        {node.isInternal && (
+          <span
+            className="w-3 shrink-0 text-fg-subtle"
+            onClick={(e) => {
+              e.stopPropagation();
+              node.toggle();
+            }}
+          >
+            {node.isOpen ? '▾' : '▸'}
+          </span>
+        )}
         {Icon !== undefined && <Icon size={13} />}
         {node.isEditing ? (
           <input
@@ -95,29 +113,26 @@ export function ExplorerView() {
   const order = useProjectStore((state) => state.order);
   const requests = useProjectStore((state) => state.requests);
   const removeInterface = useProjectStore((state) => state.removeInterface);
+  const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
-  const openEditor = useEditorsStore((state) => state.open);
+  const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
+  const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
+  const requestRemoveInterface = useUiStore((state) => state.requestRemoveInterface);
+  const requestDeleteRequest = useUiStore((state) => state.requestDeleteRequest);
 
   const [containerRef, size] = useElementSize<HTMLDivElement>();
-  const [pendingRemoval, setPendingRemoval] = useState<string | undefined>(undefined);
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
 
   const summaries = order.map((id) => interfaces[id]).filter((s): s is NonNullable<typeof s> => s !== undefined);
   const data = buildExplorerTree(summaries, Object.values(requests));
 
-  const openRequestTab = (node: ExplorerNode): void => {
-    if (node.kind !== 'request' || node.requestId === undefined) {
-      return;
-    }
-    const request = requests[node.requestId];
-    openEditor({
-      id: `request:${node.requestId}`,
-      kind: 'request',
-      title: request?.name ?? node.label,
-      requestId: node.requestId,
-    });
-  };
+  useEffect(() => {
+    registerExplorerTree(treeRef ?? null);
+    return () => registerExplorerTree(null);
+  }, [treeRef]);
+
+  const requestPendingDeletion = confirmDeleteRequestId !== undefined ? requests[confirmDeleteRequestId] : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -150,12 +165,26 @@ export function ExplorerView() {
               openByDefault
               disableEdit={(node) => node.kind !== 'request'}
               aria-label="Explorer"
-              onActivate={(node: NodeApi<ExplorerNode>) => openRequestTab(node.data)}
+              onActivate={(node: NodeApi<ExplorerNode>) => explorerActions.openRequest(node.data.requestId)}
               onSelect={(nodes) => {
                 const node = nodes[0]?.data;
-                if (node !== undefined) {
-                  setSelection({ kind: node.kind, id: node.id });
+                if (node === undefined) {
+                  setSelection(undefined);
+                  return;
                 }
+                const definitionUrl =
+                  node.kind === 'interface' ? interfaces[node.interfaceId ?? '']?.definitionUrl : undefined;
+                setSelection({
+                  kind: node.kind,
+                  id: node.id,
+                  ...(node.interfaceId !== undefined ? { interfaceId: node.interfaceId } : {}),
+                  ...(definitionUrl !== undefined ? { definitionUrl } : {}),
+                  ...(node.bindingName !== undefined ? { bindingName: node.bindingName } : {}),
+                  ...(node.operationName !== undefined ? { operationName: node.operationName } : {}),
+                  ...(node.soapAction !== undefined ? { soapAction: node.soapAction } : {}),
+                  ...(node.requestId !== undefined ? { requestId: node.requestId } : {}),
+                  ...(node.address !== undefined ? { address: node.address } : {}),
+                });
               }}
               onRename={({ id, name }) => {
                 const node = data.flatMap(flatten).find((n) => n.id === id);
@@ -163,16 +192,25 @@ export function ExplorerView() {
                   useProjectStore.getState().updateRequest(node.requestId, { name });
                 }
               }}
+              onDelete={({ nodes }) => {
+                for (const node of nodes) {
+                  if (node.data.kind === 'interface') {
+                    requestRemoveInterface(node.data.interfaceId);
+                  } else if (node.data.kind === 'request') {
+                    requestDeleteRequest(node.data.requestId);
+                  }
+                }
+              }}
             >
-              {(props) => <NodeRow {...props} onRequestRemoval={setPendingRemoval} />}
+              {(props) => <NodeRow {...props} />}
             </Tree>
           )
         )}
       </div>
 
       <AlertDialog.Root
-        open={pendingRemoval !== undefined}
-        onOpenChange={(open) => !open && setPendingRemoval(undefined)}
+        open={confirmRemoveInterfaceId !== undefined}
+        onOpenChange={(open) => !open && requestRemoveInterface(undefined)}
       >
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
@@ -192,12 +230,49 @@ export function ExplorerView() {
                   type="button"
                   className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
                   onClick={() => {
-                    if (pendingRemoval !== undefined) {
-                      void removeInterface(pendingRemoval);
+                    if (confirmRemoveInterfaceId !== undefined) {
+                      void removeInterface(confirmRemoveInterfaceId);
                     }
                   }}
                 >
                   Remove
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root
+        open={confirmDeleteRequestId !== undefined}
+        onOpenChange={(open) => !open && requestDeleteRequest(undefined)}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
+          <AlertDialog.Content className="fixed top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg">
+            <AlertDialog.Title className="text-md font-medium text-fg-default">Delete request?</AlertDialog.Title>
+            <AlertDialog.Description className="mt-1 text-sm text-fg-subtle">
+              {requestPendingDeletion !== undefined
+                ? `"${requestPendingDeletion.name}" will be deleted. This cannot be undone.`
+                : 'This cannot be undone.'}
+            </AlertDialog.Description>
+            <div className="mt-4 flex justify-end gap-2">
+              <AlertDialog.Cancel asChild>
+                <button type="button" className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">
+                  Cancel
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  type="button"
+                  className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
+                  onClick={() => {
+                    if (confirmDeleteRequestId !== undefined) {
+                      removeRequest(confirmDeleteRequestId);
+                    }
+                  }}
+                >
+                  Delete
                 </button>
               </AlertDialog.Action>
             </div>

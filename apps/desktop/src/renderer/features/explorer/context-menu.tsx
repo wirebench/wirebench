@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { useEditorsStore } from '../../state/editors.js';
-import { useProjectStore } from '../../state/project.js';
-import { useUiStore } from '../../state/ui.js';
+import { explorerActions } from './explorer-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
 
 const ITEM_CLASS =
@@ -11,32 +9,29 @@ const ITEM_CLASS =
 export interface ExplorerContextMenuProps {
   readonly node: ExplorerNode;
   readonly children: ReactNode;
-  readonly onRemoveInterface: () => void;
 }
 
-/** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
-export function ExplorerContextMenu({ node, children, onRemoveInterface }: ExplorerContextMenuProps) {
-  const openImportDialog = useUiStore((state) => state.openImportDialog);
-  const openEditor = useEditorsStore((state) => state.open);
-  const requests = useProjectStore((state) => state.requests);
-
+/** The right-click menu for one explorer node; the items shown depend on `node.kind`. Every item
+ * delegates to {@link explorerActions} — the same handlers the `explorer.*` palette commands run. */
+export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
   const items: ReactNode[] = [];
 
   if (node.kind === 'interface') {
     items.push(
-      <ContextMenu.Item key="import-another" className={ITEM_CLASS} onSelect={openImportDialog}>
+      <ContextMenu.Item key="import-another" className={ITEM_CLASS} onSelect={() => explorerActions.importAnother()}>
         Import another WSDL…
       </ContextMenu.Item>,
-      <ContextMenu.Item key="remove" className={ITEM_CLASS} onSelect={onRemoveInterface}>
+      <ContextMenu.Item
+        key="remove"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.removeInterface(node.interfaceId)}
+      >
         Remove interface
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="copy-url"
         className={ITEM_CLASS}
-        onSelect={() => {
-          const summary = useProjectStore.getState().interfaces[node.interfaceId ?? ''];
-          if (summary !== undefined) void navigator.clipboard.writeText(summary.definitionUrl);
-        }}
+        onSelect={() => explorerActions.copyDefinitionUrl(node.interfaceId)}
       >
         Copy definition URL
       </ContextMenu.Item>,
@@ -48,18 +43,14 @@ export function ExplorerContextMenu({ node, children, onRemoveInterface }: Explo
       <ContextMenu.Item
         key="new-request"
         className={ITEM_CLASS}
-        onSelect={() => {
-          console.info('[wirebench] New request — not implemented yet (Task 15)');
-        }}
+        onSelect={() => explorerActions.newRequest(node.interfaceId, node.bindingName, node.operationName)}
       >
         New request
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="copy-soap-action"
         className={ITEM_CLASS}
-        onSelect={() => {
-          if (node.soapAction !== undefined) void navigator.clipboard.writeText(node.soapAction);
-        }}
+        onSelect={() => explorerActions.copySoapAction(node.soapAction)}
       >
         Copy SOAPAction
       </ContextMenu.Item>,
@@ -68,42 +59,27 @@ export function ExplorerContextMenu({ node, children, onRemoveInterface }: Explo
 
   if (node.kind === 'request') {
     items.push(
-      <ContextMenu.Item
-        key="open"
-        className={ITEM_CLASS}
-        onSelect={() => {
-          const request = node.requestId !== undefined ? requests[node.requestId] : undefined;
-          if (request !== undefined) {
-            openEditor({ id: `request:${request.id}`, kind: 'request', title: request.name, requestId: request.id });
-          }
-        }}
-      >
+      <ContextMenu.Item key="open" className={ITEM_CLASS} onSelect={() => explorerActions.openRequest(node.requestId)}>
         Open
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="clone"
         className={ITEM_CLASS}
-        onSelect={() => {
-          console.info('[wirebench] Clone request — not implemented yet (Task 15)');
-        }}
+        onSelect={() => explorerActions.cloneRequest(node.requestId)}
       >
         Clone
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="rename"
         className={ITEM_CLASS}
-        onSelect={() => {
-          console.info('[wirebench] Rename request — use the inline tree editor');
-        }}
+        onSelect={() => explorerActions.renameRequest(node.requestId)}
       >
         Rename…
       </ContextMenu.Item>,
       <ContextMenu.Item
         key="delete"
         className={ITEM_CLASS}
-        onSelect={() => {
-          console.info('[wirebench] Delete request — not implemented yet (Task 15)');
-        }}
+        onSelect={() => explorerActions.deleteRequest(node.requestId)}
       >
         Delete
       </ContextMenu.Item>,
@@ -115,9 +91,7 @@ export function ExplorerContextMenu({ node, children, onRemoveInterface }: Explo
       <ContextMenu.Item
         key="copy-address"
         className={ITEM_CLASS}
-        onSelect={() => {
-          if (node.address !== undefined) void navigator.clipboard.writeText(node.address);
-        }}
+        onSelect={() => explorerActions.copyEndpointAddress(node.address)}
       >
         Copy address
       </ContextMenu.Item>,

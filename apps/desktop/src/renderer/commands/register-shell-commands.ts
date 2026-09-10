@@ -1,4 +1,5 @@
 import { showToast } from '../components/toast.js';
+import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -137,7 +138,7 @@ export function registerShellCommands(openPalette: () => void): void {
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
     run: () => {
-      ui().openImportDialog();
+      explorerActions.importAnother();
     },
   });
   registerCommand({
@@ -145,8 +146,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Remove Interface',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
-    run: () => {
-      notImplemented('Remove interface from the palette', 14);
+    run: (ctx) => {
+      explorerActions.removeInterface(ctx.selection?.interfaceId);
     },
   });
   registerCommand({
@@ -154,8 +155,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Copy Definition URL',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
-    run: () => {
-      notImplemented('Copy definition URL from the palette', 14);
+    run: (ctx) => {
+      explorerActions.copyDefinitionUrl(ctx.selection?.interfaceId);
     },
   });
   registerCommand({
@@ -163,8 +164,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: New Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'operation',
-    run: () => {
-      notImplemented('New request from the palette', 15);
+    run: (ctx) => {
+      explorerActions.newRequest(ctx.selection?.interfaceId, ctx.selection?.bindingName, ctx.selection?.operationName);
     },
   });
   registerCommand({
@@ -172,8 +173,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Copy SOAPAction',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'operation',
-    run: () => {
-      notImplemented('Copy SOAPAction from the palette', 14);
+    run: (ctx) => {
+      explorerActions.copySoapAction(ctx.selection?.soapAction);
     },
   });
   registerCommand({
@@ -181,8 +182,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Open Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
-    run: () => {
-      notImplemented('Open request from the palette', 15);
+    run: (ctx) => {
+      explorerActions.openRequest(ctx.selection?.requestId);
     },
   });
   registerCommand({
@@ -190,8 +191,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Clone Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
-    run: () => {
-      notImplemented('Clone request from the palette', 15);
+    run: (ctx) => {
+      explorerActions.cloneRequest(ctx.selection?.requestId);
     },
   });
   registerCommand({
@@ -199,8 +200,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Rename Request…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
-    run: () => {
-      notImplemented('Rename request from the palette', 15);
+    run: (ctx) => {
+      explorerActions.renameRequest(ctx.selection?.requestId);
     },
   });
   registerCommand({
@@ -208,8 +209,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Delete Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
-    run: () => {
-      notImplemented('Delete request from the palette', 15);
+    run: (ctx) => {
+      explorerActions.deleteRequest(ctx.selection?.requestId);
     },
   });
   registerCommand({
@@ -217,8 +218,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Explorer: Copy Endpoint Address',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'endpoint',
-    run: () => {
-      notImplemented('Copy endpoint address from the palette', 14);
+    run: (ctx) => {
+      explorerActions.copyEndpointAddress(ctx.selection?.address);
     },
   });
 }

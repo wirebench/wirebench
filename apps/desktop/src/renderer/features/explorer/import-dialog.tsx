@@ -37,6 +37,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [importing, setImporting] = useState(false);
   const [problems, setProblems] = useState<ImportProblemWire[]>([]);
   const tokenRef = useRef<string | undefined>(undefined);
+  // Tokens for imports the user cancelled — the in-flight promise still settles after `onCancel`
+  // returns, so its resolution/rejection must be ignored rather than surfaced as an error.
+  const cancelledTokensRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) {
@@ -92,6 +95,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   }
 
   async function onImport(): Promise<void> {
+    if (importing) {
+      // Guards against a double submit racing two imports under one token.
+      return;
+    }
     reset();
     const source = buildSource();
     if (source === undefined) {
@@ -103,25 +110,37 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     try {
       const options = useAuth && username.length > 0 ? { auth: { username, password } } : undefined;
       const summary = await useProjectStore.getState().importDefinition(source, options, token);
+      if (cancelledTokensRef.current.has(token)) {
+        return;
+      }
       useProblemsStore.getState().set(summary.id, summary.problems);
       setProblems(summary.problems);
       if (summary.problems.length === 0) {
         onOpenChange(false);
       }
     } catch (error) {
+      if (cancelledTokensRef.current.has(token)) {
+        // The user already cancelled this import; its rejection is expected, not an error.
+        return;
+      }
       setImportError(error instanceof Error ? error.message : 'Import failed');
     } finally {
+      cancelledTokensRef.current.delete(token);
+      if (tokenRef.current === token) {
+        tokenRef.current = undefined;
+      }
       setImporting(false);
-      tokenRef.current = undefined;
     }
   }
 
   async function onCancel(): Promise<void> {
     const token = tokenRef.current;
     if (token !== undefined) {
+      cancelledTokensRef.current.add(token);
       await ipc().definition.cancelImport({ token });
     }
     setImporting(false);
+    setProgress(undefined);
   }
 
   function showInProblems(): void {

@@ -4,10 +4,21 @@ import { create } from 'zustand';
 import type { ConsoleTab, SidebarView, ThemePreference, UiSnapshot } from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
-/** A selected node in the explorer tree, read by the details panel (Task 30). */
+/** A selected node in the explorer tree, read by the details panel (Task 30) and explorer actions. */
 export interface Selection {
   readonly kind: string;
   readonly id: string;
+  /** Set when `kind` is `interface`: the interface id and its definition URL. */
+  readonly interfaceId?: string;
+  readonly definitionUrl?: string;
+  /** Set when `kind` is `operation`: the binding/operation this node maps to, and its SOAPAction. */
+  readonly bindingName?: string;
+  readonly operationName?: string;
+  readonly soapAction?: string;
+  /** Set when `kind` is `request`: the request draft id. */
+  readonly requestId?: string;
+  /** Set when `kind` is `endpoint`: the port's address. */
+  readonly address?: string;
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
@@ -16,9 +27,15 @@ export interface UiStore extends UiSnapshot {
   readonly selection: Selection | undefined;
   /** Whether the Import WSDL dialog is open. Transient — never persisted. */
   readonly importDialogOpen: boolean;
+  /** Interface id pending a remove confirmation, from either the context menu or a command. */
+  readonly confirmRemoveInterfaceId: string | undefined;
+  /** Request id pending a delete confirmation, from either the context menu or a command. */
+  readonly confirmDeleteRequestId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
   readonly closeImportDialog: () => void;
+  readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
+  readonly requestDeleteRequest: (requestId: string | undefined) => void;
   readonly toggleSidebar: () => void;
   readonly toggleConsole: () => void;
   readonly toggleDetails: () => void;
@@ -51,6 +68,8 @@ export const useUiStore = create<UiStore>((set, get) => {
     ...DEFAULT_UI_STATE,
     selection: undefined,
     importDialogOpen: false,
+    confirmRemoveInterfaceId: undefined,
+    confirmDeleteRequestId: undefined,
 
     setSelection: (selection) => {
       set({ selection });
@@ -60,6 +79,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     closeImportDialog: () => {
       set({ importDialogOpen: false });
+    },
+    requestRemoveInterface: (interfaceId) => {
+      set({ confirmRemoveInterfaceId: interfaceId });
+    },
+    requestDeleteRequest: (requestId) => {
+      set({ confirmDeleteRequestId: requestId });
     },
 
     toggleSidebar: () =>

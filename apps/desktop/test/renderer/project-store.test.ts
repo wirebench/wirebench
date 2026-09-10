@@ -164,4 +164,98 @@ describe('useProjectStore', () => {
     useProjectStore.getState().setEndpoint('r1', 'http://new-endpoint.test');
     expect(useProjectStore.getState().requests['r1']?.endpoint).toBe('http://new-endpoint.test');
   });
+
+  it('addRequest generates another draft named by existing-draft count for the operation', async () => {
+    const generateFn = vi.fn().mockResolvedValue({ ok: true, value: generated('Add') });
+    useProjectStore.setState({
+      interfaces: { 'iface-1': summary },
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: ['iface-1'],
+    });
+    window.wirebench = {
+      definition: { import: vi.fn(), close: vi.fn(), cancelImport: vi.fn() },
+      request: { generate: generateFn, send: vi.fn(), cancel: vi.fn() },
+      app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
+      on: vi.fn(),
+    };
+
+    const newId = await useProjectStore.getState().addRequest('iface-1', '{tns}B', 'Add');
+
+    expect(generateFn).toHaveBeenCalledWith({ interfaceId: 'iface-1', bindingName: '{tns}B', operationName: 'Add' });
+    const draft = useProjectStore.getState().requests[newId];
+    expect(draft?.name).toBe('Request 2');
+    expect(draft?.interfaceId).toBe('iface-1');
+    expect(draft?.operationName).toBe('Add');
+    expect(Object.keys(useProjectStore.getState().requests)).toHaveLength(2);
+  });
+
+  it('cloneRequest copies a draft with a "(copy)" name and a new id', () => {
+    useProjectStore.setState({
+      interfaces: {},
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: { a: 'b' },
+        },
+      },
+      order: [],
+    });
+
+    const newId = useProjectStore.getState().cloneRequest('r1');
+
+    expect(newId).not.toBe('r1');
+    const clone = useProjectStore.getState().requests[newId];
+    expect(clone?.name).toBe('Request 1 (copy)');
+    expect(clone?.envelopeXml).toBe('x');
+    expect(clone?.headers).toEqual({ a: 'b' });
+    expect(useProjectStore.getState().requests['r1']?.name).toBe('Request 1');
+  });
+
+  it('removeRequest deletes the draft and closes its open editor tab', async () => {
+    const { useEditorsStore } = await import('../../src/renderer/state/editors.js');
+    useProjectStore.setState({
+      interfaces: {},
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: [],
+    });
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:r1', kind: 'request', title: 'Request 1', requestId: 'r1' }],
+      activeId: 'request:r1',
+    });
+
+    useProjectStore.getState().removeRequest('r1');
+
+    expect(useProjectStore.getState().requests['r1']).toBeUndefined();
+    expect(useEditorsStore.getState().tabs).toHaveLength(0);
+  });
 });
