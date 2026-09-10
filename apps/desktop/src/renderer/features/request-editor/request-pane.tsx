@@ -233,7 +233,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   }, []);
 
   return (
-    <div data-testid="request-pane" className="flex h-full min-h-0 flex-col border-r border-hairline">
+    <div data-testid="request-pane-surface" className="flex h-full min-h-0 flex-col border-r border-hairline">
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
         <ViewTabs label="Request views" items={VIEWS} active={view} onSelect={(id) => setView(id as typeof view)} />
         <div className="flex items-center gap-1">

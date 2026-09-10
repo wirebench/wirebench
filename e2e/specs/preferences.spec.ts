@@ -51,8 +51,7 @@ test.describe('request properties and preferences', () => {
     await timeout.press('Enter');
 
     // Point the request at a route that answers half a second later than that.
-    await page.getByLabel('Endpoint', { exact: true }).selectOption('__custom__');
-    await page.getByLabel('Custom endpoint URL').fill(`${server!.url}/delay/500`);
+    await page.getByTestId('request-endpoint').fill(`${server!.url}/delay/500`);
 
     await page.getByTestId('request-send').click();
 
@@ -88,7 +87,9 @@ test.describe('request properties and preferences', () => {
 
     // --- back to the request, and recreate it with the new indent -------------
     await page.getByRole('tab', { name: 'Request 1' }).click();
-    await page.getByTestId('request-recreate').click();
+    // Recreate lives in the request pane's context menu since Task 32b.
+    await page.getByTestId('request-pane-surface').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Recreate request (keep values)' }).click();
 
     await expect
       .poll(

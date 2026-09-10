@@ -48,8 +48,7 @@ test.describe('Inspectors (Headers, timings)', () => {
 
     // The /headers route echoes the request headers back as JSON — so what the response pane
     // shows IS what the server received.
-    await page.getByLabel('Endpoint', { exact: true }).selectOption('__custom__');
-    await page.getByLabel('Custom endpoint URL').fill(`${server.url}/headers`);
+    await page.getByTestId('request-endpoint').fill(`${server.url}/headers`);
 
     // Request pane → Headers inspector → add X-Trace: abc.
     await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Headers' }).click();
