@@ -2,10 +2,12 @@ import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 
 test.describe('app smoke', () => {
-  let launched: LaunchedApp;
+  let launched: LaunchedApp | undefined;
 
   test.afterEach(async () => {
-    await launched.close();
+    if (launched) {
+      await launched.close();
+    }
   });
 
   test('launches and shows the shell', async () => {

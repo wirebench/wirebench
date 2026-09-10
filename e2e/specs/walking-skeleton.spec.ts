@@ -3,12 +3,16 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 test.describe('walking skeleton: import -> open request -> send -> response', () => {
-  let launched: LaunchedApp;
-  let server: TestSoapServer;
+  let launched: LaunchedApp | undefined;
+  let server: TestSoapServer | undefined;
 
   test.afterEach(async () => {
-    await launched.close();
-    await server.close();
+    if (launched) {
+      await launched.close();
+    }
+    if (server) {
+      await server.close();
+    }
   });
 
   test('imports a WSDL, sends Add, and shows the response', async () => {

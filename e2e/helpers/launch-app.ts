@@ -26,34 +26,41 @@ export async function launchApp(): Promise<LaunchedApp> {
   const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-'));
   const consoleErrors: string[] = [];
 
-  const app = await electron.launch({
-    args: [MAIN_PATH],
-    env: {
-      ...process.env,
-      NODE_ENV: 'production',
-      WIREBENCH_E2E: '1',
-      WIREBENCH_USER_DATA_DIR: userDataDir,
-    },
-  });
+  try {
+    const app = await electron.launch({
+      args: [MAIN_PATH],
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        WIREBENCH_E2E: '1',
+        WIREBENCH_USER_DATA_DIR: userDataDir,
+      },
+    });
 
-  const window = await app.firstWindow();
-  window.on('console', (message) => {
-    if (message.type() === 'error') {
-      consoleErrors.push(message.text());
-    }
-  });
+    const window = await app.firstWindow();
+    window.on('console', (message) => {
+      if (message.type() === 'error') {
+        consoleErrors.push(message.text());
+      }
+    });
 
-  await window.waitForSelector('[data-testid="activity-bar"]');
+    await window.waitForSelector('[data-testid="activity-bar"]');
 
-  return {
-    app,
-    window,
-    userDataDir,
-    async close(): Promise<void> {
-      await app.close();
-      rmSync(userDataDir, { recursive: true, force: true });
-      const unexpected = consoleErrors.filter((text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)));
-      expect(unexpected, `unexpected renderer console errors:\n${unexpected.join('\n')}`).toEqual([]);
-    },
-  };
+    return {
+      app,
+      window,
+      userDataDir,
+      async close(): Promise<void> {
+        await app.close();
+        rmSync(userDataDir, { recursive: true, force: true });
+        const unexpected = consoleErrors.filter(
+          (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
+        );
+        expect(unexpected, `unexpected renderer console errors:\n${unexpected.join('\n')}`).toEqual([]);
+      },
+    };
+  } catch (error) {
+    rmSync(userDataDir, { recursive: true, force: true });
+    throw error;
+  }
 }
