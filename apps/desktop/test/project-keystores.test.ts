@@ -165,6 +165,14 @@ describe('keystore mutations', () => {
   });
 });
 
+/**
+ * The parsed-keystore cache, which has no public surface: these tests assert that decrypted key
+ * material is actually dropped, not merely that the next read happens to be correct.
+ */
+function cacheOf(service: ProjectService): Map<string, unknown> {
+  return (service as unknown as { keystoreCache: Map<string, unknown> }).keystoreCache;
+}
+
 describe('ProjectService keystores', () => {
   it('refuses a keystore outside the project folder unless it was picked', async () => {
     const dir = tempDir('proj');
@@ -264,13 +272,47 @@ describe('ProjectService keystores', () => {
     // The live send input the renderer (and the cURL export) sees carries no key material.
     expect(JSON.stringify(service.buildLiveSendInput(requestId))).not.toContain('BEGIN');
 
-    // Removing the keystore clears the selection rather than leaving a send to fail.
+    // Removing the keystore clears the selection rather than leaving a send to fail — and drops
+    // the parsed (decrypted) copy rather than leaving key material in memory.
     await service.mutate({ kind: 'remove-keystore', keystoreId });
     expect(await service.tlsFor(requestId)).toBeUndefined();
+    expect(cacheOf(service).has(keystoreId)).toBe(false);
 
     // A request pointed at an id the project never had fails the send rather than degrading.
     await service.mutate({ kind: 'update-request-properties', requestId, patch: { sslKeystoreRef: 'ghost' } });
     await expect(service.tlsFor(requestId)).rejects.toThrow(/no longer has/);
+    await service.close();
+  });
+
+  it('re-reads the file after the password behind an unchanged ref is replaced', async () => {
+    // `secrets.replace` keeps the ref stable on purpose, so the cache key — which is built from
+    // the ref, not the secret — cannot see the change. The mutation must evict it explicitly,
+    // or a corrected password would keep reporting the old failure.
+    const dir = tempDir('proj');
+    let stored = PASSWORD;
+    const service = newService(tempDir('ud'), undefined, { get: () => Promise.resolve(stored) });
+    await service.create({ dir, name: 'Demo' });
+    await writeFile(join(dir, 'client.p12'), pkcs12Bytes());
+    const added = await service.mutate({
+      kind: 'add-keystore',
+      path: join(dir, 'client.p12'),
+      passwordSecretRef: 'secret:1',
+    });
+    const keystoreId = added.createdKeystoreId as string;
+    // A successful parse — the one the cache actually holds on to.
+    expect((await service.inspectKeystore(keystoreId)).status).toBe('ok');
+    expect(cacheOf(service).has(keystoreId)).toBe(true);
+
+    stored = 'wrong';
+    await service.mutate({ kind: 'update-keystore', keystoreId, patch: { passwordSecretRef: 'secret:1' } });
+
+    expect(cacheOf(service).has(keystoreId)).toBe(false);
+    expect((await service.inspectKeystore(keystoreId)).status).toBe('bad-password');
+
+    // …and correcting it again is equally visible, which is the point of the in-place fix.
+    stored = PASSWORD;
+    await service.mutate({ kind: 'update-keystore', keystoreId, patch: { passwordSecretRef: 'secret:1' } });
+    expect((await service.inspectKeystore(keystoreId)).status).toBe('ok');
     await service.close();
   });
 

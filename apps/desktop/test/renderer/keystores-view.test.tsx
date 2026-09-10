@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { KeystoresView } from '../../src/renderer/features/wss/keystores-view.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -32,11 +32,13 @@ function setUp(
     readonly keystores?: readonly KeystoreWire[];
     readonly inspect?: Stub;
     readonly pickFile?: Stub;
+    readonly replaceSecret?: Stub;
   } = {},
 ) {
   const inspect = options.inspect ?? vi.fn().mockResolvedValue({ ok: true, value: { status: 'ok', aliases: [ALIAS] } });
   const pickFile = options.pickFile ?? vi.fn().mockResolvedValue({ ok: true, value: { path: '/picked/corp.p12' } });
-  installWirebenchApi({ keystores: { inspect, pickFile } });
+  const replace = options.replaceSecret ?? vi.fn().mockResolvedValue({ ok: true, value: { ref: 'secret:1' } });
+  installWirebenchApi({ keystores: { inspect, pickFile }, secrets: { replace } });
   const actions = {
     addKeystore: vi.fn().mockResolvedValue('k2'),
     updateKeystore: vi.fn().mockResolvedValue(undefined),
@@ -48,7 +50,7 @@ function setUp(
       <KeystoresView />
     </TooltipPrimitive.Provider>,
   );
-  return { ...actions, inspect, pickFile };
+  return { ...actions, inspect, pickFile, replace };
 }
 
 afterEach(() => {
@@ -129,6 +131,35 @@ describe('KeystoresView', () => {
 
     fireEvent.click(await screen.findByTestId('keystore-remove-confirm'));
     expect(removeKeystore).toHaveBeenCalledWith('k1');
+  });
+
+  it('replaces a keystore password in place and re-inspects with it', async () => {
+    // The wrong-password cure must not be "remove and add again": the row itself takes a new
+    // password, and the row's status is re-read afterwards even though the ref never changed.
+    const inspect = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { status: 'bad-password', aliases: [] } })
+      .mockResolvedValue({ ok: true, value: { status: 'ok', aliases: [ALIAS] } });
+    const { updateKeystore, replace } = setUp({ inspect });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('keystore-status').textContent).toBe('Wrong password');
+    });
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+
+    const field = await screen.findByTestId('keystore-password');
+    fireEvent.click(within(field).getByRole('button', { name: 'Replace…' }));
+    fireEvent.change(within(field).getByPlaceholderText('Enter password'), { target: { value: 'correct' } });
+    fireEvent.click(within(field).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith({ ref: 'secret:1', value: 'correct' });
+      expect(updateKeystore).toHaveBeenCalledWith('k1', { passwordSecretRef: 'secret:1' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('keystore-status').textContent).toBe('Loaded');
+    });
+    expect(inspect).toHaveBeenCalledTimes(2);
   });
 
   it('invites the user to open a project when none is open', () => {

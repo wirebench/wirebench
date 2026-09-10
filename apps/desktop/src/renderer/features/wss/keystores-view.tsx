@@ -8,16 +8,15 @@
  * `secretRef` ever reaches the project file.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
-import * as Dialog from '@radix-ui/react-dialog';
 import { ChevronDown, ChevronRight, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
-import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
+import { KeystoreAddDialog } from './keystore-add-dialog.js';
 import type { KeystoreAliasWire, KeystoresInspectResponse, KeystoreWire } from '../../../shared/wire-types.js';
 
 /** The status chip's copy and tone, keyed by what `keystores.inspect` reported. */
@@ -45,9 +44,11 @@ interface RowProps {
   readonly status: KeystoresInspectResponse | undefined;
   readonly onRemove: () => void;
   readonly onSetDefaultAlias: (alias: string) => void;
+  /** A password stored (or cleared) for this row; the new `secretRef`, never the password. */
+  readonly onPasswordChange: (ref: string | undefined) => void;
 }
 
-function KeystoreRow({ keystore, status, onRemove, onSetDefaultAlias }: RowProps) {
+function KeystoreRow({ keystore, status, onRemove, onSetDefaultAlias, onPasswordChange }: RowProps) {
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   const chip = status === undefined ? { label: 'Checking…', tone: 'text-fg-subtle' } : STATUS[status.status];
@@ -83,6 +84,15 @@ function KeystoreRow({ keystore, status, onRemove, onSetDefaultAlias }: RowProps
             {shortPath(keystore.path)}
           </p>
           {keystore.defaultAlias !== undefined && <p>Default alias: {keystore.defaultAlias}</p>}
+          {/* A password typed wrongly at Add time is fixable in place: without this the only
+              cure for a "Wrong password" row is remove-and-re-add. */}
+          <div data-testid="keystore-password" className="mt-1">
+            <SecretField
+              label={`Password for ${keystore.name}`}
+              value={keystore.passwordSecretRef}
+              onChange={onPasswordChange}
+            />
+          </div>
           <ul aria-label={`Aliases of ${keystore.name}`} className="mt-1 flex flex-col gap-1">
             {(status?.aliases ?? []).map((alias: KeystoreAliasWire) => (
               <li
@@ -126,143 +136,6 @@ function KeystoreRow({ keystore, status, onRemove, onSetDefaultAlias }: RowProps
   );
 }
 
-/** The "Add keystore" dialog: pick a file, name it, and optionally store its password. */
-function AddKeystoreDialog({
-  open,
-  onOpenChange,
-}: {
-  readonly open: boolean;
-  readonly onOpenChange: (o: boolean) => void;
-}) {
-  const addKeystore = useProjectStore((state) => state.addKeystore);
-  const [path, setPath] = useState('');
-  const [name, setName] = useState('');
-  const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const flushRef = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
-  const registerFlush = useCallback((flush: (() => Promise<string | undefined>) | undefined) => {
-    flushRef.current = flush;
-  }, []);
-
-  function reset(): void {
-    setPath('');
-    setName('');
-    setPasswordRef(undefined);
-    setBusy(false);
-  }
-
-  async function pick(): Promise<void> {
-    const result = await ipc().keystores.pickFile({});
-    if (!result.ok || result.value.path === undefined) {
-      return;
-    }
-    setPath(result.value.path);
-    if (name.trim().length === 0) {
-      const file = result.value.path.split(/[\\/]/).pop() ?? '';
-      const dot = file.lastIndexOf('.');
-      setName(dot > 0 ? file.slice(0, dot) : file);
-    }
-  }
-
-  async function submit(): Promise<void> {
-    setBusy(true);
-    try {
-      // A password typed but never explicitly saved must not be dropped on the floor, so the
-      // SecretField is flushed first and its fresh ref used (see `auth-inspector.tsx`).
-      const ref = (await flushRef.current?.()) ?? passwordRef;
-      await addKeystore({
-        path,
-        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
-        ...(ref !== undefined ? { passwordSecretRef: ref } : {}),
-      });
-      reset();
-      onOpenChange(false);
-    } catch (error) {
-      setBusy(false);
-      showToast(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          reset();
-        }
-        onOpenChange(next);
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content
-          data-testid="keystore-add-dialog"
-          className="fixed top-1/2 left-1/2 w-96 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
-        >
-          <Dialog.Title className="text-md font-medium text-fg-default">Add keystore</Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-fg-subtle">
-            A PKCS#12 (.p12/.pfx) or PEM bundle. The password is stored in the OS keychain, never in the project.
-          </Dialog.Description>
-
-          <label className="mt-3 block text-sm text-fg-subtle" htmlFor="keystore-path">
-            File
-          </label>
-          <div className="mt-1 flex items-center gap-2">
-            <input
-              id="keystore-path"
-              data-testid="keystore-path"
-              readOnly
-              value={path}
-              placeholder="Choose a keystore file"
-              className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none"
-            />
-            <Button data-testid="keystore-browse" onClick={() => void pick()}>
-              Browse…
-            </Button>
-          </div>
-
-          <label className="mt-3 block text-sm text-fg-subtle" htmlFor="keystore-name">
-            Name
-          </label>
-          <input
-            id="keystore-name"
-            data-testid="keystore-name"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-            }}
-            className="mt-1 w-full rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none"
-          />
-
-          <p className="mt-3 text-sm text-fg-subtle">Password</p>
-          <div className="mt-1">
-            <SecretField
-              label="Keystore password"
-              value={passwordRef}
-              onChange={setPasswordRef}
-              registerFlush={registerFlush}
-            />
-          </div>
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Dialog.Close asChild>
-              <Button>Cancel</Button>
-            </Dialog.Close>
-            <Button
-              variant="primary"
-              data-testid="keystore-add-submit"
-              disabled={path.length === 0 || busy}
-              onClick={() => void submit()}
-            >
-              Add
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
-
 /**
  * The Keystores section body: one row per registry entry, re-inspected whenever the registry
  * changes (an add, a removal, or a password the user replaced).
@@ -275,16 +148,23 @@ export function KeystoresView() {
   const [adding, setAdding] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
   const [statuses, setStatuses] = useState<Readonly<Record<string, KeystoresInspectResponse>>>({});
+  // Bumped when a password is *replaced under the same ref*: the registry then looks identical,
+  // yet what the file opens with has changed, so the signature alone cannot ask for a re-read.
+  const [reinspect, setReinspect] = useState(0);
 
   // Keyed on the registry's identity *and* its password refs: replacing a password must
   // re-inspect, and nothing else should.
   const signature = keystores.map((k) => `${k.id}:${k.passwordSecretRef ?? ''}:${k.defaultAlias ?? ''}`).join('|');
+  // The effect keys on the signature only (see below), so the rows it reads come from a ref:
+  // the array's identity churns on every unrelated project change.
+  const keystoresRef = useRef(keystores);
+  keystoresRef.current = keystores;
 
   useEffect(() => {
     let cancelled = false;
     async function inspectAll(): Promise<void> {
       const entries = await Promise.all(
-        keystores.map(async (keystore) => {
+        keystoresRef.current.map(async (keystore) => {
           const result = await ipc().keystores.inspect({ keystoreId: keystore.id });
           const value: KeystoresInspectResponse = result.ok
             ? result.value
@@ -302,7 +182,7 @@ export function KeystoresView() {
     };
     // `signature` (not the array identity) is the dependency: it changes exactly when a row, a
     // password ref or a default alias does, which is when a re-inspection is warranted.
-  }, [signature, keystores]);
+  }, [signature, reinspect]);
 
   const pendingDelete = keystores.find((candidate) => candidate.id === pendingDeleteId);
 
@@ -339,11 +219,18 @@ export function KeystoresView() {
             onSetDefaultAlias={(alias) => {
               void updateKeystore(keystore.id, { defaultAlias: alias });
             }}
+            onPasswordChange={(ref) => {
+              // `secrets.replace` keeps the ref stable, so the patch may be a no-op on paper;
+              // the re-inspect below is what actually reports whether the new password works.
+              void updateKeystore(keystore.id, { passwordSecretRef: ref ?? null }).then(() => {
+                setReinspect((n) => n + 1);
+              });
+            }}
           />
         ))}
       </ul>
 
-      <AddKeystoreDialog open={adding} onOpenChange={setAdding} />
+      <KeystoreAddDialog open={adding} onOpenChange={setAdding} />
 
       <AlertDialog.Root
         open={pendingDeleteId !== undefined}

@@ -800,6 +800,15 @@ export class ProjectService {
       open.runtime.delete(change.interfaceId);
       this.engine.close(change.interfaceId);
     }
+    // Parsed keystores are decrypted key material keyed by entry id: a removed entry must not
+    // leave its key in memory, and a re-entered password must not be shadowed by the previous
+    // parse — the cache key cannot see a secret changing *underneath an unchanged ref*.
+    if (change.kind === 'remove-keystore') {
+      this.keystoreCache.delete(change.keystoreId);
+    }
+    if (change.kind === 'update-keystore' && change.patch.passwordSecretRef !== undefined) {
+      this.keystoreCache.delete(change.keystoreId);
+    }
     this.markDirty();
     this.emitChanged();
     return {
