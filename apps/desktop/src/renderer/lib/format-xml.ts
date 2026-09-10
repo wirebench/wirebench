@@ -31,8 +31,16 @@ interface Node {
   closeText?: string;
 }
 
-/** Matches one markup construct: CDATA, comment, PI/declaration/doctype, or an element tag. */
-const TOKEN_PATTERN = /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<[!?][\s\S]*?>|<\/?[^<>]*>/g;
+/**
+ * Matches one markup construct: CDATA, comment, PI/declaration/doctype, or an element tag.
+ *
+ * The tag alternative walks attribute values as quoted runs (`"[^"]*"` / `'[^']*'`) or bare
+ * non-`<`/`>` characters, so a `>` (or `<`) inside a quoted attribute value no longer ends the
+ * tag early. It still assumes quotes are balanced within a single tag and does not understand
+ * a `>` embedded via a character reference (e.g. `&gt;`) — that reference is left untouched as
+ * text/attribute content, which is correct, since it is not a raw `>`.
+ */
+const TOKEN_PATTERN = /<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<[!?][\s\S]*?>|<\/?(?:[^<>"']|"[^"]*"|'[^']*')*>/g;
 
 function classify(markup: string): TokenKind {
   if (markup.startsWith('<![CDATA[')) {

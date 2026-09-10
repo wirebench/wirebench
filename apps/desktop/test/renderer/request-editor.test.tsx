@@ -64,6 +64,47 @@ describe('RequestEditor', () => {
     expect(payload?.input.endpoint).toBe('https://example.test/calc.asmx');
   });
 
+  it('flushes a pending debounced edit before sending on Mod+Enter', async () => {
+    render(<RequestEditor requestId="req-1" />);
+
+    const editor = screen.getByLabelText('Request envelope XML');
+    editor.focus();
+    await userEvent.type(editor, '<!-- fresh -->', { skipClick: true });
+    // Trigger the send immediately — well inside the 120ms debounce window — so the store still
+    // holds the old text unless the send path flushes the pending edit itself.
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledOnce();
+    });
+    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toContain('<!-- fresh -->');
+  });
+
+  it('flushes a pending debounced edit before sending via the toolbar button', async () => {
+    render(<RequestEditor requestId="req-1" />);
+
+    const editor = screen.getByLabelText('Request envelope XML');
+    editor.focus();
+    await userEvent.type(editor, '<!-- fresh -->', { skipClick: true });
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledOnce();
+    });
+    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toContain('<!-- fresh -->');
+  });
+
+  it('flushes a pending debounced edit to the store on unmount', async () => {
+    const { unmount } = render(<RequestEditor requestId="req-1" />);
+
+    const editor = screen.getByLabelText('Request envelope XML');
+    editor.focus();
+    await userEvent.type(editor, '<!-- unmounted -->', { skipClick: true });
+    unmount();
+
+    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toContain('<!-- unmounted -->');
+  });
+
   it('cancels on Escape while a send is in flight', async () => {
     useExchangesStore.setState({ byRequest: { 'req-1': { status: 'sending', sendId: 'send-1' } }, log: [] });
     render(<RequestEditor requestId="req-1" />);

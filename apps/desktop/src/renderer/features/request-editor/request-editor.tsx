@@ -1,10 +1,10 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useProjectStore } from '../../state/project.js';
-import { RequestPane } from './request-pane.js';
+import { RequestPane, type RequestPaneHandle } from './request-pane.js';
 import { ResponsePane } from './response-pane.js';
 import { RequestToolbar } from './toolbar.js';
 
@@ -40,7 +40,11 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
   const sending = exchange?.status === 'sending';
   const platform = useMemo(() => detectPlatform(), []);
 
+  const requestPaneRef = useRef<RequestPaneHandle>(null);
   const onSend = useCallback(() => {
+    // The debounced envelope edit may not have reached the store yet — flush it first so the
+    // send picks up what's on screen, not a stale copy from up to DEBOUNCE_MS ago.
+    requestPaneRef.current?.flush();
     void send(requestId);
   }, [send, requestId]);
   const onCancel = useCallback(() => {
@@ -92,7 +96,12 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
 
       <Group orientation={layout} className={`flex min-h-0 flex-1 ${layout === 'horizontal' ? '' : 'flex-col'}`}>
         <Panel id="request-pane" defaultSize="50%" minSize="20%">
-          <RequestPane envelopeXml={draft.envelopeXml} onEnvelopeChange={onEnvelopeChange} onSend={onSend} />
+          <RequestPane
+            ref={requestPaneRef}
+            envelopeXml={draft.envelopeXml}
+            onEnvelopeChange={onEnvelopeChange}
+            onSend={onSend}
+          />
         </Panel>
         <Separator aria-label="Resize" className={`${SEPARATOR} ${layout === 'horizontal' ? 'w-px' : 'h-px'}`} />
         <Panel id="response-pane" minSize="20%">

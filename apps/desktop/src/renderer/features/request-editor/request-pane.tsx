@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { OnMount } from '@monaco-editor/react';
 import { SEND_KEYBINDING } from '../../editor/monaco.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
@@ -23,12 +23,39 @@ export interface RequestPaneProps {
   readonly onSend: () => void;
 }
 
+/** Imperative escape hatch for callers that must flush a pending debounced edit synchronously. */
+export interface RequestPaneHandle {
+  /** Writes any not-yet-committed edit to the store immediately. Safe to call when there is none. */
+  flush: () => void;
+}
+
 /** The request half: the editable SOAP envelope, plus the (mostly future) view strip. */
-export function RequestPane({ envelopeXml, onEnvelopeChange, onSend }: RequestPaneProps) {
+export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(function RequestPane(
+  { envelopeXml, onEnvelopeChange, onSend }: RequestPaneProps,
+  ref,
+) {
   const [local, setLocal] = useState(envelopeXml);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sendRef = useRef(onSend);
   sendRef.current = onSend;
+
+  // The latest text the editor holds, kept outside React state so flush() can read it
+  // synchronously even mid-render (e.g. from an unmount cleanup or an event handler).
+  const pendingRef = useRef<{ xml: string; onEnvelopeChange: (xml: string) => void } | undefined>(undefined);
+  const onEnvelopeChangeRef = useRef(onEnvelopeChange);
+  onEnvelopeChangeRef.current = onEnvelopeChange;
+
+  const flush = useCallback(() => {
+    clearTimeout(timer.current);
+    const pending = pendingRef.current;
+    if (pending === undefined) {
+      return;
+    }
+    pendingRef.current = undefined;
+    pending.onEnvelopeChange(pending.xml);
+  }, []);
+
+  useImperativeHandle(ref, () => ({ flush }), [flush]);
 
   // An edit made anywhere else (regenerate, clone) must win over this pane's local copy.
   useEffect(() => {
@@ -37,27 +64,32 @@ export function RequestPane({ envelopeXml, onEnvelopeChange, onSend }: RequestPa
 
   useEffect(
     () => () => {
-      clearTimeout(timer.current);
+      // Flush, don't discard: unmounting (closing the tab, switching requests) must not drop
+      // an edit that hasn't reached the store yet.
+      flush();
     },
-    [],
+    [flush],
   );
 
-  const handleChange = useCallback(
-    (next: string) => {
-      setLocal(next);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        onEnvelopeChange(next);
-      }, DEBOUNCE_MS);
-    },
-    [onEnvelopeChange],
-  );
-
-  const handleMount = useCallback<OnMount>((editor) => {
-    editor.addCommand(SEND_KEYBINDING, () => {
-      sendRef.current();
-    });
+  const handleChange = useCallback((next: string) => {
+    setLocal(next);
+    clearTimeout(timer.current);
+    pendingRef.current = { xml: next, onEnvelopeChange: onEnvelopeChangeRef.current };
+    timer.current = setTimeout(() => {
+      pendingRef.current = undefined;
+      onEnvelopeChangeRef.current(next);
+    }, DEBOUNCE_MS);
   }, []);
+
+  const handleMount = useCallback<OnMount>(
+    (editor) => {
+      editor.addCommand(SEND_KEYBINDING, () => {
+        flush();
+        sendRef.current();
+      });
+    },
+    [flush],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col border-r border-hairline">
@@ -70,4 +102,4 @@ export function RequestPane({ envelopeXml, onEnvelopeChange, onSend }: RequestPa
       </div>
     </div>
   );
-}
+});

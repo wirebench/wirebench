@@ -54,4 +54,16 @@ describe('formatXml', () => {
   it('keeps mixed content on one line', () => {
     expect(formatXml('<a>text <b>bold</b> tail</a>')).toBe('<a>text <b>bold</b> tail</a>');
   });
+
+  it('does not break a tag on a > inside a double-quoted attribute value', () => {
+    expect(formatXml('<a><b x="1>2"/></a>')).toBe('<a>\n   <b x="1>2"/>\n</a>');
+  });
+
+  it('does not break a tag on a > inside a single-quoted attribute value', () => {
+    expect(formatXml("<a><b x='1>2'/></a>")).toBe("<a>\n   <b x='1>2'/>\n</a>");
+  });
+
+  it('handles a tag carrying both single- and double-quoted attributes', () => {
+    expect(formatXml('<a><b x="1>2" y=\'3<4\'/></a>')).toBe('<a>\n   <b x="1>2" y=\'3<4\'/>\n</a>');
+  });
 });
