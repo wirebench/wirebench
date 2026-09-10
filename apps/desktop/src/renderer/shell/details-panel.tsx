@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { Tabs } from '../components/tabs.js';
+import { CodePanel } from '../features/details/code-panel.js';
 import { EndpointProperties } from '../features/details/endpoint-properties.js';
 import { InterfaceProperties } from '../features/details/interface-properties.js';
 import { RequestProperties } from '../features/details/request-properties.js';
@@ -9,12 +9,12 @@ import { useGlobalsStore } from '../state/globals.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 import type { Selection } from '../state/ui.js';
-
-type DetailsTab = 'selection' | 'globals';
+import type { DetailsTab } from '../state/ui-state.js';
 
 const TABS = [
   { id: 'selection', label: 'Details' },
   { id: 'globals', label: 'Global properties' },
+  { id: 'code', label: 'Code' },
 ] as const satisfies readonly { id: DetailsTab; label: string }[];
 
 /** The Project row's inspector: the properties every request in the project can expand. */
@@ -107,7 +107,10 @@ function useActiveRequestId(): string | undefined {
 export function DetailsPanel() {
   const selection = useUiStore((state) => state.selection);
   const activeRequestId = useActiveRequestId();
-  const [tab, setTab] = useState<DetailsTab>('selection');
+  // The tab lives in the ui store (and so in localStorage): "Show code" has to be able to open
+  // this panel on the Code tab from anywhere, and the choice should survive a relaunch.
+  const tab = useUiStore((state) => state.details.tab);
+  const setTab = useUiStore((state) => state.setDetailsTab);
 
   return (
     <aside
@@ -121,6 +124,8 @@ export function DetailsPanel() {
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         {tab === 'globals' ? (
           <GlobalProperties />
+        ) : tab === 'code' ? (
+          <CodePanel />
         ) : (
           <SelectionDetails selection={selection} activeRequestId={activeRequestId} />
         )}

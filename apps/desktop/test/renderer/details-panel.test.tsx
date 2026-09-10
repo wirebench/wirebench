@@ -7,7 +7,9 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import type { InterfaceWire, ProjectWire } from '../../src/shared/wire-types.js';
 
 const project = {
@@ -61,7 +63,9 @@ function renderPanel() {
 
 describe('DetailsPanel', () => {
   beforeEach(() => {
-    useUiStore.setState({ selection: undefined });
+    // The active tab now lives in the store, so one test switching tabs must not leak into
+    // the next; reset the persisted half of the ui state alongside the selection.
+    useUiStore.setState({ ...structuredClone(DEFAULT_UI_STATE), selection: undefined });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
     useProjectStore.setState({ project: null, requests: {}, interfaces: {} });
     useGlobalsStore.setState({ properties: {} });
@@ -142,6 +146,23 @@ describe('DetailsPanel', () => {
     renderPanel();
     expect(screen.getByTestId('interface-properties')).toBeTruthy();
     expect(screen.queryByTestId('request-properties')).toBeNull();
+  });
+
+  it('opens on the Code tab when the ui store says so', async () => {
+    installWirebenchApi({
+      request: { curl: vi.fn().mockResolvedValue({ ok: true, value: { command: 'curl --request POST' } }) },
+    });
+    useProjectStore.setState({ requests: { 'req-1': requestDraft } });
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' }],
+      activeId: 'request:req-1',
+    });
+    useUiStore.getState().showDetails('code');
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toBe('curl --request POST');
+    });
   });
 
   it('shows an endpoint node as its saved project endpoint', () => {
