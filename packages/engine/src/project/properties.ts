@@ -24,13 +24,28 @@ export interface PropertyScopes {
 
 /** One `${...}` expression that could not be resolved, with offsets into the original text. */
 export interface UnresolvedRef {
-  /** Full `${...}` text (or the unterminated `${` for a `malformed` ref). */
+  /**
+   * The `${...}` expression text (or the unterminated `${` for a `malformed` ref). When this
+   * ref was found while expanding a property's VALUE (see `via`), this is the inner expression
+   * text, not the outer reference the user typed — use `start`/`end` for the user-visible span.
+   */
   readonly expr: string;
   readonly scope?: string;
   readonly name?: string;
   readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed';
+  /**
+   * Offsets into the original text of the *outermost* `${...}` reference the user can see. When
+   * this ref was discovered while recursively expanding a property's value (not the original
+   * text directly), these are the outer reference's offsets, not offsets into that value string.
+   */
   readonly start: number;
   readonly end: number;
+  /**
+   * The chain of `scope#name` properties traversed to reach this ref, outermost first. Present
+   * only when this ref was found while expanding a property's value (i.e. it is nested at least
+   * one level below the outer reference at `start`/`end`).
+   */
+  readonly via?: readonly string[];
 }
 
 /** The result of expanding a string: the expanded text plus any problems and properties used. */
@@ -105,7 +120,13 @@ type Token =
     }
   | { readonly kind: 'malformed'; readonly raw: string; readonly start: number; readonly end: number };
 
-/** Scans `text` for `$${` escapes and `${...}` expressions, respecting nested braces. */
+/**
+ * Scans `text` for `$${` escapes and `${...}` expressions, respecting nested braces. The `$${`
+ * escape is matched left-to-right and greedily on the *first* two characters that can start it,
+ * so a run of three or more `$` before a `{` (e.g. `$$${x}`) never opens an expression: the
+ * escape consumes the middle `$$` + `{`, leaving the rest (including `x}`) as plain literal
+ * text, so `x` is never looked up.
+ */
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   let literal = '';
@@ -166,8 +187,42 @@ interface ExpandContext {
   readonly used: { scope: string; name: string }[];
 }
 
-/** Expands all `${...}` expressions in `text` at `depth`, tracking an active-resolution stack for cycle detection. */
-function expandAt(text: string, depth: number, stack: readonly string[], ctx: ExpandContext): string {
+/** The original-text span (and property chain) to attribute unresolved refs to, once expansion has recursed into a property's value. */
+interface OuterSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Pushes an unresolved ref, reporting `outer`'s span (the user-visible outer reference) when set, else the token's own span. */
+function pushUnresolved(
+  ctx: ExpandContext,
+  outer: OuterSpan | undefined,
+  via: readonly string[],
+  entry: { expr: string; scope?: string; name?: string; code: UnresolvedRef['code']; start: number; end: number },
+): void {
+  ctx.unresolved.push({
+    ...entry,
+    start: outer?.start ?? entry.start,
+    end: outer?.end ?? entry.end,
+    ...(via.length > 0 ? { via } : {}),
+  });
+}
+
+/**
+ * Expands all `${...}` expressions in `text` at `depth`, tracking an active-resolution stack for
+ * cycle detection. `outer`/`via` are set once expansion recurses into a property's value: `outer`
+ * pins unresolved refs to the outermost user-visible `${...}` span in the original text (rather
+ * than an offset into the value string), and `via` records the `scope#name` chain traversed to
+ * get here (outermost first).
+ */
+function expandAt(
+  text: string,
+  depth: number,
+  stack: readonly string[],
+  ctx: ExpandContext,
+  outer: OuterSpan | undefined,
+  via: readonly string[],
+): string {
   const tokens = tokenize(text);
   let out = '';
   for (const token of tokens) {
@@ -176,34 +231,50 @@ function expandAt(text: string, depth: number, stack: readonly string[], ctx: Ex
       continue;
     }
     if (token.kind === 'malformed') {
-      ctx.unresolved.push({ expr: token.raw, code: 'malformed', start: token.start, end: token.end });
+      pushUnresolved(ctx, outer, via, { expr: token.raw, code: 'malformed', start: token.start, end: token.end });
       out += token.raw;
       continue;
     }
     if (depth >= ctx.maxDepth) {
-      ctx.unresolved.push({ expr: token.raw, code: 'too-deep', start: token.start, end: token.end });
+      pushUnresolved(ctx, outer, via, { expr: token.raw, code: 'too-deep', start: token.start, end: token.end });
       out += token.raw;
       continue;
     }
+    // The span/chain to attribute anything found from here on down (this token's own span, unless already nested).
+    const effectiveOuter = outer ?? { start: token.start, end: token.end };
     // The inner text of the expression may itself contain expressions (nesting); expand those first.
-    const resolvedInner = expandAt(token.inner, depth + 1, stack, ctx);
+    const resolvedInner = expandAt(token.inner, depth + 1, stack, ctx, effectiveOuter, via);
     const { scope, name } = parseExpr(resolvedInner);
 
     if (scope !== undefined) {
       const key = `${scope}#${name}`;
       if (stack.includes(key)) {
-        ctx.unresolved.push({ expr: token.raw, scope, name, code: 'cycle', start: token.start, end: token.end });
+        pushUnresolved(ctx, outer, via, {
+          expr: token.raw,
+          scope,
+          name,
+          code: 'cycle',
+          start: token.start,
+          end: token.end,
+        });
         out += token.raw;
         continue;
       }
       const value = lookupInScope(scope, name, ctx.scopes);
       if (value === undefined) {
-        ctx.unresolved.push({ expr: token.raw, scope, name, code: 'missing', start: token.start, end: token.end });
+        pushUnresolved(ctx, outer, via, {
+          expr: token.raw,
+          scope,
+          name,
+          code: 'missing',
+          start: token.start,
+          end: token.end,
+        });
         out += token.raw;
         continue;
       }
       ctx.used.push({ scope, name });
-      out += expandAt(value, depth + 1, [...stack, key], ctx);
+      out += expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]);
       continue;
     }
 
@@ -213,7 +284,7 @@ function expandAt(text: string, depth: number, stack: readonly string[], ctx: Ex
       if (secondHash !== -1) {
         const attemptedScope = resolvedInner.slice(1, secondHash);
         const attemptedName = resolvedInner.slice(secondHash + 1);
-        ctx.unresolved.push({
+        pushUnresolved(ctx, outer, via, {
           expr: token.raw,
           scope: attemptedScope,
           name: attemptedName,
@@ -228,13 +299,13 @@ function expandAt(text: string, depth: number, stack: readonly string[], ctx: Ex
 
     const found = lookupShorthand(name, ctx.scopes);
     if (found === undefined) {
-      ctx.unresolved.push({ expr: token.raw, name, code: 'missing', start: token.start, end: token.end });
+      pushUnresolved(ctx, outer, via, { expr: token.raw, name, code: 'missing', start: token.start, end: token.end });
       out += token.raw;
       continue;
     }
     const key = `${found.scope}#${name}`;
     if (stack.includes(key)) {
-      ctx.unresolved.push({
+      pushUnresolved(ctx, outer, via, {
         expr: token.raw,
         scope: found.scope,
         name,
@@ -246,7 +317,7 @@ function expandAt(text: string, depth: number, stack: readonly string[], ctx: Ex
       continue;
     }
     ctx.used.push({ scope: found.scope, name });
-    out += expandAt(found.value, depth + 1, [...stack, key], ctx);
+    out += expandAt(found.value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]);
   }
   return out;
 }
@@ -259,8 +330,15 @@ export function expand(text: string, scopes: PropertyScopes, options?: { maxDept
     unresolved: [],
     used: [],
   };
-  const out = expandAt(text, 0, [], ctx);
-  return { text: out, unresolved: ctx.unresolved, used: ctx.used };
+  const out = expandAt(text, 0, [], ctx, undefined, []);
+  const seen = new Set<string>();
+  const used = ctx.used.filter(({ scope, name }) => {
+    const key = `${scope}#${name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { text: out, unresolved: ctx.unresolved, used };
 }
 
 /** True when `text` contains at least one (non-escaped) `${` sequence. */
@@ -277,7 +355,12 @@ export function hasExpansions(text: string): boolean {
   return false;
 }
 
-/** Expands the endpoint, envelope, soap action, and every header name/value of a {@link SoapSendInput}. */
+/**
+ * Expands the endpoint, envelope, soap action, and every header name/value of a
+ * {@link SoapSendInput}. Header *names* are expanded too, so two headers whose names expand to
+ * the same string collapse into one entry (last-write-wins, per `Object.entries` insertion
+ * order — same as any other JS object key collision).
+ */
 export function expandSendInput(
   input: SoapSendInput,
   scopes: PropertyScopes,

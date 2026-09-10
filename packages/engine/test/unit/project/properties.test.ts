@@ -48,7 +48,7 @@ describe('expand', () => {
   it('detects a self-referencing cycle through the shorthand form', () => {
     const result = expand('${loop}', { ...scopes, env: { ...scopes.env, loop: '${loop}' } });
     expect(result.unresolved).toEqual([
-      { expr: '${loop}', scope: 'Env', name: 'loop', code: 'cycle', start: 0, end: 7 },
+      { expr: '${loop}', scope: 'Env', name: 'loop', code: 'cycle', start: 0, end: 7, via: ['Env#loop'] },
     ]);
     expect(result.text).toBe('${loop}');
   });
@@ -104,13 +104,18 @@ describe('expand', () => {
     expect(result.unresolved).toEqual([{ expr: '${#Project#name', code: 'malformed', start: 4, end: 19 }]);
   });
 
-  it('computes correct offsets across multi-byte characters (emoji before the expression)', () => {
-    const text = '🎉 ${#Project#name}';
+  it('computes correct offsets across multi-byte characters (emoji before an unresolved expression)', () => {
+    const expr = '${#Project#nope}';
+    const text = `🎉 ${expr}`;
     const result = expand(text, scopes);
-    expect(result.text).toBe('🎉 proj-name');
-    // The emoji is a surrogate pair (2 UTF-16 code units), so the expression starts at index 3.
+    // The emoji is a surrogate pair (2 UTF-16 code units), so the expression starts at index 3
+    // (JS/UTF-16 offsets — the same units Monaco uses for editor positions).
     const start = text.indexOf('${');
     expect(start).toBe(3);
+    expect(result.unresolved).toHaveLength(1);
+    expect(result.unresolved[0]?.start).toBe(start);
+    expect(result.unresolved[0]?.end).toBe(start + expr.length);
+    expect(text.slice(result.unresolved[0]!.start, result.unresolved[0]!.end)).toBe(expr);
   });
 
   it('collects the used property list', () => {
@@ -119,6 +124,61 @@ describe('expand', () => {
       { scope: 'Project', name: 'name' },
       { scope: 'Env', name: 'host' },
     ]);
+  });
+
+  it('de-duplicates the used property list by scope#name, preserving first-seen order', () => {
+    const result = expand('${#Project#name} and ${#Project#name} again, then ${#Env#host}', scopes);
+    expect(result.used).toEqual([
+      { scope: 'Project', name: 'name' },
+      { scope: 'Env', name: 'host' },
+    ]);
+  });
+
+  it('$$${x} stays fully literal: the escape consumes before an expression can open, so x is never looked up', () => {
+    const result = expand('$$${x}', { ...scopes, project: { ...scopes.project, x: 'should-not-appear' } });
+    expect(result.text).not.toContain('should-not-appear');
+    expect(result.unresolved).toEqual([]);
+  });
+
+  describe('nested unresolved refs (found while expanding a property value)', () => {
+    it('reports the outer reference span and a one-entry via chain for a ref one level deep', () => {
+      const outer = '${#Project#a}';
+      const inner = '${#Project#missing}';
+      const text = `before ${outer} after`;
+      const result = expand(text, { ...scopes, project: { ...scopes.project, a: `x ${inner} y` } });
+      expect(result.unresolved).toHaveLength(1);
+      const ref = result.unresolved[0]!;
+      expect(ref.code).toBe('missing');
+      expect(ref.expr).toBe(inner);
+      expect(ref.start).toBe(text.indexOf(outer));
+      expect(ref.end).toBe(text.indexOf(outer) + outer.length);
+      expect(text.slice(ref.start, ref.end)).toBe(outer);
+      expect(ref.via).toEqual(['Project#a']);
+    });
+
+    it('accumulates a two-entry via chain two levels deep, still reporting the original outer span', () => {
+      const outer = '${#Project#a}';
+      const inner = '${#Project#missing}';
+      const text = `${outer}`;
+      const result = expand(text, {
+        ...scopes,
+        project: { ...scopes.project, a: '${#Project#b}', b: `${inner}` },
+      });
+      expect(result.unresolved).toHaveLength(1);
+      const ref = result.unresolved[0]!;
+      expect(ref.expr).toBe(inner);
+      expect(ref.start).toBe(0);
+      expect(ref.end).toBe(outer.length);
+      expect(ref.via).toEqual(['Project#a', 'Project#b']);
+    });
+
+    it('a top-level unresolved ref keeps its own offsets and no via', () => {
+      const result = expand('before ${#Project#nope} after', scopes);
+      expect(result.unresolved).toEqual([
+        { expr: '${#Project#nope}', scope: 'Project', name: 'nope', code: 'missing', start: 7, end: 23 },
+      ]);
+      expect(result.unresolved[0]).not.toHaveProperty('via');
+    });
   });
 });
 
@@ -163,5 +223,16 @@ describe('expandSendInput', () => {
     const result = expandSendInput(input, scopes);
     expect(result.input.endpoint).toBe('${#Project#missing}');
     expect(result.unresolved).toHaveLength(1);
+  });
+
+  it('collapses headers whose names expand to the same string, last-write-wins', () => {
+    const input: SoapSendInput = {
+      endpoint: 'https://example.test/soap',
+      envelopeXml: '<a/>',
+      soapVersion: '1.1',
+      headers: { '${#Project#name}': 'first', 'proj-name': 'second' },
+    };
+    const result = expandSendInput(input, scopes);
+    expect(result.input.headers).toEqual({ 'proj-name': 'second' });
   });
 });
