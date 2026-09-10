@@ -220,6 +220,16 @@ export { saveProject } from './project/save.js';
 export type { SaveProjectOptions, SaveResult } from './project/save.js';
 export { nodeFs } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
+export { appendHistory, generateHistoryId, openHistory } from './project/history.js';
+export type {
+  HistoryEntry,
+  HistoryError,
+  HistoryFault,
+  HistoryFile,
+  HistoryHeader,
+  HistoryListQuery,
+  HistoryOptions,
+} from './project/history.js';
 export { expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export {
