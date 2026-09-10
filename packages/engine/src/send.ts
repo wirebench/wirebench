@@ -7,6 +7,8 @@ import type { Dispatcher } from 'undici';
 import { WirebenchError } from './errors.js';
 import { sendHttp } from './http/client.js';
 import type { HttpRequest } from './http/types.js';
+import { expandSendInput } from './project/properties.js';
+import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import type { SoapExchange, SoapSendInput } from './types.js';
@@ -89,34 +91,52 @@ function decodeBody(
  * {@link HttpError}; a non-2xx HTTP status is not an error and is returned
  * as a normal exchange for the caller to inspect.
  *
+ * When `options.scopes` is given, `input.endpoint`, `input.envelopeXml`,
+ * `input.soapAction` and every header name/value are first passed through
+ * {@link expandSendInput}; any expressions that could not be resolved are
+ * left verbatim in the sent request and reported on the returned exchange's
+ * `unresolved` field, rather than failing the send.
+ *
  * @param input the endpoint, envelope and transport options to send
- * @param options an injected `dispatcher` (tests) and/or `now` clock
+ * @param options an injected `dispatcher` (tests), `now` clock, and/or property `scopes`
  */
 export async function sendSoapRequest(
   input: SoapSendInput,
-  options?: { readonly dispatcher?: Dispatcher; readonly now?: () => number },
+  options?: { readonly dispatcher?: Dispatcher; readonly now?: () => number; readonly scopes?: PropertyScopes },
 ): Promise<SoapExchange> {
+  let unresolved: readonly UnresolvedRef[] | undefined;
+  let effectiveInput = input;
+  if (options?.scopes !== undefined) {
+    const expanded = expandSendInput(input, options.scopes);
+    effectiveInput = expanded.input;
+    unresolved = expanded.unresolved;
+  }
+
   const charset =
-    charsetOf(input.headers !== undefined ? headerValue(input.headers, 'content-type') : undefined) ?? 'UTF-8';
-  const computed = soapActionHeaders(input.soapVersion, input.soapAction, {
-    ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
+    charsetOf(effectiveInput.headers !== undefined ? headerValue(effectiveInput.headers, 'content-type') : undefined) ??
+    'UTF-8';
+  const computed = soapActionHeaders(effectiveInput.soapVersion, effectiveInput.soapAction, {
+    ...(effectiveInput.skipSoapAction !== undefined ? { skipSoapAction: effectiveInput.skipSoapAction } : {}),
     charset,
   });
-  const headers = mergeHeaders({ 'content-type': computed.contentType, ...computed.headers }, input.headers ?? {});
+  const headers = mergeHeaders(
+    { 'content-type': computed.contentType, ...computed.headers },
+    effectiveInput.headers ?? {},
+  );
 
-  const body = encodeBody(input.envelopeXml, input.encoding);
+  const body = encodeBody(effectiveInput.envelopeXml, effectiveInput.encoding);
 
   const request: HttpRequest = {
-    url: input.endpoint,
+    url: effectiveInput.endpoint,
     method: 'POST',
     headers,
     body,
-    timeoutMs: input.timeoutMs ?? 60_000,
-    followRedirects: input.followRedirects ?? false,
-    ...(input.maxSizeBytes !== undefined ? { maxSizeBytes: input.maxSizeBytes } : {}),
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    ...(input.tls !== undefined ? { tls: input.tls } : {}),
-    ...(input.proxy !== undefined ? { proxy: input.proxy } : {}),
+    timeoutMs: effectiveInput.timeoutMs ?? 60_000,
+    followRedirects: effectiveInput.followRedirects ?? false,
+    ...(effectiveInput.maxSizeBytes !== undefined ? { maxSizeBytes: effectiveInput.maxSizeBytes } : {}),
+    ...(effectiveInput.signal !== undefined ? { signal: effectiveInput.signal } : {}),
+    ...(effectiveInput.tls !== undefined ? { tls: effectiveInput.tls } : {}),
+    ...(effectiveInput.proxy !== undefined ? { proxy: effectiveInput.proxy } : {}),
   };
 
   const http = await sendHttp(request, options);
@@ -156,5 +176,6 @@ export async function sendSoapRequest(
     ...(response !== undefined ? { response } : {}),
     durationMs: http.timings.totalMs,
     problems,
+    ...(unresolved !== undefined ? { unresolved } : {}),
   };
 }

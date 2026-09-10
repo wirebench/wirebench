@@ -12,6 +12,7 @@ import type { SchemaSet } from './xsd/schema-set.js';
 import type { HttpExchange, ProxyOptions, TlsOptions } from './http/types.js';
 import type { SoapEnvelopeVersion } from './soap/envelope.js';
 import type { SoapFault } from './soap/fault.js';
+import type { UnresolvedRef } from './project/properties.js';
 
 /** Where a WSDL definition comes from. */
 export type ImportSource =
@@ -125,4 +126,6 @@ export interface SoapExchange {
     readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error';
     readonly message: string;
   }[];
+  /** Property expansions in the request that could not be resolved (set only when `options.scopes` was given). */
+  readonly unresolved?: readonly UnresolvedRef[];
 }

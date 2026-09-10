@@ -1,0 +1,167 @@
+import { describe, expect, it } from 'vitest';
+import { expand, expandSendInput, hasExpansions, type PropertyScopes } from '../../../src/project/properties.js';
+import type { SoapSendInput } from '../../../src/types.js';
+
+const scopes: PropertyScopes = {
+  project: { name: 'proj-name', which: 'name', selfRef: '${#Project#selfRef}' },
+  env: { name: 'env-name', host: 'example.test' },
+  global: { name: 'global-name', onlyGlobal: 'g-value' },
+  system: { MY_VAR: 'sys-value' },
+};
+
+describe('expand', () => {
+  it.each([
+    ['${#Project#name}', 'proj-name'],
+    ['${#Env#name}', 'env-name'],
+    ['${#Global#name}', 'global-name'],
+    ['${#System#MY_VAR}', 'sys-value'],
+  ])('resolves explicit scope form %s', (input, expected) => {
+    const result = expand(input, scopes);
+    expect(result.text).toBe(expected);
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('shorthand prefers env over project over global', () => {
+    expect(expand('${name}', scopes).text).toBe('env-name');
+    expect(expand('${onlyGlobal}', scopes).text).toBe('g-value');
+  });
+
+  it('shorthand never implicitly reaches System', () => {
+    const result = expand('${MY_VAR}', scopes);
+    expect(result.unresolved).toHaveLength(1);
+    expect(result.unresolved[0]?.code).toBe('missing');
+  });
+
+  it('supports nesting: ${#Project#${#Env#which... }} style indirection', () => {
+    const result = expand('${#Project#${which}}', { ...scopes, project: { ...scopes.project, name: 'nested-ok' } });
+    expect(result.text).toBe('nested-ok');
+  });
+
+  it('recursively expands a resolved property value', () => {
+    const result = expand('${indirect}', {
+      ...scopes,
+      env: { ...scopes.env, indirect: '${#Project#name}' },
+    });
+    expect(result.text).toBe('proj-name');
+  });
+
+  it('detects a self-referencing cycle through the shorthand form', () => {
+    const result = expand('${loop}', { ...scopes, env: { ...scopes.env, loop: '${loop}' } });
+    expect(result.unresolved).toEqual([
+      { expr: '${loop}', scope: 'Env', name: 'loop', code: 'cycle', start: 0, end: 7 },
+    ]);
+    expect(result.text).toBe('${loop}');
+  });
+
+  it('detects a self-referencing cycle', () => {
+    const result = expand('${#Project#selfRef}', scopes);
+    expect(result.unresolved).toHaveLength(1);
+    expect(result.unresolved[0]?.code).toBe('cycle');
+    expect(result.text).toBe('${#Project#selfRef}');
+  });
+
+  it('reports too-deep beyond the depth budget', () => {
+    // Build a chain of properties each pointing at the next, 10 deep (> default maxDepth 8).
+    const project: Record<string, string> = {};
+    for (let i = 0; i < 10; i++) {
+      project[`p${i}`] = `\${#Project#p${i + 1}}`;
+    }
+    project.p10 = 'bottom';
+    const result = expand('${#Project#p0}', { ...scopes, project });
+    expect(result.unresolved.some((u) => u.code === 'too-deep')).toBe(true);
+  });
+
+  it('respects a custom maxDepth option', () => {
+    const result = expand('${#Project#name}', scopes, { maxDepth: 0 });
+    expect(result.unresolved[0]?.code).toBe('too-deep');
+  });
+
+  it('treats $${ as an escaped literal ${', () => {
+    const result = expand('$${literal}', scopes);
+    expect(result.text).toBe('${literal}');
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('flags an unknown scope name', () => {
+    const result = expand('${#Foo#x}', scopes);
+    expect(result.text).toBe('${#Foo#x}');
+    expect(result.unresolved).toEqual([
+      { expr: '${#Foo#x}', scope: 'Foo', name: 'x', code: 'unknown-scope', start: 0, end: 9 },
+    ]);
+  });
+
+  it('flags a missing property, leaving the expression verbatim', () => {
+    const result = expand('before ${#Project#nope} after', scopes);
+    expect(result.text).toBe('before ${#Project#nope} after');
+    expect(result.unresolved).toEqual([
+      { expr: '${#Project#nope}', scope: 'Project', name: 'nope', code: 'missing', start: 7, end: 23 },
+    ]);
+  });
+
+  it('flags an unterminated ${ as malformed but leaves it verbatim', () => {
+    const result = expand('abc ${#Project#name', scopes);
+    expect(result.text).toBe('abc ${#Project#name');
+    expect(result.unresolved).toEqual([{ expr: '${#Project#name', code: 'malformed', start: 4, end: 19 }]);
+  });
+
+  it('computes correct offsets across multi-byte characters (emoji before the expression)', () => {
+    const text = '🎉 ${#Project#name}';
+    const result = expand(text, scopes);
+    expect(result.text).toBe('🎉 proj-name');
+    // The emoji is a surrogate pair (2 UTF-16 code units), so the expression starts at index 3.
+    const start = text.indexOf('${');
+    expect(start).toBe(3);
+  });
+
+  it('collects the used property list', () => {
+    const result = expand('${#Project#name} and ${#Env#host}', scopes);
+    expect(result.used).toEqual([
+      { scope: 'Project', name: 'name' },
+      { scope: 'Env', name: 'host' },
+    ]);
+  });
+});
+
+describe('hasExpansions', () => {
+  it('is true when text contains a ${ expression', () => {
+    expect(hasExpansions('hello ${name}')).toBe(true);
+  });
+  it('is false for plain text', () => {
+    expect(hasExpansions('hello world')).toBe(false);
+  });
+  it('is false for an escaped $${', () => {
+    expect(hasExpansions('literal $${x}')).toBe(false);
+  });
+});
+
+describe('expandSendInput', () => {
+  it('expands endpoint, envelopeXml, soapAction and header names/values, leaving other fields untouched', () => {
+    const input: SoapSendInput = {
+      endpoint: 'https://${#Env#host}/soap',
+      envelopeXml: '<Envelope>${#Project#name}</Envelope>',
+      soapVersion: '1.1',
+      soapAction: 'urn:${#Project#name}',
+      headers: { 'X-${name}': '${#Global#onlyGlobal}' },
+      timeoutMs: 5000,
+    };
+    const result = expandSendInput(input, scopes);
+    expect(result.input.endpoint).toBe('https://example.test/soap');
+    expect(result.input.envelopeXml).toBe('<Envelope>proj-name</Envelope>');
+    expect(result.input.soapAction).toBe('urn:proj-name');
+    expect(result.input.headers).toEqual({ 'X-env-name': 'g-value' });
+    expect(result.input.timeoutMs).toBe(5000);
+    expect(result.input.soapVersion).toBe('1.1');
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('reports unresolved refs without throwing', () => {
+    const input: SoapSendInput = {
+      endpoint: '${#Project#missing}',
+      envelopeXml: '<a/>',
+      soapVersion: '1.1',
+    };
+    const result = expandSendInput(input, scopes);
+    expect(result.input.endpoint).toBe('${#Project#missing}');
+    expect(result.unresolved).toHaveLength(1);
+  });
+});

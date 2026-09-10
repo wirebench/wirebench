@@ -220,3 +220,5 @@ export { saveProject } from './project/save.js';
 export type { SaveProjectOptions, SaveResult } from './project/save.js';
 export { nodeFs } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
+export { expand, expandSendInput, hasExpansions } from './project/properties.js';
+export type { ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';

@@ -245,4 +245,49 @@ describe('engine facade — end to end', () => {
     const wsdlRequest = server.requests.find((r) => r.url.includes('/service'));
     expect(wsdlRequest?.headers['authorization']).toBe(`Basic ${Buffer.from('alice:wonderland').toString('base64')}`);
   });
+
+  it('expands ${#Env#...} properties in the endpoint and a header before sending', async () => {
+    server = await startTestSoapServer({ fixture: 'calculator' });
+
+    const exchange = await sendSoapRequest(
+      {
+        endpoint: '${#Env#host}/soap',
+        envelopeXml: '<Envelope>hi</Envelope>',
+        soapVersion: '1.1',
+        soapAction: 'urn:x',
+        headers: { 'X-Trace-Id': '${#Env#traceId}' },
+      },
+      {
+        scopes: {
+          project: {},
+          env: { host: server.url, traceId: 'trace-123' },
+          global: {},
+        },
+      },
+    );
+
+    expect(exchange.unresolved).toEqual([]);
+    const recorded = server.requests.at(-1);
+    expect(recorded?.url).toContain('/soap');
+    expect(recorded?.headers['x-trace-id']).toBe('trace-123');
+  });
+
+  it('leaves an unresolved property expression verbatim and reports it on the exchange', async () => {
+    server = await startTestSoapServer({ fixture: 'calculator' });
+
+    const exchange = await sendSoapRequest(
+      {
+        endpoint: `${server.url}/soap`,
+        envelopeXml: '<Envelope>${#Project#missing}</Envelope>',
+        soapVersion: '1.1',
+        soapAction: 'urn:x',
+      },
+      { scopes: { project: {}, global: {} } },
+    );
+
+    expect(exchange.unresolved).toHaveLength(1);
+    expect(exchange.unresolved?.[0]?.code).toBe('missing');
+    const recorded = server.requests.at(-1);
+    expect(recorded?.body.toString('utf-8')).toContain('${#Project#missing}');
+  });
 });
