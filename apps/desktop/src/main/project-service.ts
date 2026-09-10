@@ -26,7 +26,7 @@ import {
   saveProject,
   uniqueSlug,
 } from '@wirebench/engine';
-import type { Endpoint, Interface, OperationDef, Project, ProjectFiles } from '@wirebench/engine';
+import type { Endpoint, FsLike, Interface, OperationDef, Project, ProjectFiles } from '@wirebench/engine';
 import type {
   EngineProgressEvent,
   HydrationStatus,
@@ -125,6 +125,8 @@ export class ProjectService {
     private readonly engine: EngineService,
     private readonly recent: RecentProjects,
     private readonly hooks: ProjectServiceHooks = {},
+    /** Overrides the filesystem `saveProject` writes through. Test-only (deferred writes). */
+    private readonly fs?: FsLike,
   ) {}
 
   /** The current snapshot, or `null` when no project is open. */
@@ -251,13 +253,24 @@ export class ProjectService {
     if (open === undefined) {
       return { saved: false, written: 0, removed: 0 };
     }
-    const result = await saveProject(open.project, open.dir, {
+    // Capture the model being written before the await: `mutate` can replace `open.project`
+    // with a newer one while the write is in flight, and bookkeeping below must describe the
+    // model that was actually saved, not whatever happens to be open afterwards.
+    const model = open.project;
+    const result = await saveProject(model, open.dir, {
       ...(open.lastWritten !== undefined ? { previous: open.lastWritten } : {}),
       writer: `wirebench (${options.reason})`,
+      ...(this.fs !== undefined ? { fs: this.fs } : {}),
     });
     open.watcher.expect([...result.written, ...result.removed]);
-    open.lastWritten = projectFiles(open.project, { writer: `wirebench (${options.reason})` });
-    open.dirty = false;
+    open.lastWritten = projectFiles(model, { writer: `wirebench (${options.reason})` });
+    if (open.project === model) {
+      open.dirty = false;
+    } else {
+      // A mutation landed mid-write: `lastWritten` now describes disk, but the newer edit
+      // never made it out, so stay dirty and schedule another autosave to pick it up.
+      this.markDirty();
+    }
     open.lastSavedAt = new Date().toISOString();
     this.emitChanged();
     return {

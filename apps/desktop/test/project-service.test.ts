@@ -4,7 +4,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadProject } from '@wirebench/engine';
+import { loadProject, nodeFs } from '@wirebench/engine';
+import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectService } from '../src/main/project-service.js';
@@ -19,8 +20,34 @@ function tempDir(prefix: string): string {
 }
 
 /** A service wired to its own engine, over a shared `userData` directory for the recent list. */
-function newService(userDataDir: string): ProjectService {
-  return new ProjectService(new EngineService(), new RecentProjects(userDataDir));
+function newService(userDataDir: string, fs?: FsLike): ProjectService {
+  return new ProjectService(new EngineService(), new RecentProjects(userDataDir), {}, fs);
+}
+
+/**
+ * Wraps {@link nodeFs} so `writeFile` blocks on a gate that starts open (writes proceed
+ * normally) and can be closed/reopened with `arm()`/`release()` around the write(s) under
+ * test, simulating a slow disk only where the test needs it.
+ */
+function deferredWriteFs(): { fs: FsLike; arm: () => void; release: () => void } {
+  let gate: Promise<void> = Promise.resolve();
+  let unblock: (() => void) | undefined;
+  const fs: FsLike = {
+    ...nodeFs,
+    async writeFile(path, data) {
+      await gate;
+      await nodeFs.writeFile(path, data);
+    },
+  };
+  return {
+    fs,
+    arm: () => {
+      gate = new Promise((resolve) => {
+        unblock = resolve;
+      });
+    },
+    release: () => unblock?.(),
+  };
 }
 
 beforeEach(async () => {
@@ -168,6 +195,49 @@ describe('ProjectService', () => {
     expect(after.requests.length).toBeGreaterThan(0);
 
     await reopened.close();
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  it('does not lose an edit that lands while a save is still writing to disk', async () => {
+    const userData = root!;
+    const dir = join(tempDir('project'), 'Race Project');
+    const { fs, arm, release } = deferredWriteFs();
+    const service = newService(userData, fs);
+
+    await service.create({ dir, name: 'Race Project' });
+
+    const first = await service.mutate({ kind: 'rename-project', name: 'First' });
+    expect(first.project.dirty).toBe(true);
+
+    // Start the save; arm the gate first so its writes block until `release()`, simulating a
+    // slow disk.
+    arm();
+    const savePromise = service.save({ reason: 'test' });
+
+    // A second edit lands while the first save is still in flight.
+    const second = await service.mutate({ kind: 'rename-project', name: 'Second' });
+    expect(second.project.dirty).toBe(true);
+
+    release();
+    const saved = await savePromise;
+    expect(saved.saved).toBe(true);
+
+    // The in-flight save only ever wrote "First": the second edit must still be pending.
+    expect(service.snapshot()?.dirty).toBe(true);
+    expect(service.snapshot()?.name).toBe('Second');
+
+    const onDiskAfterFirstSave = await loadProject(dir);
+    expect(onDiskAfterFirstSave.project.name).toBe('First');
+
+    // The next save (autosave, or another manual save) must still pick up "Second".
+    const secondSave = await service.save({ reason: 'test-2' });
+    expect(secondSave.saved).toBe(true);
+    expect(service.snapshot()?.dirty).toBe(false);
+
+    const onDiskAfterSecondSave = await loadProject(dir);
+    expect(onDiskAfterSecondSave.project.name).toBe('Second');
+
+    await service.close();
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 });

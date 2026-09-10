@@ -60,8 +60,12 @@ export const projectActions = {
     if (useProjectStore.getState().project === null) {
       return;
     }
-    await useProjectStore.getState().save();
-    showToast('Saved');
+    try {
+      await useProjectStore.getState().save();
+      showToast('Saved');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save the project');
+    }
   },
 
   /** Saves and closes the open project, returning the app to the Welcome screen. */

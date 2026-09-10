@@ -213,6 +213,30 @@ describe('useProjectStore', () => {
     expect(useProjectStore.getState().lastSavedAt).toBe('2026-09-10T08:00:00.000Z');
   });
 
+  it('save() sets saveStatus to error and rejects, without touching lastSavedAt, on failure', async () => {
+    installWirebenchApi({
+      project: {
+        save: vi.fn().mockResolvedValue({ ok: false, error: { code: 'write-failed', message: 'disk full' } }),
+      },
+    });
+    await expect(useProjectStore.getState().save()).rejects.toThrow('disk full');
+    expect(useProjectStore.getState().saveStatus).toBe('error');
+    expect(useProjectStore.getState().lastSavedAt).toBeUndefined();
+  });
+
+  it('updateRequest reverts the pending patch and toasts when main rejects the mutation', async () => {
+    useProjectStore.getState().applySnapshot(projectWire());
+    const mutate = vi.fn().mockResolvedValue({ ok: false, error: { code: 'no-project', message: 'boom' } });
+    installWirebenchApi({ project: { mutate } });
+
+    useProjectStore.getState().updateRequest('req-1', { envelopeXml: '<Add>typed</Add>' });
+    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toBe('<Add>typed</Add>');
+
+    await vi.waitFor(() => {
+      expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toBe('<Add/>');
+    });
+  });
+
   it('collects and clears the paths the watcher reports', () => {
     useProjectStore.getState().noteChangedOnDisk(['wirebench.yaml']);
     useProjectStore.getState().noteChangedOnDisk(['wirebench.yaml', 'interfaces/Calculator/interface.yaml']);

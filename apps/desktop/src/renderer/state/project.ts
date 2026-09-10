@@ -1,6 +1,7 @@
 import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
+import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
   ImportSourceWire,
@@ -24,7 +25,7 @@ import { ipc } from './ipc-client.js';
 export type RequestDraft = RequestWire;
 
 /** Whether an explicit or automatic save is currently running. */
-export type SaveStatus = 'idle' | 'saving' | 'saved';
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** The renderer's read-only mirror of the main process's project model. */
 export interface ProjectSnapshot {
@@ -195,9 +196,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         draft.saveStatus = 'saving';
       });
       const result = await ipc().project.save(undefined);
+      if (!result.ok) {
+        // Leave the project dirty: nothing was written, so the pending edit is still only
+        // in memory and the caller (`projectActions.save`) needs the thrown error to toast it.
+        update((draft) => {
+          draft.saveStatus = 'error';
+        });
+        throw asError(result.error);
+      }
       update((draft) => {
         draft.saveStatus = 'saved';
-        if (result.ok && result.value.savedAt !== undefined) {
+        if (result.value.savedAt !== undefined) {
           draft.lastSavedAt = result.value.savedAt;
         }
       });
@@ -252,6 +261,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           draft.requests[requestId] = withPatch(request, patch);
         }
       });
+      const fail = (message: string): void => {
+        // Drop the pending patch and fall back to the last confirmed snapshot so the editor
+        // does not keep showing text that was never saved, then surface the failure. Without
+        // this, a failed mutate left `pending` set forever and the rejection went unhandled.
+        if (pending.get(requestId) === merged) {
+          pending.delete(requestId);
+        }
+        update((draft) => {
+          const project = get().project;
+          const fresh = project?.requests.find((candidate) => candidate.id === requestId);
+          if (fresh !== undefined) {
+            const stillPending = pending.get(requestId);
+            draft.requests[requestId] = stillPending === undefined ? fresh : withPatch(fresh, stillPending);
+          }
+        });
+        showToast(message);
+      };
       void ipc()
         .project.mutate({ change: { kind: 'update-request', requestId, patch } })
         .then((result) => {
@@ -259,10 +285,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           // but a snapshot that crossed a later keystroke does not, and the patch covers it.
           if (result.ok) {
             apply(result.value.project);
+            if (pending.get(requestId) === merged) {
+              pending.delete(requestId);
+            }
+            return;
           }
-          if (pending.get(requestId) === merged) {
-            pending.delete(requestId);
-          }
+          fail(asError(result.error).message);
+        })
+        .catch((error: unknown) => {
+          fail(error instanceof Error ? error.message : 'Could not save the change');
         });
     },
 
