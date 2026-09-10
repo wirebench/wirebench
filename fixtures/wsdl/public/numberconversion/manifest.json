@@ -1,0 +1,13 @@
+{
+  "name": "numberconversion",
+  "sourceUrl": "https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL",
+  "fetchedAt": "2026-09-10T00:14:33.707Z",
+  "files": [
+    {
+      "file": "service.wsdl",
+      "url": "https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL",
+      "sha256": "c544123d2d3e6ccca67ce79e9f659fb5d191f40c35e68cc15d9746534721e454",
+      "bytes": 4645
+    }
+  ]
+}

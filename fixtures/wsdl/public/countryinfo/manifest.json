@@ -1,0 +1,13 @@
+{
+  "name": "countryinfo",
+  "sourceUrl": "http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL",
+  "fetchedAt": "2026-09-10T00:14:32.917Z",
+  "files": [
+    {
+      "file": "service.wsdl",
+      "url": "http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL",
+      "sha256": "88ff081ee3088396f713b84e38bc9527dda987d0a8023e7c292e84bbed856b02",
+      "bytes": 37172
+    }
+  ]
+}

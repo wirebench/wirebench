@@ -1,0 +1,13 @@
+{
+  "name": "calculator",
+  "sourceUrl": "http://www.dneonline.com/calculator.asmx?WSDL",
+  "fetchedAt": "2026-09-10T00:14:32.177Z",
+  "files": [
+    {
+      "file": "service.wsdl",
+      "url": "http://www.dneonline.com/calculator.asmx?WSDL",
+      "sha256": "78d6c955cef5e46e424b0c87ad80bf6f2572a7031146d97716b80ea1022c8a11",
+      "bytes": 7880
+    }
+  ]
+}

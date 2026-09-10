@@ -1,0 +1,13 @@
+{
+  "name": "tempconvert",
+  "sourceUrl": "https://www.w3schools.com/xml/tempconvert.asmx?WSDL",
+  "fetchedAt": "2026-09-10T00:14:32.620Z",
+  "files": [
+    {
+      "file": "service.wsdl",
+      "url": "https://www.w3schools.com/xml/tempconvert.asmx?WSDL",
+      "sha256": "953f28fa5bd6c850c17d9eb52f6d550247083c3768565a3d12e7e25fb11a3575",
+      "bytes": 6901
+    }
+  ]
+}

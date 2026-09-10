@@ -24,7 +24,7 @@
     "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc -b && pnpm --filter @wirebench/desktop typecheck",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "fixtures:refresh": "echo 'not yet implemented (Task 4)' && exit 0"
+    "fixtures:refresh": "node scripts/fixtures-refresh.ts"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
