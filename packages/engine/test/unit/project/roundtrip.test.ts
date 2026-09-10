@@ -5,6 +5,7 @@ import { ProjectError } from '../../../src/errors.js';
 import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
+import { stringifyYaml } from '../../../src/project/yaml.js';
 import type { Project, RequestDef } from '../../../src/project/model.js';
 import { CRLF_ENVELOPE, listTree, readBytes, sampleProject, tempProjectDir } from './fixture.js';
 
@@ -81,6 +82,7 @@ describe('saveProject', () => {
         defaultTimeoutMs: 60000
         prettyPrintResponses: true
         resourceRoot: ./res
+      writtenBy: wirebench
       "
     `);
     expect((await readBytes(dir, 'environments/dev.yaml')).toString('utf8')).toMatchInlineSnapshot(`
@@ -141,6 +143,84 @@ describe('saveProject', () => {
     expect(result.removed).toEqual([`${opDir}/Bulk _ batch.request.yaml`, `${opDir}/Bulk _ batch.xml`]);
     expect(result.written).toEqual([]);
     expect(await listTree(dir)).not.toContain(`${opDir}/Bulk _ batch.xml`);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('leaves foreign files inside managed directories untouched by a save', async () => {
+    const dir = await tempProjectDir();
+    const project = sampleProject();
+    await saveProject(project, dir);
+
+    await writeFile(join(dir, 'environments', 'notes.txt'), 'ignored');
+    const opDir = 'interfaces/CountryInfo/operations/ListOfCountryNamesByCode';
+    await writeFile(join(dir, ...`${opDir}/Ghost.xml`.split('/')), '<x/>');
+    await writeFile(join(dir, 'README.md'), '# notes');
+    await mkdir(join(dir, 'wss', 'outgoing'), { recursive: true });
+    await writeFile(join(dir, 'wss', 'outgoing', '.gitkeep'), '');
+
+    const result = await saveProject(project, dir);
+
+    expect(result.removed).toEqual([]);
+    const tree = await listTree(dir);
+    expect(tree).toContain('environments/notes.txt');
+    expect(tree).toContain(`${opDir}/Ghost.xml`);
+    expect(tree).toContain('README.md');
+    expect(tree).toContain('wss/outgoing/.gitkeep');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects a slug that would escape the project root, before touching disk', async () => {
+    const dir = await tempProjectDir();
+    const project = sampleProject();
+
+    for (const badSlug of ['..', '../x', 'a/b', '.']) {
+      const corrupted = { ...project, environments: [{ ...project.environments[0]!, slug: badSlug }] };
+      await expect(saveProject(corrupted, dir)).rejects.toMatchObject({ code: 'project-path-invalid' });
+    }
+    expect(await listTree(dir)).toEqual([]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('rejects an absolute or escaping WssRef.file, before touching disk', async () => {
+    const dir = await tempProjectDir();
+    const project = sampleProject();
+
+    for (const badFile of ['../outside.yaml', '/etc/passwd', 'wss/../outside.yaml', 'other/x.yaml']) {
+      const corrupted: Project = {
+        ...project,
+        wss: {
+          ...project.wss,
+          outgoing: [{ id: 'W1', name: 'x', file: badFile, document: { id: 'W1', name: 'x' } }],
+        },
+      };
+      await expect(saveProject(corrupted, dir)).rejects.toMatchObject({ code: 'project-path-invalid' });
+    }
+    expect(await listTree(dir)).toEqual([]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('preserves unknown fields of a WS-Security document across a load/save cycle', async () => {
+    const dir = await tempProjectDir();
+    const project = sampleProject();
+    await saveProject(project, dir);
+
+    const outgoingPath = join(dir, 'wss', 'outgoing', 'prod-signature.yaml');
+    const richDocument = stringifyYaml({
+      id: 'W1',
+      name: 'prod-signature',
+      entries: [{ type: 'Timestamp' }],
+      ttl: 300,
+    });
+    await writeFile(outgoingPath, richDocument);
+
+    const { project: loaded } = await loadProject(dir);
+    await saveProject(loaded, dir);
+    const after = (await readBytes(dir, 'wss/outgoing/prod-signature.yaml')).toString('utf8');
+    expect(after).toBe(richDocument);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -290,16 +370,21 @@ describe('loadProject', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('rejects an unknown top-level key in a strict document', async () => {
+  it('ignores an unknown top-level key in a manifest written by a newer 1.x build', async () => {
     const dir = await tempProjectDir();
-    await saveProject(sampleProject(), dir);
+    const project = sampleProject();
+    await saveProject(project, dir);
     const file = 'wirebench.yaml';
     const text = (await readBytes(dir, file)).toString('utf8');
     await writeFile(join(dir, file), `${text}surprise: yes\n`);
 
-    const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
-    expect(error.code).toBe('project-file-invalid');
-    expect(JSON.stringify(error.details)).toContain('surprise');
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded).toEqual(project);
+    expect(Object.keys(loaded)).not.toContain('surprise');
+
+    await saveProject(loaded, dir);
+    const saved = (await readBytes(dir, file)).toString('utf8');
+    expect(saved).not.toContain('surprise');
 
     await rm(dir, { recursive: true, force: true });
   });

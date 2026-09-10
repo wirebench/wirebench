@@ -1,10 +1,14 @@
 /**
  * Zod schemas for every YAML document in a project folder.
  *
- * Schemas whose shape is settled use `z.strictObject`, so a typo (or a file written
- * by a newer Wirebench) is reported rather than silently dropped. Documents
- * that later tasks will grow (WS-Security configurations, keystores) are
- * deliberately `z.looseObject` extension points.
+ * Every object schema is `z.looseObject`: unknown keys are accepted and
+ * IGNORED on load (the loader only ever reads the fields it knows about), and
+ * `saveProject` only ever writes known fields back out, so a 1.x build reading
+ * a file written by a newer 1.x build silently drops fields it does not
+ * understand rather than refusing to open the project. A breaking change to a
+ * document's shape bumps `formatVersion` instead of relying on strictness
+ * here. `formatVersion` itself stays a `z.literal` so an out-of-range value is
+ * still caught explicitly (see `migrate.ts`).
  */
 
 import { z } from 'zod';
@@ -14,16 +18,26 @@ import { FORMAT_VERSION } from './model.js';
 const nonEmpty = z.string().min(1);
 const propertyMapSchema = z.record(z.string(), z.string());
 
-/** Credentials as persisted: usernames and a `secretRef`, never a password value. */
-export const endpointAuthSchema = z.strictObject({
-  type: z.enum(['none', 'basic', 'ntlm']),
-  username: z.string().optional(),
-  passwordRef: z.string().optional(),
-  domain: z.string().optional(),
-  preemptive: z.boolean().optional(),
-});
+/**
+ * Credentials as persisted: usernames and a `secretRef`, never a password
+ * value. Unlike every other schema here, a plaintext `password` key is
+ * explicitly rejected rather than merely ignored — secrets must never be
+ * written to a project file, in any format.
+ */
+export const endpointAuthSchema = z
+  .looseObject({
+    type: z.enum(['none', 'basic', 'ntlm']),
+    username: z.string().optional(),
+    passwordRef: z.string().optional(),
+    domain: z.string().optional(),
+    preemptive: z.boolean().optional(),
+  })
+  .refine((value) => !('password' in value), {
+    message: 'endpoint auth must not contain a plaintext "password" field; use passwordRef',
+    path: ['password'],
+  });
 
-const endpointSchema = z.strictObject({
+const endpointSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
   url: z.string(),
@@ -31,9 +45,9 @@ const endpointSchema = z.strictObject({
   authMode: z.enum(['override', 'complement']),
 });
 
-const wsaSchema = z.strictObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() });
+const wsaSchema = z.looseObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() });
 
-const operationEntrySchema = z.strictObject({
+const operationEntrySchema = z.looseObject({
   name: nonEmpty,
   bindingName: z.string(),
   slug: nonEmpty,
@@ -41,22 +55,24 @@ const operationEntrySchema = z.strictObject({
 });
 
 /** `wirebench.yaml`. */
-export const manifestSchema = z.strictObject({
+export const manifestSchema = z.looseObject({
   formatVersion: z.literal(FORMAT_VERSION),
   id: nonEmpty,
   name: z.string(),
   description: z.string().optional(),
-  settings: z.strictObject({
+  settings: z.looseObject({
     cacheDefinitions: z.boolean(),
     defaultTimeoutMs: z.number().int().positive(),
     resourceRoot: z.string().optional(),
     prettyPrintResponses: z.boolean(),
   }),
   properties: propertyMapSchema,
+  /** Name of the Wirebench build that last wrote this manifest; informational only. */
+  writtenBy: z.string().optional(),
 });
 
 /** `interfaces/<slug>/interface.yaml`. */
-export const interfaceFileSchema = z.strictObject({
+export const interfaceFileSchema = z.looseObject({
   kind: z.literal('soap'),
   id: nonEmpty,
   name: z.string(),
@@ -66,12 +82,12 @@ export const interfaceFileSchema = z.strictObject({
   targetNamespace: z.string().optional(),
   endpoints: z.array(endpointSchema),
   defaultEndpointId: z.string().optional(),
-  wsa: z.strictObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']) }),
+  wsa: z.looseObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']) }),
   auth: endpointAuthSchema.optional(),
   operations: z.array(operationEntrySchema),
 });
 
-const requestPropertiesSchema = z.strictObject({
+const requestPropertiesSchema = z.looseObject({
   encoding: z.string(),
   timeoutMs: z.number().int().nonnegative().optional(),
   bindAddress: z.string().optional(),
@@ -94,7 +110,7 @@ const requestPropertiesSchema = z.strictObject({
   wssTimeToLive: z.number().int().nonnegative().optional(),
 });
 
-const attachmentSchema = z.strictObject({
+const attachmentSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
   contentType: z.string().optional(),
@@ -103,7 +119,7 @@ const attachmentSchema = z.strictObject({
 });
 
 /** `interfaces/<slug>/operations/<slug>/<name>.request.yaml` (the envelope lives in the sibling `.xml`). */
-export const requestFileSchema = z.strictObject({
+export const requestFileSchema = z.looseObject({
   kind: z.literal('soap'),
   id: nonEmpty,
   name: z.string(),
@@ -113,7 +129,7 @@ export const requestFileSchema = z.strictObject({
   endpointUrl: z.string().optional(),
   soapVersion: z.enum(['1.1', '1.2']),
   soapAction: z.string().optional(),
-  headers: z.array(z.strictObject({ name: z.string(), value: z.string() })),
+  headers: z.array(z.looseObject({ name: z.string(), value: z.string() })),
   attachments: z.array(attachmentSchema),
   auth: endpointAuthSchema.optional(),
   wsa: wsaSchema.optional(),
@@ -123,7 +139,7 @@ export const requestFileSchema = z.strictObject({
 });
 
 /** `environments/<slug>.yaml`. */
-export const environmentFileSchema = z.strictObject({
+export const environmentFileSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
   order: z.number().int(),

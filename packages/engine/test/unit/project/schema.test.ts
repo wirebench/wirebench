@@ -34,10 +34,10 @@ describe('parseFile', () => {
     expect(parseFile(manifestSchema, validManifest, 'wirebench.yaml')).toEqual(validManifest);
   });
 
-  it('raises project-file-invalid carrying the file and the issues', () => {
+  it('raises project-file-invalid carrying the file and the issues for a genuinely invalid document', () => {
     const error = (() => {
       try {
-        parseFile(manifestSchema, { ...validManifest, formatVersion: 1, extra: true }, 'wirebench.yaml');
+        parseFile(manifestSchema, { ...validManifest, id: '' }, 'wirebench.yaml');
       } catch (e) {
         return e;
       }
@@ -46,12 +46,16 @@ describe('parseFile', () => {
     expect(error).toBeInstanceOf(ProjectError);
     expect((error as ProjectError).code).toBe('project-file-invalid');
     expect((error as ProjectError).details).toMatchObject({ file: 'wirebench.yaml' });
-    expect(JSON.stringify((error as ProjectError).details)).toContain('extra');
+    expect(JSON.stringify((error as ProjectError).details)).toContain('id');
+  });
+
+  it('accepts (and ignores, at the model layer) an unknown top-level manifest key', () => {
+    expect(() => parseFile(manifestSchema, { ...validManifest, extra: true }, 'wirebench.yaml')).not.toThrow();
   });
 });
 
-describe('strict schemas', () => {
-  it('rejects an unknown key in an interface document', () => {
+describe('loose schemas', () => {
+  it('accepts and ignores an unknown key in an interface document, but still validates known fields', () => {
     const iface = {
       kind: 'soap',
       id: 'I',
@@ -64,10 +68,12 @@ describe('strict schemas', () => {
       operations: [],
     };
     expect(() => parseFile(interfaceFileSchema, iface, 'i.yaml')).not.toThrow();
-    expect(() => parseFile(interfaceFileSchema, { ...iface, soapVersion: '1.1' }, 'i.yaml')).toThrow(ProjectError);
+    expect(() => parseFile(interfaceFileSchema, { ...iface, futureField: 'x' }, 'i.yaml')).not.toThrow();
+    expect(() => parseFile(interfaceFileSchema, { ...iface, soapVersion: '1.1' }, 'i.yaml')).not.toThrow();
+    expect(() => parseFile(interfaceFileSchema, { ...iface, kind: 'rest' }, 'i.yaml')).toThrow(ProjectError);
   });
 
-  it('rejects an unknown key in a request document and a bad soapVersion', () => {
+  it('accepts an unknown key in a request document but rejects a bad soapVersion', () => {
     const request = {
       kind: 'soap',
       id: 'R',
@@ -79,17 +85,17 @@ describe('strict schemas', () => {
       properties: { ...DEFAULT_REQUEST_PROPERTIES },
     };
     expect(() => parseFile(requestFileSchema, request, 'r.yaml')).not.toThrow();
-    expect(() => parseFile(requestFileSchema, { ...request, envelopeXml: '<x/>' }, 'r.yaml')).toThrow(ProjectError);
+    expect(() => parseFile(requestFileSchema, { ...request, envelopeXml: '<x/>' }, 'r.yaml')).not.toThrow();
     expect(() => parseFile(requestFileSchema, { ...request, soapVersion: '1.0' }, 'r.yaml')).toThrow(ProjectError);
   });
 
-  it('rejects an unknown key in an environment document', () => {
+  it('accepts an unknown key in an environment document', () => {
     const env = { id: 'E', name: 'dev', order: 0, endpoints: {}, properties: {} };
     expect(() => parseFile(environmentFileSchema, env, 'e.yaml')).not.toThrow();
-    expect(() => parseFile(environmentFileSchema, { ...env, active: true }, 'e.yaml')).toThrow(ProjectError);
+    expect(() => parseFile(environmentFileSchema, { ...env, active: true }, 'e.yaml')).not.toThrow();
   });
 
-  it('never accepts a plaintext password field', () => {
+  it('never accepts a plaintext password field, even though the rest of the object is loose', () => {
     const iface = {
       kind: 'soap',
       id: 'I',

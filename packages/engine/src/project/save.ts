@@ -13,11 +13,11 @@
 
 import { dirname, join } from 'node:path';
 import type { Project } from './model.js';
-import { ATTACHMENTS_DIR, DEFINITION_DIR, ENVIRONMENTS_DIR, INTERFACES_DIR, OPERATIONS_DIR, WSS_DIR } from './paths.js';
+import { ENVIRONMENTS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX, WSS_DIR } from './paths.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import type { ProjectFiles } from './serialize.js';
-import { MANIFEST_PATH, projectFiles } from './serialize.js';
+import { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './serialize.js';
 
 /** What a {@link saveProject} call did, as relative `/`-separated paths. */
 export interface SaveResult {
@@ -38,38 +38,55 @@ export interface SaveProjectOptions {
    */
   readonly previous?: ProjectFiles;
   readonly fs?: FsLike;
+  /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
+  readonly writer?: string;
 }
 
 function toAbsolute(root: string, relative: string): string {
   return join(root, ...relative.split('/'));
 }
 
-/** Recursively lists the files below `relativeDir`, skipping `skip`-named directories. */
-async function listFiles(fs: FsLike, root: string, relativeDir: string, skip: ReadonlySet<string>): Promise<string[]> {
-  const found: string[] = [];
-  const entries = await readdirIfExists(fs, toAbsolute(root, relativeDir));
-  for (const entry of entries) {
-    const relative = `${relativeDir}/${entry.name}`;
-    if (entry.isDirectory) {
-      if (!skip.has(entry.name)) {
-        found.push(...(await listFiles(fs, root, relative, skip)));
-      }
-    } else if (entry.isFile) {
-      found.push(relative);
-    }
-  }
-  return found;
-}
-
-/** Lists every file Wirebench manages under `root`, ignoring foreign subtrees. */
+/**
+ * Lists every file Wirebench manages under `root` — i.e. every file that
+ * matches one of the format's own patterns:
+ *
+ * - `wirebench.yaml`
+ * - `environments/*.yaml`
+ * - `interfaces/*\/interface.yaml`
+ * - `interfaces/*\/operations/*\/*.request.yaml`, plus the sibling `*.xml` of
+ *   any such file
+ * - `wss/{outgoing,incoming}/*.yaml`
+ * - `wss/keystores.yaml`
+ *
+ * Anything else on disk — a README, a `.gitkeep`, notes, an orphan `.xml`
+ * with no matching `.request.yaml` — is a foreign file and is never a
+ * deletion candidate, even when it sits inside a directory Wirebench
+ * otherwise manages.
+ */
 async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
-  const skip = new Set([DEFINITION_DIR, ATTACHMENTS_DIR]);
   const managed: string[] = [];
   if ((await readFileIfExists(fs, toAbsolute(root, MANIFEST_PATH))) !== undefined) {
     managed.push(MANIFEST_PATH);
   }
-  managed.push(...(await listFiles(fs, root, ENVIRONMENTS_DIR, skip)));
-  managed.push(...(await listFiles(fs, root, WSS_DIR, skip)));
+
+  for (const entry of await readdirIfExists(fs, toAbsolute(root, ENVIRONMENTS_DIR))) {
+    if (entry.isFile && entry.name.endsWith('.yaml')) {
+      managed.push(`${ENVIRONMENTS_DIR}/${entry.name}`);
+    }
+  }
+
+  for (const direction of ['outgoing', 'incoming'] as const) {
+    const dir = `${WSS_DIR}/${direction}`;
+    for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
+      if (entry.isFile && entry.name.endsWith('.yaml')) {
+        managed.push(`${dir}/${entry.name}`);
+      }
+    }
+  }
+  if ((await readFileIfExists(fs, toAbsolute(root, KEYSTORES_PATH))) !== undefined) {
+    managed.push(KEYSTORES_PATH);
+  }
+
   for (const entry of await readdirIfExists(fs, toAbsolute(root, INTERFACES_DIR))) {
     if (!entry.isDirectory) {
       continue;
@@ -79,7 +96,30 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
     if ((await readFileIfExists(fs, toAbsolute(root, ifaceFile))) !== undefined) {
       managed.push(ifaceFile);
     }
-    managed.push(...(await listFiles(fs, root, `${base}/${OPERATIONS_DIR}`, skip)));
+
+    const opsDir = `${base}/${OPERATIONS_DIR}`;
+    for (const opEntry of await readdirIfExists(fs, toAbsolute(root, opsDir))) {
+      if (!opEntry.isDirectory) {
+        continue;
+      }
+      const opDir = `${opsDir}/${opEntry.name}`;
+      const requestSlugs = new Set<string>();
+      const opFiles = await readdirIfExists(fs, toAbsolute(root, opDir));
+      for (const fileEntry of opFiles) {
+        if (fileEntry.isFile && fileEntry.name.endsWith(REQUEST_SUFFIX)) {
+          requestSlugs.add(fileEntry.name.slice(0, -REQUEST_SUFFIX.length));
+          managed.push(`${opDir}/${fileEntry.name}`);
+        }
+      }
+      for (const fileEntry of opFiles) {
+        if (fileEntry.isFile && fileEntry.name.endsWith('.xml')) {
+          const slug = fileEntry.name.slice(0, -'.xml'.length);
+          if (requestSlugs.has(slug)) {
+            managed.push(`${opDir}/${fileEntry.name}`);
+          }
+        }
+      }
+    }
   }
   return managed;
 }
@@ -114,7 +154,7 @@ async function pruneEmptyDirs(fs: FsLike, root: string, relativeDirs: ReadonlySe
  */
 export async function saveProject(project: Project, root: string, options?: SaveProjectOptions): Promise<SaveResult> {
   const fs = options?.fs ?? nodeFs;
-  const desired = projectFiles(project);
+  const desired = projectFiles(project, options?.writer !== undefined ? { writer: options.writer } : undefined);
   const existing = await listManagedFiles(fs, root);
 
   const written: string[] = [];

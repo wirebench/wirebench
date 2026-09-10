@@ -191,9 +191,25 @@ export function sampleProject(): Project {
       },
     ],
     wss: {
-      outgoing: [{ id: nextId(), name: 'prod-signature', file: 'wss/outgoing/prod-signature.yaml' }],
-      incoming: [{ id: nextId(), name: 'default', file: 'wss/incoming/default.yaml' }],
-      keystores: [{ id: nextId(), name: 'corp-p12' }],
+      outgoing: (() => {
+        const id = nextId();
+        return [
+          {
+            id,
+            name: 'prod-signature',
+            file: 'wss/outgoing/prod-signature.yaml',
+            document: { id, name: 'prod-signature' },
+          },
+        ];
+      })(),
+      incoming: (() => {
+        const id = nextId();
+        return [{ id, name: 'default', file: 'wss/incoming/default.yaml', document: { id, name: 'default' } }];
+      })(),
+      keystores: (() => {
+        const id = nextId();
+        return [{ id, name: 'corp-p12', document: { id, name: 'corp-p12' } }];
+      })(),
     },
   };
 }

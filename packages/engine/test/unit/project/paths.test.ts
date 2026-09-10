@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { ProjectError } from '../../../src/errors.js';
 import {
+  assertPathSegment,
+  assertWssRelativePath,
   environmentFile,
   interfaceDir,
   interfaceFile,
@@ -65,6 +68,46 @@ describe('uniqueSlug', () => {
 
   it('slugifies before checking for collisions', () => {
     expect(uniqueSlug('Orders: v2', new Set(['orders_ v2']))).toBe('Orders_ v2-2');
+  });
+});
+
+describe('assertPathSegment', () => {
+  it('accepts ordinary display-derived segments, spaces included', () => {
+    expect(() => assertPathSegment('Request 1')).not.toThrow();
+    expect(() => assertPathSegment('CountryInfo')).not.toThrow();
+  });
+
+  it('rejects segments that could escape the project root or corrupt the layout', () => {
+    for (const bad of ['', '.', '..', 'a/b', 'a\\b', ' a', 'a ', '.a', 'a.', 'CON', 'a\u0000b']) {
+      expect(() => assertPathSegment(bad)).toThrow(ProjectError);
+    }
+    try {
+      assertPathSegment('..');
+      expect.unreachable();
+    } catch (e) {
+      expect((e as ProjectError).code).toBe('project-path-invalid');
+      expect((e as ProjectError).details).toMatchObject({ segment: '..' });
+    }
+  });
+});
+
+describe('assertWssRelativePath', () => {
+  it('accepts a relative path rooted at wss/', () => {
+    expect(() => assertWssRelativePath('wss/outgoing/prod-signature.yaml')).not.toThrow();
+  });
+
+  it('rejects anything that is not a safe relative path under wss/', () => {
+    for (const bad of [
+      '../outside.yaml',
+      '/etc/passwd',
+      'wss/../outside.yaml',
+      'other/x.yaml',
+      'wss',
+      'C:/x.yaml',
+      'wss/a/../../b.yaml',
+    ]) {
+      expect(() => assertWssRelativePath(bad)).toThrow(ProjectError);
+    }
   });
 });
 

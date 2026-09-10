@@ -183,6 +183,13 @@ export interface WssRef {
    * share the single `wss/keystores.yaml` registry.
    */
   readonly file?: string;
+  /**
+   * The document as loaded from (or to be written to) disk, verbatim. Tasks
+   * 36-40 will replace this loose bag with a typed shape; until then, saving a
+   * loaded `WssRef` back out must not drop fields this build does not
+   * understand.
+   */
+  readonly document: Readonly<Record<string, unknown>>;
 }
 
 /** Project-wide settings persisted in `wirebench.yaml`. */

@@ -7,6 +7,7 @@
  */
 
 import { join } from 'node:path';
+import { ProjectError } from '../errors.js';
 
 /** Longest slug we emit; leaves room for the `.request.yaml` suffix within common path limits. */
 const MAX_SLUG_LENGTH = 80;
@@ -54,6 +55,65 @@ export function uniqueSlug(name: string, taken: ReadonlySet<string>): string {
     if (!lower.has(candidate.toLowerCase())) {
       return candidate;
     }
+  }
+}
+
+/**
+ * Rejects a value that cannot safely be used as a single path segment on disk:
+ * empty, `.`/`..`, containing a path separator or NUL, leading/trailing
+ * whitespace or dots, or a Windows reserved device name. Used to validate any
+ * slug or file reference that flows into a project file path before it is
+ * ever written to (or deleted from) disk.
+ *
+ * @throws ProjectError `project-path-invalid` carrying the offending segment.
+ */
+export function assertPathSegment(segment: string): void {
+  const invalid =
+    segment === '' ||
+    segment === '.' ||
+    segment === '..' ||
+    segment.includes('/') ||
+    segment.includes('\\') ||
+    segment.includes('\u0000') ||
+    /^[. ]/.test(segment) ||
+    /[. ]$/.test(segment) ||
+    RESERVED_NAMES.test(segment);
+  if (invalid) {
+    throw new ProjectError('project-path-invalid', `Invalid path segment: ${JSON.stringify(segment)}`, {
+      details: { segment },
+    });
+  }
+}
+
+/**
+ * Validates a `WssRef.file` value: it must be a relative path (no leading
+ * slash or drive letter), rooted at {@link WSS_DIR}, whose every segment
+ * passes {@link assertPathSegment} — so it can never resolve outside
+ * `wss/` no matter how it was constructed.
+ *
+ * @throws ProjectError `project-path-invalid` carrying the offending segment.
+ */
+export function assertWssRelativePath(file: string): void {
+  const fail = (segment: string): never => {
+    throw new ProjectError('project-path-invalid', `Invalid WSS file reference: ${JSON.stringify(file)}`, {
+      details: { segment, file },
+    });
+  };
+  if (
+    file === '' ||
+    file.includes('\\') ||
+    file.includes('\u0000') ||
+    file.startsWith('/') ||
+    /^[A-Za-z]:/.test(file)
+  ) {
+    fail(file);
+  }
+  const segments = file.split('/');
+  if (segments[0] !== WSS_DIR || segments.length < 2) {
+    fail(file);
+  }
+  for (const segment of segments.slice(1)) {
+    assertPathSegment(segment);
   }
 }
 

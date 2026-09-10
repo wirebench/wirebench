@@ -239,7 +239,7 @@ async function loadWssRefs(fs: FsLike, root: string, direction: 'outgoing' | 'in
     }
     const relative = `${dir}/${entry.name}`;
     const parsed = parseFile(schema, await readYaml(fs, root, relative), relative);
-    refs.push({ id: parsed.id, name: parsed.name, file: relative });
+    refs.push({ id: parsed.id, name: parsed.name, file: relative, document: parsed });
   }
   return refs.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -280,6 +280,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
       : parseFile(keystoresFileSchema, keystoresDocument, KEYSTORES_PATH).keystores.map((k) => ({
           id: k.id,
           name: k.name,
+          document: k,
         }));
 
   const project: Project = {
