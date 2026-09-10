@@ -50,7 +50,15 @@ describe('command registry', () => {
     registerCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'General', run });
 
     await expect(runCommand('palette.open', context)).resolves.toBe(true);
-    expect(run).toHaveBeenCalledWith(context);
+    expect(run).toHaveBeenCalledWith(context, undefined);
+  });
+
+  it('passes an optional arg through to the handler', async () => {
+    const run = vi.fn();
+    registerCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'General', run });
+
+    await expect(runCommand('palette.open', context, 'https://example.test/service.wsdl')).resolves.toBe(true);
+    expect(run).toHaveBeenCalledWith(context, 'https://example.test/service.wsdl');
   });
 
   it('throws unknown-command for an unregistered id', async () => {

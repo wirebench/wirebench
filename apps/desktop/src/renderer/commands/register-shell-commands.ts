@@ -1,5 +1,6 @@
 import { showToast } from '../components/toast.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
+import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 
 /** Stubs announce their own task number so the gap is visible in the UI, not just the backlog. */
@@ -105,7 +106,14 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Import WSDL…',
     category: 'Definition',
     shortcut: 'Mod+I',
-    run: () => {
+    // The URL picker itself is Task 14's dialog; this command only wires an already-known
+    // URL (passed as `arg`) into the project store. With no `arg`, there is nothing to
+    // import yet, so it falls back to the same stub toast as before.
+    run: async (_context, arg) => {
+      if (typeof arg === 'string' && arg.length > 0) {
+        await useProjectStore.getState().importDefinition({ kind: 'url', url: arg });
+        return;
+      }
       notImplemented('Import WSDL', 14);
     },
   });

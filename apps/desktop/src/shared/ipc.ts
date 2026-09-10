@@ -1,4 +1,17 @@
 import { z } from 'zod';
+import {
+  definitionCloseRequestSchema,
+  definitionCloseResponseSchema,
+  definitionImportRequestSchema,
+  engineProgressEventSchema,
+  exchangeSummarySchema,
+  interfaceSummarySchema,
+  requestCancelRequestSchema,
+  requestCancelResponseSchema,
+  requestGenerateRequestSchema,
+  requestGenerateResponseSchema,
+  requestSendRequestSchema,
+} from './wire-types.js';
 
 /**
  * A typed request/response contract for one `ipcMain.handle` / `ipcRenderer.invoke` pair.
@@ -59,6 +72,15 @@ export const channels = {
       }),
     ),
   },
+  definition: {
+    import: defineChannel('definition.import', definitionImportRequestSchema, interfaceSummarySchema),
+    close: defineChannel('definition.close', definitionCloseRequestSchema, definitionCloseResponseSchema),
+  },
+  request: {
+    generate: defineChannel('request.generate', requestGenerateRequestSchema, requestGenerateResponseSchema),
+    send: defineChannel('request.send', requestSendRequestSchema, exchangeSummarySchema),
+    cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
+  },
 } as const;
 
 /**
@@ -82,5 +104,8 @@ export type EventPayload<E> = E extends IpcEvent<infer Payload> ? z.infer<Payloa
 export const events = {
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),
+  },
+  engine: {
+    progress: defineEvent('engine.progress', engineProgressEventSchema),
   },
 } as const;

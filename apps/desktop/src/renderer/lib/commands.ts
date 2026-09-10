@@ -10,7 +10,8 @@ export interface CommandContext {
 
 /** A command definition plus the handler that performs it. */
 export interface Command extends CommandDefinition<CommandContext> {
-  readonly run: (context: CommandContext) => void | Promise<void>;
+  /** `arg` carries an optional command-specific payload (e.g. a URL for `definition.import`). */
+  readonly run: (context: CommandContext, arg?: unknown) => void | Promise<void>;
 }
 
 const registry = new Map<CommandId, Command>();
@@ -59,7 +60,7 @@ function isAvailable(command: Command, context: CommandContext): boolean {
  * @returns `true` when it ran, `false` when its `when` guard denied it in this context.
  * @throws Error `unknown-command` when `id` is not registered.
  */
-export async function runCommand(id: CommandId, context: CommandContext): Promise<boolean> {
+export async function runCommand(id: CommandId, context: CommandContext, arg?: unknown): Promise<boolean> {
   const command = registry.get(id);
   if (command === undefined) {
     throw new Error(`unknown-command: ${id}`);
@@ -67,7 +68,7 @@ export async function runCommand(id: CommandId, context: CommandContext): Promis
   if (!isAvailable(command, context)) {
     return false;
   }
-  await command.run(context);
+  await command.run(context, arg);
   return true;
 }
 

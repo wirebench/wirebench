@@ -1,0 +1,160 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InterfaceSummary, RequestGenerateResponse } from '../../src/shared/wire-types.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+
+const summary: InterfaceSummary = {
+  id: 'iface-1',
+  name: 'Calculator',
+  definitionUrl: 'http://example.test/service.wsdl',
+  targetNamespace: 'http://tempuri.org/',
+  soapVersions: ['1.1'],
+  services: [{ name: 'Calculator', ports: [{ name: 'CalculatorSoap', binding: '{tns}B', soapVersion: '1.1' }] }],
+  operations: [
+    {
+      name: 'Add',
+      binding: '{tns}B',
+      bindingLocal: 'B',
+      soapVersion: '1.1',
+      style: 'document',
+      ports: [{ service: 'Calculator', port: 'CalculatorSoap', address: 'http://example.test/soap' }],
+    },
+    {
+      name: 'Subtract',
+      binding: '{tns}B',
+      bindingLocal: 'B',
+      soapVersion: '1.1',
+      style: 'document',
+      ports: [{ service: 'Calculator', port: 'CalculatorSoap', address: 'http://example.test/soap' }],
+    },
+  ],
+  problems: [],
+  documentCount: 1,
+};
+
+function generated(name: string): RequestGenerateResponse {
+  return {
+    envelopeXml: `<Envelope>${name}</Envelope>`,
+    soapVersion: '1.1',
+    contentType: 'text/xml',
+    headers: { SOAPAction: `"${name}"` },
+    problems: [],
+  };
+}
+
+describe('useProjectStore', () => {
+  beforeEach(() => {
+    useProjectStore.setState({ interfaces: {}, requests: {}, order: [] });
+  });
+
+  it('importDefinition adds the interface and one request draft per operation', async () => {
+    const importFn = vi.fn().mockResolvedValue({ ok: true, value: summary });
+    const generateFn = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: generated('Add') })
+      .mockResolvedValueOnce({ ok: true, value: generated('Subtract') });
+    window.wirebench = {
+      definition: { import: importFn, close: vi.fn() },
+      request: { generate: generateFn, send: vi.fn(), cancel: vi.fn() },
+      app: { version: vi.fn() },
+      on: vi.fn(),
+    };
+
+    const result = await useProjectStore.getState().importDefinition({ kind: 'url', url: summary.definitionUrl });
+
+    expect(result).toEqual(summary);
+    expect(importFn).toHaveBeenCalledWith({ source: { kind: 'url', url: summary.definitionUrl } });
+    const state = useProjectStore.getState();
+    expect(state.interfaces['iface-1']).toEqual(summary);
+    expect(state.order).toEqual(['iface-1']);
+    const drafts = Object.values(state.requests);
+    expect(drafts).toHaveLength(2);
+    expect(drafts.map((d) => d.operationName).sort()).toEqual(['Add', 'Subtract']);
+    for (const draft of drafts) {
+      expect(draft.interfaceId).toBe('iface-1');
+      expect(draft.endpoint).toBe('http://example.test/soap');
+      expect(draft.envelopeXml).toContain(draft.operationName);
+    }
+  });
+
+  it('a failed generate produces a draft with an empty envelope and a problem', async () => {
+    window.wirebench = {
+      definition: {
+        import: vi.fn().mockResolvedValue({ ok: true, value: { ...summary, operations: [summary.operations[0]] } }),
+        close: vi.fn(),
+      },
+      request: {
+        generate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'boom', message: 'generation failed' } }),
+        send: vi.fn(),
+        cancel: vi.fn(),
+      },
+      app: { version: vi.fn() },
+      on: vi.fn(),
+    };
+
+    await useProjectStore.getState().importDefinition({ kind: 'url', url: summary.definitionUrl });
+
+    const drafts = Object.values(useProjectStore.getState().requests);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]?.envelopeXml).toBe('');
+    expect(drafts[0]?.problems?.[0]?.message).toBe('generation failed');
+  });
+
+  it('removeInterface calls definition.close and drops the interface plus its drafts', async () => {
+    const closeFn = vi.fn().mockResolvedValue({ ok: true, value: { closed: true } });
+    useProjectStore.setState({
+      interfaces: { 'iface-1': summary },
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: '',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: ['iface-1'],
+    });
+    window.wirebench = {
+      definition: { import: vi.fn(), close: closeFn },
+      request: { generate: vi.fn(), send: vi.fn(), cancel: vi.fn() },
+      app: { version: vi.fn() },
+      on: vi.fn(),
+    };
+
+    await useProjectStore.getState().removeInterface('iface-1');
+
+    expect(closeFn).toHaveBeenCalledWith({ interfaceId: 'iface-1' });
+    const state = useProjectStore.getState();
+    expect(state.interfaces['iface-1']).toBeUndefined();
+    expect(state.order).toEqual([]);
+    expect(state.requests['r1']).toBeUndefined();
+  });
+
+  it('updateRequest and setEndpoint patch an existing draft', () => {
+    useProjectStore.setState({
+      interfaces: {},
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: [],
+    });
+
+    useProjectStore.getState().updateRequest('r1', { name: 'Renamed' });
+    expect(useProjectStore.getState().requests['r1']?.name).toBe('Renamed');
+
+    useProjectStore.getState().setEndpoint('r1', 'http://new-endpoint.test');
+    expect(useProjectStore.getState().requests['r1']?.endpoint).toBe('http://new-endpoint.test');
+  });
+});
