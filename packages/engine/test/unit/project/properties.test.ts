@@ -276,3 +276,44 @@ describe('entitizing during expansion', () => {
     expect(result.input.headers).toEqual({ 'x-note': 'a & b <tag> c' });
   });
 });
+
+describe('expandSendInput attachments', () => {
+  it('expands an attachment name and file path, leaving the Content-ID alone', () => {
+    const scopes: PropertyScopes = { project: { dir: '/data', file: 'invoice.pdf' }, global: {} };
+    const { input } = expandSendInput(
+      {
+        endpoint: 'http://x.test',
+        envelopeXml: '<a/>',
+        soapVersion: '1.1',
+        attachments: [
+          {
+            id: 'A1',
+            name: '${#Project#file}',
+            contentType: 'application/pdf',
+            size: 3,
+            type: 'MIME',
+            contentId: '${#Project#file}',
+            cached: false,
+            source: { kind: 'path', path: '${#Project#dir}/${#Project#file}' },
+          },
+          {
+            id: 'A2',
+            name: 'cached.bin',
+            contentType: 'application/octet-stream',
+            size: 1,
+            type: 'CONTENT',
+            contentId: 'A2@wirebench',
+            cached: true,
+            source: { kind: 'cache', sha256: 'b'.repeat(64) },
+          },
+        ],
+      },
+      scopes,
+    );
+
+    expect(input.attachments?.[0]?.name).toBe('invoice.pdf');
+    expect(input.attachments?.[0]?.source).toEqual({ kind: 'path', path: '/data/invoice.pdf' });
+    expect(input.attachments?.[0]?.contentId).toBe('${#Project#file}');
+    expect(input.attachments?.[1]?.source).toEqual({ kind: 'cache', sha256: 'b'.repeat(64) });
+  });
+});

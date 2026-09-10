@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Attachment-carrying binding shapes (Wirebench task 32/33 fixture).
+
+  `Upload` is the classic WSDL 1.1 MIME binding: a `mime:multipartRelated` input whose first
+  part is the SOAP envelope (`soap:body parts="body"`) and whose second is a binary
+  `mime:content part="file"`. `SendRef` is the WS-I Attachments Profile 1.0 shape instead:
+  a plain SOAP body whose element has a `ref:swaRef`-typed child holding a `cid:` reference.
+-->
+<wsdl:definitions
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:ref="http://ws-i.org/profiles/basic/1.1/xsd"
+  xmlns:tns="urn:wb:attachments"
+  targetNamespace="urn:wb:attachments">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://ws-i.org/profiles/basic/1.1/xsd">
+      <!-- The swaRef type as defined by WS-I Attachments Profile 1.0. -->
+      <xsd:simpleType name="swaRef">
+        <xsd:restriction base="xsd:anyURI"/>
+      </xsd:simpleType>
+    </xsd:schema>
+
+    <xsd:schema targetNamespace="urn:wb:attachments" elementFormDefault="qualified">
+      <xsd:import namespace="http://ws-i.org/profiles/basic/1.1/xsd"/>
+
+      <xsd:element name="Upload">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="fileName" type="xsd:string"/>
+            <xsd:element name="content" type="xsd:base64Binary"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="UploadResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="stored" type="xsd:boolean"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="SendRef">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="doc" type="ref:swaRef"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="SendRefResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="received" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="UploadRequest">
+    <wsdl:part name="body" element="tns:Upload"/>
+    <wsdl:part name="file" type="xsd:base64Binary"/>
+  </wsdl:message>
+  <wsdl:message name="UploadReply">
+    <wsdl:part name="body" element="tns:UploadResponse"/>
+  </wsdl:message>
+  <wsdl:message name="SendRefRequest">
+    <wsdl:part name="body" element="tns:SendRef"/>
+  </wsdl:message>
+  <wsdl:message name="SendRefReply">
+    <wsdl:part name="body" element="tns:SendRefResponse"/>
+  </wsdl:message>
+
+  <wsdl:portType name="AttachmentsPortType">
+    <wsdl:operation name="Upload">
+      <wsdl:input message="tns:UploadRequest"/>
+      <wsdl:output message="tns:UploadReply"/>
+    </wsdl:operation>
+    <wsdl:operation name="SendRef">
+      <wsdl:input message="tns:SendRefRequest"/>
+      <wsdl:output message="tns:SendRefReply"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="AttachmentsBinding" type="tns:AttachmentsPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Upload">
+      <soap:operation soapAction="urn:wb:attachments/Upload"/>
+      <wsdl:input>
+        <mime:multipartRelated>
+          <mime:part>
+            <soap:body use="literal" parts="body"/>
+          </mime:part>
+          <mime:part>
+            <mime:content part="file" type="application/octet-stream"/>
+          </mime:part>
+        </mime:multipartRelated>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SendRef">
+      <soap:operation soapAction="urn:wb:attachments/SendRef"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="AttachmentsService">
+    <wsdl:port name="AttachmentsPort" binding="tns:AttachmentsBinding">
+      <soap:address location="http://localhost/attachments"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -3,7 +3,22 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
 import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
+import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { readPublicFixture } from './fixtures.js';
+
+/**
+ * The 1x1 PNG the `/mime-fixture` route sends as its single XOP part, so a test can assert
+ * on the exact bytes an expanded `xop:Include` must produce.
+ */
+export const MIME_FIXTURE_PNG = new Uint8Array(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
+
+/** Content-ID of the `/mime-fixture` PNG part. */
+export const MIME_FIXTURE_CID = 'png@wirebench';
 
 /** One request recorded by the test SOAP server, for assertions. */
 export interface RecordedRequest {
@@ -204,6 +219,81 @@ export async function startTestSoapServer(options?: {
       }
       res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml' });
       res.end(body);
+      return;
+    }
+
+    // Echoes a multipart request: every part comes back byte for byte with its own
+    // Content-ID and type, and the response envelope describes what arrived. An MTOM
+    // request (an `application/xop+xml` root part) is answered with an MTOM package.
+    if (method === 'POST' && url.pathname === '/mime') {
+      const requestContentType = req.headers['content-type'] ?? '';
+      if (!mediaTypeOf(requestContentType).toLowerCase().startsWith('multipart/')) {
+        res.writeHead(200, { 'content-type': requestContentType.length > 0 ? requestContentType : 'text/xml' });
+        res.end(body);
+        return;
+      }
+      const parsed = parseMultipartRelated(body, requestContentType);
+      const mtom = mediaTypeOf(parsed.root.contentType).toLowerCase() === 'application/xop+xml';
+      const parts = parsed.parts
+        .map((part) => `<part cid="${part.contentId ?? ''}" size="${part.bytes.length}"/>`)
+        .join('');
+      const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <UploadResponse rootLength="${parsed.root.bytes.length}">${parts}</UploadResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+      const built = buildMultipartRelated({
+        root: {
+          contentType: mtom ? 'application/xop+xml; charset=UTF-8; type="text/xml"' : 'text/xml; charset=UTF-8',
+          contentId: 'response@wirebench',
+          bytes: Buffer.from(envelope, 'utf-8'),
+        },
+        parts: parsed.parts.map((part) => ({
+          contentId: part.contentId ?? '',
+          contentType: part.contentType,
+          bytes: part.bytes,
+          transferEncoding: 'binary' as const,
+          ...(part.fileName !== undefined ? { fileName: part.fileName } : {}),
+        })),
+        ...(mtom ? { mtom: true } : {}),
+      });
+      res.writeHead(200, { 'content-type': built.contentType });
+      res.end(Buffer.from(built.body));
+      return;
+    }
+
+    // A fixed MTOM response whose envelope references a PNG through xop:Include, for the
+    // expand/inline options. Answers any method so a normal POST send reaches it too.
+    if (url.pathname === '/mime-fixture') {
+      const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <GetImageResponse xmlns="urn:img">
+      <image><xop:Include href="cid:${MIME_FIXTURE_CID}" xmlns:xop="http://www.w3.org/2004/08/xop/include"/></image>
+    </GetImageResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+      const built = buildMultipartRelated({
+        root: {
+          contentType: 'application/xop+xml; charset=UTF-8; type="text/xml"',
+          contentId: 'fixture-root@wirebench',
+          bytes: Buffer.from(envelope, 'utf-8'),
+        },
+        parts: [
+          {
+            contentId: MIME_FIXTURE_CID,
+            contentType: 'image/png',
+            bytes: MIME_FIXTURE_PNG,
+            transferEncoding: 'binary',
+            fileName: 'pixel.png',
+          },
+        ],
+        boundary: 'MIMEFIXTUREBOUNDARY',
+        mtom: true,
+      });
+      res.writeHead(200, { 'content-type': built.contentType });
+      res.end(Buffer.from(built.body));
       return;
     }
 

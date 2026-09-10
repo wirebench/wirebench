@@ -24,8 +24,27 @@ function build(args: Partial<ToSendInputArgs> & { request?: SendRequestInput } =
     endpoint: args.endpoint ?? 'http://example.test/soap',
     ...(args.preferences !== undefined ? { preferences: args.preferences } : {}),
     ...(args.projectSettings !== undefined ? { projectSettings: args.projectSettings } : {}),
+    ...(args.attachments !== undefined ? { attachments: args.attachments } : {}),
+    ...(args.attachmentResolvers !== undefined ? { attachmentResolvers: args.attachmentResolvers } : {}),
   });
 }
+
+const RESOLVERS = {
+  resolver: () => Promise.resolve(new Uint8Array([1])),
+  resolveFile: () => Promise.resolve(new Uint8Array([2])),
+  resourceRoot: '/projects/demo/res',
+};
+
+const ATTACHMENT = {
+  id: 'A1',
+  name: 'invoice.pdf',
+  contentType: 'application/pdf',
+  size: 1,
+  type: 'MIME' as const,
+  contentId: 'A1@wirebench',
+  cached: true,
+  source: { kind: 'cache' as const, sha256: 'a'.repeat(64) },
+};
 
 describe('toSendInput mapping', () => {
   it('maps the transport properties one for one', () => {
@@ -135,10 +154,56 @@ describe('toSendInput envelope transforms', () => {
     expect(build({ request: request({ entitizeProperties: true }) }).entitize).toBe(true);
   });
 
-  it('does not act on the MTOM/attachment properties, which land with the attachments task', () => {
-    const input = build({ request: request({ enableMtom: true, forceMtom: true, disableMultiparts: true }) });
-    expect(input).not.toHaveProperty('attachments');
+  it('leaves attachments alone when no resolver can read their bytes', () => {
+    const input = build({
+      request: request({ enableMtom: true, forceMtom: true, disableMultiparts: true }),
+      attachments: [ATTACHMENT],
+    });
+    expect(input.attachmentOptions).toBeUndefined();
+    expect(input.attachments).toBeUndefined();
     expect(input.envelopeXml).toBe(ENVELOPE);
+  });
+
+  it('passes the MTOM/attachment properties and resolvers straight through', () => {
+    const input = build({
+      request: request({
+        enableMtom: true,
+        forceMtom: true,
+        disableMultiparts: true,
+        encodeAttachments: true,
+        enableInlineFiles: true,
+        inlineResponseAttachments: true,
+        expandMtomAttachments: true,
+      }),
+      attachments: [ATTACHMENT],
+      attachmentResolvers: RESOLVERS,
+    });
+
+    expect(input.attachments).toEqual([ATTACHMENT]);
+    expect(input.attachmentOptions).toMatchObject({
+      enableMtom: true,
+      forceMtom: true,
+      disableMultiparts: true,
+      encodeAttachments: true,
+      enableInlineFiles: true,
+      inlineResponseAttachments: true,
+      expandMtomAttachments: true,
+      resolver: RESOLVERS.resolver,
+      resolveFile: RESOLVERS.resolveFile,
+      resourceRoot: RESOLVERS.resourceRoot,
+    });
+    // The envelope is not rewritten here: MTOM and inline files happen inside the send.
+    expect(input.envelopeXml).toBe(ENVELOPE);
+  });
+
+  it('reports the flags even for a request with no attachments, so inline files still work', () => {
+    const input = build({
+      request: request({ enableInlineFiles: true }),
+      attachmentResolvers: { resolver: RESOLVERS.resolver, resolveFile: RESOLVERS.resolveFile },
+    });
+    expect(input.attachments).toEqual([]);
+    expect(input.attachmentOptions?.enableInlineFiles).toBe(true);
+    expect(input.attachmentOptions?.resourceRoot).toBeUndefined();
   });
 });
 

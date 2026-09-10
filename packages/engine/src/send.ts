@@ -10,85 +10,12 @@ import { sendHttp } from './http/client.js';
 import type { HttpRequest } from './http/types.js';
 import { expandSendInput } from './project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
+import { headerValue, mergeHeaders } from './http/headers.js';
+import { charsetOf } from './soap/charset.js';
+import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import type { SoapExchange, SoapSendInput } from './types.js';
-
-/** Case-insensitively merges `override` onto `base`, letting `override`'s casing win for shared keys. */
-function mergeHeaders(
-  base: Readonly<Record<string, string>>,
-  override: Readonly<Record<string, string>>,
-): Record<string, string> {
-  const merged: Record<string, string> = { ...base };
-  const lowerToKey = new Map(Object.keys(merged).map((key) => [key.toLowerCase(), key]));
-  for (const [key, value] of Object.entries(override)) {
-    const existingKey = lowerToKey.get(key.toLowerCase());
-    if (existingKey !== undefined && existingKey !== key) {
-      delete merged[existingKey];
-    }
-    merged[key] = value;
-    lowerToKey.set(key.toLowerCase(), key);
-  }
-  return merged;
-}
-
-/** Looks up a header case-insensitively. */
-function headerValue(headers: Readonly<Record<string, string>>, name: string): string | undefined {
-  const lower = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === lower) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-/** The charset declared in a `Content-Type` header value, if any. */
-function charsetOf(contentType: string | undefined): string | undefined {
-  const match = contentType !== undefined ? /charset=([^;]+)/i.exec(contentType) : null;
-  return match?.[1]?.trim().replace(/^"|"$/g, '');
-}
-
-/**
- * Encodes `text` for the wire, per `encoding` (default utf-8).
- *
- * `ISO-8859-1` is a valid encoding label (SoapUI offers it, and it is what the Encoding
- * property's `<select>` shows), but it is not one of the labels Node's `Buffer` recognises —
- * `iso-8859-1` is instead spelled `latin1` there. That is the one label this function
- * translates; every other name is handed to `Buffer` as-is.
- */
-function encodeBody(text: string, encoding: string | undefined): Uint8Array {
-  const normalized = (encoding ?? 'utf-8').toLowerCase();
-  if (normalized === 'utf-8' || normalized === 'utf8') {
-    return new TextEncoder().encode(text);
-  }
-  const bufferEncoding = normalized === 'iso-8859-1' ? 'latin1' : normalized;
-  if (Buffer.isEncoding(bufferEncoding)) {
-    return new Uint8Array(Buffer.from(text, bufferEncoding));
-  }
-  throw new WirebenchError('unsupported-encoding', `Unsupported request encoding "${encoding}"`, {
-    details: { encoding },
-  });
-}
-
-/** Decodes a response body per its `Content-Type` charset (default UTF-8), falling back to UTF-8 with a `decode-error` problem when the charset label is unsupported or the bytes are invalid for it. */
-function decodeBody(
-  body: Uint8Array,
-  contentType: string | undefined,
-): { text: string; problem?: SoapExchange['problems'][number] } {
-  const label = charsetOf(contentType) ?? 'utf-8';
-  try {
-    return { text: new TextDecoder(label, { fatal: false }).decode(body) };
-  } catch {
-    return {
-      text: new TextDecoder('utf-8', { fatal: false }).decode(body),
-      problem: {
-        code: 'decode-error',
-        message: `Response charset "${label}" is not supported; decoded as UTF-8 instead`,
-      },
-    };
-  }
-}
 
 /**
  * Sends `input.envelopeXml` to `input.endpoint` over HTTP, computing the
@@ -99,6 +26,11 @@ function decodeBody(
  * HTTP-layer failures (timeout, abort, DNS, TLS, ...) propagate as
  * {@link HttpError}; a non-2xx HTTP status is not an error and is returned
  * as a normal exchange for the caller to inspect.
+ *
+ * When `input.attachmentOptions` is given, the envelope additionally goes
+ * through the attachment pipeline before it is sent — inline files, then MTOM,
+ * then SwA — and a `multipart/related` response is unwrapped into its envelope
+ * plus `response.attachments`. See `soap/mime/send-pipeline.ts`.
  *
  * When `options.scopes` is given, `input.endpoint`, `input.envelopeXml`,
  * `input.soapAction` and every header name/value are first passed through
@@ -133,7 +65,10 @@ export async function sendSoapRequest(
     effectiveInput.headers ?? {},
   );
 
-  const encoded = encodeBody(effectiveInput.envelopeXml, effectiveInput.encoding);
+  const problems: SoapProblem[] = [];
+  // Attachments are packaged before compression, so gzip applies to the whole multipart
+  // body exactly as it would to a plain envelope.
+  const encoded = await packageRequestBody(effectiveInput, headers, problems);
   // Compression is applied after the headers are merged so a caller-supplied Content-Encoding
   // cannot silently disagree with what is actually on the wire.
   const body = effectiveInput.compressBody === 'gzip' ? new Uint8Array(gzipSync(encoded)) : encoded;
@@ -157,14 +92,12 @@ export async function sendSoapRequest(
 
   const http = await sendHttp(request, options);
 
-  const problems: Array<SoapExchange['problems'][number]> = [];
-  const { text: envelopeXml, problem: decodeProblem } = decodeBody(
+  const { envelopeXml, attachments } = readResponseBody(
     http.body,
     headerValue(http.headers, 'content-type'),
+    effectiveInput.attachmentOptions,
+    problems,
   );
-  if (decodeProblem !== undefined) {
-    problems.push(decodeProblem);
-  }
 
   let response: SoapExchange['response'];
   try {
@@ -174,13 +107,14 @@ export async function sendSoapRequest(
       version: parsed.version,
       ...(parsed.fault !== undefined ? { fault: parsed.fault } : {}),
       isSoap: true,
+      ...(attachments !== undefined ? { attachments } : {}),
     };
   } catch (cause) {
     if (cause instanceof WirebenchError && cause.code === 'not-a-soap-envelope') {
-      response = { envelopeXml, isSoap: false };
+      response = { envelopeXml, isSoap: false, ...(attachments !== undefined ? { attachments } : {}) };
       problems.push({ code: 'not-soap', message: cause.message });
     } else if (cause instanceof WirebenchError && cause.code === 'xml-parse-error') {
-      response = { envelopeXml, isSoap: false };
+      response = { envelopeXml, isSoap: false, ...(attachments !== undefined ? { attachments } : {}) };
       problems.push({ code: 'xml-parse-error', message: cause.message });
     } else {
       throw cause;

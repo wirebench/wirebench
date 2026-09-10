@@ -10,7 +10,8 @@
 
 import { DEFAULT_PREFERENCES } from './project/preferences.js';
 import type { Preferences } from './project/preferences.js';
-import type { HeaderEntry, ProjectSettings, RequestProperties } from './project/model.js';
+import type { Attachment, HeaderEntry, ProjectSettings, RequestProperties } from './project/model.js';
+import type { AttachmentResolver } from './soap/mime/types.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import { prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 import type { SoapSendInput } from './types.js';
@@ -24,6 +25,19 @@ export interface SendRequestInput {
   readonly envelopeXml: string;
 }
 
+/**
+ * How the send is to read attachment and inline-file bytes. The engine never opens a file
+ * on its own, so without this the request's attachments (and its inline-file property) are
+ * left inert; the desktop main process supplies `createFileAttachmentResolver`.
+ */
+export interface AttachmentResolvers {
+  readonly resolver: AttachmentResolver;
+  /** Reads one file for "Enable Inline Files". */
+  readonly resolveFile?: (path: string) => Promise<Uint8Array>;
+  /** The project's resource root, for relative inline-file references. */
+  readonly resourceRoot?: string;
+}
+
 /** Everything {@link toSendInput} needs beyond the request itself. */
 export interface ToSendInputArgs {
   readonly request: SendRequestInput;
@@ -31,6 +45,9 @@ export interface ToSendInputArgs {
   readonly endpoint: string;
   readonly preferences?: Preferences;
   readonly projectSettings?: Pick<ProjectSettings, 'defaultTimeoutMs'>;
+  /** The request's attachments; only acted on together with {@link attachmentResolvers}. */
+  readonly attachments?: readonly Attachment[];
+  readonly attachmentResolvers?: AttachmentResolvers;
 }
 
 /** Case-insensitive lookup over a header map. */
@@ -74,8 +91,9 @@ function transformEnvelope(xml: string, properties: RequestProperties, indentWid
  * Request-body gzip is requested via `compressBody`; the transport does the compressing so the
  * `Content-Length` it computes describes the bytes that are actually sent.
  *
- * The MTOM/attachment properties are deliberately *not* mapped: they are stored and editable
- * now, and become effective with the attachments task.
+ * The MTOM/attachment properties are mapped only when `attachmentResolvers` says how bytes
+ * can be read; without a resolver there is nothing the transport could do with them, and a
+ * half-configured send would silently drop parts.
  *
  * @param args the request, its resolved endpoint, and the preferences/project settings around it
  */
@@ -110,6 +128,23 @@ export function toSendInput(args: ToSendInputArgs): SoapSendInput {
 
   const timeoutMs = properties.timeoutMs ?? args.projectSettings?.defaultTimeoutMs ?? preferences.http.socketTimeoutMs;
 
+  const resolvers = args.attachmentResolvers;
+  const attachmentOptions =
+    resolvers === undefined
+      ? undefined
+      : {
+          enableMtom: properties.enableMtom,
+          forceMtom: properties.forceMtom,
+          disableMultiparts: properties.disableMultiparts,
+          encodeAttachments: properties.encodeAttachments,
+          enableInlineFiles: properties.enableInlineFiles,
+          inlineResponseAttachments: properties.inlineResponseAttachments,
+          expandMtomAttachments: properties.expandMtomAttachments,
+          resolver: resolvers.resolver,
+          ...(resolvers.resolveFile !== undefined ? { resolveFile: resolvers.resolveFile } : {}),
+          ...(resolvers.resourceRoot !== undefined ? { resourceRoot: resolvers.resourceRoot } : {}),
+        };
+
   return {
     endpoint: args.endpoint,
     envelopeXml: transformEnvelope(args.request.envelopeXml, properties, preferences.editor.tabSize),
@@ -126,5 +161,6 @@ export function toSendInput(args: ToSendInputArgs): SoapSendInput {
       : {}),
     ...(preferences.http.requestCompression === 'gzip' ? { compressBody: 'gzip' as const } : {}),
     ...(properties.entitizeProperties ? { entitize: true } : {}),
+    ...(attachmentOptions !== undefined ? { attachments: args.attachments ?? [], attachmentOptions } : {}),
   };
 }

@@ -71,6 +71,18 @@ describe('putAttachment', () => {
   });
 });
 
+describe('putAttachment recovery', () => {
+  it('rewrites a blob the index knows about but the folder has lost', async () => {
+    const dir = await projectDir();
+    const put = await putAttachment(dir, INVOICE, { originalName: 'i.pdf', contentType: 'application/pdf' });
+    await rm(attachmentFile(dir, put.sha256));
+
+    await putAttachment(dir, INVOICE, { originalName: 'i.pdf', contentType: 'application/pdf' });
+    expect(await readAttachment(dir, put.sha256)).toEqual(INVOICE);
+    expect(await listAttachments(dir)).toHaveLength(1);
+  });
+});
+
 describe('readAttachment', () => {
   it('reads bytes back', async () => {
     const dir = await projectDir();

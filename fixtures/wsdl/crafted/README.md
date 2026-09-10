@@ -59,6 +59,15 @@ Each is deliberately tiny but structurally valid.
   `encodingStyle` wrapper attribute, `xsi:type` on simple accessors and a `soapenc:arrayType`
   array accessor.
 
+- **attachments/** — the two attachment shapes a binding can declare (`urn:wb:attachments`).
+  `Upload` binds its input as a `mime:multipartRelated` whose first `mime:part` is the SOAP
+  envelope (`soap:body parts="body"`) and whose second is a binary
+  `mime:content part="file" type="application/octet-stream"`. `SendRef` uses the WS-I
+  Attachments Profile 1.0 shape instead: a plain `soap:body` whose `SendRef` element has a
+  `ref:swaRef`-typed `doc` child, so the reference to the attachment travels inside the
+  envelope. An inline schema defines `swaRef` (a restriction of `xsd:anyURI`) so the fixture
+  resolves without network access.
+
 - **soap-headers/** — a `document/literal` **SOAP 1.2** binding (`soap12:binding`,
   `urn:wb:headers`). `Echo` restricts its `soap12:body` to the `body` part and adds two
   `soap12:header`s: `auth` (an `AuthHeader` element part of the *same* input message, carrying a

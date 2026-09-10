@@ -214,4 +214,25 @@ describe('parseMultipartRelated tolerance', () => {
     expect(parsed.parts[0]?.fileName).toBe('invoice.pdf');
     expect(parsed.parts[0]?.partName).toBe('file');
   });
+  it('ignores a header line with no colon and boundary text that is not at a line start', () => {
+    const body = [
+      '--B',
+      'Content-Type: text/xml',
+      'this line is not a header',
+      '',
+      'prefix --B still inside the part',
+      '--B  	',
+      'Content-Type: text/plain',
+      '',
+      'second',
+      '--B--',
+      '',
+    ].join('\r\n');
+    const parsed = parseMultipartRelated(utf8(body), 'multipart/related; boundary=B');
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.root.headers).toEqual({ 'content-type': 'text/xml' });
+    expect(text(parsed.root.bytes)).toBe('prefix --B still inside the part');
+    // Transport padding after the delimiter is skipped, so the second part still parses.
+    expect(text(parsed.parts[0]?.bytes ?? new Uint8Array())).toBe('second');
+  });
 });

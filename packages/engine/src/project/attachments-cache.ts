@@ -121,8 +121,13 @@ export async function putAttachment(
   const fs = options.fs ?? nodeFs;
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   const index = await readIndex(projectDir, fs);
+  const file = attachmentFile(projectDir, sha256);
+  // The blob is rewritten when it is missing even though the index knows it: a project
+  // whose `attachments/` was partly lost (a bad merge, a stray delete) heals on the next add.
+  if ((await readFileIfExists(fs, file)) === undefined) {
+    await writeFileAtomic(fs, file, Buffer.from(bytes));
+  }
   if (!index.has(sha256)) {
-    await writeFileAtomic(fs, attachmentFile(projectDir, sha256), Buffer.from(bytes));
     index.set(sha256, { sha256, originalName: meta.originalName, contentType: meta.contentType, size: bytes.length });
     await writeIndex(projectDir, fs, index);
   }

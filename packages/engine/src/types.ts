@@ -13,6 +13,8 @@ import type { HttpExchange, ProxyOptions, TlsOptions } from './http/types.js';
 import type { SoapEnvelopeVersion } from './soap/envelope.js';
 import type { SoapFault } from './soap/fault.js';
 import type { UnresolvedRef } from './project/properties.js';
+import type { Attachment } from './project/model.js';
+import type { AttachmentResolver, ResponseAttachment } from './soap/mime/types.js';
 
 /** Where a WSDL definition comes from. */
 export type ImportSource =
@@ -117,6 +119,42 @@ export interface SoapSendInput {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly signal?: AbortSignal;
+  /** Attachments to send; only acted on when {@link attachmentOptions} says how. */
+  readonly attachments?: readonly Attachment[];
+  /** MTOM/SwA/inline-file behaviour plus the resolvers that turn references into bytes. */
+  readonly attachmentOptions?: SendAttachmentOptions;
+}
+
+/**
+ * How one send treats attachments: the request's own MTOM/SwA properties, plus the
+ * resolvers that read bytes (the engine never touches the file system on its own —
+ * see `createFileAttachmentResolver`).
+ *
+ * `expandMtomAttachments` and `inlineResponseAttachments` are separate knobs, as in
+ * SoapUI: the first replaces each `xop:Include` in the response envelope with the
+ * referenced part's base64, the second keeps those parts listed as attachments even
+ * once they have been expanded into the envelope.
+ */
+export interface SendAttachmentOptions {
+  /** Rewrite `cid:` references as `xop:Include` and send an MTOM package. */
+  readonly enableMtom: boolean;
+  /** Send an MTOM package even when nothing was optimised. */
+  readonly forceMtom: boolean;
+  /** Send the envelope alone; attachments (and MTOM) are skipped entirely. */
+  readonly disableMultiparts: boolean;
+  /** Base64 transfer encoding for SwA parts instead of binary. */
+  readonly encodeAttachments: boolean;
+  /** Replace `file:<path>` element text with the file's base64 before sending. */
+  readonly enableInlineFiles: boolean;
+  /** Keep response parts listed as attachments even when they were expanded into the envelope. */
+  readonly inlineResponseAttachments: boolean;
+  /** Replace `xop:Include` in the response envelope with the referenced part's base64. */
+  readonly expandMtomAttachments: boolean;
+  readonly resolver: AttachmentResolver;
+  /** Reads one file for `enableInlineFiles`; without it, inline files are left alone. */
+  readonly resolveFile?: (path: string) => Promise<Uint8Array>;
+  /** Base directory for relative inline-file references. */
+  readonly resourceRoot?: string;
 }
 
 /** The result of sending a SOAP request: the raw HTTP exchange plus a structural read of the response. */
@@ -129,10 +167,12 @@ export interface SoapExchange {
     readonly fault?: SoapFault;
     /** False when the body is not a SOAP envelope (an HTML error page, etc.). */
     readonly isSoap: boolean;
+    /** Parts of a `multipart/related` response other than the envelope. */
+    readonly attachments?: readonly ResponseAttachment[];
   };
   readonly durationMs: number;
   readonly problems: readonly {
-    readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error';
+    readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error' | 'mime-parse' | 'inline-file-missing';
     readonly message: string;
   }[];
   /** Property expansions in the request that could not be resolved (set only when `options.scopes` was given). */

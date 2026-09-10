@@ -387,6 +387,10 @@ export function hasExpansions(text: string): boolean {
  * {@link SoapSendInput}. Header *names* are expanded too, so two headers whose names expand to
  * the same string collapse into one entry (last-write-wins, per `Object.entries` insertion
  * order — same as any other JS object key collision).
+ *
+ * Attachments are expanded as well, in the two places a property can reasonably appear: the
+ * display/file name that ends up in `Content-Disposition`, and the path of a file-backed
+ * attachment. Content-IDs are left alone — they are generated, not authored.
  */
 export function expandSendInput(
   input: SoapSendInput,
@@ -414,6 +418,15 @@ export function expandSendInput(
     }
   }
 
+  const attachments = input.attachments?.map((attachment) => ({
+    ...attachment,
+    name: run(attachment.name),
+    source:
+      attachment.source.kind === 'path'
+        ? { kind: 'path' as const, path: run(attachment.source.path) }
+        : attachment.source,
+  }));
+
   return {
     input: {
       ...input,
@@ -421,6 +434,7 @@ export function expandSendInput(
       envelopeXml,
       ...(soapAction !== undefined ? { soapAction } : {}),
       ...(headers !== undefined ? { headers } : {}),
+      ...(attachments !== undefined ? { attachments } : {}),
     },
     unresolved,
   };

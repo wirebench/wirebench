@@ -201,6 +201,7 @@ export type {
   ImportResult,
   ImportSource,
   OperationSummary,
+  SendAttachmentOptions,
   SoapExchange,
   SoapSendInput,
 } from './types.js';
@@ -292,7 +293,7 @@ export type {
   WsiPreferences,
 } from './project/preferences.js';
 export { toSendInput } from './send-options.js';
-export type { SendRequestInput, ToSendInputArgs } from './send-options.js';
+export type { AttachmentResolvers, SendRequestInput, ToSendInputArgs } from './send-options.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';

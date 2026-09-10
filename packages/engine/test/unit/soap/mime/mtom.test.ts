@@ -158,4 +158,27 @@ describe('expandMtomResponse', () => {
     const expanded = expandMtomResponse(parsed, { inline: false, envelopeXml: '<already-decoded/>' });
     expect(expanded.envelopeXml).toBe('<already-decoded/>');
   });
+  it('leaves an include with no usable href alone', () => {
+    const noHref = parseMultipartRelated(
+      new TextEncoder().encode(
+        [
+          '--B',
+          'Content-Type: application/xop+xml',
+          '',
+          '<a><xop:Include xmlns:xop="http://www.w3.org/2004/08/xop/include"/><xop:Include href="http://x/y" xmlns:xop="http://www.w3.org/2004/08/xop/include"/></a>',
+          '--B--',
+          '',
+        ].join('\r\n'),
+      ),
+      'multipart/related; boundary=B',
+    );
+    expect(expandMtomResponse(noHref, { inline: true }).inlinedContentIds).toEqual([]);
+  });
+
+  it('leaves an envelope it cannot scan alone', () => {
+    const expanded = expandMtomResponse(parsed, { inline: true, envelopeXml: '<a><b></a>' });
+    expect(expanded.envelopeXml).toBe('<a><b></a>');
+    expect(expanded.inlinedContentIds).toEqual([]);
+    expect(expanded.attachments).toHaveLength(1);
+  });
 });
