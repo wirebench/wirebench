@@ -54,6 +54,7 @@ export function summarizeOperations(definition: WsdlDefinition): readonly Operat
         style: operation.style ?? binding.style,
         ...(documentation !== undefined ? { documentation } : {}),
         ports,
+        inputMimeParts: operation.input?.mimeParts ?? [],
       });
     }
   }

@@ -7,7 +7,7 @@
 import type { FetchDocument } from './wsdl/resolver.js';
 import type { QName } from './wsdl/qname.js';
 import type { DefinitionBundle } from './wsdl/resolver.js';
-import type { WsdlDefinition } from './wsdl/model.js';
+import type { MimePartInfo, WsdlDefinition } from './wsdl/model.js';
 import type { SchemaSet } from './xsd/schema-set.js';
 import type { HttpExchange, ProxyOptions, TlsOptions } from './http/types.js';
 import type { SoapEnvelopeVersion } from './soap/envelope.js';
@@ -78,6 +78,11 @@ export interface OperationSummary {
   readonly style: 'document' | 'rpc';
   readonly documentation?: string;
   readonly ports: readonly { readonly serviceName: QName; readonly portName: string; readonly address?: string }[];
+  /**
+   * The `mime:multipartRelated` attachment parts declared for this operation's input, in document
+   * order; empty when the input is a plain `soap:body`. Drives the request editor's "Part" column.
+   */
+  readonly inputMimeParts: readonly MimePartInfo[];
 }
 
 /** The full result of importing a WSDL definition: parsed model, schema set, problems and an operation picker list. */

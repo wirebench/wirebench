@@ -75,10 +75,25 @@ export interface SoapHeader {
   readonly headerFaults: readonly SoapHeaderFault[];
 }
 
+/**
+ * One `mime:content` of a `mime:multipartRelated` binding message: the `wsdl:part` it carries
+ * and the media type the binding declares for it (absent when the WSDL states none).
+ */
+export interface MimePartInfo {
+  readonly part: string;
+  readonly type?: string;
+}
+
 /** The input or output side of a `wsdl:binding` operation. */
 export interface BindingMessage {
   readonly body: SoapBody;
   readonly headers: readonly SoapHeader[];
+  /**
+   * The attachment parts of a WSDL 1.1 `mime:multipartRelated` binding, in document order.
+   * Absent (rather than empty) when the message is a plain `soap:body`, so "no MIME binding"
+   * and "a MIME binding with no content parts" stay distinguishable.
+   */
+  readonly mimeParts?: readonly MimePartInfo[];
 }
 
 /** A `wsdl:fault` within a `wsdl:binding` operation, carrying its `soap:fault` `use`. */

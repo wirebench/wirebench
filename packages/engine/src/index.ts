@@ -35,6 +35,7 @@ export type {
   Fault,
   Message,
   MessageRef,
+  MimePartInfo,
   Operation,
   Part,
   Port,

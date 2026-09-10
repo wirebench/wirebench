@@ -12,6 +12,7 @@ import type {
   BindingFault,
   BindingMessage,
   BindingOperation,
+  MimePartInfo,
   Port,
   Service,
   SoapBody,
@@ -69,6 +70,34 @@ function parseSoapHeader(element: Element, ns: string, location: string, default
   };
 }
 
+/**
+ * Splits a `mime:multipartRelated` into the `mime:part` that carries the SOAP envelope (the one
+ * holding `soap:body`) and the `mime:content` declarations of every other part — the attachment
+ * slots the request editor offers a "Part" for.
+ */
+function parseMultipartRelated(
+  multipartEl: Element,
+  ns: string,
+): { readonly envelopePart?: Element; readonly mimeParts: readonly MimePartInfo[] } {
+  let envelopePart: Element | undefined;
+  const mimeParts: MimePartInfo[] = [];
+  for (const partEl of childElements(multipartEl, NS.WSDL_MIME, 'part')) {
+    if (firstChildElement(partEl, ns, 'body') !== undefined) {
+      envelopePart ??= partEl;
+      continue;
+    }
+    for (const contentEl of childElements(partEl, NS.WSDL_MIME, 'content')) {
+      const part = optionalAttribute(contentEl, 'part');
+      const type = optionalAttribute(contentEl, 'type');
+      if (part === undefined) {
+        continue;
+      }
+      mimeParts.push({ part, ...(type !== undefined ? { type } : {}) });
+    }
+  }
+  return { ...(envelopePart !== undefined ? { envelopePart } : {}), mimeParts };
+}
+
 function parseBindingMessage(
   wsdlMessageEl: Element | undefined,
   ns: string | undefined,
@@ -78,12 +107,16 @@ function parseBindingMessage(
   if (wsdlMessageEl === undefined || ns === undefined) {
     return undefined;
   }
-  const bodyEl = firstChildElement(wsdlMessageEl, ns, 'body');
+  // In a WSDL 1.1 MIME binding the `soap:body` sits one level down, inside the
+  // `mime:part` that carries the envelope — so the envelope's own `use`/`parts` would be
+  // lost if only the direct children were read.
+  const multipartEl = firstChildElement(wsdlMessageEl, NS.WSDL_MIME, 'multipartRelated');
+  const multipart = multipartEl !== undefined ? parseMultipartRelated(multipartEl, ns) : undefined;
+  const soapOwner = multipart?.envelopePart ?? wsdlMessageEl;
+  const bodyEl = firstChildElement(soapOwner, ns, 'body');
   const body: SoapBody = bodyEl !== undefined ? parseSoapBody(bodyEl) : { use: 'literal' };
-  const headers = childElements(wsdlMessageEl, ns, 'header').map((h) =>
-    parseSoapHeader(h, ns, location, defaultNamespace),
-  );
-  return { body, headers };
+  const headers = childElements(soapOwner, ns, 'header').map((h) => parseSoapHeader(h, ns, location, defaultNamespace));
+  return { body, headers, ...(multipart !== undefined ? { mimeParts: multipart.mimeParts } : {}) };
 }
 
 function parseBindingFault(element: Element, ns: string | undefined, location: string): BindingFault {
