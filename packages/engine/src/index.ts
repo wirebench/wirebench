@@ -65,7 +65,13 @@ export type { ExportDefinitionOptions, ExportedFile, ExportResult } from './wsdl
 
 export { buildSchemaSet } from './xsd/schema-set.js';
 export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';
-export { elementPathAt, completionContextAt, childrenAllowedAt, attributesAllowedAt, declarationOf } from './xsd/locate.js';
+export {
+  elementPathAt,
+  completionContextAt,
+  childrenAllowedAt,
+  attributesAllowedAt,
+  declarationOf,
+} from './xsd/locate.js';
 export type { CompletionContext, TextRange } from './xsd/locate.js';
 export { BUILTIN_TYPES, SOAP_ENC_ATTRIBUTES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from './xsd/builtins.js';
 export type { BuiltinType } from './xsd/builtins.js';

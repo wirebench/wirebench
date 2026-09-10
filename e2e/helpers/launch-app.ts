@@ -13,6 +13,8 @@ export interface LaunchOptions {
   readonly folderDialogPath?: string;
   /** Skip removing `userDataDir` on close (it is the caller's, not ours, when reused). */
   readonly keepUserDataDir?: boolean;
+  /** Extra env vars for the launched process — e.g. `WIREBENCH_E2E_SAVE_PATH`/`WIREBENCH_E2E_OPEN_PATH`. */
+  readonly extraEnv?: Readonly<Record<string, string>>;
 }
 
 export interface LaunchedApp {
@@ -48,6 +50,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
         // Playwright cannot drive a native folder picker, so specs that create or open a
         // project pin what `dialogs.openFolder` returns (see `main/ipc/dialogs.ts`).
         ...(options.folderDialogPath !== undefined ? { WIREBENCH_E2E_DIALOG_FOLDER: options.folderDialogPath } : {}),
+        ...options.extraEnv,
       },
     });
 
