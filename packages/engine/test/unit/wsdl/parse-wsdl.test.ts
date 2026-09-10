@@ -1,0 +1,308 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { isWirebenchError } from '../../../src/errors.js';
+import { findBinding, findMessage, findPortType, findService } from '../../../src/wsdl/model.js';
+import { parseWsdl, parseWsdlDocument } from '../../../src/wsdl/parse-wsdl.js';
+import { parseXml } from '../../../src/xml/parse.js';
+import { readPublicFixture } from '../../helpers/fixtures.js';
+import { toGoldenJson } from '../../helpers/golden.js';
+
+const goldenDir = fileURLToPath(new URL('../../fixtures/wsdl-model/', import.meta.url));
+
+function parseFixture(name: string) {
+  const text = readPublicFixture(name);
+  const doc = parseXml(text, { location: `${name}/service.wsdl` });
+  return parseWsdlDocument(doc, `${name}/service.wsdl`);
+}
+
+/** Set to true locally to (re)write golden files after an intentional model change. */
+const UPDATE_GOLDEN = process.env['UPDATE_WSDL_GOLDEN'] === '1';
+
+function expectMatchesGolden(name: string, def: ReturnType<typeof parseFixture>): void {
+  const json = toGoldenJson(def);
+  const path = `${goldenDir}${name}.json`;
+  if (UPDATE_GOLDEN) {
+    writeFileSync(path, `${JSON.stringify(json, null, 2)}\n`);
+  }
+  const golden = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+  expect(json).toEqual(golden);
+}
+
+describe('parseWsdlDocument — golden fixtures', () => {
+  it('matches the golden model for calculator', () => {
+    expectMatchesGolden('calculator', parseFixture('calculator'));
+  });
+
+  it('matches the golden model for tempconvert', () => {
+    expectMatchesGolden('tempconvert', parseFixture('tempconvert'));
+  });
+
+  it('matches the golden model for numberconversion', () => {
+    expectMatchesGolden('numberconversion', parseFixture('numberconversion'));
+  });
+});
+
+describe('parseWsdlDocument — calculator facts', () => {
+  const def = parseFixture('calculator');
+
+  it('has two bindings: CalculatorSoap (1.1) and CalculatorSoap12 (1.2)', () => {
+    expect(def.bindings).toHaveLength(2);
+    const soap11 = findBinding(def, { namespaceUri: def.targetNamespace, localName: 'CalculatorSoap' });
+    const soap12 = findBinding(def, { namespaceUri: def.targetNamespace, localName: 'CalculatorSoap12' });
+    expect(soap11).toBeDefined();
+    expect(soap12).toBeDefined();
+    expect(soap11?.soapVersion).toBe('1.1');
+    expect(soap11?.style).toBe('document');
+    expect(soap11?.transport).toBe('http://schemas.xmlsoap.org/soap/http');
+    expect(soap12?.soapVersion).toBe('1.2');
+  });
+
+  it('has an Add operation with soapAction http://tempuri.org/Add', () => {
+    const soap11 = findBinding(def, { namespaceUri: def.targetNamespace, localName: 'CalculatorSoap' });
+    const addOp = soap11?.operations.find((op) => op.name === 'Add');
+    expect(addOp?.soapAction).toBe('http://tempuri.org/Add');
+  });
+
+  it('has ports with addresses', () => {
+    const service = findService(def, { namespaceUri: def.targetNamespace, localName: 'Calculator' });
+    expect(service?.ports).toHaveLength(2);
+    for (const port of service?.ports ?? []) {
+      expect(port.address).toBe('http://www.dneonline.com/calculator.asmx');
+    }
+  });
+
+  it('exposes portType and message lookups', () => {
+    const portType = findPortType(def, { namespaceUri: def.targetNamespace, localName: 'CalculatorSoap' });
+    expect(portType?.operations.map((o) => o.name)).toEqual(['Add', 'Subtract', 'Multiply', 'Divide']);
+    const message = findMessage(def, { namespaceUri: def.targetNamespace, localName: 'AddSoapIn' });
+    expect(message?.parts).toEqual([
+      { name: 'parameters', element: { namespaceUri: def.targetNamespace, localName: 'Add' } },
+    ]);
+  });
+});
+
+describe('parseWsdlDocument — countryinfo', () => {
+  it('parses without error and has more than 20 operations', () => {
+    const def = parseFixture('countryinfo');
+    const operationCount = def.portTypes.reduce((sum, pt) => sum + pt.operations.length, 0);
+    expect(operationCount).toBeGreaterThan(20);
+  });
+});
+
+describe('parseWsdlDocument — errors', () => {
+  it('throws not-a-wsdl for an XSD document', () => {
+    const xsd = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:x"/>';
+    const doc = parseXml(xsd, { location: 'schema.xsd' });
+    try {
+      parseWsdlDocument(doc, 'schema.xsd');
+      expect.fail('expected parseWsdlDocument to throw');
+    } catch (e) {
+      expect(isWirebenchError(e)).toBe(true);
+      expect(isWirebenchError(e) && e.code).toBe('not-a-wsdl');
+    }
+  });
+
+  it('throws wsdl-invalid when a required attribute is missing', () => {
+    const wsdl = [
+      '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:x">',
+      '  <portType name="PT">',
+      '    <operation name="Op">',
+      '      <input/>',
+      '    </operation>',
+      '  </portType>',
+      '</definitions>',
+    ].join('\n');
+    const doc = parseXml(wsdl, { location: 'broken.wsdl' });
+    try {
+      parseWsdlDocument(doc, 'broken.wsdl');
+      expect.fail('expected parseWsdlDocument to throw');
+    } catch (e) {
+      expect(isWirebenchError(e)).toBe(true);
+      expect(isWirebenchError(e) && e.code).toBe('wsdl-invalid');
+    }
+  });
+});
+
+describe('parseWsdl', () => {
+  const fetchDocument = () => {
+    throw new Error('fetchDocument should not be called when resolveImports is false');
+  };
+
+  it('parses a single document when resolveImports is false', async () => {
+    const text = readPublicFixture('calculator');
+    const def = await parseWsdl(
+      { location: 'calculator/service.wsdl', text },
+      { fetchDocument, resolveImports: false },
+    );
+    expect(def.services).toHaveLength(1);
+  });
+
+  it('throws not-implemented when resolveImports is true', async () => {
+    const text = readPublicFixture('calculator');
+    await expect(
+      parseWsdl({ location: 'calculator/service.wsdl', text }, { fetchDocument, resolveImports: true }),
+    ).rejects.toMatchObject({ code: 'not-implemented' });
+  });
+});
+
+describe('parseWsdlDocument — soap:header', () => {
+  it('parses a soap:header referencing a message and part', () => {
+    const wsdl = `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:x"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema"
+             targetNamespace="urn:x">
+  <message name="AuthHeader"><part name="token" type="xs:string"/></message>
+  <message name="DoWorkIn"><part name="body" type="xs:string"/></message>
+  <message name="DoWorkOut"><part name="body" type="xs:string"/></message>
+  <portType name="PT">
+    <operation name="DoWork">
+      <input message="tns:DoWorkIn"/>
+      <output message="tns:DoWorkOut"/>
+    </operation>
+  </portType>
+  <binding name="B" type="tns:PT">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="DoWork">
+      <soap:operation soapAction="urn:x/DoWork"/>
+      <input>
+        <soap:body use="literal"/>
+        <soap:header message="tns:AuthHeader" part="token" use="literal"/>
+      </input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+</definitions>`;
+    const doc = parseXml(wsdl, { location: 'header.wsdl' });
+    const def = parseWsdlDocument(doc, 'header.wsdl');
+    const binding = def.bindings[0];
+    const op = binding?.operations[0];
+    expect(op?.input?.headers).toEqual([
+      {
+        message: { namespaceUri: 'urn:x', localName: 'AuthHeader' },
+        part: 'token',
+        use: 'literal',
+        headerFaults: [],
+      },
+    ]);
+  });
+});
+
+describe('parseWsdlDocument — rpc/encoded', () => {
+  it('parses style rpc, use encoded, encodingStyle, and parameterOrder', () => {
+    const wsdl = `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:x"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema"
+             targetNamespace="urn:x">
+  <message name="AddIn">
+    <part name="a" type="xs:int"/>
+    <part name="b" type="xs:int"/>
+  </message>
+  <message name="AddOut"><part name="result" type="xs:int"/></message>
+  <portType name="PT">
+    <operation name="Add" parameterOrder="a b">
+      <input message="tns:AddIn"/>
+      <output message="tns:AddOut"/>
+    </operation>
+  </portType>
+  <binding name="B" type="tns:PT">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Add">
+      <soap:operation soapAction="urn:x/Add" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="urn:x" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+      <output>
+        <soap:body use="encoded" namespace="urn:x" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </output>
+    </operation>
+  </binding>
+</definitions>`;
+    const doc = parseXml(wsdl, { location: 'rpc.wsdl' });
+    const def = parseWsdlDocument(doc, 'rpc.wsdl');
+    const portType = def.portTypes[0];
+    expect(portType?.operations[0]?.parameterOrder).toEqual(['a', 'b']);
+    const binding = def.bindings[0];
+    expect(binding?.style).toBe('rpc');
+    const op = binding?.operations[0];
+    expect(op?.style).toBe('rpc');
+    expect(op?.input?.body).toEqual({
+      use: 'encoded',
+      namespace: 'urn:x',
+      encodingStyle: 'http://schemas.xmlsoap.org/soap/encoding/',
+    });
+  });
+});
+
+describe('parseWsdlDocument — imports, faults, and remaining binding shapes', () => {
+  it('parses wsdl:import, fault documentation, soap:body parts, headerfault, binding fault use, and a portless port', () => {
+    const wsdl = `<?xml version="1.0"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+             xmlns:tns="urn:x"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema"
+             targetNamespace="urn:x">
+  <import namespace="urn:shared" location="shared.wsdl"/>
+  <message name="AuthHeader"><part name="token" type="xs:string"/></message>
+  <message name="ErrorInfo"><part name="detail" type="xs:string"/></message>
+  <message name="DoWorkIn"><part name="a" type="xs:string"/><part name="b" type="xs:string"/></message>
+  <message name="DoWorkOut"><part name="body" type="xs:string"/></message>
+  <portType name="PT">
+    <operation name="DoWork">
+      <input message="tns:DoWorkIn"/>
+      <output message="tns:DoWorkOut"/>
+      <fault name="Failure" message="tns:ErrorInfo">
+        <documentation>Thrown when work fails.</documentation>
+      </fault>
+    </operation>
+  </portType>
+  <binding name="B" type="tns:PT">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="DoWork">
+      <soap:operation soapAction="urn:x/DoWork"/>
+      <input>
+        <soap:body use="literal" parts="a b"/>
+        <soap:header message="tns:AuthHeader" part="token" use="literal">
+          <soap:headerfault message="tns:ErrorInfo" part="detail" use="literal"/>
+        </soap:header>
+      </input>
+      <output><soap:body use="literal"/></output>
+      <fault name="Failure"><soap:fault name="Failure" use="encoded"/></fault>
+    </operation>
+  </binding>
+  <service name="S">
+    <port name="NoAddressPort" binding="tns:B"/>
+  </service>
+</definitions>`;
+    const doc = parseXml(wsdl, { location: 'full.wsdl' });
+    const def = parseWsdlDocument(doc, 'full.wsdl');
+
+    expect(def.imports).toEqual([{ namespace: 'urn:shared', location: 'shared.wsdl' }]);
+
+    const portType = def.portTypes[0];
+    expect(portType?.operations[0]?.faults[0]).toEqual({
+      name: 'Failure',
+      message: { namespaceUri: 'urn:x', localName: 'ErrorInfo' },
+      documentation: 'Thrown when work fails.',
+    });
+
+    const binding = def.bindings[0];
+    const op = binding?.operations[0];
+    expect(op?.input?.body.parts).toEqual(['a', 'b']);
+    expect(op?.input?.headers[0]?.headerFaults).toEqual([
+      { message: { namespaceUri: 'urn:x', localName: 'ErrorInfo' }, part: 'detail', use: 'literal' },
+    ]);
+    expect(op?.faults).toEqual([{ name: 'Failure', use: 'encoded' }]);
+
+    const service = def.services[0];
+    expect(service?.ports[0]).toEqual({
+      name: 'NoAddressPort',
+      binding: { namespaceUri: 'urn:x', localName: 'B' },
+    });
+  });
+});

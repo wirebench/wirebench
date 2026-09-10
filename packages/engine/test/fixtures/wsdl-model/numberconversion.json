@@ -1,0 +1,245 @@
+{
+  "location": "numberconversion/service.wsdl",
+  "targetNamespace": "http://www.dataaccess.com/webservicesserver/",
+  "documentation": null,
+  "messages": [
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberToWordsSoapRequest"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberToWords"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberToWordsSoapResponse"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberToWordsResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberToDollarsSoapRequest"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberToDollars"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberToDollarsSoapResponse"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberToDollarsResponse"
+          }
+        }
+      ]
+    }
+  ],
+  "portTypes": [
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversionSoapType"
+      },
+      "operations": [
+        {
+          "name": "NumberToWords",
+          "documentation": "Returns the word corresponding to the positive number passed as parameter. Limited to quadrillions.",
+          "input": {
+            "message": {
+              "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+              "localName": "NumberToWordsSoapRequest"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+              "localName": "NumberToWordsSoapResponse"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "NumberToDollars",
+          "documentation": "Returns the non-zero dollar amount of the passed number.",
+          "input": {
+            "message": {
+              "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+              "localName": "NumberToDollarsSoapRequest"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+              "localName": "NumberToDollarsSoapResponse"
+            }
+          },
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversionSoapBinding"
+      },
+      "type": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversionSoapType"
+      },
+      "soapVersion": "1.1",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "NumberToWords",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "NumberToDollars",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversionSoapBinding12"
+      },
+      "type": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversionSoapType"
+      },
+      "soapVersion": "1.2",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "NumberToWords",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "NumberToDollars",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": {
+        "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+        "localName": "NumberConversion"
+      },
+      "documentation": "The Number Conversion Web Service, implemented with Visual DataFlex, provides functions that convert numbers into words or dollar amounts.",
+      "ports": [
+        {
+          "name": "NumberConversionSoap",
+          "binding": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberConversionSoapBinding"
+          },
+          "address": "https://www.dataaccess.com/webservicesserver/NumberConversion.wso"
+        },
+        {
+          "name": "NumberConversionSoap12",
+          "binding": {
+            "namespaceUri": "http://www.dataaccess.com/webservicesserver/",
+            "localName": "NumberConversionSoapBinding12"
+          },
+          "address": "https://www.dataaccess.com/webservicesserver/NumberConversion.wso"
+        }
+      ]
+    }
+  ],
+  "schemaElements": [
+    {
+      "targetNamespace": "http://www.dataaccess.com/webservicesserver/",
+      "elementCount": 16
+    }
+  ],
+  "imports": []
+}

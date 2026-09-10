@@ -1,0 +1,411 @@
+{
+  "location": "calculator/service.wsdl",
+  "targetNamespace": "http://tempuri.org/",
+  "documentation": null,
+  "messages": [
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "AddSoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "Add"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "AddSoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "AddResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "SubtractSoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "Subtract"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "SubtractSoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "SubtractResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "MultiplySoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "Multiply"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "MultiplySoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "MultiplyResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "DivideSoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "Divide"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "DivideSoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "DivideResponse"
+          }
+        }
+      ]
+    }
+  ],
+  "portTypes": [
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "CalculatorSoap"
+      },
+      "operations": [
+        {
+          "name": "Add",
+          "documentation": "Adds two integers. This is a test WebService. ©DNE Online",
+          "input": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "AddSoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "AddSoapOut"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "Subtract",
+          "input": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "SubtractSoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "SubtractSoapOut"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "Multiply",
+          "input": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "MultiplySoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "MultiplySoapOut"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "Divide",
+          "input": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "DivideSoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "http://tempuri.org/",
+              "localName": "DivideSoapOut"
+            }
+          },
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "CalculatorSoap"
+      },
+      "type": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "CalculatorSoap"
+      },
+      "soapVersion": "1.1",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "Add",
+          "soapAction": "http://tempuri.org/Add",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Subtract",
+          "soapAction": "http://tempuri.org/Subtract",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Multiply",
+          "soapAction": "http://tempuri.org/Multiply",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Divide",
+          "soapAction": "http://tempuri.org/Divide",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "CalculatorSoap12"
+      },
+      "type": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "CalculatorSoap"
+      },
+      "soapVersion": "1.2",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "Add",
+          "soapAction": "http://tempuri.org/Add",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Subtract",
+          "soapAction": "http://tempuri.org/Subtract",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Multiply",
+          "soapAction": "http://tempuri.org/Multiply",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "Divide",
+          "soapAction": "http://tempuri.org/Divide",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": {
+        "namespaceUri": "http://tempuri.org/",
+        "localName": "Calculator"
+      },
+      "ports": [
+        {
+          "name": "CalculatorSoap",
+          "binding": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "CalculatorSoap"
+          },
+          "address": "http://www.dneonline.com/calculator.asmx"
+        },
+        {
+          "name": "CalculatorSoap12",
+          "binding": {
+            "namespaceUri": "http://tempuri.org/",
+            "localName": "CalculatorSoap12"
+          },
+          "address": "http://www.dneonline.com/calculator.asmx"
+        }
+      ]
+    }
+  ],
+  "schemaElements": [
+    {
+      "targetNamespace": "http://tempuri.org/",
+      "elementCount": 36
+    }
+  ],
+  "imports": []
+}

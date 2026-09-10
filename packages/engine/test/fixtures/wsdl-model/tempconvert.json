@@ -1,0 +1,376 @@
+{
+  "location": "tempconvert/service.wsdl",
+  "targetNamespace": "https://www.w3schools.com/xml/",
+  "documentation": null,
+  "messages": [
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "FahrenheitToCelsiusSoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "FahrenheitToCelsius"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "FahrenheitToCelsiusSoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "FahrenheitToCelsiusResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "CelsiusToFahrenheitSoapIn"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "CelsiusToFahrenheit"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "CelsiusToFahrenheitSoapOut"
+      },
+      "parts": [
+        {
+          "name": "parameters",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "CelsiusToFahrenheitResponse"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "FahrenheitToCelsiusHttpPostIn"
+      },
+      "parts": [
+        {
+          "name": "Fahrenheit",
+          "type": {
+            "namespaceUri": "http://www.w3.org/2001/XMLSchema",
+            "localName": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "FahrenheitToCelsiusHttpPostOut"
+      },
+      "parts": [
+        {
+          "name": "Body",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "CelsiusToFahrenheitHttpPostIn"
+      },
+      "parts": [
+        {
+          "name": "Celsius",
+          "type": {
+            "namespaceUri": "http://www.w3.org/2001/XMLSchema",
+            "localName": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "CelsiusToFahrenheitHttpPostOut"
+      },
+      "parts": [
+        {
+          "name": "Body",
+          "element": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "string"
+          }
+        }
+      ]
+    }
+  ],
+  "portTypes": [
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertSoap"
+      },
+      "operations": [
+        {
+          "name": "FahrenheitToCelsius",
+          "input": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "FahrenheitToCelsiusSoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "FahrenheitToCelsiusSoapOut"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "CelsiusToFahrenheit",
+          "input": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "CelsiusToFahrenheitSoapIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "CelsiusToFahrenheitSoapOut"
+            }
+          },
+          "faults": []
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertHttpPost"
+      },
+      "operations": [
+        {
+          "name": "FahrenheitToCelsius",
+          "input": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "FahrenheitToCelsiusHttpPostIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "FahrenheitToCelsiusHttpPostOut"
+            }
+          },
+          "faults": []
+        },
+        {
+          "name": "CelsiusToFahrenheit",
+          "input": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "CelsiusToFahrenheitHttpPostIn"
+            }
+          },
+          "output": {
+            "message": {
+              "namespaceUri": "https://www.w3schools.com/xml/",
+              "localName": "CelsiusToFahrenheitHttpPostOut"
+            }
+          },
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertSoap"
+      },
+      "type": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertSoap"
+      },
+      "soapVersion": "1.1",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "FahrenheitToCelsius",
+          "soapAction": "https://www.w3schools.com/xml/FahrenheitToCelsius",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "CelsiusToFahrenheit",
+          "soapAction": "https://www.w3schools.com/xml/CelsiusToFahrenheit",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertSoap12"
+      },
+      "type": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertSoap"
+      },
+      "soapVersion": "1.2",
+      "style": "document",
+      "transport": "http://schemas.xmlsoap.org/soap/http",
+      "operations": [
+        {
+          "name": "FahrenheitToCelsius",
+          "soapAction": "https://www.w3schools.com/xml/FahrenheitToCelsius",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        },
+        {
+          "name": "CelsiusToFahrenheit",
+          "soapAction": "https://www.w3schools.com/xml/CelsiusToFahrenheit",
+          "style": "document",
+          "input": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "output": {
+            "body": {
+              "use": "literal"
+            },
+            "headers": []
+          },
+          "faults": []
+        }
+      ]
+    },
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertHttpPost"
+      },
+      "type": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvertHttpPost"
+      },
+      "soapVersion": "none",
+      "style": "document",
+      "operations": [
+        {
+          "name": "FahrenheitToCelsius",
+          "faults": []
+        },
+        {
+          "name": "CelsiusToFahrenheit",
+          "faults": []
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": {
+        "namespaceUri": "https://www.w3schools.com/xml/",
+        "localName": "TempConvert"
+      },
+      "ports": [
+        {
+          "name": "TempConvertSoap",
+          "binding": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "TempConvertSoap"
+          },
+          "address": "http://www.w3schools.com/xml/tempconvert.asmx"
+        },
+        {
+          "name": "TempConvertSoap12",
+          "binding": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "TempConvertSoap12"
+          },
+          "address": "http://www.w3schools.com/xml/tempconvert.asmx"
+        },
+        {
+          "name": "TempConvertHttpPost",
+          "binding": {
+            "namespaceUri": "https://www.w3schools.com/xml/",
+            "localName": "TempConvertHttpPost"
+          },
+          "address": "http://www.w3schools.com/xml/tempconvert.asmx"
+        }
+      ]
+    }
+  ],
+  "schemaElements": [
+    {
+      "targetNamespace": "https://www.w3schools.com/xml/",
+      "elementCount": 17
+    }
+  ],
+  "imports": []
+}
