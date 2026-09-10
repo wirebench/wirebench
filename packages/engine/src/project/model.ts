@@ -48,14 +48,46 @@ export interface WsaConfig {
   readonly version?: '2005/08' | '2004/08';
 }
 
-/** A reference to an attachment part of a request (populated by the attachments task). */
-export interface AttachmentRef {
+/**
+ * How an attachment participates in the outgoing message, following SoapUI's naming:
+ * `XOP` for an MTOM/XOP-optimised binary, `SWAREF` for a `ref:swaRef`-referenced part,
+ * `MIME` for a WSDL `mime:content` part, `CONTENT` for an unreferenced body attachment,
+ * and `UNKNOWN` when nothing in the definition says.
+ */
+export type AttachmentType = 'XOP' | 'MIME' | 'SWAREF' | 'CONTENT' | 'UNKNOWN';
+
+/**
+ * Where an attachment's bytes live: either content-addressed inside the project
+ * (`attachments/<sha256>`, written by `project/attachments-cache.ts`) or a file
+ * on disk, absolute or relative to the project's resource root.
+ */
+export type AttachmentSource =
+  { readonly kind: 'cache'; readonly sha256: string } | { readonly kind: 'path'; readonly path: string };
+
+/** One attachment part of a request. Bytes are never held here; see {@link AttachmentSource}. */
+export interface Attachment {
   readonly id: string;
+  /** Display/file name; may contain `${#...}` property expansions. */
   readonly name: string;
-  readonly contentType?: string;
-  /** Content-addressed file under `attachments/`, or a path relative to the resource root. */
-  readonly path?: string;
+  readonly contentType: string;
+  /** Size in bytes, as known when the attachment was added (informational for `path` sources). */
+  readonly size: number;
+  /** WSDL `mime:part` name this attachment fills, when the binding names one. */
+  readonly part?: string;
+  readonly type: AttachmentType;
+  /** MIME Content-ID, stored without the angle brackets. Defaults to {@link defaultContentId}. */
+  readonly contentId: string;
+  /** True when the bytes were copied into the project's attachment cache. */
   readonly cached: boolean;
+  readonly source: AttachmentSource;
+}
+
+/**
+ * The Content-ID a freshly added attachment gets: its own id in the `wirebench`
+ * domain, which is globally unique because ids are ULIDs.
+ */
+export function defaultContentId(attachmentId: string): string {
+  return `${attachmentId}@wirebench`;
 }
 
 /** One HTTP header of a request, kept in author-defined order (duplicates allowed). */
@@ -124,7 +156,7 @@ export interface RequestDef {
   readonly soapVersion: '1.1' | '1.2';
   readonly soapAction?: string;
   readonly headers: readonly HeaderEntry[];
-  readonly attachments: readonly AttachmentRef[];
+  readonly attachments: readonly Attachment[];
   readonly auth?: EndpointAuth;
   readonly wsa?: WsaConfig;
   /** Name of a `wss/outgoing/<name>.yaml` configuration. */

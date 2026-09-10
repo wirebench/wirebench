@@ -115,9 +115,16 @@ const requestPropertiesSchema = z.looseObject({
 const attachmentSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
-  contentType: z.string().optional(),
-  path: z.string().optional(),
+  contentType: z.string(),
+  size: z.number().int().nonnegative(),
+  part: z.string().optional(),
+  type: z.enum(['XOP', 'MIME', 'SWAREF', 'CONTENT', 'UNKNOWN']),
+  contentId: z.string(),
   cached: z.boolean(),
+  source: z.union([
+    z.looseObject({ kind: z.literal('cache'), sha256: nonEmpty }),
+    z.looseObject({ kind: z.literal('path'), path: nonEmpty }),
+  ]),
 });
 
 /** `interfaces/<slug>/operations/<slug>/<name>.request.yaml` (the envelope lives in the sibling `.xml`). */

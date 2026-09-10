@@ -12,7 +12,7 @@
 import { join } from 'node:path';
 import { ProjectError } from '../errors.js';
 import type {
-  AttachmentRef,
+  Attachment,
   Endpoint,
   Environment,
   Interface,
@@ -127,7 +127,7 @@ async function loadRequests(fs: FsLike, root: string, dir: string, problems: Pro
       soapVersion: parsed.soapVersion,
       ...optional('soapAction', parsed.soapAction),
       headers: parsed.headers,
-      attachments: parsed.attachments.map((a) => exact<AttachmentRef>(a)),
+      attachments: parsed.attachments.map((a) => exact<Attachment>(a)),
       ...optional('auth', parsed.auth),
       ...optional('wsa', parsed.wsa),
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),

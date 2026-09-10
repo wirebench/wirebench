@@ -157,6 +157,32 @@ export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
 
+export {
+  DEFAULT_ROOT_CONTENT_ID,
+  buildMultipartRelated,
+  mediaTypeOf,
+  mimeParameter,
+  parseMultipartRelated,
+  stripContentId,
+} from './soap/mime/multipart.js';
+export type { BuildMultipartInput, BuiltMultipart, ParsedMultipart } from './soap/mime/multipart.js';
+export { XOP_NS, expandMtomResponse, prepareMtomRequest, xopContentType } from './soap/mime/mtom.js';
+export type { ExpandedMtom, MtomOptions, PreparedMtom } from './soap/mime/mtom.js';
+export { collectResponseAttachments, prepareSwaRequest } from './soap/mime/swa.js';
+export type { PreparedSwa, SwaOptions } from './soap/mime/swa.js';
+export { inlineFiles } from './soap/mime/inline-files.js';
+export type { InlineFileProblem, InlineFilesOptions, InlinedFiles } from './soap/mime/inline-files.js';
+export { findCidReferences, forEachScannedElement, spliceRanges } from './soap/mime/cid-scan.js';
+export type { CidReference, CidScan } from './soap/mime/cid-scan.js';
+export type {
+  AttachmentResolver,
+  MimePart,
+  MultipartPart,
+  MultipartRoot,
+  ResponseAttachment,
+  TransferEncoding,
+} from './soap/mime/types.js';
+
 export { createDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
@@ -186,10 +212,13 @@ export {
   createInterface,
   createProject,
   createRequest,
+  defaultContentId,
   generateId,
 } from './project/model.js';
 export type {
-  AttachmentRef,
+  Attachment,
+  AttachmentSource,
+  AttachmentType,
   CreateInterfaceInput,
   CreateOptions,
   CreateRequestInput,
@@ -209,6 +238,7 @@ export type {
   WssRef,
 } from './project/model.js';
 export {
+  ATTACHMENTS_DIR,
   ENVIRONMENTS_DIR,
   INTERFACES_DIR,
   OPERATIONS_DIR,
@@ -273,6 +303,17 @@ export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
 export { saveProject } from './project/save.js';
 export type { SaveProjectOptions, SaveResult } from './project/save.js';
+export {
+  attachmentFile,
+  attachmentsDir,
+  attachmentsIndexFile,
+  createFileAttachmentResolver,
+  listAttachments,
+  pruneAttachments,
+  putAttachment,
+  readAttachment,
+} from './project/attachments-cache.js';
+export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
 export { nodeFs } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export { appendHistory, generateHistoryId, openHistory } from './project/history.js';
