@@ -13,6 +13,13 @@ import {
   exchangeSummarySchema,
   exchangesGetRequestSchema,
   globalsPropertiesResponseSchema,
+  historyAppendedEventSchema,
+  historyClearResponseSchema,
+  historyGetRequestSchema,
+  historyGetResponseSchema,
+  historyListRequestSchema,
+  historyListResponseSchema,
+  historyResendRequestSchema,
   globalsRemoveRequestSchema,
   globalsSetRequestSchema,
   projectAddInterfaceRequestSchema,
@@ -165,6 +172,12 @@ export const channels = {
   exchanges: {
     get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangeSummarySchema),
   },
+  history: {
+    list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),
+    get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
+    clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
+    resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
+  },
 } as const;
 
 /**
@@ -199,5 +212,8 @@ export const events = {
     changed: defineEvent('project.changed', projectChangedEventSchema),
     changedOnDisk: defineEvent('project.changedOnDisk', projectChangedOnDiskEventSchema),
     hydration: defineEvent('project.hydration', projectHydrationEventSchema),
+  },
+  history: {
+    appended: defineEvent('history.appended', historyAppendedEventSchema),
   },
 } as const;

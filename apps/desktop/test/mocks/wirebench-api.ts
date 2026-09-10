@@ -52,6 +52,12 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       getShowSecrets: fail('secrets.getShowSecrets'),
     },
     exchanges: { get: fail('exchanges.get') },
+    history: {
+      list: fail('history.list'),
+      get: fail('history.get'),
+      clear: fail('history.clear'),
+      resend: fail('history.resend'),
+    },
     files: { pathFor: vi.fn().mockReturnValue('') },
     on: vi.fn().mockReturnValue(() => undefined),
   };

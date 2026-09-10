@@ -4,6 +4,7 @@ import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
+import { HistoryService } from './history-service.js';
 import { ProjectService } from './project-service.js';
 import { RecentProjects } from './recent-projects.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
@@ -14,6 +15,7 @@ import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerExchangeChannels } from './ipc/exchanges.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
+import { registerHistoryChannels } from './ipc/history.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
@@ -63,13 +65,29 @@ function applyWindowTitle(project: ProjectWire | null): void {
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
 
+/** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
+const historyService = new HistoryService(app.getPath('userData'));
+
 const projectService = new ProjectService(
   engineService,
   new RecentProjects(app.getPath('userData')),
   {
     onChanged: (project) => {
-      broadcast(events.project.changed, { project });
-      applyWindowTitle(project);
+      // History has to be open (or closed) *before* `project.changed` reaches the renderer —
+      // `subscribeToHistory` reloads on that event, and a reload racing the file open would
+      // just see the stale (or wrong-project) history.
+      const announce = (): void => {
+        broadcast(events.project.changed, { project });
+        applyWindowTitle(project);
+      };
+      if (project === null) {
+        historyService.close();
+        announce();
+      } else if (historyService.projectId !== project.id) {
+        void historyService.open(project.id).then(announce);
+      } else {
+        announce();
+      }
     },
     onChangedOnDisk: (paths) => {
       broadcast(events.project.changedOnDisk, { paths: [...paths] });
@@ -96,7 +114,17 @@ void app.whenReady().then(() => {
 
   registerAppChannels();
   registerDefinitionChannels(engineService);
-  registerRequestChannels(engineService, { project: projectService, showSecrets: showSecretsFlag });
+  registerRequestChannels(engineService, {
+    project: projectService,
+    showSecrets: showSecretsFlag,
+    history: historyService,
+    onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
+  });
+  registerHistoryChannels(engineService, historyService, {
+    project: projectService,
+    showSecrets: showSecretsFlag,
+    onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
+  });
   registerProjectChannels(projectService);
   registerGlobalsChannels(globalProperties, (properties) => {
     broadcast(events.globals.changed, { properties });

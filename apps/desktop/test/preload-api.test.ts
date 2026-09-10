@@ -23,6 +23,7 @@ describe('buildApi', () => {
       'exchanges',
       'files',
       'globals',
+      'history',
       'on',
       'project',
       'request',

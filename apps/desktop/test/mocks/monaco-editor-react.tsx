@@ -55,7 +55,22 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
   );
 }
 
-export const DiffEditor = Editor;
+export interface MockDiffEditorProps {
+  readonly original?: string;
+  readonly modified?: string;
+  readonly options?: { readonly readOnly?: boolean; readonly renderSideBySide?: boolean };
+}
+
+/** A two-`<textarea>` stand-in for `@monaco-editor/react`'s `DiffEditor`. */
+export function DiffEditor({ original = '', modified = '' }: MockDiffEditorProps) {
+  return (
+    <div>
+      <textarea aria-label="Original" readOnly value={original} />
+      <textarea aria-label="Modified" readOnly value={modified} />
+    </div>
+  );
+}
+
 export const loader = { config: () => undefined, init: () => Promise.resolve(fakeMonaco) };
 export function useMonaco(): unknown {
   return fakeMonaco;

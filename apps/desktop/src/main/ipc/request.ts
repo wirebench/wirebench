@@ -1,14 +1,21 @@
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import type { ProjectService } from '../project-service.js';
+import type { HistoryService } from '../history-service.js';
+import { sendAndRecordHistory } from '../send-with-history.js';
+import type { HistoryEntryWire } from '../../shared/wire-types.js';
 import { registerHandler } from './register.js';
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
   /** Supplies the scopes; `ProjectService.scopesFor` in the app, a stub in tests. */
-  readonly project: Pick<ProjectService, 'scopesFor' | 'preflight' | 'authFor'>;
+  readonly project: Pick<ProjectService, 'scopesFor' | 'preflight' | 'authFor' | 'requestMeta' | 'projectId'>;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
+  /** Records every completed/failed send to the open project's history. Omitted in tests that don't care. */
+  readonly history?: HistoryService;
+  /** Called with the entry a recorded send produced, so main can broadcast `history.appended`. */
+  readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
 }
 
 /**
@@ -22,14 +29,7 @@ export interface RequestChannelDeps {
 export function registerRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
   registerHandler(channels.request.generate, (request) => Promise.resolve(service.generate(request)));
 
-  registerHandler(channels.request.send, (request) => {
-    const auth = request.requestId !== undefined ? deps.project.authFor(request.requestId) : undefined;
-    return service.send(request, {
-      scopes: deps.project.scopesFor(),
-      showSecrets: deps.showSecrets?.get() ?? false,
-      ...(auth !== undefined ? { auth } : {}),
-    });
-  });
+  registerHandler(channels.request.send, (request) => sendAndRecordHistory(service, deps, request));
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

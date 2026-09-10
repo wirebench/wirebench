@@ -12,6 +12,16 @@ const RequestEditor = lazy(async () => {
   return { default: module.RequestEditor };
 });
 
+const HistoryEntryView = lazy(async () => {
+  const module = await import('../features/history/history-entry-view.js');
+  return { default: module.HistoryEntryView };
+});
+
+const DiffView = lazy(async () => {
+  const module = await import('../features/history/diff-view.js');
+  return { default: module.DiffView };
+});
+
 export interface EditorAreaProps {
   readonly onImportDefinition: () => void;
 }
@@ -85,6 +95,14 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
           <WelcomeScreen onImportDefinition={onImportDefinition} />
         ) : activeTab.environmentId !== undefined ? (
           <EnvironmentEditor environmentId={activeTab.environmentId} />
+        ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <HistoryEntryView historyId={activeTab.historyId} />
+          </Suspense>
+        ) : activeTab.kind === 'diff' && activeTab.diff !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <DiffView {...activeTab.diff} />
+          </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />

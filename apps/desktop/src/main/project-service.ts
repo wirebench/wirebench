@@ -197,6 +197,30 @@ export class ProjectService {
     return effectiveAuth(location.request.auth, endpoint?.auth, location.iface.auth);
   }
 
+  /** The open project's id, or `undefined` when no project is open. Used to key its history file. */
+  projectId(): string | undefined {
+    return this.open?.project.id;
+  }
+
+  /**
+   * The saved request's name and owning interface/operation, for labelling a history entry.
+   * `undefined` when no project is open or the request is unknown (an ad-hoc/raw send).
+   */
+  requestMeta(requestId: string): { requestName: string; interfaceName: string; operationName: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    return {
+      requestName: location.request.name,
+      interfaceName: location.iface.name,
+      operationName: location.operation.name,
+    };
+  }
+
   /** The current snapshot, or `null` when no project is open. */
   snapshot(): ProjectWire | null {
     if (this.open === undefined) {

@@ -637,3 +637,64 @@ export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
+
+// ---------------------------------------------------------------------------
+// History (Task 24): a persistent, per-project record of every send, kept in
+// `userData` (outside the project folder) and always stored redacted.
+// ---------------------------------------------------------------------------
+
+const historyFaultSchema = z.object({ code: z.string(), reason: z.string() });
+const historyErrorSchema = z.object({ code: z.string(), message: z.string() });
+
+/** Wire (and on-disk) shape of one recorded send — mirrors the engine's `HistoryEntry`. */
+export const historyEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  projectId: z.string(),
+  requestId: z.string().optional(),
+  requestName: z.string(),
+  interfaceName: z.string(),
+  operationName: z.string(),
+  endpoint: z.string(),
+  soapVersion: soapVersionSchema,
+  soapAction: z.string().optional(),
+  status: z.number().optional(),
+  durationMs: z.number(),
+  ok: z.boolean(),
+  fault: historyFaultSchema.optional(),
+  request: z.object({ envelopeXml: z.string(), headers: z.array(headerEntrySchema) }),
+  response: z
+    .object({
+      envelopeXml: z.string().optional(),
+      rawHeaders: z.array(z.tuple([z.string(), z.string()])),
+      status: z.number(),
+      statusText: z.string(),
+    })
+    .optional(),
+  error: historyErrorSchema.optional(),
+  sizeBytes: z.number(),
+  tags: z.array(z.string()).optional(),
+});
+export type HistoryEntryWire = z.infer<typeof historyEntrySchema>;
+
+/** Request payload for `history.list`. */
+export const historyListRequestSchema = z.object({
+  query: z.string().optional(),
+  limit: z.number().optional(),
+  before: z.string().optional(),
+});
+export const historyListResponseSchema = z.object({ entries: z.array(historyEntrySchema), total: z.number() });
+
+/** Request/response for `history.get`. */
+export const historyGetRequestSchema = z.object({ id: z.string() });
+export const historyGetResponseSchema = z.object({ entry: historyEntrySchema.optional() });
+
+/** Response for `history.clear`. */
+export const historyClearResponseSchema = z.object({ cleared: z.number() });
+
+/** Request payload for `history.resend`: re-sends a past entry through the normal send path. */
+export const historyResendRequestSchema = z.object({ id: z.string() });
+
+/** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
+export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
+export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;
