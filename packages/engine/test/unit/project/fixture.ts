@@ -221,7 +221,13 @@ export function sampleProject(): Project {
       })(),
       keystores: (() => {
         const id = nextId();
-        return [{ id, name: 'corp-p12', document: { id, name: 'corp-p12' } }];
+        return [
+          {
+            id,
+            name: 'corp-p12',
+            document: { id, name: 'corp-p12', path: 'certs/corp.p12', type: 'pkcs12', passwordSecretRef: 'secret:1' },
+          },
+        ];
       })(),
     },
   };

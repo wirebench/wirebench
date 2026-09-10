@@ -292,6 +292,7 @@ export {
   definitionCacheManifestSchema,
   environmentFileSchema,
   interfaceFileSchema,
+  keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
@@ -359,6 +360,23 @@ export type {
 export { expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth } from './project/endpoints.js';
+export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
+export {
+  keystoreTypeForPath,
+  loadKeystore,
+  loadPem,
+  loadPkcs12,
+  selectAlias,
+  toTlsClientIdentity,
+} from './wss/keystore/index.js';
+export type {
+  Keystore,
+  KeystoreAlias,
+  KeystoreDef,
+  KeystoreType,
+  LoadKeystoreOptions,
+  TlsClientIdentity,
+} from './wss/keystore/index.js';
 export {
   findEnvironment,
   removeEnvironment,

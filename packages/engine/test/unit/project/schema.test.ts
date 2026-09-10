@@ -124,8 +124,12 @@ describe('extension-point schemas', () => {
       decrypt: 'ks',
     });
     expect(
-      parseFile(keystoresFileSchema, { keystores: [{ id: 'K', name: 'p12', path: 'a.p12' }] }, 'k.yaml'),
-    ).toMatchObject({ keystores: [{ path: 'a.p12' }] });
+      parseFile(
+        keystoresFileSchema,
+        { keystores: [{ id: 'K', name: 'p12', path: 'a.p12', type: 'pkcs12', future: 'kept' }] },
+        'k.yaml',
+      ),
+    ).toMatchObject({ keystores: [{ path: 'a.p12', type: 'pkcs12', future: 'kept' }] });
   });
 });
 

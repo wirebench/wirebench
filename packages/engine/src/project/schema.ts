@@ -163,9 +163,23 @@ export const wssOutgoingFileSchema = z.looseObject({ id: nonEmpty, name: z.strin
 /** `wss/incoming/<name>.yaml` — a stub until the WS-Security tasks define the entries. */
 export const wssIncomingFileSchema = z.looseObject({ id: nonEmpty, name: z.string() });
 
-/** `wss/keystores.yaml` — a stub until the keystore task defines the registry entries. */
+/**
+ * One `wss/keystores.yaml` entry: mirrors the engine's `KeystoreDef`. `looseObject` so a field
+ * a later build adds survives a load/save round trip through this one. Never a password — only
+ * a `secretRef` the host resolves through `safeStorage`.
+ */
+export const keystoreEntrySchema = z.looseObject({
+  id: nonEmpty,
+  name: z.string(),
+  path: nonEmpty,
+  type: z.enum(['pkcs12', 'pem']),
+  passwordSecretRef: z.string().optional(),
+  defaultAlias: z.string().optional(),
+});
+
+/** `wss/keystores.yaml` — the project's client keystore registry. */
 export const keystoresFileSchema = z.looseObject({
-  keystores: z.array(z.looseObject({ id: nonEmpty, name: z.string() })),
+  keystores: z.array(keystoreEntrySchema),
 });
 
 /** One document entry inside `interfaces/<slug>/definition/manifest.yaml`. */

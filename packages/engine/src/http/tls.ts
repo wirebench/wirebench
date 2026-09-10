@@ -29,6 +29,8 @@ export interface PeerCertificateLike {
 /** The subset of `tls.TLSSocket` this module reads; every accessor is optional but `getPeerCertificate`. */
 export interface TlsSocketLike {
   getPeerCertificate(detailed?: boolean): PeerCertificateLike | undefined | null;
+  /** The *local* certificate, i.e. the client identity this side presented (Node >= 11.4). */
+  getCertificate?: () => PeerCertificateLike | undefined | null;
   getProtocol?: () => string | null | undefined;
   getCipher?: () => { readonly name?: string | undefined } | undefined;
   readonly authorized?: boolean | undefined;
@@ -71,6 +73,8 @@ export interface SslInfo {
   readonly peerChain: readonly PeerCert[];
   /** Negotiated ALPN protocol, e.g. `http/1.1`. */
   readonly alpn?: string;
+  /** The client identity this side presented, when a keystore supplied one. */
+  readonly clientCertificate?: { readonly subject: string; readonly issuer: string };
 }
 
 /** Renders a Node DN object (`{ CN: 'x', OU: ['a','b'] }`) as `CN=x, OU=a, OU=b`. */
@@ -173,6 +177,15 @@ export function captureSslInfo(socket: TlsSocketLike): SslInfo {
   const servername = typeof socket.servername === 'string' ? socket.servername : undefined;
   const alpn = typeof socket.alpnProtocol === 'string' ? socket.alpnProtocol : undefined;
   const authorizationError = toAuthorizationError(socket.authorizationError);
+  const local = socket.getCertificate?.();
+  // The SSL inspector shows this so "did my keystore actually get used?" is answerable without
+  // reading the server's logs; only the DNs are kept, never any key material.
+  const clientCertificate = isEmptyCertificate(local)
+    ? undefined
+    : {
+        subject: renderDn((local as PeerCertificateLike).subject),
+        issuer: renderDn((local as PeerCertificateLike).issuer),
+      };
 
   return {
     ...(protocol !== null && protocol !== undefined ? { protocol } : {}),
@@ -182,6 +195,7 @@ export function captureSslInfo(socket: TlsSocketLike): SslInfo {
     ...(servername !== undefined ? { servername } : {}),
     peerChain: isEmptyCertificate(leaf) ? [] : walkChain(leaf as PeerCertificateLike),
     ...(alpn !== undefined ? { alpn } : {}),
+    ...(clientCertificate !== undefined ? { clientCertificate } : {}),
   };
 }
 

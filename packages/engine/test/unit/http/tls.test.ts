@@ -120,4 +120,19 @@ describe('captureSslInfo', () => {
     expect(info.servername).toBeUndefined();
     expect(info.alpn).toBeUndefined();
   });
+
+  it('reports the client identity this side presented', () => {
+    const info = captureSslInfo(
+      socket(LEAF, {
+        getCertificate: () => ({ subject: { CN: 'wirebench-client' }, issuer: { CN: 'Wirebench Test CA' } }),
+      }),
+    );
+
+    expect(info.clientCertificate).toEqual({ subject: 'CN=wirebench-client', issuer: 'CN=Wirebench Test CA' });
+  });
+
+  it('omits the client identity when none was presented', () => {
+    expect(captureSslInfo(socket(LEAF, { getCertificate: () => ({}) })).clientCertificate).toBeUndefined();
+    expect(captureSslInfo(socket(LEAF)).clientCertificate).toBeUndefined();
+  });
 });
