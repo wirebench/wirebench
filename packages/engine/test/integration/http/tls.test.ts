@@ -1,0 +1,167 @@
+import { Agent } from 'undici';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { HttpError } from '../../../src/errors.js';
+import { sendHttp } from '../../../src/http/client.js';
+import type { HttpRequest } from '../../../src/http/types.js';
+import {
+  generateClientCert,
+  generateServerCert,
+  generateTestCa,
+  type TestCertificate,
+} from '../../helpers/test-certs.js';
+import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
+
+let ca: TestCertificate;
+let serverCert: TestCertificate;
+let clientCert: TestCertificate;
+
+// Key generation is the only slow part; do it once for the whole file.
+beforeAll(() => {
+  ca = generateTestCa();
+  serverCert = generateServerCert(ca, { commonName: 'localhost', sans: ['localhost', '127.0.0.1'] });
+  clientCert = generateClientCert(ca);
+});
+
+const servers: TestSoapServer[] = [];
+const dispatchers: Agent[] = [];
+
+afterEach(async () => {
+  await Promise.all(dispatchers.splice(0).map((dispatcher) => dispatcher.close()));
+  await Promise.all(servers.splice(0).map((server) => server.close()));
+});
+
+async function startTls(extra?: {
+  requestCert?: boolean;
+  maxVersion?: 'TLSv1.2' | 'TLSv1.3';
+}): Promise<TestSoapServer> {
+  const server = await startTestSoapServer({
+    tls: {
+      cert: serverCert.certPem,
+      key: serverCert.keyPem,
+      ca: ca.certPem,
+      ...(extra?.requestCert !== undefined ? { requestCert: extra.requestCert } : {}),
+      ...(extra?.maxVersion !== undefined ? { maxVersion: extra.maxVersion } : {}),
+    },
+  });
+  servers.push(server);
+  return server;
+}
+
+function req(overrides: Partial<HttpRequest> & { url: string }): HttpRequest {
+  return { method: 'POST', headers: {}, timeoutMs: 2000, followRedirects: false, ...overrides };
+}
+
+describe('sendHttp over TLS', () => {
+  it('captures protocol, cipher and the peer chain when the CA is trusted', async () => {
+    const server = await startTls();
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] } }));
+
+    expect(exchange.status).toBe(200);
+    expect(exchange.tls?.protocol).toBe('TLSv1.3');
+    expect(exchange.tls?.cipher).toBeTruthy();
+    expect(exchange.tls?.authorized).toBe(true);
+    expect(exchange.tls?.authorizationError).toBeUndefined();
+
+    const leaf = exchange.tls?.peerChain[0];
+    expect(leaf?.subject).toContain('CN=localhost');
+    expect(leaf?.issuer).toContain('CN=Wirebench Test CA');
+    expect(leaf?.sans).toContain('127.0.0.1');
+    expect(leaf?.fingerprint256).toMatch(/^[0-9a-f]{64}$/);
+    expect(new Date(leaf?.validTo ?? '').getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('fails with a `tls` HttpError when the CA is not trusted', async () => {
+    const server = await startTls();
+
+    const error = await sendHttp(req({ url: `${server.url}/headers` })).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).code).toBe('tls');
+    expect(['SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']).toContain(
+      (error as HttpError).details?.['code'],
+    );
+  });
+
+  it('still reports the chain, unauthorized, when verification is switched off', async () => {
+    const server = await startTls();
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { rejectUnauthorized: false } }));
+
+    expect(exchange.status).toBe(200);
+    expect(exchange.tls?.authorized).toBe(false);
+    expect(exchange.tls?.authorizationError).toBeTruthy();
+    expect(exchange.tls?.peerChain.length).toBeGreaterThan(0);
+  });
+
+  it('carries the TLS info on a second request that reuses the keep-alive connection', async () => {
+    const server = await startTls();
+    const dispatcher = new Agent({ connect: { ca: [ca.certPem] } });
+    dispatchers.push(dispatcher);
+
+    // undici's pool warms a spare connection before it settles into reusing one, so
+    // send until an exchange reports no connect of its own — that one is the reuse case.
+    const exchanges = [];
+    for (let i = 0; i < 4; i += 1) {
+      exchanges.push(await sendHttp(req({ url: `${server.url}/headers` }), { dispatcher }));
+    }
+    const first = exchanges[0];
+    const reused = exchanges.find((exchange) => exchange.timings.connectMs === undefined);
+
+    expect(reused).toBeDefined();
+    // No new socket was opened, so `undici:client:connected` never fired for it — and yet
+    // `sendHeaders` still names the socket the bytes went out on.
+    expect(reused?.tls?.protocol).toBe('TLSv1.3');
+    expect(reused?.tls?.peerChain[0]?.fingerprint256).toBe(first?.tls?.peerChain[0]?.fingerprint256);
+  });
+
+  it('does not cross-attribute TLS info between concurrent exchanges to different origins', async () => {
+    const otherCert = generateServerCert(ca, { commonName: 'other.test', sans: ['other.test', '127.0.0.1'] });
+    const first = await startTls();
+    const second = await startTestSoapServer({
+      tls: { cert: otherCert.certPem, key: otherCert.keyPem, ca: ca.certPem },
+    });
+    servers.push(second);
+
+    // Both in flight at once: the single-in-flight rule cannot help here, so the only thing
+    // keeping the two chains apart is `sendHeaders`' request origin.
+    const [a, b] = await Promise.all([
+      sendHttp(req({ url: `${first.url}/headers`, tls: { ca: [ca.certPem] } })),
+      sendHttp(req({ url: `${second.url}/headers`, tls: { ca: [ca.certPem] } })),
+    ]);
+
+    expect(a.tls?.peerChain[0]?.subject).toContain('CN=localhost');
+    expect(b.tls?.peerChain[0]?.subject).toContain('CN=other.test');
+  });
+
+  it('presents a client certificate when one is configured', async () => {
+    const server = await startTls({ requestCert: true });
+
+    const exchange = await sendHttp(
+      req({
+        url: `${server.url}/tls-info`,
+        method: 'GET',
+        tls: { ca: [ca.certPem], cert: clientCert.certPem, key: clientCert.keyPem },
+      }),
+    );
+
+    expect(exchange.status).toBe(200);
+    const info = JSON.parse(Buffer.from(exchange.body).toString('utf-8')) as {
+      peerAuthorized: boolean;
+      peerCN?: string;
+    };
+    expect(info.peerAuthorized).toBe(true);
+    expect(info.peerCN).toBe('wirebench-client');
+  });
+
+  it('honours minVersion: a TLSv1.3-only client will not talk to a TLSv1.2 server', async () => {
+    const server = await startTls({ maxVersion: 'TLSv1.2' });
+
+    const error = await sendHttp(
+      req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem], minVersion: 'TLSv1.3' } }),
+    ).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).code).toBe('tls');
+  });
+});

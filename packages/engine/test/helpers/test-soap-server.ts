@@ -1,6 +1,8 @@
 import { createGzip, gunzipSync } from 'node:zlib';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
+import type { TLSSocket } from 'node:tls';
 import { readPublicFixture } from './fixtures.js';
 
 /** One request recorded by the test SOAP server, for assertions. */
@@ -9,6 +11,20 @@ export interface RecordedRequest {
   readonly url: string;
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly body: Buffer;
+}
+
+/**
+ * Serves every route over TLS instead of plain HTTP. `cert`/`key` are PEM strings
+ * (see `test-certs.ts`); `ca` plus `requestCert` turns on optional client-certificate
+ * verification, and `maxVersion` caps the protocol so a client `minVersion` can be
+ * tested against a server that cannot meet it.
+ */
+export interface TestSoapServerTls {
+  readonly cert: string;
+  readonly key: string;
+  readonly ca?: string | readonly string[];
+  readonly requestCert?: boolean;
+  readonly maxVersion?: 'TLSv1.2' | 'TLSv1.3';
 }
 
 /** Handle to a running {@link startTestSoapServer} instance. */
@@ -95,16 +111,33 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 export async function startTestSoapServer(options?: {
   readonly fixture?: string;
   readonly respondToCalculatorAdd?: boolean;
+  /** Serve over HTTPS with these credentials instead of plain HTTP. */
+  readonly tls?: TestSoapServerTls;
 }): Promise<TestSoapServer> {
   const requests: RecordedRequest[] = [];
   const sockets = new Set<Socket>();
 
-  const server: Server = createServer((req, res) => {
+  const listener = (req: IncomingMessage, res: ServerResponse): void => {
     void handle(req, res).catch((err: unknown) => {
       if (!res.headersSent) res.writeHead(500);
       res.end(String(err));
     });
-  });
+  };
+
+  const tls = options?.tls;
+  const server: Server =
+    tls === undefined
+      ? createServer(listener)
+      : createHttpsServer(
+          {
+            cert: tls.cert,
+            key: tls.key,
+            ...(tls.ca !== undefined ? { ca: typeof tls.ca === 'string' ? tls.ca : [...tls.ca] } : {}),
+            ...(tls.requestCert === true ? { requestCert: true, rejectUnauthorized: false } : {}),
+            ...(tls.maxVersion !== undefined ? { maxVersion: tls.maxVersion } : {}),
+          },
+          listener,
+        );
 
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -113,7 +146,7 @@ export async function startTestSoapServer(options?: {
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? 'GET';
-    const url = new URL(req.url ?? '/', `http://127.0.0.1`);
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const body = await readBody(req);
 
     if (url.pathname !== '/timeout') {
@@ -222,6 +255,20 @@ export async function startTestSoapServer(options?: {
       return;
     }
 
+    if (url.pathname === '/tls-info') {
+      const socket = req.socket as TLSSocket;
+      const peer = typeof socket.getPeerCertificate === 'function' ? socket.getPeerCertificate() : undefined;
+      const commonName = peer?.subject?.CN;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          peerAuthorized: socket.authorized === true,
+          ...(typeof commonName === 'string' ? { peerCN: commonName } : {}),
+        }),
+      );
+      return;
+    }
+
     if (url.pathname === '/headers') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(req.headers));
@@ -247,7 +294,7 @@ export async function startTestSoapServer(options?: {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (address === null || typeof address === 'string') throw new Error('failed to bind test SOAP server');
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const baseUrl = `${tls === undefined ? 'http' : 'https'}://127.0.0.1:${address.port}`;
 
   return {
     url: baseUrl,

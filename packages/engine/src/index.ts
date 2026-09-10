@@ -160,6 +160,8 @@ export type { ParsedSoapResponse } from './soap/response-parser.js';
 export { createDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
+export { captureSslInfo } from './http/tls.js';
+export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
 export { importDefinition } from './import.js';
 export { sendSoapRequest } from './send.js';

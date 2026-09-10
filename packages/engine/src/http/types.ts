@@ -4,6 +4,8 @@
  * layer on top by producing headers/body before `sendHttp` is called.
  */
 
+import type { SslInfo } from './tls.js';
+
 /** An HTTP request as fully resolved bytes/headers, ready to send. */
 export interface HttpRequest {
   readonly url: string;
@@ -94,7 +96,11 @@ export interface HttpExchange {
   /** Reconstructed status line + headers + body, as received on the wire. */
   readonly rawResponse: Uint8Array;
   readonly redirects: readonly { readonly url: string; readonly status: number }[];
-  readonly tls?: { readonly protocol?: string; readonly cipher?: string; readonly authorized?: boolean };
+  /**
+   * The TLS connection this exchange travelled over: protocol, cipher, whether the
+   * peer chain verified, and the chain itself. Absent for plain HTTP.
+   */
+  readonly tls?: SslInfo;
 }
 
 /** Stable, machine-readable classification for {@link HttpError}. */

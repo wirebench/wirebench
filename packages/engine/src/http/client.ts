@@ -273,6 +273,8 @@ export async function sendHttp(
     let result: PhysicalResult | undefined;
 
     for (let attempt = 0; attempt <= maxRedirects; attempt++) {
+      // Tells the tracker which origin the TLS events it is about to see belong to.
+      tracker.setOrigin(currentUrl.origin);
       const finalHeaders = buildFinalHeaders(
         { ...req, headers: currentHeaders, method: currentMethod },
         currentUrl,
