@@ -122,6 +122,20 @@ export async function startTestSoapServer(options?: { readonly fixture?: string 
       return;
     }
 
+    if (url.pathname === '/redirect-cross') {
+      // Same server, different origin string (localhost vs 127.0.0.1): used to
+      // verify credential headers are dropped across an origin change.
+      res.writeHead(307, { location: `http://localhost:${new URL(baseUrl).port}/headers` });
+      res.end();
+      return;
+    }
+
+    if (url.pathname === '/bad-gzip') {
+      res.writeHead(200, { 'content-type': 'text/xml', 'content-encoding': 'gzip' });
+      res.end(Buffer.from([0x1f, 0x8b, 0x00, 0x00, 0xff, 0xff, 0xff]));
+      return;
+    }
+
     const bigMatch = /^\/big\/(\d+)$/.exec(url.pathname);
     if (method === 'POST' && bigMatch !== null) {
       const mb = Number(bigMatch[1]);

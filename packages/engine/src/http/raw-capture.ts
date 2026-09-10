@@ -7,9 +7,13 @@ const CRLF = '\r\n';
  * `METHOD path HTTP/1.1\r\nHeader: value\r\n...\r\n\r\n<body>`.
  *
  * This is a reconstruction, not a wire capture: undici does not expose the
- * literal bytes it sends. `finalHeaders` should include any headers undici
- * adds itself (e.g. `content-length`, `host`) so the reconstruction is as
- * faithful as practical.
+ * literal bytes it sends. The reconstruction mirrors exactly the headers
+ * undici sends and nothing else — `host` (from the URL) and `content-length`
+ * (when there's a body), plus whatever headers the caller set — so it
+ * intentionally omits headers undici doesn't add by default (e.g.
+ * `Connection`, which undici's `request()` does not send).
+ * `finalHeaders` should include any headers undici adds itself (e.g.
+ * `content-length`, `host`) so the reconstruction is as faithful as practical.
  */
 export function buildRawRequest(
   req: HttpRequest,

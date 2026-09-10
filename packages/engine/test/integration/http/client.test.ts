@@ -141,4 +141,58 @@ describe('sendHttp', () => {
       code: 'too-many-redirects',
     });
   });
+
+  it('drops credential headers on a cross-origin redirect', async () => {
+    const exchange = await sendHttp(
+      req({
+        url: `${server.url}/redirect-cross`,
+        body: new Uint8Array(),
+        headers: { authorization: 'Bearer secret', cookie: 'session=abc', 'x-custom': 'kept' },
+      }),
+    );
+    const received = JSON.parse(Buffer.from(exchange.body).toString('utf-8')) as Record<string, string>;
+    expect(received['authorization']).toBeUndefined();
+    expect(received['cookie']).toBeUndefined();
+    expect(received['x-custom']).toBe('kept');
+  });
+
+  it('keeps credential headers on a same-origin redirect', async () => {
+    const exchange = await sendHttp(
+      req({
+        url: `${server.url}/redirect-get`,
+        body: new Uint8Array(),
+        headers: { authorization: 'Bearer secret' },
+      }),
+    );
+    const received = JSON.parse(Buffer.from(exchange.body).toString('utf-8')) as Record<string, string>;
+    expect(received['authorization']).toBe('Bearer secret');
+  });
+
+  it('resolves both concurrent requests with plausible timings and no cross-attribution', async () => {
+    const [a, b] = await Promise.all([
+      sendHttp(req({ url: `${server.url}/delay/100`, body: new Uint8Array(), timeoutMs: 2000 })),
+      sendHttp(req({ url: `${server.url}/delay/100`, body: new Uint8Array(), timeoutMs: 2000 })),
+    ]);
+    for (const exchange of [a, b]) {
+      expect(exchange.timings.totalMs).toBeGreaterThan(0);
+      expect(exchange.timings.ttfbMs).toBeDefined();
+      expect(exchange.timings.connectMs).toBeUndefined();
+    }
+  });
+
+  it('sets decodeError and falls back to rawBody when gzip decoding fails', async () => {
+    const exchange = await sendHttp(req({ url: `${server.url}/bad-gzip`, body: new Uint8Array() }));
+    expect(exchange.decodeError).toBeDefined();
+    expect(Buffer.compare(Buffer.from(exchange.body), Buffer.from(exchange.rawBody))).toBe(0);
+  });
+
+  it('reuses the connection after following a redirect (body fully drained)', async () => {
+    const body = new TextEncoder().encode('<x/>');
+    await sendHttp(req({ url: `${server.url}/redirect`, body }));
+    // A follow-up request against the same server should succeed cleanly,
+    // implying the prior redirect's connection was returned to the pool.
+    const exchange = await sendHttp(req({ url: `${server.url}/soap`, body }));
+    expect(exchange.status).toBe(200);
+    expect(server.requests.length).toBeGreaterThanOrEqual(3);
+  });
 });

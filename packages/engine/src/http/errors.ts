@@ -37,15 +37,26 @@ function optionsFor(
   return code !== undefined ? { cause, details: { code } } : { cause };
 }
 
+/** Node error codes that indicate a connection-level failure (occur during connect, before any bytes flow). */
+const CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET']);
+
+/** True if `err`'s name or message mentions "Proxy" (undici's proxy-related errors do this). */
+function looksLikeProxyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /proxy/i.test(err.name) || /proxy/i.test(err.message);
+}
+
 /**
  * Maps a raw error thrown by undici/Node's networking stack (or our own deadline
  * timer) into a stable {@link HttpError} with an {@link HttpErrorCode}. `userAborted`
  * distinguishes a caller-triggered abort from the deadline timer firing so we can
  * report `aborted` vs `timeout` correctly even though both surface as AbortError.
+ * `hadProxy` (the request had `proxy` set) is used to route connection-level
+ * failures and undici's proxy errors to the `proxy` code instead of `connection-refused`/`network`.
  */
 export function toHttpError(
   err: unknown,
-  options: { readonly userAborted: boolean; readonly deadlineHit: boolean },
+  options: { readonly userAborted: boolean; readonly deadlineHit: boolean; readonly hadProxy?: boolean },
 ): HttpError {
   const code = nodeErrorCode(err);
 
@@ -54,6 +65,12 @@ export function toHttpError(
   }
   if (options.userAborted || isAbortError(err)) {
     return new HttpError('aborted' satisfies HttpErrorCode, 'The request was aborted.', optionsFor(err, code));
+  }
+  if (
+    options.hadProxy === true &&
+    ((code !== undefined && CONNECT_FAILURE_CODES.has(code)) || looksLikeProxyError(err))
+  ) {
+    return new HttpError('proxy' satisfies HttpErrorCode, 'Proxy connection failed.', optionsFor(err, code));
   }
   if (code === 'ECONNREFUSED') {
     return new HttpError('connection-refused' satisfies HttpErrorCode, 'Connection refused.', optionsFor(err, code));

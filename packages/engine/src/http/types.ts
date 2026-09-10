@@ -77,6 +77,12 @@ export interface HttpExchange {
   readonly rawBody: Uint8Array;
   /** True when the body was cut short because it exceeded `maxSizeBytes`. */
   readonly truncated: boolean;
+  /**
+   * Set when the response body failed to decompress (e.g. malformed gzip).
+   * When present, `body` equals `rawBody` (decompression was not applied)
+   * rather than throwing.
+   */
+  readonly decodeError?: string;
   readonly timings: Timings;
   /** Reconstructed request line + headers + body, as it was (or would be) sent on the wire. */
   readonly rawRequest: Uint8Array;

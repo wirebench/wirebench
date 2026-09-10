@@ -58,4 +58,22 @@ describe('toHttpError', () => {
     expect(err.code).toBe('network');
     expect(err.message).toBe('Network error.');
   });
+
+  it('maps ECONNREFUSED to proxy when the request used a proxy', () => {
+    const err = toHttpError(codedError('ECONNREFUSED'), { userAborted: false, deadlineHit: false, hadProxy: true });
+    expect(err.code).toBe('proxy');
+    expect(err.details).toEqual({ code: 'ECONNREFUSED' });
+  });
+
+  it('maps ECONNREFUSED to connection-refused when no proxy was used', () => {
+    const err = toHttpError(codedError('ECONNREFUSED'), { userAborted: false, deadlineHit: false });
+    expect(err.code).toBe('connection-refused');
+  });
+
+  it('maps an undici proxy-named error to proxy when the request used a proxy', () => {
+    const proxyErr = new Error('Proxy connection failed');
+    proxyErr.name = 'ProxyError';
+    const err = toHttpError(proxyErr, { userAborted: false, deadlineHit: false, hadProxy: true });
+    expect(err.code).toBe('proxy');
+  });
 });

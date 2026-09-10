@@ -86,6 +86,25 @@ function tlsConnectOptions(tls: TlsOptions): Record<string, unknown> {
   };
 }
 
+/** Headers dropped when a redirect crosses an origin, per fetch/undici's credential-scoping semantics. */
+const CREDENTIAL_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie']);
+
+/** Origin as scheme + host + port (host already includes a non-default port). */
+function originOf(url: URL): string {
+  return `${url.protocol}//${url.host}`;
+}
+
+/** Drops credential headers (case-insensitive) when moving to a different origin. */
+function scopeHeadersToOrigin(headers: Record<string, string>, fromUrl: URL, toUrl: URL): Record<string, string> {
+  if (originOf(fromUrl) === originOf(toUrl)) return headers;
+  const scoped: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (CREDENTIAL_HEADERS.has(name.toLowerCase())) continue;
+    scoped[name] = value;
+  }
+  return scoped;
+}
+
 /** Joins undici's raw header shape (string | string[] per name) into our lower-cased map. */
 function joinHeaders(raw: Record<string, string | string[] | undefined>): {
   headers: Record<string, string>;
@@ -117,8 +136,14 @@ function buildFinalHeaders(req: HttpRequest, url: URL, body: Uint8Array | undefi
   return final;
 }
 
+/** A body stream shape wide enough to cover undici's BodyReadable (has `dump`/`destroy`) and a plain AsyncIterable. */
+type ReadableBody = AsyncIterable<Uint8Array> & {
+  dump?: () => Promise<void>;
+  destroy?: (err?: Error) => void;
+};
+
 async function readBody(
-  body: AsyncIterable<Uint8Array>,
+  body: ReadableBody,
   maxSizeBytes: number | undefined,
 ): Promise<{ data: Uint8Array; truncated: boolean }> {
   const chunks: Uint8Array[] = [];
@@ -130,6 +155,10 @@ async function readBody(
       if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
       total = maxSizeBytes;
       truncated = true;
+      // Tear the connection down explicitly rather than relying on the async
+      // iterator's implicit cleanup on `break` — that cleanup is not
+      // guaranteed to release the socket back to the pool promptly.
+      body.destroy?.();
       break;
     }
     chunks.push(chunk);
@@ -144,6 +173,22 @@ async function readBody(
   return { data, truncated };
 }
 
+/**
+ * Fully consumes a redirect response's body so the underlying connection is
+ * returned to the keep-alive pool, without buffering the bytes anywhere.
+ * Prefers undici's `dump()` (a body we're discarding, not size-capped);
+ * falls back to iterating to completion for any body lacking `dump`.
+ */
+async function drainBody(body: ReadableBody): Promise<void> {
+  if (typeof body.dump === 'function') {
+    await body.dump();
+    return;
+  }
+  for await (const chunk of body) {
+    void chunk; // discard; just drives the stream to completion
+  }
+}
+
 interface PhysicalResult {
   readonly status: number;
   readonly headers: Record<string, string>;
@@ -151,6 +196,7 @@ interface PhysicalResult {
   readonly rawBody: Uint8Array;
   readonly body: Uint8Array;
   readonly truncated: boolean;
+  readonly decodeError?: string;
   readonly rawRequest: Uint8Array;
   readonly finalUrl: string;
   readonly finalMethod: string;
@@ -234,6 +280,7 @@ export async function sendHttp(
         throw toHttpError(err, {
           userAborted: req.signal?.aborted === true,
           deadlineHit: deadlineController.signal.aborted,
+          hadProxy: req.proxy !== undefined,
         });
       }
 
@@ -244,12 +291,12 @@ export async function sendHttp(
         req.followRedirects && REDIRECT_STATUSES.has(response.statusCode) && headers['location'] !== undefined;
       if (isRedirect) {
         if (attempt === maxRedirects) {
-          // Drain the body so the socket can be released, then fail.
-          await readBody(response.body, 0).catch(() => undefined);
+          // Fully drain the body so the socket returns to the keep-alive pool, then fail.
+          await drainBody(response.body).catch(() => undefined);
           throw tooManyRedirectsError(maxRedirects);
         }
         redirects.push({ url: currentUrl.toString(), status: response.statusCode });
-        await readBody(response.body, 0).catch(() => undefined);
+        await drainBody(response.body).catch(() => undefined);
 
         const nextUrl = new URL(headers['location'] ?? '', currentUrl);
         const downgrade =
@@ -262,15 +309,25 @@ export async function sendHttp(
           delete rest['content-type'];
           currentHeaders = rest;
         }
+        // Drop credential headers (Authorization/Proxy-Authorization/Cookie)
+        // when the redirect crosses to a different origin.
+        currentHeaders = scopeHeadersToOrigin(currentHeaders, currentUrl, nextUrl);
         currentUrl = nextUrl;
         continue;
       }
 
       const { data: rawBodyRaw, truncated } = await readBody(response.body, req.maxSizeBytes);
       const decompress = req.decompress ?? true;
-      const body = decompress
-        ? await decompressBody(rawBodyRaw, headers['content-encoding']).catch(() => rawBodyRaw)
-        : rawBodyRaw;
+      let body = rawBodyRaw;
+      let decodeError: string | undefined;
+      if (decompress) {
+        try {
+          body = await decompressBody(rawBodyRaw, headers['content-encoding']);
+        } catch (err) {
+          body = rawBodyRaw;
+          decodeError = err instanceof Error ? err.message : String(err);
+        }
+      }
 
       result = {
         status: response.statusCode,
@@ -279,6 +336,7 @@ export async function sendHttp(
         rawBody: rawBodyRaw,
         body,
         truncated,
+        ...(decodeError !== undefined ? { decodeError } : {}),
         rawRequest,
         finalUrl: currentUrl.toString(),
         finalMethod: currentMethod,
@@ -301,6 +359,7 @@ export async function sendHttp(
       body: result.body,
       rawBody: result.rawBody,
       truncated: result.truncated,
+      ...(result.decodeError !== undefined ? { decodeError: result.decodeError } : {}),
       timings,
       rawRequest: result.rawRequest,
       rawResponse,

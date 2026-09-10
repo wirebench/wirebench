@@ -4,6 +4,17 @@ import type { Timings } from './types.js';
 /** Default timer, injectable for deterministic tests. */
 const defaultNow = (): number => performance.now();
 
+/**
+ * Number of `sendHttp` calls currently in flight, process-wide. `undici:client:*`
+ * connect-level diagnostics_channel events carry no per-exchange correlation id,
+ * so when more than one exchange is in flight we cannot tell which exchange a
+ * given connect event belongs to. Rather than risk mis-attributing connect/TLS
+ * timings to the wrong exchange, we only record them when exactly one exchange
+ * is in flight; concurrent exchanges leave `connectMs`/`tlsMs`/`tls` undefined
+ * (a documented imprecision, not a bug).
+ */
+let inFlightCount = 0;
+
 interface TrackedSocketInfo {
   readonly connectedProtocol?: string;
   readonly connectedCipher?: string;
@@ -42,15 +53,21 @@ export class TimingTracker {
   private readonly onBeforeConnect: (message: unknown) => void;
   private readonly onConnected: (message: unknown) => void;
 
+  private disposed = false;
+
   constructor(now: () => number = defaultNow) {
     this.now = now;
     this.startedAtMs = now();
     this.startedAtIso = new Date().toISOString();
+    inFlightCount += 1;
 
     this.onBeforeConnect = () => {
+      if (inFlightCount !== 1) return; // another exchange is concurrently in flight; can't attribute safely
       if (this.connectStart === undefined) this.connectStart = this.now();
     };
     this.onConnected = (message: unknown) => {
+      if (inFlightCount !== 1) return; // another exchange is concurrently in flight; can't attribute safely
+      if (this.connectStart === undefined) return; // beforeConnect for this exchange was never observed
       this.connectEnd = this.now();
       const socket = (
         message as {
@@ -83,10 +100,17 @@ export class TimingTracker {
     this.headersAt = this.now();
   }
 
-  /** Stops listening to diagnostics channels. Always call this, even on error paths. */
+  /**
+   * Stops listening to diagnostics channels and decrements the in-flight
+   * counter. Always call this, even on error paths — idempotent, so it is
+   * safe to call more than once (e.g. from a `finally` after an early throw).
+   */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     diagnosticsChannel.channel('undici:client:beforeConnect').unsubscribe(this.onBeforeConnect);
     diagnosticsChannel.channel('undici:client:connected').unsubscribe(this.onConnected);
+    inFlightCount -= 1;
   }
 
   /** Finalizes the timing record. Call once the response body is fully read (or the exchange failed). */
