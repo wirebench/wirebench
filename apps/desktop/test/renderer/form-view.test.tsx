@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { FormView } from '../../src/renderer/features/request-editor/views/form-view.js';
 import type { FormSource, FormViewType } from '../../src/renderer/features/request-editor/views/form-view.js';
 import type { FormNodeWire } from '../../src/renderer/../shared/wire-types.js';
+import { showToast } from '../../src/renderer/components/toast.js';
+
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
 
 const ENVELOPE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">' +
@@ -79,6 +82,11 @@ function renderView(
   return { ...stub, onValueEdit };
 }
 
+const ENVELOPE_ATTR =
+  '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">' +
+  '<soapenv:Body><tem:Add><tem:widget id="1"/><tem:intB>?</tem:intB></tem:Add></soapenv:Body>' +
+  '</soapenv:Envelope>';
+
 describe('FormView', () => {
   afterEach(() => {
     cleanup();
@@ -116,6 +124,42 @@ describe('FormView', () => {
     expect(onValueEdit).toHaveBeenLastCalledWith(INT_A_RANGE, '10');
     await userEvent.type(screen.getByLabelText('tem:intB value'), '5');
     expect(onValueEdit).toHaveBeenLastCalledWith({ start: intBStart + 1, end: intBStart + 2 }, '5');
+  });
+
+  it('typing a quote into an attribute value shifts later ranges by the actual escaped length', async () => {
+    const idStart = ENVELOPE_ATTR.indexOf('id="') + 4;
+    const attrRange = { start: idStart, end: idStart + 1 };
+    const intBStart = ENVELOPE_ATTR.indexOf('<tem:intB>') + 10;
+    const root: FormNodeWire = {
+      ...ROOT,
+      children: [
+        {
+          id: 'r/0',
+          kind: 'attribute',
+          name: { namespaceUri: '', localName: 'id' },
+          label: 'id',
+          required: true,
+          occurs: { min: 1, max: 1 },
+          type: { name: 'xs:string', base: 'string' },
+          value: '1',
+          valueRange: attrRange,
+          present: true,
+          children: [],
+        },
+        field({ id: 'r/1', label: 'tem:intB', value: '?', valueRange: { start: intBStart, end: intBStart + 1 } }),
+      ],
+    };
+    const { onValueEdit } = renderView({ xml: ENVELOPE_ATTR }, root);
+    await waitFor(() => expect(screen.getByLabelText('id value')).toBeDefined());
+    // Typing a `"` into an attribute value is written back as `&quot;` (6 chars), not 1 — the
+    // in-flight delta computation must match `applyValueEdit`'s actual escaping exactly, or the
+    // next field's range drifts and the following edit corrupts the document.
+    await userEvent.type(screen.getByLabelText('id value'), '"');
+    expect(onValueEdit).toHaveBeenLastCalledWith(attrRange, '1"');
+
+    await userEvent.type(screen.getByLabelText('tem:intB value'), '5');
+    // '1"' escapes to `1&quot;` (7 chars) replacing a 1-char range: delta is +6.
+    expect(onValueEdit).toHaveBeenLastCalledWith({ start: intBStart + 6, end: intBStart + 7 }, '5');
   });
 
   it('a field with no range in the text goes through a structural set-value', async () => {
@@ -204,6 +248,52 @@ describe('FormView', () => {
     expect(applyFormEdit).toHaveBeenCalledWith(
       expect.objectContaining({ edit: { kind: 'add-repeat', nodeId: 'r/0' } }),
     );
+  });
+
+  it('a failed structural edit shows a toast and leaves the form state unchanged', async () => {
+    const instance = field({ id: 'r/0#0', label: 'child', value: '?', valueRange: { start: 0, end: 0 } });
+    const withRepeat: FormNodeWire = {
+      ...ROOT,
+      children: [
+        {
+          id: 'r/0',
+          kind: 'repeat',
+          name: { namespaceUri: '', localName: 'child' },
+          label: 'child',
+          required: false,
+          occurs: { min: 0, max: 'unbounded' },
+          present: true,
+          children: [],
+          repeat: { instances: [instance], template: instance, canAdd: true, canRemove: true },
+        },
+      ],
+    };
+    const onEnvelopeReplace = vi.fn();
+    const stub = stubSource(withRepeat);
+    stub.applyFormEdit.mockResolvedValue({
+      ok: false,
+      error: { code: 'form-edit-failed', message: 'That element cannot be added here' },
+    });
+    render(
+      <FormView
+        xml={ENVELOPE}
+        interfaceId="if-1"
+        bindingName="{http://tempuri.org/}CalculatorSoap"
+        operationName="Add"
+        onValueEdit={vi.fn()}
+        onEnvelopeReplace={onEnvelopeReplace}
+        viewType="full"
+        onViewTypeChange={vi.fn()}
+        source={stub.source}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Add child')).toBeDefined());
+    await userEvent.click(screen.getByLabelText('Add child'));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('That element cannot be added here (form-edit-failed)'));
+    // The envelope is never replaced on failure: the tree the user was looking at stays valid.
+    expect(onEnvelopeReplace).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Add child')).toBeDefined();
   });
 
   it('an unmodellable part renders an "Edit in XML" placeholder', async () => {

@@ -123,6 +123,22 @@ function documentChildForm(
  * any schema, so it is modelled as a group whose children come from the message
  * parts (each part naming a *type*, per WSDL 1.1 rpc rules).
  */
+/** Wraps a wrapper child no message part claims, keeping its text verbatim — same treatment
+ * `form-model.ts` gives an unclaimed particle child, so a structural edit never drops it. */
+function rawWrapperChild(envelopeXml: string, source: ScannedElement, id: string): FormNode {
+  return {
+    id,
+    kind: 'any',
+    name: { namespaceUri: source.namespaceUri, localName: source.localName },
+    label: source.name,
+    required: false,
+    occurs: { min: 0, max: 'unbounded' },
+    present: true,
+    raw: envelopeXml.slice(source.range.start, source.range.end),
+    children: [],
+  };
+}
+
 function rpcWrapperForm(
   input: RequestBuildInput,
   wrapper: ScannedElement,
@@ -132,8 +148,13 @@ function rpcWrapperForm(
   problems: string[],
 ): FormNode {
   const children: FormNode[] = [];
+  const used = wrapper.children.map(() => false);
   for (const [index, part] of parts.entries()) {
-    const accessor = wrapper.children.find((candidate) => candidate.localName === part.name);
+    const accessorIndex = wrapper.children.findIndex((candidate, i) => !used[i] && candidate.localName === part.name);
+    const accessor = accessorIndex === -1 ? undefined : wrapper.children[accessorIndex];
+    if (accessorIndex !== -1) {
+      used[accessorIndex] = true;
+    }
     const accessorXml =
       accessor === undefined ? undefined : envelopeXml.slice(accessor.range.start, accessor.range.end);
     const accessorOptions: BuildFormOptions = { ...options, offset: accessor?.range.start ?? 0 };
@@ -149,6 +170,14 @@ function rpcWrapperForm(
       continue;
     }
     problems.push(`Part "${part.name}" declares neither an element nor a type`);
+  }
+  // Elements standing in the wrapper that no message part claims must survive a structural
+  // edit verbatim — the same "nothing in the source is dropped" invariant `form-model.ts`
+  // upholds for particle children.
+  for (const [index, leftover] of wrapper.children.entries()) {
+    if (!used[index]) {
+      children.push(rawWrapperChild(envelopeXml, leftover, `r/~${index}`));
+    }
   }
   return {
     id: 'r',

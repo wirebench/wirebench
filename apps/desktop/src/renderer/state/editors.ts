@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 
+/** Which fields the Form view shows. Owned here, not by the request pane's component state, so
+ * it survives a tab switch or a remount (e.g. the pane unmounting while its tab stays open in
+ * the background) instead of resetting to `'full'` every time. */
+export type FormViewType = 'full' | 'required' | 'non-empty';
+
+const DEFAULT_FORM_VIEW_TYPE: FormViewType = 'full';
+
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
@@ -24,17 +31,23 @@ export interface EditorTab {
 export interface EditorsStore {
   readonly tabs: EditorTab[];
   readonly activeId: string | undefined;
+  /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
+  readonly formViewTypes: Readonly<Record<string, FormViewType>>;
   readonly open: (tab: EditorTab) => void;
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
   readonly openOrReplace: (tab: EditorTab) => void;
   readonly close: (id: string) => void;
   readonly activate: (id: string) => void;
+  /** The Form view type for `requestId`, defaulting to `'full'` when never set. */
+  readonly formViewTypeFor: (requestId: string) => FormViewType;
+  readonly setFormViewType: (requestId: string, viewType: FormViewType) => void;
 }
 
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
   tabs: [],
   activeId: undefined,
+  formViewTypes: {},
 
   open: (tab) => {
     const { tabs } = get();
@@ -77,5 +90,11 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     if (get().tabs.some((t) => t.id === id)) {
       set({ activeId: id });
     }
+  },
+
+  formViewTypeFor: (requestId) => get().formViewTypes[requestId] ?? DEFAULT_FORM_VIEW_TYPE,
+
+  setFormViewType: (requestId, viewType) => {
+    set({ formViewTypes: { ...get().formViewTypes, [requestId]: viewType } });
   },
 }));

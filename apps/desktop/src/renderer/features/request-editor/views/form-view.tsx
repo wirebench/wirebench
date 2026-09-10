@@ -17,13 +17,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '../../../components/empty-state.js';
+import { showToast } from '../../../components/toast.js';
 import { ipc } from '../../../state/ipc-client.js';
 import type { FormEditWire, FormNodeWire, TextRangeWire } from '../../../../shared/wire-types.js';
+import type { IpcError } from '../../../../shared/ipc.js';
+import type { FormViewType } from '../../../state/editors.js';
 import { FieldEditor, NodeBadges, hintFor, isEmptyValue } from './form-fields.js';
 import { GetDataDialog } from './get-data-dialog.js';
+import { escapeForRange } from './xml-model.js';
 
-/** Which fields the view shows. Persisted per request by the request pane. */
-export type FormViewType = 'full' | 'required' | 'non-empty';
+/** Which fields the view shows. Persisted per request in the editors store (see
+ * `useEditorsStore().formViewTypeFor`), so it survives a tab switch or remount. */
+export type { FormViewType };
 
 export const FORM_VIEW_TYPES: readonly { readonly id: FormViewType; readonly label: string }[] = [
   { id: 'full', label: 'Full' },
@@ -47,7 +52,9 @@ export interface FormSource {
     operationName: string;
     envelopeXml: string;
     edit: FormEditWire;
-  }): Promise<{ ok: true; value: { envelopeXml: string; changedRange: TextRangeWire } } | { ok: false }>;
+  }): Promise<
+    { ok: true; value: { envelopeXml: string; changedRange: TextRangeWire } } | { ok: false; error?: IpcError }
+  >;
 }
 
 export interface FormViewProps {
@@ -192,7 +199,15 @@ export function FormView({
           // Deliberately not marked as an own edit: a structural change alters
           // the shape, so the tree must be rebuilt from the new text.
           onEnvelopeReplace(result.value.envelopeXml);
+          return;
         }
+        // Leave the form state exactly as it was: the envelope is not replaced, so the tree
+        // the user was looking at (and every ghost/collapsed-state decision built on it)
+        // stays valid. Silently dropping this would look like the click did nothing.
+        const error = result.error;
+        showToast(
+          error === undefined ? 'Could not apply that change to the request' : `${error.message} (${error.code})`,
+        );
       });
     },
     [api, xml, interfaceId, bindingName, operationName, onEnvelopeReplace],
@@ -208,7 +223,10 @@ export function FormView({
       }
       const range = node.valueRange;
       editSeqRef.current += 1;
-      const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      // Must match exactly what `onValueEdit` (→ `applyValueEdit`) writes, quote-escaping
+      // included for an attribute context — otherwise the delta below is wrong and every
+      // later field's `valueRange` drifts out from under it.
+      const escaped = escapeForRange(xml, range, value);
       const delta = escaped.length - (range.end - range.start);
       setRoot((current) => {
         if (current === undefined) {

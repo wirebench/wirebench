@@ -103,6 +103,7 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
         <Panel id="request-pane" defaultSize="50%" minSize="20%">
           <RequestPane
             ref={requestPaneRef}
+            requestId={requestId}
             envelopeXml={draft.envelopeXml}
             onEnvelopeChange={onEnvelopeChange}
             onSend={onSend}

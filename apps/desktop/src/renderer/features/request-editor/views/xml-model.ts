@@ -89,16 +89,28 @@ export function escapeXmlAttr(value: string, quote: '"' | "'" = '"'): string {
 }
 
 /**
- * Replaces exactly `range` in `text` with `newValue`, escaped for its context. The character
- * just before `range.start` tells the two contexts apart: a quote mark means `range` sits
- * inside an attribute value (so that quote character is escaped too), anything else means it
- * is element text content (only `&`/`<` need escaping).
+ * Escapes `newValue` exactly as {@link applyValueEdit} would write it into `range`, without
+ * performing the splice. The character just before `range.start` tells the two contexts apart:
+ * a quote mark means `range` sits inside an attribute value (so that quote character is escaped
+ * too), anything else means it is element text content (only `&`/`<` need escaping).
+ *
+ * Callers that need to predict the length delta of a pending edit (e.g. to shift later ranges
+ * before the edit is committed) must use this — not a hand-rolled escape — so the delta always
+ * matches what `applyValueEdit` actually writes.
+ */
+export function escapeForRange(text: string, range: TextRange, newValue: string): string {
+  const quoteChar = text[range.start - 1];
+  return quoteChar === '"' || quoteChar === "'" ? escapeXmlAttr(newValue, quoteChar) : escapeXmlText(newValue);
+}
+
+/**
+ * Replaces exactly `range` in `text` with `newValue`, escaped for its context. See
+ * {@link escapeForRange} for how the context is determined.
  */
 export function applyValueEdit(text: string, range: TextRange, newValue: string): string {
   const before = text.slice(0, range.start);
   const after = text.slice(range.end);
-  const quoteChar = text[range.start - 1];
-  const escaped = quoteChar === '"' || quoteChar === "'" ? escapeXmlAttr(newValue, quoteChar) : escapeXmlText(newValue);
+  const escaped = escapeForRange(text, range, newValue);
   return before + escaped + after;
 }
 

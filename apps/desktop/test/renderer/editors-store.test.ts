@@ -3,7 +3,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 
 describe('useEditorsStore', () => {
   beforeEach(() => {
-    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
   });
 
   it('open adds a new tab and activates it', () => {
@@ -58,6 +58,26 @@ describe('useEditorsStore', () => {
 
     store.activate('nope');
     expect(useEditorsStore.getState().activeId).toBe('a');
+  });
+});
+
+describe('Form view type persistence', () => {
+  beforeEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+  });
+
+  it('defaults to "full" for a request that has never set one', () => {
+    expect(useEditorsStore.getState().formViewTypeFor('req-1')).toBe('full');
+  });
+
+  it('remembers the view type per request id, independent of other requests', () => {
+    const store = useEditorsStore.getState();
+    store.setFormViewType('req-1', 'required');
+    store.setFormViewType('req-2', 'non-empty');
+
+    expect(useEditorsStore.getState().formViewTypeFor('req-1')).toBe('required');
+    expect(useEditorsStore.getState().formViewTypeFor('req-2')).toBe('non-empty');
+    expect(useEditorsStore.getState().formViewTypeFor('req-3')).toBe('full');
   });
 });
 

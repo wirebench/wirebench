@@ -6,10 +6,11 @@ import { FORMAT_KEYBINDING, GOTO_LINE_KEYBINDING, SEND_KEYBINDING } from '../../
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
 import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '../../editor/xml-language.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
-import { FormView, type FormViewType } from './views/form-view.js';
+import { FormView } from './views/form-view.js';
 import { OutlineView } from './views/outline-view.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
@@ -40,6 +41,8 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
 }
 
 export interface RequestPaneProps {
+  /** The request draft this pane edits — keys the persisted Form view type in the editors store. */
+  readonly requestId: string;
   readonly envelopeXml: string;
   readonly onEnvelopeChange: (xml: string) => void;
   /** Run when ⌘⏎ is pressed while the editor has focus — Monaco owns those keys, not the window. */
@@ -61,7 +64,7 @@ export interface RequestPaneHandle {
 
 /** The request half: the editable SOAP envelope, plus the (mostly future) view strip. */
 export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(function RequestPane(
-  { envelopeXml, onEnvelopeChange, onSend, interfaceId, bindingName, operationName }: RequestPaneProps,
+  { requestId, envelopeXml, onEnvelopeChange, onSend, interfaceId, bindingName, operationName }: RequestPaneProps,
   ref,
 ) {
   const [local, setLocal] = useState(envelopeXml);
@@ -71,9 +74,12 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
-  // The Form view type is editor state, not project data: it belongs to this pane for as long
-  // as the request tab is open, and never reaches the saved request file.
-  const [formViewType, setFormViewType] = useState<FormViewType>('full');
+  // The Form view type is editor state, not project data — it never reaches the saved request
+  // file — but it is keyed by `requestId` in the editors store (not local component state) so
+  // it survives this pane remounting (a tab switch, or the pane unmounting while its tab stays
+  // open in the background) instead of resetting to 'full' every time.
+  const formViewType = useEditorsStore((state) => state.formViewTypeFor(requestId));
+  const setFormViewType = useEditorsStore((state) => state.setFormViewType);
   // Set by an Outline row selection; consumed once when the XML view remounts so the editor's
   // selection follows the row the user was just looking at.
   const pendingSelectionRef = useRef<TextRange | undefined>(undefined);
@@ -212,7 +218,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
             onValueEdit={handleOutlineEdit}
             onEnvelopeReplace={commitNow}
             viewType={formViewType}
-            onViewTypeChange={setFormViewType}
+            onViewTypeChange={(next) => setFormViewType(requestId, next)}
           />
         ) : view === 'outline' ? (
           <OutlineView
