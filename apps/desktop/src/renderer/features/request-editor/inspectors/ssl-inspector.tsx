@@ -96,6 +96,12 @@ function TlsDetails({ tls }: { readonly tls: SslInfoWire }) {
         <Field label="Cipher" value={tls.cipher} />
         <Field label="ALPN" value={tls.alpn} />
         <Field label="SNI" value={tls.servername} />
+        {tls.clientCertificate !== undefined && (
+          <div data-testid="ssl-client-certificate" className="flex min-w-0 gap-2">
+            <span className="shrink-0 text-fg-subtle">Client certificate</span>
+            <span className="min-w-0 font-mono break-all text-fg-default">{tls.clientCertificate.subject}</span>
+          </div>
+        )}
       </div>
 
       {tls.peerChain.length === 0 ? (

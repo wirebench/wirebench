@@ -31,7 +31,7 @@ const ATTACHMENT_HINTS = {
 } as const;
 
 /** Shown on the SSL Keystore field, which is stored but has no picker yet. */
-const SSL_KEYSTORE_HINT = 'Select arrives with the keystore manager (Task 36).';
+const SSL_KEYSTORE_HINT = 'The client certificate this request presents. Manage keystores in the WS-Security view.';
 
 /**
  * The `Encoding` property's closed set of choices: every label Node's `Buffer` can encode a
@@ -61,6 +61,7 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
   const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, requestId));
   const updateRequest = useProjectStore((state) => state.updateRequest);
   const updateRequestProperties = useProjectStore((state) => state.updateRequestProperties);
+  const keystores = useProjectStore((state) => state.keystores);
 
   if (request === undefined) {
     return <p className="text-md text-fg-muted">This request is no longer in the project.</p>;
@@ -185,12 +186,22 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
           value={properties.entitizeProperties}
           onChange={(entitizeProperties) => patch({ entitizeProperties })}
         />
-        <TextSetting
+        <EnumSetting
           label="SSL Keystore"
+          testId="request-ssl-keystore"
           value={properties.sslKeystoreRef ?? ''}
-          placeholder="none"
           hint={SSL_KEYSTORE_HINT}
-          onCommit={(sslKeystoreRef) => patch({ sslKeystoreRef: sslKeystoreRef.length > 0 ? sslKeystoreRef : null })}
+          // A ref the project file still names after its keystore was removed elsewhere stays
+          // selectable (and visible) rather than silently snapping to "none".
+          options={[
+            { value: '', label: '—' },
+            ...keystores.map((keystore) => ({ value: keystore.id, label: keystore.name })),
+            ...(properties.sslKeystoreRef !== undefined &&
+            !keystores.some((keystore) => keystore.id === properties.sslKeystoreRef)
+              ? [{ value: properties.sslKeystoreRef, label: `${properties.sslKeystoreRef} (missing)` }]
+              : []),
+          ]}
+          onChange={(sslKeystoreRef) => patch({ sslKeystoreRef: sslKeystoreRef.length > 0 ? sslKeystoreRef : null })}
         />
         <ReadOnlySetting
           label="WS-Addressing"

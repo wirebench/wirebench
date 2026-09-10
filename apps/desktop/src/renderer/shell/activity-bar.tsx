@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { FolderTree, History, Search, Settings } from 'lucide-react';
+import { FolderTree, History, Search, Settings, ShieldCheck } from 'lucide-react';
 import type { CommandId } from '@shared/commands.js';
 import type { Platform } from '../lib/platform.js';
 import { shortcutFor } from '../lib/keybindings.js';
@@ -18,6 +18,7 @@ const ITEMS: readonly ActivityItem[] = [
   { view: 'explorer', label: 'Explorer', icon: FolderTree, command: 'view.showExplorer' },
   { view: 'search', label: 'Search', icon: Search, command: 'view.showSearch' },
   { view: 'history', label: 'History', icon: History, command: 'view.showHistory' },
+  { view: 'wss', label: 'WS-Security', icon: ShieldCheck, command: 'view.showWss' },
   { view: 'settings', label: 'Settings', icon: Settings, command: 'view.showSettings' },
 ];
 

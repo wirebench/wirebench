@@ -90,10 +90,38 @@ describe('RequestProperties', () => {
     useProjectStore.setState({ updateRequestProperties: patch });
     render(<RequestProperties requestId="req-1" />);
 
-    const name = screen.getByLabelText('SSL Keystore');
-    fireEvent.change(name, { target: { value: 'client-ks' } });
-    fireEvent.blur(name);
-    expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: 'client-ks' });
+    const address = screen.getByLabelText('Bind address');
+    fireEvent.change(address, { target: { value: '127.0.0.1' } });
+    fireEvent.blur(address);
+    expect(patch).toHaveBeenCalledWith('req-1', { bindAddress: '127.0.0.1' });
+  });
+
+  it('selects a client keystore from the project registry, and keeps a missing ref selectable', () => {
+    const patch = vi.fn();
+    useProjectStore.setState({
+      updateRequestProperties: patch,
+      keystores: [{ id: 'k1', name: 'corp', path: '/tmp/corp.p12', type: 'pkcs12' }],
+    });
+    render(<RequestProperties requestId="req-1" />);
+
+    const select = screen.getByLabelText<HTMLSelectElement>('SSL Keystore');
+    expect([...select.options].map((option) => option.textContent)).toEqual(['—', 'corp']);
+
+    fireEvent.change(select, { target: { value: 'k1' } });
+    expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: 'k1' });
+
+    fireEvent.change(select, { target: { value: '' } });
+    expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: null });
+  });
+
+  it('keeps a keystore ref the registry no longer has visible rather than snapping to none', () => {
+    useProjectStore.setState({ updateRequestProperties: vi.fn(), keystores: [] });
+    seed({ properties: { ...request.properties, sslKeystoreRef: 'ghost' } });
+    render(<RequestProperties requestId="req-1" />);
+
+    const select = screen.getByLabelText<HTMLSelectElement>('SSL Keystore');
+    expect(select.value).toBe('ghost');
+    expect([...select.options].map((option) => option.textContent)).toContain('ghost (missing)');
   });
 
   it('offers a closed set of encodings, including ISO-8859-1, and commits immediately', () => {

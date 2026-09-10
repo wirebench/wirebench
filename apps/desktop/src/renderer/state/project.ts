@@ -10,6 +10,8 @@ import type {
   EnvironmentWire,
   ImportSourceWire,
   InterfaceWire,
+  KeystorePatchWire,
+  KeystoreWire,
   ProjectChange,
   ProjectChangedEvent,
   ProjectChangedOnDiskEvent,
@@ -48,6 +50,8 @@ export interface ProjectSnapshot {
   readonly environments: readonly EnvironmentWire[];
   /** The active environment's id, or `undefined` when none is active. */
   readonly activeEnvironmentId: string | undefined;
+  /** The project's client keystores, in registry order. Empty when no project is open. */
+  readonly keystores: readonly KeystoreWire[];
   readonly saveStatus: SaveStatus;
   readonly lastSavedAt: string | undefined;
   /** Paths reported by the folder watcher since the banner was last dismissed. */
@@ -106,6 +110,10 @@ export interface ProjectStore extends ProjectSnapshot {
    */
   readonly updateEnvironment: (environmentId: string, patch: EnvironmentPatchWire) => Promise<void>;
   readonly removeEnvironment: (environmentId: string) => Promise<void>;
+  /** Registers a keystore file (already chosen through `keystores.pickFile`); returns its id. */
+  readonly addKeystore: (input: { path: string; name?: string; passwordSecretRef?: string }) => Promise<string>;
+  readonly updateKeystore: (keystoreId: string, patch: KeystorePatchWire) => Promise<void>;
+  readonly removeKeystore: (keystoreId: string) => Promise<void>;
   /** Switches the active environment; `null` deactivates. */
   readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
   /** Appends an endpoint to an interface. */
@@ -232,9 +240,16 @@ function withAttachmentPatch(request: RequestDraft, attachmentId: string, patch:
 /** Builds the indexes (and environment mirror) the selectors below read. */
 function indexesOf(
   project: ProjectWire | null,
-): Pick<ProjectSnapshot, 'interfaces' | 'requests' | 'order' | 'environments' | 'activeEnvironmentId'> {
+): Pick<ProjectSnapshot, 'interfaces' | 'requests' | 'order' | 'environments' | 'activeEnvironmentId' | 'keystores'> {
   if (project === null) {
-    return { interfaces: {}, requests: {}, order: [], environments: [], activeEnvironmentId: undefined };
+    return {
+      interfaces: {},
+      requests: {},
+      order: [],
+      environments: [],
+      activeEnvironmentId: undefined,
+      keystores: [],
+    };
   }
   const interfaces: Record<string, InterfaceWire> = {};
   for (const iface of project.interfaces) {
@@ -257,6 +272,7 @@ function indexesOf(
     order: project.interfaces.map((iface) => iface.id),
     environments,
     activeEnvironmentId: project.activeEnvironmentId,
+    keystores: project.keystores,
   };
 }
 
@@ -290,6 +306,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     order: [],
     environments: [],
     activeEnvironmentId: undefined,
+    keystores: [],
     saveStatus: 'idle',
     lastSavedAt: undefined,
     changedOnDisk: [],
@@ -572,6 +589,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeEnvironment: async (environmentId) => {
       await mutate({ kind: 'remove-environment', environmentId });
+    },
+
+    addKeystore: async (input) => {
+      const { createdKeystoreId } = await mutate({
+        kind: 'add-keystore',
+        path: input.path,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.passwordSecretRef !== undefined ? { passwordSecretRef: input.passwordSecretRef } : {}),
+      });
+      if (createdKeystoreId === undefined) {
+        throw new Error('add-keystore did not return a keystore id');
+      }
+      return createdKeystoreId;
+    },
+
+    updateKeystore: async (keystoreId, patch) => {
+      await mutate({ kind: 'update-keystore', keystoreId, patch });
+    },
+
+    removeKeystore: async (keystoreId) => {
+      await mutate({ kind: 'remove-keystore', keystoreId });
     },
 
     setActiveEnvironment: async (environmentId) => {

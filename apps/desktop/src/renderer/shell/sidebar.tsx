@@ -2,6 +2,7 @@ import { EnvironmentsSection } from '../features/environments/environments-secti
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { PreferencesSectionList } from '../features/preferences/section-list.js';
+import { WssSection } from '../features/wss/wss-section.js';
 import type { SidebarView } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -26,6 +27,11 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
     title: 'History',
     headline: 'Nothing sent yet',
     body: 'Every request you send is listed here with its status, duration, and size.',
+  },
+  wss: {
+    title: 'WS-Security',
+    headline: 'WS-Security',
+    body: 'Client keystores, and the outgoing/incoming configurations requests can apply.',
   },
   settings: {
     title: 'Settings',
@@ -55,6 +61,8 @@ export function Sidebar() {
         </>
       ) : view === 'history' ? (
         <HistoryView />
+      ) : view === 'wss' ? (
+        <WssSection />
       ) : view === 'settings' ? (
         <PreferencesSectionList />
       ) : (

@@ -1,5 +1,5 @@
-/** Which view the sidebar shows; mirrors the activity bar's four icons. */
-export type SidebarView = 'explorer' | 'search' | 'history' | 'settings';
+/** Which view the sidebar shows; mirrors the activity bar's icons. */
+export type SidebarView = 'explorer' | 'search' | 'history' | 'wss' | 'settings';
 
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';

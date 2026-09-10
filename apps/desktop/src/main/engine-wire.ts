@@ -153,6 +153,11 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
       ...(cert.isCA !== undefined ? { isCA: cert.isCA } : {}),
     })),
     ...(tls.alpn !== undefined ? { alpn: tls.alpn } : {}),
+    // DNs only — the certificate this side presented, so "did my keystore get used?" is
+    // answerable in the inspector without the key ever leaving main.
+    ...(tls.clientCertificate !== undefined
+      ? { clientCertificate: { subject: tls.clientCertificate.subject, issuer: tls.clientCertificate.issuer } }
+      : {}),
   };
 }
 

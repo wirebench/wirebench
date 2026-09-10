@@ -10,6 +10,7 @@ export type CommandId =
   | 'view.showExplorer'
   | 'view.showSearch'
   | 'view.showHistory'
+  | 'view.showWss'
   | 'view.showSettings'
   | 'view.toggleTheme'
   | 'preferences.open'

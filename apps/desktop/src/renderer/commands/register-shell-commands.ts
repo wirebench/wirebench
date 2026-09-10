@@ -100,6 +100,14 @@ export function registerShellCommands(openPalette: () => void): void {
     },
   });
   registerCommand({
+    id: 'view.showWss',
+    label: 'Show WS-Security',
+    category: 'View',
+    run: () => {
+      ui().showSidebarView('wss');
+    },
+  });
+  registerCommand({
     id: 'view.showSettings',
     label: 'Show Settings',
     category: 'View',
