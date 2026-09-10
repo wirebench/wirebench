@@ -1,3 +1,4 @@
+import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
@@ -147,6 +148,36 @@ export function registerShellCommands(openPalette: () => void): void {
     when: () => useProjectStore.getState().project !== null,
     run: () => {
       void projectActions.close();
+    },
+  });
+
+  registerCommand({
+    id: 'env.switch',
+    label: 'Switch Environment…',
+    category: 'Environment',
+    when: () => useProjectStore.getState().project !== null,
+    // With no argument this opens the status bar's dropdown, which is where the choice lives.
+    // The palette can also pass an environment name or id to switch straight to it.
+    run: (_context, arg) => {
+      if (typeof arg === 'string') {
+        const { environments } = useProjectStore.getState();
+        const match = environments.find((env) => env.id === arg || env.name === arg);
+        if (match !== undefined) {
+          void useProjectStore.getState().setActiveEnvironment(match.id);
+          return;
+        }
+      }
+      ui().setEnvSwitcherOpen(true);
+    },
+  });
+  registerCommand({
+    id: 'env.next',
+    label: 'Next Environment',
+    category: 'Environment',
+    shortcut: 'Mod+Alt+E',
+    when: () => useProjectStore.getState().environments.length > 0,
+    run: () => {
+      void cycleEnvironment(1);
     },
   });
 

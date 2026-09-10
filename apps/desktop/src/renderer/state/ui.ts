@@ -33,6 +33,8 @@ export interface UiStore extends UiSnapshot {
   readonly confirmRemoveInterfaceId: string | undefined;
   /** Request id pending a delete confirmation, from either the context menu or a command. */
   readonly confirmDeleteRequestId: string | undefined;
+  /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
+  readonly envSwitcherOpen: boolean;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
   /** Opens (with a folder) or closes (with `undefined`) the New Project name prompt. */
@@ -40,6 +42,7 @@ export interface UiStore extends UiSnapshot {
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
+  readonly setEnvSwitcherOpen: (open: boolean) => void;
   readonly toggleSidebar: () => void;
   readonly toggleConsole: () => void;
   readonly toggleDetails: () => void;
@@ -75,6 +78,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     newProjectDir: undefined,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
+    envSwitcherOpen: false,
 
     setSelection: (selection) => {
       set({ selection });
@@ -93,6 +97,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     requestDeleteRequest: (requestId) => {
       set({ confirmDeleteRequestId: requestId });
+    },
+    setEnvSwitcherOpen: (open) => {
+      set({ envSwitcherOpen: open });
     },
 
     toggleSidebar: () =>

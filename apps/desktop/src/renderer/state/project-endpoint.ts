@@ -60,3 +60,11 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
 export function selectRequestEndpointUrl(state: ProjectSnapshot, requestId: string): string | undefined {
   return selectRequestEndpoint(state, requestId).url;
 }
+
+/**
+ * Just the source from {@link selectRequestEndpoint}. Like {@link selectRequestEndpointUrl},
+ * it returns a primitive so it is safe inside a `useProjectStore(...)` selector.
+ */
+export function selectRequestEndpointSource(state: ProjectSnapshot, requestId: string): EndpointSourceWire {
+  return selectRequestEndpoint(state, requestId).source;
+}

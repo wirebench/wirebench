@@ -3,10 +3,12 @@ import { create } from 'zustand';
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'welcome';
+  readonly kind: 'request' | 'welcome' | 'environment';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
+  /** Set when `kind` is `'environment'`: the environment this tab edits. */
+  readonly environmentId?: string;
 }
 
 /** The editors store: open tabs plus which one is active. */

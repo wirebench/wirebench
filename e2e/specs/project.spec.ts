@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /** Absolute path of the single `.request.yaml` under an operation folder, whatever it is named. */
@@ -48,24 +49,12 @@ test.describe('projects on disk', () => {
     await expect(launched.window.getByTestId('welcome-screen')).toBeVisible();
     await expect(launched.window.getByText('No projects yet.')).toBeVisible();
 
-    await launched.window.getByTestId('welcome-new-project').click();
-    const nameField = launched.window.getByTestId('new-project-name');
-    await expect(nameField).toBeVisible();
-    await expect(nameField).toHaveValue('Calculator Project');
-    await launched.window.getByTestId('new-project-create').click();
-
-    await expect(launched.window.getByTestId('title-bar')).toContainText('Calculator Project');
-
-    await launched.window.getByTestId('welcome-import').click();
-    await launched.window.getByTestId('import-url-input').fill(server.wsdlUrl);
-    await launched.window.getByTestId('import-submit').click();
-
-    const addRow = launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add' }).first();
-    await expect(addRow).toBeVisible({ timeout: 20_000 });
     // The import writes one `Request 1` per operation, straight to disk.
+    await createProjectWithCalculator(launched.window, server, { expectProjectName: 'Calculator Project' });
+    await expect(launched.window.getByTestId('title-bar')).toContainText('Calculator Project');
     await expect(
-      launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first(),
-    ).toBeVisible({ timeout: 20_000 });
+      launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add' }).first(),
+    ).toBeVisible();
 
     await launched.close();
     launched = undefined;
@@ -78,13 +67,7 @@ test.describe('projects on disk', () => {
 
     await recent.click();
 
-    const restored = launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
-    await expect(restored).toBeVisible({ timeout: 20_000 });
-    // The context menu is the stable way to open a request (react-arborist owns double-click).
-    await restored.click({ button: 'right' });
-    await launched.window.getByRole('menuitem', { name: 'Open', exact: true }).click();
-
-    await expect(launched.window.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
+    await openFirstRequest(launched.window);
     // The envelope is the one saved on disk, not one regenerated from the network.
     await expect(launched.window.getByTestId('request-editor')).toContainText('intA', { timeout: 20_000 });
   });
@@ -95,16 +78,8 @@ test.describe('projects on disk', () => {
     projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Watched');
 
     launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
-    await launched.window.getByTestId('welcome-new-project').click();
-    await launched.window.getByTestId('new-project-create').click();
+    await createProjectWithCalculator(launched.window, server);
     await expect(launched.window.getByTestId('title-bar')).toContainText('Watched');
-
-    await launched.window.getByTestId('welcome-import').click();
-    await launched.window.getByTestId('import-url-input').fill(server.wsdlUrl);
-    await launched.window.getByTestId('import-submit').click();
-    await expect(
-      launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first(),
-    ).toBeVisible({ timeout: 20_000 });
 
     // Writes the app just made are suppressed for `SELF_WRITE_TTL_MS` (2s) so an autosave
     // never prompts the user to reload their own work; wait that out before editing by hand.

@@ -3,15 +3,16 @@ import { IconButton } from '../components/icon-button.js';
 import { Tabs } from '../components/tabs.js';
 import { HttpLog } from '../features/console/http-log.js';
 import { ProblemsView } from '../features/problems/problems-view.js';
+import { useProblemsStore } from '../state/problems.js';
 import type { ConsoleTab } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
-const TABS = [
+const TABS: readonly { id: ConsoleTab; label: string }[] = [
   { id: 'http-log', label: 'HTTP Log' },
   { id: 'problems', label: 'Problems' },
   { id: 'ws-i-report', label: 'WS-I Report' },
   { id: 'errors', label: 'Errors' },
-] as const satisfies readonly { id: ConsoleTab; label: string }[];
+];
 
 const EMPTY_COPY: Readonly<Record<ConsoleTab, string>> = {
   'http-log': 'Sent requests appear here with their raw exchange and timings.',
@@ -25,6 +26,10 @@ export function ConsolePanel() {
   const activeTab = useUiStore((state) => state.console.activeTab);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const toggleConsole = useUiStore((state) => state.toggleConsole);
+  const problemCount = useProblemsStore((state) => state.items.length);
+  const tabs = TABS.map((tab) =>
+    tab.id === 'problems' && problemCount > 0 ? { ...tab, badge: String(problemCount) } : tab,
+  );
 
   return (
     <section
@@ -33,7 +38,7 @@ export function ConsolePanel() {
       className="flex h-full min-h-0 flex-col border-t border-hairline bg-surface-base"
     >
       <div className="flex h-row shrink-0 items-center justify-between border-b border-hairline pr-2">
-        <Tabs label="Console tabs" items={TABS} active={activeTab} onSelect={showConsoleTab} />
+        <Tabs label="Console tabs" items={tabs} active={activeTab} onSelect={showConsoleTab} />
         <IconButton label="Hide console" onClick={toggleConsole}>
           <X size={14} aria-hidden="true" />
         </IconButton>

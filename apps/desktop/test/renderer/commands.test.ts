@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import {
   getCommand,
@@ -106,5 +109,47 @@ describe('command registry', () => {
 
     expect(command?.shortcut).toBe('Mod+I');
     expect(command && 'run' in command).toBe(false);
+  });
+});
+
+describe('environment commands', () => {
+  beforeEach(() => {
+    resetCommands();
+    registerShellCommands(vi.fn());
+    useUiStore.setState({ envSwitcherOpen: false });
+  });
+
+  afterEach(() => {
+    useProjectStore.setState({ project: null, environments: [], activeEnvironmentId: undefined });
+  });
+
+  it('opens the switcher dropdown with no argument', async () => {
+    useProjectStore.setState({ project: {} as never, environments: [], activeEnvironmentId: undefined });
+    await runCommand('env.switch', context);
+    expect(useUiStore.getState().envSwitcherOpen).toBe(true);
+  });
+
+  it('switches straight to a named environment when the palette passes one', async () => {
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      project: {} as never,
+      environments: [{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }],
+      setActiveEnvironment,
+    });
+    await runCommand('env.switch', context, 'uat');
+    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+    expect(useUiStore.getState().envSwitcherOpen).toBe(false);
+  });
+
+  it('cycles to the next environment, and is unavailable without any', async () => {
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ environments: [], activeEnvironmentId: undefined, setActiveEnvironment });
+    expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
+
+    useProjectStore.setState({
+      environments: [{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }],
+    });
+    await runCommand('env.next', context);
+    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
   });
 });

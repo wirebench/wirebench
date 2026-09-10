@@ -1,7 +1,7 @@
 import { Send, Square } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { RequestDraft } from '../../state/project.js';
-import type { InterfaceSummary } from '../../../shared/wire-types.js';
+import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/wire-types.js';
 import { EndpointSelect } from './endpoint-select.js';
 
 export interface RequestToolbarProps {
@@ -9,6 +9,8 @@ export interface RequestToolbarProps {
   readonly summary: InterfaceSummary | undefined;
   /** The URL the request resolves to today (see `selectRequestEndpoint`), if any. */
   readonly endpoint: string | undefined;
+  /** Which rule chose {@link RequestToolbarProps.endpoint}; `environment` locks the field. */
+  readonly endpointSource?: EndpointSourceWire;
   readonly sending: boolean;
   readonly onSend: () => void;
   readonly onCancel: () => void;
@@ -22,6 +24,7 @@ export function RequestToolbar({
   draft,
   summary,
   endpoint,
+  endpointSource,
   sending,
   onSend,
   onCancel,
@@ -48,7 +51,32 @@ export function RequestToolbar({
         </Button>
       )}
 
-      <EndpointSelect summary={summary} bindingName={draft.bindingName} value={endpoint} onChange={onEndpointChange} />
+      {endpointSource === 'environment' ? (
+        // The active environment overrides this interface's address, so the request's own
+        // endpoint is not what will be used; show what will be, and where it came from.
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span
+            data-testid="endpoint-env-badge"
+            title="Overridden by the active environment"
+            className="shrink-0 rounded-sm bg-accent-muted px-1 text-xs text-fg-default"
+          >
+            env
+          </span>
+          <input
+            readOnly
+            aria-label="Endpoint (from the active environment)"
+            value={endpoint ?? ''}
+            className="h-row min-w-0 flex-1 rounded-md border border-hairline bg-surface-sunken px-2 font-mono text-sm text-fg-muted"
+          />
+        </div>
+      ) : (
+        <EndpointSelect
+          summary={summary}
+          bindingName={draft.bindingName}
+          value={endpoint}
+          onChange={onEndpointChange}
+        />
+      )}
 
       <div className="flex shrink-0 items-center gap-2 text-sm">
         <span className="font-mono text-fg-default">{draft.operationName}</span>

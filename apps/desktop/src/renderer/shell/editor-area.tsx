@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { EnvironmentEditor } from '../features/environments/environment-editor.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { WelcomeScreen } from '../features/welcome/welcome-screen.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -27,6 +28,7 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
   const activate = useEditorsStore((state) => state.activate);
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
+  const environments = useProjectStore((state) => state.environments);
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const showingWelcome = activeTab === undefined;
@@ -60,7 +62,11 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
             }`}
           >
             <button type="button" onClick={() => activate(tab.id)}>
-              {(tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ?? tab.title}
+              {(tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
+                (tab.environmentId !== undefined
+                  ? environments.find((environment) => environment.id === tab.environmentId)?.name
+                  : undefined) ??
+                tab.title}
             </button>
             <button
               type="button"
@@ -77,6 +83,8 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
       <div className="min-h-0 flex-1 overflow-hidden">
         {showingWelcome ? (
           <WelcomeScreen onImportDefinition={onImportDefinition} />
+        ) : activeTab.environmentId !== undefined ? (
+          <EnvironmentEditor environmentId={activeTab.environmentId} />
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />

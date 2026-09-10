@@ -1,3 +1,4 @@
+import { EnvironmentsSection } from '../features/environments/environments-section.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import type { SidebarView } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
@@ -46,7 +47,10 @@ export function Sidebar() {
         {copy.title}
       </h2>
       {view === 'explorer' ? (
-        <ExplorerView />
+        <>
+          <ExplorerView />
+          <EnvironmentsSection />
+        </>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
           <p className="text-md text-fg-muted">{copy.headline}</p>

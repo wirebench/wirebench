@@ -1,3 +1,4 @@
+import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { formatBytes } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
@@ -26,7 +27,7 @@ export function StatusBar() {
       className="flex h-status-bar shrink-0 items-center justify-between border-t border-hairline bg-surface-sunken px-3 text-xs text-fg-subtle"
     >
       <div className="flex items-center gap-3">
-        <span>no environment</span>
+        <EnvSwitcher />
         {saveLabel !== undefined && (
           <>
             <span aria-hidden="true" className="text-fg-faint">

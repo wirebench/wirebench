@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NodeApi, NodeRendererProps } from 'react-arborist';
 import { Tree } from 'react-arborist';
-import { FileDown, Folder, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
+import { Box, FileDown, Folder, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { IconButton } from '../../components/icon-button.js';
 import { useProjectStore } from '../../state/project.js';
@@ -117,6 +117,8 @@ export function ExplorerView() {
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
+  const projectSelected = useUiStore((state) => state.selection?.kind === 'project');
+  const projectName = useProjectStore((state) => state.project?.name);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
   const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
@@ -149,6 +151,25 @@ export function ExplorerView() {
           <RefreshCw size={14} aria-hidden="true" />
         </IconButton>
       </div>
+
+      {projectName !== undefined && (
+        // The project itself is not part of the interfaces tree (it owns no children), but it
+        // still needs a selectable row so the details panel can edit its properties.
+        <button
+          type="button"
+          data-testid="explorer-project-row"
+          aria-pressed={projectSelected}
+          onClick={() => {
+            setSelection({ kind: 'project', id: 'project' });
+          }}
+          className={`flex h-row shrink-0 items-center gap-1.5 px-2 text-left text-sm ${
+            projectSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
+          }`}
+        >
+          <Box size={13} aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{projectName}</span>
+        </button>
+      )}
 
       <div ref={containerRef} className="min-h-0 flex-1">
         {data.length === 0 ? (

@@ -60,3 +60,17 @@ describe('useEditorsStore', () => {
     expect(useEditorsStore.getState().activeId).toBe('a');
   });
 });
+
+describe('environment tabs', () => {
+  beforeEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+  });
+
+  it('opens an environment tab carrying its environment id', () => {
+    useEditorsStore.getState().open({ id: 'env:e1', kind: 'environment', title: 'uat', environmentId: 'e1' });
+    const [tab] = useEditorsStore.getState().tabs;
+    expect(tab?.kind).toBe('environment');
+    expect(tab?.environmentId).toBe('e1');
+    expect(useEditorsStore.getState().activeId).toBe('env:e1');
+  });
+});

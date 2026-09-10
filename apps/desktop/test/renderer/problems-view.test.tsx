@@ -1,0 +1,85 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ProblemsView } from '../../src/renderer/features/problems/problems-view.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import type { RequestWire } from '../../src/shared/wire-types.js';
+
+const request = {
+  id: 'req-1',
+  interfaceId: 'iface-1',
+  bindingName: '{tns}B',
+  operationName: 'Add',
+  name: 'Request 1',
+  envelopeXml: '<Envelope/>',
+  soapVersion: '1.1',
+  headers: [],
+  order: 0,
+} as unknown as RequestWire;
+
+describe('ProblemsView', () => {
+  beforeEach(() => {
+    useProblemsStore.setState({ items: [] });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useProjectStore.setState({ requests: { 'req-1': request } });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useProjectStore.setState({ requests: {} });
+  });
+
+  it('says so when there is nothing to report', () => {
+    render(<ProblemsView />);
+    expect(screen.getByText('No problems found.')).toBeDefined();
+  });
+
+  it('badges each problem with its source and severity', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'iface-1',
+          source: 'import',
+          severity: 'error',
+          problem: { code: 'x', message: 'Schema not found' },
+        },
+        {
+          groupId: 'expansion:req-1',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'expansion-unknown', message: 'Unresolved property ${#Env#missing} in envelopeXml' },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    const rows = screen.getAllByTestId('problem-row');
+    expect(rows[0]?.textContent).toContain('import');
+    expect(rows[1]?.textContent).toContain('expansion');
+    expect(rows[1]?.textContent).toContain('${#Env#missing}');
+    expect(screen.getByLabelText('warning')).toBeDefined();
+    expect(screen.getByLabelText('error')).toBeDefined();
+  });
+
+  it('opens the offending request when an expansion problem is clicked', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'expansion:req-1',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'expansion-unknown', message: 'Unresolved property ${#Env#missing} in envelopeXml' },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    fireEvent.click(screen.getByTestId('problem-row'));
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
+    ]);
+  });
+});
