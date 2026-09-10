@@ -118,12 +118,18 @@ export async function ntlmHandshake(
       return { http: first, attempts: 1, challenged: true, durationMs };
     }
 
-    // Leg 2: the Type 1 negotiate message; the server answers with its Type 2 challenge.
+    // Leg 2: the Type 1 negotiate message, bodyless. Strip any content-encoding/length
+    // that described leg 1's body — a gzip-declared zero-length body can trip up a strict
+    // server — the server answers with its Type 2 challenge.
     const type1 = createType1({
       ...(credentials.domain !== undefined ? { domain: credentials.domain } : {}),
       ...(credentials.workstation !== undefined ? { workstation: credentials.workstation } : {}),
     });
-    const second = await leg({ ...request.headers, Authorization: encodeNtlmAuthorization(type1) }, EMPTY_BODY);
+    const type1Headers = withoutHeader(
+      withoutHeader({ ...request.headers, Authorization: encodeNtlmAuthorization(type1) }, 'content-encoding'),
+      'content-length',
+    );
+    const second = await leg(type1Headers, EMPTY_BODY);
     const challengeBytes = parseNtlmChallengeHeader(headerValue(second.headers, 'www-authenticate'));
     if (challengeBytes === undefined || remaining() <= 0) {
       return { http: second, attempts: 2, challenged: true, durationMs };

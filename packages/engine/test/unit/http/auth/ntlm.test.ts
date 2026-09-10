@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WirebenchError } from '../../../../src/errors.js';
 import {
   AV_IDS,
   DEFAULT_NEGOTIATE_FLAGS,
@@ -191,6 +192,17 @@ describe('parseType2', () => {
     new DataView(wrongType.buffer).setUint32(8, 1, true);
     expect(() => parseType2(wrongType)).toThrow(/Type 2/);
   });
+
+  it('throws a WirebenchError with a stable code, per the engine error contract', () => {
+    expect(() => parseType2(bytes('00'.repeat(40)))).toThrow(WirebenchError);
+    try {
+      parseType2(bytes('00'.repeat(40)));
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(WirebenchError);
+      expect((error as WirebenchError).code).toBe('ntlm-invalid-message');
+    }
+  });
 });
 
 describe('createType3 / parseType3', () => {
@@ -283,6 +295,69 @@ describe('createType3 / parseType3', () => {
   it('rejects a non-Type-3 payload', () => {
     expect(() => parseType3(bytes('00'.repeat(72)))).toThrow(/not an NTLM message/);
     expect(() => parseType3(createType1())).toThrow(/not an NTLM message/);
+  });
+
+  it('throws a WirebenchError with a stable code, per the engine error contract', () => {
+    expect(() => parseType3(bytes('00'.repeat(72)))).toThrow(WirebenchError);
+    try {
+      parseType3(createType1());
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(WirebenchError);
+      expect((error as WirebenchError).code).toBe('ntlm-invalid-message');
+    }
+  });
+
+  it('OEM-encodes domain/user/workstation and drops NEGOTIATE_UNICODE when the server did not negotiate it', () => {
+    const oemType2 = parseType2(
+      buildType2({
+        targetName: 'Domain',
+        serverChallenge: V.serverChallenge,
+        targetInfo: V.targetInfo,
+        flags: (DEFAULT_NEGOTIATE_FLAGS & ~NTLM_FLAGS.NEGOTIATE_UNICODE) >>> 0,
+      }),
+    );
+    expect(oemType2.flags & NTLM_FLAGS.NEGOTIATE_UNICODE).toBe(0);
+
+    const result = createType3({
+      username: V.user,
+      password: V.password,
+      domain: V.domain,
+      workstation: 'CLIENT',
+      type2: oemType2,
+      clientChallenge: V.clientChallenge,
+      timestamp: V.timestamp,
+    });
+    const view = new DataView(result.message.buffer);
+    const flags = view.getUint32(60, true) >>> 0;
+    expect(flags & NTLM_FLAGS.NEGOTIATE_UNICODE).toBe(0);
+    expect(flags & NTLM_FLAGS.NEGOTIATE_OEM).toBeTruthy();
+
+    const parsed = parseType3(result.message);
+    expect(parsed.username).toBe('User');
+    expect(parsed.domain).toBe('Domain');
+    expect(parsed.workstation).toBe('CLIENT');
+  });
+
+  it('preserves AV-pair value bytes that only coincidentally start with two zero bytes (full 4-byte EOL match)', () => {
+    // A crafted, EOL-less target info whose only pair's value ends "00 00 01 02" — the old
+    // 2-byte check (`id` bytes only) mistook this for a trailing MsvAvEOL and truncated the
+    // real value bytes 01/02 away.
+    const craftedTargetInfo = bytes('0100' + '0400' + '00000102'); // id=NbComputerName, len=4, value=00 00 01 02
+    const craftedType2 = { ...type2, targetInfo: craftedTargetInfo };
+
+    const result = createType3({
+      username: V.user,
+      password: V.password,
+      type2: craftedType2,
+      clientChallenge: V.clientChallenge,
+      timestamp: V.timestamp,
+    });
+
+    const blob = result.ntChallengeResponse.slice(16);
+    const pairs = parseAvPairs(blob.slice(28));
+    const nbComputerName = pairs.find((pair) => pair.id === AV_IDS.MsvAvNbComputerName);
+    expect(hex(nbComputerName?.value ?? new Uint8Array())).toBe('00000102');
   });
 });
 

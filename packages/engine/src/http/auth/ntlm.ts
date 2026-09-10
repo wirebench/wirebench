@@ -9,6 +9,7 @@
  */
 
 import { createHmac } from 'node:crypto';
+import { WirebenchError } from '../../errors.js';
 import { md4 } from './md4.js';
 
 const SIGNATURE = 'NTLMSSP\0';
@@ -176,15 +177,15 @@ export interface Type2Message {
  * Parses a Type 2 CHALLENGE message.
  *
  * @param bytes the raw message (already base64-decoded)
- * @throws Error when the signature or message type is not a Type 2 message
+ * @throws WirebenchError (`ntlm-invalid-message`) when the signature or message type is not a Type 2 message
  */
 export function parseType2(bytes: Uint8Array): Type2Message {
   if (!hasSignature(bytes) || bytes.length < 32) {
-    throw new Error('not an NTLM message');
+    throw new WirebenchError('ntlm-invalid-message', 'not an NTLM message');
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint32(8, true) !== 2) {
-    throw new Error('not an NTLM Type 2 message');
+    throw new WirebenchError('ntlm-invalid-message', 'not an NTLM Type 2 message');
   }
   const flags = view.getUint32(20, true);
   const targetNameBytes = readField(bytes, view, 12);
@@ -256,9 +257,15 @@ export function lmv2Response(
 
 /** Appends an `MsvAvFlags` AV pair to a target-info block whose `MsvAvEOL` terminator is replaced. */
 function withAvPairs(targetInfo: Uint8Array, extra: readonly { readonly id: number; readonly value: Uint8Array }[]) {
-  // Strip the trailing EOL pair (id 0, len 0) so the extra pairs land before it.
+  // Strip the trailing EOL pair (id 0, len 0 — all 4 bytes zero) so the extra pairs land before it.
   let end = targetInfo.length;
-  if (end >= 4 && targetInfo[end - 4] === 0 && targetInfo[end - 3] === 0) {
+  if (
+    end >= 4 &&
+    targetInfo[end - 4] === 0 &&
+    targetInfo[end - 3] === 0 &&
+    targetInfo[end - 2] === 0 &&
+    targetInfo[end - 1] === 0
+  ) {
     end -= 4;
   }
   const parts: Uint8Array[] = [targetInfo.slice(0, end)];
@@ -324,12 +331,18 @@ export interface Type3Result {
  *
  * The password is used only to derive `NTOWFv2` and never appears in the message.
  *
+ * When the server's Type 2 did not negotiate `NEGOTIATE_UNICODE`, the domain/user/workstation
+ * are OEM- (latin1-) encoded instead of UTF-16LE, and the Type 3's own flags clear the Unicode
+ * bit and set `NEGOTIATE_OEM`, matching what the server asked for.
+ *
  * @param params the credentials, the parsed challenge and the injectable nonce/clock
  */
 export function createType3(params: Type3Params): Type3Result {
   const domain = params.domain ?? '';
   const workstation = params.workstation ?? '';
   const responseKeyNt = ntowfv2(params.username, domain, params.password);
+  const useUnicode = (params.type2.flags & NTLM_FLAGS.NEGOTIATE_UNICODE) !== 0;
+  const encodeName = useUnicode ? utf16le : oem;
 
   const serverPairs = parseAvPairs(params.type2.targetInfo);
   const hasTimestamp = serverPairs.some((pair) => pair.id === AV_IDS.MsvAvTimestamp);
@@ -346,9 +359,9 @@ export function createType3(params: Type3Params): Type3Result {
   const ntChallengeResponse = concat([ntProofStr, blob]);
   const lmChallengeResponse = lmv2Response(responseKeyNt, params.type2.serverChallenge, params.clientChallenge);
 
-  const domainBytes = utf16le(domain);
-  const userBytes = utf16le(params.username);
-  const workstationBytes = utf16le(workstation);
+  const domainBytes = encodeName(domain);
+  const userBytes = encodeName(params.username);
+  const workstationBytes = encodeName(workstation);
   // 8 signature + 4 type + 6 * 8 field descriptors + 4 flags + 8 version. No MIC.
   const headerLength = 72;
   const parts = [lmChallengeResponse, ntChallengeResponse, domainBytes, userBytes, workstationBytes];
@@ -364,7 +377,12 @@ export function createType3(params: Type3Params): Type3Result {
   }
   // EncryptedRandomSessionKey: empty, since no key exchange is negotiated.
   writeField(view, 52, 0, offset);
-  view.setUint32(60, DEFAULT_NEGOTIATE_FLAGS, true);
+  let responseFlags = DEFAULT_NEGOTIATE_FLAGS;
+  if (!useUnicode) {
+    responseFlags = (responseFlags & ~NTLM_FLAGS.NEGOTIATE_UNICODE) >>> 0;
+    responseFlags = (responseFlags | NTLM_FLAGS.NEGOTIATE_OEM) >>> 0;
+  }
+  view.setUint32(60, responseFlags, true);
   message.set(VERSION_BLOCK, 64);
 
   return { message, ntProofStr, ntChallengeResponse, lmChallengeResponse, responseKeyNt };
@@ -385,15 +403,15 @@ export interface Type3Message {
  * response independently of {@link createType3}.
  *
  * @param bytes the raw message (already base64-decoded)
- * @throws Error when the signature or message type is not a Type 3 message
+ * @throws WirebenchError (`ntlm-invalid-message`) when the signature or message type is not a Type 3 message
  */
 export function parseType3(bytes: Uint8Array): Type3Message {
   if (!hasSignature(bytes) || bytes.length < 64) {
-    throw new Error('not an NTLM message');
+    throw new WirebenchError('ntlm-invalid-message', 'not an NTLM message');
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint32(8, true) !== 3) {
-    throw new Error('not an NTLM Type 3 message');
+    throw new WirebenchError('ntlm-invalid-message', 'not an NTLM Type 3 message');
   }
   const flags = view.getUint32(60, true);
   const decode = (field: Uint8Array): string =>

@@ -83,6 +83,25 @@ describe('NTLM handshake over HTTP', () => {
     expect(rawRequest).toContain('<Ping/>');
   });
 
+  it('strips content-encoding/content-length from the bodyless leg 2 when the body is gzipped', async () => {
+    ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
+
+    await sendSoapRequest({
+      endpoint: ntlm.url,
+      envelopeXml: ENVELOPE,
+      soapVersion: '1.1',
+      soapAction: 'Ping',
+      auth: CREDENTIALS,
+      compressBody: 'gzip',
+      timeoutMs: 10_000,
+    });
+
+    expect(ntlm.requests).toHaveLength(3);
+    expect(ntlm.requests[0]?.contentEncoding).toBe('gzip');
+    expect(ntlm.requests[1]?.contentEncoding).toBeUndefined();
+    expect(ntlm.requests[2]?.contentEncoding).toBe('gzip');
+  });
+
   it('returns the server 401 as a normal exchange when the password is wrong', async () => {
     ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
 

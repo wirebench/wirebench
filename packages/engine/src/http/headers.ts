@@ -34,6 +34,16 @@ export function setHeader(headers: Record<string, string>, name: string, value: 
   headers[name] = value;
 }
 
+/** Returns a copy of `headers` with `name` removed, case-insensitively. */
+export function withoutHeader(headers: Readonly<Record<string, string>>, name: string): Record<string, string> {
+  const lower = name.toLowerCase();
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== lower) result[key] = value;
+  }
+  return result;
+}
+
 /** Looks up a header case-insensitively. */
 export function headerValue(headers: Readonly<Record<string, string>>, name: string): string | undefined {
   const lower = name.toLowerCase();

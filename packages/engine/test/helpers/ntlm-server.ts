@@ -28,6 +28,7 @@ export interface NtlmRequestRecord {
   readonly socketId: number;
   readonly contentLength: number;
   readonly authorization: string | undefined;
+  readonly contentEncoding: string | undefined;
 }
 
 /** Handle to a running {@link startNtlmServer}. */
@@ -234,12 +235,14 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
     return id;
   };
 
-  let pendingLeg: 1 | 2 | 3 = 1;
+  // Keyed by socket so concurrent handshakes on different connections cannot mislabel each
+  // other's legs — NTLM state (and so leg tracking) is per-connection.
+  const pendingLegs = new WeakMap<Socket, 1 | 2 | 3>();
   const authenticator = createNtlmAuthenticator(account, {
     ...(options.advertiseNegotiate !== undefined ? { advertiseNegotiate: options.advertiseNegotiate } : {}),
     ...(options.delayLeg2Ms !== undefined ? { delayLeg2Ms: options.delayLeg2Ms } : {}),
-    onLeg: (leg) => {
-      pendingLeg = leg;
+    onLeg: (leg, req) => {
+      pendingLegs.set(req.socket, leg);
     },
   });
 
@@ -250,7 +253,13 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
     req.on('end', () => {
       const body = Buffer.concat(chunks);
       const record = (leg: 1 | 2 | 3): void => {
-        requests.push({ leg, socketId, contentLength: body.length, authorization: req.headers.authorization });
+        requests.push({
+          leg,
+          socketId,
+          contentLength: body.length,
+          authorization: req.headers.authorization,
+          contentEncoding: req.headers['content-encoding'],
+        });
       };
 
       if (options.noAuthRequired === true) {
@@ -261,7 +270,7 @@ export async function startNtlmServer(options: NtlmServerOptions): Promise<NtlmS
       }
 
       const outcome = authenticator.handle(req, res);
-      record(pendingLeg);
+      record(pendingLegs.get(req.socket) ?? 1);
       if (outcome !== 'authenticated') return;
       res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml', 'x-auth-scheme': 'ntlm' });
       res.end(body);
