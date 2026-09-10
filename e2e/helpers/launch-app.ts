@@ -56,6 +56,10 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
 
     const window = await app.firstWindow();
     window.on('console', (message) => {
+      if (process.env['WIREBENCH_E2E_DEBUG_CONSOLE'] === '1') {
+        // Every renderer console line with its source, for diagnosing a failing console gate.
+        console.log(`[renderer:${message.type()}] ${message.text()} @ ${JSON.stringify(message.location())}`);
+      }
       if (message.type() === 'error') {
         consoleErrors.push(message.text());
       }
