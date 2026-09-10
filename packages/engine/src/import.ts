@@ -5,12 +5,13 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { HttpError, WsdlParseError } from './errors.js';
+import { HttpError, ProjectError, WsdlParseError } from './errors.js';
 import { summarizeOperations } from './operations.js';
-import type { ImportOptions, ImportProblem, ImportResult, ImportSource } from './types.js';
+import type { ImportCacheOptions, ImportOptions, ImportProblem, ImportResult, ImportSource } from './types.js';
+import { readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
 import { createDefaultFetchDocument } from './wsdl/fetch.js';
 import { parseWsdlBundle } from './wsdl/merge.js';
-import type { DefinitionSource, FetchDocument } from './wsdl/resolver.js';
+import type { DefinitionBundle, DefinitionSource, FetchDocument } from './wsdl/resolver.js';
 import { resolveDefinition } from './wsdl/resolver.js';
 import { buildSchemaSet } from './xsd/schema-set.js';
 
@@ -55,6 +56,45 @@ function withBasicAuth(fetchDocument: FetchDocument, auth: { username: string; p
 }
 
 /**
+ * Resolves the definition per `cache.mode`: `'prefer-cache'` reads the cache
+ * with no network access, falling back to `resolveDefinition` (and reporting
+ * a problem) if the cache is missing or corrupt; `'refresh'` always resolves
+ * from the network, then (re)writes the cache; `'none'`/absent behaves as
+ * before, resolving from the network without touching any cache.
+ */
+async function resolveWithCache(
+  definitionSource: DefinitionSource,
+  fetchDocument: FetchDocument,
+  signal: AbortSignal | undefined,
+  cache: ImportCacheOptions | undefined,
+  cacheProblems: ImportProblem[],
+): Promise<{ bundle: DefinitionBundle; fromCache: boolean }> {
+  if (cache !== undefined && cache.mode === 'prefer-cache') {
+    try {
+      const bundle = await readDefinitionCache(cache.dir);
+      return { bundle, fromCache: true };
+    } catch (error) {
+      if (error instanceof ProjectError) {
+        cacheProblems.push({ source: 'resolve', code: error.code, message: error.message });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  const bundle = await resolveDefinition(definitionSource, {
+    fetchDocument,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+  if (cache !== undefined && cache.mode === 'refresh') {
+    await writeDefinitionCache(bundle, cache.dir);
+  }
+
+  return { bundle, fromCache: false };
+}
+
+/**
  * Imports a WSDL definition from a URL, file path, or inline text: resolves
  * its full import graph, parses the merged WSDL, compiles the schema set,
  * and summarizes its operations for a picker UI.
@@ -65,7 +105,7 @@ function withBasicAuth(fetchDocument: FetchDocument, auth: { username: string; p
  * fetched at all.
  *
  * @param source where the WSDL comes from
- * @param options fetch override, Basic auth for fetching, abort signal, progress callback
+ * @param options fetch override, Basic auth for fetching, abort signal, progress callback, definition cache
  */
 export async function importDefinition(source: ImportSource, options?: ImportOptions): Promise<ImportResult> {
   const signal = options?.signal;
@@ -74,10 +114,14 @@ export async function importDefinition(source: ImportSource, options?: ImportOpt
   const definitionSource = toDefinitionSource(source);
 
   options?.onProgress?.({ phase: 'fetch', location: definitionSource.location });
-  const bundle = await resolveDefinition(definitionSource, {
+  const cacheProblems: ImportProblem[] = [];
+  const { bundle, fromCache } = await resolveWithCache(
+    definitionSource,
     fetchDocument,
-    ...(signal !== undefined ? { signal } : {}),
-  });
+    signal,
+    options?.cache,
+    cacheProblems,
+  );
 
   options?.onProgress?.({ phase: 'parse' });
   const definition = parseWsdlBundle(bundle);
@@ -86,6 +130,7 @@ export async function importDefinition(source: ImportSource, options?: ImportOpt
   const schemaSet = buildSchemaSet(bundle);
 
   const problems: ImportProblem[] = [
+    ...cacheProblems,
     ...bundle.problems.map((p): ImportProblem => ({ source: 'resolve', ...p })),
     ...definition.problems.map((p): ImportProblem => ({ source: 'wsdl', ...p })),
     ...schemaSet.problems.map((p): ImportProblem => ({ source: 'schema', ...p })),
@@ -95,5 +140,5 @@ export async function importDefinition(source: ImportSource, options?: ImportOpt
 
   options?.onProgress?.({ phase: 'done' });
 
-  return { definition, bundle, schemaSet, problems, operations };
+  return { definition, bundle, schemaSet, problems, operations, ...(fromCache ? { fromCache: true } : {}) };
 }

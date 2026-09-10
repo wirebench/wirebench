@@ -147,10 +147,16 @@ export function interfaceFile(root: string, interfaceSlug: string): string {
   return join(interfaceDir(root, interfaceSlug), 'interface.yaml');
 }
 
-/** Absolute path of the (task-18-owned) definition cache directory of an interface. */
+/** Absolute path of an interface's definition cache directory (`interfaces/<slug>/definition/`). */
 export function definitionDir(root: string, interfaceSlug: string): string {
   return join(interfaceDir(root, interfaceSlug), DEFINITION_DIR);
 }
+
+/**
+ * Alias of {@link definitionDir} under the name the desktop facade (Task 21)
+ * calls it by: the directory passed as `cache.dir` to `importDefinition`.
+ */
+export const definitionCacheDir = definitionDir;
 
 /** Absolute path of an operation's directory. */
 export function operationDir(root: string, interfaceSlug: string, operationSlug: string): string {

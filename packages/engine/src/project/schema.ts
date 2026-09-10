@@ -158,6 +158,32 @@ export const keystoresFileSchema = z.looseObject({
   keystores: z.array(z.looseObject({ id: nonEmpty, name: z.string() })),
 });
 
+/** One document entry inside `interfaces/<slug>/definition/manifest.yaml`. */
+const definitionCacheDocumentSchema = z.looseObject({
+  file: nonEmpty,
+  location: nonEmpty,
+  requestedLocation: z.string().optional(),
+  kind: z.enum(['wsdl', 'xsd']),
+  sha256: nonEmpty,
+  bytes: z.number().int().nonnegative(),
+  importedBy: z.string().optional(),
+  namespace: z.string().optional(),
+  chameleonFor: z.string().optional(),
+});
+
+/** `interfaces/<slug>/definition/manifest.yaml`. */
+export const definitionCacheManifestSchema = z.looseObject({
+  formatVersion: z.literal(1),
+  rootLocation: nonEmpty,
+  fetchedAt: nonEmpty,
+  documents: z.array(definitionCacheDocumentSchema),
+});
+
+/** The definition cache manifest as persisted. */
+export type DefinitionCacheManifest = z.infer<typeof definitionCacheManifestSchema>;
+/** One document entry inside a definition cache manifest. */
+export type DefinitionCacheDocument = z.infer<typeof definitionCacheDocumentSchema>;
+
 /** The manifest document as persisted. */
 export type ManifestFile = z.infer<typeof manifestSchema>;
 /** An interface document as persisted. */

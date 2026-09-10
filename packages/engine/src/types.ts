@@ -31,6 +31,19 @@ export type ImportProgress =
   | { readonly phase: 'schema' }
   | { readonly phase: 'done' };
 
+/**
+ * Definition-cache behaviour for `importDefinition`: `'prefer-cache'` resolves
+ * entirely from a valid cache with no network access (falling back to the
+ * network, with a problem reported, if the cache is missing or corrupt);
+ * `'refresh'` always resolves from the network and then (re)writes the
+ * cache; `'none'` ignores the cache entirely.
+ */
+export interface ImportCacheOptions {
+  /** Absolute path of the interface's `definition/` directory (see `definitionCacheDir`). */
+  readonly dir: string;
+  readonly mode: 'prefer-cache' | 'refresh' | 'none';
+}
+
 /** Options accepted by `importDefinition`. */
 export interface ImportOptions {
   /** Overrides the default `file://`/`http(s)://` fetcher, e.g. for tests. */
@@ -39,6 +52,8 @@ export interface ImportOptions {
   readonly auth?: { readonly username: string; readonly password: string };
   readonly signal?: AbortSignal;
   readonly onProgress?: (event: ImportProgress) => void;
+  /** Definition-cache behaviour; see {@link ImportCacheOptions}. Omitted/absent means no caching. */
+  readonly cache?: ImportCacheOptions;
 }
 
 /** A non-fatal problem encountered while importing a definition, tagged by the stage that raised it. */
@@ -69,6 +84,8 @@ export interface ImportResult {
   readonly schemaSet: SchemaSet;
   readonly problems: readonly ImportProblem[];
   readonly operations: readonly OperationSummary[];
+  /** True when this result was resolved entirely from the definition cache, with no network access. */
+  readonly fromCache?: boolean;
 }
 
 /** Input to `sendSoapRequest`: an already-built envelope plus transport knobs. */

@@ -56,6 +56,12 @@ export type {
   ResolveProblem,
 } from './wsdl/resolver.js';
 export { createDefaultFetchDocument } from './wsdl/fetch.js';
+export { assignFileNames } from './wsdl/cache-naming.js';
+export type { NamedDocument } from './wsdl/cache-naming.js';
+export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
+export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
+export { exportDefinition } from './wsdl/export-definition.js';
+export type { ExportDefinitionOptions, ExportedFile, ExportResult } from './wsdl/export-definition.js';
 
 export { buildSchemaSet } from './xsd/schema-set.js';
 export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';
@@ -126,6 +132,7 @@ export { sendSoapRequest } from './send.js';
 export { generateEmptyRequest, generateRequest } from './generate.js';
 export { summarizeOperations } from './operations.js';
 export type {
+  ImportCacheOptions,
   ImportOptions,
   ImportProblem,
   ImportProgress,
@@ -171,6 +178,7 @@ export {
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
   WSS_DIR,
+  definitionCacheDir,
   definitionDir,
   environmentFile,
   interfaceDir,
@@ -185,6 +193,7 @@ export {
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
 export {
+  definitionCacheManifestSchema,
   environmentFileSchema,
   interfaceFileSchema,
   keystoresFileSchema,
@@ -194,7 +203,14 @@ export {
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from './project/schema.js';
-export type { EnvironmentFile, InterfaceFile, ManifestFile, RequestFile } from './project/schema.js';
+export type {
+  DefinitionCacheDocument,
+  DefinitionCacheManifest,
+  EnvironmentFile,
+  InterfaceFile,
+  ManifestFile,
+  RequestFile,
+} from './project/schema.js';
 export { migrate } from './project/migrate.js';
 export { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
