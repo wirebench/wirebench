@@ -97,6 +97,11 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       inspect: fail('keystores.inspect'),
       pickFile: fail('keystores.pickFile'),
     },
+    wss: {
+      previewOutgoing: fail('wss.previewOutgoing'),
+      insertEntry: fail('wss.insertEntry'),
+      removeOutgoing: fail('wss.removeOutgoing'),
+    },
     history: {
       list: fail('history.list'),
       get: fail('history.get'),

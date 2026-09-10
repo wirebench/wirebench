@@ -36,6 +36,7 @@ import {
   updateEnvironment,
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
+import { addWssOutgoing, removeWssOutgoing, updateWssOutgoing } from './project-wss-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
 
@@ -79,6 +80,7 @@ export interface MutationResult {
   readonly createdEnvironmentId?: string;
   readonly createdAttachmentId?: string;
   readonly createdKeystoreId?: string;
+  readonly createdWssOutgoingId?: string;
 }
 
 function notFound(what: string, id: string): never {
@@ -205,7 +207,9 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
   const name = patch.name ?? request.name;
   const slug = patch.name === undefined || patch.name === request.name ? request.slug : uniqueSlug(name, takenSlugs);
 
-  const optional = <K extends 'endpointId' | 'endpointUrl' | 'soapAction' | 'description'>(
+  const optional = <
+    K extends 'endpointId' | 'endpointUrl' | 'soapAction' | 'description' | 'wssOutgoingRef' | 'wssIncomingRef',
+  >(
     key: K,
   ): Partial<Pick<RequestDef, K>> => {
     const value = patch[key];
@@ -230,8 +234,8 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     attachments: request.attachments,
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
     ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
-    ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),
-    ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
+    ...optional('wssOutgoingRef'),
+    ...optional('wssIncomingRef'),
     properties: request.properties,
     envelopeXml: patch.envelopeXml ?? request.envelopeXml,
   };
@@ -718,6 +722,17 @@ export async function applyChange(
 
     case 'remove-keystore':
       return { project: removeKeystore(project, change.keystoreId) };
+
+    case 'add-wss-outgoing': {
+      const added = addWssOutgoing(project, { ...(change.name !== undefined ? { name: change.name } : {}) });
+      return { project: added.project, createdWssOutgoingId: added.configId };
+    }
+
+    case 'update-wss-outgoing':
+      return { project: updateWssOutgoing(project, change.configId, change.patch) };
+
+    case 'remove-wss-outgoing':
+      return { project: removeWssOutgoing(project, change.configId) };
   }
 }
 

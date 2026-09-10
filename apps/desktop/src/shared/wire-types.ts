@@ -678,6 +678,10 @@ export const requestWireSchema = z.object({
   description: z.string().optional(),
   /** Read-only until Task 41 wires up editing; `enabled` is the only field the Details grid shows. */
   wsa: z.object({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() }).optional(),
+  /** Id of a `wss/outgoing/<id>.yaml` configuration applied to the envelope at send time. */
+  wssOutgoingRef: z.string().optional(),
+  /** Id of a `wss/incoming/<id>.yaml` configuration used to verify/decrypt the response. */
+  wssIncomingRef: z.string().optional(),
   /**
    * `.default([])` is parse-time tolerance for a `ProjectWire` snapshot built by an older build
    * (or by a stub in a test) that omits the field; `z.infer` still yields a required array. It
@@ -714,6 +718,60 @@ export type ProjectProblemWire = z.infer<typeof projectProblemSchema>;
 
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 /**
+ * One entry of an outgoing WS-Security configuration, as the renderer edits it. A password is
+ * only ever a `passwordRef`: the value itself lives in the secret store and is resolved in main.
+ */
+export const wssEntryWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('timestamp'),
+    /** Seconds between `Created` and `Expires`; `0` omits `Expires`. */
+    timeToLiveSeconds: z.number().int().nonnegative(),
+    millisecondPrecision: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal('username-token'),
+    username: z.string(),
+    passwordRef: z.string().optional(),
+    passwordType: z.enum(['text', 'digest', 'none']),
+    addNonce: z.boolean(),
+    addCreated: z.boolean(),
+  }),
+  /** Task 38 fills these in; today the editor can only show them as unsupported. */
+  z.object({ kind: z.literal('signature') }),
+  /** Task 39 fills these in. */
+  z.object({ kind: z.literal('encryption') }),
+]);
+export type WssEntryWire = z.infer<typeof wssEntryWireSchema>;
+
+/** One `wss/outgoing/<id>.yaml` configuration as the renderer mirrors it. */
+export const wssOutgoingWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  defaultAlias: z.string().optional(),
+  /** A `secretRef` for the default username-token password; never the password itself. */
+  defaultPasswordRef: z.string().optional(),
+  actor: z.string().optional(),
+  mustUnderstand: z.boolean(),
+  entries: z.array(wssEntryWireSchema),
+});
+export type WssOutgoingWire = z.infer<typeof wssOutgoingWireSchema>;
+
+/**
+ * The fields of an outgoing configuration the renderer may patch — the whole configuration
+ * minus its id. `null` clears an optional one; `entries` REPLACES the whole list, so reordering
+ * and removal are expressible.
+ */
+export const wssOutgoingPatchSchema = z.object({
+  name: z.string().optional(),
+  defaultAlias: z.string().nullable().optional(),
+  defaultPasswordRef: z.string().nullable().optional(),
+  actor: z.string().nullable().optional(),
+  mustUnderstand: z.boolean().optional(),
+  entries: z.array(wssEntryWireSchema).optional(),
+});
+export type WssOutgoingPatchWire = z.infer<typeof wssOutgoingPatchSchema>;
+
+/**
  * One `wss/keystores.yaml` entry as the renderer sees it. Deliberately never carries the
  * password, the private key or any certificate PEM — only the registry metadata; the material
  * itself stays in main (see `keystores.inspect` for the alias summaries).
@@ -746,6 +804,8 @@ export const projectWireSchema = z.object({
   settings: projectSettingsSchema,
   /** The project's client keystore registry; empty when it has none. */
   keystores: z.array(keystoreWireSchema),
+  /** The project's outgoing WS-Security configurations; empty when it has none. */
+  wssOutgoing: z.array(wssOutgoingWireSchema),
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
 
@@ -758,6 +818,10 @@ export const requestPatchSchema = z.object({
   headers: z.array(headerEntrySchema).optional(),
   soapAction: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
+  /** Id of a `wss/outgoing/<id>.yaml` configuration applied at send time; `null` clears it. */
+  wssOutgoingRef: z.string().nullable().optional(),
+  /** Id of a `wss/incoming/<id>.yaml` configuration; `null` clears it. */
+  wssIncomingRef: z.string().nullable().optional(),
 });
 export type RequestPatchWire = z.infer<typeof requestPatchSchema>;
 
@@ -883,6 +947,13 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     patch: keystorePatchSchema,
   }),
   z.object({ kind: z.literal('remove-keystore'), keystoreId: z.string() }),
+  z.object({ kind: z.literal('add-wss-outgoing'), name: z.string().optional() }),
+  z.object({
+    kind: z.literal('update-wss-outgoing'),
+    configId: z.string(),
+    patch: wssOutgoingPatchSchema,
+  }),
+  z.object({ kind: z.literal('remove-wss-outgoing'), configId: z.string() }),
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
@@ -906,6 +977,8 @@ export const projectMutateResponseSchema = z.object({
   createdAttachmentId: z.string().optional(),
   /** Set by `add-keystore`: the id of the keystore that was registered. */
   createdKeystoreId: z.string().optional(),
+  /** Set by `add-wss-outgoing`: the id of the configuration that was created. */
+  createdWssOutgoingId: z.string().optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 
@@ -1355,6 +1428,41 @@ export const keystoresInspectResponseSchema = z.object({
   message: z.string().optional(),
 });
 export type KeystoresInspectResponse = z.infer<typeof keystoresInspectResponseSchema>;
+
+/**
+ * `wss.previewOutgoing` / `wss.insertEntry` / `wss.removeOutgoing`: the three "bake WS-Security
+ * into the envelope *text*" operations, as distinct from the request's `wssOutgoingRef`, which
+ * is applied at send time and never touches the saved envelope.
+ *
+ * `envelopeXml` is what the editor currently holds (the saved envelope when omitted). Every
+ * response goes through `redact.ts`, so a `wsse:Password` comes back masked: an envelope the
+ * renderer may paste into the editor — and therefore into the project file — must never carry
+ * a plaintext secret. The real password is substituted only by the send-time path.
+ */
+export const wssPreviewOutgoingRequestSchema = z.object({
+  requestId: z.string(),
+  envelopeXml: z.string().optional(),
+});
+export const wssEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+export type WssPreviewOutgoingRequest = z.infer<typeof wssPreviewOutgoingRequestSchema>;
+export type WssEnvelopeResponse = z.infer<typeof wssEnvelopeResponseSchema>;
+
+/** `wss.insertEntry`: applies one ad-hoc entry, with no configuration involved. */
+export const wssInsertEntryRequestSchema = z.object({
+  requestId: z.string(),
+  envelopeXml: z.string().optional(),
+  entry: wssEntryWireSchema,
+  /** A `secretRef` for a username token's password; never the password itself. */
+  passwordRef: z.string().optional(),
+});
+export type WssInsertEntryRequest = z.infer<typeof wssInsertEntryRequestSchema>;
+
+/** `wss.removeOutgoing`: strips the `wsse:Security` header the request's configuration writes. */
+export const wssRemoveOutgoingRequestSchema = z.object({
+  requestId: z.string(),
+  envelopeXml: z.string().optional(),
+});
+export type WssRemoveOutgoingRequest = z.infer<typeof wssRemoveOutgoingRequestSchema>;
 
 /** `keystores.pickFile`: an Open dialog filtered to keystore files; records a read pick. */
 export const keystoresPickFileRequestSchema = z.object({});

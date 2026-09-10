@@ -20,6 +20,7 @@ function project(dirty: boolean): ProjectWire {
     environments: [],
     problems: [],
     keystores: [],
+    wssOutgoing: [],
   };
 }
 

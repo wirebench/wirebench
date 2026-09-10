@@ -34,6 +34,7 @@ const project: ProjectWire = {
   environments: [],
   problems: [],
   keystores: [],
+  wssOutgoing: [],
 };
 
 function stubWirebench(overrides: Parameters<typeof installWirebenchApi>[0] = {}): {

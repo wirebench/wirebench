@@ -52,8 +52,17 @@ import type {
   PropertyScopes,
   SendAttachmentOptions,
 } from '@wirebench/engine';
-import { loadKeystore, toKeystoreDef, toTlsClientIdentity, WirebenchError } from '@wirebench/engine';
-import type { Keystore, KeystoreDef } from '@wirebench/engine';
+import {
+  applyOutgoingWss,
+  createWssContext,
+  loadKeystore,
+  removeOutgoingWss,
+  toKeystoreDef,
+  toTlsClientIdentity,
+  toWssOutgoingConfig,
+  WirebenchError,
+} from '@wirebench/engine';
+import type { Keystore, KeystoreDef, SoapSendWss, WssContext, WssEntry, WssOutgoingConfig } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   EngineProgressEvent,
@@ -941,6 +950,146 @@ export class ProjectService {
     // `cert`/`key` only: a keystore says who *we* are. It never contributes `ca`, because Node
     // reads `ca` as a replacement trust store — see `toTlsClientIdentity`.
     return { cert: identity.cert, key: identity.key };
+  }
+
+  /** The outgoing WS-Security configuration with this id, or `undefined` when there is none. */
+  private wssOutgoingConfig(configId: string): WssOutgoingConfig | undefined {
+    const ref = this.open?.project.wss.outgoing.find((candidate) => candidate.id === configId);
+    if (ref === undefined) {
+      return undefined;
+    }
+    try {
+      return toWssOutgoingConfig(ref);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The {@link WssContext} every WS-Security operation runs against: keystores read through the
+   * same containment check every other read uses, and secrets decrypted through the secret
+   * store. Both closures stay inside main — a resolved password never crosses the bridge.
+   */
+  private wssContext(): WssContext {
+    return createWssContext({
+      keystores: async (ref) => {
+        const def = this.keystoreDef(ref);
+        return def === undefined ? undefined : await this.loadKeystoreFor(def);
+      },
+      secrets: async (ref) => await this.secrets?.get(ref),
+    });
+  }
+
+  /**
+   * The WS-Security half of a send of `requestId`, or `undefined` when the request selects no
+   * outgoing configuration. Async and secret-bearing, so — exactly like {@link tlsFor} — it is
+   * kept out of the synchronous {@link sendInputFor} whose result also feeds the cURL export
+   * and the renderer.
+   *
+   * A selected-but-missing configuration throws rather than sending an unsecured request: a
+   * WS-Security send that quietly degrades is as bad as a mutual-TLS one that does.
+   *
+   * @param requestId the request about to be sent
+   * @returns the configuration, the context and the request's WSS property overrides
+   * @throws WirebenchError `wss-config-missing` when the project no longer has the configuration
+   */
+  /* eslint-disable-next-line @typescript-eslint/require-await --
+     async so a missing configuration rejects rather than throwing synchronously, matching
+     every other send-time resolver. */
+  async wssFor(requestId: string): Promise<SoapSendWss | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    const configId = location?.request.wssOutgoingRef;
+    if (location === undefined || configId === undefined || configId.length === 0) {
+      return undefined;
+    }
+    const outgoing = this.wssOutgoingConfig(configId);
+    if (outgoing === undefined) {
+      throw new WirebenchError(
+        'wss-config-missing',
+        'This request selects a WS-Security configuration the project no longer has.',
+        { details: { configId } },
+      );
+    }
+    const properties = location.request.properties;
+    return {
+      outgoing,
+      ctx: this.wssContext(),
+      requestProperties: {
+        ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
+        ...(properties.wssTimeToLive !== undefined ? { wssTimeToLive: properties.wssTimeToLive } : {}),
+      },
+    };
+  }
+
+  /** The envelope a WS-Security editor action starts from: what the editor holds, else the saved one. */
+  private envelopeFor(requestId: string, envelopeXml?: string): string {
+    if (envelopeXml !== undefined) {
+      return envelopeXml;
+    }
+    const location = this.open === undefined ? undefined : findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      throw new WirebenchError('not-found', `No request with id "${requestId}"`, { details: { requestId } });
+    }
+    return location.request.envelopeXml;
+  }
+
+  /**
+   * Applies the request's own outgoing configuration to an envelope, for the preview and the
+   * "apply to editor" action. The caller redacts the result before it leaves main.
+   *
+   * @param requestId the request whose configuration to use
+   * @param envelopeXml the envelope to secure; the saved one when omitted
+   * @returns the secured envelope
+   * @throws WirebenchError `wss-config-missing` when the request selects no (or an unknown) configuration
+   */
+  async previewOutgoingWss(requestId: string, envelopeXml?: string): Promise<string> {
+    const wss = await this.wssFor(requestId);
+    if (wss?.outgoing === undefined) {
+      throw new WirebenchError('wss-config-missing', 'This request has no outgoing WS-Security configuration.', {
+        details: { requestId },
+      });
+    }
+    return await applyOutgoingWss(this.envelopeFor(requestId, envelopeXml), wss.outgoing, wss.ctx, {
+      ...(wss.requestProperties !== undefined ? { requestProperties: wss.requestProperties } : {}),
+    });
+  }
+
+  /**
+   * Applies one ad-hoc entry to an envelope — the "Add WSS Username Token…" / "Add
+   * WS-Timestamp…" actions, which involve no stored configuration at all.
+   *
+   * @param requestId the request whose envelope is being edited
+   * @param entry the single entry to write
+   * @param envelopeXml the envelope to secure; the saved one when omitted
+   * @returns the secured envelope
+   */
+  async insertWssEntry(requestId: string, entry: WssEntry, envelopeXml?: string): Promise<string> {
+    const config: WssOutgoingConfig = {
+      id: 'ad-hoc',
+      name: 'Ad-hoc',
+      mustUnderstand: false,
+      entries: [entry],
+    };
+    return await applyOutgoingWss(this.envelopeFor(requestId, envelopeXml), config, this.wssContext());
+  }
+
+  /**
+   * Strips the `wsse:Security` header the request's configuration writes (the ultimate
+   * receiver's when it selects none).
+   *
+   * @param requestId the request whose envelope is being edited
+   * @param envelopeXml the envelope to clean; the saved one when omitted
+   * @returns the envelope without that header
+   */
+  removeOutgoingWssFrom(requestId: string, envelopeXml?: string): string {
+    const configId =
+      this.open === undefined ? undefined : findRequest(this.open.project, requestId)?.request.wssOutgoingRef;
+    const actor = configId === undefined ? undefined : this.wssOutgoingConfig(configId)?.actor;
+    const envelope = this.envelopeFor(requestId, envelopeXml);
+    return actor === undefined ? removeOutgoingWss(envelope) : removeOutgoingWss(envelope, actor);
   }
 
   /**

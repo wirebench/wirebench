@@ -79,6 +79,10 @@ import {
   attachmentsOpenResponseRequestSchema,
   attachmentsOpenResponseSchema,
   attachmentsPickFilesRequestSchema,
+  wssPreviewOutgoingRequestSchema,
+  wssInsertEntryRequestSchema,
+  wssRemoveOutgoingRequestSchema,
+  wssEnvelopeResponseSchema,
   keystoresInspectRequestSchema,
   keystoresInspectResponseSchema,
   keystoresPickFileRequestSchema,
@@ -272,6 +276,11 @@ export const channels = {
   keystores: {
     inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),
     pickFile: defineChannel('keystores.pickFile', keystoresPickFileRequestSchema, keystoresPickFileResponseSchema),
+  },
+  wss: {
+    previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),
+    insertEntry: defineChannel('wss.insertEntry', wssInsertEntryRequestSchema, wssEnvelopeResponseSchema),
+    removeOutgoing: defineChannel('wss.removeOutgoing', wssRemoveOutgoingRequestSchema, wssEnvelopeResponseSchema),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

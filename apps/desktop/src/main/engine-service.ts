@@ -22,6 +22,7 @@ import type {
   PropertyScopes,
   QName,
   SoapSendInput,
+  SoapSendWss,
   TlsOptions,
 } from '@wirebench/engine';
 import { resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
@@ -155,6 +156,7 @@ function toEngineSendInput(
   signal: AbortSignal,
   attachments?: SendAttachmentInput,
   auth?: SendAuth,
+  wss?: SoapSendWss,
 ): SoapSendInput {
   return {
     endpoint: input.endpoint,
@@ -177,6 +179,9 @@ function toEngineSendInput(
       ? { attachments: attachments.attachments, attachmentOptions: attachments.attachmentOptions }
       : {}),
     ...(auth !== undefined ? { auth } : {}),
+    // Same reason as attachments: the context closes over main's keystores and secret store,
+    // so it can only be folded in here, never carried on `SoapSendInputWire`.
+    ...(wss !== undefined ? { wss } : {}),
     signal,
   };
 }
@@ -422,6 +427,8 @@ export class EngineService {
       showSecrets?: boolean;
       /** The saved request's attachments and MTOM options; absent for an ad-hoc send. */
       attachments?: SendAttachmentInput;
+      /** The request's outgoing WS-Security configuration and its context; absent when it selects none. */
+      wss?: SoapSendWss;
     } = {},
   ): Promise<ExchangeSummary> {
     const controller = new AbortController();
@@ -434,7 +441,13 @@ export class EngineService {
       // The credentials go to the engine rather than being baked into a header here, so the
       // engine can run the 401-challenge retry when they are not preemptive.
       const exchange = await sendSoapRequest(
-        toEngineSendInput(request.input, controller.signal, options.attachments, toEngineAuth(resolvedAuth)),
+        toEngineSendInput(
+          request.input,
+          controller.signal,
+          options.attachments,
+          toEngineAuth(resolvedAuth),
+          options.wss,
+        ),
         {
           ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
         },

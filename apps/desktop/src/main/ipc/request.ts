@@ -42,7 +42,8 @@ export type RequestChannelProject = Pick<
   // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor'>>;
+  // ... and, for the same reason, no WS-Security configuration.
+  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor'>>;
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {

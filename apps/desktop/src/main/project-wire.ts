@@ -4,7 +4,7 @@
  * mirrors. No `electron`, no `fs`: unit-tested directly against real engine models.
  */
 
-import { keystoreEntrySchema, toKeystoreDef } from '@wirebench/engine';
+import { keystoreEntrySchema, toKeystoreDef, toWssOutgoingConfig, wssOutgoingFileSchema } from '@wirebench/engine';
 import type {
   Attachment,
   Endpoint,
@@ -13,6 +13,7 @@ import type {
   OperationDef,
   Project,
   RequestDef,
+  WssEntry,
   WssRef,
 } from '@wirebench/engine';
 import type {
@@ -23,6 +24,8 @@ import type {
   InterfaceSummary,
   InterfaceWire,
   KeystoreWire,
+  WssEntryWire,
+  WssOutgoingWire,
   OperationSummaryWire,
   ProjectProblemWire,
   ProjectWire,
@@ -156,6 +159,8 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
     ...(request.description !== undefined ? { description: request.description } : {}),
     ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
+    ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),
+    ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     attachments: request.attachments.map(toAttachmentWire),
     properties: { ...request.properties },
   };
@@ -202,6 +207,51 @@ function toKeystoreWire(ref: WssRef): KeystoreWire {
   };
 }
 
+/**
+ * One outgoing WS-Security configuration, projected for the renderer. An entry this build does
+ * not understand (a `signature` written by a later one) is projected as its bare kind so the
+ * editor can list it as unsupported rather than the row silently vanishing; a document that is
+ * not a configuration at all becomes an empty one, for the same "offer to remove it" reason
+ * `toKeystoreWire` has.
+ */
+function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
+  if (!wssOutgoingFileSchema.safeParse(ref.document).success) {
+    return { id: ref.id, name: ref.name, mustUnderstand: false, entries: [] };
+  }
+  const config = toWssOutgoingConfig(ref);
+  return {
+    id: config.id,
+    name: config.name,
+    ...(config.defaultAlias !== undefined ? { defaultAlias: config.defaultAlias } : {}),
+    ...(config.defaultPasswordRef !== undefined ? { defaultPasswordRef: config.defaultPasswordRef } : {}),
+    ...(config.actor !== undefined ? { actor: config.actor } : {}),
+    mustUnderstand: config.mustUnderstand,
+    entries: config.entries.map(toWssEntryWire),
+  };
+}
+
+/** One entry on the wire; anything this build cannot type becomes a bare `signature`/`encryption`. */
+function toWssEntryWire(entry: WssEntry): WssEntryWire {
+  if (entry.kind === 'timestamp') {
+    return {
+      kind: 'timestamp',
+      timeToLiveSeconds: entry.timeToLiveSeconds,
+      millisecondPrecision: entry.millisecondPrecision,
+    };
+  }
+  if (entry.kind === 'username-token') {
+    return {
+      kind: 'username-token',
+      username: entry.username,
+      ...(entry.passwordRef !== undefined ? { passwordRef: entry.passwordRef } : {}),
+      passwordType: entry.passwordType,
+      addNonce: entry.addNonce,
+      addCreated: entry.addCreated,
+    };
+  }
+  return { kind: entry.kind === 'encryption' ? 'encryption' : 'signature' };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
   return {
@@ -218,6 +268,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     problems: [...context.problems],
     settings: { ...project.settings },
     keystores: project.wss.keystores.map(toKeystoreWire),
+    wssOutgoing: project.wss.outgoing.map(toWssOutgoingWire),
   };
 }
 

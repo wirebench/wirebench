@@ -20,6 +20,7 @@ const PROJECT: ProjectWire = {
   activeEnvironmentId: 'e1',
   problems: [],
   keystores: [],
+  wssOutgoing: [],
 };
 
 describe('GetDataDialog', () => {
