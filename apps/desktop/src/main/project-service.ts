@@ -22,11 +22,20 @@ import {
   interfaceDir,
   loadProject,
   ProjectError,
+  resolveScopes,
   projectFiles,
   saveProject,
   uniqueSlug,
 } from '@wirebench/engine';
-import type { Endpoint, FsLike, Interface, OperationDef, Project, ProjectFiles } from '@wirebench/engine';
+import type {
+  Endpoint,
+  FsLike,
+  Interface,
+  OperationDef,
+  Project,
+  ProjectFiles,
+  PropertyScopes,
+} from '@wirebench/engine';
 import type {
   EngineProgressEvent,
   HydrationStatus,
@@ -39,6 +48,9 @@ import type {
   RecentProject,
 } from '../shared/wire-types.js';
 import type { EngineService } from './engine-service.js';
+import type { GlobalProperties } from './global-properties.js';
+import type { PreflightResult } from './expansion-preflight.js';
+import { preflightRequest } from './expansion-preflight.js';
 import { addRequest, applyChange, projectNameFromDir } from './project-mutations.js';
 import type { InterfaceRuntime } from './project-wire.js';
 import { toProjectWire } from './project-wire.js';
@@ -127,7 +139,33 @@ export class ProjectService {
     private readonly hooks: ProjectServiceHooks = {},
     /** Overrides the filesystem `saveProject` writes through. Test-only (deferred writes). */
     private readonly fs?: FsLike,
+    /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
+    private readonly globals?: Pick<GlobalProperties, 'get'>,
   ) {}
+
+  /**
+   * The property scopes a send (or a preflight) expands against: the open project's own
+   * properties, the active environment's (or `envId`'s) overrides, the user's globals and the
+   * process environment. With no project open only the global and system scopes are populated,
+   * so an ad-hoc send still expands `${#Global#…}`.
+   */
+  scopesFor(envId?: string): PropertyScopes {
+    const globals = this.globals?.get() ?? {};
+    if (this.open === undefined) {
+      return { project: {}, global: globals, system: process.env };
+    }
+    return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
+  }
+
+  /**
+   * Resolves one saved request's endpoint under the active environment and reports every
+   * property reference that would not expand. Nothing is sent; see {@link preflightRequest}.
+   */
+  preflight(requestId: string, envId?: string): PreflightResult {
+    const open = this.require();
+    const activeId = envId ?? open.project.activeEnvironmentId;
+    return preflightRequest(open.project, requestId, this.scopesFor(activeId), activeId);
+  }
 
   /** The current snapshot, or `null` when no project is open. */
   snapshot(): ProjectWire | null {
@@ -295,7 +333,9 @@ export class ProjectService {
   }
 
   /** Applies one change to the model, marks the project dirty and schedules an autosave. */
-  async mutate(change: ProjectChange): Promise<{ project: ProjectWire; createdRequestId?: string }> {
+  async mutate(
+    change: ProjectChange,
+  ): Promise<{ project: ProjectWire; createdRequestId?: string; createdEnvironmentId?: string }> {
     const open = this.require();
     const result = await applyChange(open.project, change, {
       generate: (interfaceId, bindingName, operationName) => {
@@ -317,6 +357,7 @@ export class ProjectService {
     return {
       project: this.snapshot() as ProjectWire,
       ...(result.createdRequestId !== undefined ? { createdRequestId: result.createdRequestId } : {}),
+      ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
     };
   }
 

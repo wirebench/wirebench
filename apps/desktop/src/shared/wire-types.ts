@@ -220,6 +220,55 @@ const soapResponseWireSchema = z.object({
 
 const exchangeProblemSchema = z.object({ code: z.string(), message: z.string() });
 
+/** Which part of a send input an {@link UnresolvedRefWire} was found in. */
+export const expansionFieldSchema = z.enum(['endpoint', 'envelopeXml', 'soapAction', 'header']);
+export type ExpansionField = z.infer<typeof expansionFieldSchema>;
+
+/**
+ * Wire projection of the engine's `UnresolvedRef`: one `${...}` property expansion that could
+ * not be resolved. `field`/`headerName` are added by the main process's preflight so the UI can
+ * name *where* in the request the reference sits; the engine itself reports neither, so both are
+ * absent on the refs echoed back with a completed exchange.
+ */
+export const unresolvedRefWireSchema = z.object({
+  expr: z.string(),
+  scope: z.string().optional(),
+  name: z.string().optional(),
+  code: z.enum(['missing', 'unknown-scope', 'cycle', 'too-deep', 'malformed']),
+  start: z.number(),
+  end: z.number(),
+  via: z.array(z.string()).optional(),
+  field: expansionFieldSchema.optional(),
+  /** Set only when `field` is `'header'`: the (unexpanded) name of the header it was found in. */
+  headerName: z.string().optional(),
+});
+export type UnresolvedRefWire = z.infer<typeof unresolvedRefWireSchema>;
+
+/** Where the URL a request will actually be sent to came from — mirrors the engine's `EndpointSource`. */
+export const endpointSourceSchema = z.enum([
+  'environment',
+  'request-custom',
+  'request-endpoint',
+  'interface-default',
+  'none',
+]);
+export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
+
+/** Request payload for `request.preflight`. */
+export const requestPreflightRequestSchema = z.object({ requestId: z.string() });
+
+/**
+ * Response payload for `request.preflight`: the endpoint the saved request resolves to under
+ * the active environment, plus every property reference in it that would not expand. Purely
+ * a dry run — nothing is sent.
+ */
+export const requestPreflightResponseSchema = z.object({
+  endpoint: z.string().optional(),
+  endpointSource: endpointSourceSchema,
+  unresolved: z.array(unresolvedRefWireSchema),
+});
+export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSchema>;
+
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
   sendId: z.string(),
@@ -227,6 +276,8 @@ export const exchangeSummarySchema = z.object({
   http: httpExchangeWireSchema,
   response: soapResponseWireSchema.optional(),
   problems: z.array(exchangeProblemSchema),
+  /** Set only when the send expanded properties: the references that stayed unresolved. */
+  unresolved: z.array(unresolvedRefWireSchema).optional(),
 });
 export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 
@@ -313,7 +364,10 @@ export const requestWireSchema = z.object({
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;
 
-/** A named set of per-interface endpoint overrides; passed through untouched until Task 22. */
+/**
+ * A named set of per-interface endpoint overrides (keyed by interface *slug*) plus environment
+ * properties, which take precedence over project properties in shorthand `${name}` lookups.
+ */
 export const environmentWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -344,6 +398,8 @@ export const projectWireSchema = z.object({
   requests: z.array(requestWireSchema),
   properties: z.record(z.string(), z.string()),
   environments: z.array(environmentWireSchema),
+  /** The environment endpoints/properties resolve against, or absent when none is active. */
+  activeEnvironmentId: z.string().optional(),
   problems: z.array(projectProblemSchema),
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
@@ -358,6 +414,21 @@ export const requestPatchSchema = z.object({
   soapAction: z.string().nullable().optional(),
 });
 export type RequestPatchWire = z.infer<typeof requestPatchSchema>;
+
+/**
+ * The fields of an environment the renderer may patch through `update-environment`.
+ *
+ * `endpoints` and `properties` REPLACE the whole map rather than merging into it, so removing
+ * a key is expressible; send the complete map you want the environment to end up with.
+ * Endpoint keys are interface *slugs*; unknown slugs are accepted (an environment may name a
+ * deployment for an interface that has not been imported yet).
+ */
+export const environmentPatchSchema = z.object({
+  name: z.string().optional(),
+  endpoints: z.record(z.string(), z.string()).optional(),
+  properties: z.record(z.string(), z.string()).optional(),
+});
+export type EnvironmentPatchWire = z.infer<typeof environmentPatchSchema>;
 
 /**
  * One atomic change to the open project. Every mutation the renderer can make goes through
@@ -384,6 +455,14 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     patch: z.object({ name: z.string().optional(), url: z.string().optional() }),
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
+  z.object({ kind: z.literal('add-environment'), name: z.string() }),
+  z.object({
+    kind: z.literal('update-environment'),
+    environmentId: z.string(),
+    patch: environmentPatchSchema,
+  }),
+  z.object({ kind: z.literal('remove-environment'), environmentId: z.string() }),
+  z.object({ kind: z.literal('set-active-environment'), environmentId: z.string().nullable() }),
   z.object({ kind: z.literal('set-project-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-project-property'), name: z.string() }),
 ]);
@@ -403,6 +482,8 @@ export const projectMutateResponseSchema = z.object({
   project: projectWireSchema,
   /** Set by `add-request` and `clone-request`: the id of the request that was created. */
   createdRequestId: z.string().optional(),
+  /** Set by `add-environment`: the id of the environment that was created. */
+  createdEnvironmentId: z.string().optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 
@@ -455,3 +536,22 @@ export const projectHydrationEventSchema = z.object({
   status: hydrationStatusSchema,
   message: z.string().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Global properties (Task 22): user-scoped `${#Global#name}` values, stored in
+// Electron's `userData` rather than in any project folder.
+// ---------------------------------------------------------------------------
+
+/** A flat name -> value property map, as every property scope crosses the wire. */
+export const propertyMapSchema = z.record(z.string(), z.string());
+export type PropertyMapWire = z.infer<typeof propertyMapSchema>;
+
+/** Response for every `globals.*` channel (and the `globals.changed` event): the whole map. */
+export const globalsPropertiesResponseSchema = z.object({ properties: propertyMapSchema });
+export type GlobalsPropertiesResponse = z.infer<typeof globalsPropertiesResponseSchema>;
+
+/** Request payload for `globals.set`. */
+export const globalsSetRequestSchema = z.object({ name: z.string(), value: z.string() });
+
+/** Request payload for `globals.remove`. */
+export const globalsRemoveRequestSchema = z.object({ name: z.string() });

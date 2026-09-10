@@ -145,6 +145,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     requests: toRequestWires(project),
     properties: { ...project.properties },
     environments: project.environments.map(toEnvironmentWire),
+    ...(project.activeEnvironmentId !== undefined ? { activeEnvironmentId: project.activeEnvironmentId } : {}),
     problems: [...context.problems],
   };
 }

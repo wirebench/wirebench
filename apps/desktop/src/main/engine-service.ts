@@ -17,6 +17,7 @@ import type {
   ImportProgress,
   ImportResult,
   ImportSource,
+  PropertyScopes,
   QName,
   SoapSendInput,
   TlsOptions,
@@ -277,12 +278,20 @@ export class EngineService {
     return toGenerateResponse(generated);
   }
 
-  /** Sends a SOAP request, registering an `AbortController` so a matching `cancel` can abort it. */
-  async send(request: RequestSendRequest): Promise<ExchangeSummary> {
+  /**
+   * Sends a SOAP request, registering an `AbortController` so a matching `cancel` can abort it.
+   *
+   * With `options.scopes` the engine expands `${...}` property references in the endpoint,
+   * envelope, SOAPAction and headers first, and reports whatever stayed unresolved on the
+   * returned summary's `unresolved`.
+   */
+  async send(request: RequestSendRequest, options: { scopes?: PropertyScopes } = {}): Promise<ExchangeSummary> {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
     try {
-      const exchange = await sendSoapRequest(toEngineSendInput(request.input, controller.signal));
+      const exchange = await sendSoapRequest(toEngineSendInput(request.input, controller.signal), {
+        ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
+      });
       return toExchangeSummary(exchange, request.sendId);
     } finally {
       this.sends.delete(request.sendId);

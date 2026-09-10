@@ -12,6 +12,12 @@
 import { createRequest, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
 import type { Endpoint, Interface, OperationDef, Project, RequestDef } from '@wirebench/engine';
 import type { ProjectChange, RequestPatchWire } from '../shared/wire-types.js';
+import {
+  addEnvironment,
+  deleteEnvironment,
+  setActiveEnvironment,
+  updateEnvironment,
+} from './project-environment-mutations.js';
 import { findRequest } from './project-wire.js';
 
 /** The engine output `add-request` needs; supplied by the service, which owns the engine. */
@@ -31,6 +37,7 @@ export interface MutationDeps {
 export interface MutationResult {
   readonly project: Project;
   readonly createdRequestId?: string;
+  readonly createdEnvironmentId?: string;
 }
 
 function notFound(what: string, id: string): never {
@@ -299,6 +306,20 @@ export async function applyChange(
       const nextDefault = iface.defaultEndpointId === change.endpointId ? endpoints[0]?.id : iface.defaultEndpointId;
       return { project: replaceInterface(project, rebuiltInterface(iface, endpoints, nextDefault)) };
     }
+
+    case 'add-environment': {
+      const added = addEnvironment(project, change.name);
+      return { project: added.project, createdEnvironmentId: added.environment.id };
+    }
+
+    case 'update-environment':
+      return { project: updateEnvironment(project, change.environmentId, change.patch) };
+
+    case 'remove-environment':
+      return { project: deleteEnvironment(project, change.environmentId) };
+
+    case 'set-active-environment':
+      return { project: setActiveEnvironment(project, change.environmentId) };
 
     case 'set-project-property':
       return { project: { ...project, properties: { ...project.properties, [change.name]: change.value } } };

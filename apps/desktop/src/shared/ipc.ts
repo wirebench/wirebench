@@ -11,6 +11,9 @@ import {
   dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
+  globalsPropertiesResponseSchema,
+  globalsRemoveRequestSchema,
+  globalsSetRequestSchema,
   projectAddInterfaceRequestSchema,
   projectAddInterfaceResponseSchema,
   projectChangedEventSchema,
@@ -28,6 +31,8 @@ import {
   requestCancelResponseSchema,
   requestGenerateRequestSchema,
   requestGenerateResponseSchema,
+  requestPreflightRequestSchema,
+  requestPreflightResponseSchema,
   requestSendRequestSchema,
 } from './wire-types.js';
 
@@ -103,6 +108,7 @@ export const channels = {
     generate: defineChannel('request.generate', requestGenerateRequestSchema, requestGenerateResponseSchema),
     send: defineChannel('request.send', requestSendRequestSchema, exchangeSummarySchema),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
+    preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
   },
   project: {
     create: defineChannel('project.create', projectCreateRequestSchema, projectSnapshotResponseSchema),
@@ -118,6 +124,11 @@ export const channels = {
       projectAddInterfaceResponseSchema,
     ),
     reload: defineChannel('project.reload', z.undefined(), projectSnapshotResponseSchema),
+  },
+  globals: {
+    get: defineChannel('globals.get', z.undefined(), globalsPropertiesResponseSchema),
+    set: defineChannel('globals.set', globalsSetRequestSchema, globalsPropertiesResponseSchema),
+    remove: defineChannel('globals.remove', globalsRemoveRequestSchema, globalsPropertiesResponseSchema),
   },
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
@@ -149,6 +160,9 @@ export const events = {
   },
   engine: {
     progress: defineEvent('engine.progress', engineProgressEventSchema),
+  },
+  globals: {
+    changed: defineEvent('globals.changed', globalsPropertiesResponseSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),

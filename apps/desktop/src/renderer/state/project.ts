@@ -4,11 +4,14 @@ import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
+  EnvironmentPatchWire,
+  EnvironmentWire,
   ImportSourceWire,
   InterfaceWire,
   ProjectChange,
   ProjectChangedEvent,
   ProjectChangedOnDiskEvent,
+  ProjectMutateResponse,
   ProjectWire,
   RecentProject,
   RequestPatchWire,
@@ -37,6 +40,10 @@ export interface ProjectSnapshot {
   readonly requests: Record<string, RequestDraft>;
   /** Interface ids in project order: what the explorer iterates to render the tree. */
   readonly order: string[];
+  /** The project's environments, in `order`. Empty when no project is open. */
+  readonly environments: readonly EnvironmentWire[];
+  /** The active environment's id, or `undefined` when none is active. */
+  readonly activeEnvironmentId: string | undefined;
   readonly saveStatus: SaveStatus;
   readonly lastSavedAt: string | undefined;
   /** Paths reported by the folder watcher since the banner was last dismissed. */
@@ -71,6 +78,18 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly cloneRequest: (requestId: string) => Promise<string>;
   /** Deletes a request and closes its open editor tab, if any. */
   readonly removeRequest: (requestId: string) => Promise<void>;
+  /** Appends an empty environment and returns its id. */
+  readonly addEnvironment: (name: string) => Promise<string>;
+  /**
+   * Patches one environment. `endpoints`/`properties` REPLACE the whole map (send the complete
+   * map you want it to end up with); omit a map to leave it untouched.
+   */
+  readonly updateEnvironment: (environmentId: string, patch: EnvironmentPatchWire) => Promise<void>;
+  readonly removeEnvironment: (environmentId: string) => Promise<void>;
+  /** Switches the active environment; `null` deactivates. */
+  readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
+  readonly setProjectProperty: (name: string, value: string) => Promise<void>;
+  readonly removeProjectProperty: (name: string) => Promise<void>;
 }
 
 type Mutate = (draft: Draft<ProjectSnapshot>) => void;
@@ -98,10 +117,12 @@ function withPatch(request: RequestDraft, patch: RequestPatchWire): RequestDraft
   };
 }
 
-/** Builds the `interfaces`/`requests`/`order` indexes the existing selectors read. */
-function indexesOf(project: ProjectWire | null): Pick<ProjectSnapshot, 'interfaces' | 'requests' | 'order'> {
+/** Builds the indexes (and environment mirror) the selectors below read. */
+function indexesOf(
+  project: ProjectWire | null,
+): Pick<ProjectSnapshot, 'interfaces' | 'requests' | 'order' | 'environments' | 'activeEnvironmentId'> {
   if (project === null) {
-    return { interfaces: {}, requests: {}, order: [] };
+    return { interfaces: {}, requests: {}, order: [], environments: [], activeEnvironmentId: undefined };
   }
   const interfaces: Record<string, InterfaceWire> = {};
   for (const iface of project.interfaces) {
@@ -112,7 +133,13 @@ function indexesOf(project: ProjectWire | null): Pick<ProjectSnapshot, 'interfac
     const patch = pending.get(request.id);
     requests[request.id] = patch === undefined ? request : withPatch(request, patch);
   }
-  return { interfaces, requests, order: project.interfaces.map((iface) => iface.id) };
+  return {
+    interfaces,
+    requests,
+    order: project.interfaces.map((iface) => iface.id),
+    environments: [...project.environments].sort((a, b) => a.order - b.order),
+    activeEnvironmentId: project.activeEnvironmentId,
+  };
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => {
@@ -129,13 +156,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }));
   };
 
-  const mutate = async (change: ProjectChange): Promise<string | undefined> => {
+  const mutate = async (change: ProjectChange): Promise<ProjectMutateResponse> => {
     const result = await ipc().project.mutate({ change });
     if (!result.ok) {
       throw asError(result.error);
     }
     apply(result.value.project);
-    return result.value.createdRequestId;
+    return result.value;
   };
 
   return {
@@ -143,6 +170,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     interfaces: {},
     requests: {},
     order: [],
+    environments: [],
+    activeEnvironmentId: undefined,
     saveStatus: 'idle',
     lastSavedAt: undefined,
     changedOnDisk: [],
@@ -302,7 +331,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     addRequest: async (interfaceId, bindingName, operationName) => {
-      const created = await mutate({ kind: 'add-request', interfaceId, bindingName, operationName });
+      const { createdRequestId: created } = await mutate({
+        kind: 'add-request',
+        interfaceId,
+        bindingName,
+        operationName,
+      });
       if (created === undefined) {
         throw new Error('add-request did not return a request id');
       }
@@ -310,7 +344,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     cloneRequest: async (requestId) => {
-      const created = await mutate({ kind: 'clone-request', requestId });
+      const { createdRequestId: created } = await mutate({ kind: 'clone-request', requestId });
       if (created === undefined) {
         throw new Error('clone-request did not return a request id');
       }
@@ -323,30 +357,36 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useEditorsStore.getState().close(`request:${requestId}`);
       useExchangesStore.getState().clearRequest(requestId);
     },
+
+    addEnvironment: async (name) => {
+      const { createdEnvironmentId } = await mutate({ kind: 'add-environment', name });
+      if (createdEnvironmentId === undefined) {
+        throw new Error('add-environment did not return an environment id');
+      }
+      return createdEnvironmentId;
+    },
+
+    updateEnvironment: async (environmentId, patch) => {
+      await mutate({ kind: 'update-environment', environmentId, patch });
+    },
+
+    removeEnvironment: async (environmentId) => {
+      await mutate({ kind: 'remove-environment', environmentId });
+    },
+
+    setActiveEnvironment: async (environmentId) => {
+      await mutate({ kind: 'set-active-environment', environmentId });
+    },
+
+    setProjectProperty: async (name, value) => {
+      await mutate({ kind: 'set-project-property', name, value });
+    },
+
+    removeProjectProperty: async (name) => {
+      await mutate({ kind: 'remove-project-property', name });
+    },
   };
 });
-
-/**
- * The URL a request is actually sent to: its own custom URL, else its chosen interface
- * endpoint, else the interface default, else the interface's first endpoint. Mirrors the
- * engine's `resolveEndpoint` precedence; environments join it in Task 22.
- */
-export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string): string | undefined {
-  const request = state.requests[requestId];
-  if (request === undefined) {
-    return undefined;
-  }
-  if (request.endpointUrl !== undefined) {
-    return request.endpointUrl;
-  }
-  const iface = state.interfaces[request.interfaceId];
-  if (iface === undefined) {
-    return undefined;
-  }
-  const byId = (id: string | undefined): string | undefined =>
-    id === undefined ? undefined : iface.endpoints.find((endpoint) => endpoint.id === id)?.url;
-  return byId(request.endpointId) ?? byId(iface.defaultEndpointId) ?? iface.endpoints[0]?.url;
-}
 
 /**
  * Subscribes the mirror to main's project events and pulls the initial snapshot. Called once

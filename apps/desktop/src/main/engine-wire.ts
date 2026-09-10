@@ -5,7 +5,14 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
-import type { GeneratedRequest, HttpExchange, ImportResult, SoapExchange, SoapFault } from '@wirebench/engine';
+import type {
+  GeneratedRequest,
+  HttpExchange,
+  ImportResult,
+  SoapExchange,
+  SoapFault,
+  UnresolvedRef,
+} from '@wirebench/engine';
 import type {
   ExchangeSummary,
   FaultWire,
@@ -15,6 +22,7 @@ import type {
   OperationSummaryWire,
   RequestGenerateResponse,
   ServiceSummary,
+  UnresolvedRefWire,
 } from '../shared/wire-types.js';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
@@ -132,6 +140,23 @@ function toHttpExchangeWire(http: HttpExchange): HttpExchangeWire {
   };
 }
 
+/**
+ * Copies an engine `UnresolvedRef` onto the wire. `field`/`headerName` are left absent: the
+ * engine expands the whole send input at once and does not record which part a ref came from
+ * (`request.preflight` does — see `expansion-preflight.ts`).
+ */
+export function toUnresolvedRefWire(ref: UnresolvedRef): UnresolvedRefWire {
+  return {
+    expr: ref.expr,
+    ...(ref.scope !== undefined ? { scope: ref.scope } : {}),
+    ...(ref.name !== undefined ? { name: ref.name } : {}),
+    code: ref.code,
+    start: ref.start,
+    end: ref.end,
+    ...(ref.via !== undefined ? { via: [...ref.via] } : {}),
+  };
+}
+
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
 export function toExchangeSummary(exchange: SoapExchange, sendId: string): ExchangeSummary {
   return {
@@ -149,5 +174,6 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string): Excha
         }
       : {}),
     problems: exchange.problems.map((problem) => ({ code: problem.code, message: problem.message })),
+    ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
   };
 }

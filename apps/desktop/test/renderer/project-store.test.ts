@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
-import { selectRequestEndpoint, useProjectStore } from '../../src/renderer/state/project.js';
+import { selectRequestEndpoint, selectRequestEndpointUrl } from '../../src/renderer/state/project-endpoint.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const BINDING = '{tns}CalculatorSoap';
@@ -69,6 +70,8 @@ function resetStore(): void {
     interfaces: {},
     requests: {},
     order: [],
+    environments: [],
+    activeEnvironmentId: undefined,
     saveStatus: 'idle',
     lastSavedAt: undefined,
     changedOnDisk: [],
@@ -256,22 +259,24 @@ describe('selectRequestEndpoint', () => {
     installWirebenchApi();
   });
 
+  const resolve = (requestId: string) => selectRequestEndpoint(useProjectStore.getState(), requestId);
+
   it('prefers the request custom URL, then its endpoint, then the interface default', () => {
     useProjectStore.getState().applySnapshot(projectWire());
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'req-1')).toBe('http://a.test/soap');
+    expect(resolve('req-1')).toEqual({ url: 'http://a.test/soap', source: 'request-endpoint' });
 
     const wire = projectWire();
     useProjectStore.getState().applySnapshot({
       ...wire,
       requests: [{ ...wire.requests[0]!, endpointId: 'ep-2' }],
     });
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'req-1')).toBe('http://b.test/soap');
+    expect(resolve('req-1')).toEqual({ url: 'http://b.test/soap', source: 'request-endpoint' });
 
     useProjectStore.getState().applySnapshot({
       ...wire,
       requests: [{ ...wire.requests[0]!, endpointUrl: 'http://custom.test/soap' }],
     });
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'req-1')).toBe('http://custom.test/soap');
+    expect(resolve('req-1')).toEqual({ url: 'http://custom.test/soap', source: 'request-custom' });
   });
 
   it('falls back to the interface default, then its first endpoint, then nothing', () => {
@@ -284,14 +289,130 @@ describe('selectRequestEndpoint', () => {
       interfaces: [withoutDefault],
       requests: [{ ...wire.requests[0]!, endpointId: undefined }],
     });
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'req-1')).toBe('http://a.test/soap');
+    expect(resolve('req-1')).toEqual({ url: 'http://a.test/soap', source: 'interface-default' });
 
     useProjectStore.getState().applySnapshot({
       ...wire,
       interfaces: [{ ...withoutDefault, endpoints: [] }],
       requests: [{ ...wire.requests[0]!, endpointId: undefined }],
     });
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'req-1')).toBeUndefined();
-    expect(selectRequestEndpoint(useProjectStore.getState(), 'nope')).toBeUndefined();
+    expect(resolve('req-1')).toEqual({ source: 'none' });
+    expect(resolve('nope')).toEqual({ source: 'none' });
+    expect(selectRequestEndpointUrl(useProjectStore.getState(), 'req-1')).toBeUndefined();
+  });
+
+  it("lets the active environment's override for the interface slug beat everything else", () => {
+    const wire = projectWire();
+    const environment = {
+      id: 'env-1',
+      name: 'Dev',
+      slug: 'Dev',
+      order: 0,
+      endpoints: { Calculator: 'http://dev.test/soap' },
+      properties: {},
+    };
+
+    // Present but not active: the request's own custom URL still wins.
+    useProjectStore.getState().applySnapshot({
+      ...wire,
+      environments: [environment],
+      requests: [{ ...wire.requests[0]!, endpointUrl: 'http://custom.test/soap' }],
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://custom.test/soap', source: 'request-custom' });
+
+    useProjectStore.getState().applySnapshot({
+      ...wire,
+      environments: [environment],
+      activeEnvironmentId: 'env-1',
+      requests: [{ ...wire.requests[0]!, endpointUrl: 'http://custom.test/soap' }],
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://dev.test/soap', source: 'environment' });
+
+    // An environment with no override for this interface's slug falls through.
+    useProjectStore.getState().applySnapshot({
+      ...wire,
+      environments: [{ ...environment, endpoints: { Other: 'http://other.test/soap' } }],
+      activeEnvironmentId: 'env-1',
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://a.test/soap', source: 'request-endpoint' });
+  });
+});
+
+describe('useProjectStore: environments and properties', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  /** Stubs `project.mutate`, returning the reply and capturing the change it was sent. */
+  function stubMutate(value: Record<string, unknown> = {}) {
+    const mutate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { project: projectWire({ environments: [] }), ...value } });
+    installWirebenchApi({ project: { mutate } });
+    return mutate;
+  }
+
+  it('mirrors environments (in order) and the active environment id', () => {
+    useProjectStore.getState().applySnapshot(
+      projectWire({
+        environments: [
+          { id: 'env-2', name: 'Prod', slug: 'Prod', order: 1, endpoints: {}, properties: {} },
+          { id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: { who: 'ada' } },
+        ],
+        activeEnvironmentId: 'env-1',
+      }),
+    );
+
+    const state = useProjectStore.getState();
+    expect(state.environments.map((environment) => environment.name)).toEqual(['Dev', 'Prod']);
+    expect(state.activeEnvironmentId).toBe('env-1');
+  });
+
+  it('addEnvironment sends add-environment and returns the created id', async () => {
+    const mutate = stubMutate({ createdEnvironmentId: 'env-9' });
+
+    await expect(useProjectStore.getState().addEnvironment('Dev')).resolves.toBe('env-9');
+    expect(mutate).toHaveBeenCalledWith({ change: { kind: 'add-environment', name: 'Dev' } });
+  });
+
+  it('addEnvironment fails loudly when main returns no id', async () => {
+    stubMutate();
+    await expect(useProjectStore.getState().addEnvironment('Dev')).rejects.toThrow(/environment id/);
+  });
+
+  it('updateEnvironment, removeEnvironment and setActiveEnvironment send their change', async () => {
+    const mutate = stubMutate();
+
+    await useProjectStore.getState().updateEnvironment('env-1', { properties: { who: 'ada' } });
+    await useProjectStore.getState().removeEnvironment('env-1');
+    await useProjectStore.getState().setActiveEnvironment('env-1');
+    await useProjectStore.getState().setActiveEnvironment(null);
+
+    expect(mutate.mock.calls.map((call) => (call[0] as { change: unknown }).change)).toEqual([
+      { kind: 'update-environment', environmentId: 'env-1', patch: { properties: { who: 'ada' } } },
+      { kind: 'remove-environment', environmentId: 'env-1' },
+      { kind: 'set-active-environment', environmentId: 'env-1' },
+      { kind: 'set-active-environment', environmentId: null },
+    ]);
+  });
+
+  it('setProjectProperty and removeProjectProperty send their change', async () => {
+    const mutate = stubMutate();
+
+    await useProjectStore.getState().setProjectProperty('who', 'ada');
+    await useProjectStore.getState().removeProjectProperty('who');
+
+    expect(mutate.mock.calls.map((call) => (call[0] as { change: unknown }).change)).toEqual([
+      { kind: 'set-project-property', name: 'who', value: 'ada' },
+      { kind: 'remove-project-property', name: 'who' },
+    ]);
+  });
+
+  it('surfaces a failed environment mutation as an Error carrying the code', async () => {
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } }) },
+    });
+
+    await expect(useProjectStore.getState().removeEnvironment('nope')).rejects.toThrow('gone');
   });
 });

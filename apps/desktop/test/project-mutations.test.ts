@@ -191,3 +191,102 @@ describe('applyChange', () => {
     expect(projectNameFromDir('/tmp/some/Payments API/')).toBe('Payments API');
   });
 });
+
+describe('applyChange: environments', () => {
+  async function withEnvironments(): Promise<Project> {
+    const first = await applyChange(build(), { kind: 'add-environment', name: 'Dev' }, deps);
+    const second = await applyChange(first.project, { kind: 'add-environment', name: 'Prod' }, deps);
+    return second.project;
+  }
+
+  it('add-environment appends an empty, uniquely-slugged environment and reports its id', async () => {
+    const result = await applyChange(build(), { kind: 'add-environment', name: 'Dev' }, deps);
+    const [environment] = result.project.environments;
+
+    expect(result.createdEnvironmentId).toBe(environment?.id);
+    expect(environment).toMatchObject({ name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} });
+
+    const twice = await applyChange(result.project, { kind: 'add-environment', name: 'Dev' }, deps);
+    expect(twice.project.environments.map((env) => env.slug)).toEqual(['Dev', 'Dev-2']);
+    expect(twice.project.environments.map((env) => env.order)).toEqual([0, 1]);
+  });
+
+  it('update-environment renames (re-slugging) and replaces the endpoint/property maps whole', async () => {
+    const project = await withEnvironments();
+    const target = project.environments[0]!;
+
+    const renamed = await applyChange(
+      project,
+      {
+        kind: 'update-environment',
+        environmentId: target.id,
+        patch: { name: 'Staging', endpoints: { Calculator: 'http://staging.test/soap' }, properties: { who: 'me' } },
+      },
+      deps,
+    );
+    expect(renamed.project.environments[0]).toMatchObject({
+      name: 'Staging',
+      slug: 'Staging',
+      endpoints: { Calculator: 'http://staging.test/soap' },
+      properties: { who: 'me' },
+    });
+
+    // A patch without a map leaves it alone; a patch with one replaces it (keys can disappear).
+    const cleared = await applyChange(
+      renamed.project,
+      { kind: 'update-environment', environmentId: target.id, patch: { properties: {} } },
+      deps,
+    );
+    expect(cleared.project.environments[0]).toMatchObject({
+      endpoints: { Calculator: 'http://staging.test/soap' },
+      properties: {},
+    });
+  });
+
+  it('set-active-environment switches and clears the active environment', async () => {
+    const project = await withEnvironments();
+    const active = await applyChange(
+      project,
+      { kind: 'set-active-environment', environmentId: project.environments[1]!.id },
+      deps,
+    );
+    expect(active.project.activeEnvironmentId).toBe(project.environments[1]!.id);
+
+    const cleared = await applyChange(active.project, { kind: 'set-active-environment', environmentId: null }, deps);
+    expect('activeEnvironmentId' in cleared.project).toBe(false);
+  });
+
+  it('remove-environment drops it and deactivates it when it was active', async () => {
+    const project = await withEnvironments();
+    const active = await applyChange(
+      project,
+      { kind: 'set-active-environment', environmentId: project.environments[0]!.id },
+      deps,
+    );
+
+    const removed = await applyChange(
+      active.project,
+      { kind: 'remove-environment', environmentId: project.environments[0]!.id },
+      deps,
+    );
+    expect(removed.project.environments.map((env) => env.name)).toEqual(['Prod']);
+    expect('activeEnvironmentId' in removed.project).toBe(false);
+
+    // Removing a non-active environment leaves the active one alone.
+    const stillActive = await applyChange(
+      active.project,
+      { kind: 'remove-environment', environmentId: project.environments[1]!.id },
+      deps,
+    );
+    expect(stillActive.project.activeEnvironmentId).toBe(project.environments[0]!.id);
+  });
+
+  it('rejects unknown environment ids', async () => {
+    const project = await withEnvironments();
+    await expectNotFound(applyChange(project, { kind: 'remove-environment', environmentId: 'nope' }, deps));
+    await expectNotFound(applyChange(project, { kind: 'set-active-environment', environmentId: 'nope' }, deps));
+    await expectNotFound(
+      applyChange(project, { kind: 'update-environment', environmentId: 'nope', patch: { name: 'x' } }, deps),
+    );
+  });
+});

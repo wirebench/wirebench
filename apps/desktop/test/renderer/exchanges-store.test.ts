@@ -3,6 +3,7 @@ import type { ExchangeSummary } from '../../src/shared/wire-types.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 const draft: RequestDraft = {
@@ -47,7 +48,14 @@ function stubIpc(overrides: Parameters<typeof installWirebenchApi>[0] = {}): voi
 describe('useExchangesStore', () => {
   beforeEach(() => {
     useExchangesStore.setState({ byRequest: {}, log: [] });
-    useProjectStore.setState({ interfaces: {}, requests: { r1: draft }, order: [] });
+    useProjectStore.setState({
+      interfaces: {},
+      requests: { r1: draft },
+      order: [],
+      environments: [],
+      activeEnvironmentId: undefined,
+    });
+    useProblemsStore.setState({ items: [] });
   });
 
   it('send() transitions idle -> sending -> done and appends to the log', async () => {
@@ -95,7 +103,13 @@ describe('useExchangesStore', () => {
       headers: draft.headers,
       order: draft.order,
     };
-    useProjectStore.setState({ interfaces: {}, requests: { r1: draftWithoutEndpoint }, order: [] });
+    useProjectStore.setState({
+      interfaces: {},
+      requests: { r1: draftWithoutEndpoint },
+      order: [],
+      environments: [],
+      activeEnvironmentId: undefined,
+    });
     const sendFn = vi.fn();
     stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() } });
 
@@ -156,5 +170,115 @@ describe('useExchangesStore', () => {
     expect(state.byRequest['r1']).toBeUndefined();
     expect(state.log).toHaveLength(1);
     expect(state.log[0]?.sendId).toBe('send-1');
+  });
+
+  it('send() preflights first, sends the endpoint it returns, and lists unresolved refs', async () => {
+    const preflight = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'http://dev.test/soap',
+        endpointSource: 'environment',
+        unresolved: [
+          { expr: '${#Env#missing}', code: 'missing', start: 0, end: 15, field: 'envelopeXml' },
+          { expr: '${who}', code: 'missing', start: 0, end: 6, field: 'header', headerName: 'X-User' },
+        ],
+      },
+    });
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn(), preflight } });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(preflight).toHaveBeenCalledWith({ requestId: 'r1' });
+    // The environment override from main wins over the mirror's own `endpointUrl`.
+    expect(sendFn).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ endpoint: 'http://dev.test/soap' }) as unknown }),
+    );
+    expect(useProblemsStore.getState().items.map((item) => item.problem.message)).toEqual([
+      'Unresolved property ${#Env#missing} in envelopeXml',
+      'Unresolved property ${who} in header "X-User"',
+    ]);
+    expect(useProblemsStore.getState().items[0]).toMatchObject({
+      source: 'expansion',
+      severity: 'warning',
+      requestId: 'r1',
+    });
+  });
+
+  it("send() clears the previous send's expansion problems for that request only", async () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'expansion:r1',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'r1',
+          problem: { code: 'expansion-missing', message: 'stale' },
+        },
+        {
+          groupId: 'expansion:r2',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'r2',
+          problem: { code: 'expansion-missing', message: 'someone else' },
+        },
+      ],
+    });
+    stubIpc({
+      request: {
+        generate: vi.fn(),
+        send: vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') }),
+        cancel: vi.fn(),
+        preflight: vi.fn().mockResolvedValue({ ok: true, value: { endpointSource: 'request-custom', unresolved: [] } }),
+      },
+    });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(useProblemsStore.getState().items.map((item) => item.problem.message)).toEqual(['someone else']);
+  });
+
+  it('send() merges unresolved refs the exchange reports and skips duplicates', async () => {
+    const ref = { expr: '${#Env#missing}', code: 'missing', start: 0, end: 15, field: 'envelopeXml' as const };
+    stubIpc({
+      request: {
+        generate: vi.fn(),
+        send: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { ...exchangeSummary('send-1'), unresolved: [ref, { ...ref, expr: '${#Global#other}' }] },
+        }),
+        cancel: vi.fn(),
+        preflight: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { endpoint: draft.endpointUrl, endpointSource: 'request-custom', unresolved: [ref] },
+        }),
+      },
+    });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(useProblemsStore.getState().items.map((item) => item.problem.message)).toEqual([
+      'Unresolved property ${#Env#missing} in envelopeXml',
+      'Unresolved property ${#Global#other} in envelopeXml',
+    ]);
+  });
+
+  it("falls back to the mirror's endpoint when preflight fails (an unsaved request)", async () => {
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    stubIpc({
+      request: {
+        generate: vi.fn(),
+        send: sendFn,
+        cancel: vi.fn(),
+        preflight: vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } }),
+      },
+    });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(sendFn).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ endpoint: draft.endpointUrl }) as unknown }),
+    );
+    expect(useProblemsStore.getState().items).toEqual([]);
   });
 });

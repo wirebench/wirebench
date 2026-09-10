@@ -8,6 +8,7 @@ import { loadProject, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
+import { GlobalProperties } from '../src/main/global-properties.js';
 import { ProjectService } from '../src/main/project-service.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
@@ -240,4 +241,95 @@ describe('ProjectService', () => {
     await service.close();
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
+});
+
+describe('ProjectService: environments and property scopes', () => {
+  it('persists the active environment and resolves scopes through it', async () => {
+    const userData = root!;
+    const dir = join(tempDir('project'), 'Env Project');
+    const globals = new GlobalProperties(userData);
+    await globals.set('token', 'from-globals');
+    const service = new ProjectService(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
+
+    await service.create({ dir, name: 'Env Project' });
+    await service.mutate({ kind: 'set-project-property', name: 'stage', value: 'proj' });
+    const added = await service.mutate({ kind: 'add-environment', name: 'Dev' });
+    const environmentId = added.createdEnvironmentId!;
+    expect(added.project.environments).toHaveLength(1);
+
+    await service.mutate({
+      kind: 'update-environment',
+      environmentId,
+      patch: { endpoints: { Calculator: 'http://dev.test/soap' }, properties: { stage: 'env' } },
+    });
+
+    // With no active environment the `env` scope is absent entirely, so `${stage}` falls
+    // through to the project.
+    expect(service.scopesFor()).toMatchObject({ project: { stage: 'proj' }, global: { token: 'from-globals' } });
+    expect(service.scopesFor().env).toBeUndefined();
+
+    const activated = await service.mutate({ kind: 'set-active-environment', environmentId });
+    expect(activated.project.activeEnvironmentId).toBe(environmentId);
+    expect(service.scopesFor().env).toEqual({ stage: 'env' });
+
+    await service.save({ reason: 'test' });
+    await service.close();
+
+    const reopened = new ProjectService(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
+    const snapshot = await reopened.openProject(dir);
+    expect(snapshot.activeEnvironmentId).toBe(environmentId);
+    expect(snapshot.environments[0]).toMatchObject({
+      name: 'Dev',
+      slug: 'Dev',
+      endpoints: { Calculator: 'http://dev.test/soap' },
+      properties: { stage: 'env' },
+    });
+    expect(reopened.scopesFor().env).toEqual({ stage: 'env' });
+    await reopened.close();
+  });
+
+  it('falls back to global and system scopes with no project open', () => {
+    const globals = new GlobalProperties(root!);
+    const service = new ProjectService(new EngineService(), new RecentProjects(root!), {}, undefined, globals);
+
+    const scopes = service.scopesFor();
+
+    expect(scopes.project).toEqual({});
+    expect(scopes.env).toBeUndefined();
+    expect(scopes.system).toBe(process.env);
+  });
+
+  it('preflights a saved request against the active environment', async () => {
+    const dir = join(tempDir('project'), 'Preflight Project');
+    const service = newService(root!);
+    await service.create({ dir, name: 'Preflight Project' });
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+    const requestId = imported.project.requests[0]!.id;
+    const slug = imported.project.interfaces[0]!.slug;
+
+    const before = service.preflight(requestId);
+    expect(before.endpointSource).not.toBe('environment');
+
+    const added = await service.mutate({ kind: 'add-environment', name: 'Dev' });
+    const environmentId = added.createdEnvironmentId!;
+    await service.mutate({
+      kind: 'update-environment',
+      environmentId,
+      patch: { endpoints: { [slug]: 'http://dev.test/soap' } },
+    });
+    await service.mutate({ kind: 'set-active-environment', environmentId });
+    await service.mutate({
+      kind: 'update-request',
+      requestId,
+      patch: { envelopeXml: '<Add><a>${#Env#missing}</a></Add>' },
+    });
+
+    const after = service.preflight(requestId);
+    expect(after).toMatchObject({ endpoint: 'http://dev.test/soap', endpointSource: 'environment' });
+    expect(after.unresolved).toEqual([
+      expect.objectContaining({ field: 'envelopeXml', expr: '${#Env#missing}', code: 'missing' }),
+    ]);
+    await service.close();
+  });
 });

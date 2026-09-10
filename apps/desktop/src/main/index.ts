@@ -3,6 +3,7 @@ import { app, BrowserWindow, protocol } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { EngineService } from './engine-service.js';
+import { GlobalProperties } from './global-properties.js';
 import { ProjectService } from './project-service.js';
 import { RecentProjects } from './recent-projects.js';
 import { events } from '../shared/ipc.js';
@@ -10,6 +11,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
+import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { createMainWindow } from './windows.js';
@@ -48,21 +50,30 @@ function applyWindowTitle(project: ProjectWire | null): void {
   }
 }
 
-const projectService = new ProjectService(engineService, new RecentProjects(app.getPath('userData')), {
-  onChanged: (project) => {
-    broadcast(events.project.changed, { project });
-    applyWindowTitle(project);
+/** The user's `${#Global#name}` scope, shared by every project and every window. */
+const globalProperties = new GlobalProperties(app.getPath('userData'));
+
+const projectService = new ProjectService(
+  engineService,
+  new RecentProjects(app.getPath('userData')),
+  {
+    onChanged: (project) => {
+      broadcast(events.project.changed, { project });
+      applyWindowTitle(project);
+    },
+    onChangedOnDisk: (paths) => {
+      broadcast(events.project.changedOnDisk, { paths: [...paths] });
+    },
+    onHydration: (event) => {
+      broadcast(events.project.hydration, event);
+    },
+    onProgress: (progress) => {
+      broadcast(events.engine.progress, progress);
+    },
   },
-  onChangedOnDisk: (paths) => {
-    broadcast(events.project.changedOnDisk, { paths: [...paths] });
-  },
-  onHydration: (event) => {
-    broadcast(events.project.hydration, event);
-  },
-  onProgress: (progress) => {
-    broadcast(events.engine.progress, progress);
-  },
-});
+  undefined,
+  globalProperties,
+);
 
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
@@ -74,9 +85,14 @@ void app.whenReady().then(() => {
 
   registerAppChannels();
   registerDefinitionChannels(engineService);
-  registerRequestChannels(engineService);
+  registerRequestChannels(engineService, { project: projectService });
   registerProjectChannels(projectService);
+  registerGlobalsChannels(globalProperties, (properties) => {
+    broadcast(events.globals.changed, { properties });
+  });
   registerDialogsChannels();
+  // Warms the in-memory map so the first send does not have to wait on a disk read.
+  void globalProperties.load();
   createMainWindow();
   applyWindowTitle(projectService.snapshot());
 
