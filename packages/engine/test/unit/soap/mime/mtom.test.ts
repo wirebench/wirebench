@@ -83,6 +83,14 @@ describe('prepareMtomRequest', () => {
     const prepared = await prepareMtomRequest('<a><b>cid:A1</a>', [attachment()], { force: false, resolver });
     expect(prepared.envelopeXml).toBe('<a><b>cid:A1</a>');
   });
+
+  it('matches a cid reference whose content-id contains a space', async () => {
+    const envelope = '<Body><data>cid:my file@wirebench</data></Body>';
+    const withSpace = attachment({ contentId: 'my file@wirebench' });
+    const prepared = await prepareMtomRequest(envelope, [withSpace], { force: false, resolver });
+    expect(prepared.parts).toHaveLength(1);
+    expect(prepared.parts[0]?.contentId).toBe('my file@wirebench');
+  });
 });
 
 describe('xopContentType', () => {
@@ -180,5 +188,25 @@ describe('expandMtomResponse', () => {
     expect(expanded.envelopeXml).toBe('<a><b></a>');
     expect(expanded.inlinedContentIds).toEqual([]);
     expect(expanded.attachments).toHaveLength(1);
+  });
+
+  it('does not throw on an href that is not valid percent-encoding, and leaves the include in place', () => {
+    const malformed = parseMultipartRelated(
+      new TextEncoder().encode(
+        [
+          '--B',
+          'Content-Type: application/xop+xml',
+          '',
+          '<a><xop:Include href="cid:100%" xmlns:xop="http://www.w3.org/2004/08/xop/include"/></a>',
+          '--B--',
+          '',
+        ].join('\r\n'),
+      ),
+      'multipart/related; boundary=B',
+    );
+    expect(() => expandMtomResponse(malformed, { inline: true })).not.toThrow();
+    const expanded = expandMtomResponse(malformed, { inline: true });
+    expect(expanded.envelopeXml).toContain('<xop:Include href="cid:100%"');
+    expect(expanded.inlinedContentIds).toEqual([]);
   });
 });

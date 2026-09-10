@@ -66,6 +66,19 @@ export function xopContentType(soapContentType: string): string {
   );
 }
 
+/**
+ * Percent-decodes a `cid:` href's tail, falling back to the raw string when it is not valid
+ * percent-encoding (e.g. a stray `%` from a server that did not escape its Content-IDs) —
+ * a malformed response should not throw out of the send path.
+ */
+function decodeCidHref(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /** The attachment a `cid:` reference names: by Content-ID first, then by attachment id. */
 function findAttachment(attachments: readonly Attachment[], cid: string): Attachment | undefined {
   return attachments.find((a) => a.contentId === cid) ?? attachments.find((a) => a.id === cid);
@@ -157,7 +170,7 @@ export function expandMtomResponse(
     if (href === undefined || !href.startsWith('cid:')) {
       return;
     }
-    const contentId = decodeURIComponent(href.slice('cid:'.length));
+    const contentId = decodeCidHref(href.slice('cid:'.length));
     const part = byContentId.get(contentId);
     if (part === undefined) {
       return;

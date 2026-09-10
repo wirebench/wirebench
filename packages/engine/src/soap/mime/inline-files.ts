@@ -38,7 +38,7 @@ export interface InlinedFiles {
   readonly problems: readonly InlineFileProblem[];
 }
 
-const FILE_TEXT = /^\s*file:(\S+)\s*$/;
+const FILE_TEXT = /^file:(.+)$/;
 
 /** The paths a reference may resolve to, most specific first. */
 function candidatePaths(reference: string, resourceRoot: string | undefined): readonly string[] {
@@ -70,7 +70,7 @@ export async function inlineFiles(envelopeXml: string, options: InlineFilesOptio
     if (text === undefined) {
       return;
     }
-    const match = FILE_TEXT.exec(text.value);
+    const match = FILE_TEXT.exec(text.value.trim());
     if (match?.[1] !== undefined) {
       references.push({ path: match[1], range: text.range });
     }

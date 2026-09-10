@@ -176,6 +176,7 @@ export { findCidReferences, forEachScannedElement, spliceRanges } from './soap/m
 export type { CidReference, CidScan } from './soap/mime/cid-scan.js';
 export type {
   AttachmentResolver,
+  BuildTransferEncoding,
   MimePart,
   MultipartPart,
   MultipartRoot,

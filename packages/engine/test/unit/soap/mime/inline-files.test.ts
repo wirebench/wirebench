@@ -89,6 +89,16 @@ describe('inlineFiles', () => {
     expect(result.inlined).toBe(0);
   });
 
+  it('inlines a file: reference whose path contains a space', async () => {
+    const result = await inlineFiles('<Body><data>file:My Documents/a.txt</data></Body>', {
+      enabled: true,
+      resolveFile: resolverFor({ 'My Documents/a.txt': CONTENT }),
+    });
+    expect(result.envelopeXml).toBe(`<Body><data>${BASE64}</data></Body>`);
+    expect(result.inlined).toBe(1);
+    expect(result.problems).toEqual([]);
+  });
+
   it('inlines several references in one pass', async () => {
     const result = await inlineFiles('<Body><a>file:/tmp/a.txt</a><b>file:/tmp/b.txt</b></Body>', {
       enabled: true,

@@ -10,7 +10,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import type { MimePart, MultipartPart, MultipartRoot, TransferEncoding } from './types.js';
+import type { BuildTransferEncoding, MimePart, MultipartPart, MultipartRoot, TransferEncoding } from './types.js';
 
 /** Default Content-ID of the envelope part when the caller does not choose one. */
 export const DEFAULT_ROOT_CONTENT_ID = 'rootpart@wirebench';
@@ -53,12 +53,42 @@ export function mediaTypeOf(contentType: string): string {
 
 /** One parameter of a `Content-Type`-style header value, unquoted; case-insensitive on the name. */
 export function mimeParameter(header: string, name: string): string | undefined {
-  const pattern = new RegExp(`;\\s*${name}\\s*=\\s*(?:"([^"]*)"|([^;\\s]+))`, 'i');
+  // The quoted-string branch follows RFC 2045's grammar: any character except `"` and `\`,
+  // or a backslash-escaped pair, so a value written by {@link quoteParameter} round-trips.
+  const pattern = new RegExp(`;\\s*${name}\\s*=\\s*(?:"((?:[^"\\\\]|\\\\.)*)"|([^;\\s]+))`, 'i');
   const match = pattern.exec(header);
   if (match === null) {
     return undefined;
   }
-  return match[1] ?? match[2];
+  const quoted = match[1];
+  return quoted !== undefined ? quoted.replace(/\\(.)/g, '$1') : match[2];
+}
+
+/**
+ * Replaces CR, LF and other control characters in a header value component with `_`.
+ *
+ * Used for every value that lands unquoted on the wire (`Content-ID`, `Content-Type`) so a
+ * user-authored string (an attachment name, a resolved content type) cannot smuggle in a
+ * second header line.
+ */
+function sanitizeHeaderValue(value: string): string {
+  let out = '';
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    out += code < 0x20 || code === 0x7f ? '_' : char;
+  }
+  return out;
+}
+
+/**
+ * Quotes a MIME parameter value for a header line: sanitizes control characters (see
+ * {@link sanitizeHeaderValue}), then backslash-escapes `"` and `\` per RFC 2045's
+ * quoted-string grammar. Use for every quoted parameter this module writes — `filename`,
+ * `name`, `type`, `start`, `start-info`, `boundary` — since all of them can carry
+ * user-authored text.
+ */
+function quoteParameter(value: string): string {
+  return `"${sanitizeHeaderValue(value).replace(/[\\"]/g, (char) => `\\${char}`)}"`;
 }
 
 /** Strips the angle brackets from a Content-ID (`<a@b>` -> `a@b`). */
@@ -78,7 +108,7 @@ function toBase64Lines(bytes: Uint8Array): Buffer {
 }
 
 /** The bytes of a part as they go on the wire, honouring its transfer encoding. */
-function encodePart(bytes: Uint8Array, encoding: TransferEncoding | undefined): Buffer {
+function encodePart(bytes: Uint8Array, encoding: BuildTransferEncoding | undefined): Buffer {
   return encoding === 'base64' ? toBase64Lines(bytes) : Buffer.from(bytes);
 }
 
@@ -101,10 +131,10 @@ function chooseBoundary(preferred: string | undefined, chunks: readonly Buffer[]
 function dispositionHeader(part: MultipartPart): string | undefined {
   const attributes: string[] = [];
   if (part.partName !== undefined && part.partName.length > 0) {
-    attributes.push(`name="${part.partName}"`);
+    attributes.push(`name=${quoteParameter(part.partName)}`);
   }
   if (part.fileName !== undefined && part.fileName.length > 0) {
-    attributes.push(`filename="${part.fileName}"`);
+    attributes.push(`filename=${quoteParameter(part.fileName)}`);
   }
   return attributes.length === 0 ? undefined : `attachment; ${attributes.join('; ')}`;
 }
@@ -124,22 +154,23 @@ export function buildMultipartRelated(input: BuildMultipartInput): BuiltMultipar
   const rootBytes = Buffer.from(input.root.bytes);
   const encoded = input.parts.map((part) => encodePart(part.bytes, part.transferEncoding));
   const boundary = chooseBoundary(input.boundary, [rootBytes, ...encoded]);
-  const rootContentId = input.root.contentId ?? DEFAULT_ROOT_CONTENT_ID;
+  const rootContentId = sanitizeHeaderValue(input.root.contentId ?? DEFAULT_ROOT_CONTENT_ID);
+  const rootContentType = sanitizeHeaderValue(input.root.contentType);
 
   const chunks: Buffer[] = [];
   const push = (text: string): void => void chunks.push(Buffer.from(text, 'utf-8'));
 
   push(`--${boundary}${CRLF}`);
-  push(`Content-Type: ${input.root.contentType}${CRLF}`);
+  push(`Content-Type: ${rootContentType}${CRLF}`);
   push(`Content-Transfer-Encoding: 8bit${CRLF}`);
   push(`Content-ID: <${rootContentId}>${CRLF}${CRLF}`);
   chunks.push(rootBytes);
 
   input.parts.forEach((part, index) => {
     push(`${CRLF}--${boundary}${CRLF}`);
-    push(`Content-Type: ${part.contentType}${CRLF}`);
+    push(`Content-Type: ${sanitizeHeaderValue(part.contentType)}${CRLF}`);
     push(`Content-Transfer-Encoding: ${part.transferEncoding ?? 'binary'}${CRLF}`);
-    push(`Content-ID: <${part.contentId}>${CRLF}`);
+    push(`Content-ID: <${sanitizeHeaderValue(part.contentId)}>${CRLF}`);
     const disposition = dispositionHeader(part);
     if (disposition !== undefined) {
       push(`Content-Disposition: ${disposition}${CRLF}`);
@@ -149,11 +180,11 @@ export function buildMultipartRelated(input: BuildMultipartInput): BuiltMultipar
   });
   push(`${CRLF}--${boundary}--${CRLF}`);
 
-  const rootType = mediaTypeOf(input.root.contentType);
-  const startInfo = input.mtom === true ? (mimeParameter(input.root.contentType, 'type') ?? 'text/xml') : undefined;
+  const rootType = mediaTypeOf(rootContentType);
+  const startInfo = input.mtom === true ? (mimeParameter(rootContentType, 'type') ?? 'text/xml') : undefined;
   const contentType =
-    `multipart/related; type="${rootType}"; start="<${rootContentId}>"; boundary="${boundary}"` +
-    (startInfo === undefined ? '' : `; start-info="${startInfo}"`);
+    `multipart/related; type=${quoteParameter(rootType)}; start=${quoteParameter(`<${rootContentId}>`)}; boundary=${quoteParameter(boundary)}` +
+    (startInfo === undefined ? '' : `; start-info=${quoteParameter(startInfo)}`);
 
   return { contentType, body: new Uint8Array(Buffer.concat(chunks)), boundary };
 }
@@ -205,6 +236,17 @@ function splitHeaders(segment: Buffer): { headers: Record<string, string>; body:
   return { headers, body: segment.subarray(bodyStart) };
 }
 
+/** The last `/`-separated, non-empty segment of a `Content-Location` value, sans query/fragment. */
+function lastPathSegment(contentLocation: string | undefined): string | undefined {
+  if (contentLocation === undefined) {
+    return undefined;
+  }
+  const withoutQuery = contentLocation.trim().split(/[?#]/, 1)[0] ?? '';
+  const segments = withoutQuery.split('/');
+  const last = segments[segments.length - 1];
+  return last !== undefined && last.length > 0 ? last : undefined;
+}
+
 /** Turns one raw part segment into a {@link MimePart}, decoding its transfer encoding. */
 function toMimePart(segment: Buffer, fallbackContentType: string): MimePart {
   const { headers, body } = splitHeaders(segment);
@@ -221,7 +263,9 @@ function toMimePart(segment: Buffer, fallbackContentType: string): MimePart {
         ? decodeQuotedPrintable(raw)
         : raw;
   const disposition = headers['content-disposition'];
-  const fileName = disposition === undefined ? undefined : (mimeParameter(`;${disposition}`, 'filename') ?? undefined);
+  const dispositionFileName =
+    disposition === undefined ? undefined : (mimeParameter(`;${disposition}`, 'filename') ?? undefined);
+  const fileName = dispositionFileName ?? lastPathSegment(headers['content-location']);
   const partName = disposition === undefined ? undefined : (mimeParameter(`;${disposition}`, 'name') ?? undefined);
   const contentId = headers['content-id'];
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { MultipartPart } from '../../../../src/soap/mime/types.js';
 import { buildMultipartRelated, parseMultipartRelated } from '../../../../src/soap/mime/multipart.js';
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -51,6 +52,130 @@ describe('buildMultipartRelated', () => {
       boundary: 'B',
     });
     expect(text(built.body)).toContain('Content-Disposition: attachment; name="file"; filename="in voice.pdf"\r\n');
+  });
+
+  it('escapes a double quote in a filename and round-trips it through parse', () => {
+    const built = buildMultipartRelated({
+      root: ROOT,
+      parts: [
+        {
+          contentId: 'a',
+          contentType: 'application/pdf',
+          bytes: utf8('x'),
+          fileName: 're"port.pdf',
+          partName: 'na"me',
+        },
+      ],
+      boundary: 'B',
+    });
+    expect(text(built.body)).toContain('Content-Disposition: attachment; name="na\\"me"; filename="re\\"port.pdf"');
+    const parsed = parseMultipartRelated(built.body, built.contentType);
+    expect(parsed.parts[0]?.fileName).toBe('re"port.pdf');
+    expect(parsed.parts[0]?.partName).toBe('na"me');
+  });
+
+  it('sanitizes CR/LF in a filename so no header line is injected', () => {
+    const built = buildMultipartRelated({
+      root: ROOT,
+      parts: [
+        {
+          contentId: 'a',
+          contentType: 'application/pdf',
+          bytes: utf8('x'),
+          fileName: 'evil\r\nX-Injected: yes',
+        },
+      ],
+      boundary: 'B',
+    });
+    const body = text(built.body);
+    // No new header line was smuggled in; the CR/LF was replaced, not passed through.
+    expect(body).not.toMatch(/\r\nX-Injected: yes\r\n/);
+    expect(body).toContain('filename="evil__X-Injected: yes"');
+  });
+
+  it('sanitizes CR/LF in a Content-ID so no header line is injected', () => {
+    const built = buildMultipartRelated({
+      root: ROOT,
+      parts: [
+        {
+          contentId: 'a@x\r\nX-Injected: yes',
+          contentType: 'application/octet-stream',
+          bytes: utf8('x'),
+        },
+      ],
+      boundary: 'B',
+    });
+    const body = text(built.body);
+    expect(body).not.toMatch(/\r\nX-Injected: yes\r\n/);
+    expect(body).toContain('Content-ID: <a@x__X-Injected: yes>');
+  });
+
+  it('sanitizes CR/LF in a Content-Type so no header line is injected', () => {
+    const built = buildMultipartRelated({
+      root: ROOT,
+      parts: [
+        {
+          contentId: 'a',
+          contentType: 'text/plain\r\nX-Injected: yes',
+          bytes: utf8('x'),
+        },
+      ],
+      boundary: 'B',
+    });
+    const body = text(built.body);
+    expect(body).not.toMatch(/\r\nX-Injected: yes\r\n/);
+  });
+
+  it('rejects quoted-printable as a build-side transfer encoding (type-level)', () => {
+    // quoted-printable is understood on parse but buildMultipartRelated never writes it, so
+    // MultipartPart.transferEncoding no longer accepts it.
+    const part: MultipartPart = {
+      contentId: 'a',
+      contentType: 'text/plain',
+      bytes: utf8('x'),
+      // @ts-expect-error -- build-side transfer encoding excludes 'quoted-printable'
+      transferEncoding: 'quoted-printable',
+    };
+    expect(part.transferEncoding).toBe('quoted-printable');
+  });
+
+  it('reads a file name from Content-Location when there is no Content-Disposition', () => {
+    const withLocation = [
+      '--B',
+      'Content-Type: text/xml',
+      '',
+      '<x/>',
+      '--B',
+      'Content-Type: application/pdf',
+      'Content-ID: <f>',
+      'Content-Location: http://example.com/files/report.pdf',
+      '',
+      'PDF',
+      '--B--',
+      '',
+    ].join('\r\n');
+    const parsed = parseMultipartRelated(utf8(withLocation), 'multipart/related; boundary=B');
+    expect(parsed.parts[0]?.fileName).toBe('report.pdf');
+  });
+
+  it('prefers Content-Disposition filename over Content-Location', () => {
+    const withBoth = [
+      '--B',
+      'Content-Type: text/xml',
+      '',
+      '<x/>',
+      '--B',
+      'Content-Type: application/pdf',
+      'Content-ID: <f>',
+      'Content-Location: http://example.com/files/other.pdf',
+      'Content-Disposition: attachment; filename="report.pdf"',
+      '',
+      'PDF',
+      '--B--',
+      '',
+    ].join('\r\n');
+    const parsed = parseMultipartRelated(utf8(withBoth), 'multipart/related; boundary=B');
+    expect(parsed.parts[0]?.fileName).toBe('report.pdf');
   });
 
   it('picks a boundary that does not occur in any part', () => {

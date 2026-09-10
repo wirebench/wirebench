@@ -25,7 +25,7 @@ export interface CidScan {
   readonly scannable: boolean;
 }
 
-const CID_TEXT = /^\s*cid:(\S+)\s*$/;
+const CID_TEXT = /^cid:(.+)$/;
 
 function walk(elements: readonly ScannedElement[], visit: (element: ScannedElement) => void): void {
   for (const element of elements) {
@@ -58,7 +58,7 @@ export function findCidReferences(envelopeXml: string): CidScan {
     if (text === undefined) {
       return;
     }
-    const match = CID_TEXT.exec(text.value);
+    const match = CID_TEXT.exec(text.value.trim());
     if (match?.[1] !== undefined) {
       references.push({ cid: match[1], range: text.range });
     }

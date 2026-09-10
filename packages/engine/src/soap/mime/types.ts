@@ -16,6 +16,13 @@ export type AttachmentResolver = (attachment: Attachment) => Promise<Uint8Array>
 /** Content transfer encodings this layer writes or understands. */
 export type TransferEncoding = 'binary' | 'base64' | '8bit' | '7bit' | 'quoted-printable';
 
+/**
+ * Transfer encodings {@link buildMultipartRelated} can actually produce: `quoted-printable`
+ * is understood on parse but this layer never writes it, so it is left out of the build-side
+ * type rather than silently passed through as if it were `binary`.
+ */
+export type BuildTransferEncoding = 'binary' | 'base64' | '8bit' | '7bit';
+
 /** One part to write into a `multipart/related` body. */
 export interface MultipartPart {
   /** Content-ID without the angle brackets; they are added on the wire. */
@@ -23,7 +30,7 @@ export interface MultipartPart {
   readonly contentType: string;
   readonly bytes: Uint8Array;
   /** Defaults to `binary`; `base64` re-encodes the bytes and wraps at 76 columns. */
-  readonly transferEncoding?: TransferEncoding;
+  readonly transferEncoding?: BuildTransferEncoding;
   /** File name for `Content-Disposition: attachment; filename="..."`. */
   readonly fileName?: string;
   /** WSDL `mime:part` name for `Content-Disposition: attachment; name="..."`. */
