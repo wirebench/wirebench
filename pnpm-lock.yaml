@@ -153,6 +153,9 @@ importers:
       '@xmldom/xmldom':
         specifier: ^0.9.12
         version: 0.9.12
+      fontoxpath:
+        specifier: ^3.34.0
+        version: 3.34.0
       ulidx:
         specifier: ^2.4.1
         version: 2.4.1
@@ -1894,6 +1897,9 @@ packages:
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
 
+  fontoxpath@3.34.0:
+    resolution: {integrity: sha512-7FgBQRohn4WR/2eVdYqZtKBFZkJNaiP4kGdfqS6bAg465og05ixGA2OgfMdxsO1mnX67+64JX/8JKclVqS+bzA==}
+
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -2271,6 +2277,9 @@ packages:
   progress@2.0.3:
     resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
     engines: {node: '>=0.4.0'}
+
+  prsc@4.0.0:
+    resolution: {integrity: sha512-OmXQ2v76RlXNx/gqv7+oB6jyKnudJ/rsMfAIVexhbDFxXAJPoWKMxJkZU2ohlu4miCiSQCG+horf2DV4/kNc1Q==}
 
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
@@ -2702,6 +2711,9 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
+  whynot@5.0.0:
+    resolution: {integrity: sha512-cGGfDPYYqoHoMWqXVc3G+N74u1FhFhrBa+pOO906b9ktRc/JFUdwroTkfPqjKzyoCLVcKr6yy6bYIcWT7jTg2A==}
+
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
@@ -2712,6 +2724,9 @@ packages:
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
+
+  xspattern@3.1.0:
+    resolution: {integrity: sha512-rxtOX8ORJizRqswIdZ72G3thKrHd0Q+TvyUCMByc5VdjDz1nkuZKfPXM3xGdrGi0fwEy+DDJN7DqtAZ06Re4bA==}
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
@@ -4311,6 +4326,11 @@ snapshots:
 
   flatted@3.4.4: {}
 
+  fontoxpath@3.34.0:
+    dependencies:
+      prsc: 4.0.0
+      xspattern: 3.1.0
+
   fsevents@2.3.3:
     optional: true
 
@@ -4616,6 +4636,8 @@ snapshots:
       react-is: 17.0.2
 
   progress@2.0.3: {}
+
+  prsc@4.0.0: {}
 
   punycode@2.3.1: {}
 
@@ -4979,11 +5001,17 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
+  whynot@5.0.0: {}
+
   word-wrap@1.2.5: {}
 
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
+
+  xspattern@3.1.0:
+    dependencies:
+      whynot: 5.0.0
 
   yallist@3.1.1: {}
 

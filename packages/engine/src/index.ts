@@ -18,6 +18,10 @@ export type { NamespaceUri } from './xml/namespaces.js';
 export { LineIndex } from './xml/positions.js';
 export type { LinePosition } from './xml/positions.js';
 
+export { evaluate } from './xpath/evaluate.js';
+export type { EvaluateOptions, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export { collectNamespaces, suggestPrefixes } from './xpath/namespaces.js';
+
 export { parseQName, qnameEquals, qnameToString } from './wsdl/qname.js';
 export type { QName } from './wsdl/qname.js';
 export { findBinding, findMessage, findPortType, findService } from './wsdl/model.js';
