@@ -1,0 +1,63 @@
+@import './tokens.css';
+@import 'tailwindcss';
+
+/*
+ * Maps the design tokens onto Tailwind's theme so utilities read as intent
+ * (`bg-surface-raised`, `text-fg-muted`, `border-hairline`) instead of raw values.
+ */
+@theme {
+  --color-surface-sunken: var(--wb-bg-sunken);
+  --color-surface-base: var(--wb-bg-base);
+  --color-surface-raised: var(--wb-bg-raised);
+  --color-surface-overlay: var(--wb-bg-overlay);
+  --color-surface-hover: var(--wb-bg-hover);
+  --color-surface-active: var(--wb-bg-active);
+  --color-surface-selected: var(--wb-bg-selected);
+
+  --color-fg-default: var(--wb-fg-default);
+  --color-fg-muted: var(--wb-fg-muted);
+  --color-fg-subtle: var(--wb-fg-subtle);
+  --color-fg-faint: var(--wb-fg-faint);
+  --color-fg-on-accent: var(--wb-fg-on-accent);
+
+  --color-hairline: var(--wb-border-default);
+  --color-hairline-strong: var(--wb-border-strong);
+
+  --color-accent: var(--wb-accent-default);
+  --color-accent-hover: var(--wb-accent-hover);
+  --color-accent-muted: var(--wb-accent-muted);
+  --color-accent-surface: var(--wb-accent-surface);
+
+  --color-status-success: var(--wb-status-success);
+  --color-status-warning: var(--wb-status-warning);
+  --color-status-danger: var(--wb-status-danger);
+  --color-status-info: var(--wb-status-info);
+
+  --font-ui: var(--wb-font-ui);
+  --font-mono: var(--wb-font-mono);
+
+  --text-xs: var(--wb-font-size-xs);
+  --text-sm: var(--wb-font-size-sm);
+  --text-md: var(--wb-font-size-md);
+  --text-lg: var(--wb-font-size-lg);
+
+  --radius-sm: var(--wb-radius-sm);
+  --radius-md: var(--wb-radius-md);
+  --radius-lg: var(--wb-radius-lg);
+
+  --spacing-row: var(--wb-row-height);
+  --spacing-title-bar: var(--wb-title-bar-height);
+  --spacing-status-bar: var(--wb-status-bar-height);
+  --spacing-activity-bar: var(--wb-activity-bar-width);
+}
+
+@layer components {
+  /* The macOS `hiddenInset` title bar: the strip drags the window, its controls must not. */
+  .wb-drag {
+    -webkit-app-region: drag;
+  }
+
+  .wb-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}

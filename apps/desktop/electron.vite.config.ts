@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import type { Plugin } from 'vite';
 import { CONTENT_SECURITY_POLICY } from './src/main/security.js';
 
@@ -42,6 +43,6 @@ export default defineConfig({
   },
   renderer: {
     resolve: { alias: sharedAlias },
-    plugins: [react(), cspMetaPlugin()],
+    plugins: [react(), tailwindcss(), cspMetaPlugin()],
   },
 });

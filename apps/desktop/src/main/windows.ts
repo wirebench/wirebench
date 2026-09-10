@@ -38,8 +38,16 @@ export function createMainWindow(): BrowserWindow {
   applyContentSecurityPolicy();
 
   const win = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 1280,
+    height: 820,
+    minWidth: 880,
+    minHeight: 560,
+    backgroundColor: '#151413',
+    // macOS gets the custom title bar the shell draws (see renderer/shell/title-bar.tsx); the
+    // traffic lights are inset into it. Windows and Linux keep their native frame for now.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 12 } }
+      : {}),
     webPreferences: {
       ...MAIN_WINDOW_WEB_PREFERENCES,
       preload: PRELOAD_PATH,

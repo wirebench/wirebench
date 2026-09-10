@@ -18,6 +18,28 @@ pnpm typecheck                     # tsc -b
 pnpm check                         # lint + typecheck + test ← the pre-commit and CI gate
 ```
 
+## Keyboard shortcuts
+
+Every action in Wirebench is a command with an id, and every shortcut is that command's binding — the command palette
+(`⌘K` / `Ctrl+K`) lists them all. `Mod` is `⌘` on macOS and `Ctrl` elsewhere.
+
+| Command                 | Shortcut      |
+| ----------------------- | ------------- |
+| Show All Commands       | `Mod+K`       |
+| Toggle Sidebar          | `Mod+B`       |
+| Toggle Console          | `Mod+J`       |
+| Toggle Details Panel    | `Mod+Alt+B`   |
+| Show Explorer           | `Mod+Shift+E` |
+| Show Search             | `Mod+Shift+S` |
+| Show History            | `Mod+Shift+Y` |
+| Show Settings           | `Mod+,`       |
+| Import WSDL…            | `Mod+I`       |
+| Open Project…           | `Mod+O`       |
+| New Project             | `Mod+Shift+N` |
+| Toggle Light/Dark Theme | —             |
+
+`Mod+Shift+F` is deliberately unassigned here: it is reserved for Format XML.
+
 ## Status
 
 Early scaffolding stage. See the design spec at

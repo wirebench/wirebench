@@ -1,0 +1,147 @@
+/*
+ * Wirebench design tokens.
+ *
+ * One warm near-black ramp, hairline borders, and a single terracotta accent reserved for
+ * focus, selection, and primary actions — an IDE reads as a workbench, not a landing page,
+ * so colour is spent on state, never on decoration. Density is deliberately tight (26px rows,
+ * 13px base) to match the tool this sits beside all day.
+ *
+ * Dark is the default; `[data-theme="light"]` carries a complete light palette. Task 48
+ * polishes both. Nothing outside this file may hard-code a colour.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, deepest to highest. */
+  --wb-bg-sunken: #0f0e0d;
+  --wb-bg-base: #151413;
+  --wb-bg-raised: #1c1b19;
+  --wb-bg-overlay: #232120;
+  --wb-bg-hover: #26241f;
+  --wb-bg-active: #302c27;
+  --wb-bg-selected: #3a2a22;
+
+  /* Foreground scale, loudest to quietest. */
+  --wb-fg-default: #ece9e3;
+  --wb-fg-muted: #a49d93;
+  --wb-fg-subtle: #756e66;
+  --wb-fg-faint: #4c4741;
+  --wb-fg-on-accent: #1a1210;
+
+  /* Hairlines. */
+  --wb-border-default: #2a2724;
+  --wb-border-strong: #3b3733;
+  --wb-border-focus: var(--wb-accent-default);
+
+  /* The one accent. */
+  --wb-accent-default: #d97757;
+  --wb-accent-hover: #e58c6e;
+  --wb-accent-muted: #8a4a34;
+  --wb-accent-surface: #2b1c16;
+
+  /* Status, used only where status is the message. */
+  --wb-status-success: #6fbf8f;
+  --wb-status-warning: #d9a441;
+  --wb-status-danger: #e0685f;
+  --wb-status-info: #7fa6dd;
+
+  /* Spacing: a 2px-rooted scale; IDE chrome lives in the first four steps. */
+  --wb-space-1: 2px;
+  --wb-space-2: 4px;
+  --wb-space-3: 6px;
+  --wb-space-4: 8px;
+  --wb-space-5: 12px;
+  --wb-space-6: 16px;
+  --wb-space-7: 24px;
+  --wb-space-8: 32px;
+
+  --wb-radius-sm: 3px;
+  --wb-radius-md: 5px;
+  --wb-radius-lg: 8px;
+
+  --wb-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', sans-serif;
+  --wb-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --wb-font-size-xs: 11px;
+  --wb-font-size-sm: 12px;
+  --wb-font-size-md: 13px;
+  --wb-font-size-lg: 15px;
+  --wb-line-height-tight: 1.3;
+  --wb-line-height-normal: 1.5;
+
+  /* Chrome geometry. */
+  --wb-row-height: 26px;
+  --wb-title-bar-height: 38px;
+  --wb-status-bar-height: 24px;
+  --wb-activity-bar-width: 44px;
+
+  --wb-shadow-overlay: 0 16px 48px rgb(0 0 0 / 55%);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --wb-bg-sunken: #efece7;
+  --wb-bg-base: #faf9f7;
+  --wb-bg-raised: #ffffff;
+  --wb-bg-overlay: #ffffff;
+  --wb-bg-hover: #f0ede8;
+  --wb-bg-active: #e6e2db;
+  --wb-bg-selected: #f6e3da;
+
+  --wb-fg-default: #22201d;
+  --wb-fg-muted: #5c564e;
+  --wb-fg-subtle: #837c73;
+  --wb-fg-faint: #b3ada4;
+  --wb-fg-on-accent: #ffffff;
+
+  --wb-border-default: #e0dcd5;
+  --wb-border-strong: #c9c4bb;
+
+  --wb-accent-default: #bf5730;
+  --wb-accent-hover: #a94a27;
+  --wb-accent-muted: #e0a891;
+  --wb-accent-surface: #fbeee8;
+
+  --wb-status-success: #2f7d52;
+  --wb-status-warning: #9a6b12;
+  --wb-status-danger: #b23b33;
+  --wb-status-info: #3d6ba8;
+
+  --wb-shadow-overlay: 0 16px 48px rgb(40 30 20 / 18%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--wb-bg-base);
+  color: var(--wb-fg-default);
+  font-family: var(--wb-font-ui);
+  font-size: var(--wb-font-size-md);
+  line-height: var(--wb-line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+:focus-visible {
+  outline: 2px solid var(--wb-accent-default);
+  outline-offset: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

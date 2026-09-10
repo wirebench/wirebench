@@ -13,5 +13,11 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/api.d.ts", "src/preload/build-api.ts"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/preload/api.d.ts",
+    "src/preload/build-api.ts",
+    "test/renderer/**/*"
+  ]
 }
