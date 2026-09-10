@@ -51,6 +51,11 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       setShowSecrets: fail('secrets.setShowSecrets'),
       getShowSecrets: fail('secrets.getShowSecrets'),
     },
+    xml: {
+      completions: fail('xml.completions'),
+      declaration: fail('xml.declaration'),
+      describeMany: vi.fn().mockResolvedValue({ ok: true, value: { results: [] } }),
+    },
     exchanges: { get: fail('exchanges.get') },
     history: {
       list: fail('history.list'),

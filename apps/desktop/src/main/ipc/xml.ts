@@ -1,4 +1,4 @@
-import { childrenAllowedAt, declarationOf } from '@wirebench/engine';
+import { childrenAllowedAt, declarationOf, qnameToString } from '@wirebench/engine';
 import type { QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -48,5 +48,27 @@ export function registerXmlChannels(service: EngineService): void {
       ...(found.source.line !== undefined ? { line: found.source.line } : {}),
       ...(found.source.column !== undefined ? { column: found.source.column } : {}),
     });
+  });
+
+  registerHandler(channels.xml.describeMany, (request) => {
+    const schemaSet = service.schemaSetFor(request.interfaceId);
+    const results = request.paths.map((clarkPath) => {
+      const path = clarkPath.map(parseClarkQName);
+      const found = declarationOf(schemaSet, path);
+      if (found === undefined) {
+        return null;
+      }
+      // A named type reference (`type="tns:Foo"`) renders as its Clark-notation QName; an
+      // inline `<xs:complexType>`/`<xs:simpleType>` has no name of its own, so this reports ''
+      // (anonymous) per the outline's Type column contract.
+      const typeName = found.element.type !== undefined ? qnameToString(found.element.type) : '';
+      return {
+        typeName,
+        kind: 'element' as const,
+        nillable: found.element.nillable,
+        ...(found.element.documentation !== undefined ? { documentation: found.element.documentation } : {}),
+      };
+    });
+    return Promise.resolve({ results });
   });
 }

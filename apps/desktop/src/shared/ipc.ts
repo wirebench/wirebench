@@ -56,6 +56,8 @@ import {
   xmlCompletionsResponseSchema,
   xmlPathRequestSchema,
   xmlDeclarationResponseSchema,
+  xmlDescribeManyRequestSchema,
+  xmlDescribeManyResponseSchema,
   fsSaveTextRequestSchema,
   fsSaveTextResponseSchema,
   fsOpenTextRequestSchema,
@@ -189,6 +191,7 @@ export const channels = {
   xml: {
     completions: defineChannel('xml.completions', xmlCompletionsRequestSchema, xmlCompletionsResponseSchema),
     declaration: defineChannel('xml.declaration', xmlPathRequestSchema, xmlDeclarationResponseSchema),
+    describeMany: defineChannel('xml.describeMany', xmlDescribeManyRequestSchema, xmlDescribeManyResponseSchema),
   },
   fs: {
     saveText: defineChannel('fs.saveText', fsSaveTextRequestSchema, fsSaveTextResponseSchema),

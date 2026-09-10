@@ -111,7 +111,7 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
         </Panel>
         <Separator aria-label="Resize" className={`${SEPARATOR} ${layout === 'horizontal' ? 'w-px' : 'h-px'}`} />
         <Panel id="response-pane" minSize="20%">
-          <ResponsePane state={exchange} />
+          <ResponsePane state={exchange} interfaceId={draft.interfaceId} />
         </Panel>
       </Group>
     </section>

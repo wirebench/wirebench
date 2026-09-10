@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequestEditor } from '../../src/renderer/features/request-editor/request-editor.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -237,5 +237,51 @@ describe('RequestEditor', () => {
       expect(screen.getByRole('status').textContent).toContain('200 OK');
     });
     expect(useExchangesStore.getState().log).toHaveLength(1);
+  });
+
+  it('editing a value in the request Outline writes the change back through the store', async () => {
+    useProjectStore.setState({
+      interfaces: { 'if-1': makeInterface() },
+      requests: {
+        'req-1': makeDraft({ envelopeXml: '<soap:Envelope><soap:Body><Add>1</Add></soap:Body></soap:Envelope>' }),
+      },
+      order: ['if-1'],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    const outlineTabs = screen.getAllByRole('tab', { name: 'Outline' });
+    // The first Outline tab belongs to the request pane.
+    await userEvent.click(outlineTabs[0] as HTMLElement);
+    // The resizable-panel layout settles (measures itself and re-renders) shortly after mount;
+    // wait for that to finish before locating the row, so the element isn't stale mid-edit.
+    await waitFor(() => {
+      expect(document.querySelector('[data-row-id="0/0/0"]')).not.toBeNull();
+    });
+    const row = document.querySelector('[data-row-id="0/0/0"]') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: '1' }));
+    const input = within(row).getByDisplayValue('1');
+    // `fireEvent` (unlike `userEvent.type`) fires no events between characters, so the whole
+    // edit completes in one tick — immune to the same layout re-render mid-sequence.
+    fireEvent.change(input, { target: { value: '9' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toContain('<Add>9</Add>');
+    });
+  });
+
+  it('the response Outline renders no editable inputs', async () => {
+    render(<RequestEditor requestId="req-1" />);
+    await userEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('200 OK');
+    });
+
+    const outlineTabs = screen.getAllByRole('tab', { name: 'Outline' });
+    // The second Outline tab belongs to the response pane.
+    await userEvent.click(outlineTabs[1] as HTMLElement);
+
+    expect(screen.getByRole('tree', { name: 'Response outline' })).toBeDefined();
+    expect(document.querySelectorAll('input')).toHaveLength(0);
   });
 });

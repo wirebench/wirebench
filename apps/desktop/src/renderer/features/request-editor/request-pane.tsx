@@ -9,18 +9,34 @@ import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '
 import { useUiStore } from '../../state/ui.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
+import { OutlineView } from './views/outline-view.js';
+import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-const LATER = 'Arrives in Task 26/27/28';
+const LATER = 'Arrives in Task 27/28';
 
 const VIEWS = [
   { id: 'xml', label: 'XML' },
   { id: 'form', label: 'Form', disabledReason: LATER },
-  { id: 'outline', label: 'Outline', disabledReason: LATER },
+  { id: 'outline', label: 'Outline' },
   { id: 'raw', label: 'Raw', disabledReason: LATER },
 ] as const;
+
+/** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column, without pulling in the
+ * Node-only engine `LineIndex` (the renderer may only import the browser-safe `xml` subpath). */
+function offsetToPosition(text: string, offset: number): { lineNumber: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let i = 0; i < offset && i < text.length; i += 1) {
+    if (text[i] === '\n') {
+      line += 1;
+      lineStart = i + 1;
+    }
+  }
+  return { lineNumber: line, column: offset - lineStart + 1 };
+}
 
 export interface RequestPaneProps {
   readonly envelopeXml: string;
@@ -50,6 +66,10 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   sendRef.current = onSend;
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
+  const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
+  // Set by an Outline row selection; consumed once when the XML view remounts so the editor's
+  // selection follows the row the user was just looking at.
+  const pendingSelectionRef = useRef<TextRange | undefined>(undefined);
 
   // The latest text the editor holds, kept outside React state so flush() can read it
   // synchronously even mid-render (e.g. from an unmount cleanup or an event handler).
@@ -134,27 +154,65 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       if ((monacoNS as { languages?: unknown }).languages !== undefined) {
         registerXmlLanguageFeaturesOnce(monacoNS as typeof Monaco, () => ipcCompletionSource(interfaceId));
       }
+      // An Outline row selected just before switching back to XML: reveal the same range now
+      // that the editor exists again.
+      const pending = pendingSelectionRef.current;
+      if (pending !== undefined) {
+        pendingSelectionRef.current = undefined;
+        const start = offsetToPosition(local, pending.start);
+        const end = offsetToPosition(local, pending.end);
+        editor.setSelection({
+          startLineNumber: start.lineNumber,
+          startColumn: start.column,
+          endLineNumber: end.lineNumber,
+          endColumn: end.column,
+        });
+      }
     },
-    [flush, formatAndCommit, interfaceId],
+    [flush, formatAndCommit, interfaceId, local],
   );
+
+  // The outline writes back through the very same path as typing: apply the edit to the current
+  // text, then commit it immediately (bypassing the debounce, like Format does) so `flush()`'s
+  // "nothing pending" invariant still holds afterwards.
+  const handleOutlineEdit = useCallback(
+    (range: TextRange, value: string) => {
+      commitNow(applyValueEdit(local, range, value));
+    },
+    [commitNow, local],
+  );
+
+  const handleOutlineSelectRange = useCallback((range: TextRange) => {
+    pendingSelectionRef.current = range;
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col border-r border-hairline">
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
-        <ViewTabs label="Request views" items={VIEWS} active="xml" />
+        <ViewTabs label="Request views" items={VIEWS} active={view} onSelect={(id) => setView(id as typeof view)} />
         <div className="flex items-center gap-1">
           <span className="px-2 text-xs text-fg-faint">Request</span>
           <OverflowMenu currentText={local} onLoaded={commitNow} />
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        <XmlEditor
-          ariaLabel="Request envelope XML"
-          value={local}
-          onChange={handleChange}
-          onMount={handleMount}
-          lineNumbers={lineNumbers}
-        />
+        {view === 'outline' ? (
+          <OutlineView
+            xml={local}
+            interfaceId={interfaceId}
+            readOnly={false}
+            onEdit={handleOutlineEdit}
+            onSelectRange={handleOutlineSelectRange}
+          />
+        ) : (
+          <XmlEditor
+            ariaLabel="Request envelope XML"
+            value={local}
+            onChange={handleChange}
+            onMount={handleMount}
+            lineNumbers={lineNumbers}
+          />
+        )}
       </div>
     </div>
   );

@@ -91,4 +91,41 @@ describe('xml.* IPC', () => {
     const result = await invoke('xml.completions', {});
     expect(result).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
   });
+
+  it('xml.describeMany resolves the builtin type of a leaf element (intA -> xs:int)', async () => {
+    const result = (await invoke('xml.describeMany', {
+      interfaceId,
+      paths: [[`{${TEM}}Add`, `{${TEM}}intA`]],
+    })) as { ok: true; value: { results: ({ typeName: string; kind: string } | null)[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.results).toEqual([
+      { typeName: '{http://www.w3.org/2001/XMLSchema}int', kind: 'element', nillable: false },
+    ]);
+  });
+
+  it('xml.describeMany reports an anonymous type as an empty typeName (Add)', async () => {
+    const result = (await invoke('xml.describeMany', {
+      interfaceId,
+      paths: [[`{${TEM}}Add`]],
+    })) as { ok: true; value: { results: ({ typeName: string } | null)[] } };
+
+    expect(result.value.results).toEqual([{ typeName: '', kind: 'element', nillable: false }]);
+  });
+
+  it('xml.describeMany batches multiple paths in one call, preserving order and nulls', async () => {
+    const result = (await invoke('xml.describeMany', {
+      interfaceId,
+      paths: [
+        [`{${TEM}}Add`, `{${TEM}}intA`],
+        [`{${TEM}}Add`, `{${TEM}}DoesNotExist`],
+        [`{${TEM}}Add`, `{${TEM}}intB`],
+      ],
+    })) as { ok: true; value: { results: ({ typeName: string } | null)[] } };
+
+    expect(result.value.results).toHaveLength(3);
+    expect(result.value.results[0]?.typeName).toBe('{http://www.w3.org/2001/XMLSchema}int');
+    expect(result.value.results[1]).toBeNull();
+    expect(result.value.results[2]?.typeName).toBe('{http://www.w3.org/2001/XMLSchema}int');
+  });
 });

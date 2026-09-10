@@ -732,6 +732,31 @@ export const xmlDeclarationResponseSchema = z
   })
   .nullable();
 
+/**
+ * Request payload for `xml.describeMany` (Task 26): a batch of ancestor paths — each a chain of
+ * Clark-notation QNames identifying one outline element — resolved together to avoid one IPC
+ * round trip per visible tree row.
+ */
+export const xmlDescribeManyRequestSchema = z.object({
+  interfaceId: z.string(),
+  paths: z.array(z.array(z.string())),
+});
+
+/** One resolved schema description for the outline's Type column, or `null` when unresolvable. */
+export const xmlDescribeItemSchema = z
+  .object({
+    typeName: z.string(),
+    kind: z.enum(['element', 'attribute']),
+    nillable: z.boolean().optional(),
+    documentation: z.string().optional(),
+  })
+  .nullable();
+
+/** Response for `xml.describeMany`: one result per input path, in the same order. */
+export const xmlDescribeManyResponseSchema = z.object({
+  results: z.array(xmlDescribeItemSchema),
+});
+
 // ---------------------------------------------------------------------------
 // File dialogs for arbitrary text (Task 25): Save as… / Load from… on the
 // request editor, separate from `dialogs.*`'s open-file/open-folder pickers

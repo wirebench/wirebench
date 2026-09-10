@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { EmptyState } from '../../components/empty-state.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { decodeBase64Text } from '../../lib/format-size.js';
@@ -7,20 +7,25 @@ import { prettyPrintXml } from '../../editor/xml-language.js';
 import type { ExchangeState } from '../../state/exchanges.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
+import { OutlineView } from './views/outline-view.js';
 
 const VIEWS = [
   { id: 'xml', label: 'XML' },
+  { id: 'outline', label: 'Outline' },
   { id: 'raw', label: 'Raw', disabledReason: 'Arrives in Task 28' },
 ] as const;
 
 export interface ResponsePaneProps {
   readonly state: ExchangeState | undefined;
+  /** Which interface's schema to resolve the Outline's Type column against. */
+  readonly interfaceId?: string;
 }
 
 /** The response half: status line, then the formatted envelope (or the raw body, or nothing yet). */
-export function ResponsePane({ state }: ResponsePaneProps) {
+export function ResponsePane({ state, interfaceId }: ResponsePaneProps) {
   const exchange = state?.exchange;
   const response = exchange?.response;
+  const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
 
   const body = useMemo(() => {
     if (exchange === undefined) {
@@ -35,7 +40,7 @@ export function ResponsePane({ state }: ResponsePaneProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline">
-        <ViewTabs label="Response views" items={VIEWS} active="xml" />
+        <ViewTabs label="Response views" items={VIEWS} active={view} onSelect={(id) => setView(id as typeof view)} />
         <div className="min-w-0 flex-1">
           <ResponseStatus exchange={exchange} error={state?.error} />
         </div>
@@ -56,6 +61,8 @@ export function ResponsePane({ state }: ResponsePaneProps) {
                 : 'Send this request to see the response envelope, timings, and the raw exchange.'
             }
           />
+        ) : response?.isSoap === true && view === 'outline' ? (
+          <OutlineView xml={body} interfaceId={interfaceId} readOnly />
         ) : response?.isSoap === true ? (
           <XmlEditor ariaLabel="Response envelope XML" value={body} readOnly />
         ) : (
