@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { is } from '@electron-toolkit/utils';
 import { BrowserWindow, session, shell } from 'electron';
 import { events } from '../shared/ipc.js';
+import { emitEvent } from './ipc/events.js';
 import { CONTENT_SECURITY_POLICY, MAIN_WINDOW_WEB_PREFERENCES, isExternalUrlAllowed } from './security.js';
 
 // Electron's sandboxed preload loader only supports CommonJS (see electron.vite.config.ts),
@@ -57,7 +58,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   win.webContents.once('did-finish-load', () => {
-    win.webContents.send(events.app.ready.name, { at: new Date().toISOString() });
+    emitEvent(win.webContents, events.app.ready, { at: new Date().toISOString() });
   });
 
   const devServerUrl = process.env['ELECTRON_RENDERER_URL'];

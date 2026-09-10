@@ -95,7 +95,7 @@ Legend: **v1** = first release · **1.1** = fast-follow · **v2/v3/v4** = later 
 | Runtime | Electron | 44.x | MIT | Same family as Claude Code desktop; mature packaging/updates |
 | Language | TypeScript (strict) | 7.x | Apache-2.0 | |
 | Package manager / workspaces | pnpm | 9.x (installed 9.13.2) | MIT | Monorepo: engine + desktop |
-| Build | electron-vite + Vite | 5.x / 8.x | MIT | HMR for renderer, bundles main/preload |
+| Build | electron-vite + Vite | 5.x / 7.x | MIT | HMR for renderer, bundles main/preload |
 | UI | React | 19.x | MIT | |
 | Editor | monaco-editor + @monaco-editor/react | 0.56 / 4.7 | MIT | VS Code editor experience (find/replace, folding, minimap, markers) |
 | State | zustand + immer | 5.x / 11.x | MIT | Small, testable slices per feature |

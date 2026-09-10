@@ -1,7 +1,8 @@
 import { WirebenchError } from '@wirebench/engine';
+import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { wrapHandler } from '../src/main/ipc/envelope.js';
-import { channels } from '../src/shared/ipc.js';
+import { validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
+import { channels, defineEvent } from '../src/shared/ipc.js';
 
 describe('wrapHandler', () => {
   it('rejects a malformed request payload before calling the handler', async () => {
@@ -51,5 +52,45 @@ describe('wrapHandler', () => {
       ok: true,
       value: { version: '0.1.0', electron: '44.0.0', node: '24.0.0' },
     });
+  });
+
+  it('maps a thrown handler result that fails the response schema to ipc-invalid-response', async () => {
+    const wrapped = wrapHandler(channels.app.version, () =>
+      // Deliberately wrong shape to exercise response-schema validation.
+      Promise.resolve({ version: 0.1 } as unknown as { version: string; electron: string; node: string }),
+    );
+
+    const result = await wrapped(undefined);
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: 'ipc-invalid-response',
+        message: 'Handler returned a value that does not match the response schema',
+      },
+    });
+    if (!result.ok) {
+      expect(result.error.details?.['issues']).toBeInstanceOf(Array);
+    }
+  });
+});
+
+describe('validateEventPayload', () => {
+  const testEvent = defineEvent('test.event', z.object({ at: z.string() }));
+
+  it('returns the parsed payload for a valid payload', () => {
+    const parsed = validateEventPayload(testEvent, { at: '2026-01-01T00:00:00.000Z' });
+    expect(parsed).toEqual({ at: '2026-01-01T00:00:00.000Z' });
+  });
+
+  it('throws a WirebenchError for an invalid payload', () => {
+    expect(() => validateEventPayload(testEvent, { at: 123 })).toThrowError(WirebenchError);
+    try {
+      validateEventPayload(testEvent, { at: 123 });
+      throw new Error('expected validateEventPayload to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WirebenchError);
+      expect((err as WirebenchError).code).toBe('ipc-invalid-event');
+    }
   });
 });

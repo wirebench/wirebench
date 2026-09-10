@@ -1,6 +1,6 @@
-import { isWirebenchError } from '@wirebench/engine';
+import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { z } from 'zod';
-import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcResult } from '../../shared/ipc.js';
+import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcEvent, IpcResult } from '../../shared/ipc.js';
 
 /**
  * Validates a raw IPC payload against a channel's request schema.
@@ -40,8 +40,9 @@ export function toIpcError(err: unknown): IpcError {
 
 /**
  * Runs `handler` against a validated request and wraps the outcome as an {@link IpcResult}:
- * request validation failure, a thrown error, or a validated success value. Pure — no
- * `electron` import — so `register.ts` only needs to bind this to `ipcMain.handle`.
+ * request validation failure, a thrown error, an invalid handler result, or a validated
+ * success value. Pure — no `electron` import — so `register.ts` only needs to bind this to
+ * `ipcMain.handle`.
  */
 export function wrapHandler<Req extends z.ZodType, Res extends z.ZodType>(
   channel: IpcChannel<Req, Res>,
@@ -54,9 +55,39 @@ export function wrapHandler<Req extends z.ZodType, Res extends z.ZodType>(
     }
     try {
       const result = await handler(parsed.value as ChannelRequest<IpcChannel<Req, Res>>);
-      return { ok: true, value: channel.response.parse(result) as ChannelResponse<IpcChannel<Req, Res>> };
+      const parsedResponse = channel.response.safeParse(result);
+      if (!parsedResponse.success) {
+        return {
+          ok: false,
+          error: {
+            code: 'ipc-invalid-response',
+            message: 'Handler returned a value that does not match the response schema',
+            details: { issues: parsedResponse.error.issues },
+          },
+        };
+      }
+      return { ok: true, value: parsedResponse.data as ChannelResponse<IpcChannel<Req, Res>> };
     } catch (err) {
       return { ok: false, error: toIpcError(err) };
     }
   };
+}
+
+/**
+ * Validates an outgoing main-to-renderer event payload against its schema before it is sent.
+ * A mismatch here is a programming error (the payload was constructed by main-process code,
+ * not by untrusted input), so it throws a {@link WirebenchError} rather than returning a
+ * result — callers (see `events.ts`) let it propagate.
+ */
+export function validateEventPayload<Payload extends z.ZodType>(
+  event: IpcEvent<Payload>,
+  payload: unknown,
+): z.infer<Payload> {
+  const parsed = event.payload.safeParse(payload);
+  if (!parsed.success) {
+    throw new WirebenchError('ipc-invalid-event', `Invalid event payload for event "${event.name}"`, {
+      details: { issues: parsed.error.issues },
+    });
+  }
+  return parsed.data;
 }
