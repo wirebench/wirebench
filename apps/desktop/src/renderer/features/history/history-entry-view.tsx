@@ -3,6 +3,7 @@ import { XmlEditor } from '../../editor/xml-editor.js';
 import { formatXml } from '../../lib/format-xml.js';
 import { formatBytes } from '../../lib/format-size.js';
 import { Button } from '../../components/button.js';
+import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { useProjectStore } from '../../state/project.js';
@@ -30,7 +31,13 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
   }
 
   const onResend = () => {
-    void ipc().history.resend({ id: entry.id });
+    void ipc()
+      .history.resend({ id: entry.id })
+      .then((result) => {
+        if (!result.ok) {
+          showToast(result.error.code);
+        }
+      });
   };
 
   const onGoToRequest = () => {

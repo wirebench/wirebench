@@ -1,7 +1,17 @@
 // @vitest-environment node
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { redactHeaders, redactRawHttp, redactXml } from '../src/main/redact.js';
+import { containsRedaction, redactHeaders, REDACTED_MARKER, redactRawHttp, redactXml } from '../src/main/redact.js';
+
+describe('containsRedaction', () => {
+  it('is true when the text contains the redaction marker', () => {
+    expect(containsRedaction(`<Password>${REDACTED_MARKER}</Password>`)).toBe(true);
+  });
+
+  it('is false for text with no redaction marker', () => {
+    expect(containsRedaction('<Password>hunter2</Password>')).toBe(false);
+  });
+});
 
 describe('redactHeaders', () => {
   it('masks sensitive headers case-insensitively, leaving others alone', () => {

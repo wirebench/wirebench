@@ -9,13 +9,15 @@ import { channels } from '../../shared/ipc.js';
 import type { HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
+import { containsRedaction } from '../redact.js';
+import type { ProjectService } from '../project-service.js';
 import type { HistorySendProject } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
 
 /** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject;
+  readonly project: HistorySendProject & Pick<ProjectService, 'buildLiveSendInput'>;
   readonly showSecrets?: { get(): boolean };
   /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
@@ -24,6 +26,20 @@ export interface HistoryChannelDeps {
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
 function liveHeaders(headers: readonly HeaderEntryWire[]): Record<string, string> {
   return Object.fromEntries(headers.filter((header) => header.value !== '<redacted>').map((h) => [h.name, h.value]));
+}
+
+/**
+ * True when an orphaned entry (its original request no longer exists) carries a redacted
+ * secret anywhere a resend would replay: the request envelope, a request header value, or the
+ * SOAP fault reason. Such an entry must never be resent — the redaction marker itself would go
+ * out as the literal credential.
+ */
+function isRedacted(entry: HistoryEntryWire): boolean {
+  return (
+    containsRedaction(entry.request.envelopeXml) ||
+    entry.request.headers.some((header) => containsRedaction(header.value)) ||
+    (entry.fault?.reason !== undefined && containsRedaction(entry.fault.reason))
+  );
 }
 
 export function registerHistoryChannels(
@@ -52,6 +68,32 @@ export function registerHistoryChannels(
         details: { id: request.id },
       });
     }
+
+    // Path 1: the original request still exists — replay the LIVE request (current envelope,
+    // headers and effective endpoint), exactly like a normal `request.send`. The stored entry
+    // was redacted before being written to disk, so it must never be the source of a resend
+    // while a live copy is available.
+    const liveInput = entry.requestId !== undefined ? deps.project.buildLiveSendInput(entry.requestId) : undefined;
+    if (liveInput === undefined) {
+      // Path 2: the original request is gone. An entry that carries a redacted secret can never
+      // be resent — the marker itself would go out as the literal credential — so refuse it.
+      if (isRedacted(entry)) {
+        throw new WirebenchError(
+          'history-resend-redacted',
+          'This entry contains redacted secrets and its original request no longer exists',
+          { details: { id: request.id } },
+        );
+      }
+    }
+
+    const input = liveInput ?? {
+      endpoint: entry.endpoint,
+      envelopeXml: entry.request.envelopeXml,
+      soapVersion: entry.soapVersion === 'none' ? '1.1' : entry.soapVersion,
+      ...(entry.soapAction !== undefined ? { soapAction: entry.soapAction } : {}),
+      headers: liveHeaders(entry.request.headers),
+    };
+
     return sendAndRecordHistory(
       service,
       {
@@ -63,13 +105,7 @@ export function registerHistoryChannels(
       {
         sendId: crypto.randomUUID(),
         ...(entry.requestId !== undefined ? { requestId: entry.requestId } : {}),
-        input: {
-          endpoint: entry.endpoint,
-          envelopeXml: entry.request.envelopeXml,
-          soapVersion: entry.soapVersion === 'none' ? '1.1' : entry.soapVersion,
-          ...(entry.soapAction !== undefined ? { soapAction: entry.soapAction } : {}),
-          headers: liveHeaders(entry.request.headers),
-        },
+        input,
       },
       { requestName: entry.requestName, interfaceName: entry.interfaceName, operationName: entry.operationName },
     );

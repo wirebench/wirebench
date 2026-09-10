@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
+import { showToast } from '../../components/toast.js';
 import { formatClockTime } from '../../lib/format-size.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -113,7 +114,13 @@ export function HistoryView() {
   };
 
   const resend = (entry: HistoryEntryWire) => {
-    void ipc().history.resend({ id: entry.id });
+    void ipc()
+      .history.resend({ id: entry.id })
+      .then((result) => {
+        if (!result.ok) {
+          showToast(result.error.code);
+        }
+      });
   };
 
   const openDiff = (a: HistoryEntryWire, b: HistoryEntryWire) => {

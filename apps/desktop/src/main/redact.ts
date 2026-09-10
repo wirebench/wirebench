@@ -7,6 +7,14 @@
 
 const REDACTED = '<redacted>';
 
+/** The exact marker text every redaction helper below writes in place of a masked secret. */
+export const REDACTED_MARKER = REDACTED;
+
+/** True when `text` contains the redaction marker — i.e. it was produced by a `redact*` helper. */
+export function containsRedaction(text: string): boolean {
+  return text.includes(REDACTED_MARKER);
+}
+
 /** Header names (case-insensitive) whose value is always masked. */
 const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
 

@@ -22,6 +22,7 @@ import {
   interfaceDir,
   loadProject,
   ProjectError,
+  resolveEndpoint,
   resolveScopes,
   projectFiles,
   saveProject,
@@ -46,6 +47,7 @@ import type {
   ProjectSaveResult,
   ProjectWire,
   RecentProject,
+  SoapSendInputWire,
 } from '../shared/wire-types.js';
 import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
@@ -218,6 +220,36 @@ export class ProjectService {
       requestName: location.request.name,
       interfaceName: location.iface.name,
       operationName: location.operation.name,
+    };
+  }
+
+  /**
+   * The send input for a still-*saved* request, built from its LIVE model — current envelope,
+   * headers and effective endpoint, exactly what `request.send` would use today. `undefined`
+   * when no project is open, the request no longer exists, or its endpoint cannot be resolved.
+   *
+   * Used by `history.resend`: a re-send must replay the current request, not the (redacted)
+   * copy captured in the history entry at send time.
+   */
+  buildLiveSendInput(requestId: string): SoapSendInputWire | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const { iface, request } = location;
+    const resolved = resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, iface, request);
+    if (resolved.url === undefined) {
+      return undefined;
+    }
+    return {
+      endpoint: resolved.url,
+      envelopeXml: request.envelopeXml,
+      soapVersion: request.soapVersion,
+      ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+      headers: Object.fromEntries(request.headers.map((header) => [header.name, header.value])),
     };
   }
 

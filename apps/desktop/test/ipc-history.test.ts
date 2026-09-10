@@ -40,6 +40,17 @@ function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
   };
 }
 
+/** A project stub with no live request for any id — every resend falls back to the stored entry. */
+function noLiveRequests() {
+  return {
+    scopesFor: () => ({ project: {}, global: {}, system: {} }),
+    authFor: () => undefined,
+    requestMeta: () => undefined,
+    projectId: () => 'proj-1',
+    buildLiveSendInput: () => undefined,
+  };
+}
+
 /** A fake `HistoryService` — only the surface `ipc/history.ts` calls. */
 function fakeHistory(entries: HistoryEntryWire[]) {
   return {
@@ -69,12 +80,7 @@ describe('registerHistoryChannels', () => {
     const entries = [makeEntry({ id: 'a', requestName: 'Alpha' }), makeEntry({ id: 'b', requestName: 'Beta' })];
     const history = fakeHistory(entries);
     registerHistoryChannels(new EngineService(), history as never, {
-      project: {
-        scopesFor: () => ({ project: {}, global: {}, system: {} }),
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'proj-1',
-      },
+      project: noLiveRequests(),
     });
 
     const result = await invoke('history.list', {});
@@ -88,12 +94,7 @@ describe('registerHistoryChannels', () => {
     const entries = [makeEntry({ id: 'a' })];
     const history = fakeHistory(entries);
     registerHistoryChannels(new EngineService(), history as never, {
-      project: {
-        scopesFor: () => ({ project: {}, global: {}, system: {} }),
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'proj-1',
-      },
+      project: noLiveRequests(),
     });
 
     expect(await invoke('history.get', { id: 'a' })).toEqual({ ok: true, value: { entry: entries[0] } });
@@ -104,12 +105,7 @@ describe('registerHistoryChannels', () => {
     const entries = [makeEntry({ id: 'a' }), makeEntry({ id: 'b' })];
     const history = fakeHistory(entries);
     registerHistoryChannels(new EngineService(), history as never, {
-      project: {
-        scopesFor: () => ({ project: {}, global: {}, system: {} }),
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'proj-1',
-      },
+      project: noLiveRequests(),
     });
 
     const result = await invoke('history.clear', undefined);
@@ -119,25 +115,48 @@ describe('registerHistoryChannels', () => {
   it('history.resend rejects an unknown id with unknown-history-entry', async () => {
     const history = fakeHistory([]);
     registerHistoryChannels(new EngineService(), history as never, {
-      project: {
-        scopesFor: () => ({ project: {}, global: {}, system: {} }),
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'proj-1',
-      },
+      project: noLiveRequests(),
     });
 
     const result = await invoke('history.resend', { id: 'missing' });
     expect(result).toMatchObject({ ok: false, error: { code: 'unknown-history-entry' } });
   });
 
-  it('history.resend sends the entry through the engine using its endpoint and envelope', async () => {
+  it('history.resend refuses an orphaned entry carrying a redacted header, never sending it', async () => {
+    // No `requestId`: the original request is gone (or this was an ad-hoc send). A redacted
+    // header must never be resent verbatim — refuse instead of stripping and sending raw.
     const entries = [
       makeEntry({
         id: 'a',
         endpoint: 'http://dev.test/resend',
         request: {
           envelopeXml: '<Envelope>resend-me</Envelope>',
+          headers: [{ name: 'Authorization', value: '<redacted>' }],
+        },
+      }),
+    ];
+    const history = fakeHistory(entries);
+    const engine = new EngineService();
+    const send = vi.spyOn(engine, 'send');
+    registerHistoryChannels(engine, history as never, {
+      project: noLiveRequests(),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('history.resend uses the LIVE request when its original request still exists', async () => {
+    // The saved envelope has changed since this entry was recorded; resend must carry the NEW
+    // one, not the (redacted) copy captured at send time.
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-1',
+        endpoint: 'http://dev.test/old-endpoint',
+        request: {
+          envelopeXml: '<Envelope>old-and-redacted<Password><redacted></Password></Envelope>',
           headers: [{ name: 'Authorization', value: '<redacted>' }],
         },
       }),
@@ -159,26 +178,92 @@ describe('registerHistoryChannels', () => {
         truncated: false,
         timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
         redirects: [],
-        request: { url: 'http://dev.test/resend', method: 'POST', headers: {} },
+        request: { url: 'http://dev.test/new-endpoint', method: 'POST', headers: {} },
       },
       problems: [],
     });
     registerHistoryChannels(engine, history as never, {
       project: {
-        scopesFor: () => ({ project: {}, global: {}, system: {} }),
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'proj-1',
+        ...noLiveRequests(),
+        buildLiveSendInput: (requestId: string) =>
+          requestId === 'req-1'
+            ? {
+                endpoint: 'http://dev.test/new-endpoint',
+                envelopeXml: '<Envelope>current, with the real password</Envelope>',
+                soapVersion: '1.1' as const,
+                headers: { 'X-Live': 'yes' },
+              }
+            : undefined,
       },
     });
 
     const result = await invoke('history.resend', { id: 'a' });
     expect(result).toMatchObject({ ok: true });
-    expect(send).toHaveBeenCalledTimes(1);
     const [sentRequest] = send.mock.calls[0]!;
-    expect(sentRequest.input.endpoint).toBe('http://dev.test/resend');
-    expect(sentRequest.input.envelopeXml).toBe('<Envelope>resend-me</Envelope>');
-    // A `<redacted>` header must never be resent verbatim.
-    expect(sentRequest.input.headers).toEqual({});
+    expect(sentRequest.input.endpoint).toBe('http://dev.test/new-endpoint');
+    expect(sentRequest.input.envelopeXml).toBe('<Envelope>current, with the real password</Envelope>');
+    expect(sentRequest.input.headers).toEqual({ 'X-Live': 'yes' });
+  });
+
+  it('history.resend refuses a redacted entry whose original request no longer exists', async () => {
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-gone',
+        request: { envelopeXml: '<Envelope><Password><redacted></Password></Envelope>', headers: [] },
+      }),
+    ];
+    const history = fakeHistory(entries);
+    const engine = new EngineService();
+    const send = vi.spyOn(engine, 'send');
+    registerHistoryChannels(engine, history as never, {
+      project: noLiveRequests(), // buildLiveSendInput always undefined: the request is gone.
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('history.resend sends an orphaned entry raw when it carries no redacted secret', async () => {
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-gone',
+        endpoint: 'http://dev.test/orphan',
+        request: { envelopeXml: '<Envelope>plain</Envelope>', headers: [{ name: 'X-Foo', value: 'bar' }] },
+      }),
+    ];
+    const history = fakeHistory(entries);
+    const engine = new EngineService();
+    const send = vi.spyOn(engine, 'send').mockResolvedValue({
+      sendId: 'ignored',
+      durationMs: 1,
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        rawHeaders: [],
+        bodyBase64: '',
+        rawBodyBase64: '',
+        rawRequestBase64: '',
+        rawResponseBase64: '',
+        truncated: false,
+        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
+        redirects: [],
+        request: { url: 'http://dev.test/orphan', method: 'POST', headers: {} },
+      },
+      problems: [],
+    });
+    registerHistoryChannels(engine, history as never, {
+      project: noLiveRequests(),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+    expect(result).toMatchObject({ ok: true });
+    const [sentRequest] = send.mock.calls[0]!;
+    expect(sentRequest.input.endpoint).toBe('http://dev.test/orphan');
+    expect(sentRequest.input.envelopeXml).toBe('<Envelope>plain</Envelope>');
+    expect(sentRequest.input.headers).toEqual({ 'X-Foo': 'bar' });
   });
 });
