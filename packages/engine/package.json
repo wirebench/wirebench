@@ -18,6 +18,9 @@
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.12",
-    "undici": "^8"
+    "ulidx": "^2.4.1",
+    "undici": "^8",
+    "yaml": "^2.9",
+    "zod": "^4.6.1"
   }
 }

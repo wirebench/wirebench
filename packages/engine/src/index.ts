@@ -135,3 +135,72 @@ export type {
   SoapExchange,
   SoapSendInput,
 } from './types.js';
+
+export {
+  DEFAULT_PROJECT_SETTINGS,
+  DEFAULT_REQUEST_PROPERTIES,
+  FORMAT_VERSION,
+  createInterface,
+  createProject,
+  createRequest,
+  generateId,
+} from './project/model.js';
+export type {
+  AttachmentRef,
+  CreateInterfaceInput,
+  CreateOptions,
+  CreateRequestInput,
+  Endpoint,
+  EndpointAuth,
+  Environment,
+  HeaderEntry,
+  IdGenerator,
+  Interface,
+  OperationDef,
+  Project,
+  ProjectSettings,
+  PropertyMap,
+  RequestDef,
+  RequestProperties,
+  WsaConfig,
+  WssRef,
+} from './project/model.js';
+export {
+  ENVIRONMENTS_DIR,
+  INTERFACES_DIR,
+  OPERATIONS_DIR,
+  REQUEST_SUFFIX,
+  WSS_DIR,
+  definitionDir,
+  environmentFile,
+  interfaceDir,
+  interfaceFile,
+  keystoresFile,
+  manifestFile,
+  operationDir,
+  requestFiles,
+  slugify,
+  uniqueSlug,
+  wssFile,
+} from './project/paths.js';
+export type { RequestFilePair } from './project/paths.js';
+export {
+  environmentFileSchema,
+  interfaceFileSchema,
+  keystoresFileSchema,
+  manifestSchema,
+  parseFile,
+  requestFileSchema,
+  wssIncomingFileSchema,
+  wssOutgoingFileSchema,
+} from './project/schema.js';
+export type { EnvironmentFile, InterfaceFile, ManifestFile, RequestFile } from './project/schema.js';
+export { migrate } from './project/migrate.js';
+export { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './project/serialize.js';
+export type { ProjectFiles } from './project/serialize.js';
+export { loadProject } from './project/load.js';
+export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
+export { saveProject } from './project/save.js';
+export type { SaveProjectOptions, SaveResult } from './project/save.js';
+export { nodeFs } from './project/fs.js';
+export type { DirEntry, FileStat, FsLike } from './project/fs.js';

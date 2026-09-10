@@ -1,0 +1,171 @@
+/**
+ * Zod schemas for every YAML document in a project folder.
+ *
+ * Schemas whose shape is settled use `z.strictObject`, so a typo (or a file written
+ * by a newer Wirebench) is reported rather than silently dropped. Documents
+ * that later tasks will grow (WS-Security configurations, keystores) are
+ * deliberately `z.looseObject` extension points.
+ */
+
+import { z } from 'zod';
+import { ProjectError } from '../errors.js';
+import { FORMAT_VERSION } from './model.js';
+
+const nonEmpty = z.string().min(1);
+const propertyMapSchema = z.record(z.string(), z.string());
+
+/** Credentials as persisted: usernames and a `secretRef`, never a password value. */
+export const endpointAuthSchema = z.strictObject({
+  type: z.enum(['none', 'basic', 'ntlm']),
+  username: z.string().optional(),
+  passwordRef: z.string().optional(),
+  domain: z.string().optional(),
+  preemptive: z.boolean().optional(),
+});
+
+const endpointSchema = z.strictObject({
+  id: nonEmpty,
+  name: z.string(),
+  url: z.string(),
+  auth: endpointAuthSchema.optional(),
+  authMode: z.enum(['override', 'complement']),
+});
+
+const wsaSchema = z.strictObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() });
+
+const operationEntrySchema = z.strictObject({
+  name: nonEmpty,
+  bindingName: z.string(),
+  slug: nonEmpty,
+  order: z.number().int(),
+});
+
+/** `wirebench.yaml`. */
+export const manifestSchema = z.strictObject({
+  formatVersion: z.literal(FORMAT_VERSION),
+  id: nonEmpty,
+  name: z.string(),
+  description: z.string().optional(),
+  settings: z.strictObject({
+    cacheDefinitions: z.boolean(),
+    defaultTimeoutMs: z.number().int().positive(),
+    resourceRoot: z.string().optional(),
+    prettyPrintResponses: z.boolean(),
+  }),
+  properties: propertyMapSchema,
+});
+
+/** `interfaces/<slug>/interface.yaml`. */
+export const interfaceFileSchema = z.strictObject({
+  kind: z.literal('soap'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  definitionUrl: z.string(),
+  cacheDefinition: z.boolean(),
+  targetNamespace: z.string().optional(),
+  endpoints: z.array(endpointSchema),
+  defaultEndpointId: z.string().optional(),
+  wsa: z.strictObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']) }),
+  auth: endpointAuthSchema.optional(),
+  operations: z.array(operationEntrySchema),
+});
+
+const requestPropertiesSchema = z.strictObject({
+  encoding: z.string(),
+  timeoutMs: z.number().int().nonnegative().optional(),
+  bindAddress: z.string().optional(),
+  followRedirects: z.boolean(),
+  skipSoapAction: z.boolean(),
+  enableMtom: z.boolean(),
+  forceMtom: z.boolean(),
+  inlineResponseAttachments: z.boolean(),
+  expandMtomAttachments: z.boolean(),
+  disableMultiparts: z.boolean(),
+  encodeAttachments: z.boolean(),
+  enableInlineFiles: z.boolean(),
+  removeEmptyContent: z.boolean(),
+  entitizeProperties: z.boolean(),
+  prettyPrint: z.boolean(),
+  stripWhitespaces: z.boolean(),
+  dumpFile: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  wssPasswordType: z.enum(['text', 'digest']).optional(),
+  wssTimeToLive: z.number().int().nonnegative().optional(),
+});
+
+const attachmentSchema = z.strictObject({
+  id: nonEmpty,
+  name: z.string(),
+  contentType: z.string().optional(),
+  path: z.string().optional(),
+  cached: z.boolean(),
+});
+
+/** `interfaces/<slug>/operations/<slug>/<name>.request.yaml` (the envelope lives in the sibling `.xml`). */
+export const requestFileSchema = z.strictObject({
+  kind: z.literal('soap'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  endpointId: z.string().optional(),
+  endpointUrl: z.string().optional(),
+  soapVersion: z.enum(['1.1', '1.2']),
+  soapAction: z.string().optional(),
+  headers: z.array(z.strictObject({ name: z.string(), value: z.string() })),
+  attachments: z.array(attachmentSchema),
+  auth: endpointAuthSchema.optional(),
+  wsa: wsaSchema.optional(),
+  wssOutgoingRef: z.string().optional(),
+  wssIncomingRef: z.string().optional(),
+  properties: requestPropertiesSchema,
+});
+
+/** `environments/<slug>.yaml`. */
+export const environmentFileSchema = z.strictObject({
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  endpoints: z.record(z.string(), z.string()),
+  properties: propertyMapSchema,
+});
+
+/** `wss/outgoing/<name>.yaml` — a stub until the WS-Security tasks define the entries. */
+export const wssOutgoingFileSchema = z.looseObject({ id: nonEmpty, name: z.string() });
+
+/** `wss/incoming/<name>.yaml` — a stub until the WS-Security tasks define the entries. */
+export const wssIncomingFileSchema = z.looseObject({ id: nonEmpty, name: z.string() });
+
+/** `wss/keystores.yaml` — a stub until the keystore task defines the registry entries. */
+export const keystoresFileSchema = z.looseObject({
+  keystores: z.array(z.looseObject({ id: nonEmpty, name: z.string() })),
+});
+
+/** The manifest document as persisted. */
+export type ManifestFile = z.infer<typeof manifestSchema>;
+/** An interface document as persisted. */
+export type InterfaceFile = z.infer<typeof interfaceFileSchema>;
+/** A request document as persisted (envelope excluded). */
+export type RequestFile = z.infer<typeof requestFileSchema>;
+/** An environment document as persisted. */
+export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
+
+/**
+ * Validates `value` against `schema`, raising
+ * `ProjectError('project-file-invalid')` carrying the file path and the
+ * individual zod issues when it does not match.
+ */
+export function parseFile<T>(schema: z.ZodType<T>, value: unknown, file: string): T {
+  const result = schema.safeParse(value);
+  if (result.success) {
+    return result.data;
+  }
+  const issues = result.error.issues.map((issue) => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+  }));
+  throw new ProjectError('project-file-invalid', `Invalid project file ${file}`, {
+    details: { file, issues },
+  });
+}
