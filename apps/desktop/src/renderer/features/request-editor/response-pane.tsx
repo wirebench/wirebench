@@ -41,7 +41,7 @@ export function ResponsePane({ state }: ResponsePaneProps) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div data-testid="response-editor" className="min-h-0 flex-1">
         {state?.status === 'sending' ? (
           <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
             <Loader2 size={14} aria-hidden="true" className="animate-spin" />

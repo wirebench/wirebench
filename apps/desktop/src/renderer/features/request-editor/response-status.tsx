@@ -42,7 +42,7 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
   const fault = exchange.response?.fault;
 
   return (
-    <p role="status" className="truncate px-2 font-mono text-xs text-fg-muted">
+    <p role="status" data-testid="response-status" className="truncate px-2 font-mono text-xs text-fg-muted">
       <span className={`font-medium ${TONE_CLASS[tone]}`}>
         {exchange.http.status} {exchange.http.statusText}
       </span>

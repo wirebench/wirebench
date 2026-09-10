@@ -3,11 +3,20 @@ import { is } from '@electron-toolkit/utils';
 import { BrowserWindow, session, shell } from 'electron';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
-import { CONTENT_SECURITY_POLICY, MAIN_WINDOW_WEB_PREFERENCES, isExternalUrlAllowed } from './security.js';
+import {
+  APP_SCHEME,
+  APP_SCHEME_HOST,
+  CONTENT_SECURITY_POLICY,
+  MAIN_WINDOW_WEB_PREFERENCES,
+  isExternalUrlAllowed,
+} from './security.js';
 
 // Electron's sandboxed preload loader only supports CommonJS (see electron.vite.config.ts),
 // so the preload bundle is forced to `.cjs` even though this package is `"type": "module"`.
 const PRELOAD_PATH = join(import.meta.dirname, '../preload/index.cjs');
+
+/** The production renderer's URL, served by `app-protocol-handler.ts` instead of `file://`. */
+const PRODUCTION_RENDERER_URL = `${APP_SCHEME}://${APP_SCHEME_HOST}/index.html`;
 
 /**
  * Applies {@link CONTENT_SECURITY_POLICY} to every response served to the app's session.
@@ -73,7 +82,9 @@ export function createMainWindow(): BrowserWindow {
   if (devServerUrl !== undefined) {
     void win.loadURL(devServerUrl);
   } else {
-    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
+    // Not `loadFile`: a `file://` origin is opaque, which blocks Monaco's web workers.
+    // `app-protocol-handler.ts` serves this from the same `out/renderer` directory instead.
+    void win.loadURL(PRODUCTION_RENDERER_URL);
   }
 
   return win;

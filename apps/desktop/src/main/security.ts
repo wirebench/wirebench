@@ -25,6 +25,27 @@ export const MAIN_WINDOW_WEB_PREFERENCES = {
  */
 export const CONTENT_SECURITY_POLICY = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:";
 
+/**
+ * The custom scheme the packaged renderer is served from (`app://wirebench/...`), instead of
+ * `file://`. A `file://` origin is opaque, which blocks Monaco's web workers; `app://`
+ * registered with `standard: true` gets a real origin the renderer's workers, fetch, and CSP
+ * all work against. Must be registered via `protocol.registerSchemesAsPrivileged` before
+ * `app.ready` — see `main/index.ts`.
+ */
+export const APP_SCHEME = 'app';
+
+/** The host segment of the renderer's `app://wirebench/...` URLs. */
+export const APP_SCHEME_HOST = 'wirebench';
+
+/** Privileges registered for {@link APP_SCHEME}. Kept here, next to the CSP, for one baseline test. */
+export const APP_SCHEME_PRIVILEGES = {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+  corsEnabled: false,
+  stream: true,
+} as const;
+
 /** Protocols that `setWindowOpenHandler` / navigation may hand off to the OS browser. */
 const ALLOWED_EXTERNAL_URL_PATTERN = /^https?:\/\//;
 

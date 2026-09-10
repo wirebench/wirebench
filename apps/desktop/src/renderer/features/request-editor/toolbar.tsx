@@ -34,6 +34,7 @@ export function RequestToolbar({
         </Button>
       ) : (
         <Button
+          data-testid="request-send"
           variant="primary"
           onClick={onSend}
           disabled={draft.endpoint === undefined || draft.endpoint.length === 0}

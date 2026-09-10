@@ -9,6 +9,8 @@ export default tseslint.config(
       '**/out/**',
       '**/coverage/**',
       '**/node_modules/**',
+      '**/playwright-report/**',
+      '**/test-results/**',
       '.superpowers/**',
       '**/fixtures/**',
     ],

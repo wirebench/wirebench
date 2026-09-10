@@ -30,6 +30,43 @@ const SOAP_FAULT = `<?xml version="1.0" encoding="utf-8"?>
   </soapenv:Body>
 </soapenv:Envelope>`;
 
+/**
+ * If `requestBody` is a `tem:Add` SOAP 1.1/1.2 envelope (the `calculator` fixture's only
+ * operation with a meaningful responder here), returns a proper `AddResponse` envelope with
+ * `AddResult` computed from `intA`/`intB`. Returns `undefined` for anything else, so the
+ * caller falls back to the plain echo behaviour the rest of the test suite depends on.
+ */
+function buildCalculatorAddResponse(requestBody: string): string | undefined {
+  const addMatch = /<(?:\w+:)?Add[ >]/.exec(requestBody);
+  if (addMatch === null) {
+    return undefined;
+  }
+  const intAMatch = /<(?:\w+:)?intA>([^<]*)<\/(?:\w+:)?intA>/.exec(requestBody);
+  const intBMatch = /<(?:\w+:)?intB>([^<]*)<\/(?:\w+:)?intB>/.exec(requestBody);
+  if (intAMatch?.[1] === undefined || intBMatch?.[1] === undefined) {
+    return undefined;
+  }
+  // The request editor's default draft uses the SoapUI-style `?` placeholder for untouched
+  // leaves (see `sampleValueFor` in the engine's xsd/sample-values.ts) rather than a real
+  // number, so unparseable operands are treated as 0 instead of falling back to an echo.
+  const toOperand = (text: string): number => {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const sum = toOperand(intAMatch[1]) + toOperand(intBMatch[1]);
+  const isSoap12 = requestBody.includes('http://www.w3.org/2003/05/soap-envelope');
+  const envelopeNs = isSoap12 ? 'http://www.w3.org/2003/05/soap-envelope' : 'http://schemas.xmlsoap.org/soap/envelope/';
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="${envelopeNs}" xmlns:tem="http://tempuri.org/">
+  <soapenv:Body>
+    <tem:AddResponse>
+      <tem:AddResult>${sum}</tem:AddResult>
+    </tem:AddResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+}
+
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -42,7 +79,10 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
  * brief; this is transport-fixture-only (no real SOAP semantics beyond
  * echoing bytes back).
  */
-export async function startTestSoapServer(options?: { readonly fixture?: string }): Promise<TestSoapServer> {
+export async function startTestSoapServer(options?: {
+  readonly fixture?: string;
+  readonly respondToCalculatorAdd?: boolean;
+}): Promise<TestSoapServer> {
   const requests: RecordedRequest[] = [];
   const sockets = new Set<Socket>();
 
@@ -76,6 +116,15 @@ export async function startTestSoapServer(options?: { readonly fixture?: string 
     }
 
     if (method === 'POST' && url.pathname === '/soap') {
+      const fixtureName = options?.fixture ?? 'calculator';
+      if (fixtureName === 'calculator' && options?.respondToCalculatorAdd === true) {
+        const addResponse = buildCalculatorAddResponse(body.toString('utf-8'));
+        if (addResponse !== undefined) {
+          res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml' });
+          res.end(addResponse);
+          return;
+        }
+      }
       res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml' });
       res.end(body);
       return;

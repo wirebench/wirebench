@@ -180,6 +180,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 </label>
                 <input
                   id="import-url"
+                  data-testid="import-url-input"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="http://example.test/service.wsdl"
@@ -271,7 +272,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 <Dialog.Close asChild>
                   <Button>Cancel</Button>
                 </Dialog.Close>
-                <Button variant="primary" onClick={() => void onImport()}>
+                <Button data-testid="import-submit" variant="primary" onClick={() => void onImport()}>
                   Import
                 </Button>
               </>

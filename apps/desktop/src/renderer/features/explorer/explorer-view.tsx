@@ -52,6 +52,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
       <div
         ref={dragHandle}
         style={style}
+        data-testid="explorer-tree-row"
+        data-tree-id={node.id}
         role="treeitem"
         aria-selected={node.isSelected}
         tabIndex={-1}

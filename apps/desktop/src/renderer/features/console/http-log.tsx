@@ -34,6 +34,7 @@ function LogRow({ exchange, selected, onSelect }: RowProps) {
   return (
     <button
       type="button"
+      data-testid="http-log-row"
       onClick={onSelect}
       aria-pressed={selected}
       className={`grid ${COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${

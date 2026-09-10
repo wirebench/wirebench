@@ -9,3 +9,5 @@ CHANGELOG.md
 docs
 .idea
 .claude
+e2e/playwright-report
+e2e/test-results
