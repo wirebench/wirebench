@@ -139,4 +139,43 @@ test.describe('auth', () => {
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
     await expect(page.getByTestId('response-status')).not.toContainText('Authenticated after 401 challenge');
   });
+
+  test('NTLM authenticates through the three-leg handshake and fails with a wrong password', async () => {
+    server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
+    userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'NTLM Project');
+
+    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createProjectWithCalculator(page, server, { expectProjectName: 'NTLM Project' });
+    await openFirstRequest(page);
+
+    // `/auth/ntlm` runs the real NTLMv2 handshake against user/pass in WORKGROUP.
+    await page.getByTestId('request-endpoint').fill(`${server.url}/auth/ntlm`);
+
+    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    const panel = page.getByTestId('inspector-panel-request');
+    await page.getByTestId('auth-inherit').uncheck();
+
+    await panel.getByLabel('Authentication type').selectOption('ntlm');
+    await panel.getByLabel('Username').fill('user');
+    await panel.getByLabel('Domain').fill('WORKGROUP');
+    await panel.getByLabel('Workstation').fill('WIRETEST');
+    await panel.getByRole('button', { name: 'Set…' }).click();
+    await panel.getByPlaceholder('Enter password').fill(PASSWORD);
+    await panel.getByRole('button', { name: 'Save' }).click();
+    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+
+    await page.getByTestId('request-send').click();
+    await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
+
+    // --- a wrong password surfaces the handshake's final 401 ---------------------------------
+    await panel.getByRole('button', { name: 'Replace…' }).click();
+    await panel.getByPlaceholder('Enter password').fill('wrong');
+    await panel.getByRole('button', { name: 'Save' }).click();
+    await expect(panel.getByLabel('Password')).toHaveText('••••••••');
+
+    await page.getByTestId('request-send').click();
+    await expect(page.getByTestId('response-status')).toContainText('401', { timeout: 20_000 });
+  });
 });
