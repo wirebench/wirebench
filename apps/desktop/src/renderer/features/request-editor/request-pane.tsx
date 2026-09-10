@@ -10,6 +10,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
+import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
 import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
@@ -23,7 +24,7 @@ import { applyValueEdit, type TextRange } from './views/xml-model.js';
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-/** The request pane's inspector strip. Attachments/Auth/WS-A are placeholders until their tasks land. */
+/** The request pane's inspector strip. Auth/WS-A are placeholders until their tasks land. */
 const REQUEST_INSPECTORS: readonly InspectorItem[] = [
   { id: 'headers', label: 'Headers' },
   { id: 'attachments', label: 'Attachments' },
@@ -290,7 +291,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           ) : inspector === 'ssl' ? (
             <SslInspector exchange={exchange} />
           ) : inspector === 'attachments' ? (
-            <InspectorPlaceholder name="Attachments" task={32} />
+            <AttachmentsInspector requestId={requestId} />
           ) : inspector === 'auth' ? (
             <InspectorPlaceholder name="Auth" task={34} />
           ) : (

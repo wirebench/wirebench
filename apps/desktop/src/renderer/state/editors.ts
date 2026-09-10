@@ -67,6 +67,8 @@ export interface EditorsStore {
   readonly inspectorTabs: Readonly<Record<string, InspectorId>>;
   /** Whether a pane's inspector panel is collapsed, per `${requestId}:${pane}`. */
   readonly inspectorCollapsed: Readonly<Record<string, boolean>>;
+  /** The attachment row selected in a request's Attachments inspector. Editor state, not project data. */
+  readonly selectedAttachments: Readonly<Record<string, string>>;
   readonly open: (tab: EditorTab) => void;
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
@@ -95,6 +97,11 @@ export interface EditorsStore {
    * the full pane until the user asks for an inspector. */
   readonly inspectorCollapsedFor: (requestId: string, pane: InspectorPane) => boolean;
   readonly setInspectorCollapsed: (requestId: string, pane: InspectorPane, collapsed: boolean) => void;
+
+  /** The selected attachment row for `requestId`, or `undefined` when none is selected. */
+  readonly selectedAttachmentFor: (requestId: string) => string | undefined;
+  /** Selects (or, with `undefined`, clears) the attachment row the Remove action acts on. */
+  readonly setSelectedAttachment: (requestId: string, attachmentId: string | undefined) => void;
 }
 
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
@@ -106,6 +113,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   editorLayouts: {},
   inspectorTabs: {},
   inspectorCollapsed: {},
+  selectedAttachments: {},
 
   open: (tab) => {
     const { tabs } = get();
@@ -183,6 +191,18 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
 
   setInspectorCollapsed: (requestId, pane, collapsed) => {
     set({ inspectorCollapsed: { ...get().inspectorCollapsed, [inspectorKey(requestId, pane)]: collapsed } });
+  },
+
+  selectedAttachmentFor: (requestId) => get().selectedAttachments[requestId],
+
+  setSelectedAttachment: (requestId, attachmentId) => {
+    const next = { ...get().selectedAttachments };
+    if (attachmentId === undefined) {
+      delete next[requestId];
+    } else {
+      next[requestId] = attachmentId;
+    }
+    set({ selectedAttachments: next });
   },
 
   revealFaultTab: (requestId) => {
