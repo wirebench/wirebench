@@ -19,6 +19,7 @@ const PROJECT: ProjectWire = {
   environments: [{ id: 'e1', name: 'QA', slug: 'qa', order: 0, endpoints: {}, properties: { user: 'qa-bot' } }],
   activeEnvironmentId: 'e1',
   problems: [],
+  keystores: [],
 };
 
 describe('GetDataDialog', () => {

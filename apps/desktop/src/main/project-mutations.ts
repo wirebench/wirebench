@@ -35,6 +35,7 @@ import {
   setActiveEnvironment,
   updateEnvironment,
 } from './project-environment-mutations.js';
+import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
 
@@ -63,6 +64,12 @@ export interface MutationDeps {
   readonly generate: (interfaceId: string, bindingName: string, operationName: string) => Promise<GeneratedEnvelope>;
   /** Supplied by `ProjectService` whenever a project is open; absent only in tests that never attach. */
   readonly addAttachmentFile?: AddAttachmentFile;
+  /**
+   * Whether `add-keystore` may register this path: it must be inside the project folder or
+   * have been picked through `keystores.pickFile` this session. Absent only in tests that
+   * never add a keystore — `add-keystore` refuses outright when it is.
+   */
+  readonly allowsKeystorePath?: (path: string) => Promise<boolean>;
 }
 
 /** The outcome of one change: the next model, plus any entity the change created. */
@@ -71,6 +78,7 @@ export interface MutationResult {
   readonly createdRequestId?: string;
   readonly createdEnvironmentId?: string;
   readonly createdAttachmentId?: string;
+  readonly createdKeystoreId?: string;
 }
 
 function notFound(what: string, id: string): never {
@@ -684,6 +692,32 @@ export async function applyChange(
 
     case 'remove-attachment':
       return removeAttachment(project, change.requestId, change.attachmentId);
+
+    case 'add-keystore': {
+      // The renderer may name any string it likes, so the path is checked here — against the
+      // project folder and the session's dialog picks — before it is ever written down, let
+      // alone read. See `path-access.ts`.
+      const allowed = (await deps.allowsKeystorePath?.(change.path)) ?? false;
+      if (!allowed) {
+        throw new ProjectError(
+          'keystore-outside-project',
+          'A keystore must live inside the project folder, or be chosen through the file picker.',
+          { details: { path: change.path } },
+        );
+      }
+      const added = addKeystore(project, {
+        path: change.path,
+        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.passwordSecretRef !== undefined ? { passwordSecretRef: change.passwordSecretRef } : {}),
+      });
+      return { project: added.project, createdKeystoreId: added.keystoreId };
+    }
+
+    case 'update-keystore':
+      return { project: updateKeystore(project, change.keystoreId, change.patch) };
+
+    case 'remove-keystore':
+      return { project: removeKeystore(project, change.keystoreId) };
   }
 }
 

@@ -26,6 +26,7 @@ describe('buildApi', () => {
       'fs',
       'globals',
       'history',
+      'keystores',
       'on',
       'preferences',
       'project',

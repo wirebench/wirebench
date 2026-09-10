@@ -13,6 +13,7 @@
  */
 
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
@@ -51,6 +52,8 @@ import type {
   PropertyScopes,
   SendAttachmentOptions,
 } from '@wirebench/engine';
+import { loadKeystore, toKeystoreDef, toTlsClientIdentity, WirebenchError } from '@wirebench/engine';
+import type { Keystore, KeystoreDef } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   EngineProgressEvent,
@@ -60,9 +63,11 @@ import type {
   ProjectChange,
   ProjectProblemWire,
   ProjectSaveResult,
+  KeystoresInspectResponse,
   ProjectWire,
   RecentProject,
   SoapSendInputWire,
+  TlsOptionsWire,
 } from '../shared/wire-types.js';
 import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
@@ -74,6 +79,7 @@ import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
+import { allowsReadPath } from './path-access.js';
 import {
   addRequest,
   appendAttachment,
@@ -215,6 +221,8 @@ async function isEmptyDir(dir: string): Promise<boolean> {
 /** Owns the open project: its model, its folder, its autosave timer and its watcher. */
 export class ProjectService {
   private open: OpenProject | undefined;
+  /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
+  private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
 
@@ -700,6 +708,9 @@ export class ProjectService {
       await this.save({ reason: 'close' });
     }
     this.open.watcher.stop();
+    // Parsed keystores are decrypted key material: they must not outlive the project they
+    // belong to, and a reopened project re-reads (and re-authorises) every file anyway.
+    this.keystoreCache.clear();
     for (const iface of this.open.project.interfaces) {
       this.engine.close(iface.id);
     }
@@ -763,10 +774,12 @@ export class ProjectService {
     createdRequestId?: string;
     createdEnvironmentId?: string;
     createdAttachmentId?: string;
+    createdKeystoreId?: string;
   }> {
     const open = this.require();
     const result = await applyChange(open.project, change, {
       addAttachmentFile: (input) => this.readAttachmentSource(open.dir, input),
+      allowsKeystorePath: (path) => allowsReadPath([open.dir], this.picks, resolvePath(open.dir, path)),
       generate: (interfaceId, bindingName, operationName) => {
         const options = generateOptionsFrom(this.prefs());
         const generated = this.engine.generate({
@@ -794,6 +807,132 @@ export class ProjectService {
       ...(result.createdRequestId !== undefined ? { createdRequestId: result.createdRequestId } : {}),
       ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
       ...(result.createdAttachmentId !== undefined ? { createdAttachmentId: result.createdAttachmentId } : {}),
+      ...(result.createdKeystoreId !== undefined ? { createdKeystoreId: result.createdKeystoreId } : {}),
+    };
+  }
+
+  /** The keystore registry entry with this id, or `undefined` when no project has one. */
+  private keystoreDef(keystoreId: string): KeystoreDef | undefined {
+    const ref = this.open?.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
+    if (ref === undefined) {
+      return undefined;
+    }
+    try {
+      return toKeystoreDef(ref);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Loads (and caches) one keystore's material.
+   *
+   * The cache key is the resolved path, its mtime and size, and the password ref: a keystore
+   * re-exported over the same path, or a password the user replaced, invalidates the entry
+   * without anyone having to remember to clear it. The parsed material never leaves main.
+   *
+   * @throws WirebenchError `keystore-outside-project` when the file may not be read,
+   * `keystore-unreadable` when it is gone, or the loader's own `keystore-*` codes
+   */
+  private async loadKeystoreFor(def: KeystoreDef): Promise<Keystore> {
+    const open = this.require();
+    const path = resolvePath(open.dir, def.path);
+    if (!(await allowsReadPath([open.dir], this.picks, path))) {
+      throw new WirebenchError(
+        'keystore-outside-project',
+        `The keystore "${def.name}" is outside the project folder; add it again through the file picker.`,
+        { details: { id: def.id } },
+      );
+    }
+    let info: Stats;
+    try {
+      info = await stat(path);
+    } catch (error) {
+      throw new WirebenchError('keystore-unreadable', `The keystore file "${def.path}" could not be read.`, {
+        details: { id: def.id },
+        cause: error,
+      });
+    }
+    const key = `${path}|${String(info.mtimeMs)}|${String(info.size)}|${def.passwordSecretRef ?? ''}`;
+    const cached = this.keystoreCache.get(def.id);
+    if (cached !== undefined && cached.key === key) {
+      return cached.keystore;
+    }
+    const password = def.passwordSecretRef === undefined ? undefined : await this.secrets?.get(def.passwordSecretRef);
+    const bytes = await readFile(path);
+    const keystore = loadKeystore(bytes, { type: def.type, ...(password !== undefined ? { password } : {}) });
+    this.keystoreCache.set(def.id, { key, keystore });
+    return keystore;
+  }
+
+  /**
+   * What the Keystores view shows for one row: whether the file loads, and the aliases it holds.
+   * Deliberately returns *metadata only* — never a key or a certificate PEM — because this is
+   * the one keystore result that crosses the context bridge.
+   */
+  async inspectKeystore(keystoreId: string): Promise<KeystoresInspectResponse> {
+    const def = this.keystoreDef(keystoreId);
+    if (def === undefined) {
+      return { status: 'not-found', aliases: [] };
+    }
+    try {
+      const keystore = await this.loadKeystoreFor(def);
+      return {
+        status: 'ok',
+        aliases: keystore.aliases.map((alias) => ({
+          alias: alias.alias,
+          subject: alias.subject,
+          issuer: alias.issuer,
+          notAfter: alias.notAfter,
+          fingerprintSha256: alias.fingerprintSha256,
+          hasPrivateKey: alias.hasPrivateKey,
+        })),
+      };
+    } catch (error) {
+      const code = error instanceof WirebenchError ? error.code : 'keystore-invalid';
+      const message = error instanceof Error ? error.message : String(error);
+      const status =
+        code === 'keystore-bad-password'
+          ? 'bad-password'
+          : code === 'keystore-outside-project'
+            ? 'outside-project'
+            : code === 'keystore-unreadable'
+              ? 'not-found'
+              : 'invalid';
+      return { status, aliases: [], message };
+    }
+  }
+
+  /**
+   * The TLS options a send of `requestId` must use, or `undefined` when the request selects no
+   * keystore. Kept apart from {@link sendInputFor} — which is synchronous, and whose result is
+   * also what the cURL export quotes — because resolving an identity means reading a file and
+   * decrypting a secret, and because the material must never appear in an exported command.
+   *
+   * A selected-but-unloadable keystore throws rather than silently sending without a client
+   * certificate: a mutual-TLS request that quietly degrades is the worst possible outcome.
+   */
+  async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    const keystoreId = location?.request.properties.sslKeystoreRef;
+    if (keystoreId === undefined || keystoreId.length === 0) {
+      return undefined;
+    }
+    const def = this.keystoreDef(keystoreId);
+    if (def === undefined) {
+      throw new WirebenchError('keystore-missing', `This request selects a keystore the project no longer has.`, {
+        details: { keystoreId },
+      });
+    }
+    const keystore = await this.loadKeystoreFor(def);
+    const identity = toTlsClientIdentity(keystore, def.defaultAlias);
+    return {
+      cert: identity.cert,
+      key: identity.key,
+      ...(identity.ca !== undefined ? { ca: [...identity.ca] } : {}),
     };
   }
 

@@ -148,7 +148,7 @@ export const requestGenerateResponseSchema = z.object({
 });
 export type RequestGenerateResponse = z.infer<typeof requestGenerateResponseSchema>;
 
-const tlsOptionsSchema = z.object({
+export const tlsOptionsSchema = z.object({
   rejectUnauthorized: z.boolean().optional(),
   ca: z.array(z.string()).optional(),
   cert: z.string().optional(),
@@ -157,6 +157,8 @@ const tlsOptionsSchema = z.object({
   minVersion: z.enum(['TLSv1.2', 'TLSv1.3']).optional(),
   servername: z.string().optional(),
 });
+
+export type TlsOptionsWire = z.infer<typeof tlsOptionsSchema>;
 
 const soapSendInputWireSchema = z.object({
   endpoint: z.string(),
@@ -283,6 +285,8 @@ export const tlsInfoWireSchema = z.object({
   servername: z.string().optional(),
   peerChain: z.array(peerCertWireSchema),
   alpn: z.string().optional(),
+  /** The client identity this send presented, when a keystore supplied one. DNs only. */
+  clientCertificate: z.object({ subject: z.string(), issuer: z.string() }).optional(),
 });
 export type SslInfoWire = z.infer<typeof tlsInfoWireSchema>;
 
@@ -560,7 +564,7 @@ export const requestPropertiesSchema = z.object({
   maxSizeBytes: z.number().optional(),
   wssPasswordType: z.enum(['text', 'digest']).optional(),
   wssTimeToLive: z.number().optional(),
-  /** Name of a `wss/keystores/<name>.yaml` client keystore. Stored only; selection arrives with Task 36. */
+  /** Id of a `wss/keystores.yaml` entry: the client identity this request's TLS handshake presents. */
   sslKeystoreRef: z.string().optional(),
 });
 export type RequestPropertiesWire = z.infer<typeof requestPropertiesSchema>;
@@ -709,6 +713,23 @@ export const projectProblemSchema = z.object({
 export type ProjectProblemWire = z.infer<typeof projectProblemSchema>;
 
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
+/**
+ * One `wss/keystores.yaml` entry as the renderer sees it. Deliberately never carries the
+ * password, the private key or any certificate PEM — only the registry metadata; the material
+ * itself stays in main (see `keystores.inspect` for the alias summaries).
+ */
+export const keystoreWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Absolute, or relative to the project folder. Shown so the user can tell two files apart. */
+  path: z.string(),
+  type: z.enum(['pkcs12', 'pem']),
+  /** Present when a password was stored; the value itself never crosses the bridge. */
+  passwordSecretRef: z.string().optional(),
+  defaultAlias: z.string().optional(),
+});
+export type KeystoreWire = z.infer<typeof keystoreWireSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -723,6 +744,8 @@ export const projectWireSchema = z.object({
   activeEnvironmentId: z.string().optional(),
   problems: z.array(projectProblemSchema),
   settings: projectSettingsSchema,
+  /** The project's client keystore registry; empty when it has none. */
+  keystores: z.array(keystoreWireSchema),
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
 
@@ -757,6 +780,14 @@ export type EnvironmentPatchWire = z.infer<typeof environmentPatchSchema>;
  * One atomic change to the open project. Every mutation the renderer can make goes through
  * this union, so main stays the single writer of the model and of the folder on disk.
  */
+/** The fields of a keystore entry the renderer may patch; `null` clears an optional one. */
+export const keystorePatchSchema = z.object({
+  name: z.string().optional(),
+  passwordSecretRef: z.string().nullable().optional(),
+  defaultAlias: z.string().nullable().optional(),
+});
+export type KeystorePatchWire = z.infer<typeof keystorePatchSchema>;
+
 export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('rename-project'), name: z.string() }),
   z.object({
@@ -836,6 +867,22 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   // Deliberately does NOT prune the cache: a blob whose last reference was just removed must
   // survive an undo, so pruning stays an explicit, separate action.
   z.object({ kind: z.literal('remove-attachment'), requestId: z.string(), attachmentId: z.string() }),
+  // Only a path crosses the wire, and main refuses one that is neither inside the project
+  // folder nor picked through `keystores.pickFile` this session (`keystore-outside-project`).
+  z.object({
+    kind: z.literal('add-keystore'),
+    /** Defaults to the file's stem. */
+    name: z.string().optional(),
+    path: z.string(),
+    /** A `secretRef` for the keystore password; never the password itself. */
+    passwordSecretRef: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-keystore'),
+    keystoreId: z.string(),
+    patch: keystorePatchSchema,
+  }),
+  z.object({ kind: z.literal('remove-keystore'), keystoreId: z.string() }),
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
@@ -857,6 +904,8 @@ export const projectMutateResponseSchema = z.object({
   createdEnvironmentId: z.string().optional(),
   /** Set by `add-attachment`: the id of the attachment that was created. */
   createdAttachmentId: z.string().optional(),
+  /** Set by `add-keystore`: the id of the keystore that was registered. */
+  createdKeystoreId: z.string().optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 
@@ -1284,6 +1333,33 @@ export const attachmentsOpenRequestRequestSchema = z.object({ requestId: z.strin
 export const attachmentsOpenResponseSchema = z.object({ path: z.string() });
 
 /** Request/response for `attachments.pickFiles`: a multi-select Add-attachments dialog. */
+/**
+ * `keystores.inspect`: main reads the file (after the same containment check `add-keystore`
+ * runs), resolves the password out of the secret store and parses the keystore. Only alias
+ * *metadata* comes back — never a key, never a certificate PEM.
+ */
+export const keystoresInspectRequestSchema = z.object({ keystoreId: z.string() });
+export const keystoreAliasWireSchema = z.object({
+  alias: z.string(),
+  subject: z.string(),
+  issuer: z.string(),
+  notAfter: z.string(),
+  fingerprintSha256: z.string(),
+  hasPrivateKey: z.boolean(),
+});
+export type KeystoreAliasWire = z.infer<typeof keystoreAliasWireSchema>;
+export const keystoresInspectResponseSchema = z.object({
+  status: z.enum(['ok', 'bad-password', 'invalid', 'not-found', 'outside-project']),
+  aliases: z.array(keystoreAliasWireSchema),
+  /** The failure's human-readable detail, for the row's tooltip. */
+  message: z.string().optional(),
+});
+export type KeystoresInspectResponse = z.infer<typeof keystoresInspectResponseSchema>;
+
+/** `keystores.pickFile`: an Open dialog filtered to keystore files; records a read pick. */
+export const keystoresPickFileRequestSchema = z.object({});
+export const keystoresPickFileResponseSchema = z.object({ path: z.string().optional() });
+
 export const attachmentsPickFilesRequestSchema = z.object({});
 export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.string()) });
 

@@ -4,6 +4,7 @@
  * mirrors. No `electron`, no `fs`: unit-tested directly against real engine models.
  */
 
+import { keystoreEntrySchema, toKeystoreDef } from '@wirebench/engine';
 import type {
   Attachment,
   Endpoint,
@@ -12,6 +13,7 @@ import type {
   OperationDef,
   Project,
   RequestDef,
+  WssRef,
 } from '@wirebench/engine';
 import type {
   AttachmentWire,
@@ -20,6 +22,7 @@ import type {
   HydrationStatus,
   InterfaceSummary,
   InterfaceWire,
+  KeystoreWire,
   OperationSummaryWire,
   ProjectProblemWire,
   ProjectWire,
@@ -178,6 +181,27 @@ function toEnvironmentWire(environment: Environment): EnvironmentWire {
   };
 }
 
+/**
+ * One keystore registry entry, projected for the renderer. A malformed entry (one an older or
+ * hand-edited file left without a path) is described rather than dropped, so the UI can offer
+ * to remove it instead of the row silently vanishing.
+ */
+function toKeystoreWire(ref: WssRef): KeystoreWire {
+  const parsed = keystoreEntrySchema.safeParse(ref.document);
+  if (!parsed.success) {
+    return { id: ref.id, name: ref.name, path: '', type: 'pem' };
+  }
+  const def = toKeystoreDef(ref);
+  return {
+    id: def.id,
+    name: def.name,
+    path: def.path,
+    type: def.type,
+    ...(def.passwordSecretRef !== undefined ? { passwordSecretRef: def.passwordSecretRef } : {}),
+    ...(def.defaultAlias !== undefined ? { defaultAlias: def.defaultAlias } : {}),
+  };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
   return {
@@ -193,6 +217,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     ...(project.activeEnvironmentId !== undefined ? { activeEnvironmentId: project.activeEnvironmentId } : {}),
     problems: [...context.problems],
     settings: { ...project.settings },
+    keystores: project.wss.keystores.map(toKeystoreWire),
   };
 }
 

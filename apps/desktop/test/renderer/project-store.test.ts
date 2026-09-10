@@ -64,6 +64,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
     properties: {},
     environments: [],
     problems: [],
+    keystores: [],
     ...overrides,
   };
 }

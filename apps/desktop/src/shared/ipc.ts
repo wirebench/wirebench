@@ -79,6 +79,10 @@ import {
   attachmentsOpenResponseRequestSchema,
   attachmentsOpenResponseSchema,
   attachmentsPickFilesRequestSchema,
+  keystoresInspectRequestSchema,
+  keystoresInspectResponseSchema,
+  keystoresPickFileRequestSchema,
+  keystoresPickFileResponseSchema,
   attachmentsPickFilesResponseSchema,
   attachmentsSaveResponseRequestSchema,
   attachmentsSaveResponseResponseSchema,
@@ -264,6 +268,10 @@ export const channels = {
       attachmentsAddDroppedRequestSchema,
       attachmentsAddDroppedResponseSchema,
     ),
+  },
+  keystores: {
+    inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),
+    pickFile: defineChannel('keystores.pickFile', keystoresPickFileRequestSchema, keystoresPickFileResponseSchema),
   },
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),

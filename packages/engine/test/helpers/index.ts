@@ -10,7 +10,13 @@ export {
   type TestSoapServerTls,
   type RecordedRequest,
 } from './test-soap-server.js';
-export { generateTestCa, generateServerCert, generateClientCert, type TestCertificate } from './test-certs.js';
+export {
+  generateTestCa,
+  generateServerCert,
+  generateClientCert,
+  generateClientPkcs12,
+  type TestCertificate,
+} from './test-certs.js';
 export {
   createNtlmAuthenticator,
   startNtlmServer,

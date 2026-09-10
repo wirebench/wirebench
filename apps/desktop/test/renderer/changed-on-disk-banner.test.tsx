@@ -19,6 +19,7 @@ function project(dirty: boolean): ProjectWire {
     properties: {},
     environments: [],
     problems: [],
+    keystores: [],
   };
 }
 

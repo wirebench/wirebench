@@ -143,3 +143,27 @@ export function generateClientCert(ca: TestCertificate): TestCertificate {
   cachedClientCert = issue(ca, cert, keys.privateKey);
   return cachedClientCert;
 }
+
+/**
+ * A PKCS#12 holding `leaf`'s key and certificate with `ca` attached as its chain — the file a
+ * "client keystore" test (or e2e spec) needs, built in-process so no binary fixture is checked
+ * in. Not memoised: the password and friendly name are the point of varying it.
+ *
+ * @param ca the issuing authority, from {@link generateTestCa}
+ * @param leaf the identity to store, from {@link generateClientCert}
+ * @param options the keystore password and the entry's friendly name (default `client`)
+ * @returns the DER bytes of the `.p12` file
+ */
+export function generateClientPkcs12(
+  ca: TestCertificate,
+  leaf: TestCertificate,
+  options: { readonly password: string; readonly friendlyName?: string },
+): Uint8Array {
+  const asn1 = forge.pkcs12.toPkcs12Asn1(
+    forge.pki.privateKeyFromPem(leaf.keyPem),
+    [forge.pki.certificateFromPem(leaf.certPem), forge.pki.certificateFromPem(ca.certPem)],
+    options.password,
+    { friendlyName: options.friendlyName ?? 'client', algorithm: '3des' },
+  );
+  return Uint8Array.from(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'));
+}

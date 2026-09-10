@@ -120,7 +120,7 @@ export interface RequestProperties {
   readonly maxSizeBytes?: number;
   readonly wssPasswordType?: 'text' | 'digest';
   readonly wssTimeToLive?: number;
-  /** Name of a `wss/keystores/<name>.yaml` client keystore. Stored only; selection arrives with Task 36. */
+  /** Id of a `wss/keystores.yaml` entry: the client identity this request's TLS handshake presents. */
   readonly sslKeystoreRef?: string;
 }
 
