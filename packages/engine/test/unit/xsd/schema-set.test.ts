@@ -315,6 +315,35 @@ describe('resolveContent — crafted/schema-constructs', () => {
     expect(payload?.name).toEqual(q(OTHER, 'OtherPayload'));
     expect(set.resolveContent(payload as ComplexType).attributes.map((a) => a.name.localName)).toEqual(['id', 'lang']);
   });
+
+  it('inherits base attributes through a simpleContent extension chain', () => {
+    const taxed = set.resolveContent(expectComplex(set, TNS, 'TaxedAmount'));
+    const names = taxed.attributes.map((a) => a.name.localName).sort();
+    expect(names).toEqual(['currency', 'rate']);
+    const currency = taxed.attributes.find((a) => a.name.localName === 'currency');
+    expect(currency?.fixed).toBe('EUR');
+    expect(currency?.use).toBe('required');
+    expect(taxed.simpleContentBase).toEqual(q(NS.XSD, 'decimal'));
+  });
+
+  it('inherits an unrestated base attribute through a simpleContent restriction', () => {
+    const restricted = set.resolveContent(expectComplex(set, TNS, 'TaxedAmountRestricted'));
+    const currency = restricted.attributes.find((a) => a.name.localName === 'currency');
+    expect(currency).toBeDefined();
+    expect(currency?.fixed).toBe('EUR');
+    expect(currency?.use).toBe('required');
+    expect(restricted.simpleContentBase).toEqual(q(NS.XSD, 'decimal'));
+  });
+
+  it('inherits mixed from the base through a complexContent restriction that does not restate it', () => {
+    const restricted = set.resolveContent(expectComplex(set, TNS, 'MixedTextRestricted'));
+    expect(restricted.mixed).toBe(true);
+  });
+
+  it('inherits anyAttribute from the base through a complexContent restriction that does not restate it', () => {
+    const restricted = set.resolveContent(expectComplex(set, TNS, 'AnyHolderRestricted'));
+    expect(restricted.anyAttribute).toEqual({ namespace: '##any', processContents: 'skip' });
+  });
 });
 
 describe('buildSchemaSet — problems and edge cases', () => {

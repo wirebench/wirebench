@@ -204,7 +204,17 @@ export function resolveContent(type: ComplexType, ctx: ResolutionContext): Resol
       const base = ctx.lookupType(content.base);
       current = base !== undefined && base.kind === 'complexType' ? base : undefined;
       // A `restriction` restates the whole content model, so the base's particle
-      // is not inherited; only its attributes are (unless prohibited).
+      // is not inherited; only its attributes (and mixed/anyAttribute) are.
+      if (content.derivation === 'restriction') {
+        break;
+      }
+    } else if (content.kind === 'simpleContent') {
+      // A simpleContent extension/restriction may still chain to a complex base
+      // that itself declares simpleContent (e.g. TaxedAmount extends Amount);
+      // follow it so the base's attributes are inherited. The chain ends once
+      // the base is a simple type or builtin (handled by ultimateSimpleBase).
+      const base = ctx.lookupType(content.base);
+      current = base !== undefined && base.kind === 'complexType' ? base : undefined;
       if (content.derivation === 'restriction') {
         break;
       }
@@ -226,19 +236,35 @@ export function resolveContent(type: ComplexType, ctx: ResolutionContext): Resol
     collectAttributes(content.attributes, ctx, acc, new Set());
   }
 
-  // Attributes of levels *above* a restriction cut-off are still inherited.
+  // Attributes (and, for complexContent, mixed/anyAttribute) of levels *above*
+  // a restriction cut-off are still inherited: a restriction restates the
+  // content model but not necessarily every attribute/mixed/anyAttribute.
   const restrictionRoot = chain[0];
-  if (restrictionRoot !== undefined && restrictionRoot.content.kind === 'complexContent') {
+  if (
+    restrictionRoot !== undefined &&
+    (restrictionRoot.content.kind === 'complexContent' || restrictionRoot.content.kind === 'simpleContent') &&
+    restrictionRoot.content.derivation === 'restriction'
+  ) {
     const rootContent = restrictionRoot.content;
-    if (rootContent.derivation === 'restriction') {
-      const inheritedType = ctx.lookupType(rootContent.base);
-      if (inheritedType !== undefined && inheritedType.kind === 'complexType') {
-        const inherited = resolveContent(inheritedType, ctx);
-        for (const attribute of inherited.attributes) {
-          const key = qnameToString(attribute.name);
-          if (!acc.prohibited.has(key) && !acc.byName.has(key)) {
-            acc.byName.set(key, attribute);
-          }
+    const inheritedType = ctx.lookupType(rootContent.base);
+    if (inheritedType !== undefined && inheritedType.kind === 'complexType') {
+      const inherited = resolveContent(inheritedType, ctx);
+      for (const attribute of inherited.attributes) {
+        const key = qnameToString(attribute.name);
+        if (!acc.prohibited.has(key) && !acc.byName.has(key)) {
+          acc.byName.set(key, attribute);
+        }
+      }
+      if (rootContent.kind === 'complexContent') {
+        // The derived type inherits `mixed` from the base unless it declares
+        // its own (XSD 1.0: `mixed` is not required to be restated).
+        if (!restrictionRoot.mixed) {
+          mixed = mixed || inherited.mixed;
+        }
+        // A restriction may narrow or drop `anyAttribute`; only fall back to
+        // the base's when the restriction itself declares none.
+        if (acc.anyAttribute === undefined && inherited.anyAttribute !== undefined) {
+          acc.anyAttribute = inherited.anyAttribute;
         }
       }
     }

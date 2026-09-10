@@ -110,6 +110,25 @@
         </xs:simpleContent>
       </xs:complexType>
 
+      <!-- simpleContent extension that does NOT restate the base's "currency"
+           attribute: it must still be inherited from Amount. -->
+      <xs:complexType name="TaxedAmount">
+        <xs:simpleContent>
+          <xs:extension base="tns:Amount">
+            <xs:attribute name="rate" type="xs:decimal" use="required"/>
+          </xs:extension>
+        </xs:simpleContent>
+      </xs:complexType>
+
+      <!-- simpleContent restriction that does NOT restate "currency" either. -->
+      <xs:complexType name="TaxedAmountRestricted">
+        <xs:simpleContent>
+          <xs:restriction base="tns:Amount">
+            <xs:maxInclusive value="500"/>
+          </xs:restriction>
+        </xs:simpleContent>
+      </xs:complexType>
+
       <!-- nested compositors with occurrence constraints -->
       <xs:complexType name="ChoiceType">
         <xs:choice>
@@ -159,6 +178,31 @@
         <xs:sequence>
           <xs:element name="em" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
         </xs:sequence>
+      </xs:complexType>
+
+      <!-- complexContent restriction of a mixed type that does not restate
+           mixed="true": the base's mixed-ness must still be inherited. -->
+      <xs:complexType name="MixedTextRestricted">
+        <xs:complexContent>
+          <xs:restriction base="tns:MixedText">
+            <xs:sequence>
+              <xs:element name="em" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:restriction>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <!-- complexContent restriction of a type with anyAttribute that does not
+           restate it: the base's anyAttribute must still be inherited. -->
+      <xs:complexType name="AnyHolderRestricted">
+        <xs:complexContent>
+          <xs:restriction base="tns:AnyHolder">
+            <xs:sequence>
+              <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="blob" type="xs:anyType"/>
+            </xs:sequence>
+          </xs:restriction>
+        </xs:complexContent>
       </xs:complexType>
 
       <xs:complexType name="EmptyType">

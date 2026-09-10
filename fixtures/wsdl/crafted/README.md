@@ -28,7 +28,13 @@ Each is deliberately tiny but structurally valid.
   `complexContent extension` chain with an attribute at each level (`Level1`..`Level3`),
   a `complexContent restriction` that prohibits an inherited attribute
   (`Level3Restricted`), `simpleContent` extension and restriction (`Amount`,
-  `ShortAmount`), a substitution group with an abstract head and a transitive member
+  `ShortAmount`), a `simpleContent` extension and restriction that each inherit an
+  unrestated base attribute (`TaxedAmount`, `TaxedAmountRestricted`, both extending
+  `Amount` without repeating `currency`), a `complexContent restriction` that
+  inherits `mixed` without restating it (`MixedTextRestricted`, restricting
+  `MixedText`) and one that inherits `anyAttribute` without restating it
+  (`AnyHolderRestricted`, restricting `AnyHolder`), a substitution group with an
+  abstract head and a transitive member
   (`Vehicle` ← `Car` ← `Truck`), an abstract complex type with two concrete derivations
   (`AbstractShape`/`Circle`/`Square`), anonymous complex and simple types (`AnonRoot`),
   `enumeration`/`pattern`/`length`/`whiteSpace`/`minInclusive`/`maxExclusive` facets,
