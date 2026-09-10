@@ -61,6 +61,6 @@ export function parseWsdlBundle(bundle: DefinitionBundle): WsdlDefinition {
     ],
     imports: rootDef.imports,
     namespaceDeclarations: rootDef.namespaceDeclarations,
-    problems: bundle.problems,
+    problems: rootDef.problems,
   };
 }

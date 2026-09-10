@@ -188,6 +188,53 @@ describe('engine facade — end to end', () => {
     ).rejects.toMatchObject({ code: 'aborted' } satisfies Partial<HttpError>);
   });
 
+  it('decodes a response body using its declared charset', async () => {
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const exchange = await sendSoapRequest({
+      endpoint: `${server.url}/latin1`,
+      envelopeXml: '<a/>',
+      soapVersion: '1.1',
+      soapAction: 'urn:x',
+    });
+
+    expect(exchange.response?.envelopeXml).toContain('é');
+  });
+
+  it('falls back to UTF-8 and records a decode-error problem for an unsupported charset label', async () => {
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const exchange = await sendSoapRequest({
+      endpoint: `${server.url}/bad-charset`,
+      envelopeXml: '<a/>',
+      soapVersion: '1.1',
+      soapAction: 'urn:x',
+    });
+
+    const decodeErrors = exchange.problems.filter((p) => p.code === 'decode-error');
+    expect(decodeErrors).toHaveLength(1);
+    expect(decodeErrors[0]?.message).toContain('x-unknown');
+    expect(exchange.response?.envelopeXml).toBe('<a/>');
+  });
+
+  it('reports a resolve problem exactly once, not duplicated onto the WSDL definition', async () => {
+    const text = `<?xml version="1.0"?>
+<definitions name="MissingImport" targetNamespace="urn:wb:missing-import"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:tns="urn:wb:missing-import">
+  <import namespace="urn:wb:missing-import-target" location="does-not-exist.wsdl"/>
+  <portType name="PT"><operation name="Op"/></portType>
+</definitions>`;
+    const result = await importDefinition({
+      kind: 'text',
+      text,
+      location: 'file:///tmp/wirebench-missing-import/root.wsdl',
+    });
+
+    const fetchFailed = result.problems.filter((p) => p.code === 'fetch-failed');
+    expect(fetchFailed).toHaveLength(1);
+    expect(fetchFailed[0]?.source).toBe('resolve');
+    expect(result.definition.problems).toEqual([]);
+  });
+
   it('adds a Basic auth Authorization header to the WSDL fetch when auth is given', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     await importDefinition(

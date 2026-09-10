@@ -153,7 +153,13 @@ export interface WsdlDefinition {
    * are resolved against these.
    */
   readonly namespaceDeclarations: Readonly<Record<string, string>>;
-  /** Problems encountered resolving imports (empty for the single-document, `resolveImports: false` path). */
+  /**
+   * Problems encountered parsing this WSDL document itself. Import-resolution
+   * problems (failed fetches, unsupported redefines, and the like) live on
+   * the {@link DefinitionBundle}'s `problems`, not here — this is always
+   * empty for the current parser, which does not yet record WSDL-parse-level
+   * problems.
+   */
   readonly problems: readonly ResolveProblem[];
 }
 

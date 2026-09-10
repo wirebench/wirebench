@@ -81,6 +81,18 @@ export async function startTestSoapServer(options?: { readonly fixture?: string 
       return;
     }
 
+    if (method === 'POST' && url.pathname === '/latin1') {
+      res.writeHead(200, { 'content-type': 'text/xml; charset=ISO-8859-1' });
+      res.end(Buffer.concat([Buffer.from('<root>', 'ascii'), Buffer.from([0xe9]), Buffer.from('</root>', 'ascii')]));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/bad-charset') {
+      res.writeHead(200, { 'content-type': 'text/xml; charset=x-unknown' });
+      res.end(body.length > 0 ? body : Buffer.from('<root/>'));
+      return;
+    }
+
     if (method === 'POST' && url.pathname === '/fault') {
       res.writeHead(500, { 'content-type': 'text/xml' });
       res.end(SOAP_FAULT);

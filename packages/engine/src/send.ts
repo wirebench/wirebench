@@ -60,14 +60,21 @@ function encodeBody(text: string, encoding: string | undefined): Uint8Array {
   });
 }
 
-/** Decodes a response body per its `Content-Type` charset, falling back to UTF-8 with a `decode-error` problem. */
-function decodeBody(body: Uint8Array): { text: string; problem?: SoapExchange['problems'][number] } {
+/** Decodes a response body per its `Content-Type` charset (default UTF-8), falling back to UTF-8 with a `decode-error` problem when the charset label is unsupported or the bytes are invalid for it. */
+function decodeBody(
+  body: Uint8Array,
+  contentType: string | undefined,
+): { text: string; problem?: SoapExchange['problems'][number] } {
+  const label = charsetOf(contentType) ?? 'utf-8';
   try {
-    return { text: new TextDecoder('utf-8', { fatal: true }).decode(body) };
+    return { text: new TextDecoder(label, { fatal: false }).decode(body) };
   } catch {
     return {
-      text: new TextDecoder('utf-8').decode(body),
-      problem: { code: 'decode-error', message: 'Response body could not be decoded as UTF-8; showing best effort' },
+      text: new TextDecoder('utf-8', { fatal: false }).decode(body),
+      problem: {
+        code: 'decode-error',
+        message: `Response charset "${label}" is not supported; decoded as UTF-8 instead`,
+      },
     };
   }
 }
@@ -115,7 +122,10 @@ export async function sendSoapRequest(
   const http = await sendHttp(request, options);
 
   const problems: Array<SoapExchange['problems'][number]> = [];
-  const { text: envelopeXml, problem: decodeProblem } = decodeBody(http.body);
+  const { text: envelopeXml, problem: decodeProblem } = decodeBody(
+    http.body,
+    headerValue(http.headers, 'content-type'),
+  );
   if (decodeProblem !== undefined) {
     problems.push(decodeProblem);
   }
