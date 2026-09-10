@@ -10,3 +10,6 @@ coverage
 .env*
 .superpowers/
 *.tsbuildinfo
+.idea/
+.claude/launch.json
+.claude/settings.local.json
