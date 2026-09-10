@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { generateRequest, importDefinition, parseFault, parseSoapResponse, parseXml } from '@wirebench/engine';
 import type { HttpExchange, SoapExchange } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { toExchangeSummary, toGenerateResponse, toInterfaceSummary, toWireFault } from '../src/main/engine-wire.js';
+import {
+  toExchangeSummary,
+  toGenerateResponse,
+  toInterfaceSummary,
+  toWireFault,
+  redactExchangeSummary,
+} from '../src/main/engine-wire.js';
+import type { ExchangeSummary } from '../src/shared/wire-types.js';
 
 const CALCULATOR_URL = 'http://example.test/calculator/service.wsdl';
 
@@ -183,5 +190,101 @@ describe('toExchangeSummary', () => {
   it('omits `response` when the exchange had none', () => {
     const wire = toExchangeSummary({ http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
     expect(wire.response).toBeUndefined();
+  });
+});
+
+describe('redactExchangeSummary', () => {
+  it('redacts wsse:Password in response.envelopeXml when show is false', () => {
+    const envelope = `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">s3cret</wsse:Password>
+    </wsse:Security>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const summary: ExchangeSummary = {
+      sendId: 'send-5',
+      durationMs: 12,
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/xml' },
+        rawHeaders: [['content-type', 'text/xml']],
+        bodyBase64: 'PGEvPg==',
+        rawBodyBase64: 'PGEvPg==',
+        rawRequestBase64: Buffer.from('POST /soap HTTP/1.1\r\n\r\n').toString('base64'),
+        rawResponseBase64: Buffer.from('HTTP/1.1 200 OK\r\n\r\n<a/>').toString('base64'),
+        truncated: false,
+        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 12 },
+        redirects: [],
+        request: { url: 'http://example.test/soap', method: 'POST', headers: { 'content-type': 'text/xml' } },
+      },
+      response: {
+        envelopeXml: envelope,
+        isSoap: true,
+      },
+      problems: [],
+    };
+
+    const redacted = redactExchangeSummary(summary);
+    expect(redacted.response?.envelopeXml).toContain('<redacted>');
+    expect(redacted.response?.envelopeXml).not.toContain('s3cret');
+
+    const shown = redactExchangeSummary(summary, { show: true });
+    expect(shown.response?.envelopeXml).toContain('s3cret');
+  });
+
+  it('redacts wsse:Password in response.fault.detailXml when show is false', () => {
+    const detailXml = `<detail>
+  <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">s3cret</wsse:Password>
+</detail>`;
+
+    const summary: ExchangeSummary = {
+      sendId: 'send-6',
+      durationMs: 12,
+      http: {
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: { 'content-type': 'text/xml' },
+        rawHeaders: [['content-type', 'text/xml']],
+        bodyBase64: 'PGEvPg==',
+        rawBodyBase64: 'PGEvPg==',
+        rawRequestBase64: Buffer.from('POST /soap HTTP/1.1\r\n\r\n').toString('base64'),
+        rawResponseBase64: Buffer.from('HTTP/1.1 500 Internal Server Error\r\n\r\n<a/>').toString('base64'),
+        truncated: false,
+        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 12 },
+        redirects: [],
+        request: { url: 'http://example.test/soap', method: 'POST', headers: { 'content-type': 'text/xml' } },
+      },
+      response: {
+        envelopeXml: `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <soapenv:Fault>
+      <faultcode>soapenv:Server</faultcode>
+      <faultstring>Authentication failed</faultstring>
+    </soapenv:Fault>
+  </soapenv:Body>
+</soapenv:Envelope>`,
+        isSoap: true,
+        fault: {
+          version: '1.1',
+          code: 'soapenv:Server',
+          subcodes: [],
+          reason: 'Authentication failed',
+          detailXml,
+        },
+      },
+      problems: [],
+    };
+
+    const redacted = redactExchangeSummary(summary);
+    expect(redacted.response?.fault?.detailXml).toContain('<redacted>');
+    expect(redacted.response?.fault?.detailXml).not.toContain('s3cret');
+
+    const shown = redactExchangeSummary(summary, { show: true });
+    expect(shown.response?.fault?.detailXml).toContain('s3cret');
   });
 });

@@ -5,7 +5,7 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactRawHttp } from './redact.js';
+import { redactHeaderPairs, redactHeaders, redactRawHttp, redactXml } from './redact.js';
 import type {
   GeneratedRequest,
   HttpExchange,
@@ -210,5 +210,23 @@ export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: 
       rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
       request: { ...summary.http.request, headers: redactHeaders(summary.http.request.headers, { show }) },
     },
+    ...(summary.response !== undefined
+      ? {
+          response: {
+            ...summary.response,
+            envelopeXml: redactXml(summary.response.envelopeXml, { show }),
+            ...(summary.response.fault !== undefined
+              ? {
+                  fault: {
+                    ...summary.response.fault,
+                    ...(summary.response.fault.detailXml !== undefined
+                      ? { detailXml: redactXml(summary.response.fault.detailXml, { show }) }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
