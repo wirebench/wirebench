@@ -1,6 +1,12 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@shared': resolve(import.meta.dirname, 'apps/desktop/src/shared'),
+    },
+  },
   test: {
     coverage: {
       provider: 'v8',
@@ -30,6 +36,13 @@ export default defineConfig({
         test: {
           name: 'engine-interop',
           include: ['packages/engine/test/interop/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'desktop',
+          include: ['apps/desktop/test/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
         },
       },
     ],

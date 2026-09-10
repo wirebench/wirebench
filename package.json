@@ -22,14 +22,16 @@
     "test:wss-xmlsec": "echo 'not yet implemented (Task 38)' && exit 0",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && pnpm --filter @wirebench/desktop typecheck",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "fixtures:refresh": "echo 'not yet implemented (Task 4)' && exit 0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.2",
     "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.10.0",
+    "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",
