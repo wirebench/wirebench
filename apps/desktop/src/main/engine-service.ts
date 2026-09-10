@@ -304,6 +304,11 @@ export class EngineService {
     return { closed: this.definitions.delete(interfaceId) };
   }
 
+  /** The resolved `SchemaSet` for `interfaceId`, for completion/declaration lookups. Throws `unknown-interface` if absent. */
+  schemaSetFor(interfaceId: string) {
+    return this.lookup(interfaceId).schemaSet;
+  }
+
   private lookup(interfaceId: string): ImportResult {
     const stored = this.definitions.get(interfaceId);
     if (stored === undefined) {

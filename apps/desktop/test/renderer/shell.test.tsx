@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
+
 import { App } from '../../src/renderer/app.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';

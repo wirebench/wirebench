@@ -13,6 +13,8 @@ export interface UiSnapshot {
   readonly console: { readonly visible: boolean; readonly activeTab: ConsoleTab; readonly size: number };
   readonly details: { readonly visible: boolean; readonly size: number };
   readonly theme: ThemePreference;
+  /** Whether request/response Monaco editors show line numbers. */
+  readonly editorLineNumbers: boolean;
 }
 
 /** `localStorage` key holding the persisted layout. */
@@ -27,6 +29,7 @@ export const DEFAULT_UI_STATE: UiSnapshot = {
   console: { visible: true, activeTab: 'http-log', size: 25 },
   details: { visible: true, size: 20 },
   theme: 'dark',
+  editorLineNumbers: true,
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -67,11 +70,14 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
     }
     const stored = asRecord(payload['state']) ?? {};
     const theme = stored['theme'];
+    const editorLineNumbers = stored['editorLineNumbers'];
     return {
       sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
       console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
       details: mergeSection(DEFAULT_UI_STATE.details, stored['details']),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
+      editorLineNumbers:
+        typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,
     };
   } catch {
     return DEFAULT_UI_STATE;

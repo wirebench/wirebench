@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DiffXmlEditor } from '../../editor/diff-xml-editor.js';
-import { formatXml } from '../../lib/format-xml.js';
+import { prettyPrintXml } from '../../editor/xml-language.js';
 
 export interface DiffViewProps {
   readonly leftLabel: string;
@@ -53,8 +53,8 @@ export function DiffView({ leftLabel, rightLabel, leftXml, rightXml }: DiffViewP
       </div>
       <div className="min-h-0 flex-1">
         <DiffXmlEditor
-          original={formatXml(leftXml)}
-          modified={formatXml(rightXml)}
+          original={prettyPrintXml(leftXml)}
+          modified={prettyPrintXml(rightXml)}
           renderSideBySide={sideBySide}
           ignoreTrimWhitespace={ignoreWhitespace}
         />

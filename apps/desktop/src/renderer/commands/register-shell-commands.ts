@@ -1,3 +1,6 @@
+import { getActiveRequestEditor } from '../editor/active-request-editor.js';
+import { formatEditorInPlace, gotoLine } from '../editor/xml-language.js';
+import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { projectActions } from '../features/welcome/project-actions.js';
@@ -222,6 +225,81 @@ export function registerShellCommands(openPalette: () => void): void {
       if (requestId !== undefined) {
         void useExchangesStore.getState().cancel(requestId);
       }
+    },
+  });
+
+  // The editor.* commands act on whatever Monaco instance is currently mounted as the request
+  // editor (see `active-request-editor.ts`) — gated the same way as `request.send`/`cancel`,
+  // by whether a request tab is active, since that is exactly when that editor is mounted.
+  registerCommand({
+    id: 'editor.formatXml',
+    label: 'Format Document',
+    category: 'Editor',
+    // No `shortcut` here: Mod+Shift+F is bound directly on the Monaco instance in
+    // `request-pane.tsx` (`FORMAT_KEYBINDING`), scoped to when the editor itself has focus.
+    // The global window-level keybinding dispatcher fires Mod-based bindings even while an
+    // input has focus (see `shouldIgnoreEvent`), so registering the same shortcut here too
+    // would run the command twice per keystroke.
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const editor = getActiveRequestEditor();
+      if (editor !== undefined) {
+        formatEditorInPlace(editor);
+      }
+    },
+  });
+  registerCommand({
+    id: 'editor.gotoLine',
+    label: 'Go to Line…',
+    category: 'Editor',
+    // Same reasoning as `editor.formatXml` above: Mod+G is bound on the Monaco instance itself.
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const editor = getActiveRequestEditor();
+      if (editor !== undefined) {
+        gotoLine(editor);
+      }
+    },
+  });
+  registerCommand({
+    id: 'editor.toggleLineNumbers',
+    label: 'Toggle Line Numbers',
+    category: 'Editor',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      ui().toggleEditorLineNumbers();
+    },
+  });
+  registerCommand({
+    id: 'editor.saveAs',
+    label: 'Save Request As…',
+    category: 'Editor',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const editor = getActiveRequestEditor();
+      const text = editor?.getModel()?.getValue();
+      if (text !== undefined) {
+        void saveXmlAs(text);
+      }
+    },
+  });
+  registerCommand({
+    id: 'editor.loadFrom',
+    label: 'Load Request From…',
+    category: 'Editor',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const requestId = activeRequestId();
+      const editor = getActiveRequestEditor();
+      const currentText = editor?.getModel()?.getValue() ?? '';
+      if (requestId === undefined) {
+        return;
+      }
+      void loadXmlFrom(currentText).then((text) => {
+        if (text !== undefined) {
+          useProjectStore.getState().updateRequest(requestId, { envelopeXml: text });
+        }
+      });
     },
   });
 

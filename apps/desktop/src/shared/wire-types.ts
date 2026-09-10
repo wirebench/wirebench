@@ -698,3 +698,55 @@ export const historyResendRequestSchema = z.object({ id: z.string() });
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;
+
+// ---------------------------------------------------------------------------
+// XML editor (Task 25): schema-driven completion and "go to declaration",
+// backed by the interface's in-memory `SchemaSet`.
+// ---------------------------------------------------------------------------
+
+/** Request payload shared by `xml.completions` and `xml.declaration`: a path of Clark-notation QNames. */
+export const xmlPathRequestSchema = z.object({
+  interfaceId: z.string(),
+  path: z.array(z.string()),
+});
+
+/** Request payload for `xml.completions`: the ancestor path plus what the user has typed so far. */
+export const xmlCompletionsRequestSchema = xmlPathRequestSchema.extend({
+  partial: z.string().optional(),
+});
+
+/** One candidate child element for the completion provider. */
+export const xmlCompletionItemSchema = z.object({
+  name: z.string(),
+  namespaceUri: z.string(),
+  documentation: z.string().optional(),
+});
+export const xmlCompletionsResponseSchema = z.object({ items: z.array(xmlCompletionItemSchema) });
+
+/** Response for `xml.declaration`: where the element was declared in the schema, or `null` when unresolvable. */
+export const xmlDeclarationResponseSchema = z
+  .object({
+    location: z.string(),
+    line: z.number().optional(),
+    column: z.number().optional(),
+  })
+  .nullable();
+
+// ---------------------------------------------------------------------------
+// File dialogs for arbitrary text (Task 25): Save as… / Load from… on the
+// request editor, separate from `dialogs.*`'s open-file/open-folder pickers
+// because these round-trip file *content*, not just a chosen path.
+// ---------------------------------------------------------------------------
+
+/** Request payload for `fs.saveText`. */
+export const fsSaveTextRequestSchema = z.object({
+  defaultName: z.string().optional(),
+  text: z.string(),
+});
+export const fsSaveTextResponseSchema = z.object({ path: z.string().optional() });
+
+/** Request payload for `fs.openText`. */
+export const fsOpenTextRequestSchema = z.object({
+  filters: z.array(dialogFilterSchema).optional(),
+});
+export const fsOpenTextResponseSchema = z.object({ path: z.string().optional(), text: z.string().optional() });

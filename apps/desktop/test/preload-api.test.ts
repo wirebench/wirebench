@@ -22,12 +22,14 @@ describe('buildApi', () => {
       'dialogs',
       'exchanges',
       'files',
+      'fs',
       'globals',
       'history',
       'on',
       'project',
       'request',
       'secrets',
+      'xml',
     ]);
     expect('ipcRenderer' in api).toBe(false);
   });

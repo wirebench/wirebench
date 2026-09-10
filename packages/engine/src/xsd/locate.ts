@@ -38,7 +38,7 @@ function xmlnsDeclarations(rawAttrs: string): Record<string, string> {
   let m: RegExpExecArray | null;
   while ((m = re.exec(rawAttrs)) !== null) {
     const attrName = m[1] as string;
-    const value = (m[2] ?? m[3] ?? '') as string;
+    const value = m[2] ?? m[3] ?? '';
     if (attrName === 'xmlns') {
       decls[''] = value;
     } else if (attrName.startsWith('xmlns:')) {
@@ -72,11 +72,11 @@ function scopeStackAt(text: string, offset: number): Scope[] {
   const re = new RegExp(OPEN_TAG_RE);
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    const matchEnd = m.index + (m[0] as string).length;
+    const matchEnd = m.index + m[0].length;
     if (matchEnd > offset) {
       break;
     }
-    const raw = m[0] as string;
+    const raw = m[0];
     if (raw.startsWith('</')) {
       // Tolerant of stray/mismatched close tags: just pop, since the source text
       // up to the cursor is assumed well-formed for the purpose of this walk.
@@ -86,7 +86,7 @@ function scopeStackAt(text: string, offset: number): Scope[] {
       continue;
     }
     const name = (m[1] as string).replace(/^\//, '');
-    const rawAttrs = (m[2] as string | undefined) ?? '';
+    const rawAttrs = m[2] ?? '';
     const selfClosing = m[3] === '/';
     const parentPrefixes = stack.length > 0 ? (stack[stack.length - 1] as Scope).prefixes : {};
     const ownDecls = xmlnsDeclarations(rawAttrs);

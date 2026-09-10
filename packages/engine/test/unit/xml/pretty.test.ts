@@ -29,9 +29,7 @@ describe('formatXml', () => {
   });
 
   it('is idempotent: formatting an already-formatted document reports unchanged', () => {
-    const once = formatXml(
-      '<a xmlns="urn:x"><b>1</b>\n<c>2</c></a>',
-    );
+    const once = formatXml('<a xmlns="urn:x"><b>1</b>\n<c>2</c></a>');
     const twice = formatXml(once.text);
     expect(twice.text).toBe(once.text);
     expect(twice.changed).toBe(false);
@@ -99,5 +97,21 @@ describe('formatXml', () => {
     const result = formatXml('<a><b>1</b>');
     expect(result.problem).toBeDefined();
     expect(result.text).toBe('<a><b>1</b>');
+  });
+
+  it('returns an empty string for empty input', () => {
+    expect(formatXml('').text).toBe('');
+  });
+
+  it('does not break a tag on a > inside a double-quoted attribute value', () => {
+    expect(formatXml('<a><b x="1>2"/></a>').text).toBe('<a>\n   <b x="1>2"/>\n</a>');
+  });
+
+  it('does not break a tag on a > inside a single-quoted attribute value', () => {
+    expect(formatXml("<a><b x='1>2'/></a>").text).toBe("<a>\n   <b x='1>2'/>\n</a>");
+  });
+
+  it('handles a tag carrying both single- and double-quoted attributes', () => {
+    expect(formatXml('<a><b x="1>2" y=\'3<4\'/></a>').text).toBe('<a>\n   <b x="1>2" y=\'3<4\'/>\n</a>');
   });
 });

@@ -52,6 +52,14 @@ import {
   secretsSetRequestSchema,
   secretsSetShowSecretsRequestSchema,
   secretsShowSecretsResponseSchema,
+  xmlCompletionsRequestSchema,
+  xmlCompletionsResponseSchema,
+  xmlPathRequestSchema,
+  xmlDeclarationResponseSchema,
+  fsSaveTextRequestSchema,
+  fsSaveTextResponseSchema,
+  fsOpenTextRequestSchema,
+  fsOpenTextResponseSchema,
 } from './wire-types.js';
 
 /**
@@ -177,6 +185,14 @@ export const channels = {
     get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
     resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
+  },
+  xml: {
+    completions: defineChannel('xml.completions', xmlCompletionsRequestSchema, xmlCompletionsResponseSchema),
+    declaration: defineChannel('xml.declaration', xmlPathRequestSchema, xmlDeclarationResponseSchema),
+  },
+  fs: {
+    saveText: defineChannel('fs.saveText', fsSaveTextRequestSchema, fsSaveTextResponseSchema),
+    openText: defineChannel('fs.openText', fsOpenTextRequestSchema, fsOpenTextResponseSchema),
   },
 } as const;
 

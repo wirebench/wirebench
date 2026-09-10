@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
+
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
@@ -19,6 +22,7 @@ const context: CommandContext = {
     console: { visible: true, activeTab: 'http-log', size: 25 },
     details: { visible: true, size: 20 },
     theme: 'dark',
+    editorLineNumbers: true,
   },
   selection: undefined,
 };

@@ -48,6 +48,12 @@ export function monacoThemeName(theme: 'dark' | 'light'): string {
  */
 export const SEND_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter;
 
+/** Monaco's numeric encoding of ⌘⇧F / Ctrl+Shift+F: `editor.formatXml`. */
+export const FORMAT_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF;
+
+/** Monaco's numeric encoding of ⌘G / Ctrl+G: `editor.gotoLine`. */
+export const GOTO_LINE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG;
+
 /** Editor options shared by the request and response panes; per-pane overrides sit alongside. */
 export const BASE_EDITOR_OPTIONS = {
   automaticLayout: true,

@@ -46,6 +46,7 @@ export function AppShell() {
   const consoleState = useUiStore((state) => state.console);
   const details = useUiStore((state) => state.details);
   const theme = useUiStore((state) => state.theme);
+  const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const selection = useUiStore((state) => state.selection);
   const setSidebarSize = useUiStore((state) => state.setSidebarSize);
   const setConsoleSize = useUiStore((state) => state.setConsoleSize);
@@ -74,8 +75,8 @@ export function AppShell() {
   useTheme(theme);
 
   const context: CommandContext = useMemo(
-    () => ({ platform, ui: { sidebar, console: consoleState, details, theme }, selection }),
-    [platform, sidebar, consoleState, details, theme, selection],
+    () => ({ platform, ui: { sidebar, console: consoleState, details, theme, editorLineNumbers }, selection }),
+    [platform, sidebar, consoleState, details, theme, editorLineNumbers, selection],
   );
   useKeybindings(context);
 

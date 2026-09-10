@@ -17,19 +17,34 @@ export interface XmlEditorProps {
   /** The accessible name Monaco puts on its hidden textarea — how tests and AT address the editor. */
   readonly ariaLabel: string;
   readonly onMount?: OnMount;
+  /** Whether to show the gutter line-number column. Defaults to `true`. */
+  readonly lineNumbers?: boolean;
 }
 
 /**
  * The one Monaco wrapper: XML language, Wirebench theme, shared options. Both panes go through
  * it so the request and response editors can never drift apart.
  */
-export function XmlEditor({ value, onChange, readOnly = false, ariaLabel, onMount }: XmlEditorProps) {
+export function XmlEditor({
+  value,
+  onChange,
+  readOnly = false,
+  ariaLabel,
+  onMount,
+  lineNumbers = true,
+}: XmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(resolveTheme(preference));
 
   const options = useMemo(
-    () => ({ ...BASE_EDITOR_OPTIONS, readOnly, domReadOnly: readOnly, ariaLabel }),
-    [readOnly, ariaLabel],
+    () => ({
+      ...BASE_EDITOR_OPTIONS,
+      readOnly,
+      domReadOnly: readOnly,
+      ariaLabel,
+      lineNumbers: lineNumbers ? ('on' as const) : ('off' as const),
+    }),
+    [readOnly, ariaLabel, lineNumbers],
   );
 
   return (

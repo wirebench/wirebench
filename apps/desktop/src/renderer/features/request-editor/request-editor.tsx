@@ -106,6 +106,7 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
             envelopeXml={draft.envelopeXml}
             onEnvelopeChange={onEnvelopeChange}
             onSend={onSend}
+            interfaceId={draft.interfaceId}
           />
         </Panel>
         <Separator aria-label="Resize" className={`${SEPARATOR} ${layout === 'horizontal' ? 'w-px' : 'h-px'}`} />

@@ -144,7 +144,7 @@ describe('useUiStore', () => {
   it('exposes a snapshot free of action functions', () => {
     const snapshot = useUiStore.getState().snapshot();
 
-    expect(Object.keys(snapshot).sort()).toEqual(['console', 'details', 'sidebar', 'theme']);
+    expect(Object.keys(snapshot).sort()).toEqual(['console', 'details', 'editorLineNumbers', 'sidebar', 'theme']);
   });
 
   it('persists on every change', () => {

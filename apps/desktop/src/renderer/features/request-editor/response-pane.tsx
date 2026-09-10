@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { EmptyState } from '../../components/empty-state.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { decodeBase64Text } from '../../lib/format-size.js';
-import { formatXml } from '../../lib/format-xml.js';
+import { prettyPrintXml } from '../../editor/xml-language.js';
 import type { ExchangeState } from '../../state/exchanges.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
@@ -27,7 +27,7 @@ export function ResponsePane({ state }: ResponsePaneProps) {
       return '';
     }
     if (response?.isSoap === true) {
-      return formatXml(response.envelopeXml);
+      return prettyPrintXml(response.envelopeXml);
     }
     return decodeBase64Text(exchange.http.bodyBase64) ?? '';
   }, [exchange, response]);

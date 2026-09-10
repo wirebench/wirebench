@@ -54,7 +54,7 @@ type TreeNode =
     };
 
 const TOKEN_RE =
-  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE(?:[^[>]|\[[^\]]*\])*>|<\/[^>]+>|<[^!?/][^>]*>|[^<]+/g;
+  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE(?:[^[>]|\[[^\]]*\])*>|<\/(?:[^<>"']|"[^"]*"|'[^']*')*>|<[^!?/](?:[^<>"']|"[^"]*"|'[^']*')*>|[^<]+/g;
 
 function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');

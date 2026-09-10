@@ -1,6 +1,6 @@
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { XmlEditor } from '../../editor/xml-editor.js';
-import { formatXml } from '../../lib/format-xml.js';
+import { prettyPrintXml } from '../../editor/xml-language.js';
 import { formatBytes } from '../../lib/format-size.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -79,7 +79,11 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
       <div className="min-h-0 flex-1">
         <Group orientation="horizontal" className="flex h-full">
           <Panel defaultSize={50} minSize={20}>
-            <XmlEditor ariaLabel="History request envelope" value={formatXml(entry.request.envelopeXml)} readOnly />
+            <XmlEditor
+              ariaLabel="History request envelope"
+              value={prettyPrintXml(entry.request.envelopeXml)}
+              readOnly
+            />
           </Panel>
           <Separator className={SEPARATOR} />
           <Panel defaultSize={50} minSize={20}>
@@ -87,7 +91,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
               ariaLabel="History response envelope"
               value={
                 entry.response?.envelopeXml !== undefined
-                  ? formatXml(entry.response.envelopeXml)
+                  ? prettyPrintXml(entry.response.envelopeXml)
                   : (entry.error?.message ?? '')
               }
               readOnly

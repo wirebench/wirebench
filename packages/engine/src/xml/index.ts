@@ -4,9 +4,4 @@
  * into the Electron renderer.
  */
 export { formatXml, type FormatXmlOptions, type FormatXmlResult } from './pretty.js';
-export {
-  elementPathAt,
-  completionContextAt,
-  type CompletionContext,
-  type TextRange,
-} from '../xsd/locate.js';
+export { elementPathAt, completionContextAt, type CompletionContext, type TextRange } from '../xsd/locate.js';

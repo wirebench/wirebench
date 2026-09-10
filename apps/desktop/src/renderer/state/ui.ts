@@ -53,6 +53,7 @@ export interface UiStore extends UiSnapshot {
   readonly setDetailsSize: (size: number) => void;
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
+  readonly toggleEditorLineNumbers: () => void;
   /** The layout without the actions — what commands and keybindings receive as context. */
   readonly snapshot: () => UiSnapshot;
   /** Starts (or, with `undefined`, stops) mirroring every change into a storage backend. */
@@ -152,10 +153,14 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.theme = theme;
       }),
+    toggleEditorLineNumbers: () =>
+      update((draft) => {
+        draft.editorLineNumbers = !draft.editorLineNumbers;
+      }),
 
     snapshot: () => {
-      const { sidebar, console: consoleState, details, theme } = get();
-      return { sidebar, console: consoleState, details, theme };
+      const { sidebar, console: consoleState, details, theme, editorLineNumbers } = get();
+      return { sidebar, console: consoleState, details, theme, editorLineNumbers };
     },
 
     persistTo: (storage) => {
