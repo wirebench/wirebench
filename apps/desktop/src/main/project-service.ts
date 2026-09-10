@@ -12,8 +12,9 @@
  * ("hydration"), which is what makes `request.generate` and `request.send` work offline.
  */
 
-import { mkdir, readdir, rename } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { basename, resolve as resolvePath } from 'node:path';
 import {
   createInterface,
   createProject,
@@ -22,6 +23,7 @@ import {
   interfaceDir,
   loadProject,
   ProjectError,
+  putAttachment,
   resolveEndpoint,
   resolveScopes,
   projectFiles,
@@ -30,6 +32,7 @@ import {
   uniqueSlug,
 } from '@wirebench/engine';
 import type {
+  AttachmentSource,
   Endpoint,
   FsLike,
   Preferences,
@@ -515,11 +518,15 @@ export class ProjectService {
   }
 
   /** Applies one change to the model, marks the project dirty and schedules an autosave. */
-  async mutate(
-    change: ProjectChange,
-  ): Promise<{ project: ProjectWire; createdRequestId?: string; createdEnvironmentId?: string }> {
+  async mutate(change: ProjectChange): Promise<{
+    project: ProjectWire;
+    createdRequestId?: string;
+    createdEnvironmentId?: string;
+    createdAttachmentId?: string;
+  }> {
     const open = this.require();
     const result = await applyChange(open.project, change, {
+      addAttachmentFile: (input) => this.readAttachmentSource(open.dir, input),
       generate: (interfaceId, bindingName, operationName) => {
         const options = generateOptionsFrom(this.prefs());
         const generated = this.engine.generate({
@@ -546,7 +553,30 @@ export class ProjectService {
       project: this.snapshot() as ProjectWire,
       ...(result.createdRequestId !== undefined ? { createdRequestId: result.createdRequestId } : {}),
       ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
+      ...(result.createdAttachmentId !== undefined ? { createdAttachmentId: result.createdAttachmentId } : {}),
     };
+  }
+
+  /**
+   * Turns the path an `add-attachment` names into the bytes' size and their {@link AttachmentSource}:
+   * copied into `attachments/<sha256>` when the change asks for it (so the project stays
+   * self-contained and survives the original being moved), or referenced where it lies.
+   */
+  private async readAttachmentSource(
+    projectDir: string,
+    input: { path: string; copyToCache: boolean; contentType: string },
+  ): Promise<{ size: number; source: AttachmentSource }> {
+    const path = resolvePath(input.path);
+    if (!input.copyToCache) {
+      const info = await stat(path);
+      return { size: info.size, source: { kind: 'path', path } };
+    }
+    const bytes = await readFile(path);
+    const { sha256, size } = await putAttachment(projectDir, new Uint8Array(bytes), {
+      originalName: basename(path),
+      contentType: input.contentType,
+    });
+    return { size, source: { kind: 'cache', sha256 } };
   }
 
   /** The recent-projects list, most recent first. */

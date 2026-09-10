@@ -61,6 +61,13 @@ const operationPortRefSchema = z.object({
   address: z.string().optional(),
 });
 
+/**
+ * One `mime:content` an operation's `mime:multipartRelated` input declares — mirrors the
+ * engine's `MimePartInfo`. Drives the "Part" column of the attachments table.
+ */
+export const mimePartWireSchema = z.object({ part: z.string(), type: z.string().optional() });
+export type MimePartWire = z.infer<typeof mimePartWireSchema>;
+
 const operationSummaryWireSchema = z.object({
   name: z.string(),
   binding: z.string(),
@@ -70,6 +77,12 @@ const operationSummaryWireSchema = z.object({
   style: z.enum(['document', 'rpc']),
   documentation: z.string().optional(),
   ports: z.array(operationPortRefSchema),
+  /**
+   * The attachment slots the binding declares for this operation's input; empty for a plain
+   * `soap:body`. Defaulted so a summary built before a definition hydrates (or by an older
+   * cached snapshot) still parses.
+   */
+  inputMimeParts: z.array(mimePartWireSchema).default([]),
 });
 
 const importProblemSchema = z.object({
@@ -304,11 +317,29 @@ const faultWireSchema = z.object({
 });
 export type FaultWire = z.infer<typeof faultWireSchema>;
 
+/**
+ * One attachment part of a response, as listed for the renderer. The bytes NEVER cross IPC:
+ * they stay in main's `ExchangeCache`, addressed by `sendId` + `index`, and reach disk only
+ * through `attachments.saveResponse` / `attachments.openResponse`.
+ */
+export const responseAttachmentWireSchema = z.object({
+  /** Position in `SoapExchange.response.attachments`; the handle the `attachments.*` channels take. */
+  index: z.number(),
+  /** MIME Content-ID, without the angle brackets. */
+  contentId: z.string(),
+  contentType: z.string(),
+  size: z.number(),
+  name: z.string().optional(),
+});
+export type ResponseAttachmentWire = z.infer<typeof responseAttachmentWireSchema>;
+
 const soapResponseWireSchema = z.object({
   envelopeXml: z.string(),
   version: z.enum(['1.1', '1.2']).optional(),
   isSoap: z.boolean(),
   fault: faultWireSchema.optional(),
+  /** Defaulted so an exchange recorded before Task 33a still parses out of the history file. */
+  attachments: z.array(responseAttachmentWireSchema).default([]),
 });
 
 const exchangeProblemSchema = z.object({ code: z.string(), message: z.string() });
@@ -544,6 +575,49 @@ export const projectSettingsPatchSchema = z.object({
 });
 export type ProjectSettingsPatchWire = z.infer<typeof projectSettingsPatchSchema>;
 
+/** Where an attachment's bytes live — mirrors the engine's `AttachmentSource` exactly. */
+export const attachmentSourceWireSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('cache'), sha256: z.string() }),
+  z.object({ kind: z.literal('path'), path: z.string() }),
+]);
+export type AttachmentSourceWire = z.infer<typeof attachmentSourceWireSchema>;
+
+/** How an attachment is carried on the wire — mirrors the engine's `AttachmentType`. */
+export const attachmentTypeSchema = z.enum(['XOP', 'MIME', 'SWAREF', 'CONTENT', 'UNKNOWN']);
+export type AttachmentTypeWire = z.infer<typeof attachmentTypeSchema>;
+
+/**
+ * One attachment of a saved request — mirrors the engine's `Attachment` field for field. Bytes
+ * are never held here (nor anywhere in the renderer): `source` says where main can read them.
+ */
+export const attachmentWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  contentType: z.string(),
+  size: z.number(),
+  /** The WSDL `mime:part` this attachment fills, when the binding names one. */
+  part: z.string().optional(),
+  type: attachmentTypeSchema,
+  /** MIME Content-ID, without the angle brackets. */
+  contentId: z.string(),
+  cached: z.boolean(),
+  source: attachmentSourceWireSchema,
+});
+export type AttachmentWire = z.infer<typeof attachmentWireSchema>;
+
+/**
+ * The fields of an attachment the renderer may patch through `update-attachment`. `part: null`
+ * clears the WSDL part binding back to "none" (the codebase's "unset this" convention).
+ */
+export const attachmentPatchSchema = z.object({
+  name: z.string().optional(),
+  contentType: z.string().optional(),
+  contentId: z.string().optional(),
+  type: attachmentTypeSchema.optional(),
+  part: z.string().nullable().optional(),
+});
+export type AttachmentPatchWire = z.infer<typeof attachmentPatchSchema>;
+
 /** A saved request, flattened out of its owning operation so the renderer can index it by id. */
 export const requestWireSchema = z.object({
   id: z.string(),
@@ -563,6 +637,8 @@ export const requestWireSchema = z.object({
   description: z.string().optional(),
   /** Read-only until Task 41 wires up editing; `enabled` is the only field the Details grid shows. */
   wsa: z.object({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() }).optional(),
+  /** Defaulted so a snapshot built before Task 33a (or by a stub in a test) still parses. */
+  attachments: z.array(attachmentWireSchema).default([]),
   properties: requestPropertiesSchema,
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;
@@ -693,6 +769,27 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     interfaceId: z.string(),
     patch: z.object({ cacheDefinition: z.boolean().optional() }),
   }),
+  // Only a path crosses the wire: main stats, reads and (when `copyToCache`) content-addresses
+  // the file, so the renderer never touches the file system.
+  z.object({
+    kind: z.literal('add-attachment'),
+    requestId: z.string(),
+    /** Absolute path of the file to attach, as returned by `attachments.pickFiles` or a drop. */
+    path: z.string(),
+    /** Copy the bytes into `attachments/<sha256>` rather than referencing the file in place. */
+    copyToCache: z.boolean(),
+    /** Overrides the extension-sniffed media type. */
+    contentType: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-attachment'),
+    requestId: z.string(),
+    attachmentId: z.string(),
+    patch: attachmentPatchSchema,
+  }),
+  // Deliberately does NOT prune the cache: a blob whose last reference was just removed must
+  // survive an undo, so pruning stays an explicit, separate action.
+  z.object({ kind: z.literal('remove-attachment'), requestId: z.string(), attachmentId: z.string() }),
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
@@ -712,6 +809,8 @@ export const projectMutateResponseSchema = z.object({
   createdRequestId: z.string().optional(),
   /** Set by `add-environment`: the id of the environment that was created. */
   createdEnvironmentId: z.string().optional(),
+  /** Set by `add-attachment`: the id of the attachment that was created. */
+  createdAttachmentId: z.string().optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 
@@ -1104,6 +1203,37 @@ export const fsOpenTextRequestSchema = z.object({
   filters: z.array(dialogFilterSchema).optional(),
 });
 export const fsOpenTextResponseSchema = z.object({ path: z.string().optional(), text: z.string().optional() });
+
+// ---------------------------------------------------------------------------
+// Attachments (Task 33a): the file-side operations the attachments inspector
+// needs. Bytes never cross IPC — every one of these moves them within main.
+// ---------------------------------------------------------------------------
+
+/** Request payload for `attachments.saveResponse`; `path` omitted shows a native Save-as dialog. */
+export const attachmentsSaveResponseRequestSchema = z.object({
+  sendId: z.string(),
+  index: z.number(),
+  path: z.string().optional(),
+});
+/** Response for `attachments.saveResponse`: the file written, or `cancelled` when the user backed out. */
+export const attachmentsSaveResponseResponseSchema = z.object({
+  path: z.string().optional(),
+  cancelled: z.boolean().optional(),
+});
+export type AttachmentsSaveResponseResult = z.infer<typeof attachmentsSaveResponseResponseSchema>;
+
+/** Request payload for `attachments.openResponse`. */
+export const attachmentsOpenResponseRequestSchema = z.object({ sendId: z.string(), index: z.number() });
+
+/** Request payload for `attachments.openRequest`. */
+export const attachmentsOpenRequestRequestSchema = z.object({ requestId: z.string(), attachmentId: z.string() });
+
+/** Response for both `attachments.openResponse` and `attachments.openRequest`: the path handed to the OS. */
+export const attachmentsOpenResponseSchema = z.object({ path: z.string() });
+
+/** Request/response for `attachments.pickFiles`: a multi-select Add-attachments dialog. */
+export const attachmentsPickFilesRequestSchema = z.object({});
+export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.string()) });
 
 // ---------------------------------------------------------------------------
 // XPath 3.1 / XQuery 3.1 scratchpad (Task 28): evaluated in main so the

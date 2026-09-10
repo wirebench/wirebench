@@ -29,7 +29,7 @@ export function makeExchange(overrides: Partial<ExchangeSummary> = {}): Exchange
       redirects: [],
       request: { url: 'https://example.test/calc.asmx', method: 'POST', headers: {} },
     },
-    response: { envelopeXml: body, version: '1.1', isSoap: true },
+    response: { envelopeXml: body, version: '1.1', isSoap: true, attachments: [] },
     problems: [],
     ...overrides,
   };

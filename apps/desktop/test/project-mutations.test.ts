@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createInterface, createProject, createRequest, isWirebenchError } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
-import { addRequest, applyChange, projectNameFromDir } from '../src/main/project-mutations.js';
-import type { MutationDeps } from '../src/main/project-mutations.js';
+import { addRequest, applyChange, contentTypeForPath, projectNameFromDir } from '../src/main/project-mutations.js';
+import type { AddAttachmentFile, MutationDeps } from '../src/main/project-mutations.js';
 import { findRequest } from '../src/main/project-wire.js';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
@@ -288,5 +288,166 @@ describe('applyChange: environments', () => {
     await expectNotFound(
       applyChange(project, { kind: 'update-environment', environmentId: 'nope', patch: { name: 'x' } }, deps),
     );
+  });
+});
+
+describe('applyChange attachments', () => {
+  /** Deps whose `addAttachmentFile` records what it was asked for and answers deterministically. */
+  function attachmentDeps(): MutationDeps & { calls: Parameters<AddAttachmentFile>[0][] } {
+    const calls: Parameters<AddAttachmentFile>[0][] = [];
+    return {
+      ...deps,
+      calls,
+      addAttachmentFile: (input) => {
+        calls.push(input);
+        return Promise.resolve(
+          input.copyToCache
+            ? { size: 12, source: { kind: 'cache', sha256: 'a'.repeat(64) } }
+            : { size: 12, source: { kind: 'path', path: input.path } },
+        );
+      },
+    };
+  }
+
+  it('add-attachment copies into the cache and records a cache source', async () => {
+    const mutationDeps = attachmentDeps();
+    const result = await applyChange(
+      build(),
+      { kind: 'add-attachment', requestId: 'req-1', path: '/files/logo.PNG', copyToCache: true },
+      mutationDeps,
+    );
+    const attachment = findRequest(result.project, 'req-1')!.request.attachments[0]!;
+    expect(result.createdAttachmentId).toBe(attachment.id);
+    expect(attachment).toMatchObject({
+      name: 'logo.PNG',
+      contentType: 'image/png',
+      size: 12,
+      type: 'UNKNOWN',
+      cached: true,
+      source: { kind: 'cache', sha256: 'a'.repeat(64) },
+    });
+    expect(attachment.contentId).toBe(`${attachment.id}@wirebench`);
+    // The sniffed content type is passed down, so the cache index records it too.
+    expect(mutationDeps.calls[0]).toEqual({ path: '/files/logo.PNG', copyToCache: true, contentType: 'image/png' });
+  });
+
+  it('add-attachment without copyToCache references the file in place and honours an explicit type', async () => {
+    const result = await applyChange(
+      build(),
+      {
+        kind: 'add-attachment',
+        requestId: 'req-1',
+        path: '/files/payload.bin',
+        copyToCache: false,
+        contentType: 'application/vnd.custom',
+      },
+      attachmentDeps(),
+    );
+    const attachment = findRequest(result.project, 'req-1')!.request.attachments[0]!;
+    expect(attachment).toMatchObject({
+      name: 'payload.bin',
+      contentType: 'application/vnd.custom',
+      cached: false,
+      source: { kind: 'path', path: '/files/payload.bin' },
+    });
+  });
+
+  it('add-attachment falls back to octet-stream for an unknown extension', async () => {
+    const result = await applyChange(
+      build(),
+      { kind: 'add-attachment', requestId: 'req-1', path: '/files/thing.qqq', copyToCache: false },
+      attachmentDeps(),
+    );
+    expect(findRequest(result.project, 'req-1')!.request.attachments[0]?.contentType).toBe('application/octet-stream');
+  });
+
+  it('update-attachment patches the named fields and clears part with null', async () => {
+    const added = await applyChange(
+      build(),
+      { kind: 'add-attachment', requestId: 'req-1', path: '/files/a.xml', copyToCache: false },
+      attachmentDeps(),
+    );
+    const id = added.createdAttachmentId!;
+    const patched = await applyChange(
+      added.project,
+      {
+        kind: 'update-attachment',
+        requestId: 'req-1',
+        attachmentId: id,
+        patch: {
+          name: 'renamed.xml',
+          contentType: 'text/xml',
+          contentId: 'part1@wirebench',
+          type: 'MIME',
+          part: 'file',
+        },
+      },
+      deps,
+    );
+    expect(findRequest(patched.project, 'req-1')!.request.attachments[0]).toMatchObject({
+      name: 'renamed.xml',
+      contentType: 'text/xml',
+      contentId: 'part1@wirebench',
+      type: 'MIME',
+      part: 'file',
+    });
+
+    const cleared = await applyChange(
+      patched.project,
+      { kind: 'update-attachment', requestId: 'req-1', attachmentId: id, patch: { part: null } },
+      deps,
+    );
+    expect(findRequest(cleared.project, 'req-1')!.request.attachments[0]?.part).toBeUndefined();
+  });
+
+  it('remove-attachment drops just that attachment', async () => {
+    const one = await applyChange(
+      build(),
+      { kind: 'add-attachment', requestId: 'req-1', path: '/files/a.pdf', copyToCache: false },
+      attachmentDeps(),
+    );
+    const two = await applyChange(
+      one.project,
+      { kind: 'add-attachment', requestId: 'req-1', path: '/files/b.zip', copyToCache: false },
+      attachmentDeps(),
+    );
+    const removed = await applyChange(
+      two.project,
+      { kind: 'remove-attachment', requestId: 'req-1', attachmentId: one.createdAttachmentId! },
+      deps,
+    );
+    expect(findRequest(removed.project, 'req-1')!.request.attachments.map((a) => a.name)).toEqual(['b.zip']);
+  });
+
+  it('rejects an unknown attachment id', async () => {
+    await expectNotFound(
+      applyChange(build(), { kind: 'update-attachment', requestId: 'req-1', attachmentId: 'nope', patch: {} }, deps),
+    );
+    await expectNotFound(
+      applyChange(build(), { kind: 'remove-attachment', requestId: 'req-1', attachmentId: 'nope' }, deps),
+    );
+  });
+
+  it('add-attachment needs an addAttachmentFile dep', async () => {
+    await expect(
+      applyChange(build(), { kind: 'add-attachment', requestId: 'req-1', path: '/a.png', copyToCache: true }, deps),
+    ).rejects.toThrow(/attachment/i);
+  });
+});
+
+describe('contentTypeForPath', () => {
+  it.each([
+    ['a.png', 'image/png'],
+    ['a.JPG', 'image/jpeg'],
+    ['a.jpeg', 'image/jpeg'],
+    ['a.gif', 'image/gif'],
+    ['a.pdf', 'application/pdf'],
+    ['a.xml', 'application/xml'],
+    ['a.txt', 'text/plain'],
+    ['a.json', 'application/json'],
+    ['a.zip', 'application/zip'],
+    ['a', 'application/octet-stream'],
+  ])('maps %s to %s', (path, expected) => {
+    expect(contentTypeForPath(path)).toBe(expected);
   });
 });

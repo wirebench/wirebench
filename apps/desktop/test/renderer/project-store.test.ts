@@ -32,6 +32,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
             soapVersion: '1.1',
             style: 'document',
             ports: [],
+            inputMimeParts: [],
           },
         ],
         problems: [],
@@ -47,6 +48,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
     requests: [
       {
         properties: REQUEST_PROPERTIES,
+        attachments: [],
         id: 'req-1',
         interfaceId: 'iface-1',
         bindingName: BINDING,
@@ -452,5 +454,140 @@ describe('useProjectStore: environments and properties', () => {
     });
 
     await expect(useProjectStore.getState().removeEnvironment('nope')).rejects.toThrow('gone');
+  });
+});
+
+describe('useProjectStore attachments', () => {
+  const attachment = {
+    id: 'att-1',
+    name: 'logo.png',
+    contentType: 'image/png',
+    size: 12,
+    type: 'UNKNOWN' as const,
+    contentId: 'att-1@wirebench',
+    cached: true,
+    source: { kind: 'cache' as const, sha256: 'c'.repeat(64) },
+  };
+
+  /** The snapshot with `req-1` already carrying {@link attachment}. */
+  function withAttachment(): ProjectWire {
+    const base = projectWire();
+    return { ...base, requests: base.requests.map((request) => ({ ...request, attachments: [attachment] })) };
+  }
+
+  beforeEach(() => {
+    resetStore();
+    installWirebenchApi();
+  });
+
+  it('addAttachment sends only the path and returns the created id', async () => {
+    const mutate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { project: withAttachment(), createdAttachmentId: 'att-1' } });
+    installWirebenchApi({ project: { mutate } });
+
+    const id = await useProjectStore.getState().addAttachment('req-1', '/files/logo.png');
+
+    expect(id).toBe('att-1');
+    expect(mutate).toHaveBeenCalledWith({
+      change: { kind: 'add-attachment', requestId: 'req-1', path: '/files/logo.png', copyToCache: true },
+    });
+    expect(useProjectStore.getState().requests['req-1']?.attachments).toEqual([attachment]);
+  });
+
+  it('addAttachment passes copyToCache: false and an explicit content type through', async () => {
+    const mutate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { project: withAttachment(), createdAttachmentId: 'att-1' } });
+    installWirebenchApi({ project: { mutate } });
+
+    await useProjectStore
+      .getState()
+      .addAttachment('req-1', '/files/a.bin', { copyToCache: false, contentType: 'application/x-thing' });
+
+    expect(mutate).toHaveBeenCalledWith({
+      change: {
+        kind: 'add-attachment',
+        requestId: 'req-1',
+        path: '/files/a.bin',
+        copyToCache: false,
+        contentType: 'application/x-thing',
+      },
+    });
+  });
+
+  it('addAttachment rejects when main returns no id', async () => {
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: withAttachment() } }) },
+    });
+    await expect(useProjectStore.getState().addAttachment('req-1', '/files/a.png')).rejects.toThrow(/attachment id/);
+  });
+
+  it('updateAttachment applies the patch optimistically, then keeps main’s reply', async () => {
+    useProjectStore.getState().applySnapshot(withAttachment());
+    let resolveMutate: ((value: unknown) => void) | undefined;
+    const mutate = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveMutate = resolve;
+      }),
+    );
+    installWirebenchApi({ project: { mutate } });
+
+    useProjectStore.getState().updateAttachment('req-1', 'att-1', { contentType: 'image/webp', part: 'file' });
+    expect(useProjectStore.getState().requests['req-1']?.attachments[0]).toMatchObject({
+      contentType: 'image/webp',
+      part: 'file',
+    });
+
+    const confirmed = withAttachment();
+    confirmed.requests[0]!.attachments = [{ ...attachment, contentType: 'image/webp', part: 'file' }];
+    resolveMutate?.({ ok: true, value: { project: confirmed } });
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        change: {
+          kind: 'update-attachment',
+          requestId: 'req-1',
+          attachmentId: 'att-1',
+          patch: { contentType: 'image/webp', part: 'file' },
+        },
+      });
+    });
+    expect(useProjectStore.getState().requests['req-1']?.attachments[0]?.contentType).toBe('image/webp');
+  });
+
+  it('updateAttachment with part: null clears the part in the mirror', () => {
+    const base = withAttachment();
+    base.requests[0]!.attachments = [{ ...attachment, part: 'file' }];
+    useProjectStore.getState().applySnapshot(base);
+    installWirebenchApi({ project: { mutate: vi.fn().mockReturnValue(new Promise(() => undefined)) } });
+
+    useProjectStore.getState().updateAttachment('req-1', 'att-1', { part: null });
+
+    expect(useProjectStore.getState().requests['req-1']?.attachments[0]?.part).toBeUndefined();
+  });
+
+  it('updateAttachment reverts to the confirmed snapshot when main rejects it', async () => {
+    useProjectStore.getState().applySnapshot(withAttachment());
+    const mutate = vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } });
+    installWirebenchApi({ project: { mutate } });
+
+    useProjectStore.getState().updateAttachment('req-1', 'att-1', { name: 'renamed.png' });
+
+    await vi.waitFor(() => {
+      expect(useProjectStore.getState().requests['req-1']?.attachments[0]?.name).toBe('logo.png');
+    });
+  });
+
+  it('removeAttachment mutates and mirrors the reply', async () => {
+    useProjectStore.getState().applySnapshot(withAttachment());
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: { project: projectWire() } });
+    installWirebenchApi({ project: { mutate } });
+
+    await useProjectStore.getState().removeAttachment('req-1', 'att-1');
+
+    expect(mutate).toHaveBeenCalledWith({
+      change: { kind: 'remove-attachment', requestId: 'req-1', attachmentId: 'att-1' },
+    });
+    expect(useProjectStore.getState().requests['req-1']?.attachments).toEqual([]);
   });
 });

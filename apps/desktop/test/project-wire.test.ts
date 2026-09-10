@@ -40,7 +40,15 @@ const summary: InterfaceSummary = {
   soapVersions: ['1.1'],
   services: [{ name: 'Calculator', ports: [{ name: 'CalculatorSoap', binding: BINDING, soapVersion: '1.1' }] }],
   operations: [
-    { name: 'Add', binding: BINDING, bindingLocal: 'CalculatorSoap', soapVersion: '1.1', style: 'document', ports: [] },
+    {
+      name: 'Add',
+      binding: BINDING,
+      bindingLocal: 'CalculatorSoap',
+      soapVersion: '1.1',
+      style: 'document',
+      ports: [],
+      inputMimeParts: [],
+    },
     {
       name: 'Subtract',
       binding: BINDING,
@@ -48,6 +56,7 @@ const summary: InterfaceSummary = {
       soapVersion: '1.1',
       style: 'document',
       ports: [],
+      inputMimeParts: [],
     },
   ],
   problems: [],
@@ -94,6 +103,7 @@ describe('project-wire', () => {
         endpointId: 'ep-1',
         headers: [{ name: 'X-Trace', value: 'on' }],
         order: 0,
+        attachments: [],
         properties: REQUEST_PROPERTIES,
       },
     ]);
@@ -116,6 +126,7 @@ describe('project-wire', () => {
         soapVersion: '1.1',
         style: 'document',
         ports: [],
+        inputMimeParts: [],
       },
     ]);
   });
@@ -125,5 +136,81 @@ describe('project-wire', () => {
     expect(findRequest(project, 'req-1')?.operation.name).toBe('Add');
     expect(findRequest(project, 'nope')).toBeUndefined();
     expect(toRequestWires(project)).toHaveLength(1);
+  });
+});
+
+describe('toRequestWires attachments', () => {
+  it('projects both attachment source kinds field for field', () => {
+    const project = buildProject();
+    const request = project.interfaces[0]!.operations[0]!.requests[0]!;
+    const withAttachments: Project = {
+      ...project,
+      interfaces: [
+        {
+          ...project.interfaces[0]!,
+          operations: [
+            {
+              ...project.interfaces[0]!.operations[0]!,
+              requests: [
+                {
+                  ...request,
+                  attachments: [
+                    {
+                      id: 'att-1',
+                      name: 'logo.png',
+                      contentType: 'image/png',
+                      size: 12,
+                      part: 'file',
+                      type: 'MIME',
+                      contentId: 'att-1@wirebench',
+                      cached: true,
+                      source: { kind: 'cache', sha256: 'b'.repeat(64) },
+                    },
+                    {
+                      id: 'att-2',
+                      name: 'notes.txt',
+                      contentType: 'text/plain',
+                      size: 4,
+                      type: 'UNKNOWN',
+                      contentId: 'att-2@wirebench',
+                      cached: false,
+                      source: { kind: 'path', path: '/files/notes.txt' },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const [wire] = toRequestWires(withAttachments);
+
+    expect(wire?.attachments).toEqual([
+      {
+        id: 'att-1',
+        name: 'logo.png',
+        contentType: 'image/png',
+        size: 12,
+        part: 'file',
+        type: 'MIME',
+        contentId: 'att-1@wirebench',
+        cached: true,
+        source: { kind: 'cache', sha256: 'b'.repeat(64) },
+      },
+      {
+        id: 'att-2',
+        name: 'notes.txt',
+        contentType: 'text/plain',
+        size: 4,
+        type: 'UNKNOWN',
+        contentId: 'att-2@wirebench',
+        cached: false,
+        source: { kind: 'path', path: '/files/notes.txt' },
+      },
+    ]);
+    // No `part` key at all rather than an explicit undefined, so the wire stays JSON-clean.
+    expect(Object.hasOwn(wire!.attachments[1]!, 'part')).toBe(false);
   });
 });

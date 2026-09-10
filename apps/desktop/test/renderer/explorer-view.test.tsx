@@ -24,7 +24,17 @@ const summary: InterfaceWire = {
       ports: [{ name: 'CalculatorSoap', address: 'http://example.test/soap', binding: '{tns}B', soapVersion: '1.1' }],
     },
   ],
-  operations: [{ name: 'Add', binding: '{tns}B', bindingLocal: 'B', soapVersion: '1.1', style: 'document', ports: [] }],
+  operations: [
+    {
+      name: 'Add',
+      binding: '{tns}B',
+      bindingLocal: 'B',
+      soapVersion: '1.1',
+      style: 'document',
+      ports: [],
+      inputMimeParts: [],
+    },
+  ],
   problems: [],
   documentCount: 1,
 };
@@ -72,6 +82,7 @@ describe('ExplorerView', () => {
       requests: {
         'req-1': {
           properties: REQUEST_PROPERTIES,
+          attachments: [],
           id: 'req-1',
           interfaceId: 'iface-1',
           bindingName: '{tns}B',

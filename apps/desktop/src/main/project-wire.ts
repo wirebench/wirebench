@@ -4,8 +4,17 @@
  * mirrors. No `electron`, no `fs`: unit-tested directly against real engine models.
  */
 
-import type { Endpoint, Environment, Interface, OperationDef, Project, RequestDef } from '@wirebench/engine';
 import type {
+  Attachment,
+  Endpoint,
+  Environment,
+  Interface,
+  OperationDef,
+  Project,
+  RequestDef,
+} from '@wirebench/engine';
+import type {
+  AttachmentWire,
   EndpointWire,
   EnvironmentWire,
   HydrationStatus,
@@ -62,6 +71,8 @@ function operationsFromModel(iface: Interface): OperationSummaryWire[] {
     soapVersion: operation.requests[0]?.soapVersion ?? '1.1',
     style: 'document' as const,
     ports: [],
+    // Only the WSDL knows the binding's MIME parts; until it hydrates there are none to offer.
+    inputMimeParts: [],
   }));
 }
 
@@ -102,6 +113,27 @@ export function toInterfaceWire(iface: Interface, runtime: InterfaceRuntime | un
   };
 }
 
+/**
+ * Copies one attachment onto the wire. Field for field with the engine's `Attachment` — no
+ * bytes, only the `source` that tells main where to read them.
+ */
+function toAttachmentWire(attachment: Attachment): AttachmentWire {
+  return {
+    id: attachment.id,
+    name: attachment.name,
+    contentType: attachment.contentType,
+    size: attachment.size,
+    ...(attachment.part !== undefined ? { part: attachment.part } : {}),
+    type: attachment.type,
+    contentId: attachment.contentId,
+    cached: attachment.cached,
+    source:
+      attachment.source.kind === 'cache'
+        ? { kind: 'cache', sha256: attachment.source.sha256 }
+        : { kind: 'path', path: attachment.source.path },
+  };
+}
+
 /** Converts one saved request to its wire shape, flattened out of its owning operation. */
 export function toRequestWire(iface: Interface, operation: OperationDef, request: RequestDef): RequestWire {
   return {
@@ -120,6 +152,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
     ...(request.description !== undefined ? { description: request.description } : {}),
     ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
+    attachments: request.attachments.map(toAttachmentWire),
     properties: { ...request.properties },
   };
 }

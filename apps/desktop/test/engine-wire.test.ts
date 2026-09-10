@@ -64,6 +64,16 @@ describe('toInterfaceSummary', () => {
     const summary = toInterfaceSummary(noServices, 'iface-2', CALCULATOR_URL);
     expect(summary.name).toBe('service.wsdl');
   });
+
+  it('carries the binding mime parts through to the operation summary', async () => {
+    const location = `${process.cwd()}/fixtures/wsdl/crafted/attachments/service.wsdl`;
+    const result = await importDefinition({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
+    const summary = toInterfaceSummary(result, 'iface-3', location);
+    expect(summary.operations.find((op) => op.name === 'Upload')?.inputMimeParts).toEqual([
+      { part: 'file', type: 'application/octet-stream' },
+    ]);
+    expect(summary.operations.find((op) => op.name === 'SendRef')?.inputMimeParts).toEqual([]);
+  });
 });
 
 describe('toGenerateResponse', () => {
@@ -264,6 +274,7 @@ describe('redactExchangeSummary', () => {
       response: {
         envelopeXml: envelope,
         isSoap: true,
+        attachments: [],
       },
       problems: [],
     };
@@ -309,6 +320,7 @@ describe('redactExchangeSummary', () => {
   </soapenv:Body>
 </soapenv:Envelope>`,
         isSoap: true,
+        attachments: [],
         fault: {
           version: '1.1',
           code: 'soapenv:Server',

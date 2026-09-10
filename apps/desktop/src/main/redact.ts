@@ -46,6 +46,18 @@ export function redactHeaderPairs(
   return pairs.map(([name, value]) => [name, !show && SENSITIVE_HEADERS.has(name.toLowerCase()) ? REDACTED : value]);
 }
 
+/**
+ * The redaction pass for a response's attachment list. Nothing in `{index, contentId,
+ * contentType, size, name}` carries a secret today, so this is a copy — it exists as the one
+ * call site so that when a part's `Content-Disposition` (or a signed-URL-shaped name) does need
+ * masking, it is masked everywhere the list is built, including on a show-secrets re-render.
+ * It takes no `show` flag for that reason: the only caller that has one already returns early
+ * when secrets are shown.
+ */
+export function redactResponseAttachments<T>(attachments: readonly T[]): T[] {
+  return [...attachments];
+}
+
 /** Matches an (optionally namespace-prefixed) `<Password ...>...</Password>` element's text. */
 const WSSE_PASSWORD_RE = /(<(?:[\w-]+:)?Password\b[^>]*>)([\s\S]*?)(<\/(?:[\w-]+:)?Password>)/gi;
 

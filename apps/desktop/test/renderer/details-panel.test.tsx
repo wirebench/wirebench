@@ -25,6 +25,7 @@ const project = {
 } as unknown as ProjectWire;
 
 const requestDraft = {
+  attachments: [],
   id: 'req-1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',

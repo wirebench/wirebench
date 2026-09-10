@@ -32,6 +32,7 @@ function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
         soapVersion: '1.1',
         style: 'document',
         ports: [{ service: 'Calculator', port: 'CalculatorSoap', address: 'http://example.test/soap' }],
+        inputMimeParts: [],
       },
     ],
     problems: [],
@@ -43,6 +44,7 @@ function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
 function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
   return {
     properties: REQUEST_PROPERTIES,
+    attachments: [],
     id: 'req-1',
     interfaceId: 'iface-1',
     bindingName: '{tns}CalculatorSoap',
@@ -92,6 +94,7 @@ describe('buildExplorerTree', () => {
           soapVersion: '1.1',
           style: 'document',
           ports: [],
+          inputMimeParts: [],
         },
         {
           name: 'Add',
@@ -100,6 +103,7 @@ describe('buildExplorerTree', () => {
           soapVersion: '1.2',
           style: 'document',
           ports: [],
+          inputMimeParts: [],
         },
       ],
     });
@@ -114,8 +118,24 @@ describe('buildExplorerTree', () => {
   it('sorts operations alphabetically and keeps requests in creation order', () => {
     const summary = iface({
       operations: [
-        { name: 'Subtract', binding: '{tns}B', bindingLocal: 'B', soapVersion: '1.1', style: 'document', ports: [] },
-        { name: 'Add', binding: '{tns}B', bindingLocal: 'B', soapVersion: '1.1', style: 'document', ports: [] },
+        {
+          name: 'Subtract',
+          binding: '{tns}B',
+          bindingLocal: 'B',
+          soapVersion: '1.1',
+          style: 'document',
+          ports: [],
+          inputMimeParts: [],
+        },
+        {
+          name: 'Add',
+          binding: '{tns}B',
+          bindingLocal: 'B',
+          soapVersion: '1.1',
+          style: 'document',
+          ports: [],
+          inputMimeParts: [],
+        },
       ],
     });
     const requests = [

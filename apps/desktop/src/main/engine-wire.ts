@@ -5,7 +5,7 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactRawHttp, redactXml } from './redact.js';
+import { redactHeaderPairs, redactHeaders, redactRawHttp, redactResponseAttachments, redactXml } from './redact.js';
 import type {
   GeneratedRequest,
   HttpExchange,
@@ -13,6 +13,7 @@ import type {
   SoapExchange,
   SoapFault,
   SslInfo,
+  ResponseAttachment,
   UnresolvedRef,
 } from '@wirebench/engine';
 import type {
@@ -23,6 +24,7 @@ import type {
   InterfaceSummary,
   OperationSummaryWire,
   RequestGenerateResponse,
+  ResponseAttachmentWire,
   ServiceSummary,
   SslInfoWire,
   UnresolvedRefWire,
@@ -66,6 +68,10 @@ export function toInterfaceSummary(result: ImportResult, id: string, definitionU
       service: port.serviceName.localName,
       port: port.portName,
       ...(port.address !== undefined ? { address: port.address } : {}),
+    })),
+    inputMimeParts: op.inputMimeParts.map((mimePart) => ({
+      part: mimePart.part,
+      ...(mimePart.type !== undefined ? { type: mimePart.type } : {}),
     })),
   }));
 
@@ -197,6 +203,29 @@ export function toUnresolvedRefWire(ref: UnresolvedRef): UnresolvedRefWire {
   };
 }
 
+/**
+ * Lists a response's attachment parts for the renderer: metadata only, indexed by position, so
+ * the bytes stay in main (`ExchangeCache`) and reach disk only through `attachments.saveResponse`.
+ * Routed through `redactResponseAttachments` for the same reason headers are — a future
+ * `Content-Disposition` carrying a token has one place to be masked.
+ */
+export function toResponseAttachmentWires(
+  attachments: readonly ResponseAttachment[] | undefined,
+): ResponseAttachmentWire[] {
+  if (attachments === undefined) {
+    return [];
+  }
+  return redactResponseAttachments(
+    attachments.map((attachment, index) => ({
+      index,
+      contentId: attachment.contentId,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      ...(attachment.name !== undefined ? { name: attachment.name } : {}),
+    })),
+  );
+}
+
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
 export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?: { show?: boolean }): ExchangeSummary {
   return {
@@ -210,6 +239,7 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
             ...(exchange.response.version !== undefined ? { version: exchange.response.version } : {}),
             isSoap: exchange.response.isSoap,
             ...(exchange.response.fault !== undefined ? { fault: toWireFault(exchange.response.fault) } : {}),
+            attachments: toResponseAttachmentWires(exchange.response.attachments),
           },
         }
       : {}),
@@ -242,6 +272,7 @@ export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: 
       ? {
           response: {
             ...summary.response,
+            attachments: redactResponseAttachments(summary.response.attachments),
             envelopeXml: redactXml(summary.response.envelopeXml, { show }),
             ...(summary.response.fault !== undefined
               ? {

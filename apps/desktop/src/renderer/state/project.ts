@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
+  AttachmentPatchWire,
   EnvironmentPatchWire,
   EnvironmentWire,
   ImportSourceWire,
@@ -119,6 +120,24 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   readonly setProjectProperty: (name: string, value: string) => Promise<void>;
   readonly removeProjectProperty: (name: string) => Promise<void>;
+  /**
+   * Attaches a file to a request. Only the path crosses IPC: main stats and reads it, and with
+   * `copyToCache` (the default) content-addresses the bytes into the project's `attachments/`
+   * folder so the project stays self-contained. Returns the new attachment's id.
+   */
+  readonly addAttachment: (
+    requestId: string,
+    path: string,
+    options?: { readonly copyToCache?: boolean; readonly contentType?: string },
+  ) => Promise<string>;
+  /**
+   * Merges a patch into one attachment's editable fields. Applied optimistically (so an edited
+   * grid cell does not lag the keystroke) and then confirmed by main's snapshot. `part: null`
+   * clears the WSDL part binding.
+   */
+  readonly updateAttachment: (requestId: string, attachmentId: string, patch: AttachmentPatchWire) => void;
+  /** Detaches one attachment. Any cached blob is left in place; pruning is a separate action. */
+  readonly removeAttachment: (requestId: string, attachmentId: string) => Promise<void>;
 }
 
 type Mutate = (draft: Draft<ProjectSnapshot>) => void;
@@ -177,6 +196,25 @@ function withPatch(request: RequestDraft, patch: RequestPatchWire): RequestDraft
     ...(patch.endpointId !== undefined ? { endpointId: patch.endpointId ?? undefined } : {}),
     ...(patch.endpointUrl !== undefined ? { endpointUrl: patch.endpointUrl ?? undefined } : {}),
     ...(patch.soapAction !== undefined ? { soapAction: patch.soapAction ?? undefined } : {}),
+  };
+}
+
+/** Applies an attachment patch to a mirrored request; `part: null` clears the WSDL part binding. */
+function withAttachmentPatch(request: RequestDraft, attachmentId: string, patch: AttachmentPatchWire): RequestDraft {
+  return {
+    ...request,
+    attachments: request.attachments.map((attachment) =>
+      attachment.id !== attachmentId
+        ? attachment
+        : {
+            ...attachment,
+            ...(patch.name !== undefined ? { name: patch.name } : {}),
+            ...(patch.contentType !== undefined ? { contentType: patch.contentType } : {}),
+            ...(patch.contentId !== undefined ? { contentId: patch.contentId } : {}),
+            ...(patch.type !== undefined ? { type: patch.type } : {}),
+            ...(patch.part !== undefined ? { part: patch.part ?? undefined } : {}),
+          },
+    ),
   };
 }
 
@@ -551,6 +589,48 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeProjectProperty: async (name) => {
       await mutate({ kind: 'remove-project-property', name });
+    },
+
+    addAttachment: async (requestId, path, options) => {
+      const { createdAttachmentId } = await mutate({
+        kind: 'add-attachment',
+        requestId,
+        path,
+        copyToCache: options?.copyToCache ?? true,
+        ...(options?.contentType !== undefined ? { contentType: options.contentType } : {}),
+      });
+      if (createdAttachmentId === undefined) {
+        throw new Error('add-attachment did not return an attachment id');
+      }
+      return createdAttachmentId;
+    },
+
+    updateAttachment: (requestId, attachmentId, patch) => {
+      update((draft) => {
+        const request = draft.requests[requestId];
+        if (request !== undefined) {
+          draft.requests[requestId] = withAttachmentPatch(request, attachmentId, patch);
+        }
+      });
+      void ipc()
+        .project.mutate({ change: { kind: 'update-attachment', requestId, attachmentId, patch } })
+        .then((result) => {
+          if (result.ok) {
+            apply(result.value.project);
+            return;
+          }
+          // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
+          apply(get().project);
+          showToast(asError(result.error).message);
+        })
+        .catch((error: unknown) => {
+          apply(get().project);
+          showToast(error instanceof Error ? error.message : 'Could not save the change');
+        });
+    },
+
+    removeAttachment: async (requestId, attachmentId) => {
+      await mutate({ kind: 'remove-attachment', requestId, attachmentId });
     },
   };
 });

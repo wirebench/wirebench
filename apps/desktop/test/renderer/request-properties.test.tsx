@@ -7,6 +7,7 @@ import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 const request: RequestDraft = {
+  attachments: [],
   id: 'req-1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',

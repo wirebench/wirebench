@@ -9,6 +9,7 @@ import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const draft: RequestDraft = {
   properties: REQUEST_PROPERTIES,
+  attachments: [],
   id: 'r1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',
@@ -96,6 +97,7 @@ describe('useExchangesStore', () => {
   it('send() reports missing-endpoint without calling the IPC layer', async () => {
     const draftWithoutEndpoint: RequestDraft = {
       properties: REQUEST_PROPERTIES,
+      attachments: [],
       id: draft.id,
       interfaceId: draft.interfaceId,
       bindingName: draft.bindingName,

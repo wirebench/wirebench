@@ -9,8 +9,10 @@
  * mutation that appears to succeed.
  */
 
-import { createRequest, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
+import { createRequest, defaultContentId, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
 import type {
+  Attachment,
+  AttachmentSource,
   Endpoint,
   EndpointAuth,
   Interface,
@@ -21,6 +23,7 @@ import type {
   RequestProperties,
 } from '@wirebench/engine';
 import type {
+  AttachmentPatchWire,
   ProjectChange,
   ProjectSettingsPatchWire,
   RequestPatchWire,
@@ -32,6 +35,7 @@ import {
   setActiveEnvironment,
   updateEnvironment,
 } from './project-environment-mutations.js';
+import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
 
 /** The engine output `add-request` needs; supplied by the service, which owns the engine. */
@@ -41,10 +45,24 @@ export interface GeneratedEnvelope {
   readonly soapAction?: string;
 }
 
+/**
+ * Reads (and, when asked, content-addresses into the project's attachment cache) the file an
+ * `add-attachment` names. Kept as a dependency so the reducer stays free of `fs`: the service
+ * owns the project directory, which is the only thing that can turn a path into a cache blob.
+ */
+export type AddAttachmentFile = (input: {
+  readonly path: string;
+  readonly copyToCache: boolean;
+  /** The already-resolved media type, so the cache index records the same one the model does. */
+  readonly contentType: string;
+}) => Promise<{ readonly size: number; readonly source: AttachmentSource }>;
+
 /** I/O the pure reducer cannot do itself. */
 export interface MutationDeps {
   /** Builds a fresh sample envelope for one operation of an already-hydrated interface. */
   readonly generate: (interfaceId: string, bindingName: string, operationName: string) => Promise<GeneratedEnvelope>;
+  /** Supplied by `ProjectService` whenever a project is open; absent only in tests that never attach. */
+  readonly addAttachmentFile?: AddAttachmentFile;
 }
 
 /** The outcome of one change: the next model, plus any entity the change created. */
@@ -52,6 +70,7 @@ export interface MutationResult {
   readonly project: Project;
   readonly createdRequestId?: string;
   readonly createdEnvironmentId?: string;
+  readonly createdAttachmentId?: string;
 }
 
 function notFound(what: string, id: string): never {
@@ -324,6 +343,130 @@ function updateRequestProperties(
   return { project: replaceInterface(project, replaceOperation(iface, { ...operation, requests })) };
 }
 
+/**
+ * Media type for an attachment picked off disk, by extension. Deliberately a short table
+ * rather than a `mime-db` dependency: the value is editable in the attachments table, so the
+ * only job here is to guess right for the handful of formats a SOAP attachment usually is,
+ * and to fall back to `application/octet-stream` — which is always a legal answer — otherwise.
+ */
+export function contentTypeForPath(path: string): string {
+  const match = /\.([A-Za-z0-9]+)$/.exec(path);
+  switch (match?.[1]?.toLowerCase()) {
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'pdf':
+      return 'application/pdf';
+    case 'xml':
+      return 'application/xml';
+    case 'txt':
+      return 'text/plain';
+    case 'json':
+      return 'application/json';
+    case 'zip':
+      return 'application/zip';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/** The last `/`- or `\`-separated segment of `path`; the path itself when it has none. */
+function basenameOf(path: string): string {
+  const segments = path.split(/[\\/]/).filter((segment) => segment.length > 0);
+  return segments.at(-1) ?? path;
+}
+
+/** Replaces one request inside its operation, leaving every other request untouched. */
+function replaceRequest(project: Project, location: RequestLocation, next: RequestDef): Project {
+  const requests = location.operation.requests.map((candidate) => (candidate.id === next.id ? next : candidate));
+  return replaceInterface(project, replaceOperation(location.iface, { ...location.operation, requests }));
+}
+
+/**
+ * Appends one attachment to a request. The bytes are handled by {@link AddAttachmentFile}:
+ * either copied into `attachments/<sha256>` (`copyToCache`, the safe default for a project
+ * that will be shared) or referenced where they lie.
+ */
+async function addAttachment(
+  project: Project,
+  change: { requestId: string; path: string; copyToCache: boolean; contentType?: string | undefined },
+  deps: MutationDeps,
+): Promise<MutationResult> {
+  const location = findRequest(project, change.requestId) ?? notFound('request', change.requestId);
+  if (deps.addAttachmentFile === undefined) {
+    throw new ProjectError('attachment-unsupported', 'Adding an attachment needs an open project folder');
+  }
+  const contentType = change.contentType ?? contentTypeForPath(change.path);
+  const { size, source } = await deps.addAttachmentFile({
+    path: change.path,
+    copyToCache: change.copyToCache,
+    contentType,
+  });
+  const id = generateId();
+  const attachment: Attachment = {
+    id,
+    name: basenameOf(change.path),
+    contentType,
+    size,
+    // Nothing has told us which WSDL part (or MTOM/SwA role) this fills yet; the inspector
+    // sets both once the user picks a Part, so the model starts out honest about not knowing.
+    type: 'UNKNOWN',
+    contentId: defaultContentId(id),
+    cached: source.kind === 'cache',
+    source,
+  };
+  const next: RequestDef = { ...location.request, attachments: [...location.request.attachments, attachment] };
+  return { project: replaceRequest(project, location, next), createdAttachmentId: id };
+}
+
+/** Applies a renderer patch to one attachment; `part: null` clears the WSDL part binding. */
+function updateAttachment(
+  project: Project,
+  requestId: string,
+  attachmentId: string,
+  patch: AttachmentPatchWire,
+): MutationResult {
+  const location = findRequest(project, requestId) ?? notFound('request', requestId);
+  const current = location.request.attachments.find((candidate) => candidate.id === attachmentId);
+  if (current === undefined) {
+    notFound('attachment', attachmentId);
+  }
+  const part = patch.part === undefined ? current.part : (patch.part ?? undefined);
+  const patched: Attachment = {
+    id: current.id,
+    name: patch.name ?? current.name,
+    contentType: patch.contentType ?? current.contentType,
+    size: current.size,
+    ...(part !== undefined ? { part } : {}),
+    type: patch.type ?? current.type,
+    contentId: patch.contentId ?? current.contentId,
+    cached: current.cached,
+    source: current.source,
+  };
+  const attachments = location.request.attachments.map((candidate) =>
+    candidate.id === attachmentId ? patched : candidate,
+  );
+  return { project: replaceRequest(project, location, { ...location.request, attachments }) };
+}
+
+/**
+ * Drops one attachment from a request. The cached blob is deliberately left behind: a project
+ * whose last reference to it was removed in an unsaved edit must survive an undo, so reclaiming
+ * the space stays an explicit `pruneAttachments` the UI offers separately.
+ */
+function removeAttachment(project: Project, requestId: string, attachmentId: string): MutationResult {
+  const location = findRequest(project, requestId) ?? notFound('request', requestId);
+  const attachments = location.request.attachments.filter((candidate) => candidate.id !== attachmentId);
+  if (attachments.length === location.request.attachments.length) {
+    notFound('attachment', attachmentId);
+  }
+  return { project: replaceRequest(project, location, { ...location.request, attachments }) };
+}
+
 /** Merges a settings patch into the project's settings; `resourceRoot: null` clears it. */
 function updateProjectSettings(project: Project, patch: ProjectSettingsPatchWire): MutationResult {
   const settings: Record<string, unknown> = { ...project.settings };
@@ -497,6 +640,15 @@ export async function applyChange(
         }),
       };
     }
+
+    case 'add-attachment':
+      return addAttachment(project, change, deps);
+
+    case 'update-attachment':
+      return updateAttachment(project, change.requestId, change.attachmentId, change.patch);
+
+    case 'remove-attachment':
+      return removeAttachment(project, change.requestId, change.attachmentId);
   }
 }
 

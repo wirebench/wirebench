@@ -41,6 +41,7 @@ describe('ResponsePane', () => {
       response: {
         envelopeXml: '<Envelope><Body><Fault/></Body></Envelope>',
         isSoap: true,
+        attachments: [],
         version: '1.1',
         fault: { version: '1.1', code: 'soap:Server', subcodes: [], reason: 'boom' },
       },
@@ -70,7 +71,7 @@ describe('ResponsePane', () => {
     const base = makeExchange();
     const nonSoap = makeExchange({
       http: { ...base.http, status: 404, statusText: 'Not Found', bodyBase64: b64('no such endpoint') },
-      response: { envelopeXml: '', isSoap: false },
+      response: { envelopeXml: '', isSoap: false, attachments: [] },
     });
     render(<ResponsePane state={{ status: 'done', exchange: nonSoap }} requestId="r6" />);
 
