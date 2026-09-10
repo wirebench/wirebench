@@ -47,13 +47,17 @@ import type {
   ProjectWire,
   RecentProject,
 } from '../shared/wire-types.js';
+import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
+import { resolveEndpointAuth } from './secret-resolver.js';
+import type { SecretStore } from './secrets.js';
+import { effectiveAuth } from './project-auth.js';
 import { addRequest, applyChange, projectNameFromDir } from './project-mutations.js';
 import type { InterfaceRuntime } from './project-wire.js';
-import { toProjectWire } from './project-wire.js';
+import { findRequest, toProjectWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
 import type { RecentProjects } from './recent-projects.js';
 
@@ -141,6 +145,8 @@ export class ProjectService {
     private readonly fs?: FsLike,
     /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
     private readonly globals?: Pick<GlobalProperties, 'get'>,
+    /** Resolves `passwordRef`s at import time. Omitted in tests that never import with auth. */
+    private readonly secrets?: Pick<SecretStore, 'get'>,
   ) {}
 
   /**
@@ -165,6 +171,35 @@ export class ProjectService {
     const open = this.require();
     const activeId = envId ?? open.project.activeEnvironmentId;
     return preflightRequest(open.project, requestId, this.scopesFor(activeId), activeId);
+  }
+
+  /** Resolves a `secretRef` to plaintext for the duration of one import/send call. */
+  private async getSecret(ref: string): Promise<string | undefined> {
+    return this.secrets?.get(ref);
+  }
+
+  /**
+   * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
+   * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
+   * unknown or nothing configures auth at any level.
+   */
+  authFor(requestId: string): EndpointAuth | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const endpoint = location.request.endpointId
+      ? location.iface.endpoints.find((candidate) => candidate.id === location.request.endpointId)
+      : undefined;
+    return effectiveAuth(location.request.auth, endpoint?.auth, location.iface.auth);
+  }
+
+  /** Resolves a `secretRef` from the store, for the request.send handler's preemptive-auth header. */
+  resolveSecret(ref: string): Promise<string | undefined> {
+    return this.getSecret(ref);
   }
 
   /** The current snapshot, or `null` when no project is open. */
@@ -373,12 +408,23 @@ export class ProjectService {
    */
   async addInterface(input: {
     source: ImportSourceWire;
-    auth?: { username: string; password: string };
+    /** `password` never appears here: the caller sends a `secretRef`, resolved just below. */
+    auth?: { username: string; passwordRef: string };
+    /** When true, the resolved auth (by ref, never plaintext) is saved onto the interface. */
+    useForRequests?: boolean;
     token?: string;
   }): Promise<{ project: ProjectWire; interfaceId: string }> {
     const open = this.require();
     const interfaceId = generateId();
     const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+
+    const resolvedAuth =
+      input.auth !== undefined
+        ? await resolveEndpointAuth(
+            { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef },
+            (ref) => this.getSecret(ref),
+          )
+        : undefined;
 
     // The interface's name (and therefore its slug) comes from the WSDL, which is only known
     // once the import has run — so the cache is written under a provisional folder that is
@@ -389,7 +435,9 @@ export class ProjectService {
         interfaceId,
         source: input.source,
         cache: { dir: definitionCacheDir(open.dir, provisionalSlug), mode: 'refresh' },
-        ...(input.auth !== undefined ? { auth: input.auth } : {}),
+        ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
+          ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
+          : {}),
         ...(input.token !== undefined ? { token: input.token } : {}),
       },
       { onProgress: (event) => this.hooks.onProgress?.(event) },
@@ -401,15 +449,22 @@ export class ProjectService {
     }
 
     const endpoints = endpointsFrom(summary);
-    const iface: Interface = createInterface(summary.name, {
-      id: interfaceId,
-      slug,
-      definitionUrl: summary.definitionUrl,
-      targetNamespace: summary.targetNamespace,
-      order: open.project.interfaces.length,
-      endpoints,
-      operations: operationsFrom(summary),
-    });
+    const savedAuth: EndpointAuth | undefined =
+      input.useForRequests === true && input.auth !== undefined
+        ? { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true }
+        : undefined;
+    const iface: Interface = {
+      ...createInterface(summary.name, {
+        id: interfaceId,
+        slug,
+        definitionUrl: summary.definitionUrl,
+        targetNamespace: summary.targetNamespace,
+        order: open.project.interfaces.length,
+        endpoints,
+        operations: operationsFrom(summary),
+      }),
+      ...(savedAuth !== undefined ? { auth: savedAuth } : {}),
+    };
 
     open.project = { ...open.project, interfaces: [...open.project.interfaces, iface] };
     open.runtime.set(interfaceId, { hydration: 'ready', summary });

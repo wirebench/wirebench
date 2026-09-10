@@ -42,6 +42,14 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       reload: fail('project.reload'),
     },
     dialogs: { openFile: fail('dialogs.openFile'), openFolder: fail('dialogs.openFolder') },
+    secrets: {
+      set: fail('secrets.set'),
+      replace: fail('secrets.replace'),
+      exists: fail('secrets.exists'),
+      delete: fail('secrets.delete'),
+      list: fail('secrets.list'),
+      setShowSecrets: fail('secrets.setShowSecrets'),
+    },
     files: { pathFor: vi.fn().mockReturnValue('') },
     on: vi.fn().mockReturnValue(() => undefined),
   };

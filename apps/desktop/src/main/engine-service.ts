@@ -13,6 +13,7 @@ import {
   WirebenchError,
 } from '@wirebench/engine';
 import type {
+  EndpointAuth,
   GenerateOptions,
   ImportProgress,
   ImportResult,
@@ -22,6 +23,7 @@ import type {
   SoapSendInput,
   TlsOptions,
 } from '@wirebench/engine';
+import { resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
 import type {
   DefinitionImportRequest,
   EngineProgressEvent,
@@ -95,6 +97,28 @@ function toEngineTls(tls: NonNullable<SoapSendInputWire['tls']>): TlsOptions {
   };
 }
 
+/**
+ * When `auth.type === 'basic'` and `auth.preemptive !== false`, adds an `Authorization: Basic
+ * ...` header to `input` (without waiting for a 401 challenge — a challenge-based flow is Task
+ * 34). An explicit header the caller already set is left alone. Pure — takes the *resolved*
+ * auth (a real password, never a ref) — so it is trivially unit-testable without IPC or a
+ * secret store.
+ */
+export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth): SoapSendInputWire {
+  if (auth === undefined || auth.type !== 'basic' || auth.preemptive === false) {
+    return input;
+  }
+  if (auth.username === undefined || auth.password === undefined) {
+    return input;
+  }
+  const headers = { ...input.headers };
+  if (Object.keys(headers).some((name) => name.toLowerCase() === 'authorization')) {
+    return input;
+  }
+  headers['Authorization'] = `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}`;
+  return { ...input, headers };
+}
+
 /** Converts the wire `SoapSendInputWire` (plus a controller's signal) to the engine's `SoapSendInput`. */
 function toEngineSendInput(input: SoapSendInputWire, signal: AbortSignal): SoapSendInput {
   return {
@@ -136,6 +160,12 @@ export class EngineService {
   private readonly sends = new Map<string, AbortController>();
   private readonly imports = new Map<string, AbortController>();
 
+  /**
+   * Resolves a `secretRef` for {@link importDefinition}'s Basic-auth fetch credentials. Omitted
+   * in tests that never import with auth; `main/index.ts` wires it to `SecretStore.get`.
+   */
+  constructor(private readonly getSecret?: (ref: string) => Promise<string | undefined>) {}
+
   /** Imports a WSDL definition and stores the full `ImportResult` under a new id. */
   async importDefinition(request: DefinitionImportRequest, hooks: EngineServiceHooks = {}): Promise<InterfaceSummary> {
     const id = crypto.randomUUID();
@@ -143,10 +173,19 @@ export class EngineService {
     if (request.token !== undefined) {
       this.imports.set(request.token, controller);
     }
+    const wireAuth = request.options?.auth;
+    const password = wireAuth !== undefined ? await this.getSecret?.(wireAuth.passwordRef) : undefined;
+    if (wireAuth !== undefined && password === undefined) {
+      throw new WirebenchError('secret-missing', `Secret ${wireAuth.passwordRef} was not found in the secret store.`, {
+        details: { ref: wireAuth.passwordRef },
+      });
+    }
     let result: ImportResult;
     try {
       result = await engineImportDefinition(toEngineSource(request.source), {
-        ...(request.options?.auth !== undefined ? { auth: request.options.auth } : {}),
+        ...(wireAuth !== undefined && password !== undefined
+          ? { auth: { username: wireAuth.username, password } }
+          : {}),
         signal: controller.signal,
         onProgress: (progress) => {
           // The final 'done' event is re-emitted below once the interface id is known, so the
@@ -285,14 +324,22 @@ export class EngineService {
    * envelope, SOAPAction and headers first, and reports whatever stayed unresolved on the
    * returned summary's `unresolved`.
    */
-  async send(request: RequestSendRequest, options: { scopes?: PropertyScopes } = {}): Promise<ExchangeSummary> {
+  async send(
+    request: RequestSendRequest,
+    options: { scopes?: PropertyScopes; auth?: EndpointAuth; showSecrets?: boolean } = {},
+  ): Promise<ExchangeSummary> {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
     try {
-      const exchange = await sendSoapRequest(toEngineSendInput(request.input, controller.signal), {
+      const resolvedAuth =
+        options.auth !== undefined
+          ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
+          : undefined;
+      const input = withResolvedAuth(request.input, resolvedAuth);
+      const exchange = await sendSoapRequest(toEngineSendInput(input, controller.signal), {
         ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
       });
-      return toExchangeSummary(exchange, request.sendId);
+      return toExchangeSummary(exchange, request.sendId, { show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);
     }

@@ -41,7 +41,12 @@ export function clarkLocalName(clark: string): string {
 }
 
 function toEndpointWire(endpoint: Endpoint): EndpointWire {
-  return { id: endpoint.id, name: endpoint.name, url: endpoint.url };
+  return {
+    id: endpoint.id,
+    name: endpoint.name,
+    url: endpoint.url,
+    ...(endpoint.auth !== undefined ? { auth: endpoint.auth } : {}),
+  };
 }
 
 /**
@@ -92,6 +97,8 @@ export function toInterfaceWire(iface: Interface, runtime: InterfaceRuntime | un
     endpoints: iface.endpoints.map(toEndpointWire),
     ...(iface.defaultEndpointId !== undefined ? { defaultEndpointId: iface.defaultEndpointId } : {}),
     hydration: runtime?.hydration ?? 'pending',
+    // `EndpointAuth` only ever carries a `passwordRef`, never a password — safe on the wire.
+    ...(iface.auth !== undefined ? { auth: iface.auth } : {}),
   };
 }
 
@@ -110,6 +117,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.endpointUrl !== undefined ? { endpointUrl: request.endpointUrl } : {}),
     headers: request.headers.map((header) => ({ name: header.name, value: header.value })),
     order: request.order,
+    ...(request.auth !== undefined ? { auth: request.auth } : {}),
   };
 }
 

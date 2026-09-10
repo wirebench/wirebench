@@ -25,8 +25,16 @@ describe('buildApi', () => {
       'on',
       'project',
       'request',
+      'secrets',
     ]);
     expect('ipcRenderer' in api).toBe(false);
+  });
+
+  it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {
+    const api = buildApi(vi.fn(), vi.fn(), vi.fn());
+
+    expect(Object.keys(api.secrets).sort()).toEqual(['delete', 'exists', 'list', 'replace', 'set', 'setShowSecrets']);
+    expect('get' in api.secrets).toBe(false);
   });
 
   it('exposes files.pathFor as the injected pure helper, not an ipcRenderer call', () => {

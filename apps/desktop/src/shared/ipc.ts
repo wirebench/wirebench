@@ -34,6 +34,16 @@ import {
   requestPreflightRequestSchema,
   requestPreflightResponseSchema,
   requestSendRequestSchema,
+  secretsDeleteRequestSchema,
+  secretsDeleteResponseSchema,
+  secretsExistsRequestSchema,
+  secretsExistsResponseSchema,
+  secretsListResponseSchema,
+  secretsRefResponseSchema,
+  secretsReplaceRequestSchema,
+  secretsSetRequestSchema,
+  secretsSetShowSecretsRequestSchema,
+  secretsShowSecretsResponseSchema,
 } from './wire-types.js';
 
 /**
@@ -133,6 +143,20 @@ export const channels = {
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
     openFolder: defineChannel('dialogs.openFolder', dialogsOpenFolderRequestSchema, dialogsOpenFolderResponseSchema),
+  },
+  // No `secrets.get`: the renderer may create/replace/check/delete/list secret refs, but can
+  // never read a value back — resolution happens only in main, at send/import time.
+  secrets: {
+    set: defineChannel('secrets.set', secretsSetRequestSchema, secretsRefResponseSchema),
+    replace: defineChannel('secrets.replace', secretsReplaceRequestSchema, secretsRefResponseSchema),
+    exists: defineChannel('secrets.exists', secretsExistsRequestSchema, secretsExistsResponseSchema),
+    delete: defineChannel('secrets.delete', secretsDeleteRequestSchema, secretsDeleteResponseSchema),
+    list: defineChannel('secrets.list', z.undefined(), secretsListResponseSchema),
+    setShowSecrets: defineChannel(
+      'secrets.setShowSecrets',
+      secretsSetShowSecretsRequestSchema,
+      secretsShowSecretsResponseSchema,
+    ),
   },
 } as const;
 

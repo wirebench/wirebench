@@ -116,6 +116,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       const result = await ipc().request.send({
         sendId,
+        requestId,
         input: {
           endpoint,
           envelopeXml: draftRequest.envelopeXml,

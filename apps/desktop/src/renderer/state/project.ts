@@ -66,7 +66,10 @@ export interface ProjectStore extends ProjectSnapshot {
   /** Imports a WSDL into the open project; the interface and its `Request 1`s come back saved. */
   readonly importDefinition: (
     source: ImportSourceWire,
-    options?: { readonly auth?: { readonly username: string; readonly password: string } },
+    options?: {
+      readonly auth?: { readonly username: string; readonly passwordRef: string };
+      readonly useForRequests?: boolean;
+    },
     token?: string,
   ) => Promise<InterfaceWire>;
   readonly removeInterface: (interfaceId: string) => Promise<void>;
@@ -285,6 +288,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const result = await ipc().project.addInterface({
         source,
         ...(options?.auth !== undefined ? { auth: options.auth } : {}),
+        ...(options?.useForRequests !== undefined ? { useForRequests: options.useForRequests } : {}),
         ...(token !== undefined ? { token } : {}),
       });
       if (!result.ok) {

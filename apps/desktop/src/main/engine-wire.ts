@@ -5,6 +5,7 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
+import { redactHeaders, redactRawHttp } from './redact.js';
 import type {
   GeneratedRequest,
   HttpExchange,
@@ -121,22 +122,33 @@ function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64');
 }
 
-function toHttpExchangeWire(http: HttpExchange): HttpExchangeWire {
+/**
+ * Converts the engine's `HttpExchange` (unredacted — this is the internal, in-memory shape) to
+ * its wire form, redacting `Authorization`/`Cookie`/etc. and `wsse:Password` unless `show` is
+ * set (the session "show secrets" toggle). Nothing crossing IPC carries a real secret by
+ * default: the engine's own in-memory state is never touched by this.
+ */
+function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): HttpExchangeWire {
+  const show = opts?.show ?? false;
   return {
     status: http.status,
     statusText: http.statusText,
-    headers: { ...http.headers },
+    headers: redactHeaders(http.headers, { show }),
     rawHeaders: http.rawHeaders.map(([name, value]) => [name, value]),
     bodyBase64: toBase64(http.body),
     rawBodyBase64: toBase64(http.rawBody),
-    rawRequestBase64: toBase64(http.rawRequest),
-    rawResponseBase64: toBase64(http.rawResponse),
+    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { show, encoding: 'base64' }),
+    rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
     redirects: http.redirects.map((redirect) => ({ ...redirect })),
     ...(http.tls !== undefined ? { tls: { ...http.tls } } : {}),
-    request: { url: http.request.url, method: http.request.method, headers: { ...http.request.headers } },
+    request: {
+      url: http.request.url,
+      method: http.request.method,
+      headers: redactHeaders(http.request.headers, { show }),
+    },
   };
 }
 
@@ -158,11 +170,11 @@ export function toUnresolvedRefWire(ref: UnresolvedRef): UnresolvedRefWire {
 }
 
 /** Converts a `SoapExchange` plus its `sendId` into the `request.send` response payload. */
-export function toExchangeSummary(exchange: SoapExchange, sendId: string): ExchangeSummary {
+export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?: { show?: boolean }): ExchangeSummary {
   return {
     sendId,
     durationMs: exchange.durationMs,
-    http: toHttpExchangeWire(exchange.http),
+    http: toHttpExchangeWire(exchange.http, opts),
     ...(exchange.response !== undefined
       ? {
           response: {

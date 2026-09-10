@@ -18,8 +18,14 @@ export const importSourceSchema = z.discriminatedUnion('kind', [
 ]);
 export type ImportSourceWire = z.infer<typeof importSourceSchema>;
 
-/** Basic-auth credentials for fetching a definition (and any of its imports). */
-export const importAuthSchema = z.object({ username: z.string(), password: z.string() });
+/**
+ * Basic-auth credentials for fetching a definition (and any of its imports). The password NEVER
+ * crosses the wire as plaintext: the caller stores it via `secrets.set` first and sends the
+ * resulting `secretRef`, which main resolves at send/fetch time. `password` is deliberately
+ * absent from this schema — zod strips/rejects it, so a plaintext password sent by mistake
+ * fails validation rather than silently reaching a project file or a log.
+ */
+export const importAuthSchema = z.object({ username: z.string(), passwordRef: z.string() });
 
 /** Request payload for `definition.import`. */
 export const definitionImportRequestSchema = z.object({
@@ -152,6 +158,8 @@ export const requestSendRequestSchema = z.object({
   /** Client-generated id (`crypto.randomUUID()`), used to correlate a later `request.cancel`. */
   sendId: z.string(),
   input: soapSendInputWireSchema,
+  /** The saved request this send came from, if any — used to resolve its effective auth. */
+  requestId: z.string().optional(),
 });
 export type RequestSendRequest = z.infer<typeof requestSendRequestSchema>;
 
@@ -324,8 +332,27 @@ export type EngineProgressEvent = z.infer<typeof engineProgressEventSchema>;
 export const headerEntrySchema = z.object({ name: z.string(), value: z.string() });
 export type HeaderEntryWire = z.infer<typeof headerEntrySchema>;
 
-/** One addressable endpoint of an interface (credentials stay in main; never on the wire). */
-export const endpointWireSchema = z.object({ id: z.string(), name: z.string(), url: z.string() });
+/**
+ * How a request/endpoint/interface authenticates, as mirrored to the renderer. Never a
+ * `password` — only a `passwordRef` into the main-process secret store, which the renderer
+ * cannot read back (there is no `secrets.get` channel).
+ */
+export const endpointAuthSchema = z.object({
+  type: z.enum(['none', 'basic', 'ntlm']),
+  username: z.string().optional(),
+  passwordRef: z.string().optional(),
+  domain: z.string().optional(),
+  preemptive: z.boolean().optional(),
+});
+export type EndpointAuthWire = z.infer<typeof endpointAuthSchema>;
+
+/** One addressable endpoint of an interface (credentials referenced by `secretRef`, never on the wire). */
+export const endpointWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  auth: endpointAuthSchema.optional(),
+});
 export type EndpointWire = z.infer<typeof endpointWireSchema>;
 
 /** Whether the definition behind an interface has been (re)loaded into the engine yet. */
@@ -343,6 +370,7 @@ export const interfaceWireSchema = interfaceSummarySchema.extend({
   endpoints: z.array(endpointWireSchema),
   defaultEndpointId: z.string().optional(),
   hydration: hydrationStatusSchema,
+  auth: endpointAuthSchema.optional(),
 });
 export type InterfaceWire = z.infer<typeof interfaceWireSchema>;
 
@@ -361,6 +389,7 @@ export const requestWireSchema = z.object({
   endpointUrl: z.string().optional(),
   headers: z.array(headerEntrySchema),
   order: z.number(),
+  auth: endpointAuthSchema.optional(),
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;
 
@@ -455,6 +484,18 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     patch: z.object({ name: z.string().optional(), url: z.string().optional() }),
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
+  z.object({ kind: z.literal('update-request-auth'), requestId: z.string(), auth: endpointAuthSchema.nullable() }),
+  z.object({
+    kind: z.literal('update-interface-auth'),
+    interfaceId: z.string(),
+    auth: endpointAuthSchema.nullable(),
+  }),
+  z.object({
+    kind: z.literal('update-endpoint-auth'),
+    interfaceId: z.string(),
+    endpointId: z.string(),
+    auth: endpointAuthSchema.nullable(),
+  }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -513,6 +554,8 @@ export const projectRecentResponseSchema = z.object({ recent: z.array(recentProj
 export const projectAddInterfaceRequestSchema = z.object({
   source: importSourceSchema,
   auth: importAuthSchema.optional(),
+  /** When true, the resolved auth is also saved on the interface for reuse when sending requests. */
+  useForRequests: z.boolean().optional(),
   /** Echoed back on `engine.progress` events raised while this import is in flight. */
   token: z.string().optional(),
 });
@@ -555,3 +598,34 @@ export const globalsSetRequestSchema = z.object({ name: z.string(), value: z.str
 
 /** Request payload for `globals.remove`. */
 export const globalsRemoveRequestSchema = z.object({ name: z.string() });
+
+// ---------------------------------------------------------------------------
+// Secrets (Task 23): keychain-backed store. There is deliberately no `secrets.get`
+// channel — the renderer can create/replace/check/delete/list refs, but can never
+// read a value back; resolution happens only in main (`secret-resolver.ts`).
+// ---------------------------------------------------------------------------
+
+/** Request payload for `secrets.set`. */
+export const secretsSetRequestSchema = z.object({ value: z.string(), label: z.string().optional() });
+/** Response for `secrets.set` and `secrets.replace`: the ref the value is stored under. */
+export const secretsRefResponseSchema = z.object({ ref: z.string() });
+
+/** Request payload for `secrets.replace`. */
+export const secretsReplaceRequestSchema = z.object({ ref: z.string(), value: z.string() });
+
+/** Request payload for `secrets.exists`. */
+export const secretsExistsRequestSchema = z.object({ ref: z.string() });
+export const secretsExistsResponseSchema = z.object({ exists: z.boolean() });
+
+/** Request payload for `secrets.delete`. */
+export const secretsDeleteRequestSchema = z.object({ ref: z.string() });
+export const secretsDeleteResponseSchema = z.object({ deleted: z.boolean() });
+
+/** One entry as listed by `secrets.list` — never a value. */
+export const secretListEntrySchema = z.object({ ref: z.string(), label: z.string().optional(), createdAt: z.string() });
+export const secretsListResponseSchema = z.object({ entries: z.array(secretListEntrySchema) });
+export type SecretListEntryWire = z.infer<typeof secretListEntrySchema>;
+
+/** Request/response for `secrets.setShowSecrets` — a session-only, unpersisted flag. */
+export const secretsSetShowSecretsRequestSchema = z.object({ show: z.boolean() });
+export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });

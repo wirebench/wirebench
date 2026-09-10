@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import type { EngineProgressEvent, ImportProblemWire, ImportSourceWire } from '../../../shared/wire-types.js';
 import { Button } from '../../components/button.js';
+import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
@@ -29,7 +30,8 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [url, setUrl] = useState('');
   const [useAuth, setUseAuth] = useState(false);
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
+  const [useForRequests, setUseForRequests] = useState(false);
   const [filePath, setFilePath] = useState('');
   const [pasted, setPasted] = useState('');
   const [urlError, setUrlError] = useState<string | undefined>(undefined);
@@ -116,7 +118,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     tokenRef.current = token;
     setImporting(true);
     try {
-      const options = useAuth && username.length > 0 ? { auth: { username, password } } : undefined;
+      const options =
+        useAuth && username.length > 0 && passwordRef !== undefined
+          ? { auth: { username, passwordRef }, useForRequests }
+          : undefined;
       const summary = await useProjectStore.getState().importDefinition(source, options, token);
       if (cancelledTokensRef.current.has(token)) {
         return;
@@ -201,23 +206,26 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   Use Basic auth
                 </label>
                 {useAuth && (
-                  <div className="flex gap-2">
-                    <input
-                      aria-label="Username"
-                      placeholder="Username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
-                    />
-                    <input
-                      aria-label="Password"
-                      type="password"
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
-                    />
-                  </div>
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        aria-label="Username"
+                        placeholder="Username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
+                      />
+                    </div>
+                    <SecretField value={passwordRef} onChange={setPasswordRef} label="Password" />
+                    <label className="flex items-center gap-2 text-sm text-fg-subtle">
+                      <input
+                        type="checkbox"
+                        checked={useForRequests}
+                        onChange={(e) => setUseForRequests(e.target.checked)}
+                      />
+                      Use these credentials for requests too
+                    </label>
+                  </>
                 )}
               </>
             )}

@@ -6,7 +6,9 @@ import { registerHandler } from './register.js';
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
   /** Supplies the scopes; `ProjectService.scopesFor` in the app, a stub in tests. */
-  readonly project: Pick<ProjectService, 'scopesFor' | 'preflight'>;
+  readonly project: Pick<ProjectService, 'scopesFor' | 'preflight' | 'authFor'>;
+  /** The session "show secrets" flag; omitted defaults every send to redacted. */
+  readonly showSecrets?: { get(): boolean };
 }
 
 /**
@@ -20,7 +22,14 @@ export interface RequestChannelDeps {
 export function registerRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
   registerHandler(channels.request.generate, (request) => Promise.resolve(service.generate(request)));
 
-  registerHandler(channels.request.send, (request) => service.send(request, { scopes: deps.project.scopesFor() }));
+  registerHandler(channels.request.send, (request) => {
+    const auth = request.requestId !== undefined ? deps.project.authFor(request.requestId) : undefined;
+    return service.send(request, {
+      scopes: deps.project.scopesFor(),
+      showSecrets: deps.showSecrets?.get() ?? false,
+      ...(auth !== undefined ? { auth } : {}),
+    });
+  });
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

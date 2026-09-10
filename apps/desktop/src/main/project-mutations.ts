@@ -10,7 +10,7 @@
  */
 
 import { createRequest, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
-import type { Endpoint, Interface, OperationDef, Project, RequestDef } from '@wirebench/engine';
+import type { Endpoint, EndpointAuth, Interface, OperationDef, Project, RequestDef } from '@wirebench/engine';
 import type { ProjectChange, RequestPatchWire } from '../shared/wire-types.js';
 import {
   addEnvironment,
@@ -228,6 +228,55 @@ function requireEndpoint(iface: Interface, endpointId: string): Endpoint {
   return iface.endpoints.find((endpoint) => endpoint.id === endpointId) ?? notFound('endpoint', endpointId);
 }
 
+/**
+ * Normalises a wire `EndpointAuth` (whose zod-optional fields type as `T | undefined`) into the
+ * engine's `EndpointAuth`, which under `exactOptionalPropertyTypes` requires absent keys to be
+ * truly absent rather than present-with-`undefined`.
+ */
+function toEngineAuth(auth: {
+  type: EndpointAuth['type'];
+  username?: string | undefined;
+  passwordRef?: string | undefined;
+  domain?: string | undefined;
+  preemptive?: boolean | undefined;
+}): EndpointAuth {
+  return {
+    type: auth.type,
+    ...(auth.username !== undefined ? { username: auth.username } : {}),
+    ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+    ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
+  };
+}
+
+/** Sets (or clears, with `auth: null`) one request's own `auth`, leaving every other field alone. */
+function updateRequestAuth(project: Project, requestId: string, auth: EndpointAuth | null): MutationResult {
+  const location = findRequest(project, requestId) ?? notFound('request', requestId);
+  const { iface, operation, request } = location;
+  const next: RequestDef = {
+    kind: request.kind,
+    id: request.id,
+    name: request.name,
+    slug: request.slug,
+    order: request.order,
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    ...(request.endpointId !== undefined ? { endpointId: request.endpointId } : {}),
+    ...(request.endpointUrl !== undefined ? { endpointUrl: request.endpointUrl } : {}),
+    soapVersion: request.soapVersion,
+    ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+    headers: request.headers,
+    attachments: request.attachments,
+    ...(auth !== null ? { auth } : {}),
+    ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
+    ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),
+    ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
+    properties: request.properties,
+    envelopeXml: request.envelopeXml,
+  };
+  const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));
+  return { project: replaceInterface(project, replaceOperation(iface, { ...operation, requests })) };
+}
+
 /** Applies one {@link ProjectChange}, returning the next model. Never mutates its input. */
 export async function applyChange(
   project: Project,
@@ -305,6 +354,46 @@ export async function applyChange(
       // is dropped entirely rather than set to an explicit `undefined`.
       const nextDefault = iface.defaultEndpointId === change.endpointId ? endpoints[0]?.id : iface.defaultEndpointId;
       return { project: replaceInterface(project, rebuiltInterface(iface, endpoints, nextDefault)) };
+    }
+
+    case 'update-request-auth':
+      return updateRequestAuth(project, change.requestId, change.auth === null ? null : toEngineAuth(change.auth));
+
+    case 'update-interface-auth': {
+      const iface = requireInterface(project, change.interfaceId);
+      const next: Interface = {
+        kind: iface.kind,
+        id: iface.id,
+        name: iface.name,
+        slug: iface.slug,
+        order: iface.order,
+        definitionUrl: iface.definitionUrl,
+        cacheDefinition: iface.cacheDefinition,
+        ...(iface.targetNamespace !== undefined ? { targetNamespace: iface.targetNamespace } : {}),
+        endpoints: iface.endpoints,
+        ...(iface.defaultEndpointId !== undefined ? { defaultEndpointId: iface.defaultEndpointId } : {}),
+        wsa: iface.wsa,
+        ...(change.auth !== null ? { auth: toEngineAuth(change.auth) } : {}),
+        operations: iface.operations,
+      };
+      return { project: replaceInterface(project, next) };
+    }
+
+    case 'update-endpoint-auth': {
+      const iface = requireInterface(project, change.interfaceId);
+      requireEndpoint(iface, change.endpointId);
+      const endpoints = iface.endpoints.map((endpoint): Endpoint =>
+        endpoint.id === change.endpointId
+          ? {
+              id: endpoint.id,
+              name: endpoint.name,
+              url: endpoint.url,
+              authMode: endpoint.authMode,
+              ...(change.auth !== null ? { auth: toEngineAuth(change.auth) } : {}),
+            }
+          : endpoint,
+      );
+      return { project: replaceInterface(project, { ...iface, endpoints }) };
     }
 
     case 'add-environment': {

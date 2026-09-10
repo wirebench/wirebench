@@ -112,7 +112,9 @@ describe('registerRequestChannels', () => {
       },
       problems: [],
     });
-    registerRequestChannels(engine, { project: { scopesFor: () => scopes, preflight: () => preflight } });
+    registerRequestChannels(engine, {
+      project: { scopesFor: () => scopes, preflight: () => preflight, authFor: () => undefined },
+    });
 
     const result = await invoke('request.send', {
       sendId: 'send-1',
@@ -120,11 +122,15 @@ describe('registerRequestChannels', () => {
     });
 
     expect(result).toMatchObject({ ok: true });
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }), { scopes });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }), { scopes, showSecrets: false });
   });
 
   it('answers request.preflight from the project service', async () => {
-    const project = { scopesFor: vi.fn().mockReturnValue(scopes), preflight: vi.fn().mockReturnValue(preflight) };
+    const project = {
+      scopesFor: vi.fn().mockReturnValue(scopes),
+      preflight: vi.fn().mockReturnValue(preflight),
+      authFor: vi.fn().mockReturnValue(undefined),
+    };
     registerRequestChannels(new EngineService(), { project });
 
     const result = await invoke('request.preflight', { requestId: 'req-1' });
@@ -135,7 +141,7 @@ describe('registerRequestChannels', () => {
 
   it('rejects a malformed request.preflight payload', async () => {
     registerRequestChannels(new EngineService(), {
-      project: { scopesFor: () => scopes, preflight: () => preflight },
+      project: { scopesFor: () => scopes, preflight: () => preflight, authFor: () => undefined },
     });
 
     expect(await invoke('request.preflight', {})).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
