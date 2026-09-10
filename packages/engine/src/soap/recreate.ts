@@ -119,9 +119,8 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
   if (generatedEnvelope === undefined) {
     return { xml: formatXml(generatedXml).text, kept: 0, added: 0, removed: 0 };
   }
-  if (currentEnvelope === undefined || !keepValues) {
-    const removed = keepValues ? 0 : 0;
-    return { xml: formatXml(generatedXml).text, kept: 0, added: countAll(generatedEnvelope.children), removed };
+  if (currentEnvelope === undefined) {
+    return { xml: formatXml(generatedXml).text, kept: 0, added: countAll(generatedEnvelope.children), removed: 0 };
   }
 
   const currentIndex = indexByPath(currentEnvelope.children);
@@ -146,7 +145,7 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
 
       // Leaf element (no children in generated): copy text value if present in current.
       if (el.children.length === 0) {
-        if (currentEl.text !== undefined && el.text !== undefined) {
+        if (keepValues && currentEl.text !== undefined && el.text !== undefined) {
           const currentValue = currentEl.text.value;
           const generatedValue = el.text.value;
           if (currentValue !== generatedValue) {
@@ -163,14 +162,16 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
       }
 
       // Attributes: copy matching attribute values from current.
-      for (const attr of el.attributes) {
-        const currentAttr = currentEl.attributes.find((a) => a.name === attr.name);
-        if (currentAttr !== undefined && currentAttr.value !== attr.value) {
-          replacements.push({
-            start: attr.valueRange.start,
-            end: attr.valueRange.end,
-            value: escapeXmlAttr(currentAttr.value),
-          });
+      if (keepValues) {
+        for (const attr of el.attributes) {
+          const currentAttr = currentEl.attributes.find((a) => a.name === attr.name);
+          if (currentAttr !== undefined && currentAttr.value !== attr.value) {
+            replacements.push({
+              start: attr.valueRange.start,
+              end: attr.valueRange.end,
+              value: escapeXmlAttr(currentAttr.value),
+            });
+          }
         }
       }
     }

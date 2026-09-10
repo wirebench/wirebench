@@ -79,4 +79,25 @@ describe('recreateRequest', () => {
     const result = recreateRequest(currentWithHeader, GENERATED, { keepValues: true, keepHeaders: false });
     expect(result.xml).not.toContain('wsse:Security');
   });
+
+  it('keeps the current header block when discarding values', () => {
+    const currentWithHeader = CURRENT.replace(
+      '<soapenv:Header/>',
+      '<soapenv:Header><wsse:Security xmlns:wsse="urn:x"><wsse:Token>abc</wsse:Token></wsse:Security></soapenv:Header>',
+    );
+    const result = recreateRequest(currentWithHeader, GENERATED, { keepValues: false, keepHeaders: true });
+    expect(result.xml).toContain('wsse:Security');
+    expect(result.xml).toContain('abc');
+    expect(result.kept).toBe(0);
+  });
+
+  it('counts removed elements when discarding values', () => {
+    const currentWithExtra = CURRENT.replace(
+      '<tem:intB>?</tem:intB>',
+      '<tem:intB>?</tem:intB>\n         <tem:intC>99</tem:intC>',
+    );
+    const result = recreateRequest(currentWithExtra, GENERATED, { keepValues: false, keepHeaders: false });
+    expect(result.removed).toBe(1);
+    expect(result.kept).toBe(0);
+  });
 });

@@ -190,6 +190,22 @@ describe('request.recreate / curl / importCurl', () => {
     expect(shown.command).toContain('Authorization: Basic c2VjcmV0');
   });
 
+  it('curl redacts a WS-Security password in the envelope by default and reveals it when show-secrets is on', async () => {
+    project.envelopeXml = project.envelopeXml.replace(
+      '<soapenv:Header/>',
+      '<soapenv:Header><wsse:Security xmlns:wsse="urn:x"><wsse:UsernameToken>' +
+        '<wsse:Password>s3cret</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header>',
+    );
+
+    const redacted = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(redacted.command).toContain('<redacted>');
+    expect(redacted.command).not.toContain('s3cret');
+
+    showSecrets = true;
+    const shown = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(shown.command).toContain('s3cret');
+  });
+
   it('curl builds a PowerShell command for the powershell shell', async () => {
     const result = unwrap<{ command: string }>(
       await invoke('request.curl', { requestId: 'req-1', shell: 'powershell' }),

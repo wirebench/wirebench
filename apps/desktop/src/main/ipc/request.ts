@@ -3,7 +3,7 @@ import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import type { ProjectService } from '../project-service.js';
 import type { HistoryService } from '../history-service.js';
-import { redactHeaders } from '../redact.js';
+import { redactHeaders, redactXml } from '../redact.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import type {
   HistoryEntryWire,
@@ -100,11 +100,12 @@ async function curl(
   });
   const show = deps.showSecrets?.get() ?? false;
   const headers = redactHeaders(effective.headers ?? {}, { show });
+  const envelopeXml = redactXml(effective.envelopeXml, { show });
   return {
     command: toCurl(
       {
         endpoint: effective.endpoint,
-        envelopeXml: effective.envelopeXml,
+        envelopeXml,
         soapVersion: effective.soapVersion,
         ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
         headers,
