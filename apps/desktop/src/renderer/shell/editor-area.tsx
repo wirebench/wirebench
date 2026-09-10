@@ -1,8 +1,16 @@
+import { lazy, Suspense } from 'react';
 import { FileDown, FolderOpen, FilePlus } from 'lucide-react';
 import { Button } from '../components/button.js';
 import { EmptyState } from '../components/empty-state.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
+
+// Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
+// thing that pulls it in — is split out and fetched the first time a request tab is opened.
+const RequestEditor = lazy(async () => {
+  const module = await import('../features/request-editor/request-editor.js');
+  return { default: module.RequestEditor };
+});
 
 export interface EditorAreaProps {
   readonly onImportDefinition: () => void;
@@ -14,8 +22,7 @@ const WELCOME_ID = 'welcome';
 
 /**
  * The tabbed editor area. A Welcome tab is always present; opening a request from the
- * explorer adds a real tab from `state/editors.ts`. Task 15 replaces the request tab's
- * placeholder body with the full editor.
+ * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
 export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: EditorAreaProps) {
   const tabs = useEditorsStore((state) => state.tabs);
@@ -55,7 +62,7 @@ export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: 
             }`}
           >
             <button type="button" onClick={() => activate(tab.id)}>
-              {tab.title}
+              {(tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ?? tab.title}
             </button>
             <button
               type="button"
@@ -69,7 +76,7 @@ export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: 
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {showingWelcome ? (
           <EmptyState
             title="Start with a definition"
@@ -90,16 +97,11 @@ export function EditorArea({ onImportDefinition, onOpenProject, onNewProject }: 
               </Button>
             </div>
           </EmptyState>
-        ) : (
-          <div className="p-4">
-            <p className="text-sm text-fg-subtle">Request editor arrives in Task 15</p>
-            {activeTab.requestId !== undefined && (
-              <pre className="mt-3 overflow-auto rounded bg-surface-raised p-3 text-xs text-fg-default">
-                {requests[activeTab.requestId]?.envelopeXml ?? ''}
-              </pre>
-            )}
-          </div>
-        )}
+        ) : activeTab.requestId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <RequestEditor requestId={activeTab.requestId} />
+          </Suspense>
+        ) : null}
       </div>
     </section>
   );

@@ -18,6 +18,7 @@
     "src/shared/**/*",
     "src/preload/api.d.ts",
     "src/preload/build-api.ts",
-    "test/renderer/**/*"
+    "test/renderer/**/*",
+    "test/mocks/**/*"
   ]
 }

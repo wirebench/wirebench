@@ -1,0 +1,46 @@
+import { Editor } from '@monaco-editor/react';
+import type { OnMount } from '@monaco-editor/react';
+import { useMemo } from 'react';
+import { resolveTheme } from '../lib/theme.js';
+import { useUiStore } from '../state/ui.js';
+import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
+
+// Monaco's loader must be pointed at the bundled copy before the first editor mounts, and this
+// module is only ever reached through the lazily-loaded request editor, so import time is the
+// right moment — `beforeMount` would already be too late for `loader.config`.
+configureMonaco();
+
+export interface XmlEditorProps {
+  readonly value: string;
+  readonly onChange?: (value: string) => void;
+  readonly readOnly?: boolean;
+  /** The accessible name Monaco puts on its hidden textarea — how tests and AT address the editor. */
+  readonly ariaLabel: string;
+  readonly onMount?: OnMount;
+}
+
+/**
+ * The one Monaco wrapper: XML language, Wirebench theme, shared options. Both panes go through
+ * it so the request and response editors can never drift apart.
+ */
+export function XmlEditor({ value, onChange, readOnly = false, ariaLabel, onMount }: XmlEditorProps) {
+  const preference = useUiStore((state) => state.theme);
+  const theme = monacoThemeName(resolveTheme(preference));
+
+  const options = useMemo(
+    () => ({ ...BASE_EDITOR_OPTIONS, readOnly, domReadOnly: readOnly, ariaLabel }),
+    [readOnly, ariaLabel],
+  );
+
+  return (
+    <Editor
+      language={XML_LANGUAGE_ID}
+      theme={theme}
+      value={value}
+      options={options}
+      {...(onChange !== undefined ? { onChange: (next?: string) => onChange(next ?? '') } : {})}
+      {...(onMount !== undefined ? { onMount } : {})}
+      loading={<span className="p-3 text-sm text-fg-subtle">Loading editor…</span>}
+    />
+  );
+}

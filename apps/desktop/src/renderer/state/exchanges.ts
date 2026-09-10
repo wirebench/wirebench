@@ -33,6 +33,8 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancel: (requestId: string) => Promise<void>;
   /** Clears the exchange state for a removed request (keeps the log). */
   readonly clearRequest: (requestId: string) => void;
+  /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
+  readonly clearLog: () => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -110,6 +112,12 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         return;
       }
       await ipc().request.cancel({ sendId: entry.sendId });
+    },
+
+    clearLog: () => {
+      update((draft) => {
+        draft.log = [];
+      });
     },
 
     clearRequest: (requestId) => {

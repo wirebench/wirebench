@@ -1,7 +1,15 @@
 import { showToast } from '../components/toast.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
+import { useEditorsStore } from '../state/editors.js';
+import { useExchangesStore } from '../state/exchanges.js';
 import { useUiStore } from '../state/ui.js';
+
+/** The request draft behind the active editor tab, or `undefined` when none is a request tab. */
+function activeRequestId(): string | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  return tabs.find((tab) => tab.id === activeId && tab.kind === 'request')?.requestId;
+}
 
 /** Stubs announce their own task number so the gap is visible in the UI, not just the backlog. */
 function notImplemented(what: string, task: number): void {
@@ -126,6 +134,38 @@ export function registerShellCommands(openPalette: () => void): void {
     shortcut: 'Mod+O',
     run: () => {
       notImplemented('Open project', 13);
+    },
+  });
+
+  registerCommand({
+    id: 'request.send',
+    label: 'Send Request',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().send(requestId);
+      }
+    },
+  });
+  registerCommand({
+    id: 'request.cancel',
+    label: 'Cancel Request',
+    category: 'Request',
+    shortcut: 'Escape',
+    // Escape must stay available to dialogs, menus, and the palette, so this command exists
+    // only while the active request is actually in flight.
+    when: () => {
+      const requestId = activeRequestId();
+      return requestId !== undefined && useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
+    },
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().cancel(requestId);
+      }
     },
   });
 

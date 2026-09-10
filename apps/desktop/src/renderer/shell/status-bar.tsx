@@ -1,8 +1,12 @@
 import { useAppVersion } from '../lib/use-app-version.js';
+import { formatBytes } from '../lib/format-size.js';
+import { responseSize, toneFor } from '../features/request-editor/response-status.js';
+import { useExchangesStore } from '../state/exchanges.js';
 
-/** The bottom strip: environment and connection state on the left, cursor position on the right. */
+/** The bottom strip: environment and connection state on the left, the last exchange on the right. */
 export function StatusBar() {
   const version = useAppVersion();
+  const last = useExchangesStore((state) => state.log.at(-1));
 
   return (
     <footer
@@ -25,7 +29,17 @@ export function StatusBar() {
           </>
         )}
       </div>
-      <span className="font-mono">Ln 1, Col 1</span>
+      {last === undefined ? (
+        <span className="font-mono">no requests sent</span>
+      ) : (
+        <span className="font-mono">
+          last:{' '}
+          <span className={toneFor(last) === 'bad' ? 'text-status-danger' : 'text-status-success'}>
+            {last.http.status}
+          </span>{' '}
+          in {last.durationMs} ms · {formatBytes(responseSize(last))}
+        </span>
+      )}
     </footer>
   );
 }

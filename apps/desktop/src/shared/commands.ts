@@ -24,10 +24,12 @@ export type CommandId =
   | 'explorer.cloneRequest'
   | 'explorer.renameRequest'
   | 'explorer.deleteRequest'
-  | 'explorer.copyEndpointAddress';
+  | 'explorer.copyEndpointAddress'
+  | 'request.send'
+  | 'request.cancel';
 
 /** Palette grouping for a command; also the heading shown in the command palette. */
-export type CommandCategory = 'General' | 'View' | 'Project' | 'Definition' | 'Explorer';
+export type CommandCategory = 'General' | 'View' | 'Project' | 'Definition' | 'Explorer' | 'Request';
 
 /**
  * The declarative half of a command: everything needed to render it in a palette or a menu,
