@@ -14,6 +14,19 @@ export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
 
 const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
 
+/** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
+export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl';
+
+/** Which pane's strip an inspector selection belongs to — the two are independent. */
+export type InspectorPane = 'request' | 'response';
+
+const DEFAULT_INSPECTOR: InspectorId = 'headers';
+
+/** Inspector state is per request AND per pane, so the two strips key off distinct entries. */
+function inspectorKey(requestId: string, pane: InspectorPane): string {
+  return `${requestId}:${pane}`;
+}
+
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
@@ -50,6 +63,10 @@ export interface EditorsStore {
   /** Per-request layout override, set by the layout toggles. Session state, never persisted —
    * the persisted default lives in the `ui` store (see `request-editor/layout.ts`). */
   readonly editorLayouts: Readonly<Record<string, EditorLayout>>;
+  /** Selected inspector per `${requestId}:${pane}`. Editor state, not project data. */
+  readonly inspectorTabs: Readonly<Record<string, InspectorId>>;
+  /** Whether a pane's inspector panel is collapsed, per `${requestId}:${pane}`. */
+  readonly inspectorCollapsed: Readonly<Record<string, boolean>>;
   readonly open: (tab: EditorTab) => void;
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
@@ -69,6 +86,15 @@ export interface EditorsStore {
   readonly revealFaultTab: (requestId: string) => void;
   /** Records this request's layout override. */
   readonly setEditorLayout: (requestId: string, layout: EditorLayout) => void;
+
+  /** The selected inspector for one pane of one request, defaulting to `'headers'`. */
+  readonly inspectorFor: (requestId: string, pane: InspectorPane) => InspectorId;
+  /** Selects an inspector — which also expands the panel, since picking a tab means "show me it". */
+  readonly setInspector: (requestId: string, pane: InspectorPane, inspector: InspectorId) => void;
+  /** Whether one pane's inspector panel is collapsed. Panels start collapsed, so the editor keeps
+   * the full pane until the user asks for an inspector. */
+  readonly inspectorCollapsedFor: (requestId: string, pane: InspectorPane) => boolean;
+  readonly setInspectorCollapsed: (requestId: string, pane: InspectorPane, collapsed: boolean) => void;
 }
 
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
@@ -78,6 +104,8 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   responseViewTypes: {},
   responseViewPinned: {},
   editorLayouts: {},
+  inspectorTabs: {},
+  inspectorCollapsed: {},
 
   open: (tab) => {
     const { tabs } = get();
@@ -139,6 +167,22 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
 
   setEditorLayout: (requestId, layout) => {
     set({ editorLayouts: { ...get().editorLayouts, [requestId]: layout } });
+  },
+
+  inspectorFor: (requestId, pane) => get().inspectorTabs[inspectorKey(requestId, pane)] ?? DEFAULT_INSPECTOR,
+
+  setInspector: (requestId, pane, inspector) => {
+    const key = inspectorKey(requestId, pane);
+    set({
+      inspectorTabs: { ...get().inspectorTabs, [key]: inspector },
+      inspectorCollapsed: { ...get().inspectorCollapsed, [key]: false },
+    });
+  },
+
+  inspectorCollapsedFor: (requestId, pane) => get().inspectorCollapsed[inspectorKey(requestId, pane)] ?? true,
+
+  setInspectorCollapsed: (requestId, pane, collapsed) => {
+    set({ inspectorCollapsed: { ...get().inspectorCollapsed, [inspectorKey(requestId, pane)]: collapsed } });
   },
 
   revealFaultTab: (requestId) => {

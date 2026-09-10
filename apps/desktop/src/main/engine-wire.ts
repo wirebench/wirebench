@@ -12,6 +12,7 @@ import type {
   ImportResult,
   SoapExchange,
   SoapFault,
+  SslInfo,
   UnresolvedRef,
 } from '@wirebench/engine';
 import type {
@@ -23,6 +24,7 @@ import type {
   OperationSummaryWire,
   RequestGenerateResponse,
   ServiceSummary,
+  SslInfoWire,
   UnresolvedRefWire,
 } from '../shared/wire-types.js';
 
@@ -123,6 +125,32 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
+ * Copies the engine's `SslInfo` onto the wire. Deep, not a spread: `peerChain` and each
+ * certificate's `sans` are `readonly` arrays in the engine and mutable ones on the wire, and
+ * nothing here is secret, so no redaction applies.
+ */
+function toTlsWire(tls: SslInfo): SslInfoWire {
+  return {
+    ...(tls.protocol !== undefined ? { protocol: tls.protocol } : {}),
+    ...(tls.cipher !== undefined ? { cipher: tls.cipher } : {}),
+    ...(tls.authorized !== undefined ? { authorized: tls.authorized } : {}),
+    ...(tls.authorizationError !== undefined ? { authorizationError: tls.authorizationError } : {}),
+    ...(tls.servername !== undefined ? { servername: tls.servername } : {}),
+    peerChain: tls.peerChain.map((cert) => ({
+      subject: cert.subject,
+      issuer: cert.issuer,
+      validFrom: cert.validFrom,
+      validTo: cert.validTo,
+      ...(cert.serialNumber !== undefined ? { serialNumber: cert.serialNumber } : {}),
+      sans: [...cert.sans],
+      fingerprint256: cert.fingerprint256,
+      ...(cert.isCA !== undefined ? { isCA: cert.isCA } : {}),
+    })),
+    ...(tls.alpn !== undefined ? { alpn: tls.alpn } : {}),
+  };
+}
+
+/**
  * Converts the engine's `HttpExchange` (unredacted — this is the internal, in-memory shape) to
  * its wire form, redacting `Authorization`/`Cookie`/etc. and `wsse:Password` unless `show` is
  * set (the session "show secrets" toggle). Nothing crossing IPC carries a real secret by
@@ -143,7 +171,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
     redirects: http.redirects.map((redirect) => ({ ...redirect })),
-    ...(http.tls !== undefined ? { tls: { ...http.tls } } : {}),
+    ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
       url: http.request.url,
       method: http.request.method,

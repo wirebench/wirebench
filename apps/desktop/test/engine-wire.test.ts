@@ -191,6 +191,46 @@ describe('toExchangeSummary', () => {
     const wire = toExchangeSummary({ http: fakeHttpExchange(), durationMs: 5, problems: [] }, 'send-2');
     expect(wire.response).toBeUndefined();
   });
+
+  it('copies the whole SslInfo, peer chain included, onto the wire', () => {
+    const http: HttpExchange = {
+      ...fakeHttpExchange(),
+      tls: {
+        protocol: 'TLSv1.3',
+        cipher: 'TLS_AES_256_GCM_SHA384',
+        authorized: false,
+        authorizationError: 'SELF_SIGNED_CERT_IN_CHAIN',
+        servername: 'example.test',
+        alpn: 'http/1.1',
+        peerChain: [
+          {
+            subject: 'CN=example.test',
+            issuer: 'CN=Example CA',
+            validFrom: '2026-01-01T00:00:00.000Z',
+            validTo: '2027-01-01T00:00:00.000Z',
+            serialNumber: '01',
+            sans: ['example.test', '127.0.0.1'],
+            fingerprint256: 'ab'.repeat(32),
+            isCA: false,
+          },
+        ],
+      },
+    };
+
+    const wire = toExchangeSummary({ http, durationMs: 1, problems: [] }, 'send-tls');
+
+    expect(wire.http.tls).toEqual(http.tls);
+    // Deep-copied, not aliased: the wire object must not share arrays with the engine's.
+    expect(wire.http.tls?.peerChain).not.toBe(http.tls?.peerChain);
+    expect(wire.http.tls?.peerChain[0]?.sans).not.toBe(http.tls?.peerChain[0]?.sans);
+    expect(() => void JSON.parse(JSON.stringify(wire))).not.toThrow();
+  });
+
+  it('leaves `tls` absent for a plain-HTTP exchange', () => {
+    expect(
+      toExchangeSummary({ http: fakeHttpExchange(), durationMs: 1, problems: [] }, 'send-plain').http.tls,
+    ).toBeUndefined();
+  });
 });
 
 describe('redactExchangeSummary', () => {

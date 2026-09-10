@@ -4,6 +4,7 @@ import { Button } from '../../components/button.js';
 import { base64ByteLength, decodeBase64Text, formatBytes, formatClockTime } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
 import { useExchangesStore } from '../../state/exchanges.js';
+import { TimingsBar } from './timings-bar.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { ExchangeSummary } from '../../../shared/wire-types.js';
 
@@ -55,25 +56,10 @@ function LogRow({ exchange, selected, onSelect }: RowProps) {
   );
 }
 
-const TIMING_LABELS = [
-  ['total', 'totalMs'],
-  ['dns', 'dnsMs'],
-  ['connect', 'connectMs'],
-  ['tls', 'tlsMs'],
-  ['ttfb', 'ttfbMs'],
-  ['download', 'downloadMs'],
-] as const;
-
 function Detail({ exchange }: { readonly exchange: ExchangeSummary }) {
-  const { timings } = exchange.http;
-
   return (
     <div className="min-h-0 shrink-0 basis-1/2 overflow-auto border-t border-hairline">
-      <p className="px-2 py-1 font-mono text-xs text-fg-subtle">
-        {TIMING_LABELS.filter(([, key]) => timings[key] !== undefined)
-          .map(([label, key]) => `${label} ${String(timings[key])} ms`)
-          .join(' · ')}
-      </p>
+      <TimingsBar timings={exchange.http.timings} />
       <div className="grid grid-cols-2 gap-2 p-2">
         <section aria-label="Raw request">
           <h3 className="mb-1 text-xs text-fg-subtle">Raw request</h3>

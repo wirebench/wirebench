@@ -10,6 +10,9 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
+import { HeadersInspector } from './inspectors/headers-inspector.js';
+import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { SslInspector } from './inspectors/ssl-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
 import { FormView } from './views/form-view.js';
@@ -19,6 +22,15 @@ import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
+
+/** The request pane's inspector strip. Attachments/Auth/WS-A are placeholders until their tasks land. */
+const REQUEST_INSPECTORS: readonly InspectorItem[] = [
+  { id: 'headers', label: 'Headers' },
+  { id: 'attachments', label: 'Attachments' },
+  { id: 'auth', label: 'Auth' },
+  { id: 'wsa', label: 'WS-A' },
+  { id: 'ssl', label: 'SSL' },
+];
 
 const VIEWS = [
   { id: 'xml', label: 'XML' },
@@ -73,7 +85,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const sendRef = useRef(onSend);
   sendRef.current = onSend;
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
-  const rawRequestBase64 = useExchangesStore((state) => state.byRequest[requestId]?.exchange?.http.rawRequestBase64);
+  const exchange = useExchangesStore((state) => state.byRequest[requestId]?.exchange);
+  const rawRequestBase64 = exchange?.http.rawRequestBase64;
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
   const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
   // The Form view type is editor state, not project data — it never reaches the saved request
@@ -265,6 +278,25 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           />
         )}
       </div>
+      <InspectorStrip
+        requestId={requestId}
+        pane="request"
+        label="Request inspectors"
+        items={REQUEST_INSPECTORS}
+        render={(inspector) =>
+          inspector === 'headers' ? (
+            <HeadersInspector requestId={requestId} />
+          ) : inspector === 'ssl' ? (
+            <SslInspector exchange={exchange} />
+          ) : inspector === 'attachments' ? (
+            <InspectorPlaceholder name="Attachments" task={32} />
+          ) : inspector === 'auth' ? (
+            <InspectorPlaceholder name="Auth" task={34} />
+          ) : (
+            <InspectorPlaceholder name="WS-Addressing" task={41} />
+          )
+        }
+      />
     </div>
   );
 });

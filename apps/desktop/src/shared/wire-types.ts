@@ -243,11 +243,34 @@ const timingsWireSchema = z.object({
 
 const redirectWireSchema = z.object({ url: z.string(), status: z.number() });
 
-const tlsInfoWireSchema = z.object({
+/** Wire projection of one certificate in the peer chain — see the engine's `PeerCert`. */
+export const peerCertWireSchema = z.object({
+  /** Distinguished name, rendered `CN=…, O=…`. */
+  subject: z.string(),
+  issuer: z.string(),
+  /** ISO 8601, or the certificate's own text when it could not be parsed. */
+  validFrom: z.string(),
+  validTo: z.string(),
+  serialNumber: z.string().optional(),
+  /** Subject alternative names, type prefix (`DNS:`/`IP Address:`) stripped. */
+  sans: z.array(z.string()),
+  /** SHA-256 fingerprint as 64 lower-case hex characters. */
+  fingerprint256: z.string(),
+  isCA: z.boolean().optional(),
+});
+export type PeerCertWire = z.infer<typeof peerCertWireSchema>;
+
+/** Wire projection of the engine's `SslInfo`: everything the SSL Info inspector shows. */
+export const tlsInfoWireSchema = z.object({
   protocol: z.string().optional(),
   cipher: z.string().optional(),
   authorized: z.boolean().optional(),
+  authorizationError: z.string().optional(),
+  servername: z.string().optional(),
+  peerChain: z.array(peerCertWireSchema),
+  alpn: z.string().optional(),
 });
+export type SslInfoWire = z.infer<typeof tlsInfoWireSchema>;
 
 /** Wire projection of `HttpExchange`: `Uint8Array` bodies become base64 strings. */
 const httpExchangeWireSchema = z.object({

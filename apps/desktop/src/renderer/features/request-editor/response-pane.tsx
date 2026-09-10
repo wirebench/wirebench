@@ -10,6 +10,9 @@ import type { ExchangeState } from '../../state/exchanges.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { ResponseViewType } from '../../state/editors.js';
+import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
+import { SslInspector } from './inspectors/ssl-inspector.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
@@ -32,6 +35,14 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
   }
   return { lineNumber: line, column: offset - lineStart + 1 };
 }
+
+/** The response pane's inspector strip. Attachments/WSS are placeholders until their tasks land. */
+const RESPONSE_INSPECTORS: readonly InspectorItem[] = [
+  { id: 'headers', label: 'Headers' },
+  { id: 'attachments', label: 'Attachments' },
+  { id: 'wss', label: 'WSS' },
+  { id: 'ssl', label: 'SSL Info' },
+];
 
 export interface ResponsePaneProps {
   readonly state: ExchangeState | undefined;
@@ -168,6 +179,24 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
           </pre>
         )}
       </div>
+
+      <InspectorStrip
+        requestId={requestId}
+        pane="response"
+        label="Response inspectors"
+        items={RESPONSE_INSPECTORS}
+        render={(inspector) =>
+          inspector === 'headers' ? (
+            <ResponseHeadersInspector exchange={exchange} />
+          ) : inspector === 'ssl' ? (
+            <SslInspector exchange={exchange} />
+          ) : inspector === 'attachments' ? (
+            <InspectorPlaceholder name="Attachments" task={32} />
+          ) : (
+            <InspectorPlaceholder name="WS-Security" task={40} />
+          )
+        }
+      />
     </div>
   );
 }

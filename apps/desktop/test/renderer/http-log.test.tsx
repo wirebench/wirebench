@@ -57,6 +57,17 @@ describe('HttpLog', () => {
     expect(screen.getByLabelText('Raw response').textContent).toContain('<AddResult>7</AddResult>');
   });
 
+  it('breaks the selected exchange down into a timings bar with a total', async () => {
+    useExchangesStore.setState({ log: [makeExchange()] });
+    render(<HttpLog />);
+
+    await userEvent.click(screen.getByRole('button', { name: /POST/ }));
+
+    expect(screen.getByTestId('timings-total').textContent).toBe('total 143 ms');
+    expect(screen.getByTestId('timings-legend').textContent).toContain('ttfb 100 ms');
+    expect(screen.getByTestId('timings-legend').textContent).toContain('dns n/a');
+  });
+
   it('summarises a binary payload by size instead of dumping bytes', async () => {
     const base = makeExchange();
     useExchangesStore.setState({
