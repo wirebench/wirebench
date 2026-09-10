@@ -3,26 +3,30 @@
  * `scripts/fixtures-refresh.ts` to recursively download the files a WSDL depends on.
  */
 
-const REFERENCE_PATTERNS: readonly RegExp[] = [
-  /<[^>]*\bwsdl:import\b[^>]*\blocation\s*=\s*"([^"]+)"[^>]*>/g,
-  /<[^>]*\bxs:import\b[^>]*\bschemaLocation\s*=\s*"([^"]+)"[^>]*>/g,
-  /<[^>]*\bxs:include\b[^>]*\bschemaLocation\s*=\s*"([^"]+)"[^>]*>/g,
-];
+// Matches any `<import ...>` or `<include ...>` element regardless of namespace prefix (or lack
+// of one) — real-world WSDLs use `wsdl:`, `xsd:`, `s:`, or the default namespace, not just
+// `wsdl:`/`xs:`. The local name must be exactly `import`/`include` (word boundary keeps this from
+// matching e.g. `<importantNote>`).
+const ELEMENT_PATTERN = /<(?:[A-Za-z_][\w.-]*:)?(?:import|include)\b([^>]*)>/g;
+// Matches a `location="…"` or `schemaLocation="…"` attribute, single or double quoted, anywhere
+// within the element's attribute text.
+const ATTRIBUTE_PATTERN = /\b(?:location|schemaLocation)\s*=\s*(?:"([^"]*)"|'([^']*)')/;
 
 /**
- * Scans WSDL/XSD document text for `wsdl:import` and `xs:import`/`xs:include` references,
- * returning the referenced locations in first-seen order with duplicates removed.
+ * Scans WSDL/XSD document text for `import`/`include` elements (of any namespace prefix, or none)
+ * and extracts their `location`/`schemaLocation` reference, returning the referenced locations in
+ * first-seen order with duplicates removed.
  */
 export function extractReferences(xml: string): string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];
-  for (const pattern of REFERENCE_PATTERNS) {
-    for (const match of xml.matchAll(pattern)) {
-      const location = match[1];
-      if (location !== undefined && !seen.has(location)) {
-        seen.add(location);
-        ordered.push(location);
-      }
+  for (const match of xml.matchAll(ELEMENT_PATTERN)) {
+    const attributes = match[1] ?? '';
+    const attributeMatch = ATTRIBUTE_PATTERN.exec(attributes);
+    const location = attributeMatch?.[1] ?? attributeMatch?.[2];
+    if (location !== undefined && !seen.has(location)) {
+      seen.add(location);
+      ordered.push(location);
     }
   }
   return ordered;

@@ -1,7 +1,6 @@
 node_modules
 dist
 dist-test
-dist-scripts
 out
 coverage
 .DS_Store

@@ -41,6 +41,36 @@ describe('extractReferences', () => {
   it('returns empty array when no references present', () => {
     expect(extractReferences('<definitions></definitions>')).toEqual([]);
   });
+
+  it('extracts xsd:import (xsd prefix) schemaLocation', () => {
+    const xml = `<schema><xsd:import namespace="ns" schemaLocation="types.xsd"/></schema>`;
+    expect(extractReferences(xml)).toEqual(['types.xsd']);
+  });
+
+  it('extracts s:import (s prefix) schemaLocation', () => {
+    const xml = `<schema><s:import namespace="ns" schemaLocation="types.xsd"/></schema>`;
+    expect(extractReferences(xml)).toEqual(['types.xsd']);
+  });
+
+  it('extracts prefix-less import with location', () => {
+    const xml = `<definitions><import namespace="ns" location="Other.wsdl"/></definitions>`;
+    expect(extractReferences(xml)).toEqual(['Other.wsdl']);
+  });
+
+  it('extracts xs:include with single-quoted schemaLocation', () => {
+    const xml = `<schema><xs:include schemaLocation='common.xsd'/></schema>`;
+    expect(extractReferences(xml)).toEqual(['common.xsd']);
+  });
+
+  it('extracts a reference when attribute order is swapped', () => {
+    const xml = `<schema><xs:import schemaLocation="types.xsd" namespace="ns"/></schema>`;
+    expect(extractReferences(xml)).toEqual(['types.xsd']);
+  });
+
+  it('does not match an element whose local name merely starts with import/include', () => {
+    const xml = `<definitions><importantNote location="not-a-reference.xsd"/><includedSummary schemaLocation="also-not.xsd"/></definitions>`;
+    expect(extractReferences(xml)).toEqual([]);
+  });
 });
 
 describe('resolveReferenceUrl', () => {
