@@ -9,6 +9,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./xml": {
+      "development": "./src/xml/index.ts",
+      "types": "./dist/xml/index.d.ts",
+      "default": "./dist/xml/index.js"
+    },
     "./test-helpers": "./test/helpers/index.ts"
   },
   "scripts": {
