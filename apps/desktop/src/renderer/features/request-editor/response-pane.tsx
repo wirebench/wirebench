@@ -11,6 +11,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { ResponseViewType } from '../../state/editors.js';
 import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { ResponseAttachmentsInspector } from './inspectors/response-attachments-inspector.js';
 import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
 import { ResponseStatus } from './response-status.js';
@@ -36,13 +37,21 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
   return { lineNumber: line, column: offset - lineStart + 1 };
 }
 
-/** The response pane's inspector strip. Attachments/WSS are placeholders until their tasks land. */
-const RESPONSE_INSPECTORS: readonly InspectorItem[] = [
-  { id: 'headers', label: 'Headers' },
-  { id: 'attachments', label: 'Attachments' },
-  { id: 'wss', label: 'WSS' },
-  { id: 'ssl', label: 'SSL Info' },
-];
+/**
+ * The response pane's inspector strip. WSS is a placeholder until its task lands.
+ *
+ * The Attachments tab carries its count (`Attachments (2)`) because it is the one tab whose
+ * emptiness is a property of the *response* rather than of the app: without the badge you have
+ * to open it to learn a send brought parts back.
+ */
+function responseInspectors(attachmentCount: number): readonly InspectorItem[] {
+  return [
+    { id: 'headers', label: 'Headers' },
+    { id: 'attachments', label: attachmentCount > 0 ? `Attachments (${String(attachmentCount)})` : 'Attachments' },
+    { id: 'wss', label: 'WSS' },
+    { id: 'ssl', label: 'SSL Info' },
+  ];
+}
 
 export interface ResponsePaneProps {
   readonly state: ExchangeState | undefined;
@@ -184,14 +193,14 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
         requestId={requestId}
         pane="response"
         label="Response inspectors"
-        items={RESPONSE_INSPECTORS}
+        items={responseInspectors(response?.attachments.length ?? 0)}
         render={(inspector) =>
           inspector === 'headers' ? (
             <ResponseHeadersInspector exchange={exchange} />
           ) : inspector === 'ssl' ? (
             <SslInspector exchange={exchange} />
           ) : inspector === 'attachments' ? (
-            <InspectorPlaceholder name="Attachments" task={32} />
+            <ResponseAttachmentsInspector exchange={exchange} />
           ) : (
             <InspectorPlaceholder name="WS-Security" task={40} />
           )

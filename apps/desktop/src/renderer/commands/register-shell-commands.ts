@@ -4,6 +4,10 @@ import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { flipMode, flipOrientation, setEditorLayout } from '../features/request-editor/layout.js';
+import {
+  addAttachmentsThroughPicker,
+  removeSelectedAttachment,
+} from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
@@ -308,6 +312,26 @@ export function registerShellCommands(openPalette: () => void): void {
       openRequestDialog('import-curl', requestId);
     }),
   });
+  // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
+  // go through `attachmentActions`, so the palette and the inspector cannot drift apart.
+  registerCommand({
+    id: 'request.addAttachment',
+    label: 'Request: Add Attachment…',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void addAttachmentsThroughPicker(requestId)),
+  });
+  registerCommand({
+    id: 'request.removeAttachment',
+    label: 'Request: Remove Attachment',
+    category: 'Request',
+    when: () => {
+      const requestId = activeRequestId();
+      return requestId !== undefined && useEditorsStore.getState().selectedAttachmentFor(requestId) !== undefined;
+    },
+    run: onActiveRequest((requestId) => void removeSelectedAttachment(requestId)),
+  });
+
   registerCommand({
     id: 'request.showCode',
     label: 'Request: Show Code',

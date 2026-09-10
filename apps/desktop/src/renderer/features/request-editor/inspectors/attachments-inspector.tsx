@@ -7,6 +7,7 @@ import { usePreferencesStore } from '../../../state/preferences.js';
 import { useProjectStore } from '../../../state/project.js';
 import { useUiStore } from '../../../state/ui.js';
 import type { AttachmentPatchWire, MimePartWire } from '../../../../shared/wire-types.js';
+import { addAttachmentsThroughPicker } from '../attachment-actions.js';
 import { AttachmentsTable } from './attachments-table.js';
 
 /** Per-file cap of `attachments.addDropped`, mirrored here only to word the toast. */
@@ -40,7 +41,6 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
   const summary = useProjectStore((state) =>
     request === undefined ? undefined : state.interfaces[request.interfaceId],
   );
-  const addAttachment = useProjectStore((state) => state.addAttachment);
   const updateAttachment = useProjectStore((state) => state.updateAttachment);
   const removeAttachment = useProjectStore((state) => state.removeAttachment);
   const confirmOnDelete = usePreferencesStore((state) => state.preferences.ui.confirmOnDelete);
@@ -61,21 +61,6 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
     summary?.operations.find(
       (operation) => operation.binding === request.bindingName && operation.name === request.operationName,
     )?.inputMimeParts ?? [];
-
-  const add = async (): Promise<void> => {
-    const picked = await ipc().attachments.pickFiles({});
-    if (!picked.ok) {
-      showToast(picked.error.message);
-      return;
-    }
-    for (const path of picked.value.paths) {
-      try {
-        await addAttachment(requestId, path, { copyToCache });
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : `Could not add "${path}"`);
-      }
-    }
-  };
 
   const remove = (attachmentId: string): void => {
     setSelectedAttachment(requestId, undefined);
@@ -155,7 +140,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
           type="button"
           data-testid="attachments-add"
           onClick={() => {
-            void add();
+            void addAttachmentsThroughPicker(requestId, copyToCache);
           }}
           className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-xs text-fg-default hover:bg-surface-hover"
         >

@@ -42,6 +42,8 @@ export type CommandId =
   | 'request.copyCurlPowerShell'
   | 'request.importCurl'
   | 'request.showCode'
+  | 'request.addAttachment'
+  | 'request.removeAttachment'
   | 'editor.formatXml'
   | 'editor.gotoLine'
   | 'editor.toggleLineNumbers'

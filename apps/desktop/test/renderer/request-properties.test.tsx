@@ -175,14 +175,15 @@ describe('RequestProperties', () => {
     expect(patch).toHaveBeenCalledWith('req-1', { prettyPrint: true });
   });
 
-  it('stores the attachment flags even though nothing acts on them yet', () => {
+  it('stores the attachment flags and explains each one on its label', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
     render(<RequestProperties requestId="req-1" />);
 
     fireEvent.click(screen.getByLabelText('Enable MTOM'));
     expect(patch).toHaveBeenCalledWith('req-1', { enableMtom: true });
-    expect(screen.getByText(/Task 32/)).toBeTruthy();
+    expect(screen.getByText('Enable MTOM').getAttribute('title')).toMatch(/MTOM\/XOP parts/);
+    expect(screen.getByText('Disable multiparts').getAttribute('title')).toMatch(/Never send a multipart body/);
   });
 
   it('maps the WSS password type through, and clears it with None', () => {

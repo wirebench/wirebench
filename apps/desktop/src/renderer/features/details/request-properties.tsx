@@ -15,8 +15,20 @@ export interface RequestPropertiesProps {
   readonly requestId: string;
 }
 
-/** Shown on the attachment flags, which are stored and editable but not yet honoured by a send. */
-const ATTACHMENTS_HINT = 'Stored now; takes effect when attachments and MTOM land (Task 32).';
+/**
+ * One line per attachment flag, matching SoapUI's semantics. They are the tooltip on each row's
+ * label, because the flags interact (Force MTOM only means anything with MTOM enabled, Disable
+ * multiparts overrides both) and the label alone does not say which way.
+ */
+const ATTACHMENT_HINTS = {
+  enableMtom: 'Send attachments as MTOM/XOP parts instead of SwA parts.',
+  forceMtom: 'Use an XOP part even for a single inline value; only applies when MTOM is enabled.',
+  inlineResponseAttachments: 'Inline response attachments into the envelope instead of listing them as parts.',
+  expandMtomAttachments: 'Replace incoming xop:Include references with the referenced bytes when showing the response.',
+  disableMultiparts: 'Never send a multipart body: attachments are dropped and the envelope goes on its own.',
+  encodeAttachments: 'Base64-encode outgoing attachment content instead of sending it as raw bytes.',
+  enableInlineFiles: 'Expand `cid:` and file references found in the envelope from the attached files.',
+} as const;
 
 /** Shown on the SSL Keystore field, which is stored but has no picker yet. */
 const SSL_KEYSTORE_HINT = 'Select arrives with the keystore manager (Task 36).';
@@ -187,31 +199,46 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
         />
       </SettingsGroup>
 
-      <SettingsGroup title="Attachments" hint={ATTACHMENTS_HINT}>
-        <BooleanSetting label="Enable MTOM" value={properties.enableMtom} onChange={(v) => patch({ enableMtom: v })} />
-        <BooleanSetting label="Force MTOM" value={properties.forceMtom} onChange={(v) => patch({ forceMtom: v })} />
+      <SettingsGroup title="Attachments">
+        <BooleanSetting
+          label="Enable MTOM"
+          hint={ATTACHMENT_HINTS.enableMtom}
+          value={properties.enableMtom}
+          onChange={(v) => patch({ enableMtom: v })}
+        />
+        <BooleanSetting
+          label="Force MTOM"
+          hint={ATTACHMENT_HINTS.forceMtom}
+          value={properties.forceMtom}
+          onChange={(v) => patch({ forceMtom: v })}
+        />
         <BooleanSetting
           label="Inline response attachments"
+          hint={ATTACHMENT_HINTS.inlineResponseAttachments}
           value={properties.inlineResponseAttachments}
           onChange={(v) => patch({ inlineResponseAttachments: v })}
         />
         <BooleanSetting
           label="Expand MTOM attachments"
+          hint={ATTACHMENT_HINTS.expandMtomAttachments}
           value={properties.expandMtomAttachments}
           onChange={(v) => patch({ expandMtomAttachments: v })}
         />
         <BooleanSetting
           label="Disable multiparts"
+          hint={ATTACHMENT_HINTS.disableMultiparts}
           value={properties.disableMultiparts}
           onChange={(v) => patch({ disableMultiparts: v })}
         />
         <BooleanSetting
           label="Encode attachments"
+          hint={ATTACHMENT_HINTS.encodeAttachments}
           value={properties.encodeAttachments}
           onChange={(v) => patch({ encodeAttachments: v })}
         />
         <BooleanSetting
           label="Enable inline files"
+          hint={ATTACHMENT_HINTS.enableInlineFiles}
           value={properties.enableInlineFiles}
           onChange={(v) => patch({ enableInlineFiles: v })}
         />

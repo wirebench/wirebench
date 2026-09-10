@@ -228,6 +228,7 @@ describe('request action commands', () => {
       'request.copyCurlPowerShell',
       'request.importCurl',
       'request.showCode',
+      'request.addAttachment',
     ];
     const listed = listCommands(context).map((command) => command.id);
     for (const id of ids) {
@@ -261,6 +262,30 @@ describe('request action commands', () => {
     await runCommand('request.clone', context);
 
     expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'clone', requestId: 'req-1' });
+  });
+
+  it('adds attachments through the picker', async () => {
+    const pickFiles = vi.fn().mockResolvedValue({ ok: true, value: { paths: ['/tmp/a.png'] } });
+    const addAttachment = vi.fn().mockResolvedValue('att-1');
+    installWirebenchApi({ attachments: { pickFiles } });
+    useProjectStore.setState({ addAttachment } as never);
+
+    await runCommand('request.addAttachment', context);
+
+    expect(addAttachment).toHaveBeenCalledWith('req-1', '/tmp/a.png', { copyToCache: true });
+  });
+
+  it('offers Remove Attachment only while a row is selected, and removes that row', async () => {
+    const removeAttachment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ removeAttachment } as never);
+    useEditorsStore.getState().setSelectedAttachment('req-1', undefined);
+    expect(listCommands(context).map((command) => command.id)).not.toContain('request.removeAttachment');
+
+    useEditorsStore.getState().setSelectedAttachment('req-1', 'att-9');
+    expect(listCommands(context).map((command) => command.id)).toContain('request.removeAttachment');
+
+    await runCommand('request.removeAttachment', context);
+    expect(removeAttachment).toHaveBeenCalledWith('req-1', 'att-9');
   });
 
   it('reveals the Details panel on the Code tab', async () => {
