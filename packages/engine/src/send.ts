@@ -17,6 +17,7 @@ import { charsetOf } from './soap/charset.js';
 import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
+import { applyOutgoingWss } from './wss/apply.js';
 import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
 
 /**
@@ -66,6 +67,18 @@ export async function sendSoapRequest(
     const expanded = expandSendInput(input, options.scopes, { entitize: input.entitize ?? false });
     effectiveInput = expanded.input;
     unresolved = expanded.unresolved;
+  }
+
+  // WS-Security runs on the expanded envelope and before the attachment pipeline, so the
+  // header is inside the envelope that MTOM/SwA package and that raw capture records.
+  let wssApplied: readonly string[] | undefined;
+  const wss = effectiveInput.wss;
+  if (wss?.outgoing !== undefined) {
+    const envelopeXml = await applyOutgoingWss(effectiveInput.envelopeXml, wss.outgoing, wss.ctx, {
+      ...(wss.requestProperties !== undefined ? { requestProperties: wss.requestProperties } : {}),
+    });
+    effectiveInput = { ...effectiveInput, envelopeXml };
+    wssApplied = wss.outgoing.entries.map((entry) => entry.kind);
   }
 
   const charset =
@@ -194,5 +207,6 @@ export async function sendSoapRequest(
     ...(authSummary !== undefined ? { auth: authSummary } : {}),
     problems,
     ...(unresolved !== undefined ? { unresolved } : {}),
+    ...(wssApplied !== undefined ? { wss: { applied: wssApplied } } : {}),
   };
 }

@@ -233,6 +233,7 @@ export type {
   SendAuth,
   SoapExchange,
   SoapSendInput,
+  SoapSendWss,
 } from './types.js';
 
 export {
@@ -298,6 +299,7 @@ export {
   parseFile,
   requestFileSchema,
   wssIncomingFileSchema,
+  wssEntrySchema,
   wssOutgoingFileSchema,
 } from './project/schema.js';
 export type {
@@ -361,6 +363,25 @@ export { expand, expandSendInput, hasExpansions } from './project/properties.js'
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
+export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
+export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
+export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
+export { createWssContext, WSS_ENTRY_KINDS } from './wss/model.js';
+export type {
+  WssContext,
+  WssEncryptionEntry,
+  WssEntry,
+  WssIncomingConfig,
+  WssOutgoingConfig,
+  WssPasswordType,
+  WssSignatureEntry,
+  WssTimestampEntry,
+  WssUsernameTokenEntry,
+} from './wss/model.js';
+export { buildTimestamp, formatWssDateTime } from './wss/outgoing/timestamp.js';
+export type { BuildTimestampInput } from './wss/outgoing/timestamp.js';
+export { buildUsernameToken, passwordDigest } from './wss/outgoing/username-token.js';
+export type { BuildUsernameTokenInput } from './wss/outgoing/username-token.js';
 export {
   keystoreTypeForPath,
   loadKeystore,

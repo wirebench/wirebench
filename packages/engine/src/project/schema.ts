@@ -157,11 +157,74 @@ export const environmentFileSchema = z.looseObject({
   properties: propertyMapSchema,
 });
 
-/** `wss/outgoing/<name>.yaml` — a stub until the WS-Security tasks define the entries. */
-export const wssOutgoingFileSchema = z.looseObject({ id: nonEmpty, name: z.string() });
+/** A `wsu:Timestamp` entry inside an outgoing configuration. */
+const wssTimestampEntrySchema = z.looseObject({
+  kind: z.literal('timestamp'),
+  timeToLiveSeconds: z.number().int().nonnegative(),
+  millisecondPrecision: z.boolean(),
+});
 
-/** `wss/incoming/<name>.yaml` — a stub until the WS-Security tasks define the entries. */
-export const wssIncomingFileSchema = z.looseObject({ id: nonEmpty, name: z.string() });
+/**
+ * A `wsse:UsernameToken` entry. As with `endpointAuthSchema`, a plaintext `password` key is
+ * rejected outright rather than merely ignored: WS-Security passwords live in the secret store.
+ */
+const wssUsernameTokenEntrySchema = z
+  .looseObject({
+    kind: z.literal('username-token'),
+    username: z.string(),
+    passwordRef: z.string().optional(),
+    passwordType: z.enum(['text', 'digest', 'none']),
+    addNonce: z.boolean(),
+    addCreated: z.boolean(),
+  })
+  .refine((value) => !('password' in value), {
+    message: 'a WS-Security username token must not contain a plaintext "password" field; use passwordRef',
+    path: ['password'],
+  });
+
+/** A signature entry. Task 38 defines its fields; loose so a newer build's config round-trips. */
+const wssSignatureEntrySchema = z.looseObject({ kind: z.literal('signature') });
+
+/** An encryption entry. Task 39 defines its fields; loose for the same reason. */
+const wssEncryptionEntrySchema = z.looseObject({ kind: z.literal('encryption') });
+
+/**
+ * One entry as *persisted*. Deliberately loose about the entry's own shape — a `signature`
+ * entry written by a later build, or a document a foreign tool wrote, must survive a load/save
+ * round trip through this build — but a plaintext `password` is rejected outright, wherever in
+ * an entry it appears.
+ */
+const wssStoredEntrySchema = z.looseObject({}).refine((value) => !('password' in value), {
+  message: 'a WS-Security entry must not contain a plaintext "password" field; use passwordRef',
+  path: ['password'],
+});
+
+/** One entry of an outgoing WS-Security configuration, as this build understands it. */
+export const wssEntrySchema = z.union([
+  wssTimestampEntrySchema,
+  wssUsernameTokenEntrySchema,
+  wssSignatureEntrySchema,
+  wssEncryptionEntrySchema,
+]);
+
+/** `wss/outgoing/<name>.yaml`. */
+export const wssOutgoingFileSchema = z.looseObject({
+  id: nonEmpty,
+  name: z.string(),
+  defaultAlias: z.string().optional(),
+  defaultPasswordRef: z.string().optional(),
+  actor: z.string().optional(),
+  mustUnderstand: z.boolean().optional(),
+  entries: z.array(wssStoredEntrySchema).optional(),
+});
+
+/** `wss/incoming/<name>.yaml`. */
+export const wssIncomingFileSchema = z.looseObject({
+  id: nonEmpty,
+  name: z.string(),
+  decryptKeystoreRef: z.string().optional(),
+  signatureKeystoreRef: z.string().optional(),
+});
 
 /**
  * One `wss/keystores.yaml` entry: mirrors the engine's `KeystoreDef`. `looseObject` so a field

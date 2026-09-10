@@ -15,6 +15,8 @@ import type { SoapFault } from './soap/fault.js';
 import type { UnresolvedRef } from './project/properties.js';
 import type { Attachment } from './project/model.js';
 import type { AttachmentResolver, ResponseAttachment } from './soap/mime/types.js';
+import type { WssContext, WssOutgoingConfig } from './wss/model.js';
+import type { WssRequestProperties } from './wss/apply.js';
 
 /** Where a WSDL definition comes from. */
 export type ImportSource =
@@ -163,6 +165,19 @@ export interface SoapSendInput {
   readonly attachments?: readonly Attachment[];
   /** MTOM/SwA/inline-file behaviour plus the resolvers that turn references into bytes. */
   readonly attachmentOptions?: SendAttachmentOptions;
+  /**
+   * WS-Security applied to the envelope after property expansion and before attachments, so
+   * the header is part of the envelope that actually goes on the wire (and that raw capture
+   * shows).
+   */
+  readonly wss?: SoapSendWss;
+}
+
+/** The WS-Security half of a send: the configuration, its capabilities, and the overrides. */
+export interface SoapSendWss {
+  readonly outgoing?: WssOutgoingConfig;
+  readonly ctx: WssContext;
+  readonly requestProperties?: WssRequestProperties;
 }
 
 /**
@@ -224,4 +239,9 @@ export interface SoapExchange {
   readonly auth?: AuthSummary;
   /** Property expansions in the request that could not be resolved (set only when `options.scopes` was given). */
   readonly unresolved?: readonly UnresolvedRef[];
+  /** What WS-Security did, when the send was given {@link SoapSendInput.wss}. */
+  readonly wss?: {
+    /** The entry kinds applied to the outgoing envelope, in the order they were applied. */
+    readonly applied: readonly string[];
+  };
 }
