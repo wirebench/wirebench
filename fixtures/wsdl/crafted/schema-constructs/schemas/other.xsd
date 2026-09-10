@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:other="urn:wb:sc:other"
+           targetNamespace="urn:wb:sc:other"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>Secondary namespace: simple types, a reusable group and attribute group.</xs:documentation>
+  </xs:annotation>
+
+  <xs:simpleType name="ColorCode">
+    <xs:annotation>
+      <xs:documentation>An enumerated colour.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RED"/>
+      <xs:enumeration value="GREEN"/>
+      <xs:enumeration value="BLUE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SmallInt">
+    <xs:restriction base="xs:int">
+      <xs:minInclusive value="1"/>
+      <xs:maxExclusive value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Code5">
+    <xs:restriction base="xs:string">
+      <xs:length value="5"/>
+      <xs:pattern value="[A-Z]{5}"/>
+      <xs:whiteSpace value="collapse"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ColorList">
+    <xs:list itemType="other:ColorCode"/>
+  </xs:simpleType>
+
+  <xs:simpleType name="InlineList">
+    <xs:list>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:maxLength value="3"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:list>
+  </xs:simpleType>
+
+  <xs:simpleType name="CodeOrNumber">
+    <xs:union memberTypes="other:Code5 xs:int">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="NONE"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <xs:attributeGroup name="CommonAttrs">
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+    <xs:attribute name="lang" type="xs:string" default="en"/>
+  </xs:attributeGroup>
+
+  <xs:group name="NamePart">
+    <xs:sequence>
+      <xs:element name="first" type="xs:string"/>
+      <xs:element name="last" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:group>
+
+  <xs:complexType name="OtherPayload">
+    <xs:sequence>
+      <xs:element name="label" type="xs:string"/>
+      <xs:element name="color" type="other:ColorCode" minOccurs="0"/>
+      <xs:element name="codes" type="other:ColorList" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="other:CommonAttrs"/>
+  </xs:complexType>
+
+  <xs:element name="OtherRoot" type="other:OtherPayload"/>
+  <xs:element name="OtherRootResponse" type="xs:string"/>
+</xs:schema>

@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions name="SchemaConstructsService"
+                  targetNamespace="urn:wb:sc"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:sc"
+                  xmlns:other="urn:wb:sc:other"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:wb:sc"
+               elementFormDefault="qualified"
+               attributeFormDefault="unqualified"
+               xmlns:xs="http://www.w3.org/2001/XMLSchema"
+               xmlns:tns="urn:wb:sc"
+               xmlns:other="urn:wb:sc:other"
+               xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"
+               xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+      <xs:import namespace="urn:wb:sc:other" schemaLocation="schemas/other.xsd"/>
+
+      <!-- extension chain of depth 3, one attribute per level -->
+      <xs:complexType name="Level1">
+        <xs:annotation>
+          <xs:documentation>Root of the three-deep extension chain.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element name="a" type="xs:string"/>
+        </xs:sequence>
+        <xs:attribute name="attr1" type="xs:string" use="required"/>
+      </xs:complexType>
+
+      <xs:complexType name="Level2">
+        <xs:complexContent>
+          <xs:extension base="tns:Level1">
+            <xs:sequence>
+              <xs:element name="b" type="xs:int" default="7"/>
+            </xs:sequence>
+            <xs:attribute name="attr2" type="xs:string"/>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <xs:complexType name="Level3">
+        <xs:complexContent>
+          <xs:extension base="tns:Level2">
+            <xs:sequence>
+              <xs:element name="c" type="other:ColorCode" fixed="RED"/>
+            </xs:sequence>
+            <xs:attribute name="attr3" type="xs:string"/>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <!-- restriction that prohibits an inherited attribute -->
+      <xs:complexType name="Level3Restricted">
+        <xs:complexContent>
+          <xs:restriction base="tns:Level3">
+            <xs:sequence>
+              <xs:element name="a" type="xs:string"/>
+              <xs:element name="b" type="xs:int"/>
+              <xs:element name="c" type="other:ColorCode"/>
+            </xs:sequence>
+            <xs:attribute name="attr1" use="prohibited"/>
+            <xs:attribute name="attr3" type="xs:string" use="required"/>
+          </xs:restriction>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <!-- abstract type with two concrete derivations (xsi:type) -->
+      <xs:complexType name="AbstractShape" abstract="true">
+        <xs:sequence>
+          <xs:element name="name" type="xs:string"/>
+        </xs:sequence>
+      </xs:complexType>
+
+      <xs:complexType name="Circle">
+        <xs:complexContent>
+          <xs:extension base="tns:AbstractShape">
+            <xs:sequence>
+              <xs:element name="radius" type="xs:double"/>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <xs:complexType name="Square">
+        <xs:complexContent>
+          <xs:extension base="tns:AbstractShape">
+            <xs:sequence>
+              <xs:element name="side" type="xs:double"/>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <!-- simpleContent extension: text plus an attribute -->
+      <xs:complexType name="Amount">
+        <xs:simpleContent>
+          <xs:extension base="xs:decimal">
+            <xs:attribute name="currency" type="xs:string" use="required" fixed="EUR"/>
+          </xs:extension>
+        </xs:simpleContent>
+      </xs:complexType>
+
+      <xs:complexType name="ShortAmount">
+        <xs:simpleContent>
+          <xs:restriction base="tns:Amount">
+            <xs:maxInclusive value="1000"/>
+            <xs:attribute name="currency" type="xs:string" use="required"/>
+          </xs:restriction>
+        </xs:simpleContent>
+      </xs:complexType>
+
+      <!-- nested compositors with occurrence constraints -->
+      <xs:complexType name="ChoiceType">
+        <xs:choice>
+          <xs:element name="single" type="xs:string"/>
+          <xs:sequence minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="many" type="xs:string"/>
+            <xs:element name="tag" type="xs:string" minOccurs="0" maxOccurs="3"/>
+          </xs:sequence>
+        </xs:choice>
+      </xs:complexType>
+
+      <xs:complexType name="AllType">
+        <xs:all>
+          <xs:element name="p" type="xs:string" minOccurs="0"/>
+          <xs:element name="q" type="xs:boolean"/>
+        </xs:all>
+      </xs:complexType>
+
+      <!-- group ref + attributeGroup ref, both cross-namespace -->
+      <xs:complexType name="GroupUser">
+        <xs:sequence>
+          <xs:group ref="other:NamePart" minOccurs="1" maxOccurs="2"/>
+          <xs:element name="note" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attributeGroup ref="other:CommonAttrs"/>
+        <xs:attribute ref="tns:version"/>
+      </xs:complexType>
+
+      <!-- recursive type -->
+      <xs:complexType name="Node">
+        <xs:sequence>
+          <xs:element name="child" type="tns:Node" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attribute name="label" type="xs:string" default="node"/>
+      </xs:complexType>
+
+      <!-- wildcards -->
+      <xs:complexType name="AnyHolder">
+        <xs:sequence>
+          <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          <xs:element name="blob" type="xs:anyType"/>
+        </xs:sequence>
+        <xs:anyAttribute namespace="##any" processContents="skip"/>
+      </xs:complexType>
+
+      <xs:complexType name="MixedText" mixed="true">
+        <xs:sequence>
+          <xs:element name="em" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+      </xs:complexType>
+
+      <xs:complexType name="EmptyType">
+        <xs:attribute name="only" type="xs:string"/>
+      </xs:complexType>
+
+      <xs:complexType name="VehicleType">
+        <xs:sequence>
+          <xs:element name="wheels" type="other:SmallInt"/>
+        </xs:sequence>
+      </xs:complexType>
+
+      <!-- soapenc array shape (rpc/encoded style) -->
+      <xs:complexType name="StringArray">
+        <xs:complexContent>
+          <xs:restriction base="soapenc:Array">
+            <xs:attribute ref="soapenc:arrayType" wsdl:arrayType="xs:string[]"/>
+          </xs:restriction>
+        </xs:complexContent>
+      </xs:complexType>
+
+      <xs:attribute name="version" type="xs:string"/>
+
+      <!-- substitution group: abstract head, two members, one transitive -->
+      <xs:element name="Vehicle" type="tns:VehicleType" abstract="true"/>
+      <xs:element name="Car" type="tns:VehicleType" substitutionGroup="tns:Vehicle"/>
+      <xs:element name="Truck" type="tns:VehicleType" substitutionGroup="tns:Car"/>
+
+      <xs:element name="Level3El" type="tns:Level3"/>
+      <xs:element name="Level3RestrictedEl" type="tns:Level3Restricted"/>
+      <xs:element name="ShapeEl" type="tns:AbstractShape"/>
+      <xs:element name="AmountEl" type="tns:Amount"/>
+      <xs:element name="ChoiceEl" type="tns:ChoiceType"/>
+      <xs:element name="AllEl" type="tns:AllType"/>
+      <xs:element name="GroupUserEl" type="tns:GroupUser"/>
+      <xs:element name="NodeEl" type="tns:Node"/>
+      <xs:element name="AnyHolderEl" type="tns:AnyHolder"/>
+      <xs:element name="MixedEl" type="tns:MixedText"/>
+      <xs:element name="EmptyEl" type="tns:EmptyType"/>
+      <xs:element name="StringArrayEl" type="tns:StringArray"/>
+      <xs:element name="NillableThing" type="xs:string" nillable="true"/>
+
+      <!-- anonymous complex type wrapping an anonymous simple type -->
+      <xs:element name="AnonRoot">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="inner" minOccurs="0">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="ONE"/>
+                  <xs:enumeration value="TWO"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:element>
+            <xs:element name="pick" type="other:CodeOrNumber" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+
+      <xs:element name="GenericResponse" type="xs:string"/>
+    </xs:schema>
+  </wsdl:types>
+
+  <wsdl:message name="Level3In"><wsdl:part name="parameters" element="tns:Level3El"/></wsdl:message>
+  <wsdl:message name="ChoiceIn"><wsdl:part name="parameters" element="tns:ChoiceEl"/></wsdl:message>
+  <wsdl:message name="AllIn"><wsdl:part name="parameters" element="tns:AllEl"/></wsdl:message>
+  <wsdl:message name="GroupUserIn"><wsdl:part name="parameters" element="tns:GroupUserEl"/></wsdl:message>
+  <wsdl:message name="NodeIn"><wsdl:part name="parameters" element="tns:NodeEl"/></wsdl:message>
+  <wsdl:message name="AnyHolderIn"><wsdl:part name="parameters" element="tns:AnyHolderEl"/></wsdl:message>
+  <wsdl:message name="AmountIn"><wsdl:part name="parameters" element="tns:AmountEl"/></wsdl:message>
+  <wsdl:message name="VehicleIn"><wsdl:part name="parameters" element="tns:Vehicle"/></wsdl:message>
+  <wsdl:message name="AnonIn"><wsdl:part name="parameters" element="tns:AnonRoot"/></wsdl:message>
+  <wsdl:message name="OtherIn"><wsdl:part name="parameters" element="other:OtherRoot"/></wsdl:message>
+  <wsdl:message name="GenericOut"><wsdl:part name="parameters" element="tns:GenericResponse"/></wsdl:message>
+
+  <wsdl:portType name="ConstructsPortType">
+    <wsdl:operation name="Level3Op">
+      <wsdl:input message="tns:Level3In"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="ChoiceOp">
+      <wsdl:input message="tns:ChoiceIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="AllOp">
+      <wsdl:input message="tns:AllIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="GroupUserOp">
+      <wsdl:input message="tns:GroupUserIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="NodeOp">
+      <wsdl:input message="tns:NodeIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="AnyHolderOp">
+      <wsdl:input message="tns:AnyHolderIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="AmountOp">
+      <wsdl:input message="tns:AmountIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="VehicleOp">
+      <wsdl:input message="tns:VehicleIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="AnonOp">
+      <wsdl:input message="tns:AnonIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+    <wsdl:operation name="OtherOp">
+      <wsdl:input message="tns:OtherIn"/><wsdl:output message="tns:GenericOut"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="ConstructsBinding" type="tns:ConstructsPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Level3Op">
+      <soap:operation soapAction="urn:wb:sc/Level3Op"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ChoiceOp">
+      <soap:operation soapAction="urn:wb:sc/ChoiceOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AllOp">
+      <soap:operation soapAction="urn:wb:sc/AllOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GroupUserOp">
+      <soap:operation soapAction="urn:wb:sc/GroupUserOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="NodeOp">
+      <soap:operation soapAction="urn:wb:sc/NodeOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnyHolderOp">
+      <soap:operation soapAction="urn:wb:sc/AnyHolderOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AmountOp">
+      <soap:operation soapAction="urn:wb:sc/AmountOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="VehicleOp">
+      <soap:operation soapAction="urn:wb:sc/VehicleOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnonOp">
+      <soap:operation soapAction="urn:wb:sc/AnonOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="OtherOp">
+      <soap:operation soapAction="urn:wb:sc/OtherOp"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="ConstructsService">
+    <wsdl:port name="ConstructsPort" binding="tns:ConstructsBinding">
+      <soap:address location="http://example.invalid/constructs"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

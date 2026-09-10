@@ -56,3 +56,39 @@ export type {
   ResolveProblem,
 } from './wsdl/resolver.js';
 export { createDefaultFetchDocument } from './wsdl/fetch.js';
+
+export { buildSchemaSet } from './xsd/schema-set.js';
+export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';
+export { BUILTIN_TYPES, SOAP_ENC_ATTRIBUTES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from './xsd/builtins.js';
+export type { BuiltinType } from './xsd/builtins.js';
+export type {
+  All,
+  AnyAttribute,
+  AnyParticle,
+  AttributeDecl,
+  AttributeGroup,
+  AttributeGroupRef,
+  AttributeRef,
+  AttributeUse,
+  AttributeUseKind,
+  Choice,
+  ComplexContentModel,
+  ComplexType,
+  Compositor,
+  ElementDecl,
+  ElementRef,
+  Facet,
+  Group,
+  GroupRef,
+  LocalElement,
+  Occurs,
+  Particle,
+  ProcessContents,
+  ResolvedAttribute,
+  ResolvedContent,
+  SchemaProblem,
+  Sequence,
+  SimpleType,
+  SourceRef,
+  TypeDefinition,
+} from './xsd/model.js';
