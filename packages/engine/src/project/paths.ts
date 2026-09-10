@@ -40,6 +40,27 @@ export function slugify(name: string): string {
 }
 
 /**
+ * Sanitises a candidate on-disk *file* name (as opposed to {@link slugify},
+ * which sanitises a display name into a directory/base segment): illegal
+ * characters become `_`, whitespace collapses, but unlike `slugify` a
+ * hyphen or a run of internal dots is left untouched, since file names
+ * legitimately contain both (`get-weather.xsd`). Never empty.
+ */
+export function sanitiseFileName(name: string): string {
+  const cleaned = name.replace(/\s+/g, ' ').trim().replace(ILLEGAL_CHARS, '_');
+  return cleaned === '' ? 'document' : cleaned;
+}
+
+/**
+ * True when `name` (a full file name, extension included) is a Windows
+ * reserved device name — `CON`, `NUL`, `COM1`, ... — with or without an
+ * extension.
+ */
+export function isReservedFileName(name: string): boolean {
+  return RESERVED_NAMES.test(name);
+}
+
+/**
  * Returns `slugify(name)`, or that slug plus a `-N` suffix when it is already
  * taken. Comparison is case-insensitive because macOS and Windows file systems
  * usually are.

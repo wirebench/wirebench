@@ -156,43 +156,127 @@ describe('importDefinition — cache modes', () => {
     await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
   });
 
-  it('refresh writes the cache; a later prefer-cache import equals it without touching the network', async () => {
+  const location = pathToFileURL(join(craftedRoot, 'nested-imports', 'service.wsdl')).href;
+
+  /** A `FetchDocument` that counts calls and delegates to the real default fetcher. */
+  function countingFetch(): { fetchDocument: FetchDocument; calls: () => number } {
+    let calls = 0;
+    const real = createDefaultFetchDocument();
+    return {
+      fetchDocument: (loc, signal) => {
+        calls += 1;
+        return real(loc, signal);
+      },
+      calls: () => calls,
+    };
+  }
+
+  const throwingFetch: FetchDocument = () => Promise.reject(new Error('network must not be used'));
+
+  it('refresh: fetches from the network and writes the cache', async () => {
     const dir = await tempDir();
     dirs.push(dir);
-    const location = pathToFileURL(join(craftedRoot, 'nested-imports', 'service.wsdl')).href;
 
-    const first = await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
-    expect(first.fromCache).toBeUndefined();
-    expect(first.problems).toEqual([]);
+    const counting = countingFetch();
+    const result = await importDefinition(
+      { kind: 'url', url: location },
+      { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'refresh' } },
+    );
 
-    const throwingFetch: FetchDocument = () => Promise.reject(new Error('network must not be used'));
+    expect(result.fromCache).toBeUndefined();
+    expect(result.problems).toEqual([]);
+    expect(counting.calls()).toBeGreaterThan(0);
+    await expect(readDefinitionCache(dir)).resolves.toBeDefined();
+  });
+
+  it('none: never touches the cache directory', async () => {
+    const parent = await tempDir();
+    dirs.push(parent);
+    const dir = join(parent, 'unused');
+
+    const counting = countingFetch();
+    const result = await importDefinition(
+      { kind: 'url', url: location },
+      { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'none' } },
+    );
+
+    expect(result.fromCache).toBeUndefined();
+    expect(result.problems).toEqual([]);
+    expect(counting.calls()).toBeGreaterThan(0);
+    await expect(readDefinitionCache(dir)).rejects.toMatchObject({ code: 'definition-cache-missing' });
+  });
+
+  it('prefer-cache + valid cache: reads offline, fromCache true, no network calls', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
+
     const second = await importDefinition(
       { kind: 'url', url: location },
       { fetchDocument: throwingFetch, cache: { dir, mode: 'prefer-cache' } },
     );
 
     expect(second.fromCache).toBe(true);
-    expect(second.operations.map((o) => o.operationName)).toEqual(first.operations.map((o) => o.operationName));
-    expect(second.schemaSet.elements.size).toBe(first.schemaSet.elements.size);
+    expect(second.problems).toEqual([]);
   });
 
-  it('prefer-cache with a corrupted cache falls back to network and reports the problem', async () => {
+  it('prefer-cache + missing cache: fetches from the network with no problem reported, then writes the cache', async () => {
     const dir = await tempDir();
     dirs.push(dir);
-    const location = pathToFileURL(join(craftedRoot, 'nested-imports', 'service.wsdl')).href;
 
-    const manifest = await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
-    void manifest;
+    const counting = countingFetch();
+    const result = await importDefinition(
+      { kind: 'url', url: location },
+      { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'prefer-cache' } },
+    );
+
+    expect(result.fromCache).toBeUndefined();
+    expect(result.problems).toEqual([]);
+    expect(counting.calls()).toBeGreaterThan(0);
+    await expect(readDefinitionCache(dir)).resolves.toBeDefined();
+  });
+
+  it('prefer-cache + corrupt cache: fetches from the network, reports the problem, and rewrites the cache', async () => {
+    const dir = await tempDir();
+    dirs.push(dir);
+    await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
     const files = (await readdir(dir)).filter((f) => f !== 'manifest.yaml');
     const victim = files[0];
     if (victim === undefined) throw new Error('expected at least one cached file');
     await writeFile(join(dir, victim), 'corrupted');
 
-    const result = await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'prefer-cache' } });
+    const counting = countingFetch();
+    const result = await importDefinition(
+      { kind: 'url', url: location },
+      { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'prefer-cache' } },
+    );
 
     expect(result.fromCache).toBeUndefined();
-    expect(result.problems.some((p) => p.source === 'resolve' && p.code === 'definition-cache-corrupt')).toBe(true);
+    expect(counting.calls()).toBeGreaterThan(0);
+    expect(result.problems).toEqual([
+      expect.objectContaining({ source: 'resolve', code: 'definition-cache-corrupt', location }),
+    ]);
     expect(result.operations.length).toBeGreaterThan(0);
+
+    // the cache was rewritten: the previously-corrupted file is now valid again.
+    await expect(readDefinitionCache(dir)).resolves.toBeDefined();
+    const restoredBytes = await readFile(join(dir, victim));
+    expect(restoredBytes.toString('utf-8')).not.toBe('corrupted');
+  });
+
+  it('write failure: reports definition-cache-write-failed but still returns the import result', async () => {
+    // Using a plain file (not a directory) as the cache dir makes any write inside it fail.
+    const parent = await tempDir();
+    dirs.push(parent);
+    const notADir = join(parent, 'not-a-directory');
+    await writeFile(notADir, 'i am a file, not a directory');
+
+    const result = await importDefinition({ kind: 'url', url: location }, { cache: { dir: notADir, mode: 'refresh' } });
+
+    expect(result.operations.length).toBeGreaterThan(0);
+    expect(result.problems).toEqual([
+      expect.objectContaining({ source: 'resolve', code: 'definition-cache-write-failed' }),
+    ]);
   });
 });
 

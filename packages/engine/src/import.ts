@@ -55,12 +55,45 @@ function withBasicAuth(fetchDocument: FetchDocument, auth: { username: string; p
   };
 }
 
+/** Resolves from the network, honoring the optional abort signal. */
+function resolveFromNetwork(
+  definitionSource: DefinitionSource,
+  fetchDocument: FetchDocument,
+  signal: AbortSignal | undefined,
+): Promise<DefinitionBundle> {
+  return resolveDefinition(definitionSource, {
+    fetchDocument,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+}
+
 /**
- * Resolves the definition per `cache.mode`: `'prefer-cache'` reads the cache
- * with no network access, falling back to `resolveDefinition` (and reporting
- * a problem) if the cache is missing or corrupt; `'refresh'` always resolves
- * from the network, then (re)writes the cache; `'none'`/absent behaves as
- * before, resolving from the network without touching any cache.
+ * Writes `bundle` to the definition cache. A failure here never aborts the
+ * import (the caller already has a usable bundle from the network) — it is
+ * reported as a `definition-cache-write-failed` problem instead.
+ */
+async function writeCacheSafely(bundle: DefinitionBundle, dir: string, cacheProblems: ImportProblem[]): Promise<void> {
+  try {
+    await writeDefinitionCache(bundle, dir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    cacheProblems.push({ source: 'resolve', code: 'definition-cache-write-failed', message });
+  }
+}
+
+/**
+ * Resolves the definition per `cache.mode`:
+ * - `'prefer-cache'`: reads the cache with no network access. A missing
+ *   cache (`definition-cache-missing`) falls back to the network silently
+ *   (no problem reported) and then writes the cache. A corrupt cache
+ *   (`definition-cache-corrupt`) falls back to the network too, but reports
+ *   a problem, and then rewrites the cache. A valid cache is used as-is,
+ *   fully offline, with `fromCache: true`.
+ * - `'refresh'`: always resolves from the network, then (re)writes the cache.
+ * - `'none'`/absent: resolves from the network without touching any cache.
+ *
+ * A cache-write failure in any of the above is reported as a
+ * `definition-cache-write-failed` problem; the import itself still succeeds.
  */
 async function resolveWithCache(
   definitionSource: DefinitionSource,
@@ -69,28 +102,36 @@ async function resolveWithCache(
   cache: ImportCacheOptions | undefined,
   cacheProblems: ImportProblem[],
 ): Promise<{ bundle: DefinitionBundle; fromCache: boolean }> {
-  if (cache !== undefined && cache.mode === 'prefer-cache') {
+  if (cache === undefined || cache.mode === 'none') {
+    const bundle = await resolveFromNetwork(definitionSource, fetchDocument, signal);
+    return { bundle, fromCache: false };
+  }
+
+  if (cache.mode === 'prefer-cache') {
     try {
       const bundle = await readDefinitionCache(cache.dir);
       return { bundle, fromCache: true };
     } catch (error) {
-      if (error instanceof ProjectError) {
-        cacheProblems.push({ source: 'resolve', code: error.code, message: error.message });
-      } else {
+      if (!(error instanceof ProjectError)) {
         throw error;
       }
+      if (error.code === 'definition-cache-corrupt') {
+        cacheProblems.push({
+          source: 'resolve',
+          code: error.code,
+          message: error.message,
+          location: definitionSource.location,
+        });
+      }
+      const bundle = await resolveFromNetwork(definitionSource, fetchDocument, signal);
+      await writeCacheSafely(bundle, cache.dir, cacheProblems);
+      return { bundle, fromCache: false };
     }
   }
 
-  const bundle = await resolveDefinition(definitionSource, {
-    fetchDocument,
-    ...(signal !== undefined ? { signal } : {}),
-  });
-
-  if (cache !== undefined && cache.mode === 'refresh') {
-    await writeDefinitionCache(bundle, cache.dir);
-  }
-
+  // 'refresh'
+  const bundle = await resolveFromNetwork(definitionSource, fetchDocument, signal);
+  await writeCacheSafely(bundle, cache.dir, cacheProblems);
   return { bundle, fromCache: false };
 }
 
