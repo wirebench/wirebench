@@ -236,3 +236,43 @@ describe('expandSendInput', () => {
     expect(result.input.headers).toEqual({ 'proj-name': 'second' });
   });
 });
+
+describe('entitizing during expansion', () => {
+  const scopes = {
+    project: { markup: 'a & b <tag> c', outer: '${#Project#markup}' },
+    global: {},
+    system: {},
+  };
+
+  it('leaves substituted values alone by default', () => {
+    expect(expand('<a>${#Project#markup}</a>', scopes).text).toBe('<a>a & b <tag> c</a>');
+  });
+
+  it('XML-escapes substituted values when asked', () => {
+    expect(expand('<a>${#Project#markup}</a>', scopes, { entitize: true }).text).toBe('<a>a &amp; b &lt;tag&gt; c</a>');
+  });
+
+  it('escapes a nested expansion exactly once', () => {
+    expect(expand('<a>${#Project#outer}</a>', scopes, { entitize: true }).text).toBe('<a>a &amp; b &lt;tag&gt; c</a>');
+  });
+
+  it('never escapes literal text the user typed', () => {
+    expect(expand('<a>x & y ${#Project#markup}</a>', scopes, { entitize: true }).text).toBe(
+      '<a>x & y a &amp; b &lt;tag&gt; c</a>',
+    );
+  });
+
+  it('entitizes the envelope only, never the endpoint or a header', () => {
+    const input: SoapSendInput = {
+      endpoint: 'https://example.test/?q=${#Project#markup}',
+      envelopeXml: '<a>${#Project#markup}</a>',
+      soapVersion: '1.1',
+      headers: { 'x-note': '${#Project#markup}' },
+      entitize: true,
+    };
+    const result = expandSendInput(input, scopes);
+    expect(result.input.envelopeXml).toBe('<a>a &amp; b &lt;tag&gt; c</a>');
+    expect(result.input.endpoint).toBe('https://example.test/?q=a & b <tag> c');
+    expect(result.input.headers).toEqual({ 'x-note': 'a & b <tag> c' });
+  });
+});

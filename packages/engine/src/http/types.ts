@@ -17,6 +17,11 @@ export interface HttpRequest {
   /** Maximum response body size to buffer, in bytes. Undefined = unlimited. */
   readonly maxSizeBytes?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Local interface address to bind the outgoing socket to. Passed straight to the connector;
+   * an address the host does not own makes the connection fail, which is the intended feedback.
+   */
+  readonly localAddress?: string;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   /** Whether to transparently decompress a gzip/deflate/br response body. Default true. */

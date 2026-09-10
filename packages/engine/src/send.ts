@@ -3,6 +3,7 @@
  * response: SOAP version, fault, or "not actually SOAP" detection.
  */
 
+import { gzipSync } from 'node:zlib';
 import type { Dispatcher } from 'undici';
 import { WirebenchError } from './errors.js';
 import { sendHttp } from './http/client.js';
@@ -107,7 +108,7 @@ export async function sendSoapRequest(
   let unresolved: readonly UnresolvedRef[] | undefined;
   let effectiveInput = input;
   if (options?.scopes !== undefined) {
-    const expanded = expandSendInput(input, options.scopes);
+    const expanded = expandSendInput(input, options.scopes, { entitize: input.entitize ?? false });
     effectiveInput = expanded.input;
     unresolved = expanded.unresolved;
   }
@@ -124,7 +125,13 @@ export async function sendSoapRequest(
     effectiveInput.headers ?? {},
   );
 
-  const body = encodeBody(effectiveInput.envelopeXml, effectiveInput.encoding);
+  const encoded = encodeBody(effectiveInput.envelopeXml, effectiveInput.encoding);
+  // Compression is applied after the headers are merged so a caller-supplied Content-Encoding
+  // cannot silently disagree with what is actually on the wire.
+  const body = effectiveInput.compressBody === 'gzip' ? new Uint8Array(gzipSync(encoded)) : encoded;
+  if (effectiveInput.compressBody === 'gzip') {
+    headers['content-encoding'] = 'gzip';
+  }
 
   const request: HttpRequest = {
     url: effectiveInput.endpoint,
@@ -134,6 +141,7 @@ export async function sendSoapRequest(
     timeoutMs: effectiveInput.timeoutMs ?? 60_000,
     followRedirects: effectiveInput.followRedirects ?? false,
     ...(effectiveInput.maxSizeBytes !== undefined ? { maxSizeBytes: effectiveInput.maxSizeBytes } : {}),
+    ...(effectiveInput.localAddress !== undefined ? { localAddress: effectiveInput.localAddress } : {}),
     ...(effectiveInput.signal !== undefined ? { signal: effectiveInput.signal } : {}),
     ...(effectiveInput.tls !== undefined ? { tls: effectiveInput.tls } : {}),
     ...(effectiveInput.proxy !== undefined ? { proxy: effectiveInput.proxy } : {}),

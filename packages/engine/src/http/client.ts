@@ -57,7 +57,10 @@ export function createDispatcher(opts: {
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly keepAlive?: boolean;
+  /** Local interface address to bind outgoing sockets to; undici's `connect.localAddress`. */
+  readonly localAddress?: string;
 }): Dispatcher {
+  const connect = connectOptions(opts);
   if (opts.proxy !== undefined) {
     const proxy = opts.proxy;
     return new ProxyAgent({
@@ -65,13 +68,27 @@ export function createDispatcher(opts: {
       ...(proxy.auth !== undefined
         ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
         : {}),
-      ...(opts.tls !== undefined ? { connect: tlsConnectOptions(opts.tls) } : {}),
+      ...(connect !== undefined ? { connect } : {}),
     });
   }
-  if (opts.tls !== undefined) {
-    return new Agent({ connect: tlsConnectOptions(opts.tls) });
+  if (connect !== undefined) {
+    return new Agent({ connect });
   }
   return getDefaultAgent();
+}
+
+/** The connector options for the given TLS/bind-address settings, or `undefined` when neither is set. */
+function connectOptions(opts: {
+  readonly tls?: TlsOptions;
+  readonly localAddress?: string;
+}): Record<string, unknown> | undefined {
+  if (opts.tls === undefined && opts.localAddress === undefined) {
+    return undefined;
+  }
+  return {
+    ...(opts.tls !== undefined ? tlsConnectOptions(opts.tls) : {}),
+    ...(opts.localAddress !== undefined ? { localAddress: opts.localAddress } : {}),
+  };
 }
 
 function tlsConnectOptions(tls: TlsOptions): Record<string, unknown> {
@@ -229,10 +246,12 @@ export async function sendHttp(
   }
 
   const ownDispatcher =
-    options?.dispatcher === undefined && (req.tls !== undefined || req.proxy !== undefined)
+    options?.dispatcher === undefined &&
+    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined)
       ? createDispatcher({
           ...(req.tls !== undefined ? { tls: req.tls } : {}),
           ...(req.proxy !== undefined ? { proxy: req.proxy } : {}),
+          ...(req.localAddress !== undefined ? { localAddress: req.localAddress } : {}),
         })
       : undefined;
   const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();

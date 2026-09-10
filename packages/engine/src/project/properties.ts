@@ -10,6 +10,7 @@
  * passes in (default `process.env`).
  */
 
+import { entitizeValue } from '../soap/transforms.js';
 import type { PropertyMap } from './model.js';
 import type { SoapSendInput } from '../types.js';
 
@@ -183,6 +184,8 @@ function tokenize(text: string): Token[] {
 interface ExpandContext {
   readonly scopes: PropertyScopes;
   readonly maxDepth: number;
+  /** XML-escape every substituted value (SoapUI's "Entitize Properties"). */
+  readonly entitize: boolean;
   readonly unresolved: UnresolvedRef[];
   readonly used: { scope: string; name: string }[];
 }
@@ -206,6 +209,15 @@ function pushUnresolved(
     end: outer?.end ?? entry.end,
     ...(via.length > 0 ? { via } : {}),
   });
+}
+
+/**
+ * The text a resolved reference contributes to the output. When entitizing is on, the value is
+ * XML-escaped — but only at the outermost reference (`outer === undefined`), so a property whose
+ * value itself expands another property is escaped once rather than once per nesting level.
+ */
+function substituted(ctx: ExpandContext, outer: OuterSpan | undefined, value: string): string {
+  return ctx.entitize && outer === undefined ? entitizeValue(value) : value;
 }
 
 /**
@@ -274,7 +286,7 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
-      out += expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]);
+      out += substituted(ctx, outer, expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]));
       continue;
     }
 
@@ -317,16 +329,31 @@ function expandAt(
       continue;
     }
     ctx.used.push({ scope: found.scope, name });
-    out += expandAt(found.value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]);
+    out += substituted(
+      ctx,
+      outer,
+      expandAt(found.value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]),
+    );
   }
   return out;
 }
 
+/** Options accepted by {@link expand} and {@link expandSendInput}. */
+export interface ExpandOptions {
+  readonly maxDepth?: number;
+  /**
+   * XML-escape every substituted value (SoapUI's "Entitize Properties"). Off by default; the
+   * send path turns it on only for the envelope, never for headers or the endpoint.
+   */
+  readonly entitize?: boolean;
+}
+
 /** Expands every `${...}` property reference in `text` against `scopes`. */
-export function expand(text: string, scopes: PropertyScopes, options?: { maxDepth?: number }): ExpandResult {
+export function expand(text: string, scopes: PropertyScopes, options?: ExpandOptions): ExpandResult {
   const ctx: ExpandContext = {
     scopes,
     maxDepth: options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+    entitize: options?.entitize ?? false,
     unresolved: [],
     used: [],
   };
@@ -364,17 +391,19 @@ export function hasExpansions(text: string): boolean {
 export function expandSendInput(
   input: SoapSendInput,
   scopes: PropertyScopes,
+  options?: ExpandOptions,
 ): { input: SoapSendInput; unresolved: UnresolvedRef[] } {
   const unresolved: UnresolvedRef[] = [];
 
-  function run(text: string): string {
-    const result = expand(text, scopes);
+  function run(text: string, entitize = false): string {
+    const result = expand(text, scopes, { ...options, entitize });
     unresolved.push(...result.unresolved);
     return result.text;
   }
 
   const endpoint = run(input.endpoint);
-  const envelopeXml = run(input.envelopeXml);
+  // Only the envelope is entitized: escaping a header value or an endpoint would corrupt it.
+  const envelopeXml = run(input.envelopeXml, options?.entitize ?? input.entitize ?? false);
   const soapAction = input.soapAction !== undefined ? run(input.soapAction) : undefined;
 
   let headers: Record<string, string> | undefined;

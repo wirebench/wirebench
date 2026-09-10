@@ -105,6 +105,15 @@ export interface SoapSendInput {
   readonly followRedirects?: boolean;
   readonly maxSizeBytes?: number;
   readonly skipSoapAction?: boolean;
+  /** Local network interface address to bind the outgoing socket to (SoapUI's "Bind Address"). */
+  readonly localAddress?: string;
+  /** Compress the request body and set `Content-Encoding` accordingly. Default: uncompressed. */
+  readonly compressBody?: 'gzip';
+  /**
+   * XML-escape every property value substituted into `envelopeXml` (SoapUI's "Entitize
+   * Properties"). Only meaningful when the send is given property scopes to expand against.
+   */
+  readonly entitize?: boolean;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly signal?: AbortSignal;

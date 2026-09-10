@@ -6,6 +6,8 @@
  * entity references.
  */
 
+import { localNameOf, normalizeLineEndings, tokenizeXml, type XmlToken } from './tolerant-tree.js';
+
 /** Options for {@link formatXml}. */
 export interface FormatXmlOptions {
   /** Indentation unit per nesting level. Defaults to three spaces. */
@@ -28,17 +30,7 @@ export interface FormatXmlResult {
   readonly problem?: string;
 }
 
-type TokenKind = 'comment' | 'cdata' | 'pi' | 'doctype' | 'open' | 'close' | 'text';
-
-interface Token {
-  readonly kind: TokenKind;
-  readonly raw: string;
-  readonly start: number;
-  readonly end: number;
-  readonly name?: string;
-  readonly rawAttrs?: string;
-  readonly selfClosing?: boolean;
-}
+type Token = XmlToken;
 
 type TreeNode =
   | { readonly type: 'text'; readonly value: string }
@@ -52,58 +44,6 @@ type TreeNode =
       /** Original text between the end of the open tag and the start of the close tag. */
       readonly rawInner: string;
     };
-
-const TOKEN_RE =
-  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE(?:[^[>]|\[[^\]]*\])*>|<\/(?:[^<>"']|"[^"]*"|'[^']*')*>|<[^!?/](?:[^<>"']|"[^"]*"|'[^']*')*>|[^<]+/g;
-
-function normalizeLineEndings(text: string): string {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-/** Tokenizes; returns `undefined` if the tokens do not contiguously cover the whole string (malformed markup). */
-function tokenize(text: string): Token[] | undefined {
-  const tokens: Token[] = [];
-  const re = new RegExp(TOKEN_RE);
-  let match: RegExpExecArray | null;
-  let cursor = 0;
-  while ((match = re.exec(text)) !== null) {
-    const raw = match[0];
-    const start = match.index;
-    if (start !== cursor) {
-      return undefined;
-    }
-    const end = start + raw.length;
-    cursor = end;
-    if (raw.startsWith('<!--')) {
-      tokens.push({ kind: 'comment', raw, start, end });
-    } else if (raw.startsWith('<![CDATA[')) {
-      tokens.push({ kind: 'cdata', raw, start, end });
-    } else if (raw.startsWith('<?')) {
-      tokens.push({ kind: 'pi', raw, start, end });
-    } else if (/^<!DOCTYPE/i.test(raw)) {
-      tokens.push({ kind: 'doctype', raw, start, end });
-    } else if (raw.startsWith('</')) {
-      const nameMatch = /^<\/\s*([^\s>]+)\s*>$/.exec(raw);
-      if (nameMatch === null) {
-        return undefined;
-      }
-      tokens.push({ kind: 'close', raw, start, end, name: nameMatch[1] as string });
-    } else if (raw.startsWith('<')) {
-      const selfClosing = /\/>$/.test(raw);
-      const nameMatch = /^<([^\s/>]+)/.exec(raw);
-      if (nameMatch === null) {
-        return undefined;
-      }
-      const name = nameMatch[1] as string;
-      const attrsEnd = raw.length - (selfClosing ? 2 : 1);
-      const rawAttrs = raw.slice(1 + name.length, attrsEnd).trim();
-      tokens.push({ kind: 'open', raw, start, end, name, rawAttrs, selfClosing });
-    } else {
-      tokens.push({ kind: 'text', raw, start, end });
-    }
-  }
-  return cursor === text.length ? tokens : undefined;
-}
 
 interface OpenFrame {
   readonly name: string;
@@ -168,11 +108,6 @@ function buildTree(tokens: readonly Token[], text: string): { roots: TreeNode[] 
     return { problem: `Unclosed tag <${(stack[stack.length - 1] as OpenFrame).name}>` };
   }
   return { roots };
-}
-
-function localNameOf(name: string): string {
-  const colon = name.indexOf(':');
-  return colon === -1 ? name : name.slice(colon + 1);
 }
 
 function renderNodes(
@@ -249,7 +184,7 @@ export function formatXml(text: string, options?: FormatXmlOptions): FormatXmlRe
   const preserve = new Set(options?.preserveWhitespaceIn ?? []);
   const normalized = normalizeLineEndings(text);
 
-  const tokens = tokenize(normalized);
+  const tokens = tokenizeXml(normalized);
   if (tokens === undefined) {
     return { text: normalized, changed: false, problem: 'Malformed markup: could not tokenize' };
   }

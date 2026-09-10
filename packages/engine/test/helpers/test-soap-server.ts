@@ -1,4 +1,4 @@
-import { createGzip } from 'node:zlib';
+import { createGzip, gunzipSync } from 'node:zlib';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { readPublicFixture } from './fixtures.js';
@@ -67,10 +67,23 @@ function buildCalculatorAddResponse(requestBody: string): string | undefined {
 </soapenv:Envelope>`;
 }
 
+/**
+ * Reads the request body, transparently gunzipping it when the client announced
+ * `Content-Encoding: gzip` — so a spec asserting on what the server received sees the
+ * envelope, not the compressed bytes. A body that claims gzip but is not is left as-is.
+ */
 async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
+  const raw = Buffer.concat(chunks);
+  if ((req.headers['content-encoding'] ?? '').toLowerCase().includes('gzip') && raw.length > 0) {
+    try {
+      return gunzipSync(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 /**

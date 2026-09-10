@@ -245,6 +245,25 @@ export type {
   ManifestFile,
   RequestFile,
 } from './project/schema.js';
+export { DEFAULT_PREFERENCES, mergePreferences, preferencesSchema, resetPreferences } from './project/preferences.js';
+export type {
+  EditorPreferences,
+  HttpPreferences,
+  LayoutPreference,
+  Preferences,
+  PreferencesPatch,
+  PreferencesSection,
+  ProxyPreferences,
+  SslPreferences,
+  UiPreferences,
+  WsdlPreferences,
+  WsiPreferences,
+} from './project/preferences.js';
+export { toSendInput } from './send-options.js';
+export type { SendRequestInput, ToSendInputArgs } from './send-options.js';
+export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
+export { formatXml } from './xml/pretty.js';
+export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
 export { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
@@ -265,7 +284,7 @@ export type {
   HistoryOptions,
 } from './project/history.js';
 export { expand, expandSendInput, hasExpansions } from './project/properties.js';
-export type { ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
+export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export {
   findEnvironment,
   removeEnvironment,
