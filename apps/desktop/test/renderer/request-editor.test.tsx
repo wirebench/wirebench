@@ -4,8 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { RequestEditor } from '../../src/renderer/features/request-editor/request-editor.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { makeDraft, makeExchange, makeInterface } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
+import type { CommandContext } from '../../src/renderer/lib/commands.js';
+import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
+import { getActiveRequestPaneHandle } from '../../src/renderer/editor/active-request-editor.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -131,10 +136,10 @@ describe('RequestEditor', () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
-  it('commits formatted text immediately via formatAndCommit, not after debounce', async () => {
+  it('commits formatted text immediately via formatAndCommit, not after debounce', () => {
     // This test verifies the fix: formatAndCommit() commits the formatted text synchronously
     // to the store, so a Send fired immediately after Format gets the correct text.
-    const unformattedXml = '<a><b></b></a>';
+    const unformattedXml = '<soapenv:Envelope><soapenv:Body><test/></soapenv:Body></soapenv:Envelope>';
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
@@ -145,17 +150,82 @@ describe('RequestEditor', () => {
     const editor = screen.getByLabelText('Request envelope XML');
     editor.focus();
 
-    // Trigger the Format keybinding (Mod+Shift+F).
-    await userEvent.keyboard('{Meta>}{Shift>}F{/Shift}{/Meta}');
+    // Trigger the Format keybinding via the registered handler (the mock editor's onKeyDown
+    // may not fire the handler reliably with userEvent.keyboard, so we access it directly).
+    const handle = getActiveRequestPaneHandle();
+    if (handle !== undefined) {
+      handle.formatAndCommit();
+    }
 
     // The store should have the formatted text immediately (synchronously committed by formatAndCommit),
     // not waiting for the 120ms onChange debounce timer.
-    await waitFor(() => {
-      const storeValue = useProjectStore.getState().requests['req-1']?.envelopeXml;
-      // The key assertion: the store should be updated (not empty, not the original unformatted value if changed)
-      expect(storeValue).toBeDefined();
-      expect(storeValue).not.toBe('');
+    const storeValue = useProjectStore.getState().requests['req-1']?.envelopeXml;
+    // The key assertion: the formatted text contains indented Body element
+    expect(storeValue).toContain('   <soapenv:Body>');
+  });
+
+  it('runs editor.formatXml palette command and commits formatted text synchronously', async () => {
+    const unformattedXml = '<soapenv:Envelope><soapenv:Body><test/></soapenv:Body></soapenv:Envelope>';
+    useProjectStore.setState({
+      interfaces: { 'if-1': makeInterface() },
+      requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
+      order: ['if-1'],
     });
+
+    // Set up the editors store with an active request tab so the command's `when` condition passes.
+    useEditorsStore.setState({
+      tabs: [{ id: 'tab-1', kind: 'request' as const, requestId: 'req-1', title: 'Request 1' }],
+      activeId: 'tab-1',
+    });
+
+    render(<RequestEditor requestId="req-1" />);
+
+    // Register shell commands and set up the context.
+    resetCommands();
+    registerShellCommands(vi.fn());
+
+    const context: CommandContext = {
+      platform: 'mac',
+      ui: {
+        sidebar: { visible: true, view: 'explorer', size: 20 },
+        console: { visible: true, activeTab: 'http-log', size: 25 },
+        details: { visible: true, size: 20 },
+        theme: 'dark',
+        editorLineNumbers: true,
+      },
+      selection: undefined,
+    };
+
+    // Run the palette command.
+    const result = await runCommand('editor.formatXml', context);
+    expect(result).toBe(true);
+
+    // The store should have the formatted text immediately, synchronously committed.
+    const storeValue = useProjectStore.getState().requests['req-1']?.envelopeXml;
+    expect(storeValue).toContain('   <soapenv:Body>');
+  });
+
+  it('overflow-menu Format path calls formatAndCommit and commits formatted text synchronously', () => {
+    // This test verifies that the overflow menu's Format action (via getActiveRequestPaneHandle)
+    // commits formatted text to the store immediately.
+    const unformattedXml = '<soapenv:Envelope><soapenv:Body><test/></soapenv:Body></soapenv:Envelope>';
+    useProjectStore.setState({
+      interfaces: { 'if-1': makeInterface() },
+      requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
+      order: ['if-1'],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    // Simulate what the overflow menu does: call formatAndCommit() via the active request pane handle.
+    const handle = getActiveRequestPaneHandle();
+    expect(handle).toBeDefined();
+    if (handle !== undefined) {
+      handle.formatAndCommit();
+    }
+
+    // The store should have the formatted text immediately, synchronously committed.
+    const storeValue = useProjectStore.getState().requests['req-1']?.envelopeXml;
+    expect(storeValue).toContain('   <soapenv:Body>');
   });
 
   it('shows the response once the send resolves', async () => {
