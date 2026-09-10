@@ -62,7 +62,7 @@ export const BASE_EDITOR_OPTIONS = {
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   tabSize: 3,
-  wordWrap: 'on',
+  wordWrap: 'off',
   renderLineHighlight: 'none',
   scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
 } as const;

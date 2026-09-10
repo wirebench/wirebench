@@ -157,7 +157,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     fontSize: 12,
     tabSize: 3,
     lineNumbers: true,
-    wordWrap: true,
+    wordWrap: false,
     autoValidateOnSend: false,
     autoFormatResponses: true,
   }),
