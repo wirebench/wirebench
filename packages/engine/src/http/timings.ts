@@ -19,16 +19,21 @@ const defaultNow = (): number => performance.now();
  */
 let inFlightCount = 0;
 
-/** The shape `undici:client:connected` / `undici:client:sendHeaders` publish, as far as we read it. */
+/** The shape `undici:client:connected` / `undici:client:sendHeaders` / `undici:request:create` publish, as far as we read it. */
 interface SocketMessage {
   readonly socket?: (TlsSocketLike & { readonly encrypted?: boolean }) | undefined;
-  readonly request?: { readonly origin?: unknown } | undefined;
+  readonly request?: ({ readonly origin?: unknown } & object) | undefined;
 }
 
 /** Narrows a diagnostics-channel payload to the TLS socket it carries, if it carries one. */
 function encryptedSocketOf(message: unknown): (TlsSocketLike & { encrypted?: boolean }) | undefined {
   const socket = (message as SocketMessage | undefined)?.socket;
   return socket?.encrypted === true ? socket : undefined;
+}
+
+/** The `request` object a diagnostics-channel payload carries, when it carries one. */
+function requestOf(message: unknown): object | undefined {
+  return (message as SocketMessage | undefined)?.request;
 }
 
 /** The `origin` string undici stamps on the request the event belongs to, when it has one. */
@@ -40,19 +45,25 @@ function requestOriginOf(message: unknown): string | undefined {
 }
 
 /**
- * Tracks timings for exactly one physical HTTP exchange at a time (this
- * module never issues concurrent requests through the same dispatcher call,
- * so correlating "the next create/connect/headers event" to "this request"
- * is safe without threading opaque ids through undici).
+ * Tracks timings for one physical HTTP exchange. `connectMs`/`tlsMs` still rely on
+ * this module never issuing concurrent requests through the same dispatcher call (so
+ * "the next connect event" can only be this exchange's) — but `tls`, the peer/protocol
+ * snapshot, does not get that luxury: two exchanges can easily be concurrently in
+ * flight to the *same* origin on *different* sockets, and `undici:client:sendHeaders`
+ * carries no correlation id of its own beyond the undici `Request` object reference.
+ * `captureRequestFor` threads that reference through explicitly, so `onSendHeaders`
+ * can match on it exactly instead of guessing from origin.
  *
  * Sources:
  * - `connectMs`/`tlsMs`: `undici:client:beforeConnect` / `undici:client:connected`.
  *   Only observed when a *new* socket is opened for this exchange; a reused
  *   keep-alive connection leaves both undefined.
- * - `tls` (the {@link SslInfo} snapshot): `undici:client:sendHeaders`, which
- *   carries both the request and the socket its bytes were written to — so a
- *   request that reuses a warm keep-alive connection still gets the peer chain,
- *   which `undici:client:connected` alone (fresh connections only) cannot give.
+ * - `tls` (the {@link SslInfo} snapshot): `undici:client:sendHeaders`, which carries
+ *   the request, and the socket its bytes were written to — so a request that reuses a
+ *   warm keep-alive connection still gets the peer chain, which `undici:client:connected`
+ *   alone (fresh connections only) cannot give. Correlated by request identity (see
+ *   {@link captureRequestFor}); origin matching is a fallback for the case where no
+ *   identity was captured, not the primary mechanism.
  * - `ttfbMs`: `undici:request:headers` (response headers received).
  * - `downloadMs`: measured after headers, ended by our own body-read loop
  *   (not a diagnostics channel — undici doesn't expose a clean "body fully
@@ -73,6 +84,12 @@ export class TimingTracker {
   private ssl: SslInfo | undefined;
   /** The origin this exchange is currently talking to; a redirect moves it. */
   private origin: string | undefined;
+  /**
+   * The exact undici `Request` object this physical attempt is using, captured via
+   * {@link captureRequestFor}. Compared by identity (`===`) in `onSendHeaders` — see
+   * that handler for why this, rather than origin, is the correlation key.
+   */
+  private request: object | undefined;
 
   private readonly onBeforeConnect: (message: unknown) => void;
   private readonly onConnected: (message: unknown) => void;
@@ -109,10 +126,21 @@ export class TimingTracker {
     this.onSendHeaders = (message: unknown) => {
       const socket = encryptedSocketOf(message);
       if (socket === undefined) return;
-      // Correlate by origin rather than by "nothing else is in flight": two
-      // exchanges to the *same* origin share a server certificate anyway, so a
-      // match is either this exchange's socket or one indistinguishable from it.
-      // With no origin to compare against, fall back to the single-in-flight rule.
+      if (this.request !== undefined) {
+        // Correlate by the exact undici `Request` object identity: `captureRequestFor`
+        // records it synchronously from `undici:request:create`, which undici fires
+        // inside the very call that starts this attempt, before any other exchange's
+        // code can run (Node is single-threaded and nothing awaits in between). That
+        // makes this exact — unlike origin matching, which conflates two concurrent
+        // exchanges to the *same* origin on *different* sockets (they usually share a
+        // certificate, but not always: see the concurrent-same-origin integration test).
+        if (requestOf(message) !== this.request) return;
+        this.ssl = sslInfoForSocket(socket);
+        return;
+      }
+      // Fall back to origin matching only when no request identity was ever captured
+      // for this exchange (defensive: `client.ts` always wraps its `undiciRequest()`
+      // call in `captureRequestFor`, so in practice this branch is not expected to run).
       const origin = requestOriginOf(message);
       const matches = this.origin !== undefined && origin !== undefined ? origin === this.origin : inFlightCount === 1;
       if (!matches) return;
@@ -127,6 +155,30 @@ export class TimingTracker {
   /** Records which origin the next physical request goes to, so TLS events can be attributed to it. */
   setOrigin(origin: string): void {
     this.origin = origin;
+  }
+
+  /**
+   * Runs `fn` — a call that synchronously triggers undici's `undici:request:create`
+   * diagnostics event, as every plain `undiciRequest()` call does — while listening for
+   * that event, so `this.request` becomes the exact undici `Request` object this
+   * physical attempt is using. Call this wrapping the `undiciRequest()` call itself
+   * (not a `.then()`/`await` of it): the create event fires inside the synchronous
+   * portion of that call, before it returns a pending promise, which is what makes the
+   * capture race-free even when another exchange's own send is interleaved via
+   * `Promise.all` — no other code runs between this subscribe and unsubscribe.
+   */
+  captureRequestFor<T>(fn: () => T): T {
+    const channel = diagnosticsChannel.channel('undici:request:create');
+    const onCreate = (message: unknown): void => {
+      const request = requestOf(message);
+      if (request !== undefined) this.request = request;
+    };
+    channel.subscribe(onCreate);
+    try {
+      return fn();
+    } finally {
+      channel.unsubscribe(onCreate);
+    }
   }
 
   /** Call when the response headers arrive (time-to-first-byte). */

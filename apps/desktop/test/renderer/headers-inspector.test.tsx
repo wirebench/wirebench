@@ -78,6 +78,32 @@ describe('HeadersInspector (request)', () => {
     expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Renamed', value: 'abc' }] });
   });
 
+  it('trims a name edit before committing, same as adding a new header', async () => {
+    renderInspector();
+    const name = screen.getByLabelText<HTMLInputElement>('Name of header 1');
+
+    await userEvent.clear(name);
+    await userEvent.type(name, '  X-Padded  {Enter}');
+
+    expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Padded', value: 'abc' }] });
+  });
+
+  it('rejects an empty or whitespace-only name on inline commit, reverting to the previous name', async () => {
+    renderInspector();
+    const name = screen.getByLabelText<HTMLInputElement>('Name of header 1');
+
+    await userEvent.clear(name);
+    await userEvent.type(name, '{Enter}');
+    expect(name.value).toBe('X-Trace');
+    expect(updateRequest).not.toHaveBeenCalled();
+
+    await userEvent.clear(name);
+    await userEvent.type(name, '   ');
+    await userEvent.tab();
+    expect(name.value).toBe('X-Trace');
+    expect(updateRequest).not.toHaveBeenCalled();
+  });
+
   it('removes a header by index, keeping the duplicate that shares its name', async () => {
     install([
       { name: 'Accept', value: 'a' },

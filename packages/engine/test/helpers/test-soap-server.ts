@@ -2,7 +2,7 @@ import { createGzip, gunzipSync } from 'node:zlib';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
-import type { TLSSocket } from 'node:tls';
+import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
 import { readPublicFixture } from './fixtures.js';
 
 /** One request recorded by the test SOAP server, for assertions. */
@@ -25,6 +25,16 @@ export interface TestSoapServerTls {
   readonly ca?: string | readonly string[];
   readonly requestCert?: boolean;
   readonly maxVersion?: 'TLSv1.2' | 'TLSv1.3';
+  /**
+   * Distinct cert/key pairs to alternate across TLS handshakes, round-robin, via
+   * `SNICallback` — Node invokes it once per handshake even when the servername
+   * repeats, so two concurrent sockets to the same origin each end up presenting
+   * a different leaf certificate. That lets a test tell, from the response alone,
+   * which physical connection an exchange actually landed on. `cert`/`key` above
+   * are still required (`https.createServer` needs a default context) but are
+   * not served once this is set — every handshake goes through the callback.
+   */
+  readonly perConnectionCerts?: readonly { readonly cert: string; readonly key: string }[];
 }
 
 /** Handle to a running {@link startTestSoapServer} instance. */
@@ -125,6 +135,26 @@ export async function startTestSoapServer(options?: {
   };
 
   const tls = options?.tls;
+  // Round-robins `perConnectionCerts` across handshakes; a plain counter is enough because
+  // `SNICallback` runs synchronously on the (single-threaded) server, one call per handshake.
+  let perConnectionIndex = 0;
+  const perConnectionCerts = tls?.perConnectionCerts;
+  const tlsCa = tls?.ca;
+  const sniCallback =
+    perConnectionCerts !== undefined
+      ? (_servername: string, cb: (err: Error | null, ctx?: SecureContext) => void): void => {
+          const pick = perConnectionCerts[perConnectionIndex % perConnectionCerts.length];
+          perConnectionIndex += 1;
+          cb(
+            null,
+            createSecureContext({
+              cert: pick?.cert,
+              key: pick?.key,
+              ...(tlsCa !== undefined ? { ca: typeof tlsCa === 'string' ? tlsCa : [...tlsCa] } : {}),
+            }),
+          );
+        }
+      : undefined;
   const server: Server =
     tls === undefined
       ? createServer(listener)
@@ -135,6 +165,7 @@ export async function startTestSoapServer(options?: {
             ...(tls.ca !== undefined ? { ca: typeof tls.ca === 'string' ? tls.ca : [...tls.ca] } : {}),
             ...(tls.requestCert === true ? { requestCert: true, rejectUnauthorized: false } : {}),
             ...(tls.maxVersion !== undefined ? { maxVersion: tls.maxVersion } : {}),
+            ...(sniCallback !== undefined ? { SNICallback: sniCallback } : {}),
           },
           listener,
         );
@@ -259,11 +290,20 @@ export async function startTestSoapServer(options?: {
       const socket = req.socket as TLSSocket;
       const peer = typeof socket.getPeerCertificate === 'function' ? socket.getPeerCertificate() : undefined;
       const commonName = peer?.subject?.CN;
+      // The server's own (local) certificate for *this specific* connection — with
+      // `perConnectionCerts`, different sockets to the same origin get a different one,
+      // which is how the concurrency test tells its two exchanges apart.
+      const local = typeof socket.getCertificate === 'function' ? socket.getCertificate() : undefined;
+      const serverFingerprint =
+        local !== null && local !== undefined && 'fingerprint256' in local
+          ? (local as { fingerprint256?: string }).fingerprint256
+          : undefined;
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify({
           peerAuthorized: socket.authorized === true,
           ...(typeof commonName === 'string' ? { peerCN: commonName } : {}),
+          ...(typeof serverFingerprint === 'string' ? { serverFingerprint } : {}),
         }),
       );
       return;

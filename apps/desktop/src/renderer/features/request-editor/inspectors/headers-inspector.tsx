@@ -54,6 +54,20 @@ function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, o
   const position = index + 1;
   const overrides = COMPUTED_HEADERS.has(header.name.trim().toLowerCase());
 
+  /**
+   * Commits the name field, applying the same trim + non-empty rule `add()` uses for a
+   * new header: a blank (or whitespace-only) name is never a valid commit, so it reverts
+   * to what the model already holds instead of writing an empty header name.
+   */
+  const commitName = (): void => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) {
+      setName(header.name);
+      return;
+    }
+    onCommit({ name: trimmed, value });
+  };
+
   return (
     <tr data-testid="header-row">
       <td className="py-0.5 pr-2 align-top">
@@ -65,10 +79,10 @@ function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, o
             setName(event.target.value);
           }}
           onBlur={() => {
-            onCommit({ name, value });
+            commitName();
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') onCommit({ name, value });
+            if (event.key === 'Enter') commitName();
             if (event.key === 'Escape') setName(header.name);
           }}
         />

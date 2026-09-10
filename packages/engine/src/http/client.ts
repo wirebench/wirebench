@@ -288,15 +288,21 @@ export async function sendHttp(
 
       let response: Dispatcher.ResponseData;
       try {
-        response = await undiciRequest(currentUrl, {
-          method: currentMethod,
-          headers: currentHeaders,
-          ...(currentBody !== undefined ? { body: currentBody } : {}),
-          dispatcher,
-          signal: combinedSignal ?? null,
-          headersTimeout: req.timeoutMs,
-          bodyTimeout: req.timeoutMs,
-        });
+        // Wraps the call itself (not its result) so the tracker can capture the exact
+        // undici `Request` object this attempt uses from `undici:request:create`, which
+        // fires synchronously inside `undiciRequest()` before it returns a pending
+        // promise — see `TimingTracker.captureRequestFor`.
+        response = await tracker.captureRequestFor(() =>
+          undiciRequest(currentUrl, {
+            method: currentMethod,
+            headers: currentHeaders,
+            ...(currentBody !== undefined ? { body: currentBody } : {}),
+            dispatcher,
+            signal: combinedSignal ?? null,
+            headersTimeout: req.timeoutMs,
+            bodyTimeout: req.timeoutMs,
+          }),
+        );
       } catch (err) {
         throw toHttpError(err, {
           userAborted: req.signal?.aborted === true,

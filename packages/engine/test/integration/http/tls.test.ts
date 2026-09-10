@@ -2,7 +2,7 @@ import { Agent } from 'undici';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendHttp } from '../../../src/http/client.js';
-import type { HttpRequest } from '../../../src/http/types.js';
+import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import {
   generateClientCert,
   generateServerCert,
@@ -113,6 +113,53 @@ describe('sendHttp over TLS', () => {
     // `sendHeaders` still names the socket the bytes went out on.
     expect(reused?.tls?.protocol).toBe('TLSv1.3');
     expect(reused?.tls?.peerChain[0]?.fingerprint256).toBe(first?.tls?.peerChain[0]?.fingerprint256);
+  });
+
+  it('does not cross-attribute TLS info between concurrent exchanges to the SAME origin on different sockets', async () => {
+    // Two more certs (both valid for `localhost`, so verification succeeds regardless of
+    // which one SNICallback hands back) that the server alternates per handshake, so the
+    // two sockets this test forces are distinguishable from the outside. The requests
+    // below deliberately address the server as `localhost`, not `127.0.0.1`: SNI is only
+    // sent for a DNS name, never for an IP-literal host (RFC 6066), so `SNICallback` — the
+    // only per-connection lever `https.createServer` exposes — would otherwise never fire.
+    const certA = generateServerCert(ca, { commonName: 'socket-a', sans: ['localhost', '127.0.0.1'] });
+    const certB = generateServerCert(ca, { commonName: 'socket-b', sans: ['localhost', '127.0.0.1'] });
+    const server = await startTestSoapServer({
+      tls: {
+        cert: certA.certPem,
+        key: certA.keyPem,
+        ca: ca.certPem,
+        perConnectionCerts: [
+          { cert: certA.certPem, key: certA.keyPem },
+          { cert: certB.certPem, key: certB.keyPem },
+        ],
+      },
+    });
+    servers.push(server);
+    const url = server.url.replace('127.0.0.1', 'localhost');
+    // `connections: 2` forces two physical sockets for two concurrent requests to the
+    // same origin instead of queueing the second behind the first; `pipelining: 1` keeps
+    // each socket to one in-flight request so the pairing below is unambiguous.
+    const dispatcher = new Agent({ connections: 2, pipelining: 1, connect: { ca: [ca.certPem] } });
+    dispatchers.push(dispatcher);
+
+    const [a, b] = await Promise.all([
+      sendHttp(req({ url: `${url}/tls-info`, method: 'GET' }), { dispatcher }),
+      sendHttp(req({ url: `${url}/tls-info`, method: 'GET' }), { dispatcher }),
+    ]);
+
+    const normalize = (fp: string): string => fp.replace(/:/g, '').toLowerCase();
+    const bodyOf = (exchange: HttpExchange): { serverFingerprint: string } =>
+      JSON.parse(Buffer.from(exchange.body).toString('utf-8')) as { serverFingerprint: string };
+
+    const bodyA = bodyOf(a);
+    const bodyB = bodyOf(b);
+    // The two connections really did land on different certs — otherwise this test
+    // would pass trivially, the very failure mode the bug produces.
+    expect(bodyA.serverFingerprint).not.toBe(bodyB.serverFingerprint);
+
+    expect(a.tls?.peerChain[0]?.fingerprint256).toBe(normalize(bodyA.serverFingerprint));
+    expect(b.tls?.peerChain[0]?.fingerprint256).toBe(normalize(bodyB.serverFingerprint));
   });
 
   it('does not cross-attribute TLS info between concurrent exchanges to different origins', async () => {
