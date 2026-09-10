@@ -11,6 +11,7 @@
 import { DEFAULT_PREFERENCES } from './project/preferences.js';
 import type { Preferences } from './project/preferences.js';
 import type { HeaderEntry, ProjectSettings, RequestProperties } from './project/model.js';
+import { soapActionHeaders } from './soap/soap-action.js';
 import { prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 import type { SoapSendInput } from './types.js';
 
@@ -36,6 +37,12 @@ export interface ToSendInputArgs {
 function hasHeader(headers: Readonly<Record<string, string>>, name: string): boolean {
   const lower = name.toLowerCase();
   return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+/** Whether `encoding` is (a spelling of) the transport's own default, so nothing needs reflecting. */
+function isDefaultEncoding(encoding: string): boolean {
+  const normalized = encoding.trim().toLowerCase();
+  return normalized.length === 0 || normalized === 'utf-8' || normalized === 'utf8';
 }
 
 /**
@@ -88,6 +95,17 @@ export function toSendInput(args: ToSendInputArgs): SoapSendInput {
   }
   if (preferences.http.closeConnections && !hasHeader(headers, 'connection')) {
     headers['Connection'] = 'close';
+  }
+  // A non-default `encoding` property changes what bytes actually go on the wire (see
+  // `encodeBody` in `send.ts`), so the `Content-Type` charset must say the same thing — a
+  // request sent as ISO-8859-1 but declared UTF-8 would decode wrong at the far end. This is
+  // skipped for the default encoding so a request with no opinion keeps getting the transport's
+  // own `UTF-8` charset, computed downstream exactly as it always has been.
+  if (!isDefaultEncoding(properties.encoding) && !hasHeader(headers, 'content-type')) {
+    headers['Content-Type'] = soapActionHeaders(args.request.soapVersion, args.request.soapAction, {
+      ...(properties.skipSoapAction !== undefined ? { skipSoapAction: properties.skipSoapAction } : {}),
+      charset: properties.encoding,
+    }).contentType;
   }
 
   const timeoutMs = properties.timeoutMs ?? args.projectSettings?.defaultTimeoutMs ?? preferences.http.socketTimeoutMs;

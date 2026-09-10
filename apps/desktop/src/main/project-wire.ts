@@ -119,6 +119,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     order: request.order,
     ...(request.auth !== undefined ? { auth: request.auth } : {}),
     ...(request.description !== undefined ? { description: request.description } : {}),
+    ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
     properties: { ...request.properties },
   };
 }

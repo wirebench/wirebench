@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
+import type { DialogPicks } from '../dialog-picks.js';
 import { registerHandler } from './register.js';
 
 /**
@@ -19,8 +20,13 @@ function e2eSaveOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_DIALOG_SAVE'];
 }
 
-/** Registers the `dialogs.*` IPC channels: native file/folder pickers scoped to the caller's window. */
-export function registerDialogsChannels(): void {
+/**
+ * Registers the `dialogs.*` IPC channels: native file/folder pickers scoped to the caller's
+ * window. `picks` records every path a Save-as dialog returns — today, only the Dump File
+ * "Browse…" picker uses `saveFile` — so `request.send`'s containment check can treat a
+ * user-picked path as an explicit exception to "stay inside the project".
+ */
+export function registerDialogsChannels(picks: DialogPicks): void {
   registerHandler(channels.dialogs.openFile, async (request, sender) => {
     const window = BrowserWindow.fromWebContents(sender) ?? undefined;
     const result = await dialog.showOpenDialog(window as BrowserWindow, {
@@ -47,6 +53,7 @@ export function registerDialogsChannels(): void {
   registerHandler(channels.dialogs.saveFile, async (request, sender) => {
     const override = e2eSaveOverride();
     if (override !== undefined) {
+      picks.remember(override);
       return { path: override };
     }
     const window = BrowserWindow.fromWebContents(sender) ?? undefined;
@@ -55,6 +62,9 @@ export function registerDialogsChannels(): void {
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
       ...(request.defaultPath !== undefined ? { defaultPath: request.defaultPath } : {}),
     });
+    if (!result.canceled && result.filePath !== undefined) {
+      picks.remember(result.filePath);
+    }
     return { path: result.canceled ? undefined : result.filePath };
   });
 }

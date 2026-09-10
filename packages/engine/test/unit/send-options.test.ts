@@ -141,3 +141,31 @@ describe('toSendInput envelope transforms', () => {
     expect(input.envelopeXml).toBe(ENVELOPE);
   });
 });
+
+describe('toSendInput content-type charset', () => {
+  it('reflects a non-default encoding into the Content-Type charset (SOAP 1.1)', () => {
+    const input = build({ request: request({ encoding: 'ISO-8859-1' }) });
+    expect(input.headers?.['Content-Type']).toBe('text/xml;charset=ISO-8859-1');
+  });
+
+  it('reflects the charset for SOAP 1.2, keeping the action parameter', () => {
+    const input = build({
+      request: request({ encoding: 'ISO-8859-1' }, { soapVersion: '1.2', soapAction: 'urn:Add' }),
+    });
+    expect(input.headers?.['Content-Type']).toBe('application/soap+xml;charset=ISO-8859-1;action="urn:Add"');
+  });
+
+  it('leaves Content-Type unset for the default UTF-8 encoding', () => {
+    expect(build().headers?.['Content-Type']).toBeUndefined();
+  });
+
+  it('never overrides a Content-Type the request already set', () => {
+    const input = build({
+      request: request(
+        { encoding: 'ISO-8859-1' },
+        { headers: [{ name: 'Content-Type', value: 'text/xml;charset=custom' }] },
+      ),
+    });
+    expect(input.headers?.['Content-Type']).toBe('text/xml;charset=custom');
+  });
+});

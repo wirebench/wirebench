@@ -86,6 +86,8 @@ export interface RequestProperties {
   readonly maxSizeBytes?: number;
   readonly wssPasswordType?: 'text' | 'digest';
   readonly wssTimeToLive?: number;
+  /** Name of a `wss/keystores/<name>.yaml` client keystore. Stored only; selection arrives with Task 36. */
+  readonly sslKeystoreRef?: string;
 }
 
 /** The request property values applied to a freshly created request. */

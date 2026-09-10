@@ -469,6 +469,8 @@ export const requestPropertiesSchema = z.object({
   maxSizeBytes: z.number().optional(),
   wssPasswordType: z.enum(['text', 'digest']).optional(),
   wssTimeToLive: z.number().optional(),
+  /** Name of a `wss/keystores/<name>.yaml` client keystore. Stored only; selection arrives with Task 36. */
+  sslKeystoreRef: z.string().optional(),
 });
 export type RequestPropertiesWire = z.infer<typeof requestPropertiesSchema>;
 
@@ -497,6 +499,7 @@ export const requestPropertiesPatchSchema = z.object({
   maxSizeBytes: z.number().nullable().optional(),
   wssPasswordType: z.enum(['text', 'digest']).nullable().optional(),
   wssTimeToLive: z.number().nullable().optional(),
+  sslKeystoreRef: z.string().nullable().optional(),
 });
 export type RequestPropertiesPatchWire = z.infer<typeof requestPropertiesPatchSchema>;
 
@@ -535,6 +538,8 @@ export const requestWireSchema = z.object({
   order: z.number(),
   auth: endpointAuthSchema.optional(),
   description: z.string().optional(),
+  /** Read-only until Task 41 wires up editing; `enabled` is the only field the Details grid shows. */
+  wsa: z.object({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() }).optional(),
   properties: requestPropertiesSchema,
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;

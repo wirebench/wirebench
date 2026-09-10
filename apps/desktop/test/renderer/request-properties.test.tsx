@@ -57,6 +57,8 @@ describe('RequestProperties', () => {
       'Enable inline files',
       'WSS password type',
       'WSS time to live (s)',
+      'SSL Keystore',
+      'WS-Addressing',
     ]) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
@@ -87,10 +89,56 @@ describe('RequestProperties', () => {
     useProjectStore.setState({ updateRequestProperties: patch });
     render(<RequestProperties requestId="req-1" />);
 
-    const encoding = screen.getByLabelText('Encoding');
+    const name = screen.getByLabelText('SSL Keystore');
+    fireEvent.change(name, { target: { value: 'client-ks' } });
+    fireEvent.blur(name);
+    expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: 'client-ks' });
+  });
+
+  it('offers a closed set of encodings, including ISO-8859-1, and commits immediately', () => {
+    const patch = vi.fn();
+    useProjectStore.setState({ updateRequestProperties: patch });
+    render(<RequestProperties requestId="req-1" />);
+
+    const encoding = screen.getByLabelText<HTMLSelectElement>('Encoding');
+    expect(encoding.value).toBe('UTF-8');
+    const values = Array.from(encoding.options).map((option) => option.value);
+    expect(values).toContain('ISO-8859-1');
+
     fireEvent.change(encoding, { target: { value: 'ISO-8859-1' } });
-    fireEvent.blur(encoding);
     expect(patch).toHaveBeenCalledWith('req-1', { encoding: 'ISO-8859-1' });
+  });
+
+  it('still shows an unrecognised encoding from a hand-edited project file', () => {
+    seed({ properties: { ...REQUEST_PROPERTIES, encoding: 'Shift_JIS' } });
+    render(<RequestProperties requestId="req-1" />);
+
+    expect(screen.getByLabelText<HTMLSelectElement>('Encoding').value).toBe('Shift_JIS');
+  });
+
+  it('clears the SSL Keystore back to "none" when emptied', () => {
+    const patch = vi.fn();
+    seed({ properties: { ...REQUEST_PROPERTIES, sslKeystoreRef: 'client-ks' } });
+    useProjectStore.setState({ updateRequestProperties: patch });
+    render(<RequestProperties requestId="req-1" />);
+
+    const field = screen.getByLabelText('SSL Keystore');
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.blur(field);
+    expect(patch).toHaveBeenCalledWith('req-1', { sslKeystoreRef: null });
+  });
+
+  it('reports WS-Addressing read-only, from request.wsa.enabled', () => {
+    seed({ wsa: { enabled: true, version: '2005/08' } });
+    render(<RequestProperties requestId="req-1" />);
+
+    const field = screen.getByLabelText('WS-Addressing');
+    expect(field.textContent).toBe('Enabled');
+  });
+
+  it('reports WS-Addressing as Disabled when the request has no wsa config', () => {
+    render(<RequestProperties requestId="req-1" />);
+    expect(screen.getByLabelText('WS-Addressing').textContent).toBe('Disabled');
   });
 
   it('clears a numeric property back to "inherit" when the field is emptied', () => {

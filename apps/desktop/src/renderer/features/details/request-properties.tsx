@@ -2,6 +2,7 @@ import {
   BooleanSetting,
   EnumSetting,
   NumberSetting,
+  ReadOnlySetting,
   SettingsGroup,
   TextSetting,
 } from '../../components/settings-grid.js';
@@ -16,6 +17,23 @@ export interface RequestPropertiesProps {
 
 /** Shown on the attachment flags, which are stored and editable but not yet honoured by a send. */
 const ATTACHMENTS_HINT = 'Stored now; takes effect when attachments and MTOM land (Task 32).';
+
+/** Shown on the SSL Keystore field, which is stored but has no picker yet. */
+const SSL_KEYSTORE_HINT = 'Select arrives with the keystore manager (Task 36).';
+
+/**
+ * The `Encoding` property's closed set of choices: every label Node's `Buffer` can encode a
+ * request body as, plus `ISO-8859-1` — a valid SoapUI encoding that `Buffer` itself does not
+ * recognise by that name (`encodeBody` maps it to `latin1` internally, see `send.ts`).
+ */
+const ENCODING_OPTIONS = [
+  { value: 'UTF-8', label: 'UTF-8' },
+  { value: 'ASCII', label: 'US-ASCII' },
+  { value: 'ISO-8859-1', label: 'ISO-8859-1 (Latin-1)' },
+  { value: 'UTF-16LE', label: 'UTF-16LE' },
+  { value: 'BASE64', label: 'Base64' },
+  { value: 'HEX', label: 'Hex' },
+];
 
 /**
  * The per-request property grid of the Details panel — SoapUI's request property list, in three
@@ -71,7 +89,19 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
           }}
         />
         <TextSetting label="Endpoint URL" value={endpoint ?? ''} readOnly monospace onCommit={() => undefined} />
-        <TextSetting label="Encoding" value={properties.encoding} onCommit={(encoding) => patch({ encoding })} />
+        <EnumSetting
+          label="Encoding"
+          value={properties.encoding}
+          // A value a hand-edited project file set that is not one of the known labels still
+          // shows (rather than silently snapping to the first option); picking a different
+          // entry replaces it.
+          options={
+            ENCODING_OPTIONS.some((option) => option.value === properties.encoding)
+              ? ENCODING_OPTIONS
+              : [...ENCODING_OPTIONS, { value: properties.encoding, label: properties.encoding }]
+          }
+          onChange={(encoding) => patch({ encoding })}
+        />
         <NumberSetting
           label="Timeout (ms)"
           value={properties.timeoutMs}
@@ -142,6 +172,18 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
           label="Entitize properties"
           value={properties.entitizeProperties}
           onChange={(entitizeProperties) => patch({ entitizeProperties })}
+        />
+        <TextSetting
+          label="SSL Keystore"
+          value={properties.sslKeystoreRef ?? ''}
+          placeholder="none"
+          hint={SSL_KEYSTORE_HINT}
+          onCommit={(sslKeystoreRef) => patch({ sslKeystoreRef: sslKeystoreRef.length > 0 ? sslKeystoreRef : null })}
+        />
+        <ReadOnlySetting
+          label="WS-Addressing"
+          value={request.wsa?.enabled === true ? 'Enabled' : 'Disabled'}
+          hint="Editing arrives with WS-Addressing (Task 41)."
         />
       </SettingsGroup>
 

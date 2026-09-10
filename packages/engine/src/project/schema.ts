@@ -109,6 +109,7 @@ const requestPropertiesSchema = z.looseObject({
   maxSizeBytes: z.number().int().nonnegative().optional(),
   wssPasswordType: z.enum(['text', 'digest']).optional(),
   wssTimeToLive: z.number().int().nonnegative().optional(),
+  sslKeystoreRef: z.string().optional(),
 });
 
 const attachmentSchema = z.looseObject({

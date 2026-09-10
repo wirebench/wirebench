@@ -53,6 +53,7 @@ import type {
 } from '../shared/wire-types.js';
 import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
+import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
@@ -520,7 +521,13 @@ export class ProjectService {
     const open = this.require();
     const result = await applyChange(open.project, change, {
       generate: (interfaceId, bindingName, operationName) => {
-        const generated = this.engine.generate({ interfaceId, bindingName, operationName });
+        const options = generateOptionsFrom(this.prefs());
+        const generated = this.engine.generate({
+          interfaceId,
+          bindingName,
+          operationName,
+          ...(options !== undefined ? { options } : {}),
+        });
         return Promise.resolve({
           envelopeXml: generated.envelopeXml,
           soapVersion: generated.soapVersion,
@@ -618,11 +625,13 @@ export class ProjectService {
     open.project = { ...open.project, interfaces: [...open.project.interfaces, iface] };
     open.runtime.set(interfaceId, { hydration: 'ready', summary });
 
+    const generateOptions = generateOptionsFrom(this.prefs());
     for (const operation of summary.operations) {
       const generated = this.engine.generate({
         interfaceId,
         bindingName: operation.binding,
         operationName: operation.name,
+        ...(generateOptions !== undefined ? { options: generateOptions } : {}),
       });
       open.project = addRequest(open.project, {
         interfaceId,

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -352,6 +352,92 @@ describe('request.send applies the saved request properties', () => {
     expect(result.value.problems).toEqual([]);
     expect(readFileSync(join(dir, 'dumps', 'last.xml'), 'utf8')).toBe('<ok/>');
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses a dump file whose relative path traverses outside the project folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        dumpFileFor: () => ({ path: join('..', '..', 'escaped.xml'), projectDir: dir }),
+      },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump-traversal',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses an absolute dump file path outside the project folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
+    const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        dumpFileFor: () => ({ path: join(outsideDir, 'out.xml'), projectDir: dir }),
+      },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump-absolute',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
+    expect(existsSync(join(outsideDir, 'out.xml'))).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('allows an absolute dump file path outside the project when it was picked via Browse…', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
+    const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
+    const outsidePath = join(outsideDir, 'picked.xml');
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        dumpFileFor: () => ({ path: outsidePath, projectDir: dir }),
+      },
+      dialogPicks: { has: (path) => path === outsidePath },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump-picked',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([]);
+    expect(readFileSync(outsidePath, 'utf8')).toBe('<ok/>');
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   });
 
   it('reports a dump-failed problem instead of failing the send', async () => {

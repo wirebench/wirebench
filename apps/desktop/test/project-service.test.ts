@@ -471,3 +471,83 @@ describe('ProjectService: environments and property scopes', () => {
     });
   });
 });
+
+describe('ProjectService: WSDL generation preferences reach every generation path', () => {
+  /** The `intA` element's inner text of a generated Calculator "Add" envelope, whatever its prefix. */
+  function intAValue(envelopeXml: string): string | undefined {
+    return /<[\w:]*intA>([^<]*)<\/[\w:]*intA>/.exec(envelopeXml)?.[1];
+  }
+
+  it('fills a freshly imported "Request 1" with sample values when the preference asks for it', async () => {
+    const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
+    const service = new ProjectService(
+      new EngineService(),
+      new RecentProjects(root!),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      preferences,
+    );
+    const dir = join(tempDir('project'), 'Sample Values Project');
+    await service.create({ dir, name: 'Sample Values Project' });
+
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+
+    const addRequest = imported.project.requests.find((request) => request.envelopeXml.includes('intA'));
+    expect(addRequest).toBeDefined();
+    const value = intAValue(addRequest!.envelopeXml);
+    expect(value).not.toBe('?');
+    expect(value).toMatch(/^-?\d+$/);
+
+    await service.close();
+  });
+
+  it('honours the same preference on add-request, not just on import', async () => {
+    const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
+    const service = new ProjectService(
+      new EngineService(),
+      new RecentProjects(root!),
+      {},
+      undefined,
+      undefined,
+      undefined,
+      preferences,
+    );
+    const dir = join(tempDir('project'), 'Add Request Sample Values Project');
+    await service.create({ dir, name: 'Add Request Sample Values Project' });
+
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+    const addOperation = imported.project.requests.find((request) => request.envelopeXml.includes('intA'))!;
+
+    const created = await service.mutate({
+      kind: 'add-request',
+      interfaceId: addOperation.interfaceId,
+      bindingName: addOperation.bindingName,
+      operationName: addOperation.operationName,
+    });
+    const newRequest = created.project.requests.find((request) => request.id === created.createdRequestId);
+    expect(newRequest).toBeDefined();
+    const value = intAValue(newRequest!.envelopeXml);
+    expect(value).not.toBe('?');
+    expect(value).toMatch(/^-?\d+$/);
+
+    await service.close();
+  });
+
+  it('leaves the "?" placeholder when the preference is off (the default)', async () => {
+    const service = newService(root!);
+    const dir = join(tempDir('project'), 'Default Values Project');
+    await service.create({ dir, name: 'Default Values Project' });
+
+    const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.whenHydrated();
+
+    const addRequest = imported.project.requests.find((request) => request.envelopeXml.includes('intA'));
+    expect(intAValue(addRequest!.envelopeXml)).toBe('?');
+
+    await service.close();
+  });
+});

@@ -269,17 +269,38 @@ function mergeSection<T extends object>(base: T, patch: object | undefined): T {
   return { ...base, ...defined(patch) };
 }
 
+/** Parses one top-level section's raw value against its own schema; `undefined` on any failure. */
+function parseSection<T>(schema: z.ZodType<T>, raw: unknown): T | undefined {
+  const parsed = schema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
 /**
  * Deep-merges `patch` onto `base` (default {@link DEFAULT_PREFERENCES}), one level per
  * section. Unknown keys are ignored (the schema strips them), `undefined` values leave the
  * base value alone, and `trustAll` is pinned to `false` regardless of what a file claims.
  *
+ * Each top-level section is parsed independently, so a bad field in (say) `wsdl` only loses
+ * `wsdl` — every other section of the same patch still applies. Parsing the whole document in
+ * one shot would instead discard the entire patch the moment any single field anywhere in it
+ * failed to validate, which is worse than doing nothing with the parts that were fine.
+ *
  * @param patch a parsed (or raw) partial preferences document
  * @param base the preferences to merge onto; defaults to the built-in defaults
  */
 export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PREFERENCES): Preferences {
-  const parsed = preferencesSchema.safeParse(patch ?? {});
-  const value: PreferencesPatch = parsed.success ? parsed.data : {};
+  const root: Record<string, unknown> = typeof patch === 'object' && patch !== null ? (patch as never) : {};
+  const shape = preferencesSchema.shape;
+  const value: PreferencesPatch = {
+    http: parseSection(shape.http, root['http']),
+    proxy: parseSection(shape.proxy, root['proxy']),
+    ssl: parseSection(shape.ssl, root['ssl']),
+    wsdl: parseSection(shape.wsdl, root['wsdl']),
+    wsi: parseSection(shape.wsi, root['wsi']),
+    editor: parseSection(shape.editor, root['editor']),
+    ui: parseSection(shape.ui, root['ui']),
+    shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
+  };
   return {
     http: mergeSection(base.http, value.http),
     proxy: mergeSection(base.proxy, value.proxy),

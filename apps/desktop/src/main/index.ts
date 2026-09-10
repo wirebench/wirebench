@@ -2,6 +2,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { app, BrowserWindow, protocol, safeStorage } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
+import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
@@ -73,6 +74,9 @@ const globalProperties = new GlobalProperties(app.getPath('userData'));
 /** The user's application preferences, shared by every project and every window. */
 const preferencesService = new PreferencesService(app.getPath('userData'));
 
+/** Absolute paths picked through a Save-as dialog this session; see `dialog-picks.ts`. */
+const dialogPicks = new DialogPicks();
+
 /** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
 
@@ -129,6 +133,7 @@ void app.whenReady().then(() => {
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     preferences: preferencesService,
+    dialogPicks,
   });
   registerHistoryChannels(engineService, historyService, {
     project: projectService,
@@ -142,7 +147,7 @@ void app.whenReady().then(() => {
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
   });
-  registerDialogsChannels();
+  registerDialogsChannels(dialogPicks);
   registerFsChannels();
   registerXmlChannels(engineService);
   registerXpathChannels();

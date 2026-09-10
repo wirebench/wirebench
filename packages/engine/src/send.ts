@@ -49,14 +49,22 @@ function charsetOf(contentType: string | undefined): string | undefined {
   return match?.[1]?.trim().replace(/^"|"$/g, '');
 }
 
-/** Encodes `text` for the wire, per `encoding` (default utf-8). */
+/**
+ * Encodes `text` for the wire, per `encoding` (default utf-8).
+ *
+ * `ISO-8859-1` is a valid encoding label (SoapUI offers it, and it is what the Encoding
+ * property's `<select>` shows), but it is not one of the labels Node's `Buffer` recognises —
+ * `iso-8859-1` is instead spelled `latin1` there. That is the one label this function
+ * translates; every other name is handed to `Buffer` as-is.
+ */
 function encodeBody(text: string, encoding: string | undefined): Uint8Array {
   const normalized = (encoding ?? 'utf-8').toLowerCase();
   if (normalized === 'utf-8' || normalized === 'utf8') {
     return new TextEncoder().encode(text);
   }
-  if (Buffer.isEncoding(normalized)) {
-    return new Uint8Array(Buffer.from(text, normalized));
+  const bufferEncoding = normalized === 'iso-8859-1' ? 'latin1' : normalized;
+  if (Buffer.isEncoding(bufferEncoding)) {
+    return new Uint8Array(Buffer.from(text, bufferEncoding));
   }
   throw new WirebenchError('unsupported-encoding', `Unsupported request encoding "${encoding}"`, {
     details: { encoding },

@@ -49,6 +49,25 @@ describe('mergePreferences', () => {
     expect(mergePreferences({ ssl: { trustAll: true } }).ssl.trustAll).toBe(false);
   });
 
+  it('loses only the section a bad field is in, keeping every other section of the same patch', () => {
+    const merged = mergePreferences({
+      http: { userAgent: 'Custom/1' },
+      // `sampleValues` must be a boolean; this section fails to parse on its own.
+      wsdl: { sampleValues: 'yes' },
+    });
+    expect(merged.http.userAgent).toBe('Custom/1');
+    expect(merged.wsdl).toEqual(DEFAULT_PREFERENCES.wsdl);
+  });
+
+  it('loses only the malformed section, not sections that come after it', () => {
+    const merged = mergePreferences({
+      proxy: { port: 'not-a-number' },
+      editor: { tabSize: 5 },
+    });
+    expect(merged.proxy).toEqual(DEFAULT_PREFERENCES.proxy);
+    expect(merged.editor.tabSize).toBe(5);
+  });
+
   it('merges onto a given base rather than the defaults', () => {
     const base = mergePreferences({ http: { userAgent: 'Base/1' } });
     expect(mergePreferences({ editor: { tabSize: 4 } }, base).http.userAgent).toBe('Base/1');
