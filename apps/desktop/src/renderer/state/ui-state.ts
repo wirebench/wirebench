@@ -4,6 +4,12 @@ export type SidebarView = 'explorer' | 'search' | 'history' | 'settings';
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
 
+/** How a request editor arranges its panes; see `features/request-editor/layout.ts`. */
+export interface EditorLayoutSnapshot {
+  readonly orientation: 'side-by-side' | 'stacked';
+  readonly mode: 'split' | 'tabs';
+}
+
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
 export type ThemePreference = 'dark' | 'light' | 'system';
 
@@ -15,13 +21,15 @@ export interface UiSnapshot {
   readonly theme: ThemePreference;
   /** Whether request/response Monaco editors show line numbers. */
   readonly editorLineNumbers: boolean;
+  /** The default request-editor layout; a request may override it for the session. */
+  readonly editorLayout: EditorLayoutSnapshot;
 }
 
 /** `localStorage` key holding the persisted layout. */
 export const UI_STORAGE_KEY = 'wirebench.ui';
 
 /** Bumped whenever {@link UiSnapshot} changes shape; older payloads are discarded, not migrated. */
-export const UI_STORAGE_VERSION = 1;
+export const UI_STORAGE_VERSION = 2;
 
 /** The layout a first run gets: everything visible, Explorer selected, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
@@ -30,6 +38,7 @@ export const DEFAULT_UI_STATE: UiSnapshot = {
   details: { visible: true, size: 20 },
   theme: 'dark',
   editorLineNumbers: true,
+  editorLayout: { orientation: 'side-by-side', mode: 'split' },
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -51,6 +60,20 @@ function mergeSection<T extends Record<string, unknown>>(defaults: T, stored: un
     }
   }
   return merged as T;
+}
+
+/** Reads a persisted editor layout, falling back per-field to the default for anything odd. */
+function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
+  const record = asRecord(stored);
+  const orientation = record?.['orientation'];
+  const mode = record?.['mode'];
+  return {
+    orientation:
+      orientation === 'side-by-side' || orientation === 'stacked'
+        ? orientation
+        : DEFAULT_UI_STATE.editorLayout.orientation,
+    mode: mode === 'split' || mode === 'tabs' ? mode : DEFAULT_UI_STATE.editorLayout.mode,
+  };
 }
 
 /**
@@ -78,6 +101,7 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,
+      editorLayout: mergeEditorLayout(stored['editorLayout']),
     };
   } catch {
     return DEFAULT_UI_STATE;

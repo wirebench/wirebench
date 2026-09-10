@@ -4,7 +4,8 @@ import type { SoapSendInput } from '../../../src/types.js';
 
 const INPUT: SoapSendInput = {
   endpoint: 'https://example.com/calc?wsdl',
-  envelopeXml: "<soapenv:Envelope><soapenv:Body><tem:Add><tem:intA>it's 5</tem:intA></tem:Add></soapenv:Body></soapenv:Envelope>",
+  envelopeXml:
+    "<soapenv:Envelope><soapenv:Body><tem:Add><tem:intA>it's 5</tem:intA></tem:Add></soapenv:Body></soapenv:Envelope>",
   soapVersion: '1.1',
   soapAction: 'http://tempuri.org/Add',
   headers: { 'X-Custom': 'value' },

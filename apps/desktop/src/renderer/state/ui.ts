@@ -1,7 +1,7 @@
 import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
-import type { ConsoleTab, SidebarView, ThemePreference, UiSnapshot } from './ui-state.js';
+import type { ConsoleTab, EditorLayoutSnapshot, SidebarView, ThemePreference, UiSnapshot } from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
 /** A selected node in the explorer tree, read by the details panel (Task 30) and explorer actions. */
@@ -54,6 +54,8 @@ export interface UiStore extends UiSnapshot {
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
   readonly toggleEditorLineNumbers: () => void;
+  /** Replaces the default request-editor layout (persisted); see `request-editor/layout.ts`. */
+  readonly setEditorLayout: (layout: EditorLayoutSnapshot) => void;
   /** The layout without the actions — what commands and keybindings receive as context. */
   readonly snapshot: () => UiSnapshot;
   /** Starts (or, with `undefined`, stops) mirroring every change into a storage backend. */
@@ -158,9 +160,14 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.editorLineNumbers = !draft.editorLineNumbers;
       }),
 
+    setEditorLayout: (layout) =>
+      update((draft) => {
+        draft.editorLayout = layout;
+      }),
+
     snapshot: () => {
-      const { sidebar, console: consoleState, details, theme, editorLineNumbers } = get();
-      return { sidebar, console: consoleState, details, theme, editorLineNumbers };
+      const { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout } = get();
+      return { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout };
     },
 
     persistTo: (storage) => {

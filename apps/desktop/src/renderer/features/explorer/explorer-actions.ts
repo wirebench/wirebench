@@ -1,5 +1,5 @@
 import { showToast } from '../../components/toast.js';
-import { useEditorsStore } from '../../state/editors.js';
+import { openRequestTab, recreateRequest } from '../request-editor/request-actions.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingRequest } from './explorer-api.js';
@@ -8,19 +8,6 @@ import { startRenamingRequest } from './explorer-api.js';
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
  * mirrors). Kept here, shared by both, so the palette and the context menu can never drift.
  */
-
-function openRequestTab(requestId: string): void {
-  const request = useProjectStore.getState().requests[requestId];
-  if (request === undefined) {
-    return;
-  }
-  useEditorsStore.getState().open({
-    id: `request:${requestId}`,
-    kind: 'request',
-    title: request.name,
-    requestId: request.id,
-  });
-}
 
 export const explorerActions = {
   importAnother(): void {
@@ -86,6 +73,12 @@ export const explorerActions = {
       .catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'Clone request failed');
       });
+  },
+
+  recreateRequest(requestId: string | undefined): void {
+    if (requestId !== undefined) {
+      void recreateRequest(requestId, 'keep-values');
+    }
   },
 
   renameRequest(requestId: string | undefined): void {

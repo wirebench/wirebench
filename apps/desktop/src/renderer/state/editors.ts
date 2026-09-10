@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { EditorLayout } from '../features/request-editor/layout.js';
 
 /** Which fields the Form view shows. Owned here, not by the request pane's component state, so
  * it survives a tab switch or a remount (e.g. the pane unmounting while its tab stays open in
@@ -44,6 +45,9 @@ export interface EditorsStore {
   /** Whether the user has explicitly picked a response tab for this request — once true, an
    * arriving fault no longer auto-selects the Fault tab for them (see `setResponseView`). */
   readonly responseViewPinned: Readonly<Record<string, boolean>>;
+  /** Per-request layout override, set by the layout toggles. Session state, never persisted —
+   * the persisted default lives in the `ui` store (see `request-editor/layout.ts`). */
+  readonly editorLayouts: Readonly<Record<string, EditorLayout>>;
   readonly open: (tab: EditorTab) => void;
   /** Like `open`, but replaces an already-open tab's content instead of leaving it stale —
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
@@ -61,6 +65,8 @@ export interface EditorsStore {
   /** Switches to the Fault tab when a fault just arrived, unless the user already pinned a
    * different tab for this request (see `setResponseView`). */
   readonly revealFaultTab: (requestId: string) => void;
+  /** Records this request's layout override. */
+  readonly setEditorLayout: (requestId: string, layout: EditorLayout) => void;
 }
 
 export const useEditorsStore = create<EditorsStore>((set, get) => ({
@@ -69,6 +75,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   formViewTypes: {},
   responseViewTypes: {},
   responseViewPinned: {},
+  editorLayouts: {},
 
   open: (tab) => {
     const { tabs } = get();
@@ -126,6 +133,10 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
       responseViewTypes: { ...get().responseViewTypes, [requestId]: viewType },
       responseViewPinned: { ...get().responseViewPinned, [requestId]: true },
     });
+  },
+
+  setEditorLayout: (requestId, layout) => {
+    set({ editorLayouts: { ...get().editorLayouts, [requestId]: layout } });
   },
 
   revealFaultTab: (requestId) => {

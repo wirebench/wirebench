@@ -168,6 +168,56 @@ export const requestSendRequestSchema = z.object({
 });
 export type RequestSendRequest = z.infer<typeof requestSendRequestSchema>;
 
+/** Request payload for `request.recreate` — SoapUI's "Recreate Request", applied to a saved request. */
+export const requestRecreateRequestSchema = z.object({
+  requestId: z.string(),
+  /** Copy matching leaf values out of the current envelope into the regenerated structure. */
+  keepValues: z.boolean(),
+  /** Keep the current `<soapenv:Header>` block verbatim. */
+  keepHeaders: z.boolean(),
+  /** Build an empty envelope instead of a sample one; skips the merge entirely. */
+  empty: z.boolean(),
+});
+export type RequestRecreateRequest = z.infer<typeof requestRecreateRequestSchema>;
+
+/** Response payload for `request.recreate`: the saved envelope plus what the merge did. */
+export const requestRecreateResponseSchema = z.object({
+  envelopeXml: z.string(),
+  kept: z.number(),
+  added: z.number(),
+  removed: z.number(),
+});
+export type RequestRecreateResponse = z.infer<typeof requestRecreateResponseSchema>;
+
+/** Request payload for `request.curl`: which saved request, and which shell's quoting. */
+export const requestCurlRequestSchema = z.object({
+  requestId: z.string(),
+  shell: z.enum(['posix', 'powershell']),
+});
+export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+
+/** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
+export const requestCurlResponseSchema = z.object({ command: z.string() });
+export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
+
+/** Request payload for `request.importCurl`: a pasted command, and the operation to hang it off. */
+export const requestImportCurlRequestSchema = z.object({
+  command: z.string(),
+  interfaceId: z.string(),
+  /** Clark-notation binding QName: `{namespaceUri}localName`. */
+  bindingName: z.string(),
+  operationName: z.string(),
+  name: z.string().optional(),
+});
+export type RequestImportCurlRequest = z.infer<typeof requestImportCurlRequestSchema>;
+
+/** Response payload for `request.importCurl`: the new request, and anything the parse dropped. */
+export const requestImportCurlResponseSchema = z.object({
+  requestId: z.string(),
+  problems: z.array(z.string()),
+});
+export type RequestImportCurlResponse = z.infer<typeof requestImportCurlResponseSchema>;
+
 const httpRequestSummarySchema = z.object({
   url: z.string(),
   method: z.string(),

@@ -150,6 +150,10 @@ export { buildRequestForm } from './soap/form-request.js';
 export type { RequestForm } from './soap/form-request.js';
 export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
+export { recreateRequest } from './soap/recreate.js';
+export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
+export { fromCurl, toCurl } from './http/curl.js';
+export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
 

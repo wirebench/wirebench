@@ -192,6 +192,7 @@ describe('RequestEditor', () => {
         details: { visible: true, size: 20 },
         theme: 'dark',
         editorLineNumbers: true,
+        editorLayout: { orientation: 'side-by-side', mode: 'split' },
       },
       selection: undefined,
     };

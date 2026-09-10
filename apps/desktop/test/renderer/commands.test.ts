@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
@@ -23,6 +24,7 @@ const context: CommandContext = {
     details: { visible: true, size: 20 },
     theme: 'dark',
     editorLineNumbers: true,
+    editorLayout: { orientation: 'side-by-side', mode: 'split' },
   },
   selection: undefined,
 };
@@ -155,5 +157,43 @@ describe('environment commands', () => {
     });
     await runCommand('env.next', context);
     expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+  });
+});
+
+describe('editor layout commands', () => {
+  beforeEach(() => {
+    resetCommands();
+    registerShellCommands(vi.fn());
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' }],
+      activeId: 'request:req-1',
+      editorLayouts: {},
+    });
+    useUiStore.getState().setEditorLayout({ orientation: 'side-by-side', mode: 'split' });
+  });
+
+  afterEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined, editorLayouts: {} });
+  });
+
+  it('registers both layout toggles, gated on an active request editor', () => {
+    const ids = listCommands(context).map((command) => command.id);
+    expect(ids).toContain('editor.toggleLayoutOrientation');
+    expect(ids).toContain('editor.toggleLayoutMode');
+
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    const withoutRequest = listCommands(context).map((command) => command.id);
+    expect(withoutRequest).not.toContain('editor.toggleLayoutOrientation');
+    expect(withoutRequest).not.toContain('editor.toggleLayoutMode');
+  });
+
+  it('toggles orientation and mode for the active request', async () => {
+    await runCommand('editor.toggleLayoutOrientation', context);
+    expect(useEditorsStore.getState().editorLayouts['req-1']?.orientation).toBe('stacked');
+    expect(useUiStore.getState().editorLayout.orientation).toBe('stacked');
+
+    await runCommand('editor.toggleLayoutMode', context);
+    expect(useEditorsStore.getState().editorLayouts['req-1']?.mode).toBe('tabs');
+    expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
   });
 });

@@ -253,6 +253,29 @@ export class ProjectService {
     };
   }
 
+  /**
+   * Where a saved request came from (its operation) and what it currently holds. `undefined`
+   * when no project is open or the request no longer exists. Used by `request.recreate`, which
+   * must regenerate that operation's envelope before merging the current one into it.
+   */
+  requestSource(
+    requestId: string,
+  ): { interfaceId: string; bindingName: string; operationName: string; envelopeXml: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    return {
+      interfaceId: location.iface.id,
+      bindingName: location.operation.bindingName,
+      operationName: location.operation.name,
+      envelopeXml: location.request.envelopeXml,
+    };
+  }
+
   /** The current snapshot, or `null` when no project is open. */
   snapshot(): ProjectWire | null {
     if (this.open === undefined) {

@@ -3,6 +3,7 @@ import { gotoLine } from '../editor/xml-language.js';
 import { loadXmlFrom, saveXmlAs } from '../editor/xml-file-ops.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
+import { flipMode, flipOrientation, setEditorLayout } from '../features/request-editor/layout.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -303,6 +304,31 @@ export function registerShellCommands(openPalette: () => void): void {
     },
   });
 
+  registerCommand({
+    id: 'editor.toggleLayoutOrientation',
+    label: 'Toggle Editor Layout: Side by Side / Stacked',
+    category: 'Editor',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        setEditorLayout(requestId, flipOrientation);
+      }
+    },
+  });
+  registerCommand({
+    id: 'editor.toggleLayoutMode',
+    label: 'Toggle Editor Layout: Split / Tabs',
+    category: 'Editor',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        setEditorLayout(requestId, flipMode);
+      }
+    },
+  });
+
   // Every explorer context-menu action is also a command, so the palette can run it against
   // whatever node is currently selected. The menu itself (context-menu.tsx) owns the actual
   // logic; these mirror the same `when` gates so the palette only lists what applies.
@@ -385,6 +411,15 @@ export function registerShellCommands(openPalette: () => void): void {
     when: (ctx) => ctx.selection?.kind === 'request',
     run: (ctx) => {
       explorerActions.deleteRequest(ctx.selection?.requestId);
+    },
+  });
+  registerCommand({
+    id: 'explorer.recreateRequest',
+    label: 'Explorer: Recreate Request (keep values)',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'request',
+    run: (ctx) => {
+      explorerActions.recreateRequest(ctx.selection?.requestId);
     },
   });
   registerCommand({

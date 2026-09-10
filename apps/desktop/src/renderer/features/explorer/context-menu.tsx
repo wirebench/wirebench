@@ -70,6 +70,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
         Clone
       </ContextMenu.Item>,
       <ContextMenu.Item
+        key="recreate"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.recreateRequest(node.requestId)}
+      >
+        Recreate request (keep values)
+      </ContextMenu.Item>,
+      <ContextMenu.Item
         key="rename"
         className={ITEM_CLASS}
         onSelect={() => explorerActions.renameRequest(node.requestId)}

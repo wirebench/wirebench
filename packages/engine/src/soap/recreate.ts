@@ -83,7 +83,10 @@ function countAll(elements: readonly ScannedElement[]): number {
 }
 
 /** Splices `[value, at range]` replacements into `text`, applied back-to-front so ranges stay valid. */
-function applyReplacements(text: string, replacements: readonly { start: number; end: number; value: string }[]): string {
+function applyReplacements(
+  text: string,
+  replacements: readonly { start: number; end: number; value: string }[],
+): string {
   const sorted = [...replacements].sort((a, b) => b.start - a.start);
   let out = text;
   for (const r of sorted) {
@@ -147,7 +150,11 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
           const currentValue = currentEl.text.value;
           const generatedValue = el.text.value;
           if (currentValue !== generatedValue) {
-            replacements.push({ start: el.text.range.start, end: el.text.range.end, value: escapeXmlText(currentValue) });
+            replacements.push({
+              start: el.text.range.start,
+              end: el.text.range.end,
+              value: escapeXmlText(currentValue),
+            });
           }
           kept += 1;
         }
@@ -159,7 +166,11 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
       for (const attr of el.attributes) {
         const currentAttr = currentEl.attributes.find((a) => a.name === attr.name);
         if (currentAttr !== undefined && currentAttr.value !== attr.value) {
-          replacements.push({ start: attr.valueRange.start, end: attr.valueRange.end, value: escapeXmlAttr(currentAttr.value) });
+          replacements.push({
+            start: attr.valueRange.start,
+            end: attr.valueRange.end,
+            value: escapeXmlAttr(currentAttr.value),
+          });
         }
       }
     }
@@ -190,8 +201,8 @@ export function recreateRequest(currentXml: string, generatedXml: string, option
 
   if (keepHeaders) {
     const currentHeader = currentEnvelope.children.find((e) => e.localName === 'Header');
-    const generatedHeaderInMerged = scanXml(mergedXml).elements
-      .find((e) => e.localName === 'Envelope')
+    const generatedHeaderInMerged = scanXml(mergedXml)
+      .elements.find((e) => e.localName === 'Envelope')
       ?.children.find((e) => e.localName === 'Header');
     if (currentHeader !== undefined && generatedHeaderInMerged !== undefined) {
       const headerText = currentXml.slice(currentHeader.range.start, currentHeader.range.end);

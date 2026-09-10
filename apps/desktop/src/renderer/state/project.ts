@@ -75,6 +75,9 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeInterface: (interfaceId: string) => Promise<void>;
   readonly updateRequest: (requestId: string, patch: RequestPatchWire) => void;
   readonly setEndpoint: (requestId: string, url: string) => void;
+  /** Replaces a request's envelope in the mirror ONLY: for changes main has already saved
+   * itself (`request.recreate`), where a second `update-request` would just rewrite the file. */
+  readonly applyEnvelope: (requestId: string, envelopeXml: string) => void;
   /** Generates another request for the operation, named `Request N`. Returns its id. */
   readonly addRequest: (interfaceId: string, bindingName: string, operationName: string) => Promise<string>;
   /** Copies an existing request, named `<name> (copy)`. Returns the new request's id. */
@@ -91,6 +94,17 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeEnvironment: (environmentId: string) => Promise<void>;
   /** Switches the active environment; `null` deactivates. */
   readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
+  /** Appends an endpoint to an interface. */
+  readonly addEndpoint: (interfaceId: string, name: string, url: string) => Promise<void>;
+  /** Renames or re-addresses one endpoint. */
+  readonly updateEndpoint: (
+    interfaceId: string,
+    endpointId: string,
+    patch: { readonly name?: string; readonly url?: string },
+  ) => Promise<void>;
+  readonly removeEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
+  /** Makes one endpoint the interface's default, used by requests that pick none of their own. */
+  readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   readonly setProjectProperty: (name: string, value: string) => Promise<void>;
   readonly removeProjectProperty: (name: string) => Promise<void>;
 }
@@ -353,6 +367,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         });
     },
 
+    applyEnvelope: (requestId, envelopeXml) => {
+      update((draft) => {
+        const request = draft.requests[requestId];
+        if (request !== undefined) {
+          draft.requests[requestId] = { ...request, envelopeXml };
+        }
+      });
+    },
+
     setEndpoint: (requestId, url) => {
       get().updateRequest(requestId, { endpointUrl: url });
     },
@@ -376,6 +399,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         throw new Error('clone-request did not return a request id');
       }
       return created;
+    },
+
+    addEndpoint: async (interfaceId, name, url) => {
+      await mutate({ kind: 'add-endpoint', interfaceId, name, url });
+    },
+
+    updateEndpoint: async (interfaceId, endpointId, patch) => {
+      await mutate({ kind: 'update-endpoint', interfaceId, endpointId, patch });
+    },
+
+    removeEndpoint: async (interfaceId, endpointId) => {
+      await mutate({ kind: 'remove-endpoint', interfaceId, endpointId });
+    },
+
+    setDefaultEndpoint: async (interfaceId, endpointId) => {
+      await mutate({ kind: 'set-default-endpoint', interfaceId, endpointId });
     },
 
     removeRequest: async (requestId) => {

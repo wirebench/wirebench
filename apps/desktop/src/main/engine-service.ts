@@ -6,6 +6,7 @@
  */
 
 import {
+  expandSendInput,
   generateEmptyRequest,
   generateRequest,
   importDefinition as engineImportDefinition,
@@ -281,6 +282,34 @@ export class EngineService {
       message: messageFor({ phase: 'done' }),
     });
     return summary;
+  }
+
+  /**
+   * The input a send would actually put on the wire: the effective Basic-auth header applied
+   * (its `passwordRef` resolved) and every `${#…#name}` reference expanded. Shared by
+   * `request.curl`, which must show the very same command `request.send` would perform —
+   * unresolved references are left as written rather than reported, since nothing is sent.
+   */
+  async effectiveSendInput(
+    input: SoapSendInputWire,
+    options: { scopes?: PropertyScopes; auth?: EndpointAuth } = {},
+  ): Promise<SoapSendInputWire> {
+    const resolvedAuth =
+      options.auth !== undefined
+        ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
+        : undefined;
+    const withAuth = withResolvedAuth(input, resolvedAuth);
+    if (options.scopes === undefined) {
+      return withAuth;
+    }
+    const expanded = expandSendInput(toEngineSendInput(withAuth, new AbortController().signal), options.scopes).input;
+    return {
+      ...withAuth,
+      endpoint: expanded.endpoint,
+      envelopeXml: expanded.envelopeXml,
+      ...(expanded.soapAction !== undefined ? { soapAction: expanded.soapAction } : {}),
+      ...(expanded.headers !== undefined ? { headers: { ...expanded.headers } } : {}),
+    };
   }
 
   /** True when a definition is loaded in memory for `interfaceId`. */

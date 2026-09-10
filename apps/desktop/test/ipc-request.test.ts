@@ -78,6 +78,22 @@ const preflight: PreflightResult = {
   unresolved: [{ expr: '${#Env#missing}', code: 'missing', start: 0, end: 15, field: 'envelopeXml' }],
 };
 
+/**
+ * The recreate/cURL half of the project surface, which the send/preflight tests below never
+ * exercise — every call throws so an accidental use is loud rather than silently `undefined`.
+ */
+const noActionSupport = {
+  requestSource: (): never => {
+    throw new Error('requestSource is not stubbed in this test');
+  },
+  buildLiveSendInput: (): never => {
+    throw new Error('buildLiveSendInput is not stubbed in this test');
+  },
+  mutate: (): never => {
+    throw new Error('mutate is not stubbed in this test');
+  },
+};
+
 function invoke(channel: string, payload: unknown): Promise<unknown> {
   const handler = handlers.get(channel);
   if (handler === undefined) {
@@ -145,6 +161,7 @@ describe('registerRequestChannels', () => {
         authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => undefined,
+        ...noActionSupport,
       },
     });
 
@@ -168,6 +185,7 @@ describe('registerRequestChannels', () => {
         authFor: () => ({ type: 'basic', username: 'alice', passwordRef: 'sec_deleted' }),
         requestMeta: () => undefined,
         projectId: () => undefined,
+        ...noActionSupport,
       },
     });
 
@@ -187,6 +205,7 @@ describe('registerRequestChannels', () => {
       authFor: vi.fn().mockReturnValue(undefined),
       requestMeta: vi.fn().mockReturnValue(undefined),
       projectId: vi.fn().mockReturnValue(undefined),
+      ...noActionSupport,
     };
     registerRequestChannels(new EngineService(), { project });
 
@@ -204,6 +223,7 @@ describe('registerRequestChannels', () => {
         authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => undefined,
+        ...noActionSupport,
       },
     });
 

@@ -28,6 +28,9 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       send: fail('request.send'),
       cancel: fail('request.cancel'),
       preflight: fail('request.preflight'),
+      recreate: fail('request.recreate'),
+      curl: fail('request.curl'),
+      importCurl: fail('request.importCurl'),
     },
     globals: { get: fail('globals.get'), set: fail('globals.set'), remove: fail('globals.remove') },
     project: {

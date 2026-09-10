@@ -91,6 +91,11 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const onEnvelopeChangeRef = useRef(onEnvelopeChange);
   onEnvelopeChangeRef.current = onEnvelopeChange;
 
+  // The last text this pane itself sent to the store. An incoming `envelopeXml` that matches
+  // it is this pane's own edit echoing back through the mirror; anything else came from
+  // outside (Recreate, Clone, Load from…) and must win — see the external-replace effect below.
+  const committedRef = useRef(envelopeXml);
+
   const flush = useCallback(() => {
     clearTimeout(timer.current);
     const pending = pendingRef.current;
@@ -98,6 +103,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       return;
     }
     pendingRef.current = undefined;
+    committedRef.current = pending.xml;
     pending.onEnvelopeChange(pending.xml);
   }, []);
 
@@ -107,6 +113,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     setLocal(next);
     clearTimeout(timer.current);
     pendingRef.current = undefined;
+    committedRef.current = next;
     onEnvelopeChangeRef.current(next);
   }, []);
 
@@ -123,8 +130,18 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
 
   useImperativeHandle(ref, () => ({ flush, formatAndCommit }), [flush, formatAndCommit]);
 
-  // An edit made anywhere else (regenerate, clone) must win over this pane's local copy.
+  // An envelope replaced from OUTSIDE this pane (Recreate, Clone, Load from…) must win over
+  // both the local copy and any still-debounced keystroke: without dropping the pending edit,
+  // the timer would fire a moment later and write the old text back over the new one (the
+  // Task 15 ruling). An `envelopeXml` this pane itself committed is not such a replacement —
+  // it is the mirror echoing that very edit back, and a keystroke made since must survive it.
   useEffect(() => {
+    if (envelopeXml === committedRef.current) {
+      return;
+    }
+    clearTimeout(timer.current);
+    pendingRef.current = undefined;
+    committedRef.current = envelopeXml;
     setLocal(envelopeXml);
   }, [envelopeXml]);
 
@@ -144,6 +161,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     pendingRef.current = { xml: next, onEnvelopeChange: onEnvelopeChangeRef.current };
     timer.current = setTimeout(() => {
       pendingRef.current = undefined;
+      committedRef.current = next;
       onEnvelopeChangeRef.current(next);
     }, DEBOUNCE_MS);
   }, []);

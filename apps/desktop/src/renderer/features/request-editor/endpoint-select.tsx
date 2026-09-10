@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { InterfaceSummary } from '../../../shared/wire-types.js';
 
 const CUSTOM = '__custom__';
+const EDIT = '__edit__';
 
 export interface EndpointSelectProps {
   readonly summary: InterfaceSummary | undefined;
@@ -9,6 +10,8 @@ export interface EndpointSelectProps {
   readonly bindingName: string;
   readonly value: string | undefined;
   readonly onChange: (endpoint: string) => void;
+  /** Opens the interface's endpoint manager; omitted where there is nothing to manage. */
+  readonly onEditEndpoints?: () => void;
 }
 
 interface EndpointOption {
@@ -43,7 +46,7 @@ function collectOptions(summary: InterfaceSummary | undefined, bindingName: stri
  * Endpoint picker: the interface's declared addresses, then a free-text escape hatch. The
  * draft already carries the first matching port address, so this is normally a confirmation.
  */
-export function EndpointSelect({ summary, bindingName, value, onChange }: EndpointSelectProps) {
+export function EndpointSelect({ summary, bindingName, value, onChange, onEditEndpoints }: EndpointSelectProps) {
   const options = useMemo(() => collectOptions(summary, bindingName), [summary, bindingName]);
   const known = value !== undefined && options.some((option) => option.address === value);
   const [custom, setCustom] = useState(!known && value !== undefined);
@@ -55,6 +58,10 @@ export function EndpointSelect({ summary, bindingName, value, onChange }: Endpoi
         className="h-row min-w-0 max-w-[26rem] flex-1 truncate rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
         value={custom || !known ? CUSTOM : value}
         onChange={(event) => {
+          if (event.target.value === EDIT) {
+            onEditEndpoints?.();
+            return;
+          }
           if (event.target.value === CUSTOM) {
             setCustom(true);
             return;
@@ -69,6 +76,7 @@ export function EndpointSelect({ summary, bindingName, value, onChange }: Endpoi
           </option>
         ))}
         <option value={CUSTOM}>Custom…</option>
+        {onEditEndpoints !== undefined && <option value={EDIT}>Edit endpoints…</option>}
       </select>
 
       {(custom || !known) && (

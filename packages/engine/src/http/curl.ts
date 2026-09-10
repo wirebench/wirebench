@@ -116,7 +116,8 @@ export function fromCurl(text: string): FromCurlResult {
     const hereStringMatch = /@'\r?\n([\s\S]*?)\r?\n'@/.exec(text);
     if (hereStringMatch !== null) {
       heredocData = hereStringMatch[1];
-      withoutHeredoc = text.slice(0, hereStringMatch.index) + text.slice(hereStringMatch.index + hereStringMatch[0].length);
+      withoutHeredoc =
+        text.slice(0, hereStringMatch.index) + text.slice(hereStringMatch.index + hereStringMatch[0].length);
     }
   }
 

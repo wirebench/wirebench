@@ -26,6 +26,7 @@ export type CommandId =
   | 'explorer.cloneRequest'
   | 'explorer.renameRequest'
   | 'explorer.deleteRequest'
+  | 'explorer.recreateRequest'
   | 'explorer.copyEndpointAddress'
   | 'env.switch'
   | 'env.next'
@@ -36,7 +37,9 @@ export type CommandId =
   | 'editor.gotoLine'
   | 'editor.toggleLineNumbers'
   | 'editor.saveAs'
-  | 'editor.loadFrom';
+  | 'editor.loadFrom'
+  | 'editor.toggleLayoutOrientation'
+  | 'editor.toggleLayoutMode';
 
 /** Palette grouping for a command; also the heading shown in the command palette. */
 export type CommandCategory =

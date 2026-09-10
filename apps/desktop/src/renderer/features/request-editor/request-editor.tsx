@@ -1,19 +1,24 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { selectRequestEndpointSource, selectRequestEndpointUrl } from '../../state/project-endpoint.js';
 import { useProjectStore } from '../../state/project.js';
+import { groupOrientation, useEditorLayout } from './layout.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
+import { ViewTabs } from './view-tabs.js';
 import { ResponsePane } from './response-pane.js';
 import { RequestToolbar } from './toolbar.js';
 
 export interface RequestEditorProps {
   readonly requestId: string;
-  /** `horizontal` puts the panes side by side. Task 29 adds the toggle that flips this. */
-  readonly layout?: 'horizontal' | 'vertical';
 }
+
+const PANE_TABS = [
+  { id: 'request', label: 'Request' },
+  { id: 'response', label: 'Response' },
+] as const;
 
 /** Mirrors `keybindings.ts`'s notion of "a keystroke the focused field should keep". */
 function isTextInput(target: EventTarget): boolean {
@@ -29,7 +34,9 @@ const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-vis
  * One request tab: toolbar on top, request and response panes below. Everything it needs is
  * read from the stores by id, so a tab is fully described by its `requestId`.
  */
-export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEditorProps) {
+export function RequestEditor({ requestId }: RequestEditorProps) {
+  const layout = useEditorLayout(requestId);
+  const [pane, setPane] = useState<(typeof PANE_TABS)[number]['id']>('request');
   const draft = useProjectStore((state) => state.requests[requestId]);
   const summary = useProjectStore((state) => (draft === undefined ? undefined : state.interfaces[draft.interfaceId]));
   const updateRequest = useProjectStore((state) => state.updateRequest);
@@ -66,6 +73,8 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
     [setEndpoint, requestId],
   );
 
+  const orientation = groupOrientation(layout);
+
   if (draft === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This request no longer exists.</p>;
   }
@@ -99,24 +108,54 @@ export function RequestEditor({ requestId, layout = 'horizontal' }: RequestEdito
         sendShortcut={shortcutFor('request.send', platform)}
       />
 
-      <Group orientation={layout} className={`flex min-h-0 flex-1 ${layout === 'horizontal' ? '' : 'flex-col'}`}>
-        <Panel id="request-pane" defaultSize="50%" minSize="20%">
-          <RequestPane
-            ref={requestPaneRef}
-            requestId={requestId}
-            envelopeXml={draft.envelopeXml}
-            onEnvelopeChange={onEnvelopeChange}
-            onSend={onSend}
-            interfaceId={draft.interfaceId}
-            bindingName={draft.bindingName}
-            operationName={draft.operationName}
+      {layout.mode === 'tabs' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ViewTabs
+            label="Editor panes"
+            items={PANE_TABS}
+            active={pane}
+            onSelect={(id) => setPane(id as typeof pane)}
           />
-        </Panel>
-        <Separator aria-label="Resize" className={`${SEPARATOR} ${layout === 'horizontal' ? 'w-px' : 'h-px'}`} />
-        <Panel id="response-pane" minSize="20%">
-          <ResponsePane state={exchange} interfaceId={draft.interfaceId} requestId={requestId} />
-        </Panel>
-      </Group>
+          <div className="min-h-0 flex-1">
+            {pane === 'request' ? (
+              <RequestPane
+                ref={requestPaneRef}
+                requestId={requestId}
+                envelopeXml={draft.envelopeXml}
+                onEnvelopeChange={onEnvelopeChange}
+                onSend={onSend}
+                interfaceId={draft.interfaceId}
+                bindingName={draft.bindingName}
+                operationName={draft.operationName}
+              />
+            ) : (
+              <ResponsePane state={exchange} interfaceId={draft.interfaceId} requestId={requestId} />
+            )}
+          </div>
+        </div>
+      ) : (
+        <Group
+          orientation={orientation}
+          className={`flex min-h-0 flex-1 ${orientation === 'horizontal' ? '' : 'flex-col'}`}
+        >
+          <Panel id="request-pane" defaultSize="50%" minSize="20%">
+            <RequestPane
+              ref={requestPaneRef}
+              requestId={requestId}
+              envelopeXml={draft.envelopeXml}
+              onEnvelopeChange={onEnvelopeChange}
+              onSend={onSend}
+              interfaceId={draft.interfaceId}
+              bindingName={draft.bindingName}
+              operationName={draft.operationName}
+            />
+          </Panel>
+          <Separator aria-label="Resize" className={`${SEPARATOR} ${orientation === 'horizontal' ? 'w-px' : 'h-px'}`} />
+          <Panel id="response-pane" minSize="20%">
+            <ResponsePane state={exchange} interfaceId={draft.interfaceId} requestId={requestId} />
+          </Panel>
+        </Group>
+      )}
     </section>
   );
 }
