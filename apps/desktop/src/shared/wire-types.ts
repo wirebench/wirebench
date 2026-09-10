@@ -1397,6 +1397,27 @@ export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatch
 export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });
 
 /**
+ * The largest single file a drag-and-drop may add (32 MiB).
+ *
+ * Dropped bytes cross IPC base64-encoded and are held in memory on both sides, so an unbounded
+ * drop is an easy way to wedge the app. Adding a bigger file through the Add… picker is
+ * unaffected: that path streams from disk and never crosses the bridge. This is the single
+ * source of truth for the cap — the renderer's drop handler, the `addDropped` request schema,
+ * and `ProjectService.addAttachmentBytes`'s decoded-length check all read it from here.
+ */
+export const MAX_DROPPED_ATTACHMENT_BYTES = 32 * 1024 * 1024;
+
+/**
+ * The longest a dropped file's base64 payload may be: `MAX_DROPPED_ATTACHMENT_BYTES` encoded,
+ * plus the few bytes of padding base64 can add. Bounding this in the request schema means an
+ * oversized drop is refused before `addDropped` ever decodes it.
+ */
+export const MAX_DROPPED_BASE64_LENGTH = Math.ceil((MAX_DROPPED_ATTACHMENT_BYTES * 4) / 3) + 4;
+
+/** The most files a single drop may add — an editing-sanity bound, not a product limit. */
+export const MAX_DROPPED_FILES = 32;
+
+/**
  * Request payload for `attachments.addDropped`: the *bytes* of files dropped onto the
  * attachments inspector, never their paths.
  *
@@ -1408,14 +1429,16 @@ export const preferencesResetRequestSchema = z.object({ section: preferencesSect
  */
 export const attachmentsAddDroppedRequestSchema = z.object({
   requestId: z.string(),
-  files: z.array(
-    z.object({
-      name: z.string(),
-      /** The browser's sniffed media type; empty when it could not tell, so main falls back. */
-      contentType: z.string(),
-      bytesBase64: z.string(),
-    }),
-  ),
+  files: z
+    .array(
+      z.object({
+        name: z.string(),
+        /** The browser's sniffed media type; empty when it could not tell, so main falls back. */
+        contentType: z.string(),
+        bytesBase64: z.string().max(MAX_DROPPED_BASE64_LENGTH),
+      }),
+    )
+    .max(MAX_DROPPED_FILES),
 });
 export type AttachmentsAddDroppedRequest = z.infer<typeof attachmentsAddDroppedRequestSchema>;
 

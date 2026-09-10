@@ -12,7 +12,8 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
-import { MAX_DROPPED_ATTACHMENT_BYTES, ProjectService } from '../src/main/project-service.js';
+import { ProjectService } from '../src/main/project-service.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/wire-types.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 

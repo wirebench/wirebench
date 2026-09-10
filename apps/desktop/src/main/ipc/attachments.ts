@@ -14,6 +14,7 @@ import { BrowserWindow, dialog, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
+import { MAX_DROPPED_BASE64_LENGTH } from '../../shared/wire-types.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ExchangeCache } from '../exchange-cache.js';
 import type { ProjectService } from '../project-service.js';
@@ -190,6 +191,14 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     // the attachment cache). See `ProjectService.addAttachmentBytes`.
     const attachmentIds: string[] = [];
     for (const file of request.files) {
+      // Checked on the base64 string itself, before `Buffer.from` ever decodes it: the request
+      // schema already bounds this, but a file at or near that bound would otherwise still pay
+      // for a full decode before `addAttachmentBytes`'s byte-length check rejects it.
+      if (file.bytesBase64.length > MAX_DROPPED_BASE64_LENGTH) {
+        throw new WirebenchError('attachment-too-large', `"${file.name}" is larger than the drop limit`, {
+          details: { name: file.name },
+        });
+      }
       const bytes = new Uint8Array(Buffer.from(file.bytesBase64, 'base64'));
       attachmentIds.push(
         await deps.project.addAttachmentBytes(request.requestId, {

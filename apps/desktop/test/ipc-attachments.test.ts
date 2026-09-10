@@ -301,6 +301,21 @@ describe('attachments.* IPC', () => {
       });
     });
 
+    it('refuses a file whose base64 payload is over the drop cap without decoding or calling the project', async () => {
+      // One byte over `MAX_DROPPED_BASE64_LENGTH`: big enough that a schema-level cap already
+      // refuses it, and — should that check ever be loosened — small enough to also exercise
+      // the handler's own pre-decode length check rather than actually allocating 32+ MiB here.
+      const oversized = 'A'.repeat(45_875_002);
+
+      const result = (await invoke('attachments.addDropped', {
+        requestId: 'req-1',
+        files: [{ name: 'huge.bin', contentType: '', bytesBase64: oversized }],
+      })) as Envelope<{ attachmentIds: string[] }>;
+
+      expect(result.ok).toBe(false);
+      expect(addAttachmentBytes).not.toHaveBeenCalled();
+    });
+
     it('reports the project’s error code when a dropped file is refused', async () => {
       addAttachmentBytes.mockRejectedValueOnce(new WirebenchError('attachment-too-large', 'huge.bin is too large'));
 

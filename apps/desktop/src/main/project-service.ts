@@ -50,6 +50,7 @@ import type {
   PropertyScopes,
   SendAttachmentOptions,
 } from '@wirebench/engine';
+import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   EngineProgressEvent,
   HydrationStatus,
@@ -93,15 +94,6 @@ export interface SendAttachmentInput {
   readonly attachments: readonly Attachment[];
   readonly attachmentOptions: SendAttachmentOptions;
 }
-
-/**
- * The largest single file a drag-and-drop may add (32 MiB).
- *
- * Dropped bytes cross IPC base64-encoded and are held in memory on both sides, so an
- * unbounded drop is an easy way to wedge the app. Adding a bigger file through the Add…
- * picker is unaffected: that path streams from disk and never crosses the bridge.
- */
-export const MAX_DROPPED_ATTACHMENT_BYTES = 32 * 1024 * 1024;
 
 /** How long an edit sits before autosave writes it out. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
