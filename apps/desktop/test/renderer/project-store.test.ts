@@ -258,4 +258,91 @@ describe('useProjectStore', () => {
     expect(useProjectStore.getState().requests['r1']).toBeUndefined();
     expect(useEditorsStore.getState().tabs).toHaveLength(0);
   });
+
+  it('delete-then-add yields Request 3 when Request 1 and 2 exist then 1 is deleted', async () => {
+    const generateFn = vi.fn().mockResolvedValue({ ok: true, value: generated('Add') });
+    useProjectStore.setState({
+      interfaces: { 'iface-1': summary },
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+        r2: {
+          id: 'r2',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 2',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: ['iface-1'],
+    });
+    window.wirebench = {
+      definition: { import: vi.fn(), close: vi.fn(), cancelImport: vi.fn() },
+      request: { generate: generateFn, send: vi.fn(), cancel: vi.fn() },
+      app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
+      on: vi.fn(),
+    };
+
+    useProjectStore.getState().removeRequest('r1');
+    const newId = await useProjectStore.getState().addRequest('iface-1', '{tns}B', 'Add');
+
+    const draft = useProjectStore.getState().requests[newId];
+    expect(draft?.name).toBe('Request 3');
+  });
+
+  it('addRequest ignores renamed drafts when determining next Request N', async () => {
+    const generateFn = vi.fn().mockResolvedValue({ ok: true, value: generated('Add') });
+    useProjectStore.setState({
+      interfaces: { 'iface-1': summary },
+      requests: {
+        r1: {
+          id: 'r1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+        r2: {
+          id: 'r2',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Custom Name',
+          envelopeXml: 'x',
+          soapVersion: '1.1',
+          headers: {},
+        },
+      },
+      order: ['iface-1'],
+    });
+    window.wirebench = {
+      definition: { import: vi.fn(), close: vi.fn(), cancelImport: vi.fn() },
+      request: { generate: generateFn, send: vi.fn(), cancel: vi.fn() },
+      app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
+      on: vi.fn(),
+    };
+
+    const newId = await useProjectStore.getState().addRequest('iface-1', '{tns}B', 'Add');
+
+    const draft = useProjectStore.getState().requests[newId];
+    expect(draft?.name).toBe('Request 2');
+  });
 });

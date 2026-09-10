@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import type { ImportSourceWire, InterfaceSummary, RequestGenerateResponse } from '../../shared/wire-types.js';
 import { useEditorsStore } from './editors.js';
+import { useExchangesStore } from './exchanges.js';
 import { ipc } from './ipc-client.js';
 
 /** One request tab: an operation's generated envelope, plus whatever the user has edited. */
@@ -182,10 +183,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (operation === undefined) {
         throw new Error(`unknown-operation: ${bindingName} ${operationName}`);
       }
-      const existingCount = Object.values(get().requests).filter(
+      const existingDrafts = Object.values(get().requests).filter(
         (r) => r.interfaceId === interfaceId && r.bindingName === bindingName && r.operationName === operationName,
-      ).length;
-      const name = `Request ${String(existingCount + 1)}`;
+      );
+      const maxIndex = existingDrafts.reduce((max, draft) => {
+        const match = draft.name.match(/^Request (\d+)$/);
+        return match ? Math.max(max, parseInt(match[1]!, 10)) : max;
+      }, 0);
+      const name = `Request ${String(maxIndex + 1)}`;
 
       const generated = await ipc().request.generate({ interfaceId, bindingName, operationName });
       const draftRequest = generated.ok
@@ -223,6 +228,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         delete draft.requests[requestId];
       });
       useEditorsStore.getState().close(`request:${requestId}`);
+      useExchangesStore.getState().clearRequest(requestId);
     },
   };
 });

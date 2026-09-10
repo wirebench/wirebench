@@ -147,4 +147,19 @@ describe('useExchangesStore', () => {
     expect(log.at(-1)?.sendId).toBe('new-1');
     expect(log[0]?.sendId).toBe('old-1');
   });
+
+  it('clearRequest deletes the exchange entry but keeps the log', () => {
+    const summary = exchangeSummary('send-1');
+    useExchangesStore.setState({
+      byRequest: { r1: { status: 'done', sendId: 'send-1', exchange: summary } },
+      log: [summary],
+    });
+
+    useExchangesStore.getState().clearRequest('r1');
+
+    const state = useExchangesStore.getState();
+    expect(state.byRequest['r1']).toBeUndefined();
+    expect(state.log).toHaveLength(1);
+    expect(state.log[0]?.sendId).toBe('send-1');
+  });
 });
