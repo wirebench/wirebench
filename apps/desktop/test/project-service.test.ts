@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadProject, mergePreferences, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
+import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
@@ -22,8 +23,17 @@ function tempDir(prefix: string): string {
 }
 
 /** A service wired to its own engine, over a shared `userData` directory for the recent list. */
-function newService(userDataDir: string, fs?: FsLike): ProjectService {
-  return new ProjectService(new EngineService(), new RecentProjects(userDataDir), {}, fs);
+function newService(userDataDir: string, fs?: FsLike, picks?: DialogPicks): ProjectService {
+  return new ProjectService(
+    new EngineService(),
+    new RecentProjects(userDataDir),
+    {},
+    fs,
+    undefined,
+    undefined,
+    undefined,
+    picks,
+  );
 }
 
 /**
@@ -553,19 +563,39 @@ describe('ProjectService: WSDL generation preferences reach every generation pat
 });
 
 describe('ProjectService attachments', () => {
-  /** A project with one imported interface and its `Request 1`, plus the folder it lives in. */
-  async function withProject(name: string): Promise<{ service: ProjectService; dir: string; requestId: string }> {
-    const service = newService(root!);
+  /**
+   * A project with one imported interface and its `Request 1`, plus the folder it lives in and
+   * the session's picked-path memory — the stand-in for `attachments.pickFiles` having run, so
+   * a test that attaches a file from outside the project has to say so explicitly with `pick`.
+   */
+  async function withProject(name: string): Promise<{
+    service: ProjectService;
+    dir: string;
+    requestId: string;
+    picks: DialogPicks;
+    pick: (path: string) => string;
+  }> {
+    const picks = new DialogPicks();
+    const service = newService(root!, undefined, picks);
     const dir = join(tempDir('project'), name);
     await service.create({ dir, name });
     const imported = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
     await service.whenHydrated();
-    return { service, dir, requestId: imported.project.requests[0]!.id };
+    return {
+      service,
+      dir,
+      requestId: imported.project.requests[0]!.id,
+      picks,
+      pick: (path: string) => {
+        picks.remember(path);
+        return path;
+      },
+    };
   }
 
   it('add-attachment with copyToCache writes the blob and records its digest', async () => {
-    const { service, dir, requestId } = await withProject('Attach Cache Project');
-    const source = join(tempDir('files'), 'logo.png');
+    const { service, dir, requestId, pick } = await withProject('Attach Cache Project');
+    const source = pick(join(tempDir('files'), 'logo.png'));
     await writeFile(source, Buffer.from([1, 2, 3, 4]));
 
     const result = await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: true });
@@ -581,8 +611,8 @@ describe('ProjectService attachments', () => {
   });
 
   it('add-attachment without copyToCache stores the absolute path and leaves the cache empty', async () => {
-    const { service, dir, requestId } = await withProject('Attach Path Project');
-    const source = join(tempDir('files'), 'notes.txt');
+    const { service, dir, requestId, pick } = await withProject('Attach Path Project');
+    const source = pick(join(tempDir('files'), 'notes.txt'));
     await writeFile(source, 'hello');
 
     const result = await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: false });
@@ -596,8 +626,8 @@ describe('ProjectService attachments', () => {
   });
 
   it('sendAttachmentsFor carries the attachments and the seven MTOM flags', async () => {
-    const { service, requestId } = await withProject('Attach Send Project');
-    const source = join(tempDir('files'), 'a.pdf');
+    const { service, requestId, pick } = await withProject('Attach Send Project');
+    const source = pick(join(tempDir('files'), 'a.pdf'));
     await writeFile(source, 'pdf');
     await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: true });
     await service.mutate({
@@ -640,10 +670,10 @@ describe('ProjectService attachments', () => {
 
   describe('resolveFile containment', () => {
     it('reads a file inside the project folder and the attachment cache', async () => {
-      const { service, dir, requestId } = await withProject('Inline Inside Project');
+      const { service, dir, requestId, pick } = await withProject('Inline Inside Project');
       const inside = join(dir, 'payload.txt');
       await writeFile(inside, 'inside');
-      const cached = join(tempDir('files'), 'cached.bin');
+      const cached = pick(join(tempDir('files'), 'cached.bin'));
       await writeFile(cached, 'cached-bytes');
       const added = await service.mutate({ kind: 'add-attachment', requestId, path: cached, copyToCache: true });
       const digest = (
@@ -673,8 +703,8 @@ describe('ProjectService attachments', () => {
     });
 
     it('allows the exact absolute path a path-source attachment of this request names', async () => {
-      const { service, requestId } = await withProject('Inline Declared Project');
-      const declared = join(tempDir('files'), 'declared.bin');
+      const { service, requestId, pick } = await withProject('Inline Declared Project');
+      const declared = pick(join(tempDir('files'), 'declared.bin'));
       await writeFile(declared, 'declared-bytes');
       await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
 
@@ -686,5 +716,188 @@ describe('ProjectService attachments', () => {
 
       await service.close();
     });
+  });
+
+  describe('resolveAttachmentPath containment', () => {
+    /** The saved `.request.yaml` of the only request that carries attachments. */
+    async function requestFileOf(dir: string): Promise<string> {
+      const interfaces = join(dir, 'interfaces');
+      for (const slug of await readdir(interfaces)) {
+        const operations = join(interfaces, slug, 'operations');
+        for (const operation of await readdir(operations)) {
+          for (const file of await readdir(join(operations, operation))) {
+            if (!file.endsWith('.request.yaml')) {
+              continue;
+            }
+            const path = join(operations, operation, file);
+            if ((await readFile(path, 'utf8')).includes('kind: path')) {
+              return path;
+            }
+          }
+        }
+      }
+      throw new Error('no request file carries a path attachment');
+    }
+
+    it('resolves a cache source to the blob under attachments/', async () => {
+      const { service, dir, requestId, pick } = await withProject('Resolve Cache Project');
+      const source = pick(join(tempDir('files'), 'cached.bin'));
+      await writeFile(source, 'cached-bytes');
+      const added = await service.mutate({ kind: 'add-attachment', requestId, path: source, copyToCache: true });
+      const attachment = added.project.requests.find((r) => r.id === requestId)!.attachments[0]!;
+      const digest = (attachment.source as { sha256: string }).sha256;
+
+      expect(await service.resolveAttachmentPath(requestId, attachment.id)).toBe(join(dir, 'attachments', digest));
+
+      await service.close();
+    });
+
+    it('refuses a declared absolute path this session did not pick, and allows it once picked', async () => {
+      const { service, dir, requestId, pick } = await withProject('Resolve Declared Project');
+      const declared = pick(join(tempDir('files'), 'declared.bin'));
+      await writeFile(declared, 'declared-bytes');
+      const added = await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+      const attachmentId = added.project.requests.find((r) => r.id === requestId)!.attachments[0]!.id;
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      // A new session: the file is still named by the project, but nothing here has any
+      // evidence the *user* chose it, so opening it is refused rather than handed to the OS.
+      const picks = new DialogPicks();
+      const reopened = newService(root!, undefined, picks);
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      await expect(reopened.resolveAttachmentPath(requestId, attachmentId)).rejects.toMatchObject({
+        code: 'attachment-outside-project',
+      });
+
+      // The Add picker (or a Browse… dialog) putting it back in the picked set is the only
+      // thing that changes that answer.
+      picks.remember(declared);
+      expect(await reopened.resolveAttachmentPath(requestId, attachmentId)).toBe(declared);
+
+      await reopened.close();
+    });
+
+    it('refuses a declared relative path that escapes the project folder', async () => {
+      const { service, dir, requestId, pick } = await withProject('Resolve Escape Project');
+      const declared = pick(join(tempDir('files'), 'declared.bin'));
+      await writeFile(declared, 'declared-bytes');
+      const added = await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+      const attachmentId = added.project.requests.find((r) => r.id === requestId)!.attachments[0]!.id;
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      // Rewrite the saved path to a traversal, as a hand-edited (or maliciously shared)
+      // project file could: `../../etc/passwd` must not resolve into a readable file.
+      const requestFile = await requestFileOf(dir);
+      const yaml = await readFile(requestFile, 'utf8');
+      await writeFile(requestFile, yaml.replace(declared, '../../etc/passwd'));
+
+      const reopened = newService(root!, undefined, new DialogPicks());
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      await expect(reopened.resolveAttachmentPath(requestId, attachmentId)).rejects.toMatchObject({
+        code: 'attachment-outside-project',
+      });
+
+      await reopened.close();
+    });
+
+    it('refuses an unknown request or attachment id', async () => {
+      const { service, requestId } = await withProject('Resolve Unknown Project');
+
+      await expect(service.resolveAttachmentPath('nope', 'nope')).rejects.toMatchObject({ code: 'not-found' });
+      await expect(service.resolveAttachmentPath(requestId, 'nope')).rejects.toMatchObject({ code: 'not-found' });
+
+      await service.close();
+    });
+  });
+
+  describe('add-attachment containment', () => {
+    it('refuses an unpicked path outside the project before it touches the file system', async () => {
+      const { service, dir, requestId } = await withProject('Add Outside Project');
+      const outside = join(tempDir('files'), 'id_rsa');
+      await writeFile(outside, 'PRIVATE KEY');
+
+      for (const copyToCache of [true, false]) {
+        await expect(
+          service.mutate({ kind: 'add-attachment', requestId, path: outside, copyToCache }),
+        ).rejects.toMatchObject({ code: 'attachment-outside-project' });
+      }
+
+      // Nothing was read and nothing was copied: no cache blob, and the request is untouched.
+      expect(existsSync(join(dir, 'attachments'))).toBe(false);
+      expect(service.snapshot()?.requests.find((r) => r.id === requestId)?.attachments).toEqual([]);
+
+      await service.close();
+    });
+
+    it('refuses a path that does not exist with the containment error, not ENOENT', async () => {
+      // Proof that the check runs *before* the `stat`/`readFile`: a missing file would answer
+      // ENOENT if anything had reached the file system first.
+      const { service, requestId } = await withProject('Add Missing Project');
+      const missing = join(tempDir('files'), 'no-such-file.bin');
+
+      await expect(
+        service.mutate({ kind: 'add-attachment', requestId, path: missing, copyToCache: true }),
+      ).rejects.toMatchObject({ code: 'attachment-outside-project' });
+      await expect(
+        service.mutate({ kind: 'add-attachment', requestId, path: missing, copyToCache: false }),
+      ).rejects.toMatchObject({ code: 'attachment-outside-project' });
+
+      await service.close();
+    });
+
+    it('accepts a file already inside the project folder without any pick', async () => {
+      const { service, dir, requestId } = await withProject('Add Inside Project');
+      const inside = join(dir, 'inside.txt');
+      await writeFile(inside, 'hello');
+
+      const result = await service.mutate({ kind: 'add-attachment', requestId, path: inside, copyToCache: false });
+
+      expect(result.project.requests.find((r) => r.id === requestId)!.attachments[0]!.source).toEqual({
+        kind: 'path',
+        path: inside,
+      });
+
+      await service.close();
+    });
+  });
+
+  it('a cached and a path attachment survive save() and loadProject() unchanged', async () => {
+    const { service, dir, requestId, pick } = await withProject('Attach Round Trip Project');
+    const cached = pick(join(tempDir('files'), 'blob.png'));
+    await writeFile(cached, Buffer.from([9, 8, 7]));
+    const declared = pick(join(tempDir('files'), 'linked.pdf'));
+    await writeFile(declared, 'pdf-bytes');
+
+    await service.mutate({ kind: 'add-attachment', requestId, path: cached, copyToCache: true });
+    const added = await service.mutate({ kind: 'add-attachment', requestId, path: declared, copyToCache: false });
+    const first = added.project.requests.find((r) => r.id === requestId)!.attachments[0]!;
+    await service.mutate({
+      kind: 'update-attachment',
+      requestId,
+      attachmentId: first.id,
+      patch: { part: 'file', type: 'MIME', contentId: 'part-1@wirebench' },
+    });
+    const expected = service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments;
+    await service.save({ reason: 'test' });
+    await service.close();
+
+    const { project, problems } = await loadProject(dir);
+    const request = project.interfaces
+      .flatMap((iface) => iface.operations)
+      .flatMap((operation) => operation.requests)
+      .find((candidate) => candidate.id === requestId)!;
+
+    expect(problems).toEqual([]);
+    expect(request.attachments).toEqual(expected);
+    expect(request.attachments.map((attachment) => attachment.source)).toEqual([
+      expect.objectContaining({ kind: 'cache' }),
+      { kind: 'path', path: declared },
+    ]);
   });
 });

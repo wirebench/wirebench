@@ -13,7 +13,7 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
-import { registerAttachmentChannels } from './ipc/attachments.js';
+import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerExchangeChannels } from './ipc/exchanges.js';
@@ -75,7 +75,7 @@ const globalProperties = new GlobalProperties(app.getPath('userData'));
 /** The user's application preferences, shared by every project and every window. */
 const preferencesService = new PreferencesService(app.getPath('userData'));
 
-/** Absolute paths picked through a Save-as dialog this session; see `dialog-picks.ts`. */
+/** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
 const dialogPicks = new DialogPicks();
 
 /** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
@@ -116,6 +116,7 @@ const projectService = new ProjectService(
   globalProperties,
   secretStore,
   preferencesService,
+  dialogPicks,
 );
 
 void app.whenReady().then(() => {
@@ -157,8 +158,12 @@ void app.whenReady().then(() => {
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
     project: projectService,
+    picks: dialogPicks,
     userDataDir: app.getPath('userData'),
   });
+  // Last session's decrypted attachment copies are disposable; sweep them off the disk without
+  // making the first window wait on it.
+  void clearAttachmentsTmp(app.getPath('userData'));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
   void globalProperties.load().then((properties) => {

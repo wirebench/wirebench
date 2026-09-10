@@ -79,8 +79,9 @@ const operationSummaryWireSchema = z.object({
   ports: z.array(operationPortRefSchema),
   /**
    * The attachment slots the binding declares for this operation's input; empty for a plain
-   * `soap:body`. Defaulted so a summary built before a definition hydrates (or by an older
-   * cached snapshot) still parses.
+   * `soap:body`. `.default([])` is parse-time tolerance only — a summary payload produced by an
+   * older build (or a stub in a test) that omits the field parses as `[]` instead of failing —
+   * and `z.infer` still yields a required array, so every reader can index it unconditionally.
    */
   inputMimeParts: z.array(mimePartWireSchema).default([]),
 });
@@ -338,7 +339,12 @@ const soapResponseWireSchema = z.object({
   version: z.enum(['1.1', '1.2']).optional(),
   isSoap: z.boolean(),
   fault: faultWireSchema.optional(),
-  /** Defaulted so an exchange recorded before Task 33a still parses out of the history file. */
+  /**
+   * `.default([])` is parse-time tolerance for a response payload written by an older build;
+   * `z.infer` still yields a required array. It is NOT what makes an old history entry load —
+   * a history row has its own response shape (see `historyEntrySchema`), which has no
+   * attachments field at all.
+   */
   attachments: z.array(responseAttachmentWireSchema).default([]),
 });
 
@@ -637,7 +643,12 @@ export const requestWireSchema = z.object({
   description: z.string().optional(),
   /** Read-only until Task 41 wires up editing; `enabled` is the only field the Details grid shows. */
   wsa: z.object({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() }).optional(),
-  /** Defaulted so a snapshot built before Task 33a (or by a stub in a test) still parses. */
+  /**
+   * `.default([])` is parse-time tolerance for a `ProjectWire` snapshot built by an older build
+   * (or by a stub in a test) that omits the field; `z.infer` still yields a required array. It
+   * is NOT what makes an old project file load — those go through the engine's
+   * `requestFileSchema`, which requires the field.
+   */
   attachments: z.array(attachmentWireSchema).default([]),
   properties: requestPropertiesSchema,
 });
@@ -1209,11 +1220,17 @@ export const fsOpenTextResponseSchema = z.object({ path: z.string().optional(), 
 // needs. Bytes never cross IPC — every one of these moves them within main.
 // ---------------------------------------------------------------------------
 
-/** Request payload for `attachments.saveResponse`; `path` omitted shows a native Save-as dialog. */
+/**
+ * Request payload for `attachments.saveResponse`: a handle, and deliberately nothing else.
+ *
+ * There is no `path` field on purpose. These are bytes a remote server sent, so the file they
+ * land in is always chosen by the user through the native Save-as dialog (or by
+ * `WIREBENCH_E2E_SAVE_PATH` in a test build) — exactly as `fs.saveText` works. A renderer that
+ * could name the target could write server-controlled content anywhere the user can write.
+ */
 export const attachmentsSaveResponseRequestSchema = z.object({
   sendId: z.string(),
   index: z.number(),
-  path: z.string().optional(),
 });
 /** Response for `attachments.saveResponse`: the file written, or `cancelled` when the user backed out. */
 export const attachmentsSaveResponseResponseSchema = z.object({

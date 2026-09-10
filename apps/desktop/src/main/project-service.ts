@@ -14,8 +14,9 @@
 
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
+import { basename, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
+import type { PickedPaths } from './dialog-picks.js';
 import {
   createInterface,
   createProject,
@@ -178,7 +179,32 @@ export class ProjectService {
      * engine's built-in defaults stand in.
      */
     private readonly preferences?: Pick<PreferencesService, 'get'>,
+    /**
+     * The absolute paths the user picked through a native dialog this session (see
+     * `dialog-picks.ts`). It is the only evidence that lets an attachment name a file outside
+     * the project folder; omitted in tests, which then get containment and nothing else.
+     */
+    private readonly picks?: PickedPaths,
   ) {}
+
+  /**
+   * Whether main may touch `resolved` on behalf of a request attachment.
+   *
+   * Two kinds of evidence count, and nothing else does: the file is contained in the project
+   * folder (or its attachment cache), or the *user* picked it through the Add-attachments /
+   * Browse… dialog this session. A path that merely arrived over IPC — or that a project file
+   * declares after a restart — has neither, so it is refused rather than read, sent or opened.
+   *
+   * A path delivered by an OS drag-and-drop (Task 33b) is NOT evidence: it leaves no record in
+   * main. 33b must add its own "remember this drop" channel and call it before the drop's path
+   * reaches `add-attachment`, rather than widening this check.
+   */
+  private async allowsAttachmentPath(dir: string, resolved: string): Promise<boolean> {
+    if (this.picks?.has(resolved) === true) {
+      return true;
+    }
+    return isInsideAny([dir, attachmentsDir(dir)], resolved);
+  }
 
   /** The current preferences, or the engine defaults when none were injected. */
   private prefs(): Preferences | undefined {
@@ -295,16 +321,18 @@ export class ProjectService {
    * `resolver` is the engine's own project-folder resolver. `resolveFile` is the guarded one:
    * the renderer can put any `file:<path>` it likes into an envelope, so a read is allowed only
    * inside the project folder or its attachment cache, or at the exact absolute path one of
-   * this request's own `path`-source attachments already names — a path the user picked
-   * explicitly. Anything else is refused rather than silently read.
+   * this request's own `path`-source attachments already names. That last exemption is safe
+   * because `add-attachment` will not record such a path in the first place unless it was
+   * contained or user-picked (see {@link allowsAttachmentPath}), so it names a file the user
+   * already chose to attach. Anything else is refused rather than silently read.
    */
   private attachmentResolvers(open: OpenProject, attachments: readonly Attachment[]): AttachmentResolvers {
     const projectDir = open.dir;
     const roots = [projectDir, attachmentsDir(projectDir)];
     const declared = new Set(
-      attachments
-        .filter((attachment) => attachment.source.kind === 'path')
-        .map((attachment) => resolvePath(projectDir, (attachment.source as { path: string }).path)),
+      attachments.flatMap((attachment) =>
+        attachment.source.kind === 'path' ? [resolvePath(projectDir, attachment.source.path)] : [],
+      ),
     );
     const resourceRoot = open.project.settings.resourceRoot;
     return {
@@ -330,9 +358,11 @@ export class ProjectService {
    * The absolute file that holds one request attachment's bytes: the cache blob for a `cache`
    * source, or the resolved `path` for a `path` one.
    *
-   * The result is what `attachments.openRequest` hands to the OS, so it is allow-listed here
-   * rather than at the call site: a path inside the project folder or its attachment cache, or
-   * the exact absolute path the attachment itself declares (which the user picked). Throws
+   * The result is what `attachments.openRequest` hands to the OS — a `.command`/`.desktop`
+   * away from arbitrary code execution — so it is allow-listed here rather than at the call
+   * site, through {@link allowsAttachmentPath}: inside the project folder or its attachment
+   * cache, or a path the user picked through a dialog *this session*. A `path` attachment
+   * saved in an earlier session therefore needs re-picking before it can be opened. Throws
    * rather than returning `undefined` so the renderer sees *why* an open was refused.
    */
   async resolveAttachmentPath(requestId: string, attachmentId: string): Promise<string> {
@@ -350,7 +380,7 @@ export class ProjectService {
     }
     const declared = attachment.source.path;
     const resolved = resolvePath(open.dir, declared);
-    if (isAbsolute(declared) || (await isInsideAny([open.dir, attachmentsDir(open.dir)], resolved))) {
+    if (await this.allowsAttachmentPath(open.dir, resolved)) {
       return resolved;
     }
     throw new ProjectError('attachment-outside-project', `The attachment "${attachment.name}" is outside the project`, {
@@ -687,12 +717,26 @@ export class ProjectService {
    * Turns the path an `add-attachment` names into the bytes' size and their {@link AttachmentSource}:
    * copied into `attachments/<sha256>` when the change asks for it (so the project stays
    * self-contained and survives the original being moved), or referenced where it lies.
+   *
+   * The path arrives over IPC, so it is checked by {@link allowsAttachmentPath} *before* any
+   * `stat` or `readFile`: without that, a renderer could name `~/.ssh/id_rsa` and have main
+   * read it into the project cache — or, with `copyToCache: false`, ship it to whatever
+   * endpoint the next send goes to.
    */
   private async readAttachmentSource(
     projectDir: string,
     input: { path: string; copyToCache: boolean; contentType: string },
   ): Promise<{ size: number; source: AttachmentSource }> {
-    const path = resolvePath(input.path);
+    // Relative against the project folder, matching `resolveAttachmentPath` and the inline-file
+    // resolver, so all three agree on which file a given string means.
+    const path = resolvePath(projectDir, input.path);
+    if (!(await this.allowsAttachmentPath(projectDir, path))) {
+      throw new ProjectError(
+        'attachment-outside-project',
+        `The file "${input.path}" is outside the project and was not picked through the Add dialog`,
+        { details: { path: input.path } },
+      );
+    }
     if (!input.copyToCache) {
       const info = await stat(path);
       return { size: info.size, source: { kind: 'path', path } };

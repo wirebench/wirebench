@@ -8,11 +8,13 @@
  * double-click-to-open and an Add-attachments picker.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BrowserWindow, dialog, shell } from 'electron';
+import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
+import type { RecordsPicks } from '../dialog-picks.js';
 import type { ExchangeCache } from '../exchange-cache.js';
 import type { ProjectService } from '../project-service.js';
 import { registerHandler } from './register.js';
@@ -26,8 +28,30 @@ export interface AttachmentChannelDeps {
   readonly exchanges: Pick<ExchangeCache, 'getAttachment'>;
   /** Resolves (and allow-lists) a saved request's attachment to a file on disk. */
   readonly project: Pick<ProjectService, 'resolveAttachmentPath'>;
+  /**
+   * The session's picked-path memory. `pickFiles` records everything it returns here, which is
+   * the *only* evidence `add-attachment` accepts for a file outside the project folder — so
+   * this is not optional: without it every add from the picker would be refused.
+   */
+  readonly picks: RecordsPicks;
   /** Where "open" writes its temporary copies; `app.getPath('userData')` in the app. */
   readonly userDataDir: string;
+}
+
+/**
+ * Deletes whatever `openResponse` left in `<userData>/attachments-tmp` in earlier sessions.
+ *
+ * Those copies are decrypted response bytes sitting in a predictable place with no lifetime of
+ * their own, so they are swept once at app start rather than accumulating forever. Best effort:
+ * a first run has no such folder, and a file still held open by a viewer is not worth failing
+ * startup over.
+ */
+export async function clearAttachmentsTmp(userDataDir: string): Promise<void> {
+  try {
+    await rm(join(userDataDir, ATTACHMENTS_TMP_DIR), { recursive: true, force: true });
+  } catch {
+    // Nothing to do: the temp copies are disposable, and startup must not depend on them.
+  }
 }
 
 /**
@@ -100,19 +124,17 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     const defaultName =
       attachment.name ?? `${safeSegment(attachment.contentId)}${extensionForContentType(attachment.contentType)}`;
 
-    let targetPath = request.path;
+    // The target is never the renderer's to choose (see the channel's request schema): these
+    // are bytes a remote server sent, and letting the page name the file would let it write
+    // them anywhere the user can write. It comes from the native dialog, or the e2e override.
+    let targetPath = e2eSavePathOverride();
     if (targetPath === undefined) {
-      const override = e2eSavePathOverride();
-      if (override !== undefined) {
-        targetPath = override;
-      } else {
-        const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-        const result = await dialog.showSaveDialog(window as BrowserWindow, {
-          title: 'Save attachment as…',
-          defaultPath: defaultName,
-        });
-        targetPath = result.canceled ? undefined : result.filePath;
-      }
+      const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+      const result = await dialog.showSaveDialog(window as BrowserWindow, {
+        title: 'Save attachment as…',
+        defaultPath: defaultName,
+      });
+      targetPath = result.canceled ? undefined : result.filePath;
     }
     if (targetPath === undefined) {
       return { cancelled: true };
@@ -138,8 +160,9 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
   });
 
   registerHandler(channels.attachments.openRequest, async (request) => {
-    // `resolveAttachmentPath` owns the allow-list (project folder, attachment cache, or the
-    // absolute path the attachment itself declares) and throws when the file is out of bounds.
+    // `resolveAttachmentPath` owns the allow-list — inside the project folder or its attachment
+    // cache, or a path the user picked through a dialog this session — and throws otherwise, so
+    // the renderer cannot name a `.command`/`.desktop` and have the OS run it.
     const path = await deps.project.resolveAttachmentPath(request.requestId, request.attachmentId);
     await openWithShell(path);
     return { path };
@@ -147,17 +170,27 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
 
   registerHandler(channels.attachments.pickFiles, async (_request, sender) => {
     const override = e2eOpenPathOverride();
-    if (override !== undefined) {
-      // Comma-separated so an e2e spec can exercise a multi-file add.
-      return { paths: override.split(',').filter((path) => path.length > 0) };
+    // Comma-separated so an e2e spec can exercise a multi-file add. The override goes through
+    // `remember` like a real pick does, so e2e exercises the same containment path as a user.
+    const paths =
+      override !== undefined ? override.split(',').filter((path) => path.length > 0) : await pickThroughDialog(sender);
+    // The user drove the dialog, so these — and only these — are the paths outside the project
+    // that `add-attachment` and `openRequest` will accept for the rest of the session.
+    for (const path of paths) {
+      deps.picks.remember(path);
     }
-    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-    const result = await dialog.showOpenDialog(window as BrowserWindow, {
-      title: 'Add attachments',
-      properties: ['openFile', 'multiSelections'],
-    });
-    return { paths: result.canceled ? [] : [...result.filePaths] };
+    return { paths };
   });
+}
+
+/** Shows the multi-select "Add attachments" picker on `sender`'s window; `[]` when cancelled. */
+async function pickThroughDialog(sender: WebContents): Promise<string[]> {
+  const window = BrowserWindow.fromWebContents(sender) ?? undefined;
+  const result = await dialog.showOpenDialog(window as BrowserWindow, {
+    title: 'Add attachments',
+    properties: ['openFile', 'multiSelections'],
+  });
+  return result.canceled ? [] : [...result.filePaths];
 }
 
 /**
