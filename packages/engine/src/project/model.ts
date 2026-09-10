@@ -28,6 +28,8 @@ export interface EndpointAuth {
   readonly passwordRef?: string;
   /** NTLM domain. */
   readonly domain?: string;
+  /** NTLM workstation name; optional, and only ever advertised, never verified. */
+  readonly workstation?: string;
   /** Send the Authorization header without waiting for a 401 challenge. */
   readonly preemptive?: boolean;
 }

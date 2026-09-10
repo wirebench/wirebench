@@ -143,6 +143,7 @@ export function toEngineAuth(auth?: ResolvedAuth): SendAuth | undefined {
       username: auth.username,
       password: auth.password,
       ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+      ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
     };
   }
   return { type: 'basic', username: auth.username, password: auth.password, preemptive: auth.preemptive !== false };

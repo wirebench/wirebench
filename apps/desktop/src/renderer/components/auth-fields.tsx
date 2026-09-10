@@ -1,7 +1,7 @@
 /**
  * The credential fields shared by the endpoints dialog and the interface inspector: type,
  * username, password (through {@link SecretField}, so only a `passwordRef` is ever held here),
- * NTLM domain and the Basic "preemptive" flag.
+ * NTLM domain/workstation and the Basic "preemptive" flag.
  *
  * Every label is prefixed with the level being edited (`Endpoint`, `Interface`), because the
  * request pane's own Auth inspector can be on screen at the same time and two identical
@@ -106,6 +106,7 @@ export function AuthFields({ scope, auth, onChange }: AuthFieldsProps) {
                     // password drops the field entirely rather than setting it to `undefined`.
                     ...(ref !== undefined ? { passwordRef: ref } : {}),
                     ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+                    ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
                     ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
                   };
                   onChange(merged);
@@ -123,6 +124,20 @@ export function AuthFields({ scope, auth, onChange }: AuthFieldsProps) {
                 value={auth.domain ?? ''}
                 onChange={(event) => {
                   patch({ domain: event.target.value });
+                }}
+              />
+            </label>
+          )}
+
+          {type === 'ntlm' && (
+            <label className="flex items-center gap-2">
+              <span className="w-28 shrink-0 text-xs text-fg-subtle">Workstation</span>
+              <input
+                aria-label={`${scope} workstation`}
+                className={INPUT_CLASS}
+                value={auth.workstation ?? ''}
+                onChange={(event) => {
+                  patch({ workstation: event.target.value });
                 }}
               />
             </label>

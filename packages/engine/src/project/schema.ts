@@ -30,6 +30,7 @@ export const endpointAuthSchema = z
     username: z.string().optional(),
     passwordRef: z.string().optional(),
     domain: z.string().optional(),
+    workstation: z.string().optional(),
     preemptive: z.boolean().optional(),
   })
   .refine((value) => !('password' in value), {

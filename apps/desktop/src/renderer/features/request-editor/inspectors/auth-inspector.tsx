@@ -194,6 +194,7 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
                         // password drops the field entirely rather than setting it to `undefined`.
                         ...(ref !== undefined ? { passwordRef: ref } : {}),
                         ...(base.domain !== undefined ? { domain: base.domain } : {}),
+                        ...(base.workstation !== undefined ? { workstation: base.workstation } : {}),
                         ...(base.preemptive !== undefined ? { preemptive: base.preemptive } : {}),
                       };
                       updateRequestAuth(requestId, merged);
@@ -211,6 +212,20 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
                     value={auth?.domain ?? ''}
                     onChange={(event) => {
                       patch({ domain: event.target.value });
+                    }}
+                  />
+                </label>
+              )}
+
+              {type === 'ntlm' && (
+                <label className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-fg-subtle">Workstation</span>
+                  <input
+                    aria-label="Workstation"
+                    className={INPUT_CLASS}
+                    value={auth?.workstation ?? ''}
+                    onChange={(event) => {
+                      patch({ workstation: event.target.value });
                     }}
                   />
                 </label>

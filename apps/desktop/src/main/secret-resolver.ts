@@ -13,6 +13,7 @@ export interface ResolvedAuth {
   readonly username?: string;
   readonly password?: string;
   readonly domain?: string;
+  readonly workstation?: string;
   readonly preemptive?: boolean;
 }
 
@@ -33,6 +34,7 @@ export async function resolveEndpointAuth(
     type: auth.type,
     ...(auth.username !== undefined ? { username: auth.username } : {}),
     ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+    ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
     ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
   };
   if (auth.passwordRef === undefined) {

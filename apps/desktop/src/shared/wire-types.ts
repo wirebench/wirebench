@@ -500,6 +500,7 @@ export const endpointAuthSchema = z.object({
   username: z.string().optional(),
   passwordRef: z.string().optional(),
   domain: z.string().optional(),
+  workstation: z.string().optional(),
   preemptive: z.boolean().optional(),
 });
 export type EndpointAuthWire = z.infer<typeof endpointAuthSchema>;
