@@ -91,8 +91,11 @@ void app.whenReady().then(() => {
     broadcast(events.globals.changed, { properties });
   });
   registerDialogsChannels();
-  // Warms the in-memory map so the first send does not have to wait on a disk read.
-  void globalProperties.load();
+  // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
+  // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
+  void globalProperties.load().then((properties) => {
+    broadcast(events.globals.changed, { properties });
+  });
   createMainWindow();
   applyWindowTitle(projectService.snapshot());
 

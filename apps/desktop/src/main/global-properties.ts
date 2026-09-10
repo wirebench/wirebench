@@ -64,13 +64,33 @@ export class GlobalProperties {
   private readonly file: string;
   private properties: PropertyMap = {};
   private loaded = false;
+  private loadPromise: Promise<PropertyMap> | undefined;
+  /**
+   * Serialises every write: each write chains off this promise instead of `this.properties`
+   * directly, so two overlapping `set`/`remove`/`replaceAll` calls read the latest state rather
+   * than racing to persist stale snapshots and silently dropping one another's edits.
+   */
+  private queue: Promise<PropertyMap> = Promise.resolve(this.properties);
 
   constructor(userDataDir: string) {
     this.file = join(userDataDir, GLOBAL_PROPERTIES_FILE);
   }
 
-  /** Reads the file into memory, returning the map. Safe to call more than once. */
+  /**
+   * Reads the file into memory, returning the map. Safe to call more than once — concurrent
+   * calls (e.g. the startup warm-up racing an early `globals.get`) share the same in-flight read
+   * rather than each issuing their own.
+   */
   async load(): Promise<PropertyMap> {
+    if (this.loadPromise) {
+      return this.loadPromise;
+    }
+    const loadPromise = this.doLoad();
+    this.loadPromise = loadPromise;
+    return loadPromise;
+  }
+
+  private async doLoad(): Promise<PropertyMap> {
     let text: string;
     try {
       text = await readFile(this.file, 'utf8');
@@ -86,6 +106,15 @@ export class GlobalProperties {
     }
     this.loaded = true;
     return this.get();
+  }
+
+  /**
+   * Resolves once the initial `load()` has completed. Every read/write handler awaits this
+   * before touching `properties`, so an early call (before `main/index.ts`'s startup warm-up
+   * finishes) sees on-disk state rather than the empty default.
+   */
+  ready(): Promise<PropertyMap> {
+    return this.load();
   }
 
   /** The current map. A defensive copy: callers must go through {@link set}/{@link remove}. */
@@ -107,23 +136,34 @@ export class GlobalProperties {
     return this.get();
   }
 
+  /** Queues `op` after every previously queued write, so it always reads the latest state. */
+  private enqueue(op: () => Promise<PropertyMap>): Promise<PropertyMap> {
+    const next = this.queue.then(async () => {
+      await this.ensureLoaded();
+      return op();
+    });
+    // Swallow rejection on the queue chain itself (the caller's own await still sees it) so one
+    // failed write does not permanently wedge every write after it.
+    this.queue = next.catch(() => this.get());
+    return next;
+  }
+
   /** Sets one property, returning the resulting map. */
-  async set(name: string, value: string): Promise<PropertyMap> {
-    await this.ensureLoaded();
-    return this.persist({ ...this.properties, [name]: value });
+  set(name: string, value: string): Promise<PropertyMap> {
+    return this.enqueue(() => this.persist({ ...this.properties, [name]: value }));
   }
 
   /** Removes one property (a no-op when it is absent), returning the resulting map. */
-  async remove(name: string): Promise<PropertyMap> {
-    await this.ensureLoaded();
-    const next = { ...this.properties };
-    delete next[name];
-    return this.persist(next);
+  remove(name: string): Promise<PropertyMap> {
+    return this.enqueue(() => {
+      const next = { ...this.properties };
+      delete next[name];
+      return this.persist(next);
+    });
   }
 
   /** Replaces the whole map — what a properties table sends after an edit. */
-  async replaceAll(properties: PropertyMap): Promise<PropertyMap> {
-    await this.ensureLoaded();
-    return this.persist({ ...properties });
+  replaceAll(properties: PropertyMap): Promise<PropertyMap> {
+    return this.enqueue(() => this.persist({ ...properties }));
   }
 }

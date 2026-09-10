@@ -69,4 +69,15 @@ describe('GlobalProperties', () => {
     writeFileSync(join(dir, GLOBAL_PROPERTIES_FILE), 'version: 1\nproperties:\n  port: 8080\n  who: ada\n', 'utf8');
     expect(await new GlobalProperties(dir).load()).toEqual({ who: 'ada' });
   });
+
+  it('serialises concurrent writes so neither is lost to a stale read', async () => {
+    const globals = new GlobalProperties(dir);
+
+    const setA = globals.set('a', '1');
+    const setB = globals.set('b', '2');
+    await Promise.all([setA, setB]);
+
+    expect(globals.get()).toEqual({ a: '1', b: '2' });
+    expect(await new GlobalProperties(dir).load()).toEqual({ a: '1', b: '2' });
+  });
 });
