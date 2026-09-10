@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -562,6 +562,26 @@ describe('ProjectService: WSDL generation preferences reach every generation pat
   });
 });
 
+/** The saved `.request.yaml` of the only request under `dir` that carries a path attachment. */
+async function requestFileWithPathAttachment(dir: string): Promise<string> {
+  const interfaces = join(dir, 'interfaces');
+  for (const slug of await readdir(interfaces)) {
+    const operations = join(interfaces, slug, 'operations');
+    for (const operation of await readdir(operations)) {
+      for (const file of await readdir(join(operations, operation))) {
+        if (!file.endsWith('.request.yaml')) {
+          continue;
+        }
+        const path = join(operations, operation, file);
+        if ((await readFile(path, 'utf8')).includes('kind: path')) {
+          return path;
+        }
+      }
+    }
+  }
+  throw new Error('no request file carries a path attachment');
+}
+
 describe('ProjectService attachments', () => {
   /**
    * A project with one imported interface and its `Request 1`, plus the folder it lives in and
@@ -587,7 +607,7 @@ describe('ProjectService attachments', () => {
       requestId: imported.project.requests[0]!.id,
       picks,
       pick: (path: string) => {
-        picks.remember(path);
+        picks.rememberRead(path);
         return path;
       },
     };
@@ -703,11 +723,80 @@ describe('ProjectService attachments', () => {
       const reopened = newService(root!, undefined, picks);
       await reopened.openProject(dir);
       await reopened.whenHydrated();
-      picks.remember(declared);
+      picks.rememberRead(declared);
 
       const send = reopened.sendAttachmentsFor(requestId)!;
       expect(await send.attachmentOptions.resolver(send.attachments[0]!)).toEqual(
         new Uint8Array(Buffer.from('declared-bytes')),
+      );
+
+      await reopened.close();
+    });
+
+    it('refuses a resourceRoot + relative-path bypass: checks the candidate the engine would actually read', async () => {
+      // Finding 1 (fix round 3): the old check resolved a `path` source only against the
+      // project folder (`resolvePath(projectDir, source.path)`), but the engine resolver this
+      // delegates to (`createFileAttachmentResolver`) tries `join(resourceRoot, path)` FIRST
+      // for a relative path. `resourceRoot` is a plain string the project file — or the
+      // renderer via `update-project-settings` — can point anywhere, so a relative `id_rsa`
+      // attachment with `resourceRoot: <attacker dir>` passed the old guard (contained under
+      // the project folder by that resolution) while the engine actually read the attacker's
+      // file. The fix must check the same candidate the engine would pick.
+      const { service, dir, requestId, pick } = await withProject('Send Resolver ResourceRoot Bypass Project');
+      const outsideDir = tempDir('resource-root-outside');
+      const secretPath = join(outsideDir, 'id_rsa');
+      await writeFile(secretPath, 'SECRET-KEY-BYTES');
+      const picked = pick(secretPath);
+      await service.mutate({ kind: 'add-attachment', requestId, path: picked, copyToCache: false });
+      await service.mutate({ kind: 'update-project-settings', patch: { resourceRoot: outsideDir } });
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      // Hand-edit the saved request the way a shared or hand-edited project file could: the
+      // declared path becomes relative, so only `resourceRoot` decides which file it names.
+      const requestFile = await requestFileWithPathAttachment(dir);
+      const savedYaml = await readFile(requestFile, 'utf8');
+      await writeFile(requestFile, savedYaml.replace(secretPath, 'id_rsa'));
+
+      // A fresh session: no pick evidence at all, and `resourceRoot` still names the outside
+      // folder — exactly the attacker's `resourceRoot: /Users/me/.ssh` + `path: id_rsa` case.
+      const reopened = newService(root!, undefined, new DialogPicks());
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      const send = reopened.sendAttachmentsFor(requestId)!;
+      await expect(send.attachmentOptions.resolver(send.attachments[0]!)).rejects.toMatchObject({
+        code: 'attachment-outside-project',
+      });
+
+      await reopened.close();
+    });
+
+    it('allows the resourceRoot + relative-path candidate when resourceRoot resolves inside the project', async () => {
+      const { service, dir, requestId, pick } = await withProject('Send Resolver ResourceRoot Inside Project');
+      const insideRoot = join(dir, 'resources');
+      await mkdir(insideRoot, { recursive: true });
+      const insidePath = join(insideRoot, 'payload.bin');
+      await writeFile(insidePath, 'inside-bytes');
+      const picked = pick(insidePath);
+      await service.mutate({ kind: 'add-attachment', requestId, path: picked, copyToCache: false });
+      await service.mutate({ kind: 'update-project-settings', patch: { resourceRoot: insideRoot } });
+      await service.save({ reason: 'test' });
+      await service.close();
+
+      const requestFile = await requestFileWithPathAttachment(dir);
+      const savedYaml = await readFile(requestFile, 'utf8');
+      await writeFile(requestFile, savedYaml.replace(insidePath, 'payload.bin'));
+
+      // Fresh session, still no pick evidence — this time `resourceRoot` itself is inside the
+      // project folder, so the candidate it resolves to is legitimately contained.
+      const reopened = newService(root!, undefined, new DialogPicks());
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      const send = reopened.sendAttachmentsFor(requestId)!;
+      expect(await send.attachmentOptions.resolver(send.attachments[0]!)).toEqual(
+        new Uint8Array(Buffer.from('inside-bytes')),
       );
 
       await reopened.close();
@@ -754,7 +843,7 @@ describe('ProjectService attachments', () => {
       await service.close();
     });
 
-    it('allows the exact absolute path a path-source attachment of this request names', async () => {
+    it('allows the exact absolute path this session picked, whether or not an attachment declares it', async () => {
       const { service, requestId, pick } = await withProject('Inline Declared Project');
       const declared = pick(join(tempDir('files'), 'declared.bin'));
       await writeFile(declared, 'declared-bytes');
@@ -763,7 +852,8 @@ describe('ProjectService attachments', () => {
       const resolveFile = service.sendAttachmentsFor(requestId)!.attachmentOptions.resolveFile!;
 
       expect(await resolveFile(declared)).toEqual(new Uint8Array(Buffer.from('declared-bytes')));
-      // Its neighbours are still out of bounds: only the declared path itself is exempt.
+      // Its neighbours are still out of bounds: `declared` passes because it was picked, not
+      // because some attachment on the request happens to name it — there is no such exemption.
       await expect(resolveFile(join(tempDir('files'), 'other.bin'))).rejects.toThrow(/outside the project folder/);
 
       await service.close();
@@ -771,25 +861,8 @@ describe('ProjectService attachments', () => {
   });
 
   describe('resolveAttachmentPath containment', () => {
-    /** The saved `.request.yaml` of the only request that carries attachments. */
-    async function requestFileOf(dir: string): Promise<string> {
-      const interfaces = join(dir, 'interfaces');
-      for (const slug of await readdir(interfaces)) {
-        const operations = join(interfaces, slug, 'operations');
-        for (const operation of await readdir(operations)) {
-          for (const file of await readdir(join(operations, operation))) {
-            if (!file.endsWith('.request.yaml')) {
-              continue;
-            }
-            const path = join(operations, operation, file);
-            if ((await readFile(path, 'utf8')).includes('kind: path')) {
-              return path;
-            }
-          }
-        }
-      }
-      throw new Error('no request file carries a path attachment');
-    }
+    /** Alias kept local to this describe for readability; see the module-level definition. */
+    const requestFileOf = requestFileWithPathAttachment;
 
     it('resolves a cache source to the blob under attachments/', async () => {
       const { service, dir, requestId, pick } = await withProject('Resolve Cache Project');
@@ -826,7 +899,7 @@ describe('ProjectService attachments', () => {
 
       // The Add picker (or a Browse… dialog) putting it back in the picked set is the only
       // thing that changes that answer.
-      picks.remember(declared);
+      picks.rememberRead(declared);
       expect(await reopened.resolveAttachmentPath(requestId, attachmentId)).toBe(declared);
 
       await reopened.close();

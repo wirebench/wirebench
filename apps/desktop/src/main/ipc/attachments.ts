@@ -14,7 +14,7 @@ import { BrowserWindow, dialog, shell } from 'electron';
 import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
-import type { RecordsPicks } from '../dialog-picks.js';
+import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ExchangeCache } from '../exchange-cache.js';
 import type { ProjectService } from '../project-service.js';
 import { registerHandler } from './register.js';
@@ -33,7 +33,7 @@ export interface AttachmentChannelDeps {
    * the *only* evidence `add-attachment` accepts for a file outside the project folder — so
    * this is not optional: without it every add from the picker would be refused.
    */
-  readonly picks: RecordsPicks;
+  readonly picks: RecordsReadPicks;
   /** Where "open" writes its temporary copies; `app.getPath('userData')` in the app. */
   readonly userDataDir: string;
 }
@@ -171,13 +171,15 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
   registerHandler(channels.attachments.pickFiles, async (_request, sender) => {
     const override = e2eOpenPathOverride();
     // Comma-separated so an e2e spec can exercise a multi-file add. The override goes through
-    // `remember` like a real pick does, so e2e exercises the same containment path as a user.
+    // `rememberRead` like a real pick does, so e2e exercises the same containment path as a user.
     const paths =
       override !== undefined ? override.split(',').filter((path) => path.length > 0) : await pickThroughDialog(sender);
     // The user drove the dialog, so these — and only these — are the paths outside the project
-    // that `add-attachment` and `openRequest` will accept for the rest of the session.
+    // that `add-attachment` and `openRequest` will accept for the rest of the session. This is
+    // a *read* pick only: it must never make a path a legal Dump File write target (that is
+    // `dialogs.saveFile`'s `rememberWrite`, a separate set).
     for (const path of paths) {
-      deps.picks.remember(path);
+      deps.picks.rememberRead(path);
     }
     return { paths };
   });

@@ -66,8 +66,12 @@ export interface RequestChannelDeps {
   readonly dialogPicks?: DumpFilePicks;
 }
 
-/** The subset of the session's picked-path memory the dump-file check needs. */
-export type DumpFilePicks = { has(path: string): boolean };
+/**
+ * The subset of the session's picked-path memory the dump-file check needs — write picks only.
+ * A path merely picked to *read* (the attachments "Add" dialog) must not qualify a Dump File
+ * write target; only a path chosen through the Save-as "Browse…" picker does.
+ */
+export type DumpFilePicks = { hasWrite(path: string): boolean };
 
 /**
  * Applies the saved request's properties (and the user's preferences) to the input the
@@ -100,7 +104,7 @@ async function resolveDumpPath(
   picks: DumpFilePicks | undefined,
 ): Promise<{ path: string } | { problem: ExchangeSummary['problems'][number] }> {
   const resolved = isAbsolute(target.path) ? target.path : resolvePath(target.projectDir, target.path);
-  if (picks?.has(resolved) === true) {
+  if (picks?.hasWrite(resolved) === true) {
     return { path: resolved };
   }
   const [projectReal, candidateReal] = await Promise.all([

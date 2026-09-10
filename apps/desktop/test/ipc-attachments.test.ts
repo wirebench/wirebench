@@ -254,22 +254,22 @@ describe('attachments.* IPC', () => {
     showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/a.png', '/b.pdf'] });
     await invoke('attachments.pickFiles', {});
 
-    expect(picks.has('/a.png')).toBe(true);
-    expect(picks.has('/b.pdf')).toBe(true);
-    expect(picks.has('/never-offered.png')).toBe(false);
+    expect(picks.hasRead('/a.png')).toBe(true);
+    expect(picks.hasRead('/b.pdf')).toBe(true);
+    expect(picks.hasRead('/never-offered.png')).toBe(false);
 
     process.env['WIREBENCH_E2E_OPEN_PATH'] = '/one.png,/two.png';
     await invoke('attachments.pickFiles', {});
 
-    expect(picks.has('/one.png')).toBe(true);
-    expect(picks.has('/two.png')).toBe(true);
+    expect(picks.hasRead('/one.png')).toBe(true);
+    expect(picks.hasRead('/two.png')).toBe(true);
   });
 
   it('pickFiles remembers nothing when the user cancels', async () => {
     showOpenDialog.mockResolvedValue({ canceled: true, filePaths: ['/leaked.png'] });
 
     expect(await invoke('attachments.pickFiles', {})).toEqual({ ok: true, value: { paths: [] } });
-    expect(picks.has('/leaked.png')).toBe(false);
+    expect(picks.hasRead('/leaked.png')).toBe(false);
   });
 
   it('does not let a Content-ID with separators steer the temp file out of its folder', async () => {

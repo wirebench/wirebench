@@ -14,9 +14,9 @@
 
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { basename, resolve as resolvePath } from 'node:path';
+import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
-import type { PickedPaths } from './dialog-picks.js';
+import type { ReadPicks } from './dialog-picks.js';
 import {
   createInterface,
   createProject,
@@ -119,6 +119,36 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * The absolute paths a `path`-source attachment's declared path could mean, in the exact order
+ * `createFileAttachmentResolver` (`@wirebench/engine`'s `packages/engine/src/project/attachments-cache.ts`)
+ * would try them: an absolute path is itself the only candidate; a relative one is tried under
+ * `resourceRoot` first (when the project has one), then under the project folder. Kept in sync
+ * with that function deliberately, so the path main checks is always the path the engine would
+ * actually read — see {@link ProjectService.attachmentResolvers}'s `resolver`.
+ */
+function attachmentPathCandidates(projectDir: string, resourceRoot: string | undefined, path: string): string[] {
+  if (isAbsolute(path)) {
+    return [path];
+  }
+  return resourceRoot === undefined
+    ? [resolvePath(projectDir, path)]
+    : [resolvePath(resourceRoot, path), resolvePath(projectDir, path)];
+}
+
+/** The first of `candidates` that exists on disk, or `undefined` when none do. */
+async function firstExistingCandidate(candidates: readonly string[]): Promise<string | undefined> {
+  for (const candidate of candidates) {
+    try {
+      await stat(candidate);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /** Every distinct port address of an imported definition, as project endpoints. */
 function endpointsFrom(summary: InterfaceSummary): Endpoint[] {
   const seen = new Set<string>();
@@ -184,7 +214,7 @@ export class ProjectService {
      * `dialog-picks.ts`). It is the only evidence that lets an attachment name a file outside
      * the project folder; omitted in tests, which then get containment and nothing else.
      */
-    private readonly picks?: PickedPaths,
+    private readonly picks?: ReadPicks,
   ) {}
 
   /**
@@ -200,7 +230,7 @@ export class ProjectService {
    * reaches `add-attachment`, rather than widening this check.
    */
   private async allowsAttachmentPath(dir: string, resolved: string): Promise<boolean> {
-    if (this.picks?.has(resolved) === true) {
+    if (this.picks?.hasRead(resolved) === true) {
       return true;
     }
     return isInsideAny([dir, attachmentsDir(dir)], resolved);
@@ -323,13 +353,18 @@ export class ProjectService {
    * resolved path is inside the project folder (or its attachment cache) or was picked by the
    * *user* through a native dialog this session.
    *
-   * `resolver` wraps the engine's own project-folder resolver (`createFileAttachmentResolver`):
-   * a `cache` source is untouched (its digest already confines it to `attachments/`), but a
-   * `path` source is checked *before* the engine resolver ever touches the file system — a
-   * project file restored from another session, a repo, or a person who shared the project can
-   * declare any absolute path, and without this guard a send would read and transmit it. The
-   * engine's own `attachment-unreadable` (missing file) is still reachable for anything that
-   * passes the guard.
+   * `resolver` does NOT delegate a `path` source to the engine's project-folder resolver
+   * (`createFileAttachmentResolver`) — only a `cache` source does, since its digest already
+   * confines it to `attachments/`. For a `path` source, main itself works out the same
+   * candidate list the engine resolver would try (`resourceRoot` first when the path is
+   * relative and one is set, then the project folder — see `attachments-cache.ts`'s own
+   * candidate logic), picks the first candidate that exists, and runs
+   * {@link allowsAttachmentPath} on *that exact candidate* before reading it itself. Checking
+   * `resolvePath(projectDir, path)` instead (ignoring `resourceRoot`) would be wrong: a
+   * relative path can be contained under the project folder by that resolution while the
+   * candidate the engine would actually read — `resourceRoot` joined with the same relative
+   * path — points somewhere else entirely, e.g. `resourceRoot: /Users/me/.ssh` +
+   * `source.path: id_rsa`. Checking the wrong candidate is equivalent to not checking at all.
    *
    * `resolveFile` handles `file:<path>` references the renderer put into the envelope; a read
    * is allowed only inside the project folder or its attachment cache, or at a user-picked
@@ -342,17 +377,27 @@ export class ProjectService {
     const readFileAttachment = createFileAttachmentResolver(projectDir, resourceRoot);
     return {
       resolver: async (attachment: Attachment): Promise<Uint8Array> => {
-        if (attachment.source.kind === 'path') {
-          const resolved = resolvePath(projectDir, attachment.source.path);
-          if (!(await this.allowsAttachmentPath(projectDir, resolved))) {
-            throw new ProjectError(
-              'attachment-outside-project',
-              `The attachment "${attachment.name}" is outside the project`,
-              { details: { attachmentId: attachment.id, path: attachment.source.path } },
-            );
-          }
+        if (attachment.source.kind !== 'path') {
+          return readFileAttachment(attachment);
         }
-        return readFileAttachment(attachment);
+        const declared = attachment.source.path;
+        const candidates = attachmentPathCandidates(projectDir, resourceRoot, declared);
+        const existing = await firstExistingCandidate(candidates);
+        if (existing === undefined) {
+          throw new ProjectError(
+            'attachment-unreadable',
+            `Attachment "${attachment.name}" could not be read from ${declared}`,
+            { details: { attachmentId: attachment.id, path: declared } },
+          );
+        }
+        if (!(await this.allowsAttachmentPath(projectDir, existing))) {
+          throw new ProjectError(
+            'attachment-outside-project',
+            `The attachment "${attachment.name}" is outside the project`,
+            { details: { attachmentId: attachment.id, path: declared } },
+          );
+        }
+        return new Uint8Array(await readFile(existing));
       },
       resolveFile: async (path: string): Promise<Uint8Array> => {
         const resolved = resolvePath(projectDir, path);

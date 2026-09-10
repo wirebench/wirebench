@@ -424,7 +424,7 @@ describe('request.send applies the saved request properties', () => {
         ...noActionSupport,
         dumpFileFor: () => ({ path: outsidePath, projectDir: dir }),
       },
-      dialogPicks: { has: (path) => path === outsidePath },
+      dialogPicks: { hasWrite: (path) => path === outsidePath },
     });
 
     const result = (await invoke('request.send', {
@@ -436,6 +436,42 @@ describe('request.send applies the saved request properties', () => {
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([]);
     expect(readFileSync(outsidePath, 'utf8')).toBe('<ok/>');
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('refuses an absolute dump file path that was only picked as an attachment read source', async () => {
+    // Adversarial case for finding 2 (fix round 3): a file chosen in the attachments "Add"
+    // dialog (a read pick) must not become a legal Dump File write target. Before the
+    // read/write split, `DumpFilePicks` consulted the same generalised set `pickFiles`
+    // populated, so this exact scenario would have been wrongly allowed.
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
+    const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
+    const outsidePath = join(outsideDir, 'attached-not-dumped.xml');
+    const { engine } = recordingEngine();
+    registerRequestChannels(engine, {
+      project: {
+        scopesFor: () => scopes,
+        preflight: () => preflight,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => undefined,
+        ...noActionSupport,
+        dumpFileFor: () => ({ path: outsidePath, projectDir: dir }),
+      },
+      // `hasWrite` never returns true for this path: it was only ever offered as a read pick.
+      dialogPicks: { hasWrite: () => false },
+    });
+
+    const result = (await invoke('request.send', {
+      sendId: 'send-dump-read-pick-only',
+      requestId: 'req-1',
+      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+    })) as { ok: boolean; value: { problems: { code: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
+    expect(existsSync(outsidePath)).toBe(false);
     rmSync(dir, { recursive: true, force: true });
     rmSync(outsideDir, { recursive: true, force: true });
   });
