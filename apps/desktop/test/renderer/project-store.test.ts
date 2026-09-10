@@ -53,9 +53,11 @@ describe('useProjectStore', () => {
       .mockResolvedValueOnce({ ok: true, value: generated('Add') })
       .mockResolvedValueOnce({ ok: true, value: generated('Subtract') });
     window.wirebench = {
-      definition: { import: importFn, close: vi.fn() },
+      definition: { import: importFn, close: vi.fn(), cancelImport: vi.fn() },
       request: { generate: generateFn, send: vi.fn(), cancel: vi.fn() },
       app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
       on: vi.fn(),
     };
 
@@ -81,6 +83,7 @@ describe('useProjectStore', () => {
       definition: {
         import: vi.fn().mockResolvedValue({ ok: true, value: { ...summary, operations: [summary.operations[0]] } }),
         close: vi.fn(),
+        cancelImport: vi.fn(),
       },
       request: {
         generate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'boom', message: 'generation failed' } }),
@@ -88,6 +91,8 @@ describe('useProjectStore', () => {
         cancel: vi.fn(),
       },
       app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
       on: vi.fn(),
     };
 
@@ -118,9 +123,11 @@ describe('useProjectStore', () => {
       order: ['iface-1'],
     });
     window.wirebench = {
-      definition: { import: vi.fn(), close: closeFn },
+      definition: { import: vi.fn(), close: closeFn, cancelImport: vi.fn() },
       request: { generate: vi.fn(), send: vi.fn(), cancel: vi.fn() },
       app: { version: vi.fn() },
+      dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+      files: { pathFor: vi.fn() },
       on: vi.fn(),
     };
 

@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { IconButton } from '../components/icon-button.js';
 import { Tabs } from '../components/tabs.js';
+import { ProblemsView } from '../features/problems/problems-view.js';
 import type { ConsoleTab } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -37,7 +38,7 @@ export function ConsolePanel() {
         </IconButton>
       </div>
       <div role="tabpanel" className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-fg-subtle">
-        {EMPTY_COPY[activeTab]}
+        {activeTab === 'problems' ? <ProblemsView /> : EMPTY_COPY[activeTab]}
       </div>
     </section>
   );

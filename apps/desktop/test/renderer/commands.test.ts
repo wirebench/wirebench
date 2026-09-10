@@ -17,6 +17,7 @@ const context: CommandContext = {
     details: { visible: true, size: 20 },
     theme: 'dark',
   },
+  selection: undefined,
 };
 
 describe('command registry', () => {

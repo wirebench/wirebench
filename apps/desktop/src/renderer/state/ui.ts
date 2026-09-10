@@ -4,8 +4,21 @@ import { create } from 'zustand';
 import type { ConsoleTab, SidebarView, ThemePreference, UiSnapshot } from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
+/** A selected node in the explorer tree, read by the details panel (Task 30). */
+export interface Selection {
+  readonly kind: string;
+  readonly id: string;
+}
+
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
 export interface UiStore extends UiSnapshot {
+  /** The explorer's current selection, if any. Transient — never persisted. */
+  readonly selection: Selection | undefined;
+  /** Whether the Import WSDL dialog is open. Transient — never persisted. */
+  readonly importDialogOpen: boolean;
+  readonly setSelection: (selection: Selection | undefined) => void;
+  readonly openImportDialog: () => void;
+  readonly closeImportDialog: () => void;
   readonly toggleSidebar: () => void;
   readonly toggleConsole: () => void;
   readonly toggleDetails: () => void;
@@ -36,6 +49,18 @@ export const useUiStore = create<UiStore>((set, get) => {
 
   return {
     ...DEFAULT_UI_STATE,
+    selection: undefined,
+    importDialogOpen: false,
+
+    setSelection: (selection) => {
+      set({ selection });
+    },
+    openImportDialog: () => {
+      set({ importDialogOpen: true });
+    },
+    closeImportDialog: () => {
+      set({ importDialogOpen: false });
+    },
 
     toggleSidebar: () =>
       update((draft) => {

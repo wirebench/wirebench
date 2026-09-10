@@ -34,6 +34,7 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly importDefinition: (
     source: ImportSourceWire,
     options?: { readonly auth?: { readonly username: string; readonly password: string } },
+    token?: string,
   ) => Promise<InterfaceSummary>;
   readonly removeInterface: (interfaceId: string) => Promise<void>;
   readonly updateRequest: (requestId: string, patch: Partial<Omit<RequestDraft, 'id' | 'interfaceId'>>) => void;
@@ -96,10 +97,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     requests: {},
     order: [],
 
-    importDefinition: async (source, options) => {
-      const result = await ipc().definition.import({ source, ...(options !== undefined ? { options } : {}) });
+    importDefinition: async (source, options, token) => {
+      const result = await ipc().definition.import({
+        source,
+        ...(options !== undefined ? { options } : {}),
+        ...(token !== undefined ? { token } : {}),
+      });
       if (!result.ok) {
-        throw new Error(result.error.message);
+        throw Object.assign(new Error(result.error.message), { code: result.error.code });
       }
       const summary = result.value;
 

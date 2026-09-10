@@ -3,6 +3,7 @@ import { app, BrowserWindow } from 'electron';
 import { EngineService } from './engine-service.js';
 import { registerAppChannels } from './ipc/app.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
+import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { createMainWindow } from './windows.js';
 
@@ -19,6 +20,7 @@ void app.whenReady().then(() => {
   registerAppChannels();
   registerDefinitionChannels(engineService);
   registerRequestChannels(engineService);
+  registerDialogsChannels();
   createMainWindow();
 
   app.on('activate', () => {

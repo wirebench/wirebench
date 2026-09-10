@@ -1,3 +1,4 @@
+import { ExplorerView } from '../features/explorer/explorer-view.js';
 import type { SidebarView } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -44,10 +45,14 @@ export function Sidebar() {
       <h2 className="flex h-row shrink-0 items-center px-3 text-xs font-medium tracking-wider text-fg-subtle uppercase">
         {copy.title}
       </h2>
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-        <p className="text-md text-fg-muted">{copy.headline}</p>
-        <p className="mt-1 text-sm text-fg-subtle">{copy.body}</p>
-      </div>
+      {view === 'explorer' ? (
+        <ExplorerView />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+          <p className="text-md text-fg-muted">{copy.headline}</p>
+          <p className="mt-1 text-sm text-fg-subtle">{copy.body}</p>
+        </div>
+      )}
     </aside>
   );
 }

@@ -40,9 +40,11 @@ function exchangeSummary(sendId: string): ExchangeSummary {
 
 function stubIpc(overrides: Partial<typeof window.wirebench> = {}): void {
   window.wirebench = {
-    definition: { import: vi.fn(), close: vi.fn() },
+    definition: { import: vi.fn(), close: vi.fn(), cancelImport: vi.fn() },
     request: { generate: vi.fn(), send: vi.fn(), cancel: vi.fn() },
     app: { version: vi.fn() },
+    dialogs: { openFile: vi.fn(), openFolder: vi.fn() },
+    files: { pathFor: vi.fn() },
     on: vi.fn(),
     ...overrides,
   };

@@ -14,4 +14,6 @@ export function registerDefinitionChannels(service: EngineService): void {
   );
 
   registerHandler(channels.definition.close, (request) => Promise.resolve(service.close(request.interfaceId)));
+
+  registerHandler(channels.definition.cancelImport, (request) => Promise.resolve(service.cancelImport(request.token)));
 }

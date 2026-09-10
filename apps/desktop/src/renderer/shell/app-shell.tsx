@@ -15,6 +15,7 @@ import { CommandPalette } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
 import { DetailsPanel } from './details-panel.js';
 import { EditorArea } from './editor-area.js';
+import { ImportDialog } from '../features/explorer/import-dialog.js';
 import { Sidebar } from './sidebar.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
@@ -41,9 +42,12 @@ export function AppShell() {
   const consoleState = useUiStore((state) => state.console);
   const details = useUiStore((state) => state.details);
   const theme = useUiStore((state) => state.theme);
+  const selection = useUiStore((state) => state.selection);
   const setSidebarSize = useUiStore((state) => state.setSidebarSize);
   const setConsoleSize = useUiStore((state) => state.setConsoleSize);
   const setDetailsSize = useUiStore((state) => state.setDetailsSize);
+  const importDialogOpen = useUiStore((state) => state.importDialogOpen);
+  const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   useEffect(() => {
     hydrateUi();
@@ -60,8 +64,8 @@ export function AppShell() {
   useTheme(theme);
 
   const context: CommandContext = useMemo(
-    () => ({ platform, ui: { sidebar, console: consoleState, details, theme } }),
-    [platform, sidebar, consoleState, details, theme],
+    () => ({ platform, ui: { sidebar, console: consoleState, details, theme }, selection }),
+    [platform, sidebar, consoleState, details, theme, selection],
   );
   useKeybindings(context);
 
@@ -155,6 +159,10 @@ export function AppShell() {
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} context={context} />
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
+      />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

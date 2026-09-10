@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { buildApi } from './build-api.js';
 
 /**
@@ -16,6 +16,7 @@ const api = buildApi(
       ipcRenderer.removeListener(eventName, wrapped);
     };
   },
+  (file) => webUtils.getPathForFile(file),
 );
 
 contextBridge.exposeInMainWorld('wirebench', api);

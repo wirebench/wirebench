@@ -42,6 +42,10 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     name: Name,
     listener: (payload: WirebenchEventMap[Name]) => void,
   ): () => void;
+  /** Pure preload helper: resolves a dropped/picked `File`'s absolute path. Not an IPC call. */
+  files: {
+    pathFor(file: File): string;
+  };
 };
 
 function isChannel(value: unknown): value is IpcChannel<z.ZodType, z.ZodType> {
@@ -69,10 +73,11 @@ function buildChannelApi(tree: ChannelTree, invoke: Invoke): Record<string, unkn
  * unit-tested with fake transports; `preload/index.ts` supplies the real `ipcRenderer`-backed
  * ones and never exposes `ipcRenderer` itself.
  */
-export function buildApi(invoke: Invoke, on: On): WirebenchApi {
+export function buildApi(invoke: Invoke, on: On, pathFor: (file: File) => string): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),
+    files: { pathFor },
   } as WirebenchApi;
 }

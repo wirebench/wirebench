@@ -14,10 +14,20 @@ export type CommandId =
   | 'view.toggleTheme'
   | 'definition.import'
   | 'project.new'
-  | 'project.open';
+  | 'project.open'
+  | 'explorer.importAnother'
+  | 'explorer.removeInterface'
+  | 'explorer.copyDefinitionUrl'
+  | 'explorer.newRequest'
+  | 'explorer.copySoapAction'
+  | 'explorer.openRequest'
+  | 'explorer.cloneRequest'
+  | 'explorer.renameRequest'
+  | 'explorer.deleteRequest'
+  | 'explorer.copyEndpointAddress';
 
 /** Palette grouping for a command; also the heading shown in the command palette. */
-export type CommandCategory = 'General' | 'View' | 'Project' | 'Definition';
+export type CommandCategory = 'General' | 'View' | 'Project' | 'Definition' | 'Explorer';
 
 /**
  * The declarative half of a command: everything needed to render it in a palette or a menu,

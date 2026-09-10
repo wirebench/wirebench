@@ -234,6 +234,24 @@ export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 export const requestCancelRequestSchema = z.object({ sendId: z.string() });
 export const requestCancelResponseSchema = z.object({ cancelled: z.boolean() });
 
+/** Request/response for `definition.cancelImport`. */
+export const definitionCancelImportRequestSchema = z.object({ token: z.string() });
+export const definitionCancelImportResponseSchema = z.object({ cancelled: z.boolean() });
+
+/** A file-open filter group, mirroring Electron's `dialog.showOpenDialog` `filters` option. */
+const dialogFilterSchema = z.object({ name: z.string(), extensions: z.array(z.string()) });
+
+/** Request/response for `dialogs.openFile`. */
+export const dialogsOpenFileRequestSchema = z.object({
+  filters: z.array(dialogFilterSchema).optional(),
+  title: z.string().optional(),
+});
+export const dialogsOpenFileResponseSchema = z.object({ path: z.string().optional() });
+
+/** Request/response for `dialogs.openFolder`. */
+export const dialogsOpenFolderRequestSchema = z.object({ title: z.string().optional() });
+export const dialogsOpenFolderResponseSchema = z.object({ path: z.string().optional() });
+
 /** Payload for the `engine.progress` event. */
 export const engineProgressEventSchema = z.object({
   kind: z.literal('import'),

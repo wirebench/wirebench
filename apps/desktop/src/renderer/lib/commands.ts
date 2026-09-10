@@ -1,11 +1,14 @@
 import type { CommandDefinition, CommandId } from '@shared/commands.js';
 import type { UiSnapshot } from '../state/ui-state.js';
+import type { Selection } from '../state/ui.js';
 import type { Platform } from './platform.js';
 
 /** What a command sees when it is listed, gated, or run. */
 export interface CommandContext {
   readonly platform: Platform;
   readonly ui: UiSnapshot;
+  /** The explorer's current selection, if any — lets `explorer.*` commands gate on node kind. */
+  readonly selection: Selection | undefined;
 }
 
 /** A command definition plus the handler that performs it. */

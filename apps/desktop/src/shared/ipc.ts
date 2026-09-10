@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import {
+  definitionCancelImportRequestSchema,
+  definitionCancelImportResponseSchema,
   definitionCloseRequestSchema,
   definitionCloseResponseSchema,
   definitionImportRequestSchema,
+  dialogsOpenFileRequestSchema,
+  dialogsOpenFileResponseSchema,
+  dialogsOpenFolderRequestSchema,
+  dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
   interfaceSummarySchema,
@@ -75,11 +81,20 @@ export const channels = {
   definition: {
     import: defineChannel('definition.import', definitionImportRequestSchema, interfaceSummarySchema),
     close: defineChannel('definition.close', definitionCloseRequestSchema, definitionCloseResponseSchema),
+    cancelImport: defineChannel(
+      'definition.cancelImport',
+      definitionCancelImportRequestSchema,
+      definitionCancelImportResponseSchema,
+    ),
   },
   request: {
     generate: defineChannel('request.generate', requestGenerateRequestSchema, requestGenerateResponseSchema),
     send: defineChannel('request.send', requestSendRequestSchema, exchangeSummarySchema),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
+  },
+  dialogs: {
+    openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
+    openFolder: defineChannel('dialogs.openFolder', dialogsOpenFolderRequestSchema, dialogsOpenFolderResponseSchema),
   },
 } as const;
 

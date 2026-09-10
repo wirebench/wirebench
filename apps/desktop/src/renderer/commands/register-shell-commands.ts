@@ -1,6 +1,5 @@
 import { showToast } from '../components/toast.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
-import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 
 /** Stubs announce their own task number so the gap is visible in the UI, not just the backlog. */
@@ -106,15 +105,8 @@ export function registerShellCommands(openPalette: () => void): void {
     label: 'Import WSDL…',
     category: 'Definition',
     shortcut: 'Mod+I',
-    // The URL picker itself is Task 14's dialog; this command only wires an already-known
-    // URL (passed as `arg`) into the project store. With no `arg`, there is nothing to
-    // import yet, so it falls back to the same stub toast as before.
-    run: async (_context, arg) => {
-      if (typeof arg === 'string' && arg.length > 0) {
-        await useProjectStore.getState().importDefinition({ kind: 'url', url: arg });
-        return;
-      }
-      notImplemented('Import WSDL', 14);
+    run: () => {
+      ui().openImportDialog();
     },
   });
   registerCommand({
@@ -133,6 +125,100 @@ export function registerShellCommands(openPalette: () => void): void {
     shortcut: 'Mod+O',
     run: () => {
       notImplemented('Open project', 13);
+    },
+  });
+
+  // Every explorer context-menu action is also a command, so the palette can run it against
+  // whatever node is currently selected. The menu itself (context-menu.tsx) owns the actual
+  // logic; these mirror the same `when` gates so the palette only lists what applies.
+  registerCommand({
+    id: 'explorer.importAnother',
+    label: 'Explorer: Import Another WSDL…',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: () => {
+      ui().openImportDialog();
+    },
+  });
+  registerCommand({
+    id: 'explorer.removeInterface',
+    label: 'Explorer: Remove Interface',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: () => {
+      notImplemented('Remove interface from the palette', 14);
+    },
+  });
+  registerCommand({
+    id: 'explorer.copyDefinitionUrl',
+    label: 'Explorer: Copy Definition URL',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: () => {
+      notImplemented('Copy definition URL from the palette', 14);
+    },
+  });
+  registerCommand({
+    id: 'explorer.newRequest',
+    label: 'Explorer: New Request',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'operation',
+    run: () => {
+      notImplemented('New request from the palette', 15);
+    },
+  });
+  registerCommand({
+    id: 'explorer.copySoapAction',
+    label: 'Explorer: Copy SOAPAction',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'operation',
+    run: () => {
+      notImplemented('Copy SOAPAction from the palette', 14);
+    },
+  });
+  registerCommand({
+    id: 'explorer.openRequest',
+    label: 'Explorer: Open Request',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'request',
+    run: () => {
+      notImplemented('Open request from the palette', 15);
+    },
+  });
+  registerCommand({
+    id: 'explorer.cloneRequest',
+    label: 'Explorer: Clone Request',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'request',
+    run: () => {
+      notImplemented('Clone request from the palette', 15);
+    },
+  });
+  registerCommand({
+    id: 'explorer.renameRequest',
+    label: 'Explorer: Rename Request…',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'request',
+    run: () => {
+      notImplemented('Rename request from the palette', 15);
+    },
+  });
+  registerCommand({
+    id: 'explorer.deleteRequest',
+    label: 'Explorer: Delete Request',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'request',
+    run: () => {
+      notImplemented('Delete request from the palette', 15);
+    },
+  });
+  registerCommand({
+    id: 'explorer.copyEndpointAddress',
+    label: 'Explorer: Copy Endpoint Address',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'endpoint',
+    run: () => {
+      notImplemented('Copy endpoint address from the palette', 14);
     },
   });
 }

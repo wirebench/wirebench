@@ -133,26 +133,39 @@ function messageFor(progress: ImportProgress): string {
 export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
+  private readonly imports = new Map<string, AbortController>();
 
   /** Imports a WSDL definition and stores the full `ImportResult` under a new id. */
   async importDefinition(request: DefinitionImportRequest, hooks: EngineServiceHooks = {}): Promise<InterfaceSummary> {
     const id = crypto.randomUUID();
-    const result = await engineImportDefinition(toEngineSource(request.source), {
-      ...(request.options?.auth !== undefined ? { auth: request.options.auth } : {}),
-      onProgress: (progress) => {
-        // The final 'done' event is re-emitted below once the interface id is known, so the
-        // renderer's `phase === 'done'` handler always sees an `interfaceId`.
-        if (progress.phase === 'done') {
-          return;
-        }
-        hooks.onProgress?.({
-          kind: 'import',
-          ...(request.token !== undefined ? { token: request.token } : {}),
-          phase: progress.phase,
-          message: messageFor(progress),
-        });
-      },
-    });
+    const controller = new AbortController();
+    if (request.token !== undefined) {
+      this.imports.set(request.token, controller);
+    }
+    let result: ImportResult;
+    try {
+      result = await engineImportDefinition(toEngineSource(request.source), {
+        ...(request.options?.auth !== undefined ? { auth: request.options.auth } : {}),
+        signal: controller.signal,
+        onProgress: (progress) => {
+          // The final 'done' event is re-emitted below once the interface id is known, so the
+          // renderer's `phase === 'done'` handler always sees an `interfaceId`.
+          if (progress.phase === 'done') {
+            return;
+          }
+          hooks.onProgress?.({
+            kind: 'import',
+            ...(request.token !== undefined ? { token: request.token } : {}),
+            phase: progress.phase,
+            message: messageFor(progress),
+          });
+        },
+      });
+    } finally {
+      if (request.token !== undefined) {
+        this.imports.delete(request.token);
+      }
+    }
     const definitionUrl = result.bundle.root.location;
     this.definitions.set(id, { result, definitionUrl });
     const summary = toInterfaceSummary(result, id, definitionUrl);
@@ -164,6 +177,17 @@ export class EngineService {
       message: messageFor({ phase: 'done' }),
     });
     return summary;
+  }
+
+  /** Aborts the in-flight import for `token`. Returns `false` when no such import is pending. */
+  cancelImport(token: string): { cancelled: boolean } {
+    const controller = this.imports.get(token);
+    if (controller === undefined) {
+      return { cancelled: false };
+    }
+    controller.abort();
+    this.imports.delete(token);
+    return { cancelled: true };
   }
 
   /** Frees the in-memory `ImportResult` for `interfaceId`. */
