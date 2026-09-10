@@ -55,6 +55,7 @@ function toEndpointWire(endpoint: Endpoint): EndpointWire {
     name: endpoint.name,
     url: endpoint.url,
     ...(endpoint.auth !== undefined ? { auth: endpoint.auth } : {}),
+    authMode: endpoint.authMode,
   };
 }
 

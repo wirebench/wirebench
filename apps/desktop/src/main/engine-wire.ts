@@ -248,6 +248,15 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
         }
       : {}),
     problems: exchange.problems.map((problem) => ({ code: problem.code, message: problem.message })),
+    ...(exchange.auth !== undefined
+      ? {
+          auth: {
+            scheme: exchange.auth.scheme,
+            challenged: exchange.auth.challenged,
+            attempts: exchange.auth.attempts,
+          },
+        }
+      : {}),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
   };
 }

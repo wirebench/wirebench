@@ -83,6 +83,7 @@ const scopes: PropertyScopes = { project: { stage: 'dev' }, global: {}, env: { w
 const preflight: PreflightResult = {
   endpoint: 'http://dev.test/soap',
   endpointSource: 'environment',
+  auth: { source: 'none', type: 'none' },
   unresolved: [{ expr: '${#Env#missing}', code: 'missing', start: 0, end: 15, field: 'envelopeXml' }],
 };
 

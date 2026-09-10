@@ -85,7 +85,9 @@ describe('project-wire', () => {
     const [iface] = wire.interfaces;
     expect(iface?.slug).toBe('Calculator');
     expect(iface?.hydration).toBe('ready');
-    expect(iface?.endpoints).toEqual([{ id: 'ep-1', name: 'Calculator Soap', url: 'http://example.test/soap' }]);
+    expect(iface?.endpoints).toEqual([
+      { id: 'ep-1', name: 'Calculator Soap', url: 'http://example.test/soap', authMode: 'complement' },
+    ]);
     expect(iface?.defaultEndpointId).toBe('ep-1');
     // Both the hydrated operations survive, deduped against the one the model declares.
     expect(iface?.operations.map((op) => op.name)).toEqual(['Add', 'Subtract']);

@@ -38,8 +38,8 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
         problems: [],
         documentCount: 1,
         endpoints: [
-          { id: 'ep-1', name: 'Primary', url: 'http://a.test/soap' },
-          { id: 'ep-2', name: 'Staging', url: 'http://b.test/soap' },
+          { id: 'ep-1', name: 'Primary', url: 'http://a.test/soap', authMode: 'override' },
+          { id: 'ep-2', name: 'Staging', url: 'http://b.test/soap', authMode: 'override' },
         ],
         defaultEndpointId: 'ep-1',
         hydration: 'ready',

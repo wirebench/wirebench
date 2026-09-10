@@ -531,7 +531,7 @@ export class ProjectService {
     const endpoint = location.request.endpointId
       ? location.iface.endpoints.find((candidate) => candidate.id === location.request.endpointId)
       : undefined;
-    return effectiveAuth(location.request.auth, endpoint?.auth, location.iface.auth);
+    return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
   }
 
   /** The open project's id, or `undefined` when no project is open. Used to key its history file. */

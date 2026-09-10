@@ -37,6 +37,7 @@ const scopes: PropertyScopes = { project: {}, global: {}, env: {} };
 const preflight: PreflightResult = {
   endpoint: 'http://dev.test/soap',
   endpointSource: 'request-custom',
+  auth: { source: 'none', type: 'none' },
   unresolved: [],
 };
 

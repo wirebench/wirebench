@@ -13,7 +13,7 @@ const summary: InterfaceWire = {
   slug: 'Calculator',
   cacheDefinition: true,
   hydration: 'ready',
-  endpoints: [{ id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'http://example.test/soap' }],
+  endpoints: [{ id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'http://example.test/soap', authMode: 'override' }],
   defaultEndpointId: 'ep-1',
   definitionUrl: 'http://example.test/service.wsdl',
   targetNamespace: 'http://tempuri.org/',

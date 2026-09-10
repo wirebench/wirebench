@@ -115,3 +115,90 @@ describe('preflightRequest', () => {
     expect(isWirebenchError(thrown) && thrown.code).toBe('not-found');
   });
 });
+
+describe('preflightRequest — auth source', () => {
+  /** Builds a one-request project whose request/endpoint/interface auth can be varied per case. */
+  function withAuth(parts: {
+    request?: Interface['auth'];
+    endpoint?: Interface['auth'];
+    iface?: Interface['auth'];
+    authMode?: 'override' | 'complement';
+  }): Project {
+    const iface: Interface = createInterface('Calculator', {
+      id: 'iface-1',
+      slug: 'Calculator',
+      definitionUrl: 'http://example.test/service.wsdl',
+      endpoints: [
+        {
+          id: 'ep-1',
+          name: 'Primary',
+          url: 'http://a.test/soap',
+          authMode: parts.authMode ?? 'override',
+          ...(parts.endpoint !== undefined ? { auth: parts.endpoint } : {}),
+        },
+      ],
+      defaultEndpointId: 'ep-1',
+      operations: [
+        {
+          name: 'Add',
+          bindingName: BINDING,
+          slug: 'Add',
+          order: 0,
+          requests: [
+            {
+              ...createRequest('Request 1', { id: 'req-1', envelopeXml: '<Add/>', soapVersion: '1.1' }),
+              endpointId: 'ep-1',
+              ...(parts.request !== undefined ? { auth: parts.request } : {}),
+            },
+          ],
+        },
+      ],
+    });
+    const withInterfaceAuth: Interface = parts.iface !== undefined ? { ...iface, auth: parts.iface } : iface;
+    return { ...createProject('Demo', { id: 'proj-1' }), interfaces: [withInterfaceAuth] };
+  }
+
+  const preflight = (project: Project) => preflightRequest(project, 'req-1', resolveScopes(project, undefined, {}, {}));
+
+  it('reports no auth when nothing is configured at any level', () => {
+    expect(preflight(withAuth({})).auth).toEqual({ source: 'none', type: 'none' });
+  });
+
+  it('reports the request as the source, without the passwordRef', () => {
+    const auth = preflight(
+      withAuth({ request: { type: 'basic', username: 'ada', passwordRef: 'ref-1', preemptive: false } }),
+    ).auth;
+    expect(auth).toEqual({ source: 'request', type: 'basic', username: 'ada', preemptive: false });
+    expect(JSON.stringify(auth)).not.toContain('ref-1');
+  });
+
+  it('names the endpoint and its mode when the endpoint supplies the credentials', () => {
+    expect(preflight(withAuth({ endpoint: { type: 'basic', username: 'end' } })).auth).toEqual({
+      source: 'endpoint',
+      type: 'basic',
+      username: 'end',
+      endpointName: 'Primary',
+      authMode: 'override',
+    });
+  });
+
+  it('reports the interface fallback when neither request nor endpoint configures auth', () => {
+    expect(preflight(withAuth({ iface: { type: 'basic', username: 'iface' } })).auth).toEqual({
+      source: 'interface',
+      type: 'basic',
+      username: 'iface',
+    });
+  });
+
+  it('keeps the request as the source under complement, showing the merged credentials', () => {
+    expect(
+      preflight(
+        withAuth({
+          request: { type: 'basic', username: 'ada' },
+          endpoint: { type: 'basic', preemptive: true },
+          authMode: 'complement',
+        }),
+      ).auth,
+    ).toEqual({ source: 'request', type: 'basic', username: 'ada', preemptive: true });
+  });
+});

@@ -10,9 +10,22 @@
  * Pure: no `electron`, no `fs`, no network.
  */
 
-import { expand, ProjectError, resolveEndpoint } from '@wirebench/engine';
-import type { Project, PropertyScopes, UnresolvedRef } from '@wirebench/engine';
-import type { EndpointSourceWire, ExpansionField, UnresolvedRefWire } from '../shared/wire-types.js';
+import { effectiveAuth, expand, ProjectError, resolveEndpoint } from '@wirebench/engine';
+import type {
+  Endpoint,
+  EndpointAuth,
+  Interface,
+  Project,
+  PropertyScopes,
+  RequestDef,
+  UnresolvedRef,
+} from '@wirebench/engine';
+import type {
+  EndpointSourceWire,
+  ExpansionField,
+  RequestAuthSourceWire,
+  UnresolvedRefWire,
+} from '../shared/wire-types.js';
 import { findRequest } from './project-wire.js';
 
 /** What `request.preflight` answers: where the request would go, and what would not expand. */
@@ -20,6 +33,34 @@ export interface PreflightResult {
   readonly endpoint?: string;
   readonly endpointSource: EndpointSourceWire;
   readonly unresolved: UnresolvedRefWire[];
+  readonly auth: RequestAuthSourceWire;
+}
+
+/**
+ * Describes the credentials a send of `request` would use, and which level they came from, so
+ * the Auth inspector can explain inheritance. Only non-secret fields travel: never a password,
+ * and not even the `passwordRef`.
+ */
+function authSourceFor(iface: Interface, request: RequestDef, endpoint: Endpoint | undefined): RequestAuthSourceWire {
+  const authMode = endpoint?.authMode ?? 'override';
+  const resolved: EndpointAuth | undefined = effectiveAuth(request.auth, endpoint?.auth, authMode, iface.auth);
+  const source: RequestAuthSourceWire['source'] =
+    resolved === undefined
+      ? 'none'
+      : endpoint?.auth !== undefined && (authMode === 'override' || request.auth === undefined)
+        ? 'endpoint'
+        : request.auth !== undefined
+          ? 'request'
+          : iface.auth !== undefined
+            ? 'interface'
+            : 'none';
+  return {
+    source,
+    type: resolved?.type ?? 'none',
+    ...(resolved?.username !== undefined ? { username: resolved.username } : {}),
+    ...(resolved?.preemptive !== undefined ? { preemptive: resolved.preemptive } : {}),
+    ...(source === 'endpoint' && endpoint !== undefined ? { endpointName: endpoint.name, authMode } : {}),
+  };
 }
 
 /** Copies an engine `UnresolvedRef` onto the wire, tagged with where in the request it was found. */
@@ -55,6 +96,10 @@ export function preflightRequest(
   }
   const { iface, request } = location;
   const resolved = resolveEndpoint(project, envId, iface, request);
+  const endpoint =
+    request.endpointId !== undefined
+      ? iface.endpoints.find((candidate) => candidate.id === request.endpointId)
+      : undefined;
 
   const unresolved: UnresolvedRefWire[] = [];
   const check = (text: string, field: ExpansionField, headerName?: string): void => {
@@ -81,5 +126,6 @@ export function preflightRequest(
     ...(resolved.url !== undefined ? { endpoint: resolved.url } : {}),
     endpointSource: resolved.source,
     unresolved,
+    auth: authSourceFor(iface, request, endpoint),
   };
 }

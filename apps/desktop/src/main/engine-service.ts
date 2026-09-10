@@ -25,6 +25,7 @@ import type {
   TlsOptions,
 } from '@wirebench/engine';
 import { resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
+import type { SendAuth } from '@wirebench/engine';
 import type {
   DefinitionImportRequest,
   EngineProgressEvent,
@@ -102,8 +103,10 @@ function toEngineTls(tls: NonNullable<SoapSendInputWire['tls']>): TlsOptions {
 
 /**
  * When `auth.type === 'basic'` and `auth.preemptive !== false`, adds an `Authorization: Basic
- * ...` header to `input` (without waiting for a 401 challenge — a challenge-based flow is Task
- * 34). An explicit header the caller already set is left alone. Pure — takes the *resolved*
+ * ...` header to `input`. Only the cURL export path uses this now: a real send hands the
+ * credentials to the engine (see {@link toEngineAuth}), which also handles the 401 challenge,
+ * but an exported cURL command has no challenge loop and so needs the preemptive header baked
+ * in. An explicit header the caller already set is left alone. Pure — takes the *resolved*
  * auth (a real password, never a ref) — so it is trivially unit-testable without IPC or a
  * secret store.
  */
@@ -122,11 +125,35 @@ export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth):
   return { ...input, headers };
 }
 
+/**
+ * Converts resolved credentials into the engine's `SendAuth`, or `undefined` when there is
+ * nothing to send (no auth configured, `type: 'none'`, or an incomplete pair). Basic defaults
+ * to preemptive, matching SoapUI; a non-preemptive send waits for the 401 challenge.
+ */
+export function toEngineAuth(auth?: ResolvedAuth): SendAuth | undefined {
+  if (auth === undefined || auth.type === 'none') {
+    return undefined;
+  }
+  if (auth.username === undefined || auth.password === undefined) {
+    return undefined;
+  }
+  if (auth.type === 'ntlm') {
+    return {
+      type: 'ntlm',
+      username: auth.username,
+      password: auth.password,
+      ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+    };
+  }
+  return { type: 'basic', username: auth.username, password: auth.password, preemptive: auth.preemptive !== false };
+}
+
 /** Converts the wire `SoapSendInputWire` (plus a controller's signal) to the engine's `SoapSendInput`. */
 function toEngineSendInput(
   input: SoapSendInputWire,
   signal: AbortSignal,
   attachments?: SendAttachmentInput,
+  auth?: SendAuth,
 ): SoapSendInput {
   return {
     endpoint: input.endpoint,
@@ -148,6 +175,7 @@ function toEngineSendInput(
     ...(attachments !== undefined
       ? { attachments: attachments.attachments, attachmentOptions: attachments.attachmentOptions }
       : {}),
+    ...(auth !== undefined ? { auth } : {}),
     signal,
   };
 }
@@ -402,10 +430,14 @@ export class EngineService {
         options.auth !== undefined
           ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
           : undefined;
-      const input = withResolvedAuth(request.input, resolvedAuth);
-      const exchange = await sendSoapRequest(toEngineSendInput(input, controller.signal, options.attachments), {
-        ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
-      });
+      // The credentials go to the engine rather than being baked into a header here, so the
+      // engine can run the 401-challenge retry when they are not preemptive.
+      const exchange = await sendSoapRequest(
+        toEngineSendInput(request.input, controller.signal, options.attachments, toEngineAuth(resolvedAuth)),
+        {
+          ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
+        },
+      );
       // The cache keeps the unredacted summary in main only; what crosses IPC is redacted per
       // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle). The
       // response attachments' BYTES are kept alongside it, never on the wire — `attachments.*`

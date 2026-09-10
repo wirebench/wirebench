@@ -576,7 +576,12 @@ export async function applyChange(
       requireEndpoint(iface, change.endpointId);
       const endpoints = iface.endpoints.map((endpoint) =>
         endpoint.id === change.endpointId
-          ? { ...endpoint, name: change.patch.name ?? endpoint.name, url: change.patch.url ?? endpoint.url }
+          ? {
+              ...endpoint,
+              name: change.patch.name ?? endpoint.name,
+              url: change.patch.url ?? endpoint.url,
+              authMode: change.patch.authMode ?? endpoint.authMode,
+            }
           : endpoint,
       );
       return { project: replaceInterface(project, { ...iface, endpoints }) };

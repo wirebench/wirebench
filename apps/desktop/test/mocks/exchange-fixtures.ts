@@ -43,8 +43,13 @@ export function makeInterface(overrides: Partial<InterfaceWire> = {}): Interface
     cacheDefinition: true,
     hydration: 'ready',
     endpoints: [
-      { id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'https://example.test/calc.asmx' },
-      { id: 'ep-2', name: 'Calculator CalculatorSoap12', url: 'https://example.test/calc12.asmx' },
+      { id: 'ep-1', name: 'Calculator CalculatorSoap', url: 'https://example.test/calc.asmx', authMode: 'override' },
+      {
+        id: 'ep-2',
+        name: 'Calculator CalculatorSoap12',
+        url: 'https://example.test/calc12.asmx',
+        authMode: 'override',
+      },
     ],
     defaultEndpointId: 'ep-1',
     name: 'Calculator',

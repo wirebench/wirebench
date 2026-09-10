@@ -384,6 +384,23 @@ export const endpointSourceSchema = z.enum([
 ]);
 export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
 
+/**
+ * Where the credentials a send would use come from, and what they look like without the
+ * secret: the renderer needs to explain inheritance in the Auth inspector, and a password
+ * never crosses IPC (only its `passwordRef` is ever stored, and that stays in main).
+ */
+export const requestAuthSourceSchema = z.object({
+  source: z.enum(['request', 'endpoint', 'interface', 'none']),
+  type: z.enum(['none', 'basic', 'ntlm']),
+  username: z.string().optional(),
+  preemptive: z.boolean().optional(),
+  /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
+  endpointName: z.string().optional(),
+  /** The endpoint's auth mode, so the UI can say "override" or "complement". */
+  authMode: z.enum(['override', 'complement']).optional(),
+});
+export type RequestAuthSourceWire = z.infer<typeof requestAuthSourceSchema>;
+
 /** Request payload for `request.preflight`. */
 export const requestPreflightRequestSchema = z.object({ requestId: z.string() });
 
@@ -396,8 +413,17 @@ export const requestPreflightResponseSchema = z.object({
   endpoint: z.string().optional(),
   endpointSource: endpointSourceSchema,
   unresolved: z.array(unresolvedRefWireSchema),
+  auth: requestAuthSourceSchema,
 });
 export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSchema>;
+
+/** What authentication did during a send; mirrors the engine's `AuthSummary`. */
+export const authSummaryWireSchema = z.object({
+  scheme: z.enum(['basic', 'ntlm']),
+  challenged: z.boolean(),
+  attempts: z.union([z.literal(1), z.literal(2)]),
+});
+export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
@@ -406,6 +432,8 @@ export const exchangeSummarySchema = z.object({
   http: httpExchangeWireSchema,
   response: soapResponseWireSchema.optional(),
   problems: z.array(exchangeProblemSchema),
+  /** Set only when the send carried credentials: what authentication did. */
+  auth: authSummaryWireSchema.optional(),
   /** Set only when the send expanded properties: the references that stayed unresolved. */
   unresolved: z.array(unresolvedRefWireSchema).optional(),
 });
@@ -482,6 +510,8 @@ export const endpointWireSchema = z.object({
   name: z.string(),
   url: z.string(),
   auth: endpointAuthSchema.optional(),
+  /** `override` replaces request credentials, `complement` only fills in blanks. */
+  authMode: z.enum(['override', 'complement']),
 });
 export type EndpointWire = z.infer<typeof endpointWireSchema>;
 
@@ -744,7 +774,11 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     kind: z.literal('update-endpoint'),
     interfaceId: z.string(),
     endpointId: z.string(),
-    patch: z.object({ name: z.string().optional(), url: z.string().optional() }),
+    patch: z.object({
+      name: z.string().optional(),
+      url: z.string().optional(),
+      authMode: z.enum(['override', 'complement']).optional(),
+    }),
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
   z.object({ kind: z.literal('update-request-auth'), requestId: z.string(), auth: endpointAuthSchema.nullable() }),
