@@ -26,8 +26,8 @@ export const ATTACHMENTS_TMP_DIR = 'attachments-tmp';
 export interface AttachmentChannelDeps {
   /** Holds the response bytes of recent sends, keyed by `sendId`. */
   readonly exchanges: Pick<ExchangeCache, 'getAttachment'>;
-  /** Resolves (and allow-lists) a saved request's attachment to a file on disk. */
-  readonly project: Pick<ProjectService, 'resolveAttachmentPath'>;
+  /** Resolves (and allow-lists) a saved request's attachment to a file on disk, and takes dropped bytes. */
+  readonly project: Pick<ProjectService, 'resolveAttachmentPath' | 'addAttachmentBytes'>;
   /**
    * The session's picked-path memory. `pickFiles` records everything it returns here, which is
    * the *only* evidence `add-attachment` accepts for a file outside the project folder — so
@@ -182,6 +182,24 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
       deps.picks.rememberRead(path);
     }
     return { paths };
+  });
+
+  registerHandler(channels.attachments.addDropped, async (request) => {
+    // Bytes, not paths: a drop leaves main no evidence that the user picked the file, so the
+    // renderer sends what the browser sandbox gave it and main decides where it lands (always
+    // the attachment cache). See `ProjectService.addAttachmentBytes`.
+    const attachmentIds: string[] = [];
+    for (const file of request.files) {
+      const bytes = new Uint8Array(Buffer.from(file.bytesBase64, 'base64'));
+      attachmentIds.push(
+        await deps.project.addAttachmentBytes(request.requestId, {
+          name: file.name,
+          contentType: file.contentType,
+          bytes,
+        }),
+      );
+    }
+    return { attachmentIds };
   });
 }
 

@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WirebenchError } from '@wirebench/engine';
 import type { ResponseAttachment } from '@wirebench/engine';
 import {
   ATTACHMENTS_TMP_DIR,
@@ -64,10 +65,12 @@ const UNNAMED: ResponseAttachment = {
 describe('attachments.* IPC', () => {
   let dir: string;
   let resolveAttachmentPath: ReturnType<typeof vi.fn>;
+  let addAttachmentBytes: ReturnType<typeof vi.fn>;
   let picks: DialogPicks;
 
   function register(userDataDir: string): void {
     resolveAttachmentPath = vi.fn();
+    addAttachmentBytes = vi.fn().mockResolvedValue('att-1');
     picks = new DialogPicks();
     const deps: AttachmentChannelDeps = {
       exchanges: {
@@ -76,6 +79,7 @@ describe('attachments.* IPC', () => {
       },
       project: {
         resolveAttachmentPath: resolveAttachmentPath as AttachmentChannelDeps['project']['resolveAttachmentPath'],
+        addAttachmentBytes: addAttachmentBytes as AttachmentChannelDeps['project']['addAttachmentBytes'],
       },
       picks,
       userDataDir,
@@ -272,11 +276,49 @@ describe('attachments.* IPC', () => {
     expect(picks.hasRead('/leaked.png')).toBe(false);
   });
 
+  describe('addDropped', () => {
+    it('decodes each dropped file and hands its bytes to the project, in order', async () => {
+      addAttachmentBytes.mockResolvedValueOnce('att-a').mockResolvedValueOnce('att-b');
+
+      const result = await invoke('attachments.addDropped', {
+        requestId: 'req-1',
+        files: [
+          { name: 'a.png', contentType: 'image/png', bytesBase64: Buffer.from([1, 2, 3]).toString('base64') },
+          { name: 'b.txt', contentType: '', bytesBase64: Buffer.from('hi').toString('base64') },
+        ],
+      });
+
+      expect(result).toEqual({ ok: true, value: { attachmentIds: ['att-a', 'att-b'] } });
+      expect(addAttachmentBytes).toHaveBeenNthCalledWith(1, 'req-1', {
+        name: 'a.png',
+        contentType: 'image/png',
+        bytes: new Uint8Array([1, 2, 3]),
+      });
+      expect(addAttachmentBytes).toHaveBeenNthCalledWith(2, 'req-1', {
+        name: 'b.txt',
+        contentType: '',
+        bytes: new Uint8Array(Buffer.from('hi')),
+      });
+    });
+
+    it('reports the project’s error code when a dropped file is refused', async () => {
+      addAttachmentBytes.mockRejectedValueOnce(new WirebenchError('attachment-too-large', 'huge.bin is too large'));
+
+      const result = (await invoke('attachments.addDropped', {
+        requestId: 'req-1',
+        files: [{ name: 'huge.bin', contentType: '', bytesBase64: '' }],
+      })) as { ok: false; error: { code: string } };
+
+      expect(result.ok).toBe(false);
+      expect(result.error.code).toBe('attachment-too-large');
+    });
+  });
+
   it('does not let a Content-ID with separators steer the temp file out of its folder', async () => {
     handlers.clear();
     registerAttachmentChannels({
       exchanges: { getAttachment: () => ({ ...UNNAMED, contentType: 'image/png', contentId: '../../escaped' }) },
-      project: { resolveAttachmentPath: () => Promise.resolve('') },
+      project: { resolveAttachmentPath: () => Promise.resolve(''), addAttachmentBytes: () => Promise.resolve('a') },
       picks: new DialogPicks(),
       userDataDir: dir,
     });

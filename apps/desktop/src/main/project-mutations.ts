@@ -396,7 +396,10 @@ async function addAttachment(
   change: { requestId: string; path: string; copyToCache: boolean; contentType?: string | undefined },
   deps: MutationDeps,
 ): Promise<MutationResult> {
-  const location = findRequest(project, change.requestId) ?? notFound('request', change.requestId);
+  // Fail before any I/O when the request is unknown; `appendAttachment` checks again after.
+  if (findRequest(project, change.requestId) === undefined) {
+    notFound('request', change.requestId);
+  }
   if (deps.addAttachmentFile === undefined) {
     throw new ProjectError('attachment-unsupported', 'Adding an attachment needs an open project folder');
   }
@@ -406,18 +409,45 @@ async function addAttachment(
     copyToCache: change.copyToCache,
     contentType,
   });
-  const id = generateId();
-  const attachment: Attachment = {
-    id,
+  return appendAttachment(project, change.requestId, {
     name: basenameOf(change.path),
     contentType,
     size,
+    source,
+  });
+}
+
+/**
+ * Appends one already-materialised attachment to a request: the caller has resolved the bytes
+ * (into the cache or to a path) and knows their size, so this is the pure half of an add.
+ *
+ * Shared by `add-attachment` and by `ProjectService.addAttachmentBytes` (the drag-and-drop
+ * path, where the bytes arrive over IPC and never had a path at all), so both produce exactly
+ * the same model entry — same id scheme, same default Content-ID, same `UNKNOWN` type.
+ */
+export function appendAttachment(
+  project: Project,
+  requestId: string,
+  input: {
+    readonly name: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly source: AttachmentSource;
+  },
+): MutationResult {
+  const location = findRequest(project, requestId) ?? notFound('request', requestId);
+  const id = generateId();
+  const attachment: Attachment = {
+    id,
+    name: input.name,
+    contentType: input.contentType,
+    size: input.size,
     // Nothing has told us which WSDL part (or MTOM/SwA role) this fills yet; the inspector
     // sets both once the user picks a Part, so the model starts out honest about not knowing.
     type: 'UNKNOWN',
     contentId: defaultContentId(id),
-    cached: source.kind === 'cache',
-    source,
+    cached: input.source.kind === 'cache',
+    source: input.source,
   };
   const next: RequestDef = { ...location.request, attachments: [...location.request.attachments, attachment] };
   return { project: replaceRequest(project, location, next), createdAttachmentId: id };

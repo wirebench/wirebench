@@ -72,7 +72,13 @@ import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
-import { addRequest, applyChange, projectNameFromDir } from './project-mutations.js';
+import {
+  addRequest,
+  appendAttachment,
+  applyChange,
+  contentTypeForPath,
+  projectNameFromDir,
+} from './project-mutations.js';
 import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
@@ -87,6 +93,15 @@ export interface SendAttachmentInput {
   readonly attachments: readonly Attachment[];
   readonly attachmentOptions: SendAttachmentOptions;
 }
+
+/**
+ * The largest single file a drag-and-drop may add (32 MiB).
+ *
+ * Dropped bytes cross IPC base64-encoded and are held in memory on both sides, so an
+ * unbounded drop is an easy way to wedge the app. Adding a bigger file through the Add…
+ * picker is unaffected: that path streams from disk and never crosses the bridge.
+ */
+export const MAX_DROPPED_ATTACHMENT_BYTES = 32 * 1024 * 1024;
 
 /** How long an edit sits before autosave writes it out. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -773,6 +788,51 @@ export class ProjectService {
       ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
       ...(result.createdAttachmentId !== undefined ? { createdAttachmentId: result.createdAttachmentId } : {}),
     };
+  }
+
+  /**
+   * Appends an attachment from bytes the renderer already holds — the drag-and-drop path.
+   *
+   * A dropped file's path is not evidence of anything (see {@link allowsAttachmentPath}), so a
+   * drop never names one: the renderer sends what the browser sandbox handed it, and those
+   * bytes go straight into `attachments/<sha256>`. A drop is therefore always a copy — there is
+   * no path to reference — which is also why {@link MAX_DROPPED_ATTACHMENT_BYTES} caps it: the
+   * bytes travel through IPC and are held in memory twice on the way.
+   *
+   * @param requestId the request to attach to
+   * @param input the dropped file's name, its browser-sniffed media type (may be empty) and bytes
+   * @returns the new attachment's id
+   */
+  async addAttachmentBytes(
+    requestId: string,
+    input: { readonly name: string; readonly contentType: string; readonly bytes: Uint8Array },
+  ): Promise<string> {
+    const open = this.require();
+    if (input.bytes.byteLength > MAX_DROPPED_ATTACHMENT_BYTES) {
+      throw new ProjectError(
+        'attachment-too-large',
+        `"${input.name}" is larger than the ${String(MAX_DROPPED_ATTACHMENT_BYTES / (1024 * 1024))} MiB drop limit`,
+        { details: { name: input.name, size: input.bytes.byteLength, limit: MAX_DROPPED_ATTACHMENT_BYTES } },
+      );
+    }
+    const contentType = input.contentType.trim().length > 0 ? input.contentType : contentTypeForPath(input.name);
+    const { sha256, size } = await putAttachment(open.dir, input.bytes, {
+      originalName: input.name,
+      contentType,
+    });
+    const result = appendAttachment(open.project, requestId, {
+      name: input.name,
+      contentType,
+      size,
+      source: { kind: 'cache', sha256 },
+    });
+    open.project = result.project;
+    this.markDirty();
+    this.emitChanged();
+    if (result.createdAttachmentId === undefined) {
+      throw new ProjectError('not-found', 'The attachment was not appended');
+    }
+    return result.createdAttachmentId;
   }
 
   /**

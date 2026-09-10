@@ -91,6 +91,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       openResponse: fail('attachments.openResponse'),
       openRequest: fail('attachments.openRequest'),
       pickFiles: fail('attachments.pickFiles'),
+      addDropped: fail('attachments.addDropped'),
     },
     history: {
       list: fail('history.list'),

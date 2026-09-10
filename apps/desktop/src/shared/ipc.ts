@@ -73,6 +73,8 @@ import {
   xmlFormResponseSchema,
   xmlApplyFormEditRequestSchema,
   xmlApplyFormEditResponseSchema,
+  attachmentsAddDroppedRequestSchema,
+  attachmentsAddDroppedResponseSchema,
   attachmentsOpenRequestRequestSchema,
   attachmentsOpenResponseRequestSchema,
   attachmentsOpenResponseSchema,
@@ -256,6 +258,11 @@ export const channels = {
       'attachments.pickFiles',
       attachmentsPickFilesRequestSchema,
       attachmentsPickFilesResponseSchema,
+    ),
+    addDropped: defineChannel(
+      'attachments.addDropped',
+      attachmentsAddDroppedRequestSchema,
+      attachmentsAddDroppedResponseSchema,
     ),
   },
   xpath: {

@@ -1395,3 +1395,29 @@ export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
 /** Request payload for `preferences.reset`. */
 export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });
+
+/**
+ * Request payload for `attachments.addDropped`: the *bytes* of files dropped onto the
+ * attachments inspector, never their paths.
+ *
+ * An OS drag-and-drop leaves no evidence in main that the user picked those files, so a channel
+ * that accepted a path would let any renderer name any file and have main read it. The browser
+ * sandbox, by contrast, only hands the page the bytes of files the user actually dropped — so
+ * those bytes are the evidence, and they are what crosses the bridge (base64, since the IPC
+ * contract is JSON-shaped).
+ */
+export const attachmentsAddDroppedRequestSchema = z.object({
+  requestId: z.string(),
+  files: z.array(
+    z.object({
+      name: z.string(),
+      /** The browser's sniffed media type; empty when it could not tell, so main falls back. */
+      contentType: z.string(),
+      bytesBase64: z.string(),
+    }),
+  ),
+});
+export type AttachmentsAddDroppedRequest = z.infer<typeof attachmentsAddDroppedRequestSchema>;
+
+/** Response for `attachments.addDropped`: the new attachment ids, in the order dropped. */
+export const attachmentsAddDroppedResponseSchema = z.object({ attachmentIds: z.array(z.string()) });

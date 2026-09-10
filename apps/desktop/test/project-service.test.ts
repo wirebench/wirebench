@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
-import { ProjectService } from '../src/main/project-service.js';
+import { MAX_DROPPED_ATTACHMENT_BYTES, ProjectService } from '../src/main/project-service.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 
@@ -643,6 +644,64 @@ describe('ProjectService attachments', () => {
     expect(existsSync(join(dir, 'attachments'))).toBe(false);
 
     await service.close();
+  });
+
+  describe('addAttachmentBytes (drag-and-drop)', () => {
+    it('writes the dropped bytes into attachments/<sha256> and appends a cached attachment', async () => {
+      const { service, dir, requestId } = await withProject('Drop Project');
+      const bytes = new Uint8Array([9, 8, 7]);
+
+      const id = await service.addAttachmentBytes(requestId, { name: 'dropped.png', contentType: '', bytes });
+
+      const attachment = service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments[0]!;
+      expect(attachment.id).toBe(id);
+      // An empty browser-sniffed type falls back to the extension table, as the picker does.
+      expect(attachment).toMatchObject({ name: 'dropped.png', contentType: 'image/png', size: 3, cached: true });
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      expect(attachment.source).toEqual({ kind: 'cache', sha256: digest });
+      expect(await readFile(join(dir, 'attachments', digest))).toEqual(Buffer.from(bytes));
+
+      await service.close();
+    });
+
+    it('keeps the browser-sniffed content type when it has one', async () => {
+      const { service, requestId } = await withProject('Drop Type Project');
+
+      await service.addAttachmentBytes(requestId, {
+        name: 'payload',
+        contentType: 'application/zip',
+        bytes: new Uint8Array([1]),
+      });
+
+      expect(service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments[0]!.contentType).toBe(
+        'application/zip',
+      );
+      await service.close();
+    });
+
+    it('refuses a file over the 32 MiB drop cap and writes nothing', async () => {
+      const { service, dir, requestId } = await withProject('Drop Cap Project');
+      const bytes = new Uint8Array(MAX_DROPPED_ATTACHMENT_BYTES + 1);
+
+      await expect(
+        service.addAttachmentBytes(requestId, { name: 'huge.bin', contentType: '', bytes }),
+      ).rejects.toMatchObject({ code: 'attachment-too-large' });
+
+      expect(existsSync(join(dir, 'attachments'))).toBe(false);
+      expect(service.snapshot()!.requests.find((r) => r.id === requestId)!.attachments).toEqual([]);
+      await service.close();
+    });
+
+    it('refuses an unknown request', async () => {
+      const { service, requestId } = await withProject('Drop Unknown Project');
+      expect(requestId).toBeDefined();
+
+      await expect(
+        service.addAttachmentBytes('nope', { name: 'a.txt', contentType: 'text/plain', bytes: new Uint8Array([1]) }),
+      ).rejects.toMatchObject({ code: 'not-found' });
+
+      await service.close();
+    });
   });
 
   it('sendAttachmentsFor carries the attachments and the seven MTOM flags', async () => {
