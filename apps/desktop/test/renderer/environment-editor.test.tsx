@@ -59,6 +59,59 @@ describe('EnvironmentEditor', () => {
     expect(updateEnvironment).toHaveBeenCalledWith('e1', { name: 'staging' });
   });
 
+  it('flushes a pending name edit on unmount instead of losing it', () => {
+    const updateEnvironment = setUp();
+    fireEvent.change(screen.getByLabelText('Environment name'), { target: { value: 'staging' } });
+    expect(updateEnvironment).not.toHaveBeenCalled();
+
+    cleanup();
+
+    expect(updateEnvironment).toHaveBeenCalledWith('e1', { name: 'staging' });
+  });
+
+  it('builds each endpoint commit from the latest store state so two rapid edits both land', () => {
+    const iface2 = {
+      id: 'iface-2',
+      name: 'Weather',
+      slug: 'weather',
+      endpoints: [{ id: 'ep-2', name: 'Soap', url: 'http://weather.test/soap' }],
+    } as unknown as InterfaceWire;
+    const updateEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      environments: [environment],
+      interfaces: { 'iface-1': iface, 'iface-2': iface2 },
+      order: ['iface-1', 'iface-2'],
+      updateEnvironment,
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EnvironmentEditor environmentId="e1" />
+      </TooltipPrimitive.Provider>,
+    );
+
+    // First commit, for the Calculator override. Main has not answered yet — as the real
+    // optimistic store would, the mirror is updated to reflect it right away.
+    fireEvent.change(screen.getByLabelText('Endpoint override for Calculator'), {
+      target: { value: 'http://three.test/soap' },
+    });
+    fireEvent.blur(screen.getByLabelText('Endpoint override for Calculator'));
+    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', { endpoints: { calculator: 'http://three.test/soap' } });
+    useProjectStore.setState({
+      environments: [{ ...environment, endpoints: { calculator: 'http://three.test/soap' } }],
+    });
+
+    // Second commit, for a different interface's override, fired before the first round trip
+    // resolves. It must build on top of the first edit, not the map captured at render time.
+    fireEvent.change(screen.getByLabelText('Endpoint override for Weather'), {
+      target: { value: 'http://four.test/soap' },
+    });
+    fireEvent.blur(screen.getByLabelText('Endpoint override for Weather'));
+
+    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', {
+      endpoints: { calculator: 'http://three.test/soap', weather: 'http://four.test/soap' },
+    });
+  });
+
   it('replaces the whole endpoint map when an override changes', () => {
     const updateEnvironment = setUp();
     const input = screen.getByLabelText('Endpoint override for Calculator');

@@ -408,6 +408,41 @@ describe('useProjectStore: environments and properties', () => {
     ]);
   });
 
+  it('builds each updateEnvironment endpoints patch from the latest pending state, not a stale snapshot', () => {
+    useProjectStore.getState().applySnapshot(
+      projectWire({
+        environments: [{ id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} }],
+      }),
+    );
+
+    const mutate = vi.fn().mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves: both commits are in flight at once */
+        }),
+    );
+    installWirebenchApi({ project: { mutate } });
+
+    const store = useProjectStore.getState();
+    // Neither commit is awaited before the next fires — this is the race: two endpoint
+    // overrides on different interfaces, committed back-to-back.
+    void store.updateEnvironment('env-1', {
+      endpoints: { ...store.environments[0]?.endpoints, calculator: 'http://one.test/soap' },
+    });
+    const latest = useProjectStore.getState();
+    void latest.updateEnvironment('env-1', {
+      endpoints: { ...latest.environments[0]?.endpoints, weather: 'http://two.test/soap' },
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(2);
+    const secondPatch = (mutate.mock.calls[1]?.[0] as { change: { patch: { endpoints: Record<string, string> } } })
+      .change.patch;
+    expect(secondPatch.endpoints).toEqual({
+      calculator: 'http://one.test/soap',
+      weather: 'http://two.test/soap',
+    });
+  });
+
   it('surfaces a failed environment mutation as an Error carrying the code', async () => {
     installWirebenchApi({
       project: { mutate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-found', message: 'gone' } }) },

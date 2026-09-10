@@ -94,6 +94,10 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedName = environment?.name;
 
+  // Tracks a name edit that has been typed but not yet committed (debounce still pending), so
+  // it can be flushed instead of lost if the tab is closed or switched before the timer fires.
+  const pendingNameRef = useRef<{ environmentId: string; trimmed: string; baseline: string } | undefined>(undefined);
+
   useEffect(() => {
     setName(savedName ?? '');
   }, [savedName]);
@@ -103,8 +107,13 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
       if (timer.current !== undefined) {
         clearTimeout(timer.current);
       }
+      const pendingName = pendingNameRef.current;
+      if (pendingName !== undefined && pendingName.trimmed !== pendingName.baseline) {
+        void updateEnvironment(pendingName.environmentId, { name: pendingName.trimmed });
+      }
+      pendingNameRef.current = undefined;
     },
-    [],
+    [environmentId, updateEnvironment],
   );
 
   if (environment === undefined) {
@@ -116,23 +125,34 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
     if (timer.current !== undefined) {
       clearTimeout(timer.current);
     }
+    const trimmed = next.trim();
+    pendingNameRef.current = { environmentId, trimmed, baseline: environment.name };
     timer.current = setTimeout(() => {
-      const trimmed = next.trim();
+      pendingNameRef.current = undefined;
       if (trimmed.length > 0 && trimmed !== environment.name) {
         void updateEnvironment(environmentId, { name: trimmed });
       }
     }, NAME_DEBOUNCE_MS);
   };
 
+  // Reads the latest environment from the store rather than the value captured at render time:
+  // two commits fired back-to-back (before either IPC round trip resolves) must each build their
+  // map from what the other just wrote, or the second overwrites the first.
+  const latestEnvironment = (): typeof environment => {
+    const fromStore = useProjectStore.getState().environments.find((candidate) => candidate.id === environmentId);
+    return fromStore ?? environment;
+  };
+
   const replaceEndpoints = (slug: string, url: string): void => {
-    const next: Record<string, string> = { ...environment.endpoints };
+    const current = latestEnvironment();
+    const next: Record<string, string> = { ...current.endpoints };
     const trimmed = url.trim();
     if (trimmed.length === 0) {
       delete next[slug];
     } else {
       next[slug] = trimmed;
     }
-    if (JSON.stringify(next) === JSON.stringify(environment.endpoints)) {
+    if (JSON.stringify(next) === JSON.stringify(current.endpoints)) {
       return;
     }
     void updateEnvironment(environmentId, { endpoints: next });
@@ -197,16 +217,16 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
           label="Environment properties"
           properties={environment.properties}
           onSet={(propertyName, value) => {
-            replaceProperties({ ...environment.properties, [propertyName]: value });
+            replaceProperties({ ...latestEnvironment().properties, [propertyName]: value });
           }}
           onRemove={(propertyName) => {
-            const next = { ...environment.properties };
+            const next = { ...latestEnvironment().properties };
             delete next[propertyName];
             replaceProperties(next);
           }}
           onRename={(from, to) => {
             const next: Record<string, string> = {};
-            for (const [key, value] of Object.entries(environment.properties)) {
+            for (const [key, value] of Object.entries(latestEnvironment().properties)) {
               next[key === from ? to : key] = value;
             }
             replaceProperties(next);

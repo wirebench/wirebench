@@ -105,6 +105,23 @@ function asError(error: IpcError): Error {
  */
 const pending = new Map<string, RequestPatchWire>();
 
+/**
+ * Environment patches applied optimistically but not yet acknowledged by main, keyed by
+ * environment id. Re-applied on top of every incoming snapshot for the same reason as
+ * {@link pending}: two edits to the same map fired before either IPC round trip resolves must
+ * each build from what the other just wrote, not from a stale render-time snapshot.
+ */
+const pendingEnvironment = new Map<string, EnvironmentPatchWire>();
+
+function withEnvironmentPatch(environment: EnvironmentWire, patch: EnvironmentPatchWire): EnvironmentWire {
+  return {
+    ...environment,
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.endpoints !== undefined ? { endpoints: patch.endpoints } : {}),
+    ...(patch.properties !== undefined ? { properties: patch.properties } : {}),
+  };
+}
+
 function withPatch(request: RequestDraft, patch: RequestPatchWire): RequestDraft {
   return {
     ...request,
@@ -133,11 +150,17 @@ function indexesOf(
     const patch = pending.get(request.id);
     requests[request.id] = patch === undefined ? request : withPatch(request, patch);
   }
+  const environments = project.environments
+    .map((environment) => {
+      const patch = pendingEnvironment.get(environment.id);
+      return patch === undefined ? environment : withEnvironmentPatch(environment, patch);
+    })
+    .sort((a, b) => a.order - b.order);
   return {
     interfaces,
     requests,
     order: project.interfaces.map((iface) => iface.id),
-    environments: [...project.environments].sort((a, b) => a.order - b.order),
+    environments,
     activeEnvironmentId: project.activeEnvironmentId,
   };
 }
@@ -367,7 +390,47 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     updateEnvironment: async (environmentId, patch) => {
-      await mutate({ kind: 'update-environment', environmentId, patch });
+      // Applied locally first (and merged with any still-pending patch) so a second commit
+      // fired before the first round trip resolves builds on top of both edits, not just the
+      // render-time snapshot; see `withEnvironmentPatch`/`pendingEnvironment` above.
+      const existing = pendingEnvironment.get(environmentId);
+      const merged: EnvironmentPatchWire = { ...existing, ...patch };
+      pendingEnvironment.set(environmentId, merged);
+      update((draft) => {
+        const index = draft.environments.findIndex((candidate) => candidate.id === environmentId);
+        const current = index === -1 ? undefined : draft.environments[index];
+        if (index !== -1 && current !== undefined) {
+          draft.environments[index] = withEnvironmentPatch(current, patch);
+        }
+      });
+      try {
+        await mutate({ kind: 'update-environment', environmentId, patch });
+        if (pendingEnvironment.get(environmentId) === merged) {
+          pendingEnvironment.delete(environmentId);
+        }
+      } catch (error) {
+        // Drop the pending patch and fall back to the last confirmed snapshot, same recovery
+        // as `updateRequest.fail` — otherwise a failed mutate leaves `pendingEnvironment` set
+        // forever and the mirror keeps showing an edit that was never saved.
+        if (pendingEnvironment.get(environmentId) === merged) {
+          pendingEnvironment.delete(environmentId);
+        }
+        update((draft) => {
+          const project = get().project;
+          const fresh = project?.environments.find((candidate) => candidate.id === environmentId);
+          if (fresh !== undefined) {
+            const index = draft.environments.findIndex((candidate) => candidate.id === environmentId);
+            const stillPending = pendingEnvironment.get(environmentId);
+            const resolved = stillPending === undefined ? fresh : withEnvironmentPatch(fresh, stillPending);
+            if (index === -1) {
+              draft.environments.push(resolved);
+            } else {
+              draft.environments[index] = resolved;
+            }
+          }
+        });
+        throw error;
+      }
     },
 
     removeEnvironment: async (environmentId) => {
