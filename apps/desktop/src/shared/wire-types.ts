@@ -758,6 +758,153 @@ export const xmlDescribeManyResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Form view (Task 27): the schema-driven form tree for a request's Body, plus
+// the structural edits the view asks main to apply (a value edit never comes
+// here — the renderer splices it into the text itself).
+// ---------------------------------------------------------------------------
+
+/** A half-open UTF-16 character range in the envelope text. */
+export const textRangeSchema = z.object({ start: z.number(), end: z.number() });
+export type TextRangeWire = z.infer<typeof textRangeSchema>;
+
+/** How a form leaf should be edited; mirrors the engine's `FormValueBase`. */
+export const formValueBaseSchema = z.enum([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'date',
+  'time',
+  'dateTime',
+  'binary',
+  'other',
+]);
+
+/** A leaf's type, with the facets the view turns into an editor and hints. */
+export interface FormTypeWire {
+  readonly name: string;
+  readonly base: z.infer<typeof formValueBaseSchema>;
+  readonly enum?: readonly string[];
+  readonly pattern?: string;
+  readonly min?: string;
+  readonly max?: string;
+}
+
+export const formTypeSchema = z.object({
+  name: z.string(),
+  base: formValueBaseSchema,
+  enum: z.array(z.string()).optional(),
+  pattern: z.string().optional(),
+  min: z.string().optional(),
+  max: z.string().optional(),
+});
+
+/**
+ * One node of the form tree. Recursive, so the shape is declared up front and
+ * tied together with `z.lazy`; it mirrors the engine's `FormNode` exactly.
+ */
+export interface FormNodeWire {
+  readonly id: string;
+  readonly kind: 'field' | 'group' | 'choice' | 'repeat' | 'attribute' | 'any';
+  readonly name: { readonly namespaceUri: string; readonly localName: string };
+  readonly label: string;
+  readonly required: boolean;
+  readonly occurs: { readonly min: number; readonly max: number | 'unbounded' };
+  readonly type?: FormTypeWire;
+  readonly value?: string;
+  readonly valueRange?: TextRangeWire;
+  readonly present: boolean;
+  readonly nillable?: boolean;
+  readonly documentation?: string;
+  readonly fixed?: string;
+  readonly xsiType?: string;
+  readonly namespaces?: Readonly<Record<string, string>>;
+  readonly extraAttributes?: readonly { readonly name: string; readonly value: string }[];
+  readonly comments?: readonly string[];
+  readonly trailingComments?: readonly string[];
+  readonly truncated?: boolean;
+  readonly raw?: string;
+  readonly children: readonly FormNodeWire[];
+  readonly choice?: { readonly selected?: number };
+  readonly repeat?: {
+    readonly instances: readonly FormNodeWire[];
+    readonly template: FormNodeWire;
+    readonly canAdd: boolean;
+    readonly canRemove: boolean;
+  };
+}
+
+export const formNodeSchema: z.ZodType<FormNodeWire> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    kind: z.enum(['field', 'group', 'choice', 'repeat', 'attribute', 'any']),
+    name: z.object({ namespaceUri: z.string(), localName: z.string() }),
+    label: z.string(),
+    required: z.boolean(),
+    occurs: z.object({ min: z.number(), max: z.union([z.number(), z.literal('unbounded')]) }),
+    type: formTypeSchema.optional(),
+    value: z.string().optional(),
+    valueRange: textRangeSchema.optional(),
+    present: z.boolean(),
+    nillable: z.boolean().optional(),
+    documentation: z.string().optional(),
+    fixed: z.string().optional(),
+    xsiType: z.string().optional(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+    extraAttributes: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
+    comments: z.array(z.string()).optional(),
+    trailingComments: z.array(z.string()).optional(),
+    truncated: z.boolean().optional(),
+    raw: z.string().optional(),
+    children: z.array(formNodeSchema),
+    choice: z.object({ selected: z.number().optional() }).optional(),
+    repeat: z
+      .object({
+        instances: z.array(formNodeSchema),
+        template: formNodeSchema,
+        canAdd: z.boolean(),
+        canRemove: z.boolean(),
+      })
+      .optional(),
+  }),
+) as z.ZodType<FormNodeWire>;
+
+/** Which operation of which interface a form belongs to, plus the envelope it models. */
+export const xmlFormRequestSchema = z.object({
+  interfaceId: z.string(),
+  /** Clark-notation binding QName. */
+  bindingName: z.string(),
+  operationName: z.string(),
+  envelopeXml: z.string(),
+});
+
+/** Response for `xml.form`: the tree, the Body range to splice over, and what could not be modelled. */
+export const xmlFormResponseSchema = z.object({
+  root: formNodeSchema,
+  bodyRange: textRangeSchema,
+  problems: z.array(z.string()),
+});
+
+/** One structural change the Form view asks main to apply; mirrors the engine's `FormEdit`. */
+export const formEditSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('insert-optional'), nodeId: z.string() }),
+  z.object({ kind: z.literal('remove-optional'), nodeId: z.string() }),
+  z.object({ kind: z.literal('add-repeat'), nodeId: z.string() }),
+  z.object({ kind: z.literal('remove-repeat'), nodeId: z.string(), index: z.number() }),
+  z.object({ kind: z.literal('select-choice'), nodeId: z.string(), index: z.number() }),
+  z.object({ kind: z.literal('set-value'), nodeId: z.string(), value: z.string() }),
+]);
+export type FormEditWire = z.infer<typeof formEditSchema>;
+
+export const xmlApplyFormEditRequestSchema = xmlFormRequestSchema.extend({ edit: formEditSchema });
+
+/** Response for `xml.applyFormEdit`: the whole new envelope plus the range that changed. */
+export const xmlApplyFormEditResponseSchema = z.object({
+  envelopeXml: z.string(),
+  changedRange: textRangeSchema,
+});
+
+// ---------------------------------------------------------------------------
 // File dialogs for arbitrary text (Task 25): Save as… / Load from… on the
 // request editor, separate from `dialogs.*`'s open-file/open-folder pickers
 // because these round-trip file *content*, not just a chosen path.

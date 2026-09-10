@@ -159,4 +159,64 @@ describe('xml.* IPC', () => {
 
     expect(result.value.results).toEqual([null]);
   });
+
+  describe('xml.form / xml.applyFormEdit', () => {
+    const BINDING = `{${TEM}}CalculatorSoap`;
+
+    function envelope(): string {
+      return service.generate({ interfaceId, bindingName: BINDING, operationName: 'Add' }).envelopeXml;
+    }
+
+    it('models Calculator Add as two required integer fields', async () => {
+      const envelopeXml = envelope();
+      const result = (await invoke('xml.form', {
+        interfaceId,
+        bindingName: BINDING,
+        operationName: 'Add',
+        envelopeXml,
+      })) as {
+        ok: true;
+        value: {
+          root: {
+            label: string;
+            children: { label: string; kind: string; required: boolean; type?: { base: string } }[];
+          };
+          bodyRange: { start: number; end: number };
+        };
+      };
+
+      expect(result.ok).toBe(true);
+      expect(result.value.root.label).toBe('tem:Add');
+      expect(result.value.root.children.map((c) => c.label)).toEqual(['tem:intA', 'tem:intB']);
+      expect(result.value.root.children.every((c) => c.kind === 'field' && c.required)).toBe(true);
+      expect(result.value.root.children[0]?.type?.base).toBe('integer');
+      expect(envelopeXml.slice(result.value.bodyRange.start, result.value.bodyRange.end)).toContain('<tem:Add>');
+    });
+
+    it('set-value updates the envelope only inside the Body', async () => {
+      const envelopeXml = envelope();
+      const form = (await invoke('xml.form', {
+        interfaceId,
+        bindingName: BINDING,
+        operationName: 'Add',
+        envelopeXml,
+      })) as { ok: true; value: { root: { children: { id: string }[] } } };
+      const intB = form.value.root.children[1]?.id as string;
+
+      const edited = (await invoke('xml.applyFormEdit', {
+        interfaceId,
+        bindingName: BINDING,
+        operationName: 'Add',
+        envelopeXml,
+        edit: { kind: 'set-value', nodeId: intB, value: '42' },
+      })) as { ok: true; value: { envelopeXml: string; changedRange: { start: number; end: number } } };
+
+      expect(edited.ok).toBe(true);
+      expect(edited.value.envelopeXml).toContain('<tem:intB>42</tem:intB>');
+      // Everything before the Body's first child is byte-identical.
+      const prefixLength = edited.value.changedRange.start;
+      expect(edited.value.envelopeXml.slice(0, prefixLength)).toBe(envelopeXml.slice(0, prefixLength));
+      expect(edited.value.envelopeXml).toContain('</soapenv:Envelope>');
+    });
+  });
 });

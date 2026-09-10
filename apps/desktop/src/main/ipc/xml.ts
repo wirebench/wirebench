@@ -1,5 +1,13 @@
-import { attributesAllowedAt, childrenAllowedAt, declarationOf, qnameToString } from '@wirebench/engine';
-import type { QName } from '@wirebench/engine';
+import {
+  applyForm,
+  applyFormEdit,
+  attributesAllowedAt,
+  buildRequestForm,
+  childrenAllowedAt,
+  declarationOf,
+  qnameToString,
+} from '@wirebench/engine';
+import type { ImportResult, OperationRef, QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { registerHandler } from './register.js';
@@ -12,6 +20,18 @@ function parseClarkQName(clark: string): QName {
   }
   const [, namespaceUri, localName] = match;
   return { namespaceUri: namespaceUri ?? '', localName: localName ?? '' };
+}
+
+/** Everything both form channels need out of one request payload. */
+function formInputs(
+  service: EngineService,
+  request: { interfaceId: string; bindingName: string; operationName: string },
+): { result: ImportResult; op: OperationRef } {
+  const result = service.resultFor(request.interfaceId);
+  return {
+    result,
+    op: { bindingName: parseClarkQName(request.bindingName), operationName: request.operationName },
+  };
 }
 
 /**
@@ -86,4 +106,46 @@ export function registerXmlChannels(service: EngineService): void {
     });
     return Promise.resolve({ results });
   });
+
+  registerHandler(channels.xml.form, (request) => {
+    const { result, op } = formInputs(service, request);
+    const form = buildRequestForm(result, op, request.envelopeXml);
+    return Promise.resolve({ root: form.root, bodyRange: form.bodyRange, problems: [...form.problems] });
+  });
+
+  registerHandler(channels.xml.applyFormEdit, (request) => {
+    const { result, op } = formInputs(service, request);
+    const form = buildRequestForm(result, op, request.envelopeXml);
+    // The edit is applied to a tree rebuilt from the envelope right now, so a
+    // click made against a slightly stale render can never write the wrong node.
+    const next = applyFormEdit(form.root, request.edit);
+    const fragment = applyForm(next);
+    // Only the Body's element children are replaced: the envelope, its namespace
+    // declarations and any headers keep their exact text.
+    const indented = indentFragment(fragment, indentOf(request.envelopeXml, form.bodyRange.start));
+    const envelopeXml =
+      request.envelopeXml.slice(0, form.bodyRange.start) + indented + request.envelopeXml.slice(form.bodyRange.end);
+    return Promise.resolve({
+      envelopeXml,
+      changedRange: { start: form.bodyRange.start, end: form.bodyRange.start + indented.length },
+    });
+  });
+}
+
+/** The whitespace standing at the start of the line `offset` falls on — the fragment's own indent. */
+function indentOf(text: string, offset: number): string {
+  const lineStart = text.lastIndexOf('\n', Math.max(offset - 1, 0)) + 1;
+  const line = text.slice(lineStart, offset);
+  return /^\s*$/.test(line) ? line : '';
+}
+
+/** Re-indents every line but the first, which already sits at the splice point. */
+function indentFragment(fragment: string, indent: string): string {
+  if (indent === '') {
+    return fragment;
+  }
+  return fragment
+    .split('\n')
+    .map((line, index) => (index === 0 || line.length === 0 ? line : `${indent}${line}`))
+    .join('\n');
 }

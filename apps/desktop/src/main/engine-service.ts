@@ -309,6 +309,11 @@ export class EngineService {
     return this.lookup(interfaceId).schemaSet;
   }
 
+  /** The whole in-memory `ImportResult` for `interfaceId`. Throws `unknown-interface` if absent. */
+  resultFor(interfaceId: string): ImportResult {
+    return this.lookup(interfaceId);
+  }
+
   private lookup(interfaceId: string): ImportResult {
     const stored = this.definitions.get(interfaceId);
     if (stored === undefined) {
