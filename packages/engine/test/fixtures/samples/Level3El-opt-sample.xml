@@ -1,0 +1,5 @@
+<ns1:Level3El xmlns:ns1="urn:wb:sc" attr1="string" attr2="string" attr3="string">
+   <ns1:a><!--type: xs:string-->string</ns1:a>
+   <ns1:b><!--type: xs:int-->7</ns1:b>
+   <ns1:c><!--type: xs:string - enumeration: [RED, GREEN, BLUE]-->RED</ns1:c>
+</ns1:Level3El>

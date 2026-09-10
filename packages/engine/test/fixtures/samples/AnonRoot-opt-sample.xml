@@ -1,0 +1,6 @@
+<ns1:AnonRoot xmlns:ns1="urn:wb:sc">
+   <!--Optional:-->
+   <ns1:inner><!--type: xs:string - enumeration: [ONE, TWO]-->ONE</ns1:inner>
+   <!--Optional:-->
+   <ns1:pick><!--type: union of [xs:string, xs:int, xs:string - enumeration: [NONE]]-->?????</ns1:pick>
+</ns1:AnonRoot>

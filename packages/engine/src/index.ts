@@ -61,6 +61,16 @@ export { buildSchemaSet } from './xsd/schema-set.js';
 export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';
 export { BUILTIN_TYPES, SOAP_ENC_ATTRIBUTES, XSD_BUILTIN_NAMES, isBuiltinType, lookupBuiltin } from './xsd/builtins.js';
 export type { BuiltinType } from './xsd/builtins.js';
+export {
+  DEFAULT_GENERATE_OPTIONS,
+  generateElement,
+  generateSoapEncArray,
+  generateType,
+} from './xsd/sample-generator.js';
+export type { GenerateOptions, GeneratedFragment } from './xsd/sample-generator.js';
+export { PLACEHOLDER, sampleValueFor, typeCommentFor } from './xsd/sample-values.js';
+export type { SampleValueContext, SampleValueOptions, SimpleTypeRef } from './xsd/sample-values.js';
+
 export type {
   All,
   AnyAttribute,

@@ -1,0 +1,4 @@
+<ns1:ShapeEl xmlns:ns1="urn:wb:sc" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ns1:Circle">
+   <ns1:name>?</ns1:name>
+   <ns1:radius>?</ns1:radius>
+</ns1:ShapeEl>

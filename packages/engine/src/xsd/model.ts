@@ -152,6 +152,12 @@ export interface AttributeRef {
   readonly use: AttributeUseKind;
   readonly default?: string;
   readonly fixed?: string;
+  /**
+   * The raw `wsdl:arrayType` value (e.g. `xs:string[]`) written on a
+   * `soapenc:arrayType` reference inside a SOAP-encoded array type. Kept
+   * verbatim because it is the only place the array's item type is recorded.
+   */
+  readonly arrayType?: string;
 }
 
 /** An `<xs:attributeGroup ref="…"/>`. */
@@ -241,6 +247,8 @@ export interface ResolvedAttribute {
   readonly use: 'optional' | 'required';
   readonly default?: string;
   readonly fixed?: string;
+  /** The `wsdl:arrayType` value carried by a `soapenc:arrayType` reference, if any. */
+  readonly arrayType?: string;
 }
 
 /** A complex type's effective content after derivation, groups and attribute groups are flattened. */

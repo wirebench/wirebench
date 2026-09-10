@@ -1,0 +1,3 @@
+<ns1:Car xmlns:ns1="urn:wb:sc">
+   <ns1:wheels><!--type: xs:int-->1</ns1:wheels>
+</ns1:Car>

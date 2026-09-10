@@ -185,12 +185,16 @@ export function parseAttribute(el: Element, ctx: SchemaContext, global: boolean)
   const fixedValue = optionalAttribute(el, 'fixed');
   const ref = global ? undefined : readQName(el, 'ref', ctx);
   if (ref !== undefined) {
+    // `wsdl:arrayType` on a `soapenc:arrayType` ref is the only record of an
+    // encoded array's item type, so it is preserved verbatim.
+    const arrayType = el.getAttributeNS(NS.WSDL, 'arrayType') ?? undefined;
     return {
       kind: 'attributeRef',
       ref,
       use,
       ...(defaultValue !== undefined ? { default: defaultValue } : {}),
       ...(fixedValue !== undefined ? { fixed: fixedValue } : {}),
+      ...(arrayType !== undefined && arrayType !== '' ? { arrayType } : {}),
     };
   }
   const localName = optionalAttribute(el, 'name') ?? '';

@@ -1,0 +1,5 @@
+<ns1:AllEl xmlns:ns1="urn:wb:sc">
+   <!--Optional:-->
+   <ns1:p><!--type: xs:string-->string</ns1:p>
+   <ns1:q><!--type: xs:boolean-->true</ns1:q>
+</ns1:AllEl>

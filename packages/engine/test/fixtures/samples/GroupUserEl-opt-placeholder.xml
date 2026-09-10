@@ -1,0 +1,8 @@
+<ns1:GroupUserEl xmlns:ns1="urn:wb:sc" id="?" lang="en" ns1:version="?">
+   <!--1 or more repetitions:-->
+   <first>?</first>
+   <!--Optional:-->
+   <last>?</last>
+   <!--Optional:-->
+   <ns1:note>?</ns1:note>
+</ns1:GroupUserEl>

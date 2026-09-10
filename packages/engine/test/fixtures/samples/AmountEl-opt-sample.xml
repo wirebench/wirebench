@@ -1,0 +1,1 @@
+<ns1:AmountEl xmlns:ns1="urn:wb:sc" currency="EUR"><!--type: xs:decimal-->1.0</ns1:AmountEl>

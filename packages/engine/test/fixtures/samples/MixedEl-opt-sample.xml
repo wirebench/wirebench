@@ -1,0 +1,4 @@
+<ns1:MixedEl xmlns:ns1="urn:wb:sc">
+   <!--Zero or more repetitions:-->
+   <ns1:em><!--type: xs:string-->string</ns1:em>
+</ns1:MixedEl>

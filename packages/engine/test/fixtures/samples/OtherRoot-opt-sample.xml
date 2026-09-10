@@ -1,0 +1,7 @@
+<ns1:OtherRoot xmlns:ns1="urn:wb:sc:other" id="id" lang="en">
+   <label><!--type: xs:string-->string</label>
+   <!--Optional:-->
+   <color><!--type: xs:string - enumeration: [RED, GREEN, BLUE]-->RED</color>
+   <!--Optional:-->
+   <codes><!--type: list of xs:string - enumeration: [RED, GREEN, BLUE]-->RED RED</codes>
+</ns1:OtherRoot>

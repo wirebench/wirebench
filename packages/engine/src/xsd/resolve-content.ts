@@ -129,6 +129,7 @@ function collectAttributes(
           use: use.use === 'required' ? 'required' : base.use,
           ...(use.default !== undefined ? { default: use.default } : {}),
           ...(use.fixed !== undefined ? { fixed: use.fixed } : {}),
+          ...(use.arrayType !== undefined ? { arrayType: use.arrayType } : {}),
         });
         break;
       }

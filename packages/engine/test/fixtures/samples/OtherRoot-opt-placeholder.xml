@@ -1,0 +1,7 @@
+<ns1:OtherRoot xmlns:ns1="urn:wb:sc:other" id="?" lang="en">
+   <label>?</label>
+   <!--Optional:-->
+   <color>?</color>
+   <!--Optional:-->
+   <codes>?</codes>
+</ns1:OtherRoot>

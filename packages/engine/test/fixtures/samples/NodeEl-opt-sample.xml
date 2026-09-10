@@ -1,0 +1,18 @@
+<ns1:NodeEl xmlns:ns1="urn:wb:sc" label="node">
+   <!--Zero or more repetitions:-->
+   <ns1:child label="node">
+      <!--Zero or more repetitions:-->
+      <ns1:child label="node">
+         <!--Zero or more repetitions:-->
+         <ns1:child label="node">
+            <!--Zero or more repetitions:-->
+            <ns1:child label="node">
+               <!--Zero or more repetitions:-->
+               <ns1:child label="node">
+                  <!--Recursion depth exceeded (ns1:Node)-->
+               </ns1:child>
+            </ns1:child>
+         </ns1:child>
+      </ns1:child>
+   </ns1:child>
+</ns1:NodeEl>
