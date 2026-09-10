@@ -23,9 +23,9 @@ function dedupeByQName<T extends { readonly name: QName }>(items: readonly T[]):
  * are kept, while `messages`/`portTypes`/`bindings`/`services` are concatenated
  * (root first, then imports in discovery order) with duplicate QNames resolved
  * by keeping the first occurrence. `schemaElements` collects the root's own
- * inline schemas plus the root `xs:schema` element of every `xsd`-kind
- * document in the bundle (inline schemas of imported WSDL documents are not
- * merged in — Task 7 resolves types across the bundle by namespace instead).
+ * inline schemas, plus the inline schemas of every imported `wsdl`-kind document,
+ * plus the root `xs:schema` element of every `xsd`-kind document in the bundle
+ * (in that order: root first, then imports in discovery order, then xsd roots).
  *
  * @param bundle the bundle produced by {@link resolveDefinition}
  */
@@ -54,7 +54,11 @@ export function parseWsdlBundle(bundle: DefinitionBundle): WsdlDefinition {
     portTypes,
     bindings,
     services,
-    schemaElements: [...rootDef.schemaElements, ...xsdSchemaElements],
+    schemaElements: [
+      ...rootDef.schemaElements,
+      ...importedWsdlDefs.flatMap((d) => d.schemaElements),
+      ...xsdSchemaElements,
+    ],
     imports: rootDef.imports,
     problems: bundle.problems,
   };

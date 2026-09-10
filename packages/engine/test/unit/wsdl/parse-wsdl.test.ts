@@ -210,7 +210,10 @@ describe('parseWsdl', () => {
       { fetchDocument: fetchNested, resolveImports: true },
     );
     expect(def.problems).toEqual([]);
-    expect(def.schemaElements).toHaveLength(2);
+    expect(def.schemaElements).toHaveLength(3);
+    // Verify one element comes from types.wsdl (has targetNamespace 'urn:wb:nested-types')
+    const fromTypesWsdl = def.schemaElements.find((el) => el.getAttribute('targetNamespace') === 'urn:wb:nested-types');
+    expect(fromTypesWsdl).toBeDefined();
     const portType = def.portTypes.find((p) => p.name.localName === 'EchoPortType');
     expect(portType?.operations.map((o) => o.name)).toEqual(['Echo']);
   });

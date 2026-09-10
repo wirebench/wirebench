@@ -71,11 +71,14 @@ describe('resolveDefinition — nested-imports (wsdl -> wsdl -> xsd -> xsd)', ()
     expect(baseXsd?.chameleonFor).toBeUndefined();
   });
 
-  it('merges via parseWsdl into a single Echo operation with 2 xsd schemaElements', async () => {
+  it('merges via parseWsdl into a single Echo operation with 3 schemaElements (root inline + imported WSDL inline + xsd roots)', async () => {
     const { fetch } = makeFakeFetcher(docs);
     const def = await parseWsdl({ location: `${base}service.wsdl` }, { fetchDocument: fetch, resolveImports: true });
     expect(def.problems).toEqual([]);
-    expect(def.schemaElements).toHaveLength(2);
+    expect(def.schemaElements).toHaveLength(3);
+    // Verify one element comes from types.wsdl (has targetNamespace 'urn:wb:nested-types')
+    const fromTypesWsdl = def.schemaElements.find((el) => el.getAttribute('targetNamespace') === 'urn:wb:nested-types');
+    expect(fromTypesWsdl).toBeDefined();
     const portType = def.portTypes.find((p) => p.name.localName === 'EchoPortType');
     expect(portType?.operations.map((o) => o.name)).toEqual(['Echo']);
     expect(def.bindings.map((b) => b.name.localName)).toEqual(['EchoBinding']);
