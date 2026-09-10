@@ -10,7 +10,7 @@
  * default; then the interface's first endpoint.
  */
 
-import type { Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
+import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
 import type { PropertyScopes } from './properties.js';
 
 /** Finds the environment with `envId` in `project`, or `undefined` when there is none or it isn't found. */
@@ -66,6 +66,30 @@ export function resolveEndpoint(
   }
 
   return { url: undefined, source: 'none' };
+}
+
+/**
+ * Resolves the `Endpoint` object a request's *credentials* should come from: the request's own
+ * chosen endpoint, else the interface's default, else its first endpoint — the same precedence
+ * {@link resolveEndpoint} uses for the URL (minus the environment-override and custom-URL cases,
+ * which name no `Endpoint` object of their own, so have no auth to contribute). Callers that need
+ * a request's effective auth (not just its URL) should resolve the endpoint through this function
+ * rather than re-deriving the precedence, so the two cannot drift apart.
+ */
+export function resolveAuthEndpoint(iface: Interface, request: Pick<RequestDef, 'endpointId'>): Endpoint | undefined {
+  if (request.endpointId !== undefined) {
+    const endpoint = iface.endpoints.find((candidate) => candidate.id === request.endpointId);
+    if (endpoint !== undefined) {
+      return endpoint;
+    }
+  }
+  if (iface.defaultEndpointId !== undefined) {
+    const endpoint = iface.endpoints.find((candidate) => candidate.id === iface.defaultEndpointId);
+    if (endpoint !== undefined) {
+      return endpoint;
+    }
+  }
+  return iface.endpoints[0];
 }
 
 /**

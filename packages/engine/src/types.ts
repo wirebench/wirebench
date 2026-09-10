@@ -207,6 +207,10 @@ export interface SoapExchange {
     /** Parts of a `multipart/related` response other than the envelope. */
     readonly attachments?: readonly ResponseAttachment[];
   };
+  /**
+   * Total time on the wire. For a challenged Basic send ({@link AuthSummary.attempts} `2`) this
+   * is the *sum* of both attempts, not just the final one, since both actually happened.
+   */
   readonly durationMs: number;
   readonly problems: readonly {
     readonly code: 'not-soap' | 'xml-parse-error' | 'decode-error' | 'mime-parse' | 'inline-file-missing';

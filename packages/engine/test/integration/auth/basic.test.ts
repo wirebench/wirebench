@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { Agent, type Dispatcher } from 'undici';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError, WirebenchError } from '../../../src/errors.js';
 import { sendSoapRequest } from '../../../src/send.js';
@@ -139,6 +140,82 @@ describe('send — HTTP Basic authentication', () => {
       // The first read is the send's start; the second (after the 401) is 40s later.
       return call === 1 ? 0 : 40_000;
     };
+    // A wrapping dispatcher records the headers/body timeout each attempt actually asked for,
+    // so the retry's budget (not just that a retry happened) is verified.
+    const dispatcher = new Agent();
+    const timeouts: (number | null | undefined)[] = [];
+    const originalDispatch = dispatcher.dispatch.bind(dispatcher);
+    dispatcher.dispatch = (opts: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler) => {
+      timeouts.push(opts.headersTimeout);
+      return originalDispatch(opts, handler);
+    };
+
+    const exchange = await sendSoapRequest(
+      {
+        endpoint: `${server.url}/auth/basic`,
+        envelopeXml: ENVELOPE,
+        soapVersion: '1.1',
+        timeoutMs: 60_000,
+        auth: { type: 'basic', username: 'user', password: 'pass', preemptive: false },
+      },
+      { now: clock, dispatcher },
+    );
+    await dispatcher.close();
+
+    expect(exchange.http.status).toBe(200);
+    expect(exchange.auth?.attempts).toBe(2);
+    // First attempt gets the full budget; the retry gets what's left after the 40s the 401 took.
+    expect(timeouts).toEqual([60_000, 20_000]);
+  });
+
+  it('sums both attempts into durationMs for a challenged send', async () => {
+    // The delay sits entirely on the *first* (401) attempt; the retry answers immediately. A
+    // `durationMs` that only reported the final attempt (the pre-fix behaviour) would come back
+    // near-instant and miss it — summing both is what proves the delay was accounted for.
+    const DELAY_MS = 150;
+    let seen = 0;
+    const slow: Server = createServer((req, res) => {
+      seen += 1;
+      if (seen === 1) {
+        setTimeout(() => {
+          res.writeHead(401, { 'www-authenticate': 'Basic realm="wirebench"', 'content-type': 'text/plain' });
+          res.end('Unauthorized');
+        }, DELAY_MS);
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/xml' });
+      res.end(
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body/></soapenv:Envelope>',
+      );
+      void req;
+    });
+    await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
+    const address = slow.address();
+    if (address === null || typeof address === 'string') throw new Error('failed to bind');
+
+    try {
+      const exchange = await sendSoapRequest({
+        endpoint: `http://127.0.0.1:${address.port}/auth/basic`,
+        envelopeXml: ENVELOPE,
+        soapVersion: '1.1',
+        auth: { type: 'basic', username: 'user', password: 'pass', preemptive: false },
+      });
+
+      expect(exchange.auth).toEqual({ scheme: 'basic', challenged: true, attempts: 2 });
+      expect(exchange.durationMs).toBeGreaterThanOrEqual(DELAY_MS);
+    } finally {
+      await new Promise<void>((resolve) => slow.close(() => resolve()));
+    }
+  });
+
+  it('reports the 401 challenge without a doomed retry once the timeout budget is exhausted', async () => {
+    server = await startTestSoapServer();
+    let call = 0;
+    const clock = (): number => {
+      call += 1;
+      // The budget is fully spent by the time the challenge comes back.
+      return call === 1 ? 0 : 60_000;
+    };
     const exchange = await sendSoapRequest(
       {
         endpoint: `${server.url}/auth/basic`,
@@ -150,8 +227,9 @@ describe('send — HTTP Basic authentication', () => {
       { now: clock },
     );
 
-    expect(exchange.http.status).toBe(200);
-    expect(exchange.auth?.attempts).toBe(2);
+    expect(exchange.http.status).toBe(401);
+    expect(exchange.auth).toEqual({ scheme: 'basic', challenged: true, attempts: 1 });
+    expect(server.requests).toHaveLength(1);
   });
 
   it('leaves an unauthenticated send untouched', async () => {

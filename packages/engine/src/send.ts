@@ -41,9 +41,11 @@ import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
  *
  * When `input.auth` is Basic, the `Authorization` header is either sent up front
  * (`preemptive`) or added on a single retry after the server answers the first attempt
- * with a 401 `Basic` challenge; both attempts share the one `timeoutMs` budget and the
- * returned exchange is the final attempt. A caller-supplied `Authorization` header always
- * wins, and NTLM is not implemented yet (`auth-unsupported`).
+ * with a 401 `Basic` challenge; both attempts share the one `timeoutMs` budget (if the first
+ * attempt already used it all, the challenge is reported as-is, `attempts: 1`, rather than
+ * firing a retry doomed to time out immediately) and the returned exchange is the final attempt
+ * actually made. A caller-supplied `Authorization` header always wins, and NTLM is not
+ * implemented yet (`auth-unsupported`).
  *
  * @param input the endpoint, envelope and transport options to send
  * @param options an injected `dispatcher` (tests), `now` clock, and/or property `scopes`
@@ -111,21 +113,28 @@ export async function sendSoapRequest(
   const now = options?.now ?? Date.now;
   const startedAt = now();
   let http = await sendHttp(request, options);
+  let totalDurationMs = http.timings.totalMs;
   let challenged = false;
   let attempts: 1 | 2 = 1;
   if (auth !== undefined && !callerAuthorization && !auth.preemptive && isBasicChallenge(http)) {
     challenged = true;
-    attempts = 2;
     // Both attempts share one timeout budget, so a challenged send cannot take twice as long.
-    const remainingMs = Math.max(1, timeoutMs - (now() - startedAt));
-    http = await sendHttp(
-      {
-        ...request,
-        headers: { ...headers, Authorization: basicAuthorization(auth.username, auth.password) },
-        timeoutMs: remainingMs,
-      },
-      options,
-    );
+    const remainingMs = timeoutMs - (now() - startedAt);
+    if (remainingMs > 0) {
+      attempts = 2;
+      const retryHttp = await sendHttp(
+        {
+          ...request,
+          headers: { ...headers, Authorization: basicAuthorization(auth.username, auth.password) },
+          timeoutMs: remainingMs,
+        },
+        options,
+      );
+      totalDurationMs += retryHttp.timings.totalMs;
+      http = retryHttp;
+    }
+    // Otherwise the budget is already spent: reporting the challenge on the first (401)
+    // exchange, with no retry, beats sending one doomed to time out immediately.
   }
   const authSummary: AuthSummary | undefined =
     auth !== undefined ? { scheme: 'basic', challenged, attempts } : undefined;
@@ -162,7 +171,7 @@ export async function sendSoapRequest(
   return {
     http,
     ...(response !== undefined ? { response } : {}),
-    durationMs: http.timings.totalMs,
+    durationMs: totalDurationMs,
     ...(authSummary !== undefined ? { auth: authSummary } : {}),
     problems,
     ...(unresolved !== undefined ? { unresolved } : {}),

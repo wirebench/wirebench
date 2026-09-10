@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findEnvironment,
   removeEnvironment,
+  resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
@@ -100,6 +101,37 @@ describe('resolveEndpoint precedence', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, undefined, iface, { endpointId: 'not-real' });
     expect(result).toEqual({ url: 'https://default.test/soap', source: 'interface-default' });
+  });
+});
+
+describe('resolveAuthEndpoint', () => {
+  it("uses the request's own endpoint when set", () => {
+    const { iface } = fixtureProject();
+    expect(resolveAuthEndpoint(iface, { endpointId: 'ep-alt' })).toBe(iface.endpoints[1]);
+  });
+
+  it("falls back to the interface's default endpoint when the request has none", () => {
+    const { iface } = fixtureProject();
+    expect(resolveAuthEndpoint(iface, {})).toBe(iface.endpoints[0]);
+  });
+
+  it('falls back to the first endpoint when there is no default', () => {
+    const { iface } = fixtureProject();
+    const noDefault: typeof iface = { ...iface };
+    Reflect.deleteProperty(noDefault, 'defaultEndpointId');
+    expect(resolveAuthEndpoint(noDefault, {})).toBe(noDefault.endpoints[0]);
+  });
+
+  it('an unresolvable request endpointId falls through to the interface default', () => {
+    const { iface } = fixtureProject();
+    expect(resolveAuthEndpoint(iface, { endpointId: 'not-real' })).toBe(iface.endpoints[0]);
+  });
+
+  it('returns undefined when the interface has no endpoints', () => {
+    const { iface } = fixtureProject();
+    const empty: typeof iface = { ...iface, endpoints: [] };
+    Reflect.deleteProperty(empty, 'defaultEndpointId');
+    expect(resolveAuthEndpoint(empty, {})).toBeUndefined();
   });
 });
 

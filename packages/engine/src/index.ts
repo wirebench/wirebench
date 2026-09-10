@@ -339,6 +339,7 @@ export { effectiveAuth } from './project/endpoints.js';
 export {
   findEnvironment,
   removeEnvironment,
+  resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
