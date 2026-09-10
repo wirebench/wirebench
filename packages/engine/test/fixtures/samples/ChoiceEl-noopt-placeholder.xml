@@ -1,4 +1,6 @@
 <ns1:ChoiceEl xmlns:ns1="urn:wb:sc">
    <!--You have a CHOICE of the next 2 items at this level-->
    <ns1:single>?</ns1:single>
+   <!--Zero or more repetitions:-->
+   <ns1:many>?</ns1:many>
 </ns1:ChoiceEl>

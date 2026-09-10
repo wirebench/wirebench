@@ -188,9 +188,21 @@ function emitElement(ctx: Context, decl: ElementDecl, depth: number): XmlNode {
   return node;
 }
 
-/** Emits one instance of an element particle, with its occurrence comment. */
-function emitElementParticle(ctx: Context, decl: ElementDecl, occurs: Occurs, out: XmlNode[], depth: number): void {
-  if (occurs.min === 0 && !ctx.options.includeOptional) {
+/**
+ * Emits one instance of an element particle, with its occurrence comment.
+ * `forceInclude` bypasses the `includeOptional` gate: it is set for a particle
+ * that is a direct alternative of a `choice` (SoapUI emits every alternative
+ * regardless of options — the user picks one and deletes the rest).
+ */
+function emitElementParticle(
+  ctx: Context,
+  decl: ElementDecl,
+  occurs: Occurs,
+  out: XmlNode[],
+  depth: number,
+  forceInclude = false,
+): void {
+  if (!forceInclude && occurs.min === 0 && !ctx.options.includeOptional) {
     return;
   }
   const node = emitElement(ctx, decl, depth);
@@ -205,15 +217,22 @@ function emitElementParticle(ctx: Context, decl: ElementDecl, occurs: Occurs, ou
   out.push(node);
 }
 
-function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: number): void {
+/**
+ * Emits one particle. `forceInclude` bypasses the `includeOptional` gate for
+ * this particle only (not its descendants): it is set when this particle is a
+ * direct alternative of an enclosing `choice`, since SoapUI emits every
+ * alternative of a choice regardless of options — the optional/occurrence
+ * gating of a compositor otherwise applies only outside a choice.
+ */
+function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: number, forceInclude = false): void {
   switch (particle.kind) {
     case 'localElement':
-      emitElementParticle(ctx, particle.decl, particle.occurs, out, depth);
+      emitElementParticle(ctx, particle.decl, particle.occurs, out, depth, forceInclude);
       return;
     case 'elementRef': {
       const decl = ctx.set.lookupElement(particle.ref);
       if (decl !== undefined) {
-        emitElementParticle(ctx, decl, particle.occurs, out, depth);
+        emitElementParticle(ctx, decl, particle.occurs, out, depth, forceInclude);
       }
       return;
     }
@@ -223,12 +242,12 @@ function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: n
     case 'groupRef': {
       const group = ctx.set.lookupGroup(particle.ref);
       if (group !== undefined) {
-        emitParticle(ctx, { ...group.particle, occurs: particle.occurs }, out, depth);
+        emitParticle(ctx, { ...group.particle, occurs: particle.occurs }, out, depth, forceInclude);
       }
       return;
     }
     default: {
-      if (particle.occurs.min === 0 && !ctx.options.includeOptional) {
+      if (!forceInclude && particle.occurs.min === 0 && !ctx.options.includeOptional) {
         return;
       }
       const text = occurrenceComment(particle.occurs);
@@ -237,8 +256,16 @@ function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: n
       }
       if (particle.kind === 'choice') {
         // SoapUI announces the alternatives and then emits every one of them,
-        // leaving the user to delete the ones they do not want.
+        // leaving the user to delete the ones they do not want. Every direct
+        // alternative is emitted regardless of `includeOptional` (the user
+        // picks one); optionality/occurrence gating still applies to content
+        // nested *inside* an alternative, and to the choice itself relative to
+        // its own parent (handled by the gate above).
         out.push(comment(`You have a CHOICE of the next ${particle.particles.length} items at this level`));
+        for (const child of particle.particles) {
+          emitParticle(ctx, child, out, depth, true);
+        }
+        return;
       }
       for (const child of particle.particles) {
         emitParticle(ctx, child, out, depth);

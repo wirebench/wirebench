@@ -129,6 +129,21 @@ describe('generateElement — rules', () => {
     expect(xml).toContain('many');
   });
 
+  it('emits every choice alternative even when includeOptional is false', () => {
+    const xml = generateElement(set, q(TNS, 'ChoiceEl'), { includeOptional: false }).xml;
+    const announced = xml.match(/You have a CHOICE of the next (\d+) items at this level/);
+    expect(announced).not.toBeNull();
+    // <xs:choice> has 2 direct alternatives: `single`, and the `minOccurs="0"` sequence.
+    expect(announced?.[1]).toBe('2');
+    expect(xml).toContain('single');
+    // The optional alternative (a sequence) is still emitted in full even though
+    // it is minOccurs="0" — choice gating overrides compositor optionality.
+    expect(xml).toContain('many');
+    // But content nested inside that alternative that is itself optional (not a
+    // choice alternative) is still gated by includeOptional as usual.
+    expect(xml).not.toContain('tag');
+  });
+
   it('emits xsi:type with the first concrete derived type for an abstract type', () => {
     const xml = generateElement(set, q(TNS, 'ShapeEl')).xml;
     expect(xml).toContain('xsi:type="ns1:Circle"');
