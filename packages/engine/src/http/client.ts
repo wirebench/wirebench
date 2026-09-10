@@ -77,6 +77,39 @@ export function createDispatcher(opts: {
   return getDefaultAgent();
 }
 
+/**
+ * Builds a dispatcher pinned to a single, non-pipelined connection per origin, using the
+ * same TLS/proxy/bind-address mapping as {@link createDispatcher}. NTLM authenticates the
+ * *connection*, not the request, so all three legs of its handshake have to travel over one
+ * socket; `connections: 1` plus keep-alive gives sequential requests exactly that. The caller
+ * owns the returned dispatcher and must close it.
+ */
+export function createSingleConnectionDispatcher(opts: {
+  readonly tls?: TlsOptions;
+  readonly proxy?: ProxyOptions;
+  readonly localAddress?: string;
+}): Dispatcher {
+  const connect = connectOptions(opts);
+  const shared = {
+    connections: 1,
+    pipelining: 1,
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 60_000,
+    ...(connect !== undefined ? { connect } : {}),
+  };
+  if (opts.proxy !== undefined) {
+    const proxy = opts.proxy;
+    return new ProxyAgent({
+      uri: proxy.url,
+      ...(proxy.auth !== undefined
+        ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
+        : {}),
+      ...shared,
+    });
+  }
+  return new Agent(shared);
+}
+
 /** The connector options for the given TLS/bind-address settings, or `undefined` when neither is set. */
 function connectOptions(opts: {
   readonly tls?: TlsOptions;

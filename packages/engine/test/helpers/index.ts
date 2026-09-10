@@ -11,4 +11,12 @@ export {
   type RecordedRequest,
 } from './test-soap-server.js';
 export { generateTestCa, generateServerCert, generateClientCert, type TestCertificate } from './test-certs.js';
+export {
+  createNtlmAuthenticator,
+  startNtlmServer,
+  verifyType3,
+  type NtlmAccount,
+  type NtlmServer,
+  type NtlmServerOptions,
+} from './ntlm-server.js';
 export { readPublicFixture } from './fixtures.js';

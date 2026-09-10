@@ -5,6 +5,7 @@ import type { Socket } from 'node:net';
 import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
 import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { readPublicFixture } from './fixtures.js';
+import { createNtlmAuthenticator } from './ntlm-server.js';
 
 /**
  * The 1x1 PNG the `/mime-fixture` route sends as its single XOP part, so a test can assert
@@ -141,6 +142,7 @@ export async function startTestSoapServer(options?: {
 }): Promise<TestSoapServer> {
   const requests: RecordedRequest[] = [];
   const sockets = new Set<Socket>();
+  const ntlmAuthenticator = createNtlmAuthenticator({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
 
   const listener = (req: IncomingMessage, res: ServerResponse): void => {
     void handle(req, res).catch((err: unknown) => {
@@ -294,6 +296,26 @@ export async function startTestSoapServer(options?: {
       });
       res.writeHead(200, { 'content-type': built.contentType });
       res.end(Buffer.from(built.body));
+      return;
+    }
+
+    // NTLM route: the full three-leg handshake against user/pass in WORKGROUP. NTLM state is
+    // per-connection, so `ntlmAuthenticator` keys its challenge off `req.socket`.
+    if (method === 'POST' && url.pathname === '/auth/ntlm') {
+      if (ntlmAuthenticator.handle(req, res) !== 'authenticated') {
+        return;
+      }
+      const contentType = req.headers['content-type'] ?? 'text/xml';
+      if ((options?.fixture ?? 'calculator') === 'calculator' && options?.respondToCalculatorAdd === true) {
+        const addResponse = buildCalculatorAddResponse(body.toString('utf-8'));
+        if (addResponse !== undefined) {
+          res.writeHead(200, { 'content-type': contentType, 'x-auth-scheme': 'ntlm' });
+          res.end(addResponse);
+          return;
+        }
+      }
+      res.writeHead(200, { 'content-type': contentType, 'x-auth-scheme': 'ntlm' });
+      res.end(body);
       return;
     }
 

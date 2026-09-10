@@ -208,7 +208,9 @@ export {
 } from './http/auth/ntlm.js';
 export type { Type1Options, Type2Message, Type3Message, Type3Params, Type3Result } from './http/auth/ntlm.js';
 export { md4 } from './http/auth/md4.js';
-export { createDispatcher, sendHttp } from './http/client.js';
+export { ntlmHandshake } from './http/auth/ntlm-transport.js';
+export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from './http/auth/ntlm-transport.js';
+export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
 export { captureSslInfo } from './http/tls.js';

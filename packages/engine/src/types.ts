@@ -122,8 +122,11 @@ export interface AuthSummary {
   readonly scheme: 'basic' | 'ntlm';
   /** True when the server answered the first attempt with a 401 challenge. */
   readonly challenged: boolean;
-  /** How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a challenge. */
-  readonly attempts: 1 | 2;
+  /**
+   * How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a Basic
+   * challenge, 3 for a full NTLM handshake (bare, Type 1, Type 3).
+   */
+  readonly attempts: 1 | 2 | 3;
 }
 
 /** Input to `sendSoapRequest`: an already-built envelope plus transport knobs. */
@@ -208,8 +211,9 @@ export interface SoapExchange {
     readonly attachments?: readonly ResponseAttachment[];
   };
   /**
-   * Total time on the wire. For a challenged Basic send ({@link AuthSummary.attempts} `2`) this
-   * is the *sum* of both attempts, not just the final one, since both actually happened.
+   * Total time on the wire. For a challenged send ({@link AuthSummary.attempts} greater than 1 —
+   * a Basic retry or an NTLM handshake) this is the *sum* of every attempt, not just the final
+   * one, since all of them actually happened.
    */
   readonly durationMs: number;
   readonly problems: readonly {

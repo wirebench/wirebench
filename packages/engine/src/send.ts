@@ -7,10 +7,11 @@ import { gzipSync } from 'node:zlib';
 import type { Dispatcher } from 'undici';
 import { WirebenchError } from './errors.js';
 import { sendHttp } from './http/client.js';
-import type { HttpRequest } from './http/types.js';
+import type { HttpExchange, HttpRequest } from './http/types.js';
 import { expandSendInput } from './project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
 import { basicAuthorization, isBasicChallenge } from './http/auth/basic.js';
+import { ntlmHandshake } from './http/auth/ntlm-transport.js';
 import { headerValue, mergeHeaders } from './http/headers.js';
 import { charsetOf } from './soap/charset.js';
 import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
@@ -44,8 +45,13 @@ import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
  * with a 401 `Basic` challenge; both attempts share the one `timeoutMs` budget (if the first
  * attempt already used it all, the challenge is reported as-is, `attempts: 1`, rather than
  * firing a retry doomed to time out immediately) and the returned exchange is the final attempt
- * actually made. A caller-supplied `Authorization` header always wins, and NTLM is not
- * implemented yet (`auth-unsupported`).
+ * actually made. A caller-supplied `Authorization` header always wins.
+ *
+ * When `input.auth` is NTLM, the send instead runs the three-leg NTLMv2 handshake over one
+ * dedicated connection (`http/auth/ntlm-transport.ts`): a bare bodyless leg, the Type 1
+ * message, then the Type 3 message carrying the real body. The returned exchange is the
+ * final leg, `durationMs` sums every leg, and a server that never challenges short-circuits
+ * after the first (`attempts: 1`).
  *
  * @param input the endpoint, envelope and transport options to send
  * @param options an injected `dispatcher` (tests), `now` clock, and/or property `scopes`
@@ -86,13 +92,12 @@ export async function sendSoapRequest(
   }
 
   const auth = effectiveInput.auth;
-  if (auth?.type === 'ntlm') {
-    throw new WirebenchError('auth-unsupported', 'NTLM authentication lands in the next release');
-  }
   // A caller-supplied Authorization header is an explicit override; never send two.
   const callerAuthorization = headerValue(headers, 'authorization') !== undefined;
-  if (auth !== undefined && !callerAuthorization && auth.preemptive) {
-    headers.Authorization = basicAuthorization(auth.username, auth.password);
+  const basicAuth = auth?.type === 'basic' && !callerAuthorization ? auth : undefined;
+  const ntlmAuth = auth?.type === 'ntlm' && !callerAuthorization ? auth : undefined;
+  if (basicAuth?.preemptive === true) {
+    headers.Authorization = basicAuthorization(basicAuth.username, basicAuth.password);
   }
 
   const timeoutMs = effectiveInput.timeoutMs ?? 60_000;
@@ -112,11 +117,25 @@ export async function sendSoapRequest(
 
   const now = options?.now ?? Date.now;
   const startedAt = now();
-  let http = await sendHttp(request, options);
-  let totalDurationMs = http.timings.totalMs;
+  let http: HttpExchange;
+  let totalDurationMs: number;
   let challenged = false;
-  let attempts: 1 | 2 = 1;
-  if (auth !== undefined && !callerAuthorization && !auth.preemptive && isBasicChallenge(http)) {
+  let attempts: 1 | 2 | 3 = 1;
+  if (ntlmAuth !== undefined) {
+    // NTLM owns the whole exchange: three legs on one connection, its own dispatcher.
+    const handshake = await ntlmHandshake(request, ntlmAuth, {
+      ...(options?.now !== undefined ? { now: options.now } : {}),
+      ...(options?.dispatcher !== undefined ? { dispatcher: options.dispatcher } : {}),
+    });
+    http = handshake.http;
+    totalDurationMs = handshake.durationMs;
+    challenged = handshake.challenged;
+    attempts = handshake.attempts;
+  } else {
+    http = await sendHttp(request, options);
+    totalDurationMs = http.timings.totalMs;
+  }
+  if (basicAuth !== undefined && !basicAuth.preemptive && isBasicChallenge(http)) {
     challenged = true;
     // Both attempts share one timeout budget, so a challenged send cannot take twice as long.
     const remainingMs = timeoutMs - (now() - startedAt);
@@ -125,7 +144,7 @@ export async function sendSoapRequest(
       const retryHttp = await sendHttp(
         {
           ...request,
-          headers: { ...headers, Authorization: basicAuthorization(auth.username, auth.password) },
+          headers: { ...headers, Authorization: basicAuthorization(basicAuth.username, basicAuth.password) },
           timeoutMs: remainingMs,
         },
         options,
@@ -137,7 +156,7 @@ export async function sendSoapRequest(
     // exchange, with no retry, beats sending one doomed to time out immediately.
   }
   const authSummary: AuthSummary | undefined =
-    auth !== undefined ? { scheme: 'basic', challenged, attempts } : undefined;
+    auth !== undefined ? { scheme: auth.type, challenged, attempts } : undefined;
 
   const { envelopeXml, attachments } = readResponseBody(
     http.body,

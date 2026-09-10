@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { Agent, type Dispatcher } from 'undici';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HttpError, WirebenchError } from '../../../src/errors.js';
+import { HttpError } from '../../../src/errors.js';
 import { sendSoapRequest } from '../../../src/send.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
@@ -88,14 +88,13 @@ describe('send — HTTP Basic authentication', () => {
     expect(server.requests[0]?.headers.authorization).toBe(AUTHORIZATION);
   });
 
-  it('rejects NTLM with a reserved auth-unsupported code', async () => {
+  // Task 34 rejected NTLM with `auth-unsupported`; Task 35 implements it, so what this
+  // asserts now is that NTLM no longer throws and reports itself as the NTLM scheme.
+  it('runs NTLM instead of rejecting it, short-circuiting when the server never challenges', async () => {
     server = await startTestSoapServer();
-    await expect(send('/soap', { auth: { type: 'ntlm', username: 'user', password: 'pass' } })).rejects.toMatchObject({
-      code: 'auth-unsupported',
-    });
-    await expect(send('/soap', { auth: { type: 'ntlm', username: 'u', password: 'p' } })).rejects.toBeInstanceOf(
-      WirebenchError,
-    );
+    const exchange = await send('/soap', { auth: { type: 'ntlm', username: 'user', password: 'pass' } });
+    expect(exchange.http.status).toBe(200);
+    expect(exchange.auth).toEqual({ scheme: 'ntlm', challenged: false, attempts: 1 });
   });
 
   it('honours an abort raised during the challenge retry', async () => {

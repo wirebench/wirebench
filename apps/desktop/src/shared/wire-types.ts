@@ -421,7 +421,7 @@ export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSc
 export const authSummaryWireSchema = z.object({
   scheme: z.enum(['basic', 'ntlm']),
   challenged: z.boolean(),
-  attempts: z.union([z.literal(1), z.literal(2)]),
+  attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
 export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 
