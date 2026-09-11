@@ -287,24 +287,29 @@ describe('explorer tree — orphaned requests', () => {
         },
       ],
     });
-    const tree = buildExplorerTree([summary], [
-      {
-        id: 'r1',
-        interfaceId: 'if-1',
-        bindingName: '{urn:x}B',
-        operationName: 'Legacy',
-        name: 'Request 1',
-        orphaned: true,
-      },
-      {
-        id: 'r2',
-        interfaceId: 'if-1',
-        bindingName: '{urn:x}B',
-        operationName: 'Legacy',
-        name: 'Request 2',
-      },
-    ] as never);
-    const requests = tree[0]?.children?.[1]?.children?.[0]?.children ?? [];
+    const tree = buildExplorerTree(
+      [{ id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/projects/demo', status: 'ready' }],
+      [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      { [summary.id]: summary },
+      [
+        {
+          id: 'r1',
+          interfaceId: 'if-1',
+          bindingName: '{urn:x}B',
+          operationName: 'Legacy',
+          name: 'Request 1',
+          orphaned: true,
+        },
+        {
+          id: 'r2',
+          interfaceId: 'if-1',
+          bindingName: '{urn:x}B',
+          operationName: 'Legacy',
+          name: 'Request 2',
+        },
+      ] as never,
+    );
+    const requests = tree[0]?.children?.[0]?.children?.[1]?.children?.[0]?.children ?? [];
     expect(requests.map((node) => node.orphaned)).toEqual([true, undefined]);
   });
 });

@@ -121,7 +121,7 @@ describe('workspace.* channels', () => {
   it('registers every channel the contract declares', () => {
     const declared = Object.values(channels.workspace).map((channel) => channel.name);
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(17);
+    expect(declared).toHaveLength(18);
   });
 
   it('none of them accepts a filesystem path from the renderer', () => {
@@ -202,6 +202,19 @@ describe('workspace.* channels', () => {
 
     const unknown = await invoke('workspace.reveal', { workspaceId: 'nope' });
     expect(unknown).toMatchObject({ ok: false, error: { code: 'workspace-not-found' } });
+    expect(reveal).toHaveBeenCalledTimes(1);
+  });
+
+  it('revealProject shows the folder of a project in the open workspace, by id only', async () => {
+    await expect(invoke('workspace.revealProject', { projectId: 'p1' })).resolves.toEqual({ ok: true, value: {} });
+    expect(reveal).toHaveBeenCalledWith('/user-data/workspaces/w1/projects/Calculator');
+
+    const unknown = await invoke('workspace.revealProject', { projectId: 'nope' });
+    expect(unknown).toMatchObject({ ok: false, error: { code: 'project-not-in-workspace' } });
+
+    // A path the renderer tries to smuggle alongside the id is stripped by the schema.
+    const parsed = channels.workspace.revealProject.request.parse({ projectId: 'p1', dir: '/etc' });
+    expect(parsed).toEqual({ projectId: 'p1' });
     expect(reveal).toHaveBeenCalledTimes(1);
   });
 

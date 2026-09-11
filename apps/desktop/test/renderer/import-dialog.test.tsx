@@ -92,9 +92,8 @@ describe('ImportDialog', () => {
     const call = importFn.mock.calls[0]?.[0] as { target: unknown; source: unknown; token: unknown };
     expect(call.source).toEqual({ kind: 'url', url: 'http://example.test/service.wsdl' });
     expect(typeof call.token).toBe('string');
-    // Nothing is selected in the explorer, so the import makes a project of its own, named
-    // after the source — it does not stop to ask for one.
-    expect(call.target).toEqual({ newProjectName: 'service' });
+    // Nothing is selected, but there is exactly one open project, so that is the default target.
+    expect(call.target).toEqual({ projectId: project.id });
 
     // A progress event for a different, or matching, token updates the progress line.
     emit('engine.progress', { kind: 'import', token: call.token, phase: 'fetch', message: 'Fetching…' });
@@ -114,6 +113,51 @@ describe('ImportDialog', () => {
     await waitFor(() => expect(importFn).toHaveBeenCalled());
     expect((importFn.mock.calls[0]?.[0] as { target: unknown }).target).toEqual({ projectId: project.id });
     useUiStore.setState({ selection: undefined });
+  });
+
+  it('defaults the target to the new project when two are open and none is selected', async () => {
+    const second: ProjectWire = { ...project, id: 'proj-2', name: 'Billing', interfaces: [], requests: [] };
+    useProjectStore.getState().applySnapshot(second.id, second);
+    const importFn = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { projectId: project.id, project, interfaceId: 'iface-1' } });
+    stubWirebench({ project: { addInterface: importFn } });
+
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+
+    const select = screen.getByTestId<HTMLSelectElement>('import-target-project');
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      'Billing',
+      'Demo',
+      'New project “Imported service”',
+    ]);
+    expect(select.value).toBe('');
+
+    // The option's name tracks the field, so the user can see what would be created.
+    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/Calculator.wsdl' } });
+    expect(select.options[2]?.textContent).toBe('New project “Calculator”');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(importFn).toHaveBeenCalled());
+    expect((importFn.mock.calls[0]?.[0] as { target: unknown }).target).toEqual({ newProjectName: 'Calculator' });
+  });
+
+  it('submits the project chosen in the target select', async () => {
+    const second: ProjectWire = { ...project, id: 'proj-2', name: 'Billing', interfaces: [], requests: [] };
+    useProjectStore.getState().applySnapshot(second.id, second);
+    const importFn = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { projectId: second.id, project: second, interfaceId: 'iface-1' } });
+    stubWirebench({ project: { addInterface: importFn } });
+
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByTestId('import-target-project'), { target: { value: second.id } });
+    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(importFn).toHaveBeenCalled());
+    expect((importFn.mock.calls[0]?.[0] as { target: unknown }).target).toEqual({ projectId: second.id });
   });
 
   it('renders an IPC error inline', async () => {

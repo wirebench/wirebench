@@ -325,6 +325,12 @@ export const channels = {
     ),
     // Shows a workspace's folder in the OS file manager — the way out for an unreadable row.
     reveal: defineChannel('workspace.reveal', workspaceIdRequestSchema, workspaceRevealResponseSchema),
+    // The same for one project's folder, by id: main holds the path, the renderer never does.
+    revealProject: defineChannel(
+      'workspace.revealProject',
+      workspaceProjectIdRequestSchema,
+      workspaceRevealResponseSchema,
+    ),
     exportProject: defineChannel(
       'workspace.exportProject',
       workspaceProjectIdRequestSchema,

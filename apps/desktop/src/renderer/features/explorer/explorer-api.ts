@@ -20,10 +20,18 @@ export function getExplorerTree(): TreeApi<ExplorerNode> | null {
 
 /** Enters inline edit mode for a request node, if the tree is mounted and the node exists. */
 export function startRenamingRequest(requestId: string): void {
+  startRenaming(`req:${requestId}`);
+}
+
+/** Enters inline edit mode for a project root, if the tree is mounted and the node exists. */
+export function startRenamingProject(projectId: string): void {
+  startRenaming(`proj:${projectId}`);
+}
+
+function startRenaming(nodeId: string): void {
   const tree = treeApi;
   if (tree === null) {
     return;
   }
-  const node = tree.get(`req:${requestId}`);
-  void node?.edit();
+  void tree.get(nodeId)?.edit();
 }

@@ -2,16 +2,30 @@ import { useEffect, useRef, useState } from 'react';
 import type { NodeApi, NodeRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
-import { Box, FileDown, Folder, FolderPlus, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
+import {
+  Box,
+  FileDown,
+  Folder,
+  FolderPlus,
+  Link2,
+  Loader2,
+  Network,
+  Plug,
+  RefreshCw,
+  FoldVertical,
+} from 'lucide-react';
+import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
+import { projectRowActions } from './project-actions.js';
 import { registerExplorerTree } from './explorer-api.js';
-import type { ExplorerNode } from './tree-nodes.js';
+import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
 import { buildExplorerTree } from './tree-nodes.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
@@ -41,6 +55,7 @@ function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { 
 }
 
 const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size: number }>>> = {
+  project: Box,
   interface: Plug,
   endpoints: Folder,
   operations: Folder,
@@ -63,6 +78,15 @@ const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeo
   },
 );
 
+/** Rows whose testid the names block fixes; everything else is a plain `explorer-tree-row`. */
+const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
+  project: 'explorer-project-row',
+  'project-missing': 'explorer-project-missing',
+};
+
+const INLINE_BUTTON_CLASS =
+  'shrink-0 rounded px-1.5 py-0.5 text-xs text-fg-default ring-1 ring-hairline-strong hover:bg-surface-base';
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
   return (
@@ -70,8 +94,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
       <div
         ref={dragHandle}
         style={style}
-        data-testid="explorer-tree-row"
+        data-testid={ROW_TESTID[node.data.kind] ?? 'explorer-tree-row'}
         data-tree-id={node.id}
+        {...(node.data.projectId !== undefined ? { 'data-project-id': node.data.projectId } : {})}
         // No `role`/`aria-selected`/`tabIndex` here: react-arborist's own row wrapper is the
         // `treeitem` (with `aria-level`, `aria-selected` and `aria-expanded`), and repeating
         // them on this child would nest a second treeitem inside the real one.
@@ -115,7 +140,51 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             }}
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate">{node.data.label}</span>
+          <span
+            className={`min-w-0 flex-1 truncate ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
+          >
+            {node.data.label}
+          </span>
+        )}
+        {node.data.kind === 'project-missing' && node.data.projectId !== undefined && (
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              className={INLINE_BUTTON_CLASS}
+              onClick={(e) => {
+                e.stopPropagation();
+                projectRowActions.locate(node.data.projectId ?? '');
+              }}
+            >
+              Locate…
+            </button>
+            <button
+              type="button"
+              className={INLINE_BUTTON_CLASS}
+              onClick={(e) => {
+                e.stopPropagation();
+                projectRowActions.remove(node.data.projectId ?? '');
+              }}
+            >
+              Remove
+            </button>
+          </span>
+        )}
+        {node.data.kind === 'project' && node.data.linked === true && (
+          <span
+            data-testid="explorer-project-linked-badge"
+            title={node.data.dir}
+            className="flex shrink-0 items-center gap-0.5 rounded-full bg-surface-base px-1.5 text-xs text-fg-subtle"
+          >
+            <Link2 size={11} aria-hidden="true" />
+            linked
+          </span>
+        )}
+        {node.data.kind === 'project' && node.data.loading === true && (
+          <span className="flex shrink-0 items-center gap-1 text-xs text-fg-subtle">
+            <Loader2 size={11} aria-hidden="true" className="animate-spin" />
+            opening…
+          </span>
         )}
         {node.data.orphaned === true && (
           <span
@@ -136,7 +205,11 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   );
 }
 
-/** The Explorer sidebar view: an empty state, or the interfaces/endpoints/operations/requests tree. */
+/**
+ * The Explorer sidebar view: an empty state offering both ways into a first project, or one
+ * root per project in the open workspace with its interfaces/endpoints/operations/requests
+ * beneath it.
+ */
 export function ExplorerView() {
   const interfaces = useProjectStore((state) => state.interfaces);
   const order = useProjectStore((state) => state.order);
@@ -145,9 +218,7 @@ export function ExplorerView() {
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
   const projects = useProjectStore((state) => state.projects);
-  const selectedProjectId = useUiStore((state) =>
-    state.selection?.kind === 'project' ? state.selection.id : undefined,
-  );
+  const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
   const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
@@ -157,13 +228,18 @@ export function ExplorerView() {
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
 
-  // Every project's interfaces in one tree. A per-project root row is Task 11; until then the
-  // tree is flat across projects, exactly as it was flat across one.
-  const summaries = order
-    .flatMap((group) => group.interfaceIds)
-    .map((id) => interfaces[id])
-    .filter((s): s is NonNullable<typeof s> => s !== undefined);
-  const data = buildExplorerTree(summaries, Object.values(requests));
+  // One root per project in the open workspace, in the manifest's order. The *name* comes from
+  // the project mirror when it holds one: a rename reaches it (`project.changed`) before the
+  // workspace snapshot catches up, and the row must not lag a rename the user just typed.
+  const roots: readonly ExplorerProject[] = (workspaceProjects ?? []).map((project) => ({
+    id: project.id,
+    name: projects[project.id]?.name ?? project.name,
+    source: project.source,
+    dir: project.dir,
+    status: project.status,
+    ...(project.message !== undefined ? { message: project.message } : {}),
+  }));
+  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests));
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -195,39 +271,23 @@ export function ExplorerView() {
         </IconButton>
       </div>
 
-      {order.map((group) => {
-        const project = projects[group.projectId];
-        if (project === undefined) {
-          return null;
-        }
-        const selected = selectedProjectId === project.id;
-        return (
-          // A project is not part of the interfaces tree (it owns no children there), but it
-          // still needs a selectable row so the details panel can edit its properties.
-          <button
-            key={project.id}
-            type="button"
-            data-testid="explorer-project-row"
-            data-project-id={project.id}
-            aria-pressed={selected}
-            onClick={() => {
-              setSelection({ kind: 'project', id: project.id });
-            }}
-            className={`flex h-row shrink-0 items-center gap-1.5 px-2 text-left text-sm ${
-              selected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
-            }`}
-          >
-            <Box size={13} aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{project.name}</span>
-          </button>
-        );
-      })}
-
       <div ref={containerRef} className="min-h-0 flex-1">
         {data.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 px-4 text-center">
-            <p className="text-md text-fg-muted">No interfaces yet</p>
-            <p className="text-sm text-fg-subtle">Import a WSDL (⌘I) to get started.</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+            <p className="text-md text-fg-muted">No projects yet</p>
+            <p className="text-sm text-fg-subtle">Create a project, or import a WSDL into a new one.</p>
+            <div className="mt-1 flex gap-2">
+              <Button
+                onClick={() => {
+                  workspaceActions.newProject();
+                }}
+              >
+                New project
+              </Button>
+              <Button variant="primary" onClick={openImportDialog}>
+                Import WSDL…
+              </Button>
+            </div>
           </div>
         ) : (
           size.height > 0 && (
@@ -239,11 +299,15 @@ export function ExplorerView() {
               rowHeight={26}
               outerElementType={FocusableListOuter}
               openByDefault
-              disableEdit={(node) => node.kind !== 'request'}
+              disableEdit={(node) => node.kind !== 'request' && node.kind !== 'project'}
               aria-label="Explorer"
               onActivate={(node: NodeApi<ExplorerNode>) => {
                 // Double-click opens a request; on an interface row it opens the viewer, the
                 // same thing "Show Interface Viewer" does.
+                if (node.data.kind === 'project') {
+                  // Double-clicking a root only folds it; a project has no editor of its own.
+                  return;
+                }
                 if (node.data.kind === 'interface') {
                   explorerActions.showInterface(node.data.interfaceId);
                   return;
@@ -260,7 +324,9 @@ export function ExplorerView() {
                   node.kind === 'interface' ? interfaces[node.interfaceId ?? '']?.definitionUrl : undefined;
                 setSelection({
                   kind: node.kind,
-                  id: node.id,
+                  // A project row stands for a project, so the selection names the project id —
+                  // what `selection.project` commands and the details panel both read.
+                  id: node.kind === 'project' ? (node.projectId ?? node.id) : node.id,
                   ...(node.interfaceId !== undefined ? { interfaceId: node.interfaceId } : {}),
                   ...(definitionUrl !== undefined ? { definitionUrl } : {}),
                   ...(node.bindingName !== undefined ? { bindingName: node.bindingName } : {}),
@@ -275,10 +341,15 @@ export function ExplorerView() {
                 if (node?.kind === 'request' && node.requestId !== undefined) {
                   useProjectStore.getState().updateRequest(node.requestId, { name });
                 }
+                if (node?.kind === 'project' && node.projectId !== undefined) {
+                  projectRowActions.commitRename(node.projectId, name);
+                }
               }}
               onDelete={({ nodes }) => {
                 for (const node of nodes) {
-                  if (node.data.kind === 'interface') {
+                  if (node.data.kind === 'project' && node.data.projectId !== undefined) {
+                    projectRowActions.remove(node.data.projectId);
+                  } else if (node.data.kind === 'interface') {
                     requestRemoveInterface(node.data.interfaceId);
                   } else if (node.data.kind === 'request') {
                     requestDeleteRequest(node.data.requestId);

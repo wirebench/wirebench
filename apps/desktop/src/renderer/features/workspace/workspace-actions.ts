@@ -80,12 +80,33 @@ export const workspaceActions = {
     }
   },
 
-  /** Removes a project from the workspace; its folder is left on disk either way here. */
-  async removeProject(projectId: string): Promise<void> {
+  /**
+   * Removes a project from the workspace. `deleteFiles` moves an *internal* project's folder to
+   * the OS trash; it is never passed for a linked project, whose folder is not ours to touch.
+   */
+  async removeProject(projectId: string, deleteFiles = false): Promise<void> {
     try {
-      await useWorkspaceStore.getState().removeProject(projectId, false);
+      await useWorkspaceStore.getState().removeProject(projectId, deleteFiles);
     } catch (error) {
       report(error, 'Could not remove the project');
+    }
+  },
+
+  /** Re-points a missing linked project at a folder the user picks in main's own dialog. */
+  async locateProject(projectId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().locateProject(projectId);
+    } catch (error) {
+      report(error, 'Could not locate the project folder');
+    }
+  },
+
+  /** Shows one project's folder in the OS file manager. */
+  async revealProject(projectId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().revealProject(projectId);
+    } catch (error) {
+      report(error, 'Could not show the project folder');
     }
   },
 

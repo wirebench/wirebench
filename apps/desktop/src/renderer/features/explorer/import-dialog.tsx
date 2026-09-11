@@ -17,6 +17,9 @@ import { useUiStore } from '../../state/ui.js';
 
 type SourceTab = 'url' | 'file' | 'paste';
 
+/** The `import-target-project` value standing for *New project "<name>"*. Never a project id. */
+const NEW_PROJECT = '';
+
 const TABS = [
   { id: 'url', label: 'URL' },
   { id: 'file', label: 'File' },
@@ -24,16 +27,22 @@ const TABS = [
 ] as const satisfies readonly { id: SourceTab; label: string }[];
 
 /**
- * A project name derived from what is being imported — `Calculator.wsdl` becomes `Calculator`.
- * Used only when no project is selected in the explorer: importing into an empty workspace
- * should not stop to ask for a project first.
+ * The name the *New project* option offers, derived from what is being imported:
+ * `…/Calculator.wsdl` becomes `Calculator`, a URL with no useful path falls back to its host,
+ * and pasted text — which names nothing — becomes "Imported service".
  */
-function projectNameFor(source: ImportSourceWire): string {
+function projectNameFor(source: ImportSourceWire | undefined): string {
+  if (source === undefined) {
+    return 'Imported service';
+  }
+  let host = '';
   const raw =
     source.kind === 'url'
       ? (() => {
           try {
-            return new URL(source.url).pathname;
+            const url = new URL(source.url);
+            host = url.hostname;
+            return url.pathname;
           } catch {
             return source.url;
           }
@@ -51,19 +60,19 @@ function projectNameFor(source: ImportSourceWire): string {
     .replace(/\.[^.]+$/, '')
     .replace(/^dropped:/, '')
     .trim();
-  return name.length > 0 ? name : 'New Project';
+  if (name.length > 0) {
+    return name;
+  }
+  return host.length > 0 ? host : 'Imported service';
 }
 
-/**
- * Where the import lands: the project selected in the explorer, or — with nothing selected — a
- * project created for it, named after the source.
- */
-function importTarget(source: ImportSourceWire): ProjectAddInterfaceTarget {
+/** The project selected in the explorer, by whichever entity the selection names. */
+function selectedProjectId(): string | undefined {
   const selection = useUiStore.getState().selection;
   const store = useProjectStore.getState();
-  const selected =
-    selection === undefined ? undefined : store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id];
-  return selected === undefined ? { newProjectName: projectNameFor(source) } : { projectId: selected };
+  return selection === undefined
+    ? undefined
+    : store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id];
 }
 
 export interface ImportDialogProps {
@@ -95,10 +104,35 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [progress, setProgress] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [problems, setProblems] = useState<ImportProblemWire[]>([]);
+  // The project the import lands in: a project id, or `NEW_PROJECT` for one created for it.
+  const [target, setTarget] = useState<string>(NEW_PROJECT);
   const tokenRef = useRef<string | undefined>(undefined);
   // Tokens for imports the user cancelled — the in-flight promise still settles after `onCancel`
   // returns, so its resolution/rejection must be ignored rather than surfaced as an error.
   const cancelledTokensRef = useRef<Set<string>>(new Set());
+
+  // The projects an import can actually land in: the ones the renderer's mirror holds. A
+  // project still opening, or one whose folder is missing, is deliberately not offered.
+  const order = useProjectStore((state) => state.order);
+  const mirror = useProjectStore((state) => state.projects);
+  const openProjects = order
+    .map((group) => mirror[group.projectId])
+    .filter((project): project is NonNullable<typeof project> => project !== undefined)
+    .map((project) => ({ id: project.id, name: project.name }));
+
+  // Each opening picks its own default: the project the explorer has selected, else the only
+  // project there is, else a new one. Re-picked on every open so it follows the selection.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    // Read at open time rather than from the render closure: this must run on `open` alone —
+    // re-running it as the project list changes would overwrite a choice already made.
+    const store = useProjectStore.getState();
+    const selected = selectedProjectId();
+    const only = store.order.length === 1 ? store.order[0]?.projectId : undefined;
+    setTarget(selected ?? only ?? NEW_PROJECT);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -191,7 +225,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         useAuth && username.length > 0 && flushedRef !== undefined
           ? { auth: { username, passwordRef: flushedRef }, useForRequests }
           : undefined;
-      const summary = await useProjectStore.getState().importDefinition(importTarget(source), source, options, token);
+      // A project that left the workspace while the dialog sat open falls back to a new one.
+      const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+      const into: ProjectAddInterfaceTarget =
+        chosen === NEW_PROJECT ? { newProjectName: projectNameFor(source) } : { projectId: chosen };
+      const summary = await useProjectStore.getState().importDefinition(into, source, options, token);
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
@@ -229,6 +267,23 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     useUiStore.getState().showConsoleTab('problems');
     onOpenChange(false);
   }
+
+  // What the *New project* option would be called, from whatever is typed so far. Derived on
+  // render (not from `buildSource`, which reports validation errors) so the option tracks the
+  // field as the user types.
+  const newProjectName = projectNameFor(
+    tab === 'url'
+      ? url.length > 0
+        ? { kind: 'url', url }
+        : undefined
+      : tab === 'file'
+        ? dropped !== undefined
+          ? { kind: 'text', text: '', location: `dropped:${dropped.name}` }
+          : filePath.length > 0
+            ? { kind: 'file', path: filePath }
+            : undefined
+        : undefined,
+  );
 
   return (
     <Dialog.Root
@@ -347,6 +402,26 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 className="rounded border border-hairline-strong bg-surface-base p-2 font-mono text-xs text-fg-default outline-none"
               />
             )}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
+              Into project
+            </label>
+            <select
+              id="import-target-project"
+              data-testid="import-target-project"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+            >
+              {openProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+              <option value={NEW_PROJECT}>{`New project “${newProjectName}”`}</option>
+            </select>
           </div>
 
           {progress !== undefined && <p className="mt-3 text-sm text-fg-subtle">{progress}</p>}

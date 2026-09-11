@@ -120,6 +120,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly updateRequestProperties: (requestId: string, patch: RequestPropertiesPatchWire) => void;
   /** Merges a patch into one project's settings (`wirebench.yaml`). */
   readonly updateProjectSettings: (projectId: string, patch: ProjectSettingsPatchWire) => Promise<void>;
+  /** Renames one project. The folder keeps its slug; only the name in `wirebench.yaml` changes. */
+  readonly renameProject: (projectId: string, name: string) => Promise<void>;
   /** Turns the definition cache on or off for one interface. */
   readonly setCacheDefinition: (interfaceId: string, cacheDefinition: boolean) => Promise<void>;
   readonly setEndpoint: (requestId: string, url: string) => void;
@@ -820,6 +822,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateProjectSettings: async (projectId, patch) => {
       await mutate(projectId, { kind: 'update-project-settings', patch });
+    },
+
+    renameProject: async (projectId, name) => {
+      await mutate(projectId, { kind: 'rename-project', name });
     },
 
     setCacheDefinition: async (interfaceId, cacheDefinition) => {

@@ -1,4 +1,5 @@
 import { registerCommand } from '../lib/commands.js';
+import { projectRowActions } from '../features/explorer/project-actions.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -111,7 +112,7 @@ export function registerWorkspaceCommands(): void {
     run: () => {
       const projectId = selectedProjectId();
       if (projectId !== undefined) {
-        void workspaceActions.exportProject(projectId);
+        projectRowActions.export(projectId);
       }
     },
   });
@@ -126,7 +127,7 @@ export function registerWorkspaceCommands(): void {
     run: () => {
       const projectId = selectedProjectId();
       if (projectId !== undefined) {
-        useUiStore.getState().requestRemoveProject(projectId);
+        projectRowActions.remove(projectId);
       }
     },
   });

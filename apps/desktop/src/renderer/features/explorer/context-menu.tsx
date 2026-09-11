@@ -2,7 +2,19 @@ import type { ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
 import { explorerActions } from './explorer-actions.js';
+import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
+
+/**
+ * The OS file manager's own name for itself, so the menu reads the way the platform does.
+ * `navigator.platform` is deprecated but is what the renderer has; anything unrecognised falls
+ * back to the neutral wording.
+ */
+const REVEAL_LABEL = /mac/i.test(navigator.userAgent)
+  ? 'Reveal in Finder'
+  : /win/i.test(navigator.userAgent)
+    ? 'Reveal in Explorer'
+    : 'Show in file manager';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -12,84 +24,83 @@ export interface ExplorerContextMenuProps {
   readonly children: ReactNode;
 }
 
-/** The right-click menu for one explorer node; the items shown depend on `node.kind`. Every item
- * delegates to {@link explorerActions} — the same handlers the `explorer.*` palette commands run. */
-export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
-  const items: ReactNode[] = [];
+/** One right-click menu entry: what it says, and what it does. */
+export interface ExplorerMenuItem {
+  readonly key: string;
+  readonly label: string;
+  readonly run: () => void;
+}
+
+/**
+ * The right-click menu for one explorer node, as data: which items a node of this kind offers,
+ * in order. Pure and store-free, so the menu for every kind is unit-testable without mounting
+ * Radix. Every item delegates to {@link explorerActions} or {@link projectRowActions} — the
+ * same handlers the `explorer.*` / `workspace.*` palette commands run.
+ */
+export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem[] {
+  const items: ExplorerMenuItem[] = [];
+
+  if (node.kind === 'project' && node.projectId !== undefined) {
+    const projectId = node.projectId;
+    items.push(
+      { key: 'import', label: 'Import WSDL…', run: () => projectRowActions.importInto(projectId) },
+      { key: 'rename', label: 'Rename', run: () => projectRowActions.rename(projectId) },
+      { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
+      { key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) },
+      { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
+      { key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) },
+    );
+  }
+
+  if (node.kind === 'project-missing' && node.projectId !== undefined) {
+    const projectId = node.projectId;
+    items.push(
+      { key: 'locate', label: 'Locate…', run: () => projectRowActions.locate(projectId) },
+      { key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) },
+    );
+  }
 
   if (node.kind === 'interface') {
     items.push(
-      <ContextMenu.Item
-        key="show-interface"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.showInterface(node.interfaceId)}
-      >
-        Show Interface Viewer
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="update-definition"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.updateDefinition(node.interfaceId)}
-      >
-        Update Definition…
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="export-definition"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.exportDefinition(node.interfaceId)}
-      >
-        Export Definition…
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="generate-docs"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.generateDocs(node.interfaceId)}
-      >
-        Generate Documentation…
-      </ContextMenu.Item>,
-      <ContextMenu.Item key="import-another" className={ITEM_CLASS} onSelect={() => explorerActions.importAnother()}>
-        Import another WSDL…
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="remove"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.removeInterface(node.interfaceId)}
-      >
-        Remove interface
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="copy-url"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.copyDefinitionUrl(node.interfaceId)}
-      >
-        Copy definition URL
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="check-wsi"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.checkWsiWsdl(node.interfaceId)}
-      >
-        Check WSDL WS-I compliance
-      </ContextMenu.Item>,
+      {
+        key: 'show-interface',
+        label: 'Show Interface Viewer',
+        run: () => explorerActions.showInterface(node.interfaceId),
+      },
+      {
+        key: 'update-definition',
+        label: 'Update Definition…',
+        run: () => explorerActions.updateDefinition(node.interfaceId),
+      },
+      {
+        key: 'export-definition',
+        label: 'Export Definition…',
+        run: () => explorerActions.exportDefinition(node.interfaceId),
+      },
+      {
+        key: 'generate-docs',
+        label: 'Generate Documentation…',
+        run: () => explorerActions.generateDocs(node.interfaceId),
+      },
+      { key: 'import-another', label: 'Import another WSDL…', run: () => explorerActions.importAnother() },
+      { key: 'remove', label: 'Remove interface', run: () => explorerActions.removeInterface(node.interfaceId) },
+      { key: 'copy-url', label: 'Copy definition URL', run: () => explorerActions.copyDefinitionUrl(node.interfaceId) },
+      {
+        key: 'check-wsi',
+        label: 'Check WSDL WS-I compliance',
+        run: () => explorerActions.checkWsiWsdl(node.interfaceId),
+      },
     );
   }
 
   if (node.kind === 'operation') {
     items.push(
-      <ContextMenu.Item
-        key="new-request"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.newRequest(node.interfaceId, node.bindingName, node.operationName)}
-      >
-        New request
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="copy-soap-action"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.copySoapAction(node.soapAction)}
-      >
-        Copy SOAPAction
-      </ContextMenu.Item>,
+      {
+        key: 'new-request',
+        label: 'New request',
+        run: () => explorerActions.newRequest(node.interfaceId, node.bindingName, node.operationName),
+      },
+      { key: 'copy-soap-action', label: 'Copy SOAPAction', run: () => explorerActions.copySoapAction(node.soapAction) },
     );
   }
 
@@ -102,57 +113,34 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       }
     };
     items.push(
-      <ContextMenu.Item key="open" className={ITEM_CLASS} onSelect={() => explorerActions.openRequest(node.requestId)}>
-        Open
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="clone"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.cloneRequest(node.requestId)}
-      >
-        Clone
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="recreate"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.recreateRequest(node.requestId)}
-      >
-        Recreate request (keep values)
-      </ContextMenu.Item>,
-      <ContextMenu.Item key="recreate-discard" className={ITEM_CLASS} onSelect={recreate('discard-values')}>
-        Recreate (discard values)
-      </ContextMenu.Item>,
-      <ContextMenu.Item key="recreate-empty" className={ITEM_CLASS} onSelect={recreate('empty')}>
-        Create empty
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="rename"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.renameRequest(node.requestId)}
-      >
-        Rename…
-      </ContextMenu.Item>,
-      <ContextMenu.Item
-        key="delete"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.deleteRequest(node.requestId)}
-      >
-        Delete
-      </ContextMenu.Item>,
+      { key: 'open', label: 'Open', run: () => explorerActions.openRequest(node.requestId) },
+      { key: 'clone', label: 'Clone', run: () => explorerActions.cloneRequest(node.requestId) },
+      {
+        key: 'recreate',
+        label: 'Recreate request (keep values)',
+        run: () => explorerActions.recreateRequest(node.requestId),
+      },
+      { key: 'recreate-discard', label: 'Recreate (discard values)', run: recreate('discard-values') },
+      { key: 'recreate-empty', label: 'Create empty', run: recreate('empty') },
+      { key: 'rename', label: 'Rename…', run: () => explorerActions.renameRequest(node.requestId) },
+      { key: 'delete', label: 'Delete', run: () => explorerActions.deleteRequest(node.requestId) },
     );
   }
 
   if (node.kind === 'endpoint') {
-    items.push(
-      <ContextMenu.Item
-        key="copy-address"
-        className={ITEM_CLASS}
-        onSelect={() => explorerActions.copyEndpointAddress(node.address)}
-      >
-        Copy address
-      </ContextMenu.Item>,
-    );
+    items.push({
+      key: 'copy-address',
+      label: 'Copy address',
+      run: () => explorerActions.copyEndpointAddress(node.address),
+    });
   }
+
+  return items;
+}
+
+/** The right-click menu for one explorer node; the items shown depend on `node.kind`. */
+export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
+  const items = explorerMenuItems(node);
 
   if (items.length === 0) {
     return <>{children}</>;
@@ -163,7 +151,11 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
-          {items}
+          {items.map((item) => (
+            <ContextMenu.Item key={item.key} className={ITEM_CLASS} onSelect={item.run}>
+              {item.label}
+            </ContextMenu.Item>
+          ))}
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

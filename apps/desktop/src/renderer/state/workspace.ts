@@ -71,6 +71,8 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   readonly importSuggestion: (index: number) => Promise<void>;
   /** Shows a workspace's folder in the OS file manager. */
   readonly reveal: (workspaceId: string) => Promise<void>;
+  /** Shows one project's folder in the OS file manager. */
+  readonly revealProject: (projectId: string) => Promise<void>;
   /** Runs main's folder picker and writes the project out to it; the folder, or `null`. */
   readonly exportProject: (projectId: string) => Promise<string | null>;
   /** Re-points a missing linked project at a folder the user picks. `false` when cancelled. */
@@ -270,6 +272,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
 
     reveal: async (workspaceId) => {
       unwrap(await ipc().workspace.reveal({ workspaceId }));
+    },
+
+    revealProject: async (projectId) => {
+      unwrap(await ipc().workspace.revealProject({ projectId }));
     },
 
     exportProject: async (projectId) => unwrap(await ipc().workspace.exportProject({ projectId })).dir,

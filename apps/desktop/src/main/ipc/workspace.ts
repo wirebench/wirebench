@@ -101,6 +101,19 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
     return {};
   });
 
+  registerHandler(channels.workspace.revealProject, (request) => {
+    // Same rule as `reveal`: the id is looked up in the open workspace's own snapshot, so the
+    // renderer names a project, never a folder.
+    const project = service.snapshot()?.projects.find((candidate) => candidate.id === request.projectId);
+    if (project === undefined) {
+      throw new WorkspaceError('project-not-in-workspace', `No project "${request.projectId}" in this workspace.`, {
+        details: { projectId: request.projectId },
+      });
+    }
+    deps.reveal?.(project.dir);
+    return Promise.resolve({});
+  });
+
   registerHandler(channels.workspace.create, async (request) => ({ workspace: await service.create(request.name) }));
 
   registerHandler(channels.workspace.open, async (request) => ({ workspace: await service.open(request.workspaceId) }));
