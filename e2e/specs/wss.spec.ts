@@ -12,7 +12,12 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { generateClientCert, generateClientPkcs12, generateTestCa } from '@wirebench/engine/test-helpers';
+import {
+  generateClientCert,
+  generateClientPkcs12,
+  generateSigningCert,
+  generateTestCa,
+} from '@wirebench/engine/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -262,5 +267,95 @@ test.describe('wss', () => {
     const raw = (await requestRaw.textContent()) ?? '';
     const body = /<soapenv:Body[\s\S]*?<\/soapenv:Body>/.exec(raw)?.[0] ?? '';
     expect(body).toContain('xenc:EncryptedData');
+  });
+
+  test('verifies and decrypts a secured response, and flags a tampered one', async () => {
+    const ca = generateTestCa();
+    // The server signs with its own identity and encrypts to the client's certificate; the
+    // client's PKCS#12 carries the issuing CA alongside its key, so the one keystore is both
+    // the decryption key and the truststore the server's signer chains to.
+    const serverIdentity = generateSigningCert(ca);
+    const client = generateClientCert(ca);
+    certsDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-certs-'));
+    const keystorePath = join(certsDir, 'client.p12');
+    writeFileSync(keystorePath, generateClientPkcs12(ca, client, { password: PASSWORD }));
+
+    server = await startTestSoapServer({
+      fixture: 'calculator',
+      respondToCalculatorAdd: true,
+      wss: { serverIdentity, clientCertPem: client.certPem },
+    });
+    userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Incoming Project');
+    launched = await launchApp({
+      userDataDir,
+      folderDialogPath: projectDir,
+      keepUserDataDir: true,
+      extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
+    });
+    const page = launched.window;
+    await createProjectWithCalculator(page, server, { expectProjectName: 'WSS Incoming Project' });
+    await openFirstRequest(page);
+
+    // --- add the keystore -------------------------------------------------------------------
+    await page.getByRole('button', { name: 'WS-Security' }).click();
+    await expect(page.getByTestId('wss-section')).toBeVisible();
+    await page.getByLabel('Add keystore').click();
+    await page.getByTestId('keystore-browse').click();
+    const addDialog = page.getByTestId('keystore-add-dialog');
+    await addDialog.getByRole('button', { name: 'Set…' }).click();
+    await addDialog.getByPlaceholder('Enter password').fill(PASSWORD);
+    await addDialog.getByRole('button', { name: 'Save' }).click();
+    await page.getByTestId('keystore-add-submit').click();
+    await expect(page.getByTestId('keystore-status')).toHaveText('Loaded', { timeout: 15_000 });
+
+    // --- an incoming configuration ----------------------------------------------------------
+    await page.getByTestId('wss-incoming-add').click();
+    const row = page.getByTestId('wss-incoming-row');
+    await expect(row).toHaveCount(1);
+    await row.getByRole('button', { expanded: false }).click();
+    const editor = page.getByTestId('wss-incoming-editor');
+    await expect(editor).toBeVisible();
+    await editor.getByLabel('Decryption keystore').selectOption({ label: 'client' });
+    await editor.getByLabel('Signature truststore').selectOption({ label: 'client' });
+
+    // --- select it on Request 1 and send to the signed+encrypted route -----------------------
+    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByTestId('request-wss-incoming').selectOption({ label: 'Incoming WSS' });
+
+    await page.getByTestId('request-endpoint').fill(`${server.url}/wss/sign-encrypt`);
+    await page.getByTestId('request-send').click();
+    await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
+
+    const responseInspectors = page.getByRole('tablist', { name: 'Response inspectors' });
+    await responseInspectors.getByRole('tab', { name: /^WSS/ }).click();
+    const panel = page.getByTestId('inspector-panel-response');
+    await expect(panel.getByTestId('wss-action-row')).toHaveCount(3, { timeout: 15_000 });
+    await expect(panel.getByText('failed', { exact: true })).toHaveCount(0);
+    await expect(panel.getByText('trusted', { exact: true })).toBeVisible();
+    await expect(responseInspectors.getByRole('tab', { name: 'WSS ✓' })).toBeVisible();
+
+    // The envelope the views work against is the decrypted one — Query resolves AddResult to 5
+    // (2 + 3) — while the bytes that actually arrived are still ciphertext.
+    const responseEditor = page.getByTestId('response-editor');
+    // Monaco renders only the lines in view, and the decrypted Body sits below a long
+    // BinarySecurityToken, so the cursor is taken to the end of the document first.
+    await responseEditor.getByRole('code').click();
+    await page.keyboard.press('ControlOrMeta+ArrowDown');
+    await page.keyboard.press('Control+End');
+    await expect(responseEditor).toContainText('AddResult', { timeout: 10_000 });
+
+    await page.getByRole('tab', { name: 'Raw' }).nth(1).click();
+    const responseRaw = page.getByLabel('Response raw bytes');
+    await expect(responseRaw).toBeVisible({ timeout: 10_000 });
+    await expect(responseRaw).toContainText('xenc:EncryptedData');
+    await expect(responseRaw).not.toContainText('AddResult');
+
+    // --- and a tampered response is flagged --------------------------------------------------
+    await page.getByTestId('request-endpoint').fill(`${server.url}/wss/tampered`);
+    await page.getByTestId('request-send').click();
+    await expect(responseInspectors.getByRole('tab', { name: 'WSS ✗' })).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText('failed', { exact: true })).toHaveCount(1);
+    await expect(panel).toContainText('references failed validation');
   });
 });
