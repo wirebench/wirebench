@@ -2185,3 +2185,84 @@ export type AttachmentsAddDroppedRequest = z.infer<typeof attachmentsAddDroppedR
 
 /** Response for `attachments.addDropped`: the new attachment ids, in the order dropped. */
 export const attachmentsAddDroppedResponseSchema = z.object({ attachmentIds: z.array(z.string()) });
+
+/** How many menu entries `app.registerMenu` accepts — comfortably above the command count. */
+const MAX_MENU_ITEMS = 256;
+
+/**
+ * One command as the application menu needs it. The renderer owns the command registry, so it
+ * is the renderer that sends main the manifest to build a menu from; `accelerator` is already
+ * in Electron's own notation (`CmdOrCtrl+Shift+F`), since the chord grammar is the renderer's.
+ */
+export const menuCommandSchema = z.object({
+  id: z.string().max(120),
+  label: z.string().max(200),
+  category: z.string().max(40),
+  accelerator: z.string().max(60).optional(),
+});
+export type MenuCommandWire = z.infer<typeof menuCommandSchema>;
+
+/** Request payload for `app.registerMenu`. */
+export const appRegisterMenuRequestSchema = z.object({ items: z.array(menuCommandSchema).max(MAX_MENU_ITEMS) });
+export type AppRegisterMenuRequest = z.infer<typeof appRegisterMenuRequestSchema>;
+
+/** Response for `app.registerMenu`: how many entries the built menu carries. */
+export const appRegisterMenuResponseSchema = z.object({ items: z.number() });
+
+/**
+ * `command.invoke`: a menu item was clicked. Main knows nothing about a command's `when` gate,
+ * so every menu item stays enabled and the renderer decides whether it can run.
+ */
+export const commandInvokeEventSchema = z.object({ id: z.string().max(120) });
+export type CommandInvokeEvent = z.infer<typeof commandInvokeEventSchema>;
+
+/** Which corpora `search.query` looks in; at least one must be on or there is nothing to search. */
+export const searchScopesSchema = z.object({
+  requestBodies: z.boolean(),
+  headers: z.boolean(),
+  definitions: z.boolean(),
+});
+export type SearchScopesWire = z.infer<typeof searchScopesSchema>;
+
+/** Request payload for `search.query`. */
+export const searchQueryRequestSchema = z.object({
+  query: z.string().min(1).max(500),
+  regex: z.boolean(),
+  caseSensitive: z.boolean(),
+  scopes: searchScopesSchema,
+  /** Hard cap on returned matches; the response says whether it was hit. */
+  limit: z.number().int().min(1).max(1000).optional(),
+});
+export type SearchQueryRequest = z.infer<typeof searchQueryRequestSchema>;
+
+/**
+ * One match. Only the matching line (trimmed and length-capped) crosses the bridge — never the
+ * document it came from — so searching a cached definition never ships the definition itself.
+ */
+export const searchMatchSchema = z.object({
+  kind: z.enum(['request-body', 'request-header', 'document']),
+  /** Set for the two request kinds: which request matched, and its display name. */
+  requestId: z.string().optional(),
+  requestName: z.string().optional(),
+  /** Set for every kind: the interface the match belongs to, and its display name. */
+  interfaceId: z.string().optional(),
+  interfaceName: z.string().optional(),
+  /** Set for `document`: the definition document's original location. */
+  location: z.string().optional(),
+  /** 1-based line and column of the match within its document. */
+  line: z.number().int().min(1),
+  column: z.number().int().min(1),
+  /** UTF-16 offsets of the match within its document, for revealing a range. */
+  start: z.number().int().min(0),
+  end: z.number().int().min(0),
+  /** The matching line, trimmed and capped. */
+  snippet: z.string(),
+});
+export type SearchMatchWire = z.infer<typeof searchMatchSchema>;
+
+/** Response for `search.query`. `truncated` is true when `limit` cut the results short. */
+export const searchQueryResponseSchema = z.object({
+  matches: z.array(searchMatchSchema),
+  truncated: z.boolean(),
+});
+export type SearchQueryResponse = z.infer<typeof searchQueryResponseSchema>;

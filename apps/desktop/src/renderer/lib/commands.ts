@@ -76,6 +76,17 @@ export async function runCommand(id: CommandId, context: CommandContext, arg?: u
 }
 
 /**
+ * Every registered command, ungated, sorted by category then label. What the application menu
+ * is built from: main cannot evaluate a `when` guard, so menu items are all generated and the
+ * registry decides at click time (see `shell/app-menu.ts`).
+ */
+export function listAllCommands(): readonly CommandDefinition<CommandContext>[] {
+  return [...registry.values()]
+    .map((command) => stripHandler(command))
+    .sort((a, b) => a.category.localeCompare(b.category) || a.label.localeCompare(b.label));
+}
+
+/**
  * The commands available in `context`, sorted by category then label — the order the palette
  * and generated menus present. Handlers are stripped so consumers cannot run a command
  * without going through {@link runCommand}.

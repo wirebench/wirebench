@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PanelSize } from 'react-resizable-panels';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
@@ -11,12 +11,14 @@ import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
 import { subscribeToGlobals } from '../state/globals.js';
-import { subscribeToPreferences } from '../state/preferences.js';
+import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { NewProjectDialog } from '../features/welcome/new-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
+import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CommandPalette } from './command-palette.js';
+import type { PaletteMode } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
 import { DetailsPanel } from './details-panel.js';
 import { EditorArea } from './editor-area.js';
@@ -41,6 +43,7 @@ function asPercentage(setSize: (size: number) => void) {
  */
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteMode, setPaletteMode] = useState<PaletteMode>('commands');
   const platform = useMemo(() => detectPlatform(), []);
 
   const sidebar = useUiStore((state) => state.sidebar);
@@ -67,12 +70,15 @@ export function AppShell() {
   useEffect(() => subscribeToPreferences(), []);
   useEffect(() => subscribeToHistory(), []);
 
-  const openPalette = useCallback(() => {
+  const openPalette = useCallback((mode: PaletteMode = 'commands') => {
+    setPaletteMode(mode);
     setPaletteOpen(true);
   }, []);
 
   useEffect(() => {
     registerShellCommands(openPalette);
+    // The manifest is built from the registry, so it can only be sent once registration ran.
+    void syncAppMenu();
   }, [openPalette]);
 
   useTheme(theme);
@@ -86,6 +92,19 @@ export function AppShell() {
     [platform, sidebar, consoleState, details, theme, editorLineNumbers, editorLayout, selection],
   );
   useKeybindings(context);
+
+  // `command.invoke` outlives every context change, so the subscription reads the latest
+  // context through a ref rather than re-subscribing on each selection or panel toggle.
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  useEffect(() => subscribeToMenuCommands(() => contextRef.current), []);
+
+  // A rebind changes the accelerators the OS menu shows, so the manifest is pushed again
+  // whenever the override map does.
+  const shortcuts = usePreferencesStore((state) => state.preferences.shortcuts);
+  useEffect(() => {
+    void syncAppMenu();
+  }, [shortcuts]);
 
   const dispatch = useCallback(
     (id: Parameters<typeof runCommand>[0]) => () => {
@@ -173,7 +192,7 @@ export function AppShell() {
         <StatusBar />
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} context={context} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} context={context} mode={paletteMode} />
       <ImportDialog
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}

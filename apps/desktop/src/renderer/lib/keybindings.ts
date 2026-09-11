@@ -117,6 +117,47 @@ export function formatKeybinding(binding: string | Keybinding, platform: Platfor
   return isMac ? parts.join('') : parts.join('+');
 }
 
+const ACCELERATOR_KEYS: Readonly<Record<string, string>> = {
+  enter: 'Return',
+  escape: 'Escape',
+  tab: 'Tab',
+  backspace: 'Backspace',
+  ' ': 'Space',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  arrowup: 'Up',
+  arrowdown: 'Down',
+};
+
+/**
+ * Renders a chord in Electron's accelerator notation (`CmdOrCtrl+Shift+F`) for the application
+ * menu, or `undefined` when it must not become one.
+ *
+ * A chord with neither Mod nor Alt (⎋, ⇧Tab) is deliberately refused: as a menu accelerator it
+ * would be captured globally and take Escape and Tab away from every dialog and form in the
+ * app. Those commands still appear in the menu — without a key hint — and still work through
+ * the window-level dispatcher, which can see what has focus.
+ */
+export function toAccelerator(binding: string): string | undefined {
+  const parsed = parseKeybinding(binding);
+  if (!parsed.mod && !parsed.alt) {
+    return undefined;
+  }
+  const key = ACCELERATOR_KEYS[parsed.key] ?? (parsed.key.length === 1 ? parsed.key.toUpperCase() : parsed.key);
+  const parts: string[] = [];
+  if (parsed.mod) {
+    parts.push('CmdOrCtrl');
+  }
+  if (parsed.shift) {
+    parts.push('Shift');
+  }
+  if (parsed.alt) {
+    parts.push('Alt');
+  }
+  parts.push(key);
+  return parts.join('+');
+}
+
 /** True when `event` is exactly this binding on `platform` (Mod = ⌘ on macOS, Ctrl elsewhere). */
 export function matchesEvent(binding: Keybinding, event: KeyboardEvent, platform: Platform): boolean {
   const modPressed = platform === 'mac' ? event.metaKey : event.ctrlKey;

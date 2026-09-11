@@ -28,7 +28,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     vi.fn().mockResolvedValue({ ok: false, error: { code: 'not-stubbed', message: `${channel} was not stubbed` } });
 
   const defaults: Record<string, unknown> = {
-    app: { version: fail('app.version') },
+    app: { version: fail('app.version'), registerMenu: vi.fn().mockResolvedValue({ ok: true, value: { items: 0 } }) },
+    search: { query: vi.fn().mockResolvedValue({ ok: true, value: { matches: [], truncated: false } }) },
     definition: {
       import: fail('definition.import'),
       close: fail('definition.close'),

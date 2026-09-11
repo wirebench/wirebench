@@ -20,6 +20,11 @@ import {
   definitionImportRequestSchema,
   definitionInterfaceRequestSchema,
   definitionSchemaIndexResponseSchema,
+  appRegisterMenuRequestSchema,
+  appRegisterMenuResponseSchema,
+  commandInvokeEventSchema,
+  searchQueryRequestSchema,
+  searchQueryResponseSchema,
   dialogsOpenFileRequestSchema,
   dialogsOpenFileResponseSchema,
   dialogsOpenFolderRequestSchema,
@@ -183,6 +188,18 @@ export const channels = {
         node: z.string(),
       }),
     ),
+    /**
+     * The renderer hands main the command manifest to build the application menu from. Sent
+     * once per window at startup, and again whenever the effective keymap changes.
+     */
+    registerMenu: defineChannel('app.registerMenu', appRegisterMenuRequestSchema, appRegisterMenuResponseSchema),
+  },
+  search: {
+    /**
+     * Project-wide find. Runs in main so cached definition documents are searched where they
+     * already live: only matching lines come back, never the documents themselves.
+     */
+    query: defineChannel('search.query', searchQueryRequestSchema, searchQueryResponseSchema),
   },
   definition: {
     import: defineChannel('definition.import', definitionImportRequestSchema, interfaceSummarySchema),
@@ -384,6 +401,10 @@ export type EventPayload<E> = E extends IpcEvent<infer Payload> ? z.infer<Payloa
 export const events = {
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),
+  },
+  command: {
+    /** A menu item was clicked; the renderer runs it through the command registry. */
+    invoke: defineEvent('command.invoke', commandInvokeEventSchema),
   },
   engine: {
     progress: defineEvent('engine.progress', engineProgressEventSchema),
