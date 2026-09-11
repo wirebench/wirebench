@@ -16,7 +16,7 @@ maintenance tooling), `fixtures` (WSDL/XSD test material), `docs`.
 `pnpm check` must be green before every commit, and it is what CI runs on macOS, Windows and Linux:
 
 ```
-pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + test + test:perf
+pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + check:doc-paths + test + test:perf
 ```
 
 The end-to-end suite is separate and needs a build first:
@@ -27,14 +27,14 @@ pnpm build && pnpm test:e2e
 
 Other commands worth knowing:
 
-| Command                            | What it does                                                                                                    |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:coverage`               | Engine coverage; the build fails below 85% lines/branches/functions/statements                                  |
-| `pnpm test:e2e`                    | Playwright drives the **built** app (and, in `packaged.spec.ts`, the packaged one)                              |
-| `pnpm test:interop`                | Live public SOAP services; needs `WIREBENCH_NETWORK_TESTS=1`, runs nightly in CI                                |
-| `pnpm test:wss-xmlsec`             | Cross-checks generated signatures/encryption with `xmlsec1` (`brew install libxmlsec1` / `apt install xmlsec1`) |
-| `pnpm bench`                       | The performance scenarios as trend numbers rather than pass/fail                                                |
-| `WIREBENCH_SKIP_PERF=1 pnpm check` | Skips the performance gates on a loaded machine                                                                 |
+| Command                            | What it does                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:coverage`               | Engine coverage; the build fails below 85% lines/branches/functions/statements                                                  |
+| `pnpm test:e2e`                    | Playwright drives the **built** app (and, in `packaged.spec.ts`, the packaged one)                                              |
+| `pnpm test:interop`                | Live public SOAP services (sets `WIREBENCH_NETWORK_TESTS=1` itself); excluded from `pnpm test`/`pnpm check`, runs nightly in CI |
+| `pnpm test:wss-xmlsec`             | Cross-checks generated signatures/encryption with `xmlsec1` (`brew install libxmlsec1` / `apt install xmlsec1`)                 |
+| `pnpm bench`                       | The performance scenarios as trend numbers rather than pass/fail                                                                |
+| `WIREBENCH_SKIP_PERF=1 pnpm check` | Skips the performance gates on a loaded machine                                                                                 |
 
 ### E2E test hooks
 

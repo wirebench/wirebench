@@ -17,10 +17,11 @@
  * again when this suite was written (2026-09-11, connection failure). If it comes back, it is
  * a read-only demo too and belongs in the table below.
  */
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { generateRequest } from '../../src/generate.js';
 import { importDefinition } from '../../src/import.js';
 import { sendSoapRequest } from '../../src/send.js';
+import { describeNetwork } from '../helpers/network-gate.js';
 import type { GenerateOptions } from '../../src/xsd/sample-generator.js';
 
 /** Generous: these are public servers on a shared internet, not a loopback socket. */
@@ -112,7 +113,7 @@ function withValues(envelopeXml: string, values: Readonly<Record<string, string>
   return xml;
 }
 
-describe.each(SERVICES)('interop: $name', (service) => {
+describeNetwork.each(SERVICES)('interop: $name', (service) => {
   it(
     `imports, generates and sends ${service.operationName}`,
     async () => {
