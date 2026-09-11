@@ -105,11 +105,6 @@ contract, send it with whatever the service demands, and read the answer.
 - Keystores are PKCS#12 and PEM; JKS is planned. NTLM is NTLMv2 only; SPNEGO/Kerberos is planned.
 - English only.
 
-<!--
-  Both links below use the placeholder repository URL (`https://github.com/wirebench/wirebench`,
-  same as `repository` in apps/desktop/package.json — see README.md's Packaging section and
-  docs/release.md). Correct them together with that URL before the first release; until then
-  they point nowhere.
--->
+<!-- The `v1.0.0` tag does not exist yet; both links resolve once it is pushed (see docs/release.md). -->
 [Unreleased]: https://github.com/wirebench/wirebench/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/wirebench/wirebench/releases/tag/v1.0.0

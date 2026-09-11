@@ -130,9 +130,8 @@ skips itself otherwise.
 `apps/desktop/release/`. Releases are cut by pushing a `v*` tag; see [`docs/release.md`](docs/release.md) for the
 signing secrets, the Electron fuse table and how the opt-in update check behaves.
 
-The `repository` URL in `apps/desktop/package.json` is still the placeholder
-`https://github.com/wirebench/wirebench.git`. It is what the update feed is derived from, so it has to be corrected to
-the real repository before the first release.
+The `repository` URL in `apps/desktop/package.json` is `https://github.com/wirebench/wirebench.git`, the public
+repository. It is what the opt-in update feed is derived from.
 
 ## Documentation
 

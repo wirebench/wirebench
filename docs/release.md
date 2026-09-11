@@ -85,17 +85,15 @@ Two consequences worth knowing:
 
 ### Before the *first* release
 
-Two things are still placeholders and must be settled before `v1.0.0` is tagged, because the
-tag is what makes them permanent:
+The source lives at `https://github.com/wirebench/wirebench` and `repository` in
+`apps/desktop/package.json` points there; it is what the update feed is derived from
+(`githubFeedFrom`). Two things remain before `v1.0.0` is tagged, because the tag is what makes
+them permanent:
 
-- **The repository has no remote.** Nothing is pushed and no tag exists yet; `release.yml` has
-  therefore never run. Adding the remote and pushing the tag is a deliberate, human step — see
-  below — not something automation should do on its own.
-- **`repository` in `apps/desktop/package.json` is `https://github.com/wirebench/wirebench.git`,
-  a placeholder.** It is what the update feed is derived from (`githubFeedFrom`), so a release
-  built with the wrong value ships an app that checks a repository that is not yours. Correct it
-  first, or leave it absent — a missing or unrecognised URL disables the update check cleanly
-  rather than pointing somewhere wrong.
+- **No tag exists yet**, so `release.yml` has never run. Pushing the tag is a deliberate, human
+  step — see below — not something automation should do on its own.
+- **The signing and notarisation secrets** described below must be present in the repository
+  settings, or the workflow produces unsigned artifacts.
 
 `CHANGELOG.md` already carries a prepared `## [1.0.0] - 2026-09-11` section, so step 2 above is
 done for the first release; check the date still matches the day you tag.
@@ -131,9 +129,9 @@ default**. `autoDownload` and `autoInstallOnAppQuit` are forced off: a download 
 confirmation and installing takes a second one. A check that cannot reach the feed reports
 "Could not check for updates" and does nothing else. No telemetry is sent, ever.
 
-The feed is read from `repository` in `apps/desktop/package.json`, currently the placeholder
-`https://github.com/wirebench/wirebench.git`. **Confirm or correct that URL before the first
-release** — with a wrong or missing one, every update check simply fails as above, and the
+The feed is read from `repository` in `apps/desktop/package.json`,
+`https://github.com/wirebench/wirebench.git`. **Keep that URL correct** — with a wrong or
+missing one, every update check simply fails as above, and the
 update metadata electron-builder generates (`latest*.yml`) points at a repository that does
 not exist.
 

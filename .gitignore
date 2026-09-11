@@ -16,3 +16,4 @@ coverage
 fixtures/wsdl/crafted/large-schema/
 git-worktrees/
 release
+.serena/
