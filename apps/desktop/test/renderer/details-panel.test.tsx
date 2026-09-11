@@ -9,6 +9,8 @@ import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import type { InterfaceWire, ProjectWire } from '../../src/shared/wire-types.js';
 
@@ -111,6 +113,35 @@ describe('DetailsPanel', () => {
     await waitFor(() => {
       expect(set).toHaveBeenCalledWith('token', 'xyz');
     });
+  });
+
+  it('edits the workspace properties from its own tab', async () => {
+    const mutate = vi.fn().mockResolvedValue({});
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { region: 'eu' } }), mutate });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace properties' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Value of region').value).toBe('eu');
+
+    fireEvent.change(screen.getByLabelText('New property name'), { target: { value: 'tenant' } });
+    fireEvent.change(screen.getByLabelText('New property value'), { target: { value: 'acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add property' }));
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ kind: 'set-workspace-property', name: 'tenant', value: 'acme' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove region' }));
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ kind: 'remove-workspace-property', name: 'region' });
+    });
+    useWorkspaceStore.setState({ workspace: null });
+  });
+
+  it('says so on the Workspace properties tab when no workspace is open', () => {
+    useWorkspaceStore.setState({ workspace: null });
+    renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace properties' }));
+    expect(screen.getByText('Open a workspace to edit its properties.')).toBeDefined();
   });
 
   it("shows the selected request's property grid", () => {

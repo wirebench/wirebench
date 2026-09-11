@@ -1,5 +1,7 @@
 import { showToast } from '../../components/toast.js';
+import { openEnvironmentTab } from '../environments/environment-actions.js';
 import { useProjectStore } from '../../state/project.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { startRenamingProject } from './explorer-api.js';
@@ -20,6 +22,27 @@ export const projectRowActions = {
   importInto(projectId: string): void {
     projectRowActions.select(projectId);
     useUiStore.getState().openImportDialog();
+  },
+
+  /**
+   * Opens a **linked** project's own environments editor. A linked project keeps its per-project
+   * environments (they win over the workspace's on a shared slug), so the tab opens on the one
+   * linked by slug to the workspace's active environment, else the project's first. A project
+   * with no environments of its own gets one, named after the active workspace environment so
+   * the slugs line up, because there is otherwise nothing to open.
+   */
+  async projectEnvironments(projectId: string): Promise<void> {
+    const store = useProjectStore.getState();
+    const environments = store.projects[projectId]?.environments ?? [];
+    const workspace = useWorkspaceStore.getState().workspace;
+    const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
+    const match = environments.find((candidate) => candidate.slug === active?.slug) ?? environments[0];
+    if (match !== undefined) {
+      openEnvironmentTab(match.id);
+      return;
+    }
+    const created = await store.addEnvironment(projectId, active?.name ?? 'New environment');
+    openEnvironmentTab(created);
   },
 
   /** Enters inline rename mode on the project's row. */

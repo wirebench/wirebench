@@ -1,9 +1,11 @@
 import { lazy, Suspense } from 'react';
 import { EnvironmentEditor } from '../features/environments/environment-editor.js';
+import { EnvironmentGrid } from '../features/environments/environment-grid.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
-import type { PreferencesSectionWire, ProjectWire } from '../../shared/wire-types.js';
+import { useWorkspaceStore } from '../state/workspace.js';
+import type { PreferencesSectionWire, ProjectWire, WorkspaceEnvironmentWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
 // thing that pulls it in — is split out and fetched the first time a request tab is opened.
@@ -32,8 +34,19 @@ const PreferencesEditor = lazy(async () => {
   return { default: module.PreferencesEditor };
 });
 
-/** One environment's name, wherever in the open projects it lives — for a tab label. */
-function environmentName(projects: Readonly<Record<string, ProjectWire>>, environmentId: string): string | undefined {
+/**
+ * One environment's name, wherever it lives — for a tab label. The workspace's own environments
+ * come first: they are what the grid tab shows, and a rename has to reach the tab.
+ */
+function environmentName(
+  projects: Readonly<Record<string, ProjectWire>>,
+  workspaceEnvironments: readonly WorkspaceEnvironmentWire[],
+  environmentId: string,
+): string | undefined {
+  const workspaceEnvironment = workspaceEnvironments.find((candidate) => candidate.id === environmentId);
+  if (workspaceEnvironment !== undefined) {
+    return workspaceEnvironment.name;
+  }
   for (const project of Object.values(projects)) {
     const match = project.environments.find((environment) => environment.id === environmentId);
     if (match !== undefined) {
@@ -42,6 +55,9 @@ function environmentName(projects: Readonly<Record<string, ProjectWire>>, enviro
   }
   return undefined;
 }
+
+/** A stable empty list, so the editor area does not rerender while no workspace is open. */
+const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
 
 const START_ID = 'start';
 
@@ -73,6 +89,7 @@ export function EditorArea() {
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
   const projects = useProjectStore((state) => state.projects);
+  const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   const interfaces = useProjectStore((state) => state.interfaces);
 
   const activeTab = tabs.find((t) => t.id === activeId);
@@ -144,7 +161,9 @@ export function EditorArea() {
               ? interfaces[tab.interfaceId]?.name
               : undefined) ??
             (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
-            (tab.environmentId !== undefined ? environmentName(projects, tab.environmentId) : undefined) ??
+            (tab.environmentId !== undefined
+              ? environmentName(projects, workspaceEnvironments, tab.environmentId)
+              : undefined) ??
             tab.title;
           return (
             // One focusable control per tab. A nested close *button* would be interactive
@@ -207,7 +226,13 @@ export function EditorArea() {
             <InterfaceEditor interfaceId={activeTab.interfaceId} />
           </Suspense>
         ) : activeTab.environmentId !== undefined ? (
-          <EnvironmentEditor environmentId={activeTab.environmentId} />
+          // A workspace environment opens the grid (every environment at once); a linked
+          // project's own environment keeps its single-environment editor.
+          workspaceEnvironments.some((candidate) => candidate.id === activeTab.environmentId) ? (
+            <EnvironmentGrid environmentId={activeTab.environmentId} />
+          ) : (
+            <EnvironmentEditor environmentId={activeTab.environmentId} />
+          )
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <HistoryEntryView historyId={activeTab.historyId} />

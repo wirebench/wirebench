@@ -896,9 +896,16 @@ export class WorkspaceService implements ProjectRouter {
         break;
       }
       case 'add-workspace-environment': {
+        // `order` is `max + 1`, not the count: after a removal the count can collide with an
+        // order still in use, which would leave two environments claiming the same column.
+        const highestOrder = open.workspace.environments.reduce(
+          (highest, candidate) => Math.max(highest, candidate.order),
+          -1,
+        );
         const environment = createWorkspaceEnvironment(
           change.name,
           new Set(open.workspace.environments.map((candidate) => candidate.slug)),
+          { order: highestOrder + 1 },
         );
         createdEnvironmentId = environment.id;
         open.workspace = { ...open.workspace, environments: [...open.workspace.environments, environment] };

@@ -32,11 +32,22 @@ describe('explorerMenuItems', () => {
     ]);
   });
 
-  it('offers the same menu for a linked project, with no way to remove its files', () => {
+  it('offers a linked project its own environments, and neither project a way to remove files', () => {
     const internal = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
     const linked = explorerMenuItems(node({ kind: 'project', id: 'proj:p2', projectId: 'p2', linked: true }));
 
-    expect(linked.map((item) => item.label)).toEqual(internal.map((item) => item.label));
+    // The one difference between the two menus: only a linked project has environments of its
+    // own — an internal project's environments are the workspace's, edited in the grid.
+    expect(linked.map((item) => item.label)).toEqual([
+      'Import WSDL…',
+      'Rename',
+      'Settings…',
+      'Project environments (linked project)',
+      REVEAL,
+      'Export project…',
+      'Remove from workspace',
+    ]);
+    expect(internal.some((item) => item.key === 'project-environments')).toBe(false);
     // Trashing the folder is a choice inside the remove confirmation, and only an internal
     // project is ever offered it — the menu itself never removes files from either.
     expect(linked.some((item) => /file|trash|delete/i.test(item.label))).toBe(false);

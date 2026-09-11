@@ -355,6 +355,22 @@ describe('WorkspaceService manifest operations', () => {
     expect(workspace.name).toBe('Renamed while closed');
   }, 60_000);
 
+  it('gives a new environment an order past the highest, not the count', async () => {
+    const service = newService();
+    await service.create('Orders');
+
+    const first = (await service.mutate({ kind: 'add-workspace-environment', name: 'dev' })).createdEnvironmentId;
+    await service.mutate({ kind: 'add-workspace-environment', name: 'uat' });
+    // Removing the first frees order 0: a count-based order would hand the next environment
+    // order 1, which `uat` already holds, and the grid would show two columns claiming one slot.
+    await service.mutate({ kind: 'remove-workspace-environment', environmentId: first! });
+    await service.mutate({ kind: 'add-workspace-environment', name: 'prod' });
+
+    const orders = service.snapshot()!.environments.map((environment) => environment.order);
+    expect(orders).toEqual([1, 2]);
+    expect(new Set(orders).size).toBe(orders.length);
+  }, 60_000);
+
   it('refuses a workspace id that is not a folder name', async () => {
     const service = newService({ trash: () => Promise.resolve() });
     // The picker's row id is the one workspace value that comes from the renderer: a traversal

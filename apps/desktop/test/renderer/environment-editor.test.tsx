@@ -3,8 +3,6 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentEditor } from '../../src/renderer/features/environments/environment-editor.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import { workspaceWire } from '../helpers/workspace-wire.js';
 import type { EnvironmentWire, InterfaceWire, ProjectWire } from '../../src/shared/wire-types.js';
 
 /** A project holding only these environments — all the editor reads from one. */
@@ -161,48 +159,8 @@ describe('EnvironmentEditor', () => {
     expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', { properties: {} });
   });
 
-  it("keys a workspace environment's endpoint rows by project slug and interface slug", () => {
-    const mutate = vi.fn().mockResolvedValue({});
-    useWorkspaceStore.setState({
-      workspace: workspaceWire({
-        environments: [
-          {
-            id: 'we1',
-            name: 'uat',
-            slug: 'uat',
-            order: 0,
-            properties: {},
-            endpoints: { 'demo/calculator': 'http://two.test/soap' },
-          },
-        ],
-        projects: [
-          { id: 'p1', name: 'Demo', slug: 'demo', source: 'internal', dir: '/w/projects/demo', status: 'ready' },
-        ],
-      }),
-      mutate,
-    });
-    useProjectStore.setState({
-      projects: projectWith([]),
-      projectOf: { 'iface-1': 'p1' },
-      interfaces: { 'iface-1': iface },
-      order: [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
-    });
-    render(
-      <TooltipPrimitive.Provider>
-        <EnvironmentEditor environmentId="we1" />
-      </TooltipPrimitive.Provider>,
-    );
-
-    const field = screen.getByLabelText<HTMLInputElement>('Endpoint override for Calculator');
-    expect(field.value).toBe('http://two.test/soap');
-    fireEvent.change(field, { target: { value: 'http://three.test/soap' } });
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    expect(mutate).toHaveBeenCalledWith({
-      kind: 'update-workspace-environment',
-      environmentId: 'we1',
-      patch: { endpoints: { 'demo/calculator': 'http://three.test/soap' } },
-    });
-    useWorkspaceStore.setState({ workspace: null });
+  it('names the project whose environments it is editing', () => {
+    setUp();
+    expect(screen.getByText('Project environments (Demo — linked project)')).toBeTruthy();
   });
 });

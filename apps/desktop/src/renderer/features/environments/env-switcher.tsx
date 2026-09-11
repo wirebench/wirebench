@@ -97,8 +97,11 @@ export function EnvSwitcher() {
           <DropdownMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              if (activeId !== undefined) {
-                openEnvironmentTab(activeId);
+              // The grid shows every environment at once, so any id opens the same view; the
+              // one it opens on is just which column's properties start out below it.
+              const target = activeId ?? environments[0]?.id;
+              if (target !== undefined) {
+                openEnvironmentTab(target);
                 return;
               }
               showSidebarView('explorer');

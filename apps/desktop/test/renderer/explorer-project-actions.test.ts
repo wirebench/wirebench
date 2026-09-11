@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectRowActions } from '../../src/renderer/features/explorer/project-actions.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
@@ -33,6 +34,46 @@ describe('projectRowActions', () => {
 
   afterEach(() => {
     useWorkspaceStore.setState({ workspace: null });
+  });
+
+  it('opens a linked project environment matched to the active workspace environment', async () => {
+    useProjectStore.getState().applySnapshot('p1', {
+      ...project,
+      environments: [
+        { id: 'pe-uat', name: 'uat', slug: 'uat', order: 0, properties: {}, endpoints: {} },
+        { id: 'pe-dev', name: 'dev', slug: 'dev', order: 1, properties: {}, endpoints: {} },
+      ],
+    });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [{ id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        activeEnvironmentId: 'we-dev',
+      }),
+    });
+
+    await projectRowActions.projectEnvironments('p1');
+
+    // The slug the workspace's active environment carries — not simply the project's first.
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['env:pe-dev']);
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+  });
+
+  it('creates an environment for a linked project that has none, then opens it', async () => {
+    const addEnvironment = vi.fn().mockResolvedValue('pe-new');
+    useProjectStore.setState({ addEnvironment });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [{ id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        activeEnvironmentId: 'we-dev',
+      }),
+    });
+
+    await projectRowActions.projectEnvironments('p1');
+
+    // Named after the active workspace environment, so the slugs line up and the project's own
+    // values win over the workspace's, as the engine resolves them.
+    expect(addEnvironment).toHaveBeenCalledWith('p1', 'dev');
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 
   it('commits an inline rename through project.mutate', async () => {

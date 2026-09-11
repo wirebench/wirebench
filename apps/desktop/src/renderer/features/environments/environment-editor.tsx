@@ -3,7 +3,6 @@ import { X } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { PropertyTable } from '../properties/property-table.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
 import type { EnvironmentPatchWire, InterfaceWire, PropertyMapWire } from '../../../shared/wire-types.js';
 
 /** How long the name field waits after the last keystroke before it saves. */
@@ -79,37 +78,29 @@ export interface EnvironmentEditorProps {
 }
 
 /**
- * The environment tab: its name, one endpoint override per interface, and its properties.
+ * One **project** environment's editor: its name, one endpoint override per interface of that
+ * project, and its properties. Only a linked project has environments of its own; the
+ * workspace's environments are edited in the grid (`environment-grid.tsx`).
+ *
  * Both maps are sent back whole — `update-environment` REPLACES them — so every edit here
  * rebuilds the map from the mirror and hands main the complete result.
  */
 export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
-  const projectEnvironment = useProjectStore((state) => selectEnvironment(state, environmentId));
-  const workspaceEnvironment = useWorkspaceStore((state) =>
-    state.workspace?.environments.find((candidate) => candidate.id === environmentId),
-  );
-  // A workspace environment and a project environment are edited through different channels,
-  // but the patch shape is the same, so the rest of this component does not care which it has.
-  const environment = workspaceEnvironment ?? projectEnvironment;
+  const environment = useProjectStore((state) => selectEnvironment(state, environmentId));
   const interfaces = useProjectStore((state) => state.interfaces);
   const projectId = useProjectStore((state) => state.projectOf[environmentId]);
   const order = useProjectStore((state) => state.order);
-  const projectOf = useProjectStore((state) => state.projectOf);
-  const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects);
+  const projectName = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.name,
+  );
   const updateProjectEnvironment = useProjectStore((state) => state.updateEnvironment);
-  const mutateWorkspace = useWorkspaceStore((state) => state.mutate);
-  const isWorkspaceEnvironment = workspaceEnvironment !== undefined;
   const updateEnvironment = useCallback(
     async (id: string, patch: EnvironmentPatchWire): Promise<void> => {
-      if (isWorkspaceEnvironment) {
-        await mutateWorkspace({ kind: 'update-workspace-environment', environmentId: id, patch });
-        return;
-      }
       if (projectId !== undefined) {
         await updateProjectEnvironment(projectId, id, patch);
       }
     },
-    [isWorkspaceEnvironment, mutateWorkspace, projectId, updateProjectEnvironment],
+    [projectId, updateProjectEnvironment],
   );
 
   const [name, setName] = useState(environment?.name ?? '');
@@ -161,9 +152,7 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
   // two commits fired back-to-back (before either IPC round trip resolves) must each build their
   // map from what the other just wrote, or the second overwrites the first.
   const latestEnvironment = (): NonNullable<typeof environment> =>
-    useWorkspaceStore.getState().workspace?.environments.find((candidate) => candidate.id === environmentId) ??
-    selectEnvironment(useProjectStore.getState(), environmentId) ??
-    environment;
+    selectEnvironment(useProjectStore.getState(), environmentId) ?? environment;
 
   const replaceEndpoints = (slug: string, url: string): void => {
     const current = latestEnvironment();
@@ -184,24 +173,13 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
     void updateEnvironment(environmentId, { properties });
   };
 
-  // Every interface of every open project: a workspace environment addresses them all, and a
-  // project environment's own grid is a strict subset of the same list.
+  // Only the owning project's interfaces: a project environment keys its overrides by interface
+  // slug alone, and knows nothing about the other projects in the workspace.
   const summaries = order
+    .filter((group) => group.projectId === projectId)
     .flatMap((group) => group.interfaceIds)
     .map((id) => interfaces[id])
     .filter((iface): iface is InterfaceWire => iface !== undefined);
-
-  // A workspace environment addresses an interface as `<projectSlug>/<interfaceSlug>` (the key
-  // `project-endpoint.ts` resolves by); a project environment only knows its own interfaces, by
-  // their slug alone. An interface whose project the workspace does not list yet has no key.
-  const endpointKey = (iface: InterfaceWire): string | undefined => {
-    if (!isWorkspaceEnvironment) {
-      return iface.slug;
-    }
-    const owner = projectOf[iface.id];
-    const projectSlug = workspaceProjects?.find((candidate) => candidate.id === owner)?.slug;
-    return projectSlug === undefined ? undefined : `${projectSlug}/${iface.slug}`;
-  };
 
   return (
     <section
@@ -209,6 +187,10 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
       aria-label={`Environment ${environment.name}`}
       className="flex h-full min-h-0 flex-col gap-4 overflow-auto p-4"
     >
+      <p className="text-xs text-fg-subtle">
+        Project environments ({projectName ?? 'linked project'} — linked project)
+      </p>
+
       <label className="flex max-w-md flex-col gap-1">
         <span className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Name</span>
         <input
@@ -236,17 +218,13 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
             </thead>
             <tbody>
               {summaries.map((iface) => {
-                const key = endpointKey(iface);
-                if (key === undefined) {
-                  return null;
-                }
                 return (
                   <EndpointRow
                     key={iface.id}
                     iface={iface}
-                    override={environment.endpoints[key]}
+                    override={environment.endpoints[iface.slug]}
                     onCommit={(url) => {
-                      replaceEndpoints(key, url);
+                      replaceEndpoints(iface.slug, url);
                     }}
                   />
                 );

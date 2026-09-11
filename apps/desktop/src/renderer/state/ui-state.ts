@@ -4,8 +4,11 @@ export type SidebarView = 'explorer' | 'search' | 'history' | 'wss' | 'settings'
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
 
-/** The Details panel's tabs: the selection inspector, the global property table, the Code panel. */
-export type DetailsTab = 'selection' | 'globals' | 'code';
+/**
+ * The Details panel's tabs: the selection inspector, the workspace and global property tables,
+ * the Code panel.
+ */
+export type DetailsTab = 'selection' | 'workspace' | 'globals' | 'code';
 
 /** Which shell the Code panel quotes its `curl` command for. */
 export type CodeShell = 'posix' | 'powershell';
@@ -118,7 +121,10 @@ function mergeDetails(stored: unknown): UiSnapshot['details'] {
   const codeShell = record?.['codeShell'];
   return {
     ...merged,
-    tab: tab === 'selection' || tab === 'globals' || tab === 'code' ? tab : DEFAULT_UI_STATE.details.tab,
+    tab:
+      tab === 'selection' || tab === 'workspace' || tab === 'globals' || tab === 'code'
+        ? tab
+        : DEFAULT_UI_STATE.details.tab,
     codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.details.codeShell,
   };
 }

@@ -46,6 +46,19 @@ export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem
       { key: 'import', label: 'Import WSDL…', run: () => projectRowActions.importInto(projectId) },
       { key: 'rename', label: 'Rename', run: () => projectRowActions.rename(projectId) },
       { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
+      // Only a linked project has environments of its own; an internal project's environments
+      // are the workspace's, edited in the grid.
+      ...(node.linked === true
+        ? [
+            {
+              key: 'project-environments',
+              label: 'Project environments (linked project)',
+              run: () => {
+                void projectRowActions.projectEnvironments(projectId);
+              },
+            },
+          ]
+        : []),
       { key: 'reveal', label: REVEAL_LABEL, run: () => projectRowActions.reveal(projectId) },
       { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
       { key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) },

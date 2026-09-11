@@ -4,6 +4,7 @@ import { EndpointProperties } from '../features/details/endpoint-properties.js';
 import { InterfaceProperties } from '../features/details/interface-properties.js';
 import { RequestProperties } from '../features/details/request-properties.js';
 import { PropertyTable } from '../features/properties/property-table.js';
+import { WorkspaceProperties } from '../features/properties/workspace-properties.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { useProjectStore } from '../state/project.js';
@@ -13,6 +14,7 @@ import type { DetailsTab } from '../state/ui-state.js';
 
 const TABS = [
   { id: 'selection', label: 'Details' },
+  { id: 'workspace', label: 'Workspace properties' },
   { id: 'globals', label: 'Global properties' },
   { id: 'code', label: 'Code' },
 ] as const satisfies readonly { id: DetailsTab; label: string }[];
@@ -122,7 +124,9 @@ export function DetailsPanel() {
         <Tabs label="Details tabs" items={TABS} active={tab} onSelect={setTab} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-        {tab === 'globals' ? (
+        {tab === 'workspace' ? (
+          <WorkspaceProperties />
+        ) : tab === 'globals' ? (
           <GlobalProperties />
         ) : tab === 'code' ? (
           <CodePanel />

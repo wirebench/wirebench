@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { cycleEnvironment, EnvSwitcher } from '../../src/renderer/features/environments/env-switcher.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-types.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
@@ -27,6 +28,7 @@ describe('EnvSwitcher', () => {
     cleanup();
     useWorkspaceStore.setState({ workspace: null });
     useUiStore.setState({ envSwitcherOpen: false });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 
   it('shows "No environment" when none is active', () => {
@@ -52,6 +54,19 @@ describe('EnvSwitcher', () => {
     fireEvent.click(items[1]!);
     await waitFor(() => {
       expect(setActiveEnvironment).toHaveBeenCalledWith('e2');
+    });
+  });
+
+  it('opens the environments grid from Manage environments, even with none active', async () => {
+    setUp(undefined);
+    render(<EnvSwitcher />);
+    fireEvent.keyDown(screen.getByTestId('env-switcher'), { key: 'Enter' });
+
+    const items = await screen.findAllByRole('menuitem');
+    fireEvent.click(items.at(-1)!);
+
+    await waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['env:e1']);
     });
   });
 
