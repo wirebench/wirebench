@@ -168,6 +168,20 @@ describe('ProjectService WS-Security', () => {
     return { service, dir, requestId: 'r1', configId: added.configId };
   }
 
+  it('returns the created configuration ids, so the renderer can select what it just added', async () => {
+    const dir = tempDir('proj');
+    const service = newService();
+    await service.create({ dir, name: 'Demo' });
+
+    const outgoing = await service.mutate({ kind: 'add-wss-outgoing', name: 'Gateway' });
+    expect(outgoing.createdWssOutgoingId).toBeDefined();
+    expect(outgoing.project.wssOutgoing.map((config) => config.id)).toContain(outgoing.createdWssOutgoingId);
+
+    const incoming = await service.mutate({ kind: 'add-wss-incoming', name: 'Responses' });
+    expect(incoming.createdWssIncomingId).toBeDefined();
+    expect(incoming.project.wssIncoming.map((config) => config.id)).toContain(incoming.createdWssIncomingId);
+  });
+
   it('mirrors configurations and the request ref onto the wire', async () => {
     const { service } = await openWithConfig();
     const snapshot = service.snapshot();

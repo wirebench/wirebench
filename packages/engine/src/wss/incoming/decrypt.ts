@@ -9,6 +9,8 @@
  */
 
 import { NS } from '../../xml/namespaces.js';
+import { parseXml } from '../../xml/parse.js';
+import { findElement } from '../security-header.js';
 import { decryptEnvelope } from '../outgoing/encryption.js';
 import type { Keystore, KeystoreAlias } from '../keystore/model.js';
 
@@ -30,11 +32,30 @@ export interface DecryptIncomingResult {
 }
 
 /**
- * Whether `xml` looks encrypted at all. A string test rather than a parse: this runs on every
- * response, including the many that are not XML, and a parse failure here would be noise.
+ * Whether `xml` really carries XML-Encryption: an `xenc:EncryptedKey` or `xenc:EncryptedData`
+ * *element*, found in the DOM.
+ *
+ * A substring test (the previous implementation) says yes to a response that merely mentions
+ * those words in its text — an error message quoting them, say — and that answer turns a plain
+ * response into a `wss-decrypt-failed`. The cheap substring test stays as a pre-filter so the
+ * many responses that are not XML at all are never parsed.
  */
 function looksEncrypted(xml: string): boolean {
-  return xml.includes(NS.XENC) && (xml.includes('EncryptedKey') || xml.includes('EncryptedData'));
+  if (!xml.includes(NS.XENC) || (!xml.includes('EncryptedKey') && !xml.includes('EncryptedData'))) {
+    return false;
+  }
+  try {
+    const root = parseXml(xml, { location: 'envelope' }).documentElement;
+    if (root === null) {
+      return false;
+    }
+    return (
+      findElement(root, NS.XENC, 'EncryptedKey') !== undefined ||
+      findElement(root, NS.XENC, 'EncryptedData') !== undefined
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
