@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { CommandId } from '@shared/commands.js';
+import type { CommandDefinition, CommandId } from '@shared/commands.js';
 import type { Platform } from './platform.js';
 import { getCommand, listCommands, runCommand } from './commands.js';
 import type { CommandContext } from './commands.js';
@@ -24,6 +24,14 @@ const NAMED_KEYS: Readonly<Record<string, string>> = {
   escape: 'escape',
   tab: 'tab',
   backspace: 'backspace',
+  left: 'arrowleft',
+  right: 'arrowright',
+  up: 'arrowup',
+  down: 'arrowdown',
+  arrowleft: 'arrowleft',
+  arrowright: 'arrowright',
+  arrowup: 'arrowup',
+  arrowdown: 'arrowdown',
 };
 
 /**
@@ -67,6 +75,11 @@ const MAC_KEY_GLYPHS: Readonly<Record<string, string>> = {
   tab: '⇥',
   backspace: '⌫',
   ' ': 'Space',
+  arrowleft: '←',
+  arrowright: '→',
+  arrowup: '↑',
+  arrowdown: '↓',
+  '\\': '\\',
 };
 
 const OTHER_KEY_NAMES: Readonly<Record<string, string>> = {
@@ -75,6 +88,11 @@ const OTHER_KEY_NAMES: Readonly<Record<string, string>> = {
   tab: 'Tab',
   backspace: 'Backspace',
   ' ': 'Space',
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  arrowup: 'Up',
+  arrowdown: 'Down',
+  '\\': '\\',
 };
 
 /** Renders a binding the way the host platform writes it: `⌘⇧F` on macOS, `Ctrl+Shift+F` elsewhere. */
@@ -117,6 +135,12 @@ function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
+  // Monaco's edit host is a text field by construction, but the editor is where ⇧Tab, ⎋ and
+  // ⌥←/→ are *meant* to work — and Monaco consumes every keystroke it has its own binding for
+  // before this listener ever sees it, so nothing here can steal one from it.
+  if (typeof target.closest === 'function' && target.closest('.monaco-editor') !== null) {
+    return false;
+  }
   const tag = target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
     return true;
@@ -133,6 +157,57 @@ export function shouldIgnoreEvent(event: KeyboardEvent, binding: Keybinding): bo
   return !binding.mod && isEditable(event.target);
 }
 
+let overrides: Readonly<Record<string, string>> = {};
+
+/**
+ * Replaces the user's keybinding overrides — `preferences.shortcuts`, keyed by command id,
+ * where an empty string means "unbound". Called by the preferences mirror on every document it
+ * receives, so a rebind takes effect without a reload.
+ */
+export function setKeybindingOverrides(next: Readonly<Record<string, string>>): void {
+  overrides = next;
+}
+
+/** The overrides currently in force. */
+export function keybindingOverrides(): Readonly<Record<string, string>> {
+  return overrides;
+}
+
+/**
+ * The chord that actually runs `definition` right now: the user's override when they set one,
+ * the registered default otherwise, and `undefined` when either says "unbound" (`''`).
+ */
+export function effectiveShortcut(definition: CommandDefinition<CommandContext>): string | undefined {
+  const override = overrides[definition.id];
+  if (override === undefined) {
+    return definition.shortcut;
+  }
+  return override === '' ? undefined : override;
+}
+
+/** {@link effectiveShortcut} by command id, for callers holding only an id. */
+export function effectiveShortcutFor(id: CommandId): string | undefined {
+  const command = getCommand(id);
+  return command === undefined ? undefined : effectiveShortcut(command);
+}
+
+/**
+ * Every chord that runs `definition`: its effective default plus any fixed aliases. Chords that
+ * do not parse are skipped rather than thrown on — a bad override in a hand-edited preferences
+ * file must not take the whole keyboard down with it.
+ */
+function chordsFor(definition: CommandDefinition<CommandContext>): readonly string[] {
+  const effective = effectiveShortcut(definition);
+  return [...(effective === undefined ? [] : [effective]), ...(definition.extraShortcuts ?? [])].filter((chord) => {
+    try {
+      parseKeybinding(chord);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /**
  * Installs the single window-level `keydown` listener that turns keystrokes into commands.
  * Bindings come from the registry, so registering a command is all it takes to gain a shortcut.
@@ -141,16 +216,15 @@ export function useKeybindings(context: CommandContext): void {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       for (const definition of listCommands(context)) {
-        if (definition.shortcut === undefined) {
-          continue;
+        for (const chord of chordsFor(definition)) {
+          const binding = parseKeybinding(chord);
+          if (!matchesEvent(binding, event, context.platform) || shouldIgnoreEvent(event, binding)) {
+            continue;
+          }
+          event.preventDefault();
+          void runCommand(definition.id, context);
+          return;
         }
-        const binding = parseKeybinding(definition.shortcut);
-        if (!matchesEvent(binding, event, context.platform) || shouldIgnoreEvent(event, binding)) {
-          continue;
-        }
-        event.preventDefault();
-        void runCommand(definition.id, context);
-        return;
       }
     }
 
@@ -161,8 +235,8 @@ export function useKeybindings(context: CommandContext): void {
   }, [context]);
 }
 
-/** The formatted shortcut for a command, or `undefined` when it has none. */
+/** The formatted effective shortcut for a command, or `undefined` when it has none. */
 export function shortcutFor(id: CommandId, platform: Platform): string | undefined {
-  const shortcut = getCommand(id)?.shortcut;
+  const shortcut = effectiveShortcutFor(id);
   return shortcut === undefined ? undefined : formatKeybinding(shortcut, platform);
 }

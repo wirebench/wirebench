@@ -6,6 +6,7 @@ import type {
   PreferencesSectionWire,
   PreferencesWire,
 } from '../../shared/wire-types.js';
+import { setKeybindingOverrides } from '../lib/keybindings.js';
 import { ipc } from './ipc-client.js';
 import { useUiStore } from './ui.js';
 
@@ -33,6 +34,9 @@ export interface PreferencesStore {
 export const usePreferencesStore = create<PreferencesStore>((set, get) => {
   const apply = (preferences: PreferencesWire): void => {
     set({ preferences, loaded: true });
+    // Rebindings are read straight off the document, so a change made in one window (or in the
+    // Shortcuts editor) is in force on the very next keystroke, with no reload.
+    setKeybindingOverrides(preferences.shortcuts);
     const ui = useUiStore.getState();
     ui.setTheme(preferences.ui.theme);
     ui.setEditorLineNumbers(preferences.editor.lineNumbers);
