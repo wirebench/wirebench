@@ -12,109 +12,20 @@
 import { createPrivateKey } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { SignedXml } from 'xml-crypto';
-import type { Document, Element, Node } from '@xmldom/xmldom';
+import type { Document, Element } from '@xmldom/xmldom';
 import { WssError } from '../../errors.js';
 import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
 import { serializeXml } from '../../xml/serialize.js';
 import { detectEnvelopeVersion, envelopeNamespace } from '../../soap/envelope.js';
 import { buildKeyIdentifier } from '../key-identifiers.js';
+import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
 import type { Keystore, KeystoreAlias } from '../keystore/model.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
 const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
-
-/** The namespace `xmlns:*` declarations themselves live in. */
-const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
-
-/**
- * Matches a `prefix:localName`-shaped token, the way a QName looks when it appears as an
- * attribute value or as element text (`xsi:type="tns:Foo"`, a WSDL/XSD `ref` value, and so on).
- */
-const QNAME_TOKEN = /\b([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*/g;
-
-/** The prefixes `element` declares on itself via `xmlns:*` attributes. */
-function ownDeclaredPrefixes(element: Element): Set<string> {
-  const declared = new Set<string>();
-  const attributes = element.attributes;
-  for (let i = 0; i < attributes.length; i += 1) {
-    const attribute = attributes.item(i);
-    if (
-      attribute !== null &&
-      attribute.namespaceURI === XMLNS_NS &&
-      attribute.prefix === 'xmlns' &&
-      attribute.localName !== null
-    ) {
-      declared.add(attribute.localName);
-    }
-  }
-  return declared;
-}
-
-/** Every `prefix:local` token found in attribute values or text content under `element`. */
-function qnamePrefixesIn(element: Element): Set<string> {
-  const found = new Set<string>();
-  const scan = (text: string): void => {
-    QNAME_TOKEN.lastIndex = 0;
-    let match = QNAME_TOKEN.exec(text);
-    while (match !== null) {
-      const prefix = match[1];
-      if (prefix !== undefined) {
-        found.add(prefix);
-      }
-      match = QNAME_TOKEN.exec(text);
-    }
-  };
-  const walk = (node: Node): void => {
-    if (node.nodeType === 1) {
-      const el = node as Element;
-      const attributes = el.attributes;
-      for (let i = 0; i < attributes.length; i += 1) {
-        const attribute = attributes.item(i);
-        if (attribute !== null && attribute.namespaceURI !== XMLNS_NS) {
-          scan(attribute.value);
-        }
-      }
-      for (let child = el.firstChild; child !== null; child = child.nextSibling) {
-        walk(child);
-      }
-    } else if (node.nodeType === 3) {
-      scan(node.nodeValue ?? '');
-    }
-  };
-  walk(element);
-  return found;
-}
-
-/**
- * The `InclusiveNamespaces PrefixList` a reference to `element` needs: the SOAP envelope
- * prefix (exclusive c14n drops it whenever the part does not itself use it, but a receiver
- * canonicalizing just this fragment still needs it in scope) plus every prefix `element`'s
- * subtree references only through attribute-value or text QName content — a use exclusive
- * c14n's "visible utilization" rule does not see, since it only looks at element/attribute
- * *names*, never their values.
- *
- * A prefix `element` already declares on itself is left out: exclusive c14n renders that
- * declaration regardless, so listing it again would be redundant, not wrong.
- *
- * @param element the referenced part
- * @param envelopePrefix the SOAP envelope's own prefix, or `null` when it uses no prefix
- */
-function inclusiveNamespacePrefixList(element: Element, envelopePrefix: string | null): string[] {
-  const declared = ownDeclaredPrefixes(element);
-  const prefixes = new Set<string>();
-  if (envelopePrefix !== null && envelopePrefix !== '') {
-    prefixes.add(envelopePrefix);
-  }
-  for (const prefix of qnamePrefixesIn(element)) {
-    if (!declared.has(prefix) && element.lookupNamespaceURI(prefix) !== null) {
-      prefixes.add(prefix);
-    }
-  }
-  return [...prefixes].sort();
-}
 
 /** `SignatureMethod` URIs, by the entry's `signatureAlgorithm`. */
 const SIGNATURE_ALGORITHM_URIS = {

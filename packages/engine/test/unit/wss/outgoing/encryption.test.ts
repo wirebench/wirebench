@@ -1,6 +1,8 @@
+import { constants, createCipheriv, privateDecrypt, publicEncrypt, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { decryptEnvelope } from '../../../../src/wss/outgoing/encryption.js';
+import { decryptEnvelope, encryptEnvelope } from '../../../../src/wss/outgoing/encryption.js';
+import { parseXml } from '../../../../src/xml/parse.js';
 import { verifySignature } from '../../../../src/wss/outgoing/signature.js';
 import { createWssContext } from '../../../../src/wss/model.js';
 import { WSS_TOKEN_TYPES } from '../../../../src/wss/key-identifiers.js';
@@ -229,14 +231,12 @@ describe('encryptEnvelope', () => {
     expect(xml).not.toContain('BinarySecurityToken');
   });
 
-  it('carries a ds:KeyName instead of an EncryptedKey when the symmetric key is shared out of band', async () => {
-    const xml = await apply([encryptionEntry({ encryptSymmetricKey: false })]);
-
-    expect(xml).not.toContain('xenc:EncryptedKey');
-    expect(xml).toContain('<ds:KeyName>recipient</ds:KeyName>');
-    expect(() => decryptEnvelope(xml, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) })).toThrowError(
-      expect.objectContaining({ code: 'wss-decrypt-failed' }),
-    );
+  it('rejects an entry that asks for an out-of-band symmetric key', async () => {
+    // Nothing would transmit the key, so the message could never be opened: refuse it rather
+    // than emitting an undecryptable envelope.
+    await expect(apply([encryptionEntry({ encryptSymmetricKey: false })])).rejects.toMatchObject({
+      code: 'wss-entry-unsupported',
+    });
   });
 
   it('rejects an entry naming a part the message does not have', async () => {
@@ -344,5 +344,235 @@ describe('entry order', () => {
 
     const result = decryptEnvelope(xml, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
     expect(result.xml).toContain('<tns:Text>hello</tns:Text>');
+  });
+});
+
+/** The base64 `CipherValue` of the first `xenc:EncryptedKey` in `xml`. */
+function wrappedKeyOf(xml: string): string {
+  const match = /<xenc:EncryptedKey[\s\S]*?<xenc:CipherValue>([^<]+)</.exec(xml);
+  if (match?.[1] === undefined) {
+    throw new Error('no EncryptedKey CipherValue in the envelope');
+  }
+  return match[1];
+}
+
+/** The base64 `CipherValue` of the first `xenc:EncryptedData` in `xml`. */
+function cipherDataOf(xml: string): string {
+  const match = /<xenc:EncryptedData[\s\S]*?<xenc:CipherValue>([^<]+)</.exec(xml);
+  if (match?.[1] === undefined) {
+    throw new Error('no EncryptedData CipherValue in the envelope');
+  }
+  return match[1];
+}
+
+/** The `ds:DigestMethod` the EncryptedKey's EncryptionMethod carries, however it serialized. */
+const DIGEST_METHOD = /<ds:DigestMethod[^>]*\/>/;
+
+/** Rewrites the `ds:DigestMethod` Algorithm of `xml`'s EncryptedKey to `algorithm`. */
+function withDigestMethod(xml: string, algorithm: string): string {
+  const replaced = xml.replace(/(<ds:DigestMethod[^>]*Algorithm=")[^"]*/, `$1${algorithm}`);
+  if (replaced === xml) {
+    throw new Error('no ds:DigestMethod in the EncryptedKey');
+  }
+  return replaced;
+}
+
+/** Turns `xml`'s EncryptedKey into an XML-Enc 1.1 RSA-OAEP one carrying `mgf`. */
+function withMgf(xml: string, mgf: string): string {
+  const replaced = xml
+    .replace(`${NS.XENC}rsa-oaep-mgf1p`, 'http://www.w3.org/2009/xmlenc11#rsa-oaep')
+    .replace(
+      DIGEST_METHOD,
+      (match) => `${match}<xenc11:MGF xmlns:xenc11="http://www.w3.org/2009/xmlenc11#" Algorithm="${mgf}"/>`,
+    );
+  if (!replaced.includes('xenc11:MGF')) {
+    throw new Error('no ds:DigestMethod to anchor the MGF to');
+  }
+  return replaced;
+}
+
+/** The symmetric key `xml`'s `EncryptedKey` carries, unwrapped with the recipient's private key. */
+function symmetricKeyOf(xml: string, oaepHash = 'sha1'): Buffer {
+  return privateDecrypt(
+    { key: recipient.keyPem, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash },
+    Buffer.from(wrappedKeyOf(xml), 'base64'),
+  );
+}
+
+describe('RSA-OAEP parameters on decrypt', () => {
+  it('reads the ds:DigestMethod, so a SHA-256 OAEP EncryptedKey decrypts', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const key = symmetricKeyOf(xml);
+    // Re-wrap the very same symmetric key with SHA-256 OAEP and say so in the DigestMethod.
+    const rewrapped = publicEncrypt(
+      { key: recipient.certPem, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+      key,
+    ).toString('base64');
+    const swapped = withDigestMethod(xml.replace(wrappedKeyOf(xml), rewrapped), `${NS.XENC}sha256`);
+
+    const result = decryptEnvelope(swapped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
+    expect(result.xml).toContain('<tns:Text>hello</tns:Text>');
+  });
+
+  it('rejects a DigestMethod this build cannot compute', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const swapped = withDigestMethod(xml, 'urn:md5');
+
+    expect(() =>
+      decryptEnvelope(swapped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) }),
+    ).toThrowError(expect.objectContaining({ code: 'wss-algorithm-unsupported' }));
+  });
+
+  it('rejects an xenc11:MGF whose hash differs from the digest', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const swapped = withMgf(xml, 'http://www.w3.org/2009/xmlenc11#mgf1sha256');
+
+    expect(() =>
+      decryptEnvelope(swapped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) }),
+    ).toThrowError(expect.objectContaining({ code: 'wss-algorithm-unsupported' }));
+  });
+
+  it('accepts an xenc11:MGF that matches the digest', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const swapped = withMgf(xml, 'http://www.w3.org/2009/xmlenc11#mgf1sha1');
+
+    const result = decryptEnvelope(swapped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
+    expect(result.xml).toContain('<tns:Text>hello</tns:Text>');
+  });
+
+  it('rejects an unknown xenc11:MGF', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const swapped = withMgf(xml, 'urn:made-up-mgf');
+
+    expect(() =>
+      decryptEnvelope(swapped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) }),
+    ).toThrowError(expect.objectContaining({ code: 'wss-algorithm-unsupported' }));
+  });
+});
+
+describe('CBC padding', () => {
+  /** Re-encrypts `plaintext` under `xml`'s symmetric key with `padding` appended verbatim. */
+  function withPadding(xml: string, plaintext: string, padding: Buffer): string {
+    const key = symmetricKeyOf(xml);
+    const iv = Buffer.from(cipherDataOf(xml), 'base64').subarray(0, 16);
+    const cipher = createCipheriv('aes-256-cbc', key, iv);
+    cipher.setAutoPadding(false);
+    const body = Buffer.concat([
+      cipher.update(Buffer.concat([Buffer.from(plaintext, 'utf8'), padding])),
+      cipher.final(),
+    ]);
+    return xml.replace(cipherDataOf(xml), Buffer.concat([iv, body]).toString('base64'));
+  }
+
+  const PLAINTEXT = '<tns:Echo xmlns:tns="urn:test"><tns:Text>hello</tns:Text></tns:Echo>';
+
+  it('accepts the arbitrary pad bytes XML-Enc 5.2.2 allows', async () => {
+    const xml = await apply([encryptionEntry({ symmetricAlgorithm: 'aes256-cbc' })]);
+    const padLength = 16 - (Buffer.byteLength(PLAINTEXT, 'utf8') % 16);
+    // Only the *last* byte carries the pad length; XML-Enc leaves the rest unspecified, and
+    // strict PKCS#7 would reject these.
+    const padding = Buffer.concat([randomBytes(padLength - 1), Buffer.from([padLength])]);
+
+    const result = decryptEnvelope(withPadding(xml, PLAINTEXT, padding), {
+      keystore: recipientKeystore,
+      alias: aliasOf(recipientKeystore),
+    });
+    expect(result.decrypted).toEqual([PLAINTEXT]);
+  });
+
+  it.each([0, 17])('rejects a final pad byte of %i', async (last) => {
+    const xml = await apply([encryptionEntry({ symmetricAlgorithm: 'aes256-cbc' })]);
+    const padLength = 16 - (Buffer.byteLength(PLAINTEXT, 'utf8') % 16);
+    const padding = Buffer.concat([Buffer.alloc(padLength - 1), Buffer.from([last])]);
+
+    expect(() =>
+      decryptEnvelope(withPadding(xml, PLAINTEXT, padding), {
+        keystore: recipientKeystore,
+        alias: aliasOf(recipientKeystore),
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'wss-decrypt-failed' }));
+  });
+});
+
+describe('the actor the EncryptedKey is addressed to', () => {
+  const WITH_EXISTING_SECURITY =
+    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+    `<soapenv:Header><wsse:Security xmlns:wsse="${NS.WSSE}"/></soapenv:Header>` +
+    '<soapenv:Body><tns:Echo xmlns:tns="urn:test"><tns:Text>hello</tns:Text></tns:Echo></soapenv:Body>' +
+    '</soapenv:Envelope>';
+
+  it('puts the EncryptedKey in the Security block the configuration addresses', async () => {
+    const xml = await applyOutgoingWss(
+      WITH_EXISTING_SECURITY,
+      { ...configOf([encryptionEntry()]), actor: 'urn:next' },
+      ctxFor(recipientKeystore),
+    );
+
+    const doc = parseXml(xml, { location: 'envelope' });
+    const blocks = [...doc.getElementsByTagNameNS(NS.WSSE, 'Security')];
+    expect(blocks).toHaveLength(2);
+    const [first, second] = blocks;
+    expect(first?.getElementsByTagNameNS(NS.XENC, 'EncryptedKey')).toHaveLength(0);
+    expect(second?.getAttribute('soapenv:actor')).toBe('urn:next');
+    expect(second?.getElementsByTagNameNS(NS.XENC, 'EncryptedKey')).toHaveLength(1);
+
+    const result = decryptEnvelope(xml, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
+    expect(result.xml).toContain('<tns:Text>hello</tns:Text>');
+  });
+
+  it('fails when no Security block is addressed to the actor', () => {
+    const doc = parseXml(WITH_EXISTING_SECURITY, { location: 'envelope' });
+
+    expect(() =>
+      encryptEnvelope(
+        doc,
+        encryptionEntry(),
+        { keystore: recipientKeystore, alias: aliasOf(recipientKeystore), actor: 'urn:nobody' },
+        ctxFor(recipientKeystore),
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'wss-security-missing' }));
+  });
+});
+
+describe('the plaintext prefix list', () => {
+  const QNAME_SOAP11 =
+    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"' +
+    ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tns="urn:test">' +
+    '<soapenv:Body><e:Echo xmlns:e="urn:echo"><e:Text xsi:type="tns:Foo">hello</e:Text></e:Echo></soapenv:Body>' +
+    '</soapenv:Envelope>';
+
+  it('carries the declarations for prefixes used only in QName content', async () => {
+    const xml = await applyOutgoingWss(QNAME_SOAP11, configOf([encryptionEntry()]), ctxFor(recipientKeystore));
+    const result = decryptEnvelope(xml, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
+
+    const [fragment] = result.decrypted;
+    expect(fragment).toContain('xmlns:tns="urn:test"');
+    // The fragment stands on its own: `tns:Foo` still resolves when it is parsed alone.
+    const parsed = parseXml(`<wb-wrap>${String(fragment)}</wb-wrap>`, { location: 'envelope' });
+    const text = parsed.getElementsByTagNameNS('urn:echo', 'Text')[0];
+    expect(text?.lookupNamespaceURI('tns')).toBe('urn:test');
+  });
+});
+
+describe('an EncryptedKey without a ReferenceList', () => {
+  it('falls back to every EncryptedData when the document has exactly one EncryptedKey', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const stripped = xml.replace(/<xenc:ReferenceList>[\s\S]*?<\/xenc:ReferenceList>/, '');
+    expect(stripped).not.toContain('ReferenceList');
+
+    const result = decryptEnvelope(stripped, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) });
+    expect(result.xml).toContain('<tns:Text>hello</tns:Text>');
+  });
+
+  it('refuses to guess when the document has more than one EncryptedKey', async () => {
+    const xml = await apply([encryptionEntry()]);
+    const stripped = xml.replace(/<xenc:ReferenceList>[\s\S]*?<\/xenc:ReferenceList>/, '');
+    const key = /<xenc:EncryptedKey[\s\S]*?<\/xenc:EncryptedKey>/.exec(stripped)?.[0] ?? '';
+    expect(key).not.toBe('');
+    const twoKeys = stripped.replace(key, `${key}${key.replace('Id="EK-', 'Id="EK2-')}`);
+
+    expect(() =>
+      decryptEnvelope(twoKeys, { keystore: recipientKeystore, alias: aliasOf(recipientKeystore) }),
+    ).toThrowError(expect.objectContaining({ code: 'wss-decrypt-failed' }));
   });
 });

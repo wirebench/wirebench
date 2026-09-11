@@ -46,7 +46,8 @@ import {
   thumbprintSha1Base64,
   WSS_TOKEN_TYPES,
 } from '../key-identifiers.js';
-import { childElement, findElement } from '../security-header.js';
+import { childElement, findElement, securityHeaders, securityIndex } from '../security-header.js';
+import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import type { Keystore, KeystoreAlias } from '../keystore/model.js';
 import type {
   WssContext,
@@ -55,6 +56,9 @@ import type {
   WssPart,
   WssSymmetricAlgorithm,
 } from '../model.js';
+
+/** The namespace `xmlns:*` declarations themselves live in. */
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 
 /** The XML Encryption 1.1 namespace, where the GCM algorithm identifiers live. */
 const XENC11 = 'http://www.w3.org/2009/xmlenc11#';
@@ -88,6 +92,23 @@ const SYMMETRIC_BY_URI: ReadonlyMap<string, SymmetricSpec> = new Map(
 const KEY_TRANSPORT_URIS: Readonly<Record<WssKeyTransportAlgorithm, string>> = {
   'rsa-oaep': `${NS.XENC}rsa-oaep-mgf1p`,
   'rsa-1_5': `${NS.XENC}rsa-1_5`,
+};
+
+/**
+ * `ds:DigestMethod` URIs, mapped onto the Node hash name RSA-OAEP takes. SHA-1 is the default
+ * `#rsa-oaep-mgf1p` implies; the other two are what an XML-Enc 1.1 `#rsa-oaep` typically names.
+ */
+const OAEP_DIGESTS: Readonly<Record<string, string>> = {
+  [`${NS.DS}sha1`]: 'sha1',
+  [`${NS.XENC}sha256`]: 'sha256',
+  [`${NS.XENC}sha512`]: 'sha512',
+};
+
+/** `xenc11:MGF` URIs, mapped onto the hash MGF1 runs on. */
+const MGF_DIGESTS: Readonly<Record<string, string>> = {
+  [`${XENC11}mgf1sha1`]: 'sha1',
+  [`${XENC11}mgf1sha256`]: 'sha256',
+  [`${XENC11}mgf1sha512`]: 'sha512',
 };
 
 /** The GCM authentication tag length, in bytes (XML-Enc 1.1 fixes it at 128 bits). */
@@ -136,9 +157,28 @@ function resolvePart(root: Element, part: WssPart, envelopeNs: string): Element 
  */
 function canonicalize(node: Node): string {
   const c14n = new ExclusiveCanonicalization();
-  // `processInner` is the per-node entry point `process` itself calls; it is used directly
-  // because `Content` encryption has to canonicalize a *list* of children, not one element.
-  return c14n.processInner(node, [], '', {}, []);
+  if (node.nodeType !== 1) {
+    // `processInner` is the per-node entry point `process` itself calls; it is used directly
+    // because `Content` encryption has to canonicalize a *list* of children, not one element.
+    return c14n.processInner(node, [], '', {}, []);
+  }
+  const element_ = node as Element;
+  // Prefixes the subtree uses only inside QName attribute values or text are invisible to
+  // exclusive c14n's "visible utilization" rule, so they are listed explicitly. The envelope
+  // prefix is deliberately *not* listed: unlike a signature reference, the plaintext is put
+  // back exactly where it came from, so it never has to stand alone inside the envelope.
+  const prefixes = inclusiveNamespacePrefixList(element_, null);
+  // The declarations themselves come from the ancestors the fragment is about to lose, so they
+  // are written onto a *copy* — the same move `ExclusiveCanonicalization.process` makes, minus
+  // the mutation of the live document.
+  const copy = element_.cloneNode(true) as Element;
+  for (const prefix of prefixes) {
+    const namespace = element_.lookupNamespaceURI(prefix);
+    if (namespace !== null) {
+      copy.setAttributeNS(XMLNS_NS, `xmlns:${prefix}`, namespace);
+    }
+  }
+  return c14n.processInner(copy, [], '', {}, prefixes);
 }
 
 /** The plaintext one part contributes: its children for `Content`, the element itself for `Element`. */
@@ -176,7 +216,16 @@ function decryptData(spec: SymmetricSpec, key: Buffer, cipherValue: Buffer): str
     );
   }
   const decipher = createDecipheriv(spec.cipher, key, iv);
-  return Buffer.concat([decipher.update(cipherValue.subarray(spec.ivBytes)), decipher.final()]).toString('utf8');
+  // XML-Enc §5.2.2 pads with `n - 1` *arbitrary* bytes followed by the length byte `n`, so the
+  // non-final pad bytes carry no value to check and strict PKCS#7 would reject conformant
+  // ciphertext. OpenSSL's automatic unpadding is turned off and only the last byte is read.
+  decipher.setAutoPadding(false);
+  const padded = Buffer.concat([decipher.update(cipherValue.subarray(spec.ivBytes)), decipher.final()]);
+  const padLength = padded.at(-1);
+  if (padLength === undefined || padLength < 1 || padLength > spec.ivBytes || padLength > padded.length) {
+    throw new Error(`The CBC padding length byte is ${String(padLength)}, which cannot be right.`);
+  }
+  return padded.subarray(0, padded.length - padLength).toString('utf8');
 }
 
 /** Wraps the symmetric key for the recipient's public key. */
@@ -198,23 +247,24 @@ function element(doc: Document, namespace: string, qualifiedName: string, childr
   return created;
 }
 
-/** Parses an XML *string* (the key-identifier builders emit strings) into `doc`. */
-function importXml(doc: Document, xml: string): Element | undefined {
+/**
+ * Parses an XML *string* (the key-identifier builders emit strings) into `doc`. A string that
+ * yields no document element is a bug in this build, not a configuration problem, so it fails
+ * loudly rather than quietly producing an empty `ds:KeyInfo` no recipient could use.
+ *
+ * @throws WssError `wss-internal`
+ */
+function importXml(doc: Document, xml: string): Element {
   const parsed = parseXml(xml, { location: 'envelope' }).documentElement;
-  return parsed === null ? undefined : doc.importNode(parsed, true);
+  if (parsed === null) {
+    throw new WssError('wss-internal', 'A WS-Security key identifier could not be built.');
+  }
+  return doc.importNode(parsed, true);
 }
 
-/** The `ds:KeyInfo` an `xenc:EncryptedData` carries: an STR to the EncryptedKey, or a KeyName. */
-function dataKeyInfo(doc: Document, entry: WssEncryptionEntry, keyId: string, aliasName: string): Element {
+/** The `ds:KeyInfo` an `xenc:EncryptedData` carries: an STR to the `xenc:EncryptedKey`. */
+function dataKeyInfo(doc: Document, keyId: string): Element {
   const keyInfo = element(doc, NS.DS, 'ds:KeyInfo');
-  if (!entry.encryptSymmetricKey) {
-    // No EncryptedKey exists to point at: the symmetric key is shared out of band, so the
-    // recipient is told only *which* key by name. The name is the keystore alias.
-    const keyName = element(doc, NS.DS, 'ds:KeyName');
-    keyName.appendChild(doc.createTextNode(aliasName));
-    keyInfo.appendChild(keyName);
-    return keyInfo;
-  }
   const str = element(doc, NS.WSSE, 'wsse:SecurityTokenReference');
   const reference = element(doc, NS.WSSE, 'wsse:Reference');
   reference.setAttribute('URI', `#${keyId}`);
@@ -226,11 +276,9 @@ function dataKeyInfo(doc: Document, entry: WssEncryptionEntry, keyId: string, al
 /** Builds the `<xenc:EncryptedData>` for one encrypted part. */
 function encryptedData(
   doc: Document,
-  entry: WssEncryptionEntry,
   spec: SymmetricSpec,
   id: string,
   keyId: string,
-  aliasName: string,
   encode: WssPart['encode'],
   cipherValue: Buffer,
 ): Element {
@@ -240,7 +288,7 @@ function encryptedData(
   const method = element(doc, NS.XENC, 'xenc:EncryptionMethod');
   method.setAttribute('Algorithm', spec.uri);
   data.appendChild(method);
-  data.appendChild(dataKeyInfo(doc, entry, keyId, aliasName));
+  data.appendChild(dataKeyInfo(doc, keyId));
   const value = element(doc, NS.XENC, 'xenc:CipherValue');
   value.appendChild(doc.createTextNode(cipherValue.toString('base64')));
   data.appendChild(element(doc, NS.XENC, 'xenc:CipherData', [value]));
@@ -292,9 +340,24 @@ export function encryptEnvelope(
   }
   const envelopeNs = envelopeNamespace(version);
   const header = childElement(root, envelopeNs, 'Header');
-  const security = header === undefined ? undefined : findElement(header, NS.WSSE, 'Security');
+  if (header === undefined) {
+    throw new WssError('wss-security-missing', 'The envelope has no wsse:Security header to encrypt into.');
+  }
+  // The same block `signEnvelope` would sign into: `securityIndex` counts direct `wsse:Security`
+  // children of the header and throws when none is addressed to this actor/role, so an entry
+  // configured for an actor never silently lands in the ultimate receiver's block.
+  const security = securityHeaders(header)[securityIndex(header, version, resolved.actor) - 1];
   if (security === undefined) {
-    throw new WssError('wss-not-an-envelope', 'The envelope has no wsse:Security header to encrypt into.');
+    throw new WssError('wss-security-missing', 'The envelope has no wsse:Security header to encrypt into.');
+  }
+
+  if (!entry.encryptSymmetricKey) {
+    // The symmetric key is generated here and never transmitted, so nothing could open the
+    // message. Refusing is honest; emitting an undecryptable envelope is not.
+    throw new WssError(
+      'wss-entry-unsupported',
+      'Out-of-band symmetric keys are not supported yet: the symmetric key must be encrypted.',
+    );
   }
 
   const spec = SYMMETRIC_SPECS[entry.symmetricAlgorithm];
@@ -320,16 +383,7 @@ export function encryptEnvelope(
     const iv = Buffer.from(ctx.nonce(spec.ivBytes));
     const id = `ED-${ctx.uuid()}`;
     dataIds.push(id);
-    const data = encryptedData(
-      doc,
-      entry,
-      spec,
-      id,
-      keyId,
-      resolved.alias.alias,
-      part.encode,
-      encryptData(spec, key, iv, plaintext),
-    );
+    const data = encryptedData(doc, spec, id, keyId, part.encode, encryptData(spec, key, iv, plaintext));
     if (part.encode === 'Element') {
       target.parentNode?.replaceChild(data, target);
     } else {
@@ -338,10 +392,6 @@ export function encryptEnvelope(
       }
       target.appendChild(data);
     }
-  }
-
-  if (!entry.encryptSymmetricKey) {
-    return;
   }
 
   const tokenId = `X509-${ctx.uuid()}`;
@@ -357,10 +407,7 @@ export function encryptEnvelope(
     if (reuse === undefined) {
       // Nothing to point at (no BST is in the header yet), so the certificate is embedded
       // anyway rather than emitting a reference that resolves to nothing.
-      const token = importXml(doc, keyIdentifier.binarySecurityTokenXml);
-      if (token !== undefined) {
-        security.appendChild(token);
-      }
+      security.appendChild(importXml(doc, keyIdentifier.binarySecurityTokenXml));
     } else {
       keyInfoXml = keyIdentifier.keyInfoXml.replace(`URI="#${tokenId}"`, `URI="#${reuse}"`);
     }
@@ -377,10 +424,7 @@ export function encryptEnvelope(
   }
   encryptedKey.appendChild(method);
   const keyInfo = element(doc, NS.DS, 'ds:KeyInfo');
-  const identifier = importXml(doc, keyInfoXml);
-  if (identifier !== undefined) {
-    keyInfo.appendChild(identifier);
-  }
+  keyInfo.appendChild(importXml(doc, keyInfoXml));
   encryptedKey.appendChild(keyInfo);
   const cipherValue = element(doc, NS.XENC, 'xenc:CipherValue');
   cipherValue.appendChild(
@@ -514,23 +558,85 @@ function privateKeyOf(options: DecryptEnvelopeOptions): ReturnType<typeof create
   }
 }
 
-/** Unwraps an `xenc:EncryptedKey`'s `CipherValue` with `privateKey`. */
-function unwrapKey(algorithm: string, privateKey: ReturnType<typeof createPrivateKey>, wrapped: Buffer): Buffer {
+/**
+ * The OAEP hash an `xenc:EncryptionMethod` asks for: its `ds:DigestMethod`, defaulting to SHA-1
+ * (what `#rsa-oaep-mgf1p` means when the element is left out).
+ *
+ * Node derives MGF1's hash from `oaepHash`, so an `xenc11:MGF` naming a *different* hash cannot
+ * be honoured and is rejected rather than silently decrypted with the wrong parameters.
+ *
+ * @throws WssError `wss-algorithm-unsupported`
+ */
+function oaepHashOf(method: Element | undefined): string {
+  const digestUri =
+    method === undefined ? undefined : childElement(method, NS.DS, 'DigestMethod')?.getAttribute('Algorithm');
+  const digest = digestUri === null || digestUri === undefined || digestUri === '' ? 'sha1' : OAEP_DIGESTS[digestUri];
+  if (digest === undefined) {
+    throw new WssError('wss-algorithm-unsupported', `Unsupported RSA-OAEP digest "${String(digestUri)}".`, {
+      details: { algorithm: String(digestUri) },
+    });
+  }
+  const mgfUri = method === undefined ? undefined : childElement(method, XENC11, 'MGF')?.getAttribute('Algorithm');
+  if (mgfUri === null || mgfUri === undefined || mgfUri === '') {
+    return digest;
+  }
+  const mgf = MGF_DIGESTS[mgfUri];
+  if (mgf === undefined) {
+    throw new WssError('wss-algorithm-unsupported', `Unsupported RSA-OAEP mask generation function "${mgfUri}".`, {
+      details: { algorithm: mgfUri },
+    });
+  }
+  if (mgf !== digest) {
+    throw new WssError(
+      'wss-algorithm-unsupported',
+      `This build cannot decrypt an RSA-OAEP key whose MGF1 hash (${mgf}) differs from its digest (${digest}).`,
+      { details: { algorithm: mgfUri, digest } },
+    );
+  }
+  return digest;
+}
+
+/** Unwraps an `xenc:EncryptedKey`'s `CipherValue` with `privateKey`, honouring its OAEP parameters. */
+function unwrapKey(
+  method: Element | undefined,
+  privateKey: ReturnType<typeof createPrivateKey>,
+  wrapped: Buffer,
+): Buffer {
+  const algorithm = method?.getAttribute('Algorithm') ?? '';
   if (algorithm === KEY_TRANSPORT_URIS['rsa-1_5']) {
     return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, wrapped);
   }
   if (algorithm === KEY_TRANSPORT_URIS['rsa-oaep'] || algorithm === `${XENC11}rsa-oaep`) {
-    return privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha1' }, wrapped);
+    return privateDecrypt(
+      { key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: oaepHashOf(method) },
+      wrapped,
+    );
   }
   throw new WssError('wss-algorithm-unsupported', `Unsupported key transport algorithm "${algorithm}".`, {
     details: { algorithm },
   });
 }
 
-/** The `xenc:EncryptedData` blocks one `EncryptedKey` keyed, by its `ReferenceList`. */
-function referencedData(root: Element, encryptedKey: Element): Element[] {
+/**
+ * The `xenc:EncryptedData` blocks one `EncryptedKey` keyed, by its `xenc:ReferenceList`.
+ *
+ * A missing `ReferenceList` is only guessed past when the document carries a single
+ * `EncryptedKey`, where "all of them" is the only possible answer. With several keys in play,
+ * attributing every block to one of them would be a guess that fails as a wrong-key decryption
+ * far from its cause, so it is refused here instead.
+ *
+ * @throws WssError `wss-decrypt-failed`
+ */
+function referencedData(root: Element, encryptedKey: Element, keyCount: number): Element[] {
   const list = childElement(encryptedKey, NS.XENC, 'ReferenceList');
   if (list === undefined) {
+    if (keyCount !== 1) {
+      throw new WssError(
+        'wss-decrypt-failed',
+        'An xenc:EncryptedKey carries no xenc:ReferenceList, and the document has more than one ' +
+          'EncryptedKey, so which blocks it keyed cannot be known.',
+      );
+    }
     return findAll(root, NS.XENC, 'EncryptedData');
   }
   const found: Element[] = [];
@@ -606,7 +712,6 @@ export function decryptEnvelope(xml: string, options: DecryptEnvelopeOptions): D
   let lastCause: unknown;
   for (const encryptedKey of candidates) {
     const method = childElement(encryptedKey, NS.XENC, 'EncryptionMethod');
-    const algorithm = method?.getAttribute('Algorithm') ?? '';
     const cipherValue = childElement(
       childElement(encryptedKey, NS.XENC, 'CipherData') ?? encryptedKey,
       NS.XENC,
@@ -614,7 +719,7 @@ export function decryptEnvelope(xml: string, options: DecryptEnvelopeOptions): D
     );
     let key: Buffer;
     try {
-      key = unwrapKey(algorithm, privateKey, Buffer.from(textOf(cipherValue), 'base64'));
+      key = unwrapKey(method, privateKey, Buffer.from(textOf(cipherValue), 'base64'));
     } catch (cause) {
       if (cause instanceof WssError) {
         throw cause;
@@ -622,7 +727,7 @@ export function decryptEnvelope(xml: string, options: DecryptEnvelopeOptions): D
       lastCause = cause;
       continue;
     }
-    for (const data of referencedData(root, encryptedKey)) {
+    for (const data of referencedData(root, encryptedKey, encryptedKeys.length)) {
       const dataAlgorithm = childElement(data, NS.XENC, 'EncryptionMethod')?.getAttribute('Algorithm') ?? '';
       const spec = SYMMETRIC_BY_URI.get(dataAlgorithm);
       if (spec === undefined) {
