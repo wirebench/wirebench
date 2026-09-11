@@ -13,7 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
@@ -128,6 +128,7 @@ import {
 import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
+import { renameWithRetry } from './rename-dir.js';
 import type { RecentProjects } from './recent-projects.js';
 
 /**
@@ -1574,7 +1575,7 @@ export class ProjectService {
 
     const slug = uniqueSlug(summary.name, taken);
     if (slug !== provisionalSlug) {
-      await rename(interfaceDir(open.dir, provisionalSlug), interfaceDir(open.dir, slug));
+      await renameWithRetry(interfaceDir(open.dir, provisionalSlug), interfaceDir(open.dir, slug));
     }
 
     const endpoints = endpointsFrom(summary);
