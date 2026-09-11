@@ -10,6 +10,7 @@ import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
+import { useWorkspaceStore } from '../state/workspace.js';
 import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
@@ -74,8 +75,11 @@ export function StatusBar() {
   // The endpoint the *active* request would be sent to — not the last one sent — so the warning
   // is about what the next Send will do.
   const activeRequestId = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.requestId);
+  // The active environment lives on the workspace, so an environment switch has to rerender
+  // the endpoint as well as a project change.
+  const workspace = useWorkspaceStore((state) => state.workspace);
   const trustInvalid = useProjectStore((state) =>
-    activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, activeRequestId),
+    activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, workspace, activeRequestId),
   );
   const tlsLabel = last?.http.tls?.protocol ?? `TLS —`;
   const saveLabel = saving ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;

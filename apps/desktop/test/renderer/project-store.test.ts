@@ -300,7 +300,8 @@ describe('selectRequestEndpoint', () => {
     installWirebenchApi();
   });
 
-  const resolve = (requestId: string) => selectRequestEndpoint(useProjectStore.getState(), requestId);
+  const resolve = (requestId: string) =>
+    selectRequestEndpoint(useProjectStore.getState(), useWorkspaceStore.getState().workspace, requestId);
 
   it('prefers the request custom URL, then its endpoint, then the interface default', () => {
     applyProject();
@@ -339,7 +340,7 @@ describe('selectRequestEndpoint', () => {
     });
     expect(resolve('req-1')).toEqual({ source: 'none' });
     expect(resolve('nope')).toEqual({ source: 'none' });
-    expect(selectRequestEndpointUrl(useProjectStore.getState(), 'req-1')).toBeUndefined();
+    expect(selectRequestEndpointUrl(useProjectStore.getState(), null, 'req-1')).toBeUndefined();
   });
 
   it("lets the workspace's active environment override beat everything else", () => {

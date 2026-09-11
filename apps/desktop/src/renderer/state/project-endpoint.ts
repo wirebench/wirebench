@@ -3,9 +3,8 @@
  * Split out of `project.ts` so the store file stays about state and actions.
  */
 
-import type { EndpointSourceWire, EndpointWire } from '../../shared/wire-types.js';
+import type { EndpointSourceWire, EndpointWire, WorkspaceWire } from '../../shared/wire-types.js';
 import type { ProjectSnapshot } from './project.js';
-import { useWorkspaceStore } from './workspace.js';
 
 /** What {@link selectRequestEndpoint} answers: the URL, and which rule produced it. */
 export interface ResolvedEndpoint {
@@ -27,8 +26,16 @@ export interface ResolvedEndpoint {
  *
  * Advisory only — `request.preflight` (and the send itself) resolve this in the main process,
  * against the authoritative model.
+ *
+ * `workspace` is an argument rather than read from the workspace store here so a component's
+ * selector depends on it visibly: a consumer subscribes to both stores and passes it in, and an
+ * environment switch (which only raises `workspace.changed`) rerenders the URL it shows.
  */
-export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string): ResolvedEndpoint {
+export function selectRequestEndpoint(
+  state: ProjectSnapshot,
+  workspace: WorkspaceWire | null,
+  requestId: string,
+): ResolvedEndpoint {
   const request = state.requests[requestId];
   if (request === undefined) {
     return { source: 'none' };
@@ -36,14 +43,11 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
   const iface = state.interfaces[request.interfaceId];
 
   // The active environment is the *workspace's*, and its endpoint keys are
-  // `<projectSlug>/<interfaceSlug>` — read straight from the workspace store rather than
-  // threaded through every caller, since this whole module is an advisory mirror of what main
-  // will decide anyway (`request.preflight` is the authority).
-  if (iface !== undefined) {
-    const workspace = useWorkspaceStore.getState().workspace;
-    const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
+  // `<projectSlug>/<interfaceSlug>`.
+  if (iface !== undefined && workspace !== null) {
+    const active = workspace.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const projectId = state.projectOf[iface.id];
-    const projectSlug = workspace?.projects.find((project) => project.id === projectId)?.slug;
+    const projectSlug = workspace.projects.find((project) => project.id === projectId)?.slug;
     const override = projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
     if (override !== undefined) {
       return { url: override, source: 'workspace-environment' };
@@ -82,22 +86,34 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
  * A primitive, so it is safe inside a `useProjectStore(...)` selector; it drives the red badge
  * in the request toolbar and the status bar.
  */
-export function selectRequestTrustsInvalid(state: ProjectSnapshot, requestId: string): boolean {
-  return selectRequestEndpoint(state, requestId).trustInvalid === true;
+export function selectRequestTrustsInvalid(
+  state: ProjectSnapshot,
+  workspace: WorkspaceWire | null,
+  requestId: string,
+): boolean {
+  return selectRequestEndpoint(state, workspace, requestId).trustInvalid === true;
 }
 
 /**
  * Just the URL from {@link selectRequestEndpoint}. Returns a primitive, so it is safe to pass
  * straight to `useProjectStore(...)` without a custom equality function.
  */
-export function selectRequestEndpointUrl(state: ProjectSnapshot, requestId: string): string | undefined {
-  return selectRequestEndpoint(state, requestId).url;
+export function selectRequestEndpointUrl(
+  state: ProjectSnapshot,
+  workspace: WorkspaceWire | null,
+  requestId: string,
+): string | undefined {
+  return selectRequestEndpoint(state, workspace, requestId).url;
 }
 
 /**
  * Just the source from {@link selectRequestEndpoint}. Like {@link selectRequestEndpointUrl},
  * it returns a primitive so it is safe inside a `useProjectStore(...)` selector.
  */
-export function selectRequestEndpointSource(state: ProjectSnapshot, requestId: string): EndpointSourceWire {
-  return selectRequestEndpoint(state, requestId).source;
+export function selectRequestEndpointSource(
+  state: ProjectSnapshot,
+  workspace: WorkspaceWire | null,
+  requestId: string,
+): EndpointSourceWire {
+  return selectRequestEndpoint(state, workspace, requestId).source;
 }

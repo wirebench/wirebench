@@ -10,6 +10,7 @@ import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
+import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
@@ -138,7 +139,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // environment) and dry-runs the expansion; the mirror's own answer is the fallback for
       // an unsaved/unknown request, where preflight cannot help.
       const preflight = await ipc().request.preflight({ requestId });
-      const endpoint = preflight.ok ? preflight.value.endpoint : selectRequestEndpointUrl(projectState, requestId);
+      const endpoint = preflight.ok
+        ? preflight.value.endpoint
+        : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
       if (preflight.ok && preflight.value.unresolved.length > 0) {
         useProblemsStore.getState().add(expansionProblems(requestId, preflight.value.unresolved));
       }
