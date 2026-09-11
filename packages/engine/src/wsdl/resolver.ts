@@ -3,6 +3,7 @@ import { WsdlParseError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
 import { getPosition, parseXml } from '../xml/parse.js';
 import { childElements, firstChildElement, optionalAttribute } from './dom-utils.js';
+import { MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS, referencePolicyFor } from './ref-policy.js';
 
 /** The root document to resolve, plus an optional pre-fetched body (avoids a redundant fetch of the root). */
 export interface DefinitionSource {
@@ -49,7 +50,15 @@ export interface BundledDocument {
 
 /** A non-fatal problem encountered while resolving an import graph. */
 export interface ResolveProblem {
-  readonly code: 'unsupported-redefine' | 'fetch-failed' | 'unresolved-import' | 'not-xml';
+  readonly code:
+    | 'unsupported-redefine'
+    | 'fetch-failed'
+    | 'unresolved-import'
+    | 'not-xml'
+    /** A reference the {@link ReferencePolicy} refused; see `wsdl/ref-policy.ts`. */
+    | 'import-ref-refused'
+    /** The graph hit the depth or document cap; everything resolved so far is still returned. */
+    | 'import-limit';
   readonly message: string;
   readonly location: string;
   readonly line?: number;
@@ -68,13 +77,47 @@ export interface DefinitionBundle {
 interface ImportJob {
   readonly requestedLocation: string;
   readonly importedBy: string;
+  /** How many `import`/`include` hops away from the root document this one is (root is 0). */
+  readonly depth: number;
   /** The enclosing schema's namespace, for chameleon-include adoption when the fetched schema has none of its own. */
   readonly chameleonNamespace?: string;
 }
 
-/** Resolves `ref` against `base` using the WHATWG `URL` class (works for both `http(s):` and `file:`). */
-function resolveUrl(ref: string, base: string): string {
-  return new URL(ref, base).toString();
+/**
+ * Queues `ref`, resolved against `base` with the WHATWG `URL` class (which handles both
+ * `http(s):` and `file:`).
+ *
+ * A relative reference cannot be resolved against the pseudo-location of a pasted or dropped
+ * document (`inline:wsdl`, `dropped:service.wsdl`) — there is no directory to resolve it
+ * against — so that becomes an `unresolved-import` problem carrying the one action that fixes
+ * it, rather than an exception that loses the whole import.
+ */
+function queueRef(
+  ref: string,
+  base: string,
+  importedBy: string,
+  depth: number,
+  queue: ImportJob[],
+  problems: ResolveProblem[],
+  chameleonNamespace?: string,
+): void {
+  let requestedLocation: string;
+  try {
+    requestedLocation = new URL(ref, base).toString();
+  } catch {
+    problems.push({
+      code: 'unresolved-import',
+      message: `Cannot resolve "${ref}" against "${base}". Use Browse… to import a WSDL whose imports live next to it`,
+      location: base,
+    });
+    return;
+  }
+  queue.push({
+    requestedLocation,
+    importedBy,
+    depth,
+    ...(chameleonNamespace !== undefined ? { chameleonNamespace } : {}),
+  });
 }
 
 /**
@@ -139,6 +182,7 @@ function collectSchemaImports(
   schemaEl: Element,
   baseLocation: string,
   importedBy: string,
+  depth: number,
   queue: ImportJob[],
   problems: ResolveProblem[],
 ): void {
@@ -151,7 +195,7 @@ function collectSchemaImports(
     if (schemaLocation === undefined) {
       continue;
     }
-    queue.push({ requestedLocation: resolveUrl(schemaLocation, baseLocation), importedBy });
+    queueRef(schemaLocation, baseLocation, importedBy, depth, queue, problems);
   }
 
   for (const includeEl of childElements(schemaEl, NS.XSD, 'include')) {
@@ -159,11 +203,7 @@ function collectSchemaImports(
     if (schemaLocation === undefined) {
       continue;
     }
-    queue.push({
-      requestedLocation: resolveUrl(schemaLocation, baseLocation),
-      importedBy,
-      ...(ownNamespace !== undefined ? { chameleonNamespace: ownNamespace } : {}),
-    });
+    queueRef(schemaLocation, baseLocation, importedBy, depth, queue, problems, ownNamespace);
   }
 
   for (const redefineEl of childElements(schemaEl, NS.XSD, 'redefine')) {
@@ -177,17 +217,13 @@ function collectSchemaImports(
     });
     if (schemaLocation !== undefined) {
       // Still fetch the referenced document, treating the redefine as a plain include.
-      queue.push({
-        requestedLocation: resolveUrl(schemaLocation, baseLocation),
-        importedBy,
-        ...(ownNamespace !== undefined ? { chameleonNamespace: ownNamespace } : {}),
-      });
+      queueRef(schemaLocation, baseLocation, importedBy, depth, queue, problems, ownNamespace);
     }
   }
 }
 
 /** Walks a {@link BundledDocument}'s imports/includes/redefines, queuing every referenced document. */
-function collectImports(doc: BundledDocument, queue: ImportJob[], problems: ResolveProblem[]): void {
+function collectImports(doc: BundledDocument, depth: number, queue: ImportJob[], problems: ResolveProblem[]): void {
   const root = doc.document.documentElement;
   if (root === null) {
     return;
@@ -199,17 +235,17 @@ function collectImports(doc: BundledDocument, queue: ImportJob[], problems: Reso
       if (location === undefined) {
         continue;
       }
-      queue.push({ requestedLocation: resolveUrl(location, doc.location), importedBy: doc.location });
+      queueRef(location, doc.location, doc.location, depth, queue, problems);
     }
 
     const typesEl = firstChildElement(root, NS.WSDL, 'types');
     if (typesEl !== undefined) {
       for (const schemaEl of childElements(typesEl, NS.XSD, 'schema')) {
-        collectSchemaImports(schemaEl, doc.location, doc.location, queue, problems);
+        collectSchemaImports(schemaEl, doc.location, doc.location, depth, queue, problems);
       }
     }
   } else {
-    collectSchemaImports(root, doc.location, doc.location, queue, problems);
+    collectSchemaImports(root, doc.location, doc.location, depth, queue, problems);
   }
 }
 
@@ -230,6 +266,14 @@ function checkAborted(signal: AbortSignal | undefined): void {
  * `xs:include`, `xs:redefine`) into a flat {@link DefinitionBundle}, fetching
  * every referenced document exactly once (by canonical, post-redirect
  * location) through the injected `fetchDocument`.
+ *
+ * Every nested reference is first judged against the root document's world (see
+ * `wsdl/ref-policy.ts`): a `file:` root may only reference `file:` documents inside its own
+ * folder, an `http(s):` root may only reference `http(s):` documents, and a pasted/dropped
+ * root may only reference `http(s):` documents. A refused reference becomes an
+ * `import-ref-refused` problem and the import continues with what did resolve — so a WSDL
+ * cannot be used to read arbitrary local files. The graph is additionally capped at
+ * {@link MAX_IMPORT_DEPTH} levels and {@link MAX_IMPORT_DOCUMENTS} documents (`import-limit`).
  *
  * A failed fetch of an imported/included document is recorded as a
  * `fetch-failed` {@link ResolveProblem} and resolution continues with the
@@ -266,9 +310,13 @@ export async function resolveDefinition(source: DefinitionSource, options: Resol
   canonicalDocs.set(rootFetched.location, rootDoc);
   const documents: BundledDocument[] = [rootDoc];
 
-  const queue: ImportJob[] = [];
-  collectImports(rootDoc, queue, problems);
+  // Every nested reference is judged against the *root* document's world; see `ref-policy.ts`.
+  const policy = referencePolicyFor(rootFetched.location);
 
+  const queue: ImportJob[] = [];
+  collectImports(rootDoc, 1, queue, problems);
+
+  let limitReported = false;
   while (queue.length > 0) {
     const job = queue.shift();
     /* v8 ignore next 3 -- queue.length > 0 guarantees a defined element */
@@ -279,6 +327,33 @@ export async function resolveDefinition(source: DefinitionSource, options: Resol
       continue;
     }
     requestedSeen.add(job.requestedLocation);
+
+    if (job.depth > MAX_IMPORT_DEPTH || documents.length >= MAX_IMPORT_DOCUMENTS) {
+      // One problem for the whole runaway graph: a cap hit usually trips on hundreds of
+      // references at once, and a problems list that long tells the user nothing extra.
+      if (!limitReported) {
+        limitReported = true;
+        problems.push({
+          code: 'import-limit',
+          message:
+            job.depth > MAX_IMPORT_DEPTH
+              ? `Import graph deeper than ${String(MAX_IMPORT_DEPTH)} levels; the rest was not fetched`
+              : `Import graph larger than ${String(MAX_IMPORT_DOCUMENTS)} documents; the rest was not fetched`,
+          location: job.importedBy,
+        });
+      }
+      continue;
+    }
+
+    const refused = await policy.allows(job.requestedLocation);
+    if (refused !== undefined) {
+      problems.push({
+        code: 'import-ref-refused',
+        message: `Refused to fetch "${job.requestedLocation}": ${refused.reason}`,
+        location: job.importedBy,
+      });
+      continue;
+    }
 
     checkAborted(signal);
 
@@ -314,7 +389,7 @@ export async function resolveDefinition(source: DefinitionSource, options: Resol
 
     canonicalDocs.set(fetched.location, bundled);
     documents.push(bundled);
-    collectImports(bundled, queue, problems);
+    collectImports(bundled, job.depth + 1, queue, problems);
   }
 
   return { root: rootDoc, documents, problems };

@@ -37,6 +37,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   }, []);
   const [useForRequests, setUseForRequests] = useState(false);
   const [filePath, setFilePath] = useState('');
+  // A dropped file, read in the renderer. A drag-and-drop is not a dialog pick, so main will
+  // not read a dropped path (see `main/ipc/definition.ts`); the bytes come across as `text`
+  // instead. The trade is that the dropped document's own relative imports cannot resolve —
+  // the engine says so, and says to use Browse… for a WSDL whose imports live beside it.
+  const [dropped, setDropped] = useState<{ name: string; text: string } | undefined>(undefined);
   const [pasted, setPasted] = useState('');
   const [urlError, setUrlError] = useState<string | undefined>(undefined);
   const [importError, setImportError] = useState<string | undefined>(undefined);
@@ -69,6 +74,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setNeedsProject(false);
   }
 
+  function closeAndReset(): void {
+    setDropped(undefined);
+    reset();
+  }
+
   function buildSource(): ImportSourceWire | undefined {
     if (tab === 'url') {
       try {
@@ -81,6 +91,9 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       return { kind: 'url', url };
     }
     if (tab === 'file') {
+      if (dropped !== undefined) {
+        return { kind: 'text', text: dropped.text, location: `dropped:${dropped.name}` };
+      }
       return filePath.length > 0 ? { kind: 'file', path: filePath } : undefined;
     }
     return pasted.length > 0 ? { kind: 'text', text: pasted } : undefined;
@@ -92,15 +105,24 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       filters: [{ name: 'WSDL/XML', extensions: ['wsdl', 'xml'] }],
     });
     if (result.ok && result.value.path !== undefined) {
+      setDropped(undefined);
       setFilePath(result.value.path);
     }
   }
 
-  function onDrop(event: React.DragEvent<HTMLDivElement>): void {
+  async function onDrop(event: React.DragEvent<HTMLDivElement>): Promise<void> {
     event.preventDefault();
     const file = event.dataTransfer.files[0];
-    if (file !== undefined) {
-      setFilePath(window.wirebench.files.pathFor(file));
+    if (file === undefined) {
+      return;
+    }
+    setImportError(undefined);
+    try {
+      const text = await file.text();
+      setDropped({ name: file.name, text });
+      setFilePath(file.name);
+    } catch {
+      setImportError(`Could not read "${file.name}"`);
     }
   }
 
@@ -172,7 +194,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     <Dialog.Root
       open={open}
       onOpenChange={(next) => {
-        if (!next) reset();
+        if (!next) closeAndReset();
         onOpenChange(next);
       }}
     >
@@ -257,7 +279,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   <input
                     aria-label="File path"
                     value={filePath}
-                    onChange={(e) => setFilePath(e.target.value)}
+                    onChange={(e) => {
+                      setDropped(undefined);
+                      setFilePath(e.target.value);
+                    }}
                     placeholder="/path/to/service.wsdl"
                     className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
                   />
@@ -265,7 +290,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 </div>
                 <div
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={onDrop}
+                  onDrop={(e) => void onDrop(e)}
                   className="flex h-20 items-center justify-center rounded border border-dashed border-hairline-strong text-sm text-fg-subtle"
                 >
                   Drop a .wsdl or .xml file here

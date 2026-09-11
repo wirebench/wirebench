@@ -10,11 +10,25 @@
 
 import { z } from 'zod';
 
-/** Where a WSDL definition comes from — mirrors the engine's `ImportSource`. */
+/** The longest URL/path an import source may carry — well past any real one, and bounded. */
+export const MAX_IMPORT_LOCATION_CHARS = 4096;
+
+/**
+ * Where a WSDL definition comes from — mirrors the engine's `ImportSource`.
+ *
+ * A `file` path is *not* authorized by passing this schema: main additionally requires it to
+ * be inside the open project folder or to have been picked through the Browse… dialog this
+ * session (see `main/ipc/definition.ts`). The drop zone in the import dialog reads the file in
+ * the renderer and sends `text` instead, precisely because a drop is not a pick.
+ */
 export const importSourceSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('url'), url: z.string() }),
-  z.object({ kind: z.literal('file'), path: z.string() }),
-  z.object({ kind: z.literal('text'), text: z.string(), location: z.string().optional() }),
+  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string(),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
 ]);
 export type ImportSourceWire = z.infer<typeof importSourceSchema>;
 

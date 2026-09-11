@@ -1,8 +1,10 @@
 import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
-import type { RecordsWritePicks } from '../dialog-picks.js';
+import type { ReadPicks, RecordsWritePicks } from '../dialog-picks.js';
+import { allowsReadPath } from '../path-access.js';
 import type { EngineService } from '../engine-service.js';
 import { pickFolder, pickSaveFile } from '../native-dialogs.js';
 import type { ProjectService } from '../project-service.js';
@@ -22,8 +24,12 @@ export type DefinitionChannelProject = Pick<
 /** What the Update/Export/Docs half of the `definition.*` channels needs beyond the engine. */
 export interface DefinitionChannelDeps {
   readonly project: DefinitionChannelProject;
-  /** Records the Save-as target the docs picker returns, so the write is a user-driven one. */
-  readonly picks: RecordsWritePicks;
+  /**
+   * The session's dialog memory: the *write* half records the Save-as target the docs picker
+   * returns, the *read* half is what proves a `definition.import { kind: 'file' }` path was
+   * chosen by the user rather than merely named by the renderer.
+   */
+  readonly picks: RecordsWritePicks & ReadPicks;
 }
 
 /** Default file name for a generated documentation file, per format. */
@@ -40,13 +46,35 @@ function docsFileName(format: 'html' | 'markdown'): string {
  * by the renderer.
  */
 export function registerDefinitionChannels(service: EngineService, deps?: DefinitionChannelDeps): void {
-  registerHandler(channels.definition.import, (request, sender) =>
-    service.importDefinition(request, {
-      onProgress: (progress) => {
-        emitEvent(sender, events.engine.progress, progress);
+  registerHandler(channels.definition.import, async (request, sender) => {
+    // A `file` import is a file *read* at a renderer-named path, so it answers the same
+    // question every other main-side read does (`main/path-access.ts`): the path is inside the
+    // open project folder, or the user drove the "Browse…" Open dialog to it this session.
+    // Nothing else — not a drag-and-drop, not a typed-in path — is evidence. The dialog's
+    // drop zone therefore reads the file in the renderer and imports it as `text`.
+    let source = request.source;
+    if (source.kind === 'file') {
+      const resolved = resolve(source.path);
+      const projectDir = deps?.project.snapshot()?.dir;
+      const allowed = await allowsReadPath(projectDir !== undefined ? [projectDir] : [], deps?.picks, resolved);
+      if (!allowed) {
+        throw new WirebenchError(
+          'import-path-refused',
+          `Wirebench will not read "${source.path}": use Browse… to pick a WSDL outside the project folder`,
+          { details: { path: source.path } },
+        );
+      }
+      source = { kind: 'file', path: resolved };
+    }
+    return service.importDefinition(
+      { ...request, source },
+      {
+        onProgress: (progress) => {
+          emitEvent(sender, events.engine.progress, progress);
+        },
       },
-    }),
-  );
+    );
+  });
 
   registerHandler(channels.definition.close, (request) => Promise.resolve(service.close(request.interfaceId)));
 

@@ -126,7 +126,10 @@ afterEach(() => {
 describe('definition.* update, export and docs IPC', () => {
   it('passes the source through to planDefinitionUpdate and returns its plan', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), { project, picks: { rememberWrite: () => undefined } });
+    registerDefinitionChannels(new EngineService(), {
+      project,
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
+    });
     const plan = await ok<UpdatePlanWire>('definition.planUpdate', {
       interfaceId: 'if-1',
       source: { kind: 'url', url: 'http://example.invalid/x.wsdl' },
@@ -140,7 +143,7 @@ describe('definition.* update, export and docs IPC', () => {
   it('rejects a source that is neither a URL nor a file path', async () => {
     registerDefinitionChannels(new EngineService(), {
       project: stubProject(),
-      picks: { rememberWrite: () => undefined },
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
     expect(
       await failure('definition.planUpdate', { interfaceId: 'if-1', source: { kind: 'text', text: '<wsdl/>' } }),
@@ -150,7 +153,7 @@ describe('definition.* update, export and docs IPC', () => {
   it('returns the fresh project snapshot alongside what applying the update did', async () => {
     registerDefinitionChannels(new EngineService(), {
       project: stubProject(),
-      picks: { rememberWrite: () => undefined },
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
     const applied = await ok<ApplyUpdateWire>('definition.applyUpdate', {
       interfaceId: 'if-1',
@@ -171,7 +174,10 @@ describe('definition.* update, export and docs IPC', () => {
 
   it('reports a cancelled folder picker instead of exporting', async () => {
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), { project, picks: { rememberWrite: () => undefined } });
+    registerDefinitionChannels(new EngineService(), {
+      project,
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
+    });
     const result = await ok<DefinitionExportResponse>('definition.export', { interfaceId: 'if-1' });
     expect(result).toEqual({ cancelled: true, files: [] });
     expect(project.calls).toEqual([]);
@@ -180,7 +186,10 @@ describe('definition.* update, export and docs IPC', () => {
   it('exports into the folder the picker answers with', async () => {
     process.env['WIREBENCH_E2E_DIALOG_FOLDER'] = tmp;
     const project = stubProject();
-    registerDefinitionChannels(new EngineService(), { project, picks: { rememberWrite: () => undefined } });
+    registerDefinitionChannels(new EngineService(), {
+      project,
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
+    });
     const result = await ok<DefinitionExportResponse>('definition.export', { interfaceId: 'if-1' });
     expect(result).toEqual({ cancelled: false, dir: tmp, files: ['service.wsdl'] });
     expect(project.calls).toEqual([{ kind: 'export', interfaceId: 'if-1', dir: tmp }]);
@@ -192,7 +201,7 @@ describe('definition.* update, export and docs IPC', () => {
     const picked: string[] = [];
     registerDefinitionChannels(new EngineService(), {
       project: stubProject(),
-      picks: { rememberWrite: (path) => picked.push(path) },
+      picks: { rememberWrite: (path) => picked.push(path), hasRead: () => false },
     });
     const result = await ok<DefinitionGenerateDocsResponse>('definition.generateDocs', {
       interfaceId: 'if-1',
@@ -206,7 +215,7 @@ describe('definition.* update, export and docs IPC', () => {
   it('writes nothing when the save dialog is cancelled', async () => {
     registerDefinitionChannels(new EngineService(), {
       project: stubProject(),
-      picks: { rememberWrite: () => undefined },
+      picks: { rememberWrite: () => undefined, hasRead: () => false },
     });
     const result = await ok<DefinitionGenerateDocsResponse>('definition.generateDocs', {
       interfaceId: 'if-1',
