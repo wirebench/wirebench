@@ -736,8 +736,26 @@ export const wssEntryWireSchema = z.discriminatedUnion('kind', [
     addNonce: z.boolean(),
     addCreated: z.boolean(),
   }),
-  /** Task 38 fills these in; today the editor can only show them as unsupported. */
-  z.object({ kind: z.literal('signature') }),
+  z.object({
+    kind: z.literal('signature'),
+    /** The `wss/keystores.yaml` registry id holding the signing key. */
+    keystoreRef: z.string(),
+    alias: z.string().optional(),
+    /** A `secretRef` for the private key's passphrase; never the passphrase itself. */
+    keyPasswordRef: z.string().optional(),
+    keyIdentifierType: z.enum([
+      'BinarySecurityToken',
+      'IssuerSerial',
+      'SubjectKeyIdentifier',
+      'X509KeyIdentifier',
+      'Thumbprint',
+    ]),
+    signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
+    digestAlgorithm: z.enum(['sha256', 'sha1']),
+    canonicalization: z.literal('exc-c14n'),
+    useSingleCertificate: z.boolean(),
+    parts: z.array(z.object({ name: z.string(), namespace: z.string(), encode: z.enum(['Content', 'Element']) })),
+  }),
   /** Task 39 fills these in. */
   z.object({ kind: z.literal('encryption') }),
 ]);

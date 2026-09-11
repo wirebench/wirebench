@@ -144,6 +144,29 @@ export function generateClientCert(ca: TestCertificate): TestCertificate {
   return cachedClientCert;
 }
 
+let cachedSigningCert: TestCertificate | undefined;
+
+/**
+ * A signing certificate issued by `ca`, carrying a `subjectKeyIdentifier` extension — what a
+ * WS-Security `SubjectKeyIdentifier` key reference needs (and {@link generateClientCert}
+ * deliberately lacks, so the "no SKI" path stays testable). Memoised per test process.
+ *
+ * @param ca the issuing authority, from {@link generateTestCa}
+ * @returns the signer's PEM certificate and private key
+ */
+export function generateSigningCert(ca: TestCertificate): TestCertificate {
+  if (cachedSigningCert !== undefined) return cachedSigningCert;
+  const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
+  const cert = newCertificate(keys.publicKey, 'wirebench-signer');
+  cert.setExtensions([
+    { name: 'basicConstraints', cA: false, critical: true },
+    { name: 'keyUsage', digitalSignature: true, nonRepudiation: true, critical: true },
+    { name: 'subjectKeyIdentifier' },
+  ]);
+  cachedSigningCert = issue(ca, cert, keys.privateKey);
+  return cachedSigningCert;
+}
+
 /**
  * A PKCS#12 holding `leaf`'s key and certificate with `ca` attached as its chain — the file a
  * "client keystore" test (or e2e spec) needs, built in-process so no binary fixture is checked

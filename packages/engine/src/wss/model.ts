@@ -6,6 +6,7 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto';
+import { NS } from '../xml/namespaces.js';
 import type { Keystore } from './keystore/model.js';
 
 /** How a `wsse:UsernameToken` carries (or does not carry) its password. */
@@ -32,13 +33,53 @@ export interface WssUsernameTokenEntry {
 }
 
 /**
- * An XML Signature entry. Task 38 defines the real fields; until then the shape is loose so
- * a config written by a later build survives a load/save round trip through this one.
+ * One message part a signature covers (or, from Task 39 on, an encryption entry encrypts),
+ * named the way SoapUI's "Parts" table names it: by local name and namespace.
+ */
+export interface WssPart {
+  readonly name: string;
+  readonly namespace: string;
+  /** `Content` signs/encrypts the element's children, `Element` the element itself. */
+  readonly encode: 'Content' | 'Element';
+}
+
+/** How a signature's `wsse:SecurityTokenReference` points at the signing certificate. */
+export type WssKeyIdentifierType =
+  'BinarySecurityToken' | 'IssuerSerial' | 'SubjectKeyIdentifier' | 'X509KeyIdentifier' | 'Thumbprint';
+
+/** The RSA signature algorithms this build offers. */
+export type WssSignatureAlgorithm = 'rsa-sha256' | 'rsa-sha1';
+
+/** The digest algorithms this build offers, for both `SignedInfo` references and `SignatureMethod`. */
+export type WssDigestAlgorithm = 'sha256' | 'sha1';
+
+/**
+ * An XML Signature entry: which key signs, how the certificate is referenced, and which parts
+ * of the message are covered.
  */
 export interface WssSignatureEntry {
   readonly kind: 'signature';
-  readonly [field: string]: unknown;
+  /** The `wss/keystores.yaml` registry id holding the signing key. */
+  readonly keystoreRef: string;
+  /** Alias inside that keystore; falls back to the configuration's `defaultAlias`. */
+  readonly alias?: string;
+  /** Secret reference for the private key's passphrase, when its PEM is encrypted. */
+  readonly keyPasswordRef?: string;
+  readonly keyIdentifierType: WssKeyIdentifierType;
+  readonly signatureAlgorithm: WssSignatureAlgorithm;
+  readonly digestAlgorithm: WssDigestAlgorithm;
+  /** Only exclusive canonicalization is offered; the field exists so documents stay explicit. */
+  readonly canonicalization: 'exc-c14n';
+  /** Emit only the leaf certificate (`X509v3`) rather than the whole path (`X509PKIPathv1`). */
+  readonly useSingleCertificate: boolean;
+  readonly parts: readonly WssPart[];
 }
+
+/** The parts a new signature entry covers: the SOAP `Body` and the WS-Security `Timestamp`. */
+export const DEFAULT_WSS_SIGNATURE_PARTS: readonly WssPart[] = [
+  { name: 'Body', namespace: NS.SOAP11_ENV, encode: 'Content' },
+  { name: 'Timestamp', namespace: NS.WSU, encode: 'Content' },
+];
 
 /** An XML Encryption entry. Task 39 defines the real fields; loose for the same reason. */
 export interface WssEncryptionEntry {

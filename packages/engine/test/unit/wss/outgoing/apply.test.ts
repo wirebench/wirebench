@@ -134,7 +134,7 @@ describe('applyOutgoingWss', () => {
   });
 
   it('rejects a not-yet-supported entry kind', async () => {
-    await expect(applyOutgoingWss(SOAP11, config({ entries: [{ kind: 'signature' }] }), ctx)).rejects.toMatchObject({
+    await expect(applyOutgoingWss(SOAP11, config({ entries: [{ kind: 'encryption' }] }), ctx)).rejects.toMatchObject({
       code: 'wss-entry-unsupported',
     });
     await expect(applyOutgoingWss(SOAP11, config({ entries: [{ kind: 'encryption' }] }), ctx)).rejects.toBeInstanceOf(

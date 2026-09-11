@@ -92,13 +92,13 @@ describe('OutgoingConfigEditor', () => {
   });
 
   it('shows an unsupported entry as such and never offers to add one', () => {
-    setUp([{ ...config, entries: [{ kind: 'signature' }] }]);
+    setUp([{ ...config, entries: [{ kind: 'encryption' }] }]);
     expand();
     expect(screen.getByText('Not supported by this build yet.')).toBeTruthy();
     const add = screen.getByLabelText('Add entry');
     expect(
       within(add)
-        .getByRole('option', { name: /Signature/ })
+        .getByRole('option', { name: /Encryption/ })
         .hasAttribute('disabled'),
     ).toBe(true);
   });

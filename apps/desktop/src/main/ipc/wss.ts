@@ -28,6 +28,14 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
     const ref = own ?? passwordRef;
     return { ...rest, ...(ref !== undefined ? { passwordRef: ref } : {}) };
   }
+  if (entry.kind === 'signature') {
+    const { alias, keyPasswordRef, ...rest } = entry;
+    return {
+      ...rest,
+      ...(alias !== undefined ? { alias } : {}),
+      ...(keyPasswordRef !== undefined ? { keyPasswordRef } : {}),
+    };
+  }
   return entry;
 }
 

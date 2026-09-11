@@ -15,6 +15,7 @@ export {
   generateServerCert,
   generateClientCert,
   generateClientPkcs12,
+  generateSigningCert,
   type TestCertificate,
 } from './test-certs.js';
 export {

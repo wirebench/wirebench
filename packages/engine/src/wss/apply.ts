@@ -13,7 +13,17 @@ import { detectEnvelopeVersion, envelopeNamespace } from '../soap/envelope.js';
 import type { SoapEnvelopeVersion } from '../soap/envelope.js';
 import { buildTimestamp } from './outgoing/timestamp.js';
 import { buildUsernameToken } from './outgoing/username-token.js';
-import type { WssContext, WssEntry, WssOutgoingConfig, WssPasswordType } from './model.js';
+import { signEnvelope } from './outgoing/signature.js';
+import { selectAlias } from './keystore/index.js';
+import {
+  actorAttribute,
+  childElement,
+  mustUnderstandValue,
+  securityHeaders,
+  securityActor,
+} from './security-header.js';
+import type { Keystore, KeystoreAlias } from './keystore/model.js';
+import type { WssContext, WssEntry, WssOutgoingConfig, WssPasswordType, WssSignatureEntry } from './model.js';
 
 /** The namespace `xmlns:*` declarations themselves live in. */
 const XMLNS = 'http://www.w3.org/2000/xmlns/';
@@ -29,27 +39,6 @@ export interface ApplyOutgoingWssOptions {
   readonly requestProperties?: WssRequestProperties;
 }
 
-/** The attribute name carrying the SOAP actor/role for `version`. */
-function actorAttribute(version: SoapEnvelopeVersion): string {
-  return version === '1.2' ? 'role' : 'actor';
-}
-
-/** The `mustUnderstand` value `version` expects. */
-function mustUnderstandValue(version: SoapEnvelopeVersion): string {
-  return version === '1.2' ? 'true' : '1';
-}
-
-/** The first child element of `parent` in `namespace` with local name `localName`. */
-function childElement(parent: Element, namespace: string, localName: string): Element | undefined {
-  for (let node = parent.firstChild; node !== null; node = node.nextSibling) {
-    const element = node as Element;
-    if (element.nodeType === 1 && element.namespaceURI === namespace && element.localName === localName) {
-      return element;
-    }
-  }
-  return undefined;
-}
-
 /** True when `header` has no element children and only whitespace (or no) text content. */
 function headerHasOnlyWhitespace(header: Element): boolean {
   for (let node = header.firstChild; node !== null; node = node.nextSibling) {
@@ -61,24 +50,6 @@ function headerHasOnlyWhitespace(header: Element): boolean {
     }
   }
   return true;
-}
-
-/** Every `wsse:Security` header block in `header`. */
-function securityHeaders(header: Element): Element[] {
-  const found: Element[] = [];
-  for (let node = header.firstChild; node !== null; node = node.nextSibling) {
-    const element = node as Element;
-    if (element.nodeType === 1 && element.namespaceURI === NS.WSSE && element.localName === 'Security') {
-      found.push(element);
-    }
-  }
-  return found;
-}
-
-/** The actor/role a `wsse:Security` element is addressed to, or `undefined` for the ultimate receiver. */
-function securityActor(security: Element, version: SoapEnvelopeVersion): string | undefined {
-  const value = security.getAttributeNS(envelopeNamespace(version), actorAttribute(version));
-  return value === null || value === '' ? undefined : value;
 }
 
 /** Parses `envelopeXml`, rejecting anything that is not a SOAP envelope. */
@@ -187,6 +158,25 @@ async function buildEntry(
   });
 }
 
+/** Loads the keystore a signature entry names and picks its alias. */
+async function resolveSigningKey(
+  entry: WssSignatureEntry,
+  config: WssOutgoingConfig,
+  ctx: WssContext,
+): Promise<{ keystore: Keystore; alias: KeystoreAlias; actor?: string }> {
+  const keystore = await ctx.keystores(entry.keystoreRef);
+  if (keystore === undefined) {
+    throw new WssError('wss-keystore-missing', 'The keystore this signature signs with is not available.', {
+      details: { keystoreRef: entry.keystoreRef },
+    });
+  }
+  return {
+    keystore,
+    alias: selectAlias(keystore, entry.alias ?? config.defaultAlias),
+    ...(config.actor !== undefined ? { actor: config.actor } : {}),
+  };
+}
+
 /**
  * Applies `config` to `envelopeXml`, returning the new envelope.
  *
@@ -208,12 +198,27 @@ export async function applyOutgoingWss(
   ctx: WssContext,
   options?: ApplyOutgoingWssOptions,
 ): Promise<string> {
-  const { doc, root, version } = parseEnvelope(envelopeXml);
-  const header = ensureHeader(doc, root, version);
-  const security = ensureSecurity(doc, root, header, version, config);
+  const { doc, version } = parseEnvelope(envelopeXml);
   for (const entry of config.entries) {
-    const element = await buildEntry(entry, config, ctx, options?.requestProperties);
-    security.appendChild(doc.importNode(element, true));
+    // The header is re-resolved every iteration because signing re-serializes the whole
+    // document (xml-crypto only speaks strings), which invalidates any element held across it.
+    const root = doc.documentElement;
+    if (root === null) {
+      throw new WssError('wss-not-an-envelope', 'WS-Security can only be applied to a SOAP envelope.');
+    }
+    const header = ensureHeader(doc, root, version);
+    const security = ensureSecurity(doc, root, header, version, config);
+    if (entry.kind === 'signature') {
+      await signEnvelope(doc, entry, await resolveSigningKey(entry, config, ctx), ctx);
+      continue;
+    }
+    security.appendChild(doc.importNode(await buildEntry(entry, config, ctx, options?.requestProperties), true));
+  }
+  if (config.entries.length === 0) {
+    const root = doc.documentElement;
+    if (root !== null) {
+      ensureSecurity(doc, root, ensureHeader(doc, root, version), version, config);
+    }
   }
   return serializeXml(doc);
 }

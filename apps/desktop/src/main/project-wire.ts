@@ -230,7 +230,7 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
   };
 }
 
-/** One entry on the wire; anything this build cannot type becomes a bare `signature`/`encryption`. */
+/** One entry on the wire; anything this build cannot type becomes a bare `encryption`. */
 function toWssEntryWire(entry: WssEntry): WssEntryWire {
   if (entry.kind === 'timestamp') {
     return {
@@ -249,7 +249,21 @@ function toWssEntryWire(entry: WssEntry): WssEntryWire {
       addCreated: entry.addCreated,
     };
   }
-  return { kind: entry.kind === 'encryption' ? 'encryption' : 'signature' };
+  if (entry.kind === 'signature') {
+    return {
+      kind: 'signature',
+      keystoreRef: entry.keystoreRef,
+      ...(entry.alias !== undefined ? { alias: entry.alias } : {}),
+      ...(entry.keyPasswordRef !== undefined ? { keyPasswordRef: entry.keyPasswordRef } : {}),
+      keyIdentifierType: entry.keyIdentifierType,
+      signatureAlgorithm: entry.signatureAlgorithm,
+      digestAlgorithm: entry.digestAlgorithm,
+      canonicalization: 'exc-c14n',
+      useSingleCertificate: entry.useSingleCertificate,
+      parts: entry.parts.map((part) => ({ name: part.name, namespace: part.namespace, encode: part.encode })),
+    };
+  }
+  return { kind: 'encryption' };
 }
 
 /** Converts the whole open project into the snapshot the renderer mirrors. */

@@ -182,8 +182,32 @@ const wssUsernameTokenEntrySchema = z
     path: ['password'],
   });
 
-/** A signature entry. Task 38 defines its fields; loose so a newer build's config round-trips. */
-const wssSignatureEntrySchema = z.looseObject({ kind: z.literal('signature') });
+/** One `{name, namespace, encode}` message part a signature covers. */
+const wssPartSchema = z.looseObject({
+  name: z.string(),
+  namespace: z.string(),
+  encode: z.enum(['Content', 'Element']),
+});
+
+/** A signature entry: the signing key, how its certificate is referenced, and what it covers. */
+const wssSignatureEntrySchema = z.looseObject({
+  kind: z.literal('signature'),
+  keystoreRef: z.string(),
+  alias: z.string().optional(),
+  keyPasswordRef: z.string().optional(),
+  keyIdentifierType: z.enum([
+    'BinarySecurityToken',
+    'IssuerSerial',
+    'SubjectKeyIdentifier',
+    'X509KeyIdentifier',
+    'Thumbprint',
+  ]),
+  signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
+  digestAlgorithm: z.enum(['sha256', 'sha1']),
+  canonicalization: z.literal('exc-c14n'),
+  useSingleCertificate: z.boolean(),
+  parts: z.array(wssPartSchema),
+});
 
 /** An encryption entry. Task 39 defines its fields; loose for the same reason. */
 const wssEncryptionEntrySchema = z.looseObject({ kind: z.literal('encryption') });
