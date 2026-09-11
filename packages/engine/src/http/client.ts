@@ -59,13 +59,16 @@ export function createDispatcher(opts: {
   readonly keepAlive?: boolean;
   /** Local interface address to bind outgoing sockets to; undici's `connect.localAddress`. */
   readonly localAddress?: string;
+  /** Offer HTTP/2 in the ALPN handshake. Off by default; see `HttpRequest.allowH2`. */
+  readonly allowH2?: boolean;
 }): Dispatcher {
   const connect = connectOptions(opts);
+  const h2 = opts.allowH2 === true ? { allowH2: true } : {};
   if (opts.proxy !== undefined) {
-    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, {}));
+    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, h2));
   }
-  if (connect !== undefined) {
-    return new Agent({ connect });
+  if (connect !== undefined || opts.allowH2 === true) {
+    return new Agent({ ...(connect !== undefined ? { connect } : {}), ...h2 });
   }
   return getDefaultAgent();
 }
@@ -290,11 +293,12 @@ export async function sendHttp(
 
   const ownDispatcher =
     options?.dispatcher === undefined &&
-    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined)
+    (req.tls !== undefined || req.proxy !== undefined || req.localAddress !== undefined || req.allowH2 === true)
       ? createDispatcher({
           ...(req.tls !== undefined ? { tls: req.tls } : {}),
           ...(req.proxy !== undefined ? { proxy: req.proxy } : {}),
           ...(req.localAddress !== undefined ? { localAddress: req.localAddress } : {}),
+          ...(req.allowH2 === true ? { allowH2: true } : {}),
         })
       : undefined;
   const dispatcher = options?.dispatcher ?? ownDispatcher ?? getDefaultAgent();
@@ -351,6 +355,7 @@ export async function sendHttp(
           userAborted: req.signal?.aborted === true,
           deadlineHit: deadlineController.signal.aborted,
           hadProxy: req.proxy !== undefined,
+          host: currentUrl.host,
         });
       }
 
@@ -416,10 +421,18 @@ export async function sendHttp(
 
     if (result === undefined) throw tooManyRedirectsError(maxRedirects);
 
-    const rawResponse = buildRawResponse(result.status, statusText(result.status), result.rawHeaders, result.rawBody);
-    const timings = tracker.finish();
-
     const tlsInfo = tracker.tlsInfo();
+    // ALPN is the only honest answer to "what did this actually speak": `allowH2` is an offer,
+    // and a server is free to stay on HTTP/1.1. Plain HTTP has no ALPN and is always 1.1.
+    const httpVersion: '1.1' | '2' = tlsInfo?.alpn === 'h2' ? '2' : '1.1';
+    const rawResponse = buildRawResponse(
+      result.status,
+      statusText(result.status),
+      result.rawHeaders,
+      result.rawBody,
+      httpVersion,
+    );
+    const timings = tracker.finish();
     return {
       request: { url: result.finalUrl, method: result.finalMethod, headers: req.headers },
       status: result.status,
@@ -429,6 +442,7 @@ export async function sendHttp(
       body: result.body,
       rawBody: result.rawBody,
       truncated: result.truncated,
+      httpVersion,
       ...(result.decodeError !== undefined ? { decodeError: result.decodeError } : {}),
       timings,
       rawRequest: result.rawRequest,

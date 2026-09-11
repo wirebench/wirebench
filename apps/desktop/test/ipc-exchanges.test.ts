@@ -40,6 +40,7 @@ function unredactedExchange(sendId: string): ExchangeSummary {
       rawRequestBase64: Buffer.from(rawRequest, 'utf8').toString('base64'),
       rawResponseBase64: Buffer.from('HTTP/1.1 200 OK\r\n\r\n<a/>', 'utf8').toString('base64'),
       truncated: false,
+      httpVersion: '1.1',
       timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 3 },
       redirects: [],
       request: { url: 'http://dev.test/soap', method: 'POST', headers: { Authorization: AUTH } },

@@ -38,6 +38,7 @@ function exchangeSummary(sendId: string): ExchangeSummary {
       rawRequestBase64: '',
       rawResponseBase64: '',
       truncated: false,
+      httpVersion: '1.1',
       timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 10 },
       redirects: [],
       request: { url: draft.endpointUrl ?? '', method: 'POST', headers: {} },

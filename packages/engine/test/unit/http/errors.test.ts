@@ -35,10 +35,46 @@ describe('toHttpError', () => {
     expect(err.code).toBe('dns');
   });
 
-  it('maps a certificate error code to tls', () => {
-    const err = toHttpError(codedError('DEPTH_ZERO_SELF_SIGNED_CERT'), { userAborted: false, deadlineHit: false });
+  it.each(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'])(
+    'maps %s to tls-untrusted',
+    (code) => {
+      const err = toHttpError(codedError(code), { userAborted: false, deadlineHit: false });
+      expect(err.code).toBe('tls-untrusted');
+      expect(err.details).toEqual({ code });
+      expect(err.message).toContain('not trusted');
+      expect(err.message).toContain('CA bundle');
+    },
+  );
+
+  it('names the peer subject when Node attached the offending certificate', () => {
+    const cause = Object.assign(codedError('SELF_SIGNED_CERT_IN_CHAIN'), {
+      cert: { subject: { CN: 'private.corp.test', O: 'Corp' } },
+    });
+    const err = toHttpError(cause, { userAborted: false, deadlineHit: false, host: 'private.corp.test:443' });
+    expect(err.details?.['peerSubject']).toBe('CN=private.corp.test, O=Corp');
+    expect(err.details?.['host']).toBe('private.corp.test:443');
+    expect(err.message).toContain('CN=private.corp.test, O=Corp');
+  });
+
+  it('finds the certificate through a cause chain', () => {
+    const inner = Object.assign(codedError('UNABLE_TO_VERIFY_LEAF_SIGNATURE'), {
+      cert: { subject: { CN: 'leaf.test' } },
+    });
+    const err = toHttpError(new Error('wrapped', { cause: inner }), { userAborted: false, deadlineHit: false });
+    // The outer error carries no code of its own, so this stays a generic network failure — but
+    // when the code *is* the untrusted one, the walk still reaches the certificate.
+    expect(toHttpError(inner, { userAborted: false, deadlineHit: false }).details?.['peerSubject']).toBe(
+      'CN=leaf.test',
+    );
+    expect(err.code).toBe('network');
+  });
+
+  it('keeps a handshake failure on the generic tls code', () => {
+    const err = toHttpError(codedError('ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION'), {
+      userAborted: false,
+      deadlineHit: false,
+    });
     expect(err.code).toBe('tls');
-    expect(err.details).toEqual({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' });
   });
 
   it('maps an ERR_TLS_* code to tls', () => {

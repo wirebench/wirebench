@@ -5,6 +5,28 @@
  * sockets and no network.
  */
 
+/** Matches each `-----BEGIN CERTIFICATE-----`…`-----END CERTIFICATE-----` block of a PEM bundle. */
+const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+/**
+ * Splits a PEM bundle into its individual certificates.
+ *
+ * Node's `ca` option accepts an array of PEM strings; handing it one blob that happens to hold
+ * several certificates works by accident of OpenSSL's parser rather than by contract, and
+ * silently ignores everything after the first block on some builds. Splitting here makes a
+ * multi-root corporate bundle behave the way the user expects, and makes "how many anchors did
+ * we actually load?" answerable.
+ *
+ * Anything outside a `BEGIN/END CERTIFICATE` block (comments, `Bag Attributes` preambles,
+ * stray whitespace) is dropped.
+ *
+ * @param bundle the file's text
+ * @returns one PEM string per certificate, in file order; empty when the text holds none
+ */
+export function splitPemBundle(bundle: string): string[] {
+  return bundle.match(PEM_BLOCK) ?? [];
+}
+
 /** How far up the issuer chain we walk before giving up, as a defence against pathological chains. */
 const MAX_CHAIN_DEPTH = 16;
 

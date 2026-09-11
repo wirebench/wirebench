@@ -126,6 +126,7 @@ describe('QueryView', () => {
           },
         ],
         truncated: false,
+        httpVersion: '1.1',
       },
     });
     await userEvent.click(runButton);

@@ -54,8 +54,9 @@ export function buildRawResponse(
   statusText: string,
   rawHeaders: readonly (readonly [string, string])[],
   rawBody: Uint8Array,
+  httpVersion: '1.1' | '2' = '1.1',
 ): Uint8Array {
-  const lines = [`HTTP/1.1 ${status} ${statusText}`];
+  const lines = [`HTTP/${httpVersion} ${status} ${statusText}`];
   for (const [name, value] of rawHeaders) {
     lines.push(`${name}: ${value}`);
   }

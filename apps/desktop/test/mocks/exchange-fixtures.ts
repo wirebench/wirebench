@@ -25,6 +25,7 @@ export function makeExchange(overrides: Partial<ExchangeSummary> = {}): Exchange
       rawRequestBase64: b64('POST /calc HTTP/1.1\r\nHost: example.test\r\n\r\n<request/>'),
       rawResponseBase64: b64(`HTTP/1.1 200 OK\r\n\r\n${body}`),
       truncated: false,
+      httpVersion: '1.1',
       timings: { startedAt: '2026-09-10T08:30:05.000Z', totalMs: 143, ttfbMs: 100 },
       redirects: [],
       request: { url: 'https://example.test/calc.asmx', method: 'POST', headers: {} },

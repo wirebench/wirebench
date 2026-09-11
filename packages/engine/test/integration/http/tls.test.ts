@@ -3,10 +3,12 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendHttp } from '../../../src/http/client.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
+import { splitPemBundle } from '../../../src/http/tls.js';
 import {
   generateClientCert,
   generateServerCert,
   generateTestCa,
+  generateUntrustedCert,
   type TestCertificate,
 } from '../../helpers/test-certs.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
@@ -33,6 +35,7 @@ afterEach(async () => {
 async function startTls(extra?: {
   requestCert?: boolean;
   maxVersion?: 'TLSv1.2' | 'TLSv1.3';
+  alpn?: readonly string[];
 }): Promise<TestSoapServer> {
   const server = await startTestSoapServer({
     tls: {
@@ -41,6 +44,7 @@ async function startTls(extra?: {
       ca: ca.certPem,
       ...(extra?.requestCert !== undefined ? { requestCert: extra.requestCert } : {}),
       ...(extra?.maxVersion !== undefined ? { maxVersion: extra.maxVersion } : {}),
+      ...(extra?.alpn !== undefined ? { alpnProtocols: extra.alpn } : {}),
     },
   });
   servers.push(server);
@@ -71,16 +75,60 @@ describe('sendHttp over TLS', () => {
     expect(new Date(leaf?.validTo ?? '').getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('fails with a `tls` HttpError when the CA is not trusted', async () => {
+  it('fails with a `tls-untrusted` HttpError, naming the peer, when the CA is not trusted', async () => {
     const server = await startTls();
 
     const error = await sendHttp(req({ url: `${server.url}/headers` })).catch((err: unknown) => err);
 
     expect(error).toBeInstanceOf(HttpError);
-    expect((error as HttpError).code).toBe('tls');
+    expect((error as HttpError).code).toBe('tls-untrusted');
     expect(['SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']).toContain(
       (error as HttpError).details?.['code'],
     );
+    // undici's connector raises a bare coded Error with no certificate attached, so the peer is
+    // named by host; `peerSubject` is filled in only when Node does hand back the certificate.
+    expect((error as HttpError).details?.['host']).toBe(new URL(server.url).host);
+    expect((error as HttpError).message).toContain('Trust invalid certificates');
+  });
+
+  it('reaches a private-CA server once its CA bundle is trusted', async () => {
+    // The carry-over acceptance case: trust is configured, verification stays on.
+    const server = await startTls();
+    const bundle = splitPemBundle(`${ca.certPem}\n${generateUntrustedCert().certPem}`);
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: bundle } }));
+
+    expect(bundle).toHaveLength(2);
+    expect(exchange.status).toBe(200);
+    expect(exchange.tls?.authorized).toBe(true);
+  });
+
+  it('passes when the endpoint opts into trusting an invalid certificate', async () => {
+    const server = await startTls();
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { rejectUnauthorized: false } }));
+
+    expect(exchange.status).toBe(200);
+    expect(exchange.tls?.authorized).toBe(false);
+  });
+
+  it('labels the exchange HTTP/2 when the server negotiates h2', async () => {
+    const server = await startTls({ alpn: ['h2', 'http/1.1'] });
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] }, allowH2: true }));
+
+    expect(exchange.status).toBe(200);
+    expect(exchange.httpVersion).toBe('2');
+    expect(Buffer.from(exchange.rawResponse).toString('utf-8')).toContain('HTTP/2 200');
+  });
+
+  it('stays on HTTP/1.1 when HTTP/2 is not offered', async () => {
+    const server = await startTls();
+
+    const exchange = await sendHttp(req({ url: `${server.url}/headers`, tls: { ca: [ca.certPem] } }));
+
+    expect(exchange.httpVersion).toBe('1.1');
+    expect(Buffer.from(exchange.rawResponse).toString('utf-8')).toContain('HTTP/1.1 200');
   });
 
   it('still reports the chain, unauthorized, when verification is switched off', async () => {

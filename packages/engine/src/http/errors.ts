@@ -1,6 +1,21 @@
 import { HttpError } from '../errors.js';
 import type { HttpErrorCode } from './types.js';
 
+/**
+ * The verification failures that mean "the chain did not lead to a trusted root" — as opposed
+ * to a protocol or handshake failure. These are the ones a CA bundle (or the endpoint's
+ * "Trust invalid certificates" flag) actually fixes, so they get their own code and their own
+ * remedy-shaped message.
+ */
+const UNTRUSTED_CODES = new Set([
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_UNTRUSTED',
+]);
+
 /** Node/undici error codes recognized as TLS/certificate failures. */
 const TLS_CODE_PATTERNS = [
   /^CERT_/,
@@ -10,6 +25,37 @@ const TLS_CODE_PATTERNS = [
   /^UNABLE_TO_VERIFY_LEAF_SIGNATURE$/,
   /^SELF_SIGNED_CERT_IN_CHAIN$/,
 ];
+
+/**
+ * The peer's subject DN, when Node attached the offending certificate to the error (it does,
+ * for every verification failure raised by `tls.connect`). Rendered `CN=x, O=y` in the
+ * certificate's own attribute order, matching `PeerCert.subject`, so the problem row and the
+ * SSL inspector name the same thing. `undefined` when the error carries no certificate.
+ */
+function peerSubjectOf(err: unknown): string | undefined {
+  const chain: unknown[] = [err];
+  for (let depth = 0; depth < 4 && chain.length > 0; depth += 1) {
+    const current = chain.shift();
+    if (current === null || typeof current !== 'object') continue;
+    const cert = (current as { cert?: unknown }).cert;
+    if (cert !== null && typeof cert === 'object') {
+      const subject = (cert as { subject?: unknown }).subject;
+      if (subject !== null && typeof subject === 'object') {
+        const parts: string[] = [];
+        for (const [key, value] of Object.entries(subject as Record<string, unknown>)) {
+          if (Array.isArray(value)) {
+            for (const item of value) parts.push(`${key}=${String(item)}`);
+          } else {
+            parts.push(`${key}=${String(value)}`);
+          }
+        }
+        if (parts.length > 0) return parts.join(', ');
+      }
+    }
+    chain.push((current as { cause?: unknown }).cause);
+  }
+  return undefined;
+}
 
 /** Extracts a Node-style `code` (e.g. `ECONNREFUSED`) from an arbitrary thrown value, if any. */
 function nodeErrorCode(err: unknown): string | undefined {
@@ -53,10 +99,18 @@ function looksLikeProxyError(err: unknown): boolean {
  * report `aborted` vs `timeout` correctly even though both surface as AbortError.
  * `hadProxy` (the request had `proxy` set) is used to route connection-level
  * failures and undici's proxy errors to the `proxy` code instead of `connection-refused`/`network`.
+ * `host` names the peer in a `tls-untrusted` message when Node did not attach the offending
+ * certificate to the error (undici's connector usually does not), so the user is always told
+ * *which* server they are being asked to trust.
  */
 export function toHttpError(
   err: unknown,
-  options: { readonly userAborted: boolean; readonly deadlineHit: boolean; readonly hadProxy?: boolean },
+  options: {
+    readonly userAborted: boolean;
+    readonly deadlineHit: boolean;
+    readonly hadProxy?: boolean;
+    readonly host?: string;
+  },
 ): HttpError {
   const code = nodeErrorCode(err);
 
@@ -77,6 +131,22 @@ export function toHttpError(
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
     return new HttpError('dns' satisfies HttpErrorCode, 'DNS lookup failed.', optionsFor(err, code));
+  }
+  if (code !== undefined && UNTRUSTED_CODES.has(code)) {
+    const peerSubject = peerSubjectOf(err);
+    const peer = peerSubject ?? options.host;
+    return new HttpError(
+      'tls-untrusted' satisfies HttpErrorCode,
+      `The server certificate${peer === undefined ? '' : ` for ${peer}`} is not trusted. Add its CA to the CA bundle, or turn on "Trust invalid certificates" for this endpoint.`,
+      {
+        cause: err,
+        details: {
+          code,
+          ...(peerSubject !== undefined ? { peerSubject } : {}),
+          ...(options.host !== undefined ? { host: options.host } : {}),
+        },
+      },
+    );
   }
   if (code !== undefined && TLS_CODE_PATTERNS.some((pattern) => pattern.test(code))) {
     return new HttpError('tls' satisfies HttpErrorCode, 'TLS/certificate error.', optionsFor(err, code));

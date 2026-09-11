@@ -28,8 +28,12 @@ export interface HttpRequest {
   readonly proxy?: ProxyOptions;
   /** Whether to transparently decompress a gzip/deflate/br response body. Default true. */
   readonly decompress?: boolean;
-  /** Reserved for future HTTP/2 support; only '1.1' is implemented. */
-  readonly httpVersion?: '1.1';
+  /**
+   * Offer HTTP/2 in the TLS ALPN handshake. Off by default: HTTP/2 changes how headers reach
+   * the wire (and so what the raw view can faithfully reconstruct), so it is opt-in. Plain
+   * HTTP is always HTTP/1.1 — there is no ALPN to negotiate over.
+   */
+  readonly allowH2?: boolean;
 }
 
 /**
@@ -82,6 +86,11 @@ export interface HttpExchange {
   readonly body: Uint8Array;
   /** Response body exactly as received on the wire, possibly still compressed. */
   readonly rawBody: Uint8Array;
+  /**
+   * The protocol the exchange actually travelled over, from the negotiated ALPN: `2` only when
+   * the caller offered HTTP/2 and the server took it. Labels the raw view.
+   */
+  readonly httpVersion: '1.1' | '2';
   /** True when the body was cut short because it exceeded `maxSizeBytes`. */
   readonly truncated: boolean;
   /**
@@ -110,6 +119,8 @@ export type HttpErrorCode =
   | 'connection-refused'
   | 'dns'
   | 'tls'
+  /** The peer chain did not verify against the trust store in use; `details.peerSubject` names the leaf. */
+  | 'tls-untrusted'
   | 'too-large'
   | 'too-many-redirects'
   | 'invalid-url'

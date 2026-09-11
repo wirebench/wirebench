@@ -185,6 +185,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { show, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
+    httpVersion: http.httpVersion,
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
     redirects: http.redirects.map((redirect) => ({ ...redirect })),

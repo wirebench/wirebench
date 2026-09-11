@@ -2,6 +2,7 @@ import { createGzip, gunzipSync } from 'node:zlib';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
+import { createSecureServer as createSecureHttp2Server } from 'node:http2';
 import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
 import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { readFixtureWsdl } from './fixtures.js';
@@ -52,6 +53,12 @@ export interface TestSoapServerTls {
    * not served once this is set — every handshake goes through the callback.
    */
   readonly perConnectionCerts?: readonly { readonly cert: string; readonly key: string }[];
+  /**
+   * ALPN protocols to advertise. Including `h2` switches the server to `http2.createSecureServer`
+   * with `allowHTTP1: true`, so the same request listener serves both protocols and a test can
+   * check what was actually negotiated rather than what was merely offered.
+   */
+  readonly alpnProtocols?: readonly string[];
 }
 
 /** Handle to a running {@link startTestSoapServer} instance. */
@@ -175,20 +182,31 @@ export async function startTestSoapServer(options?: {
           );
         }
       : undefined;
-  const server: Server =
+  const tlsOptions =
     tls === undefined
+      ? undefined
+      : {
+          cert: tls.cert,
+          key: tls.key,
+          ...(tls.ca !== undefined ? { ca: typeof tls.ca === 'string' ? tls.ca : [...tls.ca] } : {}),
+          ...(tls.requestCert === true ? { requestCert: true, rejectUnauthorized: false } : {}),
+          ...(tls.maxVersion !== undefined ? { maxVersion: tls.maxVersion } : {}),
+          ...(sniCallback !== undefined ? { SNICallback: sniCallback } : {}),
+          ...(tls.alpnProtocols !== undefined ? { ALPNProtocols: [...tls.alpnProtocols] } : {}),
+        };
+  const wantsH2 = tls?.alpnProtocols?.includes('h2') === true;
+  const server: Server =
+    tlsOptions === undefined
       ? createServer(listener)
-      : createHttpsServer(
-          {
-            cert: tls.cert,
-            key: tls.key,
-            ...(tls.ca !== undefined ? { ca: typeof tls.ca === 'string' ? tls.ca : [...tls.ca] } : {}),
-            ...(tls.requestCert === true ? { requestCert: true, rejectUnauthorized: false } : {}),
-            ...(tls.maxVersion !== undefined ? { maxVersion: tls.maxVersion } : {}),
-            ...(sniCallback !== undefined ? { SNICallback: sniCallback } : {}),
-          },
-          listener,
-        );
+      : wantsH2
+        ? // The compat layer hands the listener `Http2ServerRequest`/`Http2ServerResponse`, which are
+          // structurally close enough for everything this fixture reads but not assignable; the cast
+          // is the usual price of serving both protocols from one handler.
+          (createSecureHttp2Server(
+            { ...tlsOptions, allowHTTP1: true },
+            listener as unknown as Parameters<typeof createSecureHttp2Server>[1],
+          ) as unknown as Server)
+        : createHttpsServer(tlsOptions, listener);
 
   server.on('connection', (socket) => {
     sockets.add(socket);

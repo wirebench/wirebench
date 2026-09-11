@@ -59,6 +59,7 @@ function exchange(requestHeaders: Record<string, string> = {}): SoapExchange {
       body: new Uint8Array(),
       rawBody: new Uint8Array(),
       truncated: false,
+      httpVersion: '1.1',
       timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
       rawRequest: new Uint8Array(),
       rawResponse: new Uint8Array(),

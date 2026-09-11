@@ -76,6 +76,7 @@ async function register(sent: SentTls[]): Promise<void> {
       rawRequestBase64: '',
       rawResponseBase64: '',
       truncated: false,
+      httpVersion: '1.1' as const,
       timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
       redirects: [],
       request: { url: 'https://dev.test/soap', method: 'POST', headers: {} },

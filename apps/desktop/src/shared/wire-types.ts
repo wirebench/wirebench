@@ -537,6 +537,8 @@ const httpExchangeWireSchema = z.object({
   rawRequestBase64: z.string(),
   rawResponseBase64: z.string(),
   truncated: z.boolean(),
+  /** The protocol actually negotiated; labels the raw view. */
+  httpVersion: z.enum(['1.1', '2']).default('1.1'),
   decodeError: z.string().optional(),
   timings: timingsWireSchema,
   redirects: z.array(redirectWireSchema),

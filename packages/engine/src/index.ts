@@ -226,7 +226,7 @@ export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
 export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
-export { captureSslInfo } from './http/tls.js';
+export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
 export { importDefinition } from './import.js';
