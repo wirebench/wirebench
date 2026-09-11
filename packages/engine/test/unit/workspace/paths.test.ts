@@ -57,7 +57,11 @@ describe('assertPathSegment', () => {
     expect(() => assertPathSegment('dev')).not.toThrow();
   });
 
-  it.each(['', '.', '..', 'a/b', 'a\\b', 'a b', ' leading', 'trailing ', 'CON', 'com1', 'com1.txt'])(
+  it('accepts an embedded space', () => {
+    expect(() => assertPathSegment('a b')).not.toThrow();
+  });
+
+  it.each(['', '.', '..', 'a/b', 'a\\b', ' leading', 'trailing ', 'CON', 'com1', 'com1.txt'])(
     'rejects %j with workspace-path-invalid',
     (segment) => {
       try {
