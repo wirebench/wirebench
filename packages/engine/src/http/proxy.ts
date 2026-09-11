@@ -10,6 +10,7 @@
  * main process only has to inject `resolveSystem` and the resolved password.
  */
 
+import { WirebenchError } from '../errors.js';
 import type { ProxyOptions } from './types.js';
 
 /**
@@ -111,31 +112,54 @@ export function isExcluded(hostname: string, excludes: readonly string[]): boole
 }
 
 /**
+ * What the system (PAC) answer amounts to, once read most-preferred-entry-first.
+ *
+ * `unsupported` exists because undici's `ProxyAgent` cannot speak SOCKS: a SOCKS-only answer is
+ * neither a proxy we can dial nor a licence to connect directly (the direct route is usually
+ * exactly what the firewall drops), so it is reported and the send fails with a message naming
+ * the scheme rather than hanging or timing out for no visible reason.
+ */
+export type SystemProxyResolution =
+  | { readonly kind: 'direct' }
+  | { readonly kind: 'proxy'; readonly url: string }
+  | { readonly kind: 'unsupported'; readonly scheme: string };
+
+/** The PAC keywords that name a SOCKS proxy, lower-cased as {@link SystemProxyResolution.scheme}. */
+const SOCKS_KEYWORDS = new Set(['socks', 'socks4', 'socks5']);
+
+/**
  * Parses the PAC-style string `session.resolveProxy` answers with — a `;`-separated list of
  * `DIRECT`, `PROXY host:port`, `HTTPS host:port` or `SOCKS…` entries, most-preferred first —
- * into the proxy URL to use.
+ * into what the transport should do.
  *
  * Only the first usable HTTP(S) entry is taken: the transport has one connection to make and
- * no way to fail over. `DIRECT` (and a SOCKS-only answer, which undici's `ProxyAgent` cannot
- * speak) yields `undefined`, i.e. "go direct".
+ * no way to fail over. A SOCKS entry is skipped in favour of anything usable after it (and of a
+ * `DIRECT` the user's own PAC file offered as a fallback); a SOCKS-only answer yields
+ * `unsupported`, which the caller turns into a `proxy-unsupported` failure.
  *
  * @param pacResult the raw string from `session.resolveProxy`
- * @returns an `http(s)://host:port` URL, or `undefined` for a direct connection
+ * @returns `direct`, the `http(s)://host:port` proxy to dial, or the unsupported scheme
  */
-export function parseSystemProxy(pacResult: string | undefined): string | undefined {
-  if (pacResult === undefined) return undefined;
+export function parseSystemProxy(pacResult: string | undefined): SystemProxyResolution {
+  if (pacResult === undefined) return { kind: 'direct' };
+  let socksScheme: string | undefined;
   for (const raw of pacResult.split(';')) {
     const entry = raw.trim();
     if (entry.length === 0) continue;
-    const match = /^(DIRECT|PROXY|HTTPS|HTTP)(?:\s+(\S+))?$/i.exec(entry);
+    const match = /^([A-Za-z][A-Za-z0-9]*)(?:\s+(\S+))?$/.exec(entry);
     if (match === null) continue;
     const keyword = (match[1] ?? '').toUpperCase();
     const authority = match[2];
-    if (keyword === 'DIRECT') return undefined;
+    if (keyword === 'DIRECT') return { kind: 'direct' };
+    if (SOCKS_KEYWORDS.has(keyword.toLowerCase())) {
+      socksScheme ??= keyword.toLowerCase();
+      continue;
+    }
+    if (keyword !== 'PROXY' && keyword !== 'HTTP' && keyword !== 'HTTPS') continue;
     if (authority === undefined || authority.length === 0) continue;
-    return `${keyword === 'HTTPS' ? 'https' : 'http'}://${authority}`;
+    return { kind: 'proxy', url: `${keyword === 'HTTPS' ? 'https' : 'http'}://${authority}` };
   }
-  return undefined;
+  return socksScheme === undefined ? { kind: 'direct' } : { kind: 'unsupported', scheme: socksScheme };
 }
 
 /** The `ProxyOptions` for a proxy URL plus optional credentials, dropping an empty username. */
@@ -159,6 +183,7 @@ function withAuth(url: string, username: string | undefined, password: string | 
  * @param config the user's stored proxy configuration
  * @param options the system resolver and the password behind `passwordRef`
  * @returns the proxy to dial, or `undefined` to connect directly
+ * @throws WirebenchError `proxy-unsupported` when the system answers with a SOCKS-only proxy
  */
 export function resolveProxyFor(
   url: string,
@@ -179,7 +204,14 @@ export function resolveProxyFor(
 
   if (config.mode === 'system') {
     const resolved = parseSystemProxy(options?.resolveSystem?.(url));
-    return resolved === undefined ? undefined : { url: resolved };
+    if (resolved.kind === 'unsupported') {
+      throw new WirebenchError(
+        'proxy-unsupported',
+        `Your system proxy is ${resolved.scheme.toUpperCase()}, which Wirebench cannot use`,
+        { details: { scheme: resolved.scheme } },
+      );
+    }
+    return resolved.kind === 'direct' ? undefined : { url: resolved.url };
   }
 
   if (config.host.trim().length === 0 || !Number.isInteger(config.port) || config.port <= 0) {

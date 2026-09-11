@@ -79,7 +79,7 @@ export function ProxySection({ preferences, update }: SectionProps) {
         label="Excludes"
         value={proxy.excludes.join(', ')}
         testId="proxy-excludes"
-        hint="Comma-separated. Host names, *.wildcards, CIDR blocks (10.0.0.0/8) or localhost."
+        hint="Comma-separated: host names, *.wildcards, IPv4 CIDR blocks (10.0.0.0/8) or localhost. No port numbers."
         onCommit={(value) =>
           update({
             proxy: {

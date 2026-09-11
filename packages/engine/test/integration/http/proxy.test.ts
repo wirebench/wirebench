@@ -1,3 +1,4 @@
+import { createServer } from 'node:net';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendHttp } from '../../../src/http/client.js';
@@ -26,6 +27,21 @@ afterEach(async () => {
   await Promise.all(ntlmServers.splice(0).map((server) => server.close()));
   await Promise.all(proxies.splice(0).map((proxy) => proxy.close()));
 });
+
+/** Binds an ephemeral port, learns its number and releases it again. See its one caller. */
+async function freePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const probe = createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      probe.close(() => {
+        resolve(port);
+      });
+    });
+  });
+}
 
 async function startPlain(): Promise<TestSoapServer> {
   const server = await startTestSoapServer();
@@ -139,10 +155,11 @@ describe('sendHttp through a proxy', () => {
 
   it('reports a `proxy` HttpError when the proxy itself refuses the connection', async () => {
     const server = await startPlain();
-    const proxy = await startProxy();
-    const deadPort = proxy.port;
-    await proxy.close();
-    proxies.splice(proxies.indexOf(proxy), 1);
+    // A port nothing listens on. Taken by binding and immediately closing a throwaway socket,
+    // rather than by starting and stopping the CONNECT proxy: the window in which the OS could
+    // hand the same port to another process is then as short as it can be made, and the test
+    // does not depend on a real proxy's shutdown having completed.
+    const deadPort = await freePort();
 
     const error = await sendHttp(
       req({ url: `${server.url}/headers`, proxy: { url: `http://127.0.0.1:${deadPort}` } }),

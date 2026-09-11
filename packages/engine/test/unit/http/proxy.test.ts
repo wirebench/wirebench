@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WirebenchError } from '../../../src/errors.js';
 import { isExcluded, parseSystemProxy, resolveProxyFor, type ProxyConfig } from '../../../src/http/proxy.js';
 
 describe('isExcluded', () => {
@@ -24,18 +25,36 @@ describe('isExcluded', () => {
 
 describe('parseSystemProxy', () => {
   it.each([
-    ['DIRECT', 'DIRECT', undefined],
-    ['PROXY', 'PROXY 10.0.0.1:8080', 'http://10.0.0.1:8080'],
-    ['PROXY first, DIRECT fallback', 'PROXY 10.0.0.1:8080;DIRECT', 'http://10.0.0.1:8080'],
-    ['DIRECT first wins', 'DIRECT;PROXY 10.0.0.1:8080', undefined],
-    ['HTTPS keyword', 'HTTPS secure.corp.test:443', 'https://secure.corp.test:443'],
-    ['lower case keyword', 'proxy 10.0.0.1:3128', 'http://10.0.0.1:3128'],
-    ['SOCKS is not usable', 'SOCKS5 10.0.0.1:1080', undefined],
-    ['SOCKS then PROXY falls through', 'SOCKS5 10.0.0.1:1080;PROXY 10.0.0.2:8080', 'http://10.0.0.2:8080'],
-    ['empty string', '', undefined],
-    ['undefined', undefined, undefined],
+    ['DIRECT', 'DIRECT', { kind: 'direct' }],
+    ['PROXY', 'PROXY 10.0.0.1:8080', { kind: 'proxy', url: 'http://10.0.0.1:8080' }],
+    ['PROXY first, DIRECT fallback', 'PROXY 10.0.0.1:8080;DIRECT', { kind: 'proxy', url: 'http://10.0.0.1:8080' }],
+    ['DIRECT first wins', 'DIRECT;PROXY 10.0.0.1:8080', { kind: 'direct' }],
+    ['HTTPS keyword', 'HTTPS secure.corp.test:443', { kind: 'proxy', url: 'https://secure.corp.test:443' }],
+    ['lower case keyword', 'proxy 10.0.0.1:3128', { kind: 'proxy', url: 'http://10.0.0.1:3128' }],
+    [
+      'SOCKS then PROXY falls through',
+      'SOCKS5 10.0.0.1:1080;PROXY 10.0.0.2:8080',
+      {
+        kind: 'proxy',
+        url: 'http://10.0.0.2:8080',
+      },
+    ],
+    ['SOCKS then DIRECT goes direct', 'SOCKS5 10.0.0.1:1080;DIRECT', { kind: 'direct' }],
+    ['empty string', '', { kind: 'direct' }],
+    ['undefined', undefined, { kind: 'direct' }],
   ])('%s', (_name, input, expected) => {
-    expect(parseSystemProxy(input)).toBe(expected);
+    expect(parseSystemProxy(input)).toEqual(expected);
+  });
+
+  // A SOCKS-only answer used to look exactly like `DIRECT`, so a corporate SOCKS proxy silently
+  // became a direct connection the firewall then dropped. It is now reported, not swallowed.
+  it.each([
+    ['SOCKS5', 'SOCKS5 10.0.0.1:1080', 'socks5'],
+    ['SOCKS4', 'SOCKS4 10.0.0.1:1080', 'socks4'],
+    ['bare SOCKS', 'SOCKS 10.0.0.1:1080', 'socks'],
+    ['lower case', 'socks5 10.0.0.1:1080', 'socks5'],
+  ])('reports a SOCKS-only answer as unsupported (%s)', (_name, input, scheme) => {
+    expect(parseSystemProxy(input)).toEqual({ kind: 'unsupported', scheme });
   });
 });
 
@@ -87,6 +106,18 @@ describe('resolveProxyFor', () => {
     expect(
       resolveProxyFor('http://api.test/x', { mode: 'system' }, { resolveSystem: () => 'PROXY 10.0.0.1:8080' }),
     ).toEqual({ url: 'http://10.0.0.1:8080' });
+  });
+
+  it('throws proxy-unsupported rather than going direct when the system proxy is SOCKS', () => {
+    let error: unknown;
+    try {
+      resolveProxyFor('http://api.test/x', { mode: 'system' }, { resolveSystem: () => 'SOCKS5 10.0.0.1:1080' });
+    } catch (thrown) {
+      error = thrown;
+    }
+    expect(error).toBeInstanceOf(WirebenchError);
+    expect((error as WirebenchError).code).toBe('proxy-unsupported');
+    expect((error as WirebenchError).message).toMatch(/SOCKS5/i);
   });
 
   it('goes direct for the system mode when no resolver is injected', () => {

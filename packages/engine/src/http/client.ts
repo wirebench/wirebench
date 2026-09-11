@@ -1,4 +1,4 @@
-import { Agent, ProxyAgent, request as undiciRequest, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, request as undiciRequest, type buildConnector, type Dispatcher } from 'undici';
 import { decompressBody } from './decompress.js';
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
@@ -65,7 +65,7 @@ export function createDispatcher(opts: {
   const connect = connectOptions(opts);
   const h2 = opts.allowH2 === true ? { allowH2: true } : {};
   if (opts.proxy !== undefined) {
-    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, h2));
+    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, opts.allowH2 === true));
   }
   if (connect !== undefined || opts.allowH2 === true) {
     return new Agent({ ...(connect !== undefined ? { connect } : {}), ...h2 });
@@ -82,22 +82,39 @@ export function createDispatcher(opts: {
  * anchors, client certificate and `minVersion` for every proxied HTTPS request. `requestTls`
  * is the tunnelled origin handshake (where those belong) and `proxyTls` carries only what
  * describes the hop to the proxy itself, i.e. the bind address.
+ *
+ * `allowH2` is stated on `requestTls` rather than left to the agent, because undici builds the
+ * tunnelled connector from `requestTls` alone and its `allowH2` *defaults to true* — so an
+ * unstated flag offered `h2` in the ALPN of every proxied HTTPS handshake, including the ones
+ * whose client only speaks HTTP/1.1. Exported for the unit test that pins exactly that; not
+ * part of the package's public API (`index.ts` does not re-export it).
+ *
+ * @param proxy the resolved proxy to dial
+ * @param opts the send's TLS options and bind address
+ * @param allowH2 whether HTTP/2 may be negotiated, on the tunnelled handshake and the agent
+ * @param extra agent-level options merged on top (connection pooling, keep-alive)
  */
-function proxyAgentOptions(
+export function proxyAgentOptionsFor(
   proxy: ProxyOptions,
   opts: { readonly tls?: TlsOptions; readonly localAddress?: string },
-  shared: Record<string, unknown>,
-): ConstructorParameters<typeof ProxyAgent>[0] {
-  const proxyTls = opts.localAddress !== undefined ? { localAddress: opts.localAddress } : undefined;
+  allowH2: boolean,
+  extra: Record<string, unknown> = {},
+): ProxyAgent.Options {
   return {
     uri: proxy.url,
     ...(proxy.auth !== undefined
       ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
       : {}),
-    ...(opts.tls !== undefined ? { requestTls: tlsConnectOptions(opts.tls) } : {}),
-    ...(proxyTls !== undefined ? { proxyTls } : {}),
-    ...shared,
-  } as ConstructorParameters<typeof ProxyAgent>[0];
+    requestTls: { ...(opts.tls !== undefined ? tlsConnectOptions(opts.tls) : {}), allowH2 },
+    // undici types `proxyTls` as `TcpNetConnectOpts & …`, which insists on a `port` a connector
+    // option set never carries; the narrow cast here replaces the one that used to swallow the
+    // whole options object (and with it every typo in it).
+    ...(opts.localAddress !== undefined
+      ? { proxyTls: { localAddress: opts.localAddress } as buildConnector.BuildOptions }
+      : {}),
+    ...(allowH2 ? { allowH2: true } : {}),
+    ...extra,
+  };
 }
 
 /**
@@ -116,9 +133,10 @@ export function createSingleConnectionDispatcher(opts: {
   const base = { connections: 1, pipelining: 1, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 };
   const shared = { ...base, ...(connect !== undefined ? { connect } : {}) };
   if (opts.proxy !== undefined) {
-    // `shared` (connections: 1, keep-alive) still applies: it reaches the per-origin client
-    // inside the tunnel, which is exactly the connection NTLM authenticates.
-    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, base));
+    // `base` (connections: 1, keep-alive) still applies: it reaches the per-origin client
+    // inside the tunnel, which is exactly the connection NTLM authenticates. NTLM is an
+    // HTTP/1.1 authentication scheme, so the tunnelled handshake stays pinned to HTTP/1.1.
+    return new ProxyAgent(proxyAgentOptionsFor(opts.proxy, opts, false, base));
   }
   return new Agent(shared);
 }
@@ -137,7 +155,7 @@ function connectOptions(opts: {
   };
 }
 
-function tlsConnectOptions(tls: TlsOptions): Record<string, unknown> {
+function tlsConnectOptions(tls: TlsOptions): buildConnector.BuildOptions {
   return {
     rejectUnauthorized: tls.rejectUnauthorized,
     ca: tls.ca !== undefined ? [...tls.ca] : undefined,

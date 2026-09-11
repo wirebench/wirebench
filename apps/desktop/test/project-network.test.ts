@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PREFERENCES, mergePreferences, type Preferences } from '@wirebench/engine';
+import { DEFAULT_PREFERENCES, mergePreferences, WirebenchError, type Preferences } from '@wirebench/engine';
 import {
   generateClientCert,
   generateClientPkcs12,
@@ -124,6 +124,22 @@ describe('ProjectService.proxyFor', () => {
     expect(await service.proxyFor('https://api.test/soap')).toEqual({ url: 'http://10.0.0.1:3128' });
     expect(await service.proxyFor('http://127.0.0.1:8080/soap')).toBeUndefined();
     expect(asked).toEqual(['https://api.test/soap']);
+  });
+
+  /**
+   * undici's `ProxyAgent` cannot speak SOCKS. Going direct instead used to look like success
+   * until the firewall dropped the connection, so the send now fails with a message naming the
+   * scheme — the one case where a proxy the user configured is *not* silently ignored.
+   */
+  it('fails the send with proxy-unsupported when the system proxy is SOCKS', async () => {
+    const service = newService({
+      preferences: mergePreferences({ proxy: { mode: 'system', excludes: [] } }),
+      resolveSystemProxy: () => Promise.resolve('SOCKS5 10.0.0.1:1080'),
+    });
+    const error = await service.proxyFor('https://api.test/soap').catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(WirebenchError);
+    expect((error as WirebenchError).code).toBe('proxy-unsupported');
+    expect((error as WirebenchError).message).toMatch(/SOCKS5/);
   });
 
   it('goes direct when the system says DIRECT', async () => {

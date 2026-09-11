@@ -1121,6 +1121,10 @@ export class ProjectService {
    * the resolved {@link ProxyOptionsWire} ever reaches the transport; the reference itself
    * never becomes a password on any wire the renderer can see. `resolveSystem` is injected by
    * the app (a wrapper around `session.resolveProxy`) so this class stays Electron-free.
+   *
+   * @throws WirebenchError `proxy-unsupported` when the system's answer is a SOCKS proxy, which
+   * undici cannot dial: the send fails saying so rather than quietly going direct into a
+   * firewall that drops it.
    */
   async proxyFor(url: string): Promise<ProxyOptionsWire | undefined> {
     const proxy = this.prefs()?.proxy;

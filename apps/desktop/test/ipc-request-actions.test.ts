@@ -55,6 +55,9 @@ class FakeProject {
   wsa: SoapSendInputWire['wsa'] = undefined;
   /** Drives the cURL "WS-Security is not included" note. */
   outgoingWss = false;
+  /** What `proxyFor`/`tlsFor` answer, so the cURL export's network note can be driven. */
+  proxy: { url: string } | undefined = undefined;
+  tls: Record<string, unknown> | undefined = undefined;
   readonly changes: ProjectChange[] = [];
   auth: RequestChannelDeps['project'] extends never ? never : undefined = undefined;
 
@@ -104,6 +107,12 @@ class FakeProject {
       return undefined;
     }
     return { attachments: Array.from({ length: this.attachmentCount }, () => ({})) };
+  }
+  proxyFor(): Promise<{ url: string } | undefined> {
+    return Promise.resolve(this.proxy);
+  }
+  tlsFor(requestId: string): Promise<Record<string, unknown> | undefined> {
+    return Promise.resolve(requestId === 'req-1' ? this.tls : undefined);
   }
   hasOutgoingWss(requestId: string): boolean {
     return requestId === 'req-1' && this.outgoingWss;
@@ -267,6 +276,43 @@ describe('request.recreate / curl / importCurl', () => {
     );
     expect(withAttachments.command.split('\n')[0]).toBe('# note: 2 attachment(s) not included');
     expect(withAttachments.command).toContain('curl');
+  });
+
+  /**
+   * The exported command carries none of the network setup a real send uses — no `--proxy`, no
+   * `--cacert`, no `--insecure`, no `--cert` — so a command that "works here but not there" has
+   * to say why in the text the user pastes, not only in a `notes` array a toast may drop.
+   */
+  it('curl notes the proxy, CA bundle, trustInvalid and client keystore it does not reproduce', async () => {
+    project.proxy = { url: 'http://proxy.corp.test:8080' };
+    project.tls = { ca: ['-----BEGIN CERTIFICATE-----'], cert: 'pem', key: 'pem', rejectUnauthorized: false };
+
+    const result = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }),
+    );
+
+    const first = result.command.split('\n')[0] ?? '';
+    expect(first).toContain('# note:');
+    expect(first).toContain('http://proxy.corp.test:8080');
+    expect(first).toContain('custom trust');
+    expect(first).toContain('certificate verification turned off');
+    expect(first).toContain('client certificate');
+    expect(first).toContain('not reproduced here');
+    expect(result.notes?.some((note) => note.includes('proxy'))).toBe(true);
+  });
+
+  it('curl says nothing about the network when the send uses none of it', async () => {
+    const result = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }),
+    );
+    expect(result.command).not.toContain('# note:');
+    expect(result.notes).toBeUndefined();
+  });
+
+  it('curl still exports when resolving the network setup fails', async () => {
+    project.proxyFor = () => Promise.reject(new Error('SOCKS'));
+    const result = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(result.command).toContain('curl');
   });
 
   it('curl builds a PowerShell command for the powershell shell', async () => {

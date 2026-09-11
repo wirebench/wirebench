@@ -43,7 +43,7 @@ export type RequestChannelProject = Pick<
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss'>>;
+  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
@@ -308,16 +308,67 @@ async function curl(
   // `effectiveSendInput` never touches); a request that selects one would otherwise look, from
   // the command alone, like it sends unsecured when it does not.
   const notes: string[] = [];
+  const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
     notes.push('WS-Security is not included in the cURL command.');
   }
   if (count > 0) {
     notes.push(`${String(count)} attachment(s) are not included in the cURL command.`);
+    comments.push(`# note: ${String(count)} attachment(s) not included`);
+  }
+  const network = await networkNote(deps.project, request.requestId, effective.endpoint);
+  if (network !== undefined) {
+    notes.push(network);
+    comments.push(`# note: ${network}`);
   }
   return {
-    command: count === 0 ? command : `# note: ${String(count)} attachment(s) not included\n${command}`,
+    command: comments.length === 0 ? command : `${comments.join('\n')}\n${command}`,
     ...(notes.length > 0 ? { notes } : {}),
   };
+}
+
+/**
+ * The one-line description of everything about a real send's *connection* the exported command
+ * does not carry: the proxy it is dialled through, the extra trust anchors it verifies against,
+ * an endpoint's `trustInvalid`, and a client certificate. `curl` can be told all four
+ * (`--proxy`, `--cacert`, `--insecure`, `--cert`), but none of them can be reconstructed from
+ * what is on the clipboard — and a command that silently fails against a server only reachable
+ * through the corporate proxy is worse than one that says so.
+ *
+ * Key material is never named, only its presence; the CA bundle's *path* is left out too, since
+ * the command may be pasted anywhere. Resolving any of this can fail (a keystore that will not
+ * load, a SOCKS system proxy): the export is a preview, so a failure costs the note, not the
+ * command.
+ */
+async function networkNote(
+  project: RequestChannelProject,
+  requestId: string,
+  endpoint: string,
+): Promise<string | undefined> {
+  const parts: string[] = [];
+  try {
+    const proxy = await project.proxyFor?.(endpoint);
+    if (proxy !== undefined) {
+      parts.push(`through proxy ${proxy.url}`);
+    }
+  } catch {
+    // The send itself will report it; the export stays usable.
+  }
+  try {
+    const tls = await project.tlsFor?.(requestId);
+    if (tls?.ca !== undefined && tls.ca.length > 0) {
+      parts.push('with custom trust anchors');
+    }
+    if (tls?.rejectUnauthorized === false) {
+      parts.push('with certificate verification turned off for this endpoint');
+    }
+    if (tls?.cert !== undefined) {
+      parts.push('with a client certificate');
+    }
+  } catch {
+    // As above.
+  }
+  return parts.length === 0 ? undefined : `sent ${parts.join(', ')}; not reproduced here`;
 }
 
 /**
