@@ -1,10 +1,10 @@
 /**
- * The WS-Security sidebar view. Keystores is the only section with behaviour today; Outgoing
- * and Incoming are placeholders the WS-Security tasks (37–40) fill in, kept here so the view's
- * shape — and the order the spec lists these in — is settled before they arrive.
+ * The WS-Security sidebar view: Keystores, Outgoing configurations, and an Incoming placeholder
+ * the remaining WS-Security tasks (39–40) fill in.
  */
 
 import { KeystoresView } from './keystores-view.js';
+import { OutgoingConfigEditor } from './outgoing-config-editor.js';
 
 function Placeholder({ title, body }: { readonly title: string; readonly body: string }) {
   return (
@@ -20,7 +20,7 @@ export function WssSection() {
   return (
     <div data-testid="wss-section" className="min-h-0 flex-1 overflow-auto">
       <KeystoresView />
-      <Placeholder title="Outgoing" body="Signing and encryption for outgoing messages." />
+      <OutgoingConfigEditor />
       <Placeholder title="Incoming" body="Decryption and signature verification for responses." />
     </div>
   );

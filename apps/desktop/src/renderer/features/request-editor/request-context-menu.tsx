@@ -13,6 +13,7 @@ import { useUiStore } from '../../state/ui.js';
 import type { RequestDraft } from '../../state/project.js';
 import { copyAsCurl, recreateRequest } from './request-actions.js';
 import { openRequestDialog } from './request-dialogs.js';
+import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -112,6 +113,40 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
             }}
           >
             Show code
+          </ContextMenu.Item>
+
+          <ContextMenu.Separator className={SEPARATOR_CLASS} />
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              openRequestDialog('wss-username-token', draft.id);
+            }}
+          >
+            Add WSS Username Token…
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              openRequestDialog('wss-timestamp', draft.id);
+            }}
+          >
+            Add WS-Timestamp…
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              void applyOutgoingWssToEditor(draft.id);
+            }}
+          >
+            Outgoing WSS → Apply to editor
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              void removeOutgoingWssFromEditor(draft.id);
+            }}
+          >
+            Outgoing WSS → Remove
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={SEPARATOR_CLASS} />

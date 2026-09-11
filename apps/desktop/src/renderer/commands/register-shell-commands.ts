@@ -10,6 +10,7 @@ import {
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
+import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand, resetCommands } from '../lib/commands.js';
@@ -338,6 +339,41 @@ export function registerShellCommands(openPalette: () => void): void {
       return requestId !== undefined && useEditorsStore.getState().selectedAttachmentFor(requestId) !== undefined;
     },
     run: onActiveRequest((requestId) => void removeSelectedAttachment(requestId)),
+  });
+
+  // The four WS-Security editor actions. Unlike the request's `wssOutgoingRef` (which applies a
+  // configuration on its way to the wire), these bake a header into the envelope text itself.
+  registerCommand({
+    id: 'request.addWssUsernameToken',
+    label: 'Request: Add WSS Username Token…',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => {
+      openRequestDialog('wss-username-token', requestId);
+    }),
+  });
+  registerCommand({
+    id: 'request.addWsTimestamp',
+    label: 'Request: Add WS-Timestamp…',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => {
+      openRequestDialog('wss-timestamp', requestId);
+    }),
+  });
+  registerCommand({
+    id: 'request.applyOutgoingWss',
+    label: 'Request: Outgoing WSS → Apply to Editor',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void applyOutgoingWssToEditor(requestId)),
+  });
+  registerCommand({
+    id: 'request.removeOutgoingWss',
+    label: 'Request: Outgoing WSS → Remove',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void removeOutgoingWssFromEditor(requestId)),
   });
 
   registerCommand({

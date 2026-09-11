@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 
 /** The request dialogs more than one surface can open. */
-export type RequestDialogKind = 'clone' | 'import-curl';
+export type RequestDialogKind = 'clone' | 'import-curl' | 'wss-username-token' | 'wss-timestamp';
 
 export interface RequestDialogsStore {
   /** The dialog to show, or `undefined` when none is open. */

@@ -23,6 +23,10 @@ const ITEMS = [
   'Copy as cURL (PowerShell)',
   'Import cURL…',
   'Show code',
+  'Add WSS Username Token…',
+  'Add WS-Timestamp…',
+  'Outgoing WSS → Apply to editor',
+  'Outgoing WSS → Remove',
   'Format',
   'Go to line…',
 ];

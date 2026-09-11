@@ -11,6 +11,8 @@ import type {
   ImportSourceWire,
   InterfaceWire,
   KeystorePatchWire,
+  WssOutgoingPatchWire,
+  WssOutgoingWire,
   KeystoreWire,
   ProjectChange,
   ProjectChangedEvent,
@@ -52,6 +54,8 @@ export interface ProjectSnapshot {
   readonly activeEnvironmentId: string | undefined;
   /** The project's client keystores, in registry order. Empty when no project is open. */
   readonly keystores: readonly KeystoreWire[];
+  /** The project's outgoing WS-Security configurations. Empty when no project is open. */
+  readonly wssOutgoing: readonly WssOutgoingWire[];
   readonly saveStatus: SaveStatus;
   readonly lastSavedAt: string | undefined;
   /** Paths reported by the folder watcher since the banner was last dismissed. */
@@ -114,6 +118,10 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly addKeystore: (input: { path: string; name?: string; passwordSecretRef?: string }) => Promise<string>;
   readonly updateKeystore: (keystoreId: string, patch: KeystorePatchWire) => Promise<void>;
   readonly removeKeystore: (keystoreId: string) => Promise<void>;
+  /** Creates an empty outgoing WS-Security configuration; returns its id. */
+  readonly addWssOutgoing: (input?: { name?: string }) => Promise<string>;
+  readonly updateWssOutgoing: (configId: string, patch: WssOutgoingPatchWire) => Promise<void>;
+  readonly removeWssOutgoing: (configId: string) => Promise<void>;
   /** Switches the active environment; `null` deactivates. */
   readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
   /** Appends an endpoint to an interface. */
@@ -240,7 +248,10 @@ function withAttachmentPatch(request: RequestDraft, attachmentId: string, patch:
 /** Builds the indexes (and environment mirror) the selectors below read. */
 function indexesOf(
   project: ProjectWire | null,
-): Pick<ProjectSnapshot, 'interfaces' | 'requests' | 'order' | 'environments' | 'activeEnvironmentId' | 'keystores'> {
+): Pick<
+  ProjectSnapshot,
+  'interfaces' | 'requests' | 'order' | 'environments' | 'activeEnvironmentId' | 'keystores' | 'wssOutgoing'
+> {
   if (project === null) {
     return {
       interfaces: {},
@@ -249,6 +260,7 @@ function indexesOf(
       environments: [],
       activeEnvironmentId: undefined,
       keystores: [],
+      wssOutgoing: [],
     };
   }
   const interfaces: Record<string, InterfaceWire> = {};
@@ -273,6 +285,7 @@ function indexesOf(
     environments,
     activeEnvironmentId: project.activeEnvironmentId,
     keystores: project.keystores,
+    wssOutgoing: project.wssOutgoing,
   };
 }
 
@@ -307,6 +320,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     environments: [],
     activeEnvironmentId: undefined,
     keystores: [],
+    wssOutgoing: [],
     saveStatus: 'idle',
     lastSavedAt: undefined,
     changedOnDisk: [],
@@ -610,6 +624,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeKeystore: async (keystoreId) => {
       await mutate({ kind: 'remove-keystore', keystoreId });
+    },
+
+    addWssOutgoing: async (input) => {
+      const { createdWssOutgoingId } = await mutate({
+        kind: 'add-wss-outgoing',
+        ...(input?.name !== undefined ? { name: input.name } : {}),
+      });
+      if (createdWssOutgoingId === undefined) {
+        throw new Error('add-wss-outgoing did not return a configuration id');
+      }
+      return createdWssOutgoingId;
+    },
+
+    updateWssOutgoing: async (configId, patch) => {
+      await mutate({ kind: 'update-wss-outgoing', configId, patch });
+    },
+
+    removeWssOutgoing: async (configId) => {
+      await mutate({ kind: 'remove-wss-outgoing', configId });
     },
 
     setActiveEnvironment: async (environmentId) => {

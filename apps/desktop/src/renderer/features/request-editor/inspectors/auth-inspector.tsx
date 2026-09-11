@@ -248,6 +248,68 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
           )}
         </div>
       )}
+
+      <WssSelectors requestId={requestId} />
+    </div>
+  );
+}
+
+/**
+ * The request's WS-Security configuration selectors. Choosing one here means "apply it at send
+ * time": the saved envelope is untouched, and the header is built (with the real password,
+ * resolved in main) on its way to the wire. The editor actions in the request context menu are
+ * the other half — they bake a header into the envelope *text* instead.
+ *
+ * The Incoming list stays empty until Task 40 mirrors incoming configurations; the select
+ * exists so a ref an imported project already carries is visible and clearable.
+ */
+function WssSelectors({ requestId }: { readonly requestId: string }) {
+  const outgoingRef = useProjectStore((state) => state.requests[requestId]?.wssOutgoingRef);
+  const incomingRef = useProjectStore((state) => state.requests[requestId]?.wssIncomingRef);
+  const configs = useProjectStore((state) => state.wssOutgoing);
+  const updateRequest = useProjectStore((state) => state.updateRequest);
+
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t border-hairline pt-2">
+      <label className="flex items-center gap-2">
+        <span className="w-24 shrink-0 text-xs text-fg-subtle">Outgoing WSS</span>
+        <select
+          aria-label="Outgoing WSS"
+          data-testid="request-wss-outgoing"
+          className={INPUT_CLASS}
+          value={outgoingRef ?? ''}
+          onChange={(event) => {
+            updateRequest(requestId, { wssOutgoingRef: event.target.value === '' ? null : event.target.value });
+          }}
+        >
+          <option value="">—</option>
+          {configs.map((config) => (
+            <option key={config.id} value={config.id}>
+              {config.name}
+            </option>
+          ))}
+          {/* A ref the registry no longer has stays selectable, so it is visible rather than
+              silently reset to "none" the moment the request is opened. */}
+          {outgoingRef !== undefined && !configs.some((config) => config.id === outgoingRef) && (
+            <option value={outgoingRef}>{`${outgoingRef} (missing)`}</option>
+          )}
+        </select>
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="w-24 shrink-0 text-xs text-fg-subtle">Incoming WSS</span>
+        <select
+          aria-label="Incoming WSS"
+          data-testid="request-wss-incoming"
+          className={INPUT_CLASS}
+          value={incomingRef ?? ''}
+          onChange={(event) => {
+            updateRequest(requestId, { wssIncomingRef: event.target.value === '' ? null : event.target.value });
+          }}
+        >
+          <option value="">—</option>
+          {incomingRef !== undefined && <option value={incomingRef}>{incomingRef}</option>}
+        </select>
+      </label>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { RequestContextMenu } from './request-context-menu.js';
 import { useRequestDialogsStore } from './request-dialogs.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
 import { ViewTabs } from './view-tabs.js';
+import { WssUsernameTokenDialog, WsTimestampDialog } from './wss-entry-dialogs.js';
 import { ResponsePane } from './response-pane.js';
 import { RequestToolbar } from './toolbar.js';
 
@@ -192,6 +193,24 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
           bindingName: draft.bindingName,
           operationName: draft.operationName,
         }}
+      />
+      <WssUsernameTokenDialog
+        open={dialog === 'wss-username-token'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+          }
+        }}
+        requestId={requestId}
+      />
+      <WsTimestampDialog
+        open={dialog === 'wss-timestamp'}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+          }
+        }}
+        requestId={requestId}
       />
     </section>
   );
