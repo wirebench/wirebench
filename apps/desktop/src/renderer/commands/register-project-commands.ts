@@ -1,8 +1,9 @@
 import { checkForUpdates } from '../lib/update-status.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
-import { projectActions } from '../features/welcome/project-actions.js';
+import { projectActions } from '../features/project/project-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
+import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { ui } from './command-helpers.js';
 
@@ -26,43 +27,17 @@ export function registerProjectCommands(): void {
       ui().openImportDialog();
     },
   });
-  registerCommand({
-    id: 'project.new',
-    label: 'New Project…',
-    category: 'Project',
-    shortcut: 'Mod+Shift+N',
-    run: () => {
-      void projectActions.newProject();
-    },
-  });
-  registerCommand({
-    id: 'project.open',
-    label: 'Open Project…',
-    category: 'Project',
-    shortcut: 'Mod+O',
-    run: () => {
-      void projectActions.openProject();
-    },
-  });
+  // `project.new` / `project.open` / `project.close` are gone: a project belongs to a
+  // workspace, so creating, opening and closing one is a workspace command (Task 11).
   registerCommand({
     id: 'project.save',
-    label: 'Save Project',
+    label: 'Save All',
     category: 'Project',
     shortcut: 'Mod+S',
-    when: () => useProjectStore.getState().project !== null,
+    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
     whenScope: 'project',
     run: () => {
       void projectActions.save();
-    },
-  });
-  registerCommand({
-    id: 'project.close',
-    label: 'Close Project',
-    category: 'Project',
-    when: () => useProjectStore.getState().project !== null,
-    whenScope: 'project',
-    run: () => {
-      void projectActions.close();
     },
   });
 
@@ -70,16 +45,16 @@ export function registerProjectCommands(): void {
     id: 'env.switch',
     label: 'Switch Environment…',
     category: 'Environment',
-    when: () => useProjectStore.getState().project !== null,
+    when: () => useWorkspaceStore.getState().workspace !== null,
     whenScope: 'project',
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
     // The palette can also pass an environment name or id to switch straight to it.
     run: (_context, arg) => {
       if (typeof arg === 'string') {
-        const { environments } = useProjectStore.getState();
+        const environments = useWorkspaceStore.getState().workspace?.environments ?? [];
         const match = environments.find((env) => env.id === arg || env.name === arg);
         if (match !== undefined) {
-          void useProjectStore.getState().setActiveEnvironment(match.id);
+          void useWorkspaceStore.getState().setActiveEnvironment(match.id);
           return;
         }
       }
@@ -91,7 +66,7 @@ export function registerProjectCommands(): void {
     label: 'Next Environment',
     category: 'Environment',
     shortcut: 'Mod+Alt+E',
-    when: () => useProjectStore.getState().environments.length > 0,
+    when: () => (useWorkspaceStore.getState().workspace?.environments.length ?? 0) > 0,
     whenScope: 'project.environments',
     run: () => {
       void cycleEnvironment(1);

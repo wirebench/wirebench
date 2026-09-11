@@ -17,9 +17,9 @@ const TABS = [
   { id: 'code', label: 'Code' },
 ] as const satisfies readonly { id: DetailsTab; label: string }[];
 
-/** The Project row's inspector: the properties every request in the project can expand. */
-function ProjectProperties() {
-  const properties = useProjectStore((state) => state.project?.properties);
+/** The Project row's inspector: the properties every request in that project can expand. */
+function ProjectProperties({ projectId }: { readonly projectId: string }) {
+  const properties = useProjectStore((state) => state.projects[projectId]?.properties);
   const setProjectProperty = useProjectStore((state) => state.setProjectProperty);
   const removeProjectProperty = useProjectStore((state) => state.removeProjectProperty);
 
@@ -30,10 +30,10 @@ function ProjectProperties() {
         label="Project properties"
         properties={properties ?? {}}
         onSet={(name, value) => {
-          void setProjectProperty(name, value);
+          void setProjectProperty(projectId, name, value);
         }}
         onRemove={(name) => {
-          void removeProjectProperty(name);
+          void removeProjectProperty(projectId, name);
         }}
       />
     </>
@@ -76,7 +76,7 @@ function SelectionDetails({
   activeRequestId: string | undefined;
 }) {
   if (selection?.kind === 'project') {
-    return <ProjectProperties />;
+    return <ProjectProperties projectId={selection.id} />;
   }
   if (selection?.kind === 'request' && selection.requestId !== undefined) {
     return <RequestProperties requestId={selection.requestId} />;

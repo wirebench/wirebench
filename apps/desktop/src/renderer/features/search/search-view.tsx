@@ -47,7 +47,7 @@ export function SearchView() {
   const [truncated, setTruncated] = useState<'limit' | 'timeout' | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [searched, setSearched] = useState(false);
-  const project = useProjectStore((state) => state.project);
+  const hasProject = useProjectStore((state) => Object.keys(state.projects).length > 0);
 
   const toggleScope = useCallback((key: keyof SearchScopesWire) => {
     setScopes((current) => ({ ...current, [key]: !current[key] }));
@@ -158,10 +158,10 @@ export function SearchView() {
             {error}
           </p>
         )}
-        {error === undefined && project === null && (
-          <EmptyState title="No project open" description="Open a project to search its requests and definitions." />
+        {error === undefined && !hasProject && (
+          <EmptyState title="No project open" description="Add a project to search its requests and definitions." />
         )}
-        {error === undefined && project !== null && searched && matches.length === 0 && (
+        {error === undefined && hasProject && searched && matches.length === 0 && (
           <p data-testid="search-empty" className="px-3 py-2 text-sm text-fg-subtle">
             No results.
           </p>

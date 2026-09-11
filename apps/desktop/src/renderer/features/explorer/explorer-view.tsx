@@ -143,8 +143,10 @@ export function ExplorerView() {
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
-  const projectSelected = useUiStore((state) => state.selection?.kind === 'project');
-  const projectName = useProjectStore((state) => state.project?.name);
+  const projects = useProjectStore((state) => state.projects);
+  const selectedProjectId = useUiStore((state) =>
+    state.selection?.kind === 'project' ? state.selection.id : undefined,
+  );
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
   const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
@@ -154,7 +156,12 @@ export function ExplorerView() {
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
 
-  const summaries = order.map((id) => interfaces[id]).filter((s): s is NonNullable<typeof s> => s !== undefined);
+  // Every project's interfaces in one tree. A per-project root row is Task 11; until then the
+  // tree is flat across projects, exactly as it was flat across one.
+  const summaries = order
+    .flatMap((group) => group.interfaceIds)
+    .map((id) => interfaces[id])
+    .filter((s): s is NonNullable<typeof s> => s !== undefined);
   const data = buildExplorerTree(summaries, Object.values(requests));
 
   useEffect(() => {
@@ -178,24 +185,33 @@ export function ExplorerView() {
         </IconButton>
       </div>
 
-      {projectName !== undefined && (
-        // The project itself is not part of the interfaces tree (it owns no children), but it
-        // still needs a selectable row so the details panel can edit its properties.
-        <button
-          type="button"
-          data-testid="explorer-project-row"
-          aria-pressed={projectSelected}
-          onClick={() => {
-            setSelection({ kind: 'project', id: 'project' });
-          }}
-          className={`flex h-row shrink-0 items-center gap-1.5 px-2 text-left text-sm ${
-            projectSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
-          }`}
-        >
-          <Box size={13} aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate">{projectName}</span>
-        </button>
-      )}
+      {order.map((group) => {
+        const project = projects[group.projectId];
+        if (project === undefined) {
+          return null;
+        }
+        const selected = selectedProjectId === project.id;
+        return (
+          // A project is not part of the interfaces tree (it owns no children there), but it
+          // still needs a selectable row so the details panel can edit its properties.
+          <button
+            key={project.id}
+            type="button"
+            data-testid="explorer-project-row"
+            data-project-id={project.id}
+            aria-pressed={selected}
+            onClick={() => {
+              setSelection({ kind: 'project', id: project.id });
+            }}
+            className={`flex h-row shrink-0 items-center gap-1.5 px-2 text-left text-sm ${
+              selected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
+            }`}
+          >
+            <Box size={13} aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+          </button>
+        );
+      })}
 
       <div ref={containerRef} className="min-h-0 flex-1">
         {data.length === 0 ? (

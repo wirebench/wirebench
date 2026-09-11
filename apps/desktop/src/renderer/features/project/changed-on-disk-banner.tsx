@@ -1,25 +1,32 @@
 import { useState } from 'react';
 import { useProjectStore } from '../../state/project.js';
-import { projectActions } from '../welcome/project-actions.js';
+import { projectActions } from './project-actions.js';
 
 /**
- * Non-modal notice that the project folder changed underneath the app (an editor, a `git
+ * Non-modal notice that a project folder changed underneath the app (an editor, a `git
  * checkout`, a sync client). Reloading is destructive when there are unsaved edits, so that
  * case asks first; otherwise Reload just re-reads the folder.
+ *
+ * Keyed by project: the watcher reports per project, and reloading one must not discard
+ * another's unsaved edits. The banner shows the first project with pending paths; dismissing
+ * or reloading it reveals the next.
  */
 export function ChangedOnDiskBanner() {
-  const paths = useProjectStore((state) => state.changedOnDisk);
-  const dirty = useProjectStore((state) => state.project?.dirty ?? false);
+  const changedOnDisk = useProjectStore((state) => state.changedOnDisk);
+  const projects = useProjectStore((state) => state.projects);
   const dismiss = useProjectStore((state) => state.dismissChangedOnDisk);
   const [confirming, setConfirming] = useState(false);
 
-  if (paths.length === 0) {
+  const entry = Object.entries(changedOnDisk).find(([, list]) => list.length > 0);
+  if (entry === undefined) {
     return null;
   }
+  const [projectId, paths] = entry;
+  const dirty = projects[projectId]?.dirty ?? false;
 
   const reload = (): void => {
     setConfirming(false);
-    void projectActions.reload();
+    void projectActions.reload(projectId);
   };
 
   return (
@@ -31,7 +38,7 @@ export function ChangedOnDiskBanner() {
       <span className="min-w-0 flex-1 truncate" title={paths.join('\n')}>
         {confirming
           ? 'Reloading discards your unsaved changes. Continue?'
-          : 'Project files changed on disk — reload to pick them up.'}
+          : `${projects[projectId]?.name ?? 'Project'} files changed on disk — reload to pick them up.`}
       </span>
       <button
         type="button"
@@ -46,7 +53,7 @@ export function ChangedOnDiskBanner() {
         data-testid="changed-on-disk-ignore"
         onClick={() => {
           setConfirming(false);
-          dismiss();
+          dismiss(projectId);
         }}
         className="shrink-0 rounded px-2 py-0.5 text-xs text-fg-subtle hover:bg-surface-raised"
       >

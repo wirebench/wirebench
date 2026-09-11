@@ -13,8 +13,9 @@ import { hydrateUi, useUiStore } from '../state/ui.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
-import { subscribeToProject, useProjectStore } from '../state/project.js';
-import { NewProjectDialog } from '../features/welcome/new-project-dialog.js';
+import { subscribeToProject } from '../state/project.js';
+import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
+import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CommandPalette } from './command-palette.js';
@@ -59,12 +60,13 @@ export function AppShell() {
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
-  const project = useProjectStore((state) => state.project);
+  const workspace = useWorkspaceStore((state) => state.workspace);
 
   useEffect(() => {
     hydrateUi();
   }, []);
 
+  useEffect(() => subscribeToWorkspace(), []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToPreferences(), []);
@@ -118,12 +120,19 @@ export function AppShell() {
       <div className="flex h-full flex-col bg-surface-base text-fg-default">
         <TitleBar
           platform={platform}
-          projectName={project?.name ?? 'No project'}
-          dirty={project?.dirty ?? false}
+          projectName={workspace?.name ?? 'No workspace'}
+          dirty={false}
           onOpenPalette={openPalette}
           onToggleTheme={dispatch('view.toggleTheme')}
         />
 
+        {/* The title bar stays above the picker: it carries the window controls on every
+            platform, and losing them with no workspace open would trap the user. */}
+        {workspace === null ? (
+          <div className="min-h-0 flex-1">
+            <WorkspacePicker />
+          </div>
+        ) : (
         <div className="flex min-h-0 flex-1">
           <ActivityBar platform={platform} />
 
@@ -153,7 +162,7 @@ export function AppShell() {
             <Panel id="main-panel" minSize="30%">
               <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
                 <Panel id="editors-panel" minSize="20%">
-                  <EditorArea onImportDefinition={dispatch('definition.import')} />
+                  <EditorArea />
                 </Panel>
                 {consoleState.visible && (
                   <>
@@ -188,6 +197,7 @@ export function AppShell() {
             )}
           </Group>
         </div>
+        )}
 
         <StatusBar />
       </div>
@@ -197,7 +207,6 @@ export function AppShell() {
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
       />
-      <NewProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

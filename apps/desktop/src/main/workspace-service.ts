@@ -16,8 +16,9 @@
  */
 
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readdir, realpath } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { z } from 'zod';
 import {
   attachmentsDir,
   createProject,
@@ -1247,4 +1248,34 @@ export class WorkspaceService implements ProjectRouter {
   inspectKeystore(...args: Parameters<ProjectRouter['inspectKeystore']>): ReturnType<ProjectRouter['inspectKeystore']> {
     return this.hostOfEntity(args[0]).inspectKeystore(...args);
   }
+}
+
+/**
+ * The project folders named by a pre-workspace `recent-projects.json`, most recent first and
+ * limited to folders that still exist.
+ *
+ * Deliberately its own two-field reader rather than the `RecentProjects` class: the picker only
+ * wants "here are folders you used to open, link one if you like", and reading the file through
+ * the class would re-establish a dependency on a list nothing else in the workspace world
+ * keeps up to date. The file is never written here, and a missing or corrupt one yields none.
+ */
+export async function readLeftoverProjectFolders(userDataDir: string): Promise<readonly string[]> {
+  let text: string;
+  try {
+    text = await readFile(join(userDataDir, 'recent-projects.json'), 'utf8');
+  } catch {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const shape = z.object({ entries: z.array(z.object({ dir: z.string() })) });
+  const result = shape.safeParse(parsed);
+  if (!result.success) {
+    return [];
+  }
+  return result.data.entries.map((entry) => entry.dir).filter((dir) => existsSync(dir));
 }

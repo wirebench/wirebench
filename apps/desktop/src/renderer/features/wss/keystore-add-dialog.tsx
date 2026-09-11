@@ -13,7 +13,7 @@ import { Button } from '../../components/button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 
 export interface KeystoreAddDialogProps {
   readonly open: boolean;
@@ -30,6 +30,7 @@ function stemOf(path: string): string {
 /** The Add dialog. Rendered by {@link KeystoresView}; it owns nothing but its own draft. */
 export function KeystoreAddDialog({ open, onOpenChange }: KeystoreAddDialogProps) {
   const addKeystore = useProjectStore((state) => state.addKeystore);
+  const projectId = useTargetProjectId();
   const [path, setPath] = useState('');
   const [name, setName] = useState('');
   const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
@@ -63,7 +64,10 @@ export function KeystoreAddDialog({ open, onOpenChange }: KeystoreAddDialogProps
       // A password typed but never explicitly saved must not be dropped on the floor, so the
       // SecretField is flushed first and its fresh ref used (see `auth-inspector.tsx`).
       const ref = (await flushRef.current?.()) ?? passwordRef;
-      await addKeystore({
+      if (projectId === undefined) {
+        return;
+      }
+      await addKeystore(projectId, {
         path,
         ...(name.trim().length > 0 ? { name: name.trim() } : {}),
         ...(ref !== undefined ? { passwordSecretRef: ref } : {}),

@@ -94,20 +94,24 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
  * Subscribes the store to `history.appended` and pulls the initial page. Called once from the
  * shell; returns an unsubscribe for symmetry with React effects (mirrors `subscribeToProject`).
  *
- * Also reloads on `project.changed`: main opens a *different* history file per project, so
- * switching projects (including the very first `project.open`/`project.create` after launch,
- * which happens after this subscription starts) has to re-fetch, not just wait for new sends.
+ * Also reloads on `workspace.changed` and `project.changed`: main keeps one history file per
+ * open project and `history.list` merges them, so opening or closing a workspace — or adding,
+ * removing or reloading a project inside one — changes what the list should show, and waiting
+ * for the next send would leave it stale.
  */
 export function subscribeToHistory(): () => void {
   void useHistoryStore.getState().load();
   const offAppended = window.wirebench.on('history.appended', ((payload: HistoryAppendedEvent) => {
     useHistoryStore.getState().onAppended(payload.entry);
   }) as (payload: unknown) => void);
-  const offProjectChanged = window.wirebench.on('project.changed', () => {
+  const reload = (): void => {
     void useHistoryStore.getState().load();
-  });
+  };
+  const offProjectChanged = window.wirebench.on('project.changed', reload);
+  const offWorkspaceChanged = window.wirebench.on('workspace.changed', reload);
   return () => {
     offAppended();
     offProjectChanged();
+    offWorkspaceChanged();
   };
 }

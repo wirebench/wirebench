@@ -11,14 +11,14 @@
 
 import { channels } from '../../shared/ipc.js';
 import { redactXml } from '../redact.js';
-import type { ProjectHost } from '../project-host.js';
+import type { ProjectRouter } from '../project-router.js';
 import type { WssEntryWire } from '../../shared/wire-types.js';
 import type { WssEntry } from '@wirebench/engine';
 import { registerHandler } from './register.js';
 
 /** What the `wss.*` channels need; a stub stands in for it in tests. */
 export interface WssChannelDeps {
-  readonly project: Pick<ProjectHost, 'previewOutgoingWss' | 'insertWssEntry' | 'removeOutgoingWssFrom'>;
+  readonly project: Pick<ProjectRouter, 'previewOutgoingWss' | 'insertWssEntry' | 'removeOutgoingWssFrom'>;
 }
 
 /** The wire entry as the engine's model, with `undefined` optionals stripped for exactOptionalPropertyTypes. */

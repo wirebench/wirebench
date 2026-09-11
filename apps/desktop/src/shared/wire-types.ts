@@ -1406,16 +1406,19 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
-/** Request/response for `project.create`. */
-export const projectCreateRequestSchema = z.object({ dir: z.string(), name: z.string() });
-/** Request/response for `project.open`. */
-export const projectOpenRequestSchema = z.object({ dir: z.string() });
-/** Response for every channel that returns the whole project (or `null` when none is open). */
+/**
+ * The project a `project.*` request addresses. Every one of these channels carries it: inside
+ * a workspace "the open project" is not a question with one answer, so the renderer names the
+ * project it means and main routes the call to that project's host.
+ */
+export const projectIdRequestSchema = z.object({ projectId: z.string() });
+
+/** Response for every channel that returns the whole project (or `null` when it is not open). */
 export const projectSnapshotResponseSchema = z.object({ project: projectWireSchema.nullable() });
 export type ProjectSnapshotResponse = z.infer<typeof projectSnapshotResponseSchema>;
 
 /** Request/response for `project.mutate`: the new snapshot plus any entity the change created. */
-export const projectMutateRequestSchema = z.object({ change: projectChangeSchema });
+export const projectMutateRequestSchema = z.object({ projectId: z.string(), change: projectChangeSchema });
 export const projectMutateResponseSchema = z.object({
   project: projectWireSchema,
   /** Set by `add-request` and `clone-request`: the id of the request that was created. */
@@ -1454,11 +1457,20 @@ export const recentProjectSchema = z.object({
 });
 export type RecentProject = z.infer<typeof recentProjectSchema>;
 
-/** Response for `project.recent`. */
-export const projectRecentResponseSchema = z.object({ recent: z.array(recentProjectSchema) });
+/**
+ * Where a `project.addInterface` import lands: an existing project of the open workspace, or a
+ * project created for it on the spot. The second arm is what lets "Import WSDL" work from an
+ * empty workspace without first asking the user to make a project to put it in.
+ */
+export const projectAddInterfaceTargetSchema = z.union([
+  z.object({ projectId: z.string() }),
+  z.object({ newProjectName: z.string() }),
+]);
+export type ProjectAddInterfaceTarget = z.infer<typeof projectAddInterfaceTargetSchema>;
 
 /** Request/response for `project.addInterface`. */
 export const projectAddInterfaceRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
   source: importSourceSchema,
   auth: importAuthSchema.optional(),
   /** When true, the resolved auth is also saved on the interface for reuse when sending requests. */
@@ -1467,21 +1479,27 @@ export const projectAddInterfaceRequestSchema = z.object({
   token: z.string().optional(),
 });
 export const projectAddInterfaceResponseSchema = z.object({
+  /** The project the interface landed in — the one that was created, for a `newProjectName`. */
+  projectId: z.string(),
   project: projectWireSchema,
   interfaceId: z.string(),
 });
 export type ProjectAddInterfaceResponse = z.infer<typeof projectAddInterfaceResponseSchema>;
 
 /** Payload for the `project.changed` event: the renderer replaces its mirror wholesale. */
-export const projectChangedEventSchema = z.object({ project: projectWireSchema.nullable() });
+export const projectChangedEventSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema.nullable(),
+});
 export type ProjectChangedEvent = z.infer<typeof projectChangedEventSchema>;
 
 /** Payload for the `project.changedOnDisk` event, raised by the folder watcher. */
-export const projectChangedOnDiskEventSchema = z.object({ paths: z.array(z.string()) });
+export const projectChangedOnDiskEventSchema = z.object({ projectId: z.string(), paths: z.array(z.string()) });
 export type ProjectChangedOnDiskEvent = z.infer<typeof projectChangedOnDiskEventSchema>;
 
 /** Payload for the `project.hydration` event: one interface's definition finished (re)loading. */
 export const projectHydrationEventSchema = z.object({
+  projectId: z.string(),
   interfaceId: z.string(),
   status: hydrationStatusSchema,
   message: z.string().optional(),
@@ -2507,3 +2525,82 @@ export const workspaceChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('remove-workspace-environment'), environmentId: z.string() }),
 ]);
 export type WorkspaceChange = z.infer<typeof workspaceChangeSchema>;
+
+// ---------------------------------------------------------------------------
+// Workspace channels and events (Task 8). The renderer never sends a filesystem
+// path: link / import / export / locate run their native dialog in main, so the
+// request half of those is an id at most.
+// ---------------------------------------------------------------------------
+
+/** Response for `workspace.list`. */
+export const workspaceListResponseSchema = z.object({
+  workspaces: z.array(workspaceSummaryWireSchema),
+  /**
+   * Folders of a leftover pre-workspace `recent-projects.json`, offered on the picker as
+   * "you had these projects" rather than silently stranding them. Absent when there are none.
+   */
+  suggestions: z.array(z.string()).optional(),
+});
+export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
+
+/** Request for every channel that names a workspace by id (`open`, `delete`). */
+export const workspaceIdRequestSchema = z.object({ workspaceId: z.string() });
+
+/** Request for `workspace.create`. */
+export const workspaceCreateRequestSchema = z.object({ name: z.string() });
+
+/** Request for `workspace.rename`. */
+export const workspaceRenameRequestSchema = z.object({ workspaceId: z.string(), name: z.string() });
+
+/** Response for every channel that returns the open workspace. */
+export const workspaceResponseSchema = z.object({ workspace: workspaceWireSchema });
+export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
+
+/** Response for every channel that may leave no workspace open (`close`) or be cancelled. */
+export const workspaceSnapshotResponseSchema = z.object({ workspace: workspaceWireSchema.nullable() });
+export type WorkspaceSnapshotResponse = z.infer<typeof workspaceSnapshotResponseSchema>;
+
+/** Response for `workspace.rename` / `workspace.delete`: the refreshed picker list. */
+export const workspaceSummariesResponseSchema = z.object({ workspaces: z.array(workspaceSummaryWireSchema) });
+export type WorkspaceSummariesResponse = z.infer<typeof workspaceSummariesResponseSchema>;
+
+/** Request for `workspace.addProject`. */
+export const workspaceAddProjectRequestSchema = z.object({ name: z.string() });
+
+/** Response for `workspace.addProject`: the workspace, plus the project that was created. */
+export const workspaceAddProjectResponseSchema = z.object({
+  workspace: workspaceWireSchema,
+  projectId: z.string(),
+});
+export type WorkspaceAddProjectResponse = z.infer<typeof workspaceAddProjectResponseSchema>;
+
+/** Request for `workspace.removeProject`. `deleteFiles` never touches a linked folder. */
+export const workspaceRemoveProjectRequestSchema = z.object({
+  projectId: z.string(),
+  deleteFiles: z.boolean(),
+});
+
+/** Request for every channel addressing one project of the open workspace by id. */
+export const workspaceProjectIdRequestSchema = z.object({ projectId: z.string() });
+
+/** Response for `workspace.exportProject`: the folder written, or `null` when cancelled. */
+export const workspaceExportProjectResponseSchema = z.object({ dir: z.string().nullable() });
+export type WorkspaceExportProjectResponse = z.infer<typeof workspaceExportProjectResponseSchema>;
+
+/** Request for `workspace.setActiveEnvironment`; `null` deactivates. */
+export const workspaceSetActiveEnvironmentRequestSchema = z.object({ environmentId: z.string().nullable() });
+
+/** Request for `workspace.mutate`. */
+export const workspaceMutateRequestSchema = z.object({ change: workspaceChangeSchema });
+
+/** Response for `workspace.mutate`: the new snapshot plus any entity the change created. */
+export const workspaceMutateResponseSchema = z.object({
+  workspace: workspaceWireSchema,
+  /** Set by `add-workspace-environment`: the id of the environment that was created. */
+  createdEnvironmentId: z.string().optional(),
+});
+export type WorkspaceMutateResponse = z.infer<typeof workspaceMutateResponseSchema>;
+
+/** Payload for the `workspace.changed` event: the renderer replaces its mirror wholesale. */
+export const workspaceChangedEventSchema = z.object({ workspace: workspaceWireSchema.nullable() });
+export type WorkspaceChangedEvent = z.infer<typeof workspaceChangedEventSchema>;

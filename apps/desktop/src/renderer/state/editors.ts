@@ -124,10 +124,16 @@ export interface EditorsStore {
   readonly selectedAttachmentFor: (requestId: string) => string | undefined;
   /** Selects (or, with `undefined`, clears) the attachment row the Remove action acts on. */
   readonly setSelectedAttachment: (requestId: string, attachmentId: string | undefined) => void;
+  /**
+   * Drops every tab and every piece of per-request editor state. Called when the workspace
+   * closes: the tabs name requests of projects that are no longer open, so keeping them would
+   * leave the editor area addressing entities that no longer exist.
+   */
+  readonly reset: () => void;
 }
 
-export const useEditorsStore = create<EditorsStore>((set, get) => ({
-  tabs: [],
+const EMPTY_EDITORS = {
+  tabs: [] as EditorTab[],
   activeId: undefined,
   formViewTypes: {},
   requestViewTypes: {},
@@ -137,6 +143,15 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   inspectorTabs: {},
   inspectorCollapsed: {},
   selectedAttachments: {},
+} as const;
+
+export const useEditorsStore = create<EditorsStore>((set, get) => ({
+  ...EMPTY_EDITORS,
+  tabs: [],
+
+  reset: () => {
+    set({ ...EMPTY_EDITORS, tabs: [] });
+  },
 
   open: (tab) => {
     const { tabs } = get();

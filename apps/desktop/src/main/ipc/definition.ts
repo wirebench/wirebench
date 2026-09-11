@@ -7,23 +7,29 @@ import type { ReadPicks, RecordsWritePicks } from '../dialog-picks.js';
 import { allowsReadPath } from '../path-access.js';
 import type { EngineService } from '../engine-service.js';
 import { pickFolder, pickSaveFile } from '../native-dialogs.js';
-import type { ProjectHost } from '../project-host.js';
+import type { ProjectRouter } from '../project-router.js';
 import { declarationAtOffset, schemaIndexOf } from '../schema-index.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
 /**
- * The `ProjectHost` surface the Update/Export/Docs channels drive; a stub stands in for it
+ * The `ProjectRouter` surface the Update/Export/Docs channels drive; a stub stands in for it
  * in tests, exactly as `request.*` does.
  */
 export type DefinitionChannelProject = Pick<
-  ProjectHost,
-  'planDefinitionUpdate' | 'applyDefinitionUpdate' | 'exportDefinitionTo' | 'definitionDocs' | 'snapshot'
+  ProjectRouter,
+  'planDefinitionUpdate' | 'applyDefinitionUpdate' | 'exportDefinitionTo' | 'definitionDocs' | 'projectSnapshot' | 'projectId'
 >;
 
 /** What the Update/Export/Docs half of the `definition.*` channels needs beyond the engine. */
 export interface DefinitionChannelDeps {
   readonly project: DefinitionChannelProject;
+  /**
+   * The folders of every project open in the workspace. A `definition.import { kind: 'file' }`
+   * path is allowed when it is inside one of them — the workspace replaces the single "the
+   * open project folder" this check used to ask `snapshot()` for.
+   */
+  readonly projectDirs?: () => readonly string[];
   /**
    * The session's dialog memory: the *write* half records the Save-as target the docs picker
    * returns, the *read* half is what proves a `definition.import { kind: 'file' }` path was
@@ -55,8 +61,7 @@ export function registerDefinitionChannels(service: EngineService, deps?: Defini
     let source = request.source;
     if (source.kind === 'file') {
       const resolved = resolve(source.path);
-      const projectDir = deps?.project.snapshot()?.dir;
-      const allowed = await allowsReadPath(projectDir !== undefined ? [projectDir] : [], deps?.picks, resolved);
+      const allowed = await allowsReadPath(deps?.projectDirs?.() ?? [], deps?.picks, resolved);
       if (!allowed) {
         throw new WirebenchError(
           'import-path-refused',
@@ -142,7 +147,8 @@ export function registerDefinitionChannels(service: EngineService, deps?: Defini
 
   registerHandler(channels.definition.applyUpdate, async (request) => {
     const applied = await project.applyDefinitionUpdate(request.interfaceId, request.source, request.options);
-    const snapshot = project.snapshot();
+    const projectId = project.projectId(request.interfaceId);
+    const snapshot = projectId === undefined ? null : project.projectSnapshot(projectId);
     if (snapshot === null) {
       throw new WirebenchError('no-project', 'The project was closed while the definition was updating');
     }

@@ -44,6 +44,11 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancel: (requestId: string) => Promise<void>;
   /** Clears the exchange state for a removed request (keeps the log). */
   readonly clearRequest: (requestId: string) => void;
+  /**
+   * Drops every response and the whole HTTP log. Called when the workspace closes: both are
+   * keyed by requests of projects that are no longer open.
+   */
+  readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
   /**
@@ -83,6 +88,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
   return {
     byRequest: {},
     log: [],
+
+    reset: () => {
+      set({ byRequest: {}, log: [] });
+    },
 
     send: async (requestId, force) => {
       const projectState = useProjectStore.getState();

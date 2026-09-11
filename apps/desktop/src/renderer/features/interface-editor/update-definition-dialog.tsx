@@ -103,6 +103,7 @@ function PlanList({ title, items, testId }: { title: string; items: readonly Pla
 export function UpdateDefinitionDialog({ open, onOpenChange, interfaceId }: UpdateDefinitionDialogProps) {
   const iface = useProjectStore((state) => state.interfaces[interfaceId]);
   const refresh = useProjectStore((state) => state.applySnapshot);
+  const projectId = useProjectStore((state) => state.projectOf[interfaceId]);
   const [url, setUrl] = useState('');
   const [options, setOptions] = useState<DefinitionUpdateOptions>(DEFAULT_OPTIONS);
   const [plan, setPlan] = useState<UpdatePlanWire | undefined>(undefined);
@@ -172,7 +173,9 @@ export function UpdateDefinitionDialog({ open, onOpenChange, interfaceId }: Upda
       setError(result.error.message);
       return;
     }
-    refresh(result.value.project);
+    if (projectId !== undefined) {
+      refresh(projectId, result.value.project);
+    }
     onOpenChange(false);
     const { requestsCreated, requestsRecreated, requestsOrphaned } = result.value;
     showToast(

@@ -1,5 +1,7 @@
+import { mkdir, rename } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow, dialog, protocol, safeStorage, session } from 'electron';
+import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { DialogPicks } from './dialog-picks.js';
@@ -7,8 +9,7 @@ import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
 import { PreferencesService, rememberPickedCaBundle, toPreferencesWire } from './preferences.js';
-import { ProjectHost } from './project-host.js';
-import { RecentProjects } from './recent-projects.js';
+import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
@@ -29,6 +30,7 @@ import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerProjectChannels } from './ipc/project.js';
+import { registerWorkspaceChannels } from './ipc/workspace.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
@@ -38,7 +40,7 @@ import { createMainWindow } from './windows.js';
 import { createUpdateController } from './update-service.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import type { z } from 'zod';
-import type { ProjectWire } from '../shared/wire-types.js';
+import type { WorkspaceWire } from '../shared/wire-types.js';
 
 // Must run before `app.ready` — Electron only honours scheme privileges registered this
 // early. This is what lets the packaged renderer be served from a real (non-`file://`)
@@ -70,9 +72,9 @@ function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload:
   }
 }
 
-/** Keeps the OS window title in step with the open project, as `name — Wirebench`. */
-function applyWindowTitle(project: ProjectWire | null): void {
-  const title = project === null ? 'Wirebench' : `${project.name} — Wirebench`;
+/** Keeps the OS window title in step with the open workspace, as `name — Wirebench`. */
+function applyWindowTitle(workspace: WorkspaceWire | null): void {
+  const title = workspace === null ? 'Wirebench' : `${workspace.name} — Wirebench`;
   for (const window of BrowserWindow.getAllWindows()) {
     window.setTitle(title);
   }
@@ -90,50 +92,58 @@ const dialogPicks = new DialogPicks();
 /** Persistent request history — one jsonl file per open project under `userData`. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
 
-const projectHost = new ProjectHost(
-  engineService,
-  new RecentProjects(app.getPath('userData')),
-  {
-    onChanged: (project) => {
-      // History has to be open (or closed) *before* `project.changed` reaches the renderer —
-      // `subscribeToHistory` reloads on that event, and a reload racing the file open would
-      // just see the stale (or wrong-project) history.
-      const announce = (): void => {
-        broadcast(events.project.changed, { project });
-        applyWindowTitle(project);
-      };
-      const openIds = historyService.openProjectIds();
-      if (project === null) {
-        historyService.closeAll();
-        announce();
-      } else if (!openIds.includes(project.id)) {
-        for (const id of openIds) {
-          historyService.close(id);
-        }
-        void historyService.open(project.id).then(announce);
-      } else {
-        announce();
-      }
+/**
+ * Where a deleted workspace (or project folder) goes. `shell.trashItem` in a real run; under
+ * e2e, a move into `WIREBENCH_E2E_TRASH_DIR`, because a Playwright run must be able to *assert*
+ * on what was trashed and the OS trash is neither readable nor per-profile. Either way nothing
+ * is ever removed: there is no `rm` on this path.
+ */
+async function trashFolder(target: string): Promise<void> {
+  const e2eTrashDir = process.env['WIREBENCH_E2E_TRASH_DIR'];
+  if (e2eTrashDir === undefined) {
+    await shell.trashItem(target);
+    return;
+  }
+  await mkdir(e2eTrashDir, { recursive: true });
+  await rename(target, join(e2eTrashDir, `${basename(target)}-${String(Date.now())}`));
+}
+
+/**
+ * The open workspace and every project host inside it. It is also the `ProjectRouter` every
+ * `register*Channels` call is handed, so a channel addressed at an entity reaches that entity's
+ * own project rather than a single ambient one.
+ */
+const workspaceService = new WorkspaceService({
+  userDataDir: app.getPath('userData'),
+  engine: engineService,
+  globals: globalProperties,
+  secrets: secretStore,
+  preferences: preferencesService,
+  picks: dialogPicks,
+  history: historyService,
+  trash: trashFolder,
+  // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
+  // file or OS setting — rather than a second, subtly different guess of our own.
+  resolveSystemProxy: async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
+  hooks: {
+    onChanged: (workspace) => {
+      broadcast(events.workspace.changed, { workspace });
+      applyWindowTitle(workspace);
     },
-    onChangedOnDisk: (paths) => {
-      broadcast(events.project.changedOnDisk, { paths: [...paths] });
+    onProjectChanged: (projectId, project) => {
+      broadcast(events.project.changed, { projectId, project });
     },
-    onHydration: (event) => {
-      broadcast(events.project.hydration, event);
+    onProjectChangedOnDisk: (projectId, paths) => {
+      broadcast(events.project.changedOnDisk, { projectId, paths: [...paths] });
+    },
+    onHydration: (projectId, event) => {
+      broadcast(events.project.hydration, { projectId, ...event });
     },
     onProgress: (progress) => {
       broadcast(events.engine.progress, progress);
     },
   },
-  undefined,
-  globalProperties,
-  secretStore,
-  preferencesService,
-  dialogPicks,
-  // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
-  // file or OS setting — rather than a second, subtly different guess of our own.
-  async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
-);
+});
 
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
@@ -147,9 +157,14 @@ void app.whenReady().then(() => {
     broadcast(events.app.updateStatus, { status });
   });
   registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
-  registerDefinitionChannels(engineService, { project: projectHost, picks: dialogPicks });
+  registerDefinitionChannels(engineService, {
+    project: workspaceService,
+    picks: dialogPicks,
+    projectDirs: () => workspaceService.hosts().flatMap((host) => [host.snapshot()?.dir ?? []].flat()),
+  });
   registerRequestChannels(engineService, {
-    project: projectHost,
+    project: workspaceService,
+    adHocScopes: () => ({ project: {}, global: globalProperties.get(), system: process.env }),
     showSecrets: showSecretsFlag,
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
@@ -157,11 +172,19 @@ void app.whenReady().then(() => {
     dialogPicks,
   });
   registerHistoryChannels(engineService, historyService, {
-    project: projectHost,
+    project: workspaceService,
+    adHocScopes: () => ({ project: {}, global: globalProperties.get(), system: process.env }),
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
   });
-  registerProjectChannels(projectHost);
+  registerProjectChannels({
+    router: workspaceService,
+    addProject: async (name) => await workspaceService.addProject(name),
+  });
+  registerWorkspaceChannels({
+    service: workspaceService,
+    suggestions: async () => await readLeftoverProjectFolders(app.getPath('userData')),
+  });
   registerGlobalsChannels(globalProperties, (properties) => {
     broadcast(events.globals.changed, { properties });
   });
@@ -182,9 +205,9 @@ void app.whenReady().then(() => {
   registerFsChannels();
   registerXmlChannels(engineService);
   registerXpathChannels();
-  registerValidateChannels(engineService, projectHost);
+  registerValidateChannels(engineService, workspaceService);
   registerWsiChannels(engineService, {
-    project: projectHost,
+    project: workspaceService,
     picks: dialogPicks,
     dialog: {
       // Mirrors `dialogs.saveFile`, including its e2e override: a Playwright run cannot drive a
@@ -203,19 +226,18 @@ void app.whenReady().then(() => {
       },
     },
   });
-  // One host today; Task 8 passes the `WorkspaceService`, whose `hosts()` is the real thing.
-  registerSearchChannels(engineService, { hosts: () => [projectHost] });
+  registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
-    project: projectHost,
+    project: workspaceService,
     picks: dialogPicks,
     userDataDir: app.getPath('userData'),
   });
-  registerKeystoreChannels({ project: projectHost, picks: dialogPicks });
-  registerWsaChannels({ project: projectHost });
-  registerWssChannels({ project: projectHost });
+  registerKeystoreChannels({ project: workspaceService, picks: dialogPicks });
+  registerWsaChannels({ project: workspaceService });
+  registerWssChannels({ project: workspaceService });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
@@ -235,11 +257,15 @@ void app.whenReady().then(() => {
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();
-  applyWindowTitle(projectHost.snapshot());
+  applyWindowTitle(workspaceService.snapshot());
 
   // Opt-in, and only after the preferences are actually loaded — the default is off, so a
   // check that ran before the load would read "off" for every user who turned it on.
   void preferencesService.ready().then(async () => {
+    // The last workspace is reopened only once preferences are loaded: every host folds them
+    // into its send defaults, and a workspace opened before the load would hold the defaults.
+    // A workspace that will not open is not an error the app dies of — the picker shows it.
+    await workspaceService.openLast().catch(() => null);
     await updates.checkOnLaunch(() => preferencesService.get().updates.checkOnLaunch);
   });
 
@@ -258,8 +284,8 @@ app.on('before-quit', (event) => {
     return;
   }
   event.preventDefault();
-  void projectHost
-    .save({ reason: 'quit' })
+  void workspaceService
+    .saveAll('quit')
     .catch(() => undefined)
     .finally(() => {
       quitSaveDone = true;

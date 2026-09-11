@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import type { EngineProgressEvent, ImportProblemWire, ImportSourceWire } from '../../../shared/wire-types.js';
+import type {
+  EngineProgressEvent,
+  ImportProblemWire,
+  ImportSourceWire,
+  ProjectAddInterfaceTarget,
+} from '../../../shared/wire-types.js';
 import { Button } from '../../components/button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
@@ -9,7 +14,6 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { projectActions } from '../welcome/project-actions.js';
 
 type SourceTab = 'url' | 'file' | 'paste';
 
@@ -18,6 +22,41 @@ const TABS = [
   { id: 'file', label: 'File' },
   { id: 'paste', label: 'Paste' },
 ] as const satisfies readonly { id: SourceTab; label: string }[];
+
+/**
+ * A project name derived from what is being imported — `Calculator.wsdl` becomes `Calculator`.
+ * Used only when no project is selected in the explorer: importing into an empty workspace
+ * should not stop to ask for a project first.
+ */
+function projectNameFor(source: ImportSourceWire): string {
+  const raw =
+    source.kind === 'url'
+      ? (() => {
+          try {
+            return new URL(source.url).pathname;
+          } catch {
+            return source.url;
+          }
+        })()
+      : source.kind === 'file'
+        ? source.path
+        : (source.location ?? '');
+  const segment = raw.split(/[\\/]/).filter((part) => part.length > 0).at(-1) ?? '';
+  const name = segment.replace(/\?.*$/, '').replace(/\.[^.]+$/, '').replace(/^dropped:/, '').trim();
+  return name.length > 0 ? name : 'New Project';
+}
+
+/**
+ * Where the import lands: the project selected in the explorer, or — with nothing selected — a
+ * project created for it, named after the source.
+ */
+function importTarget(source: ImportSourceWire): ProjectAddInterfaceTarget {
+  const selection = useUiStore.getState().selection;
+  const store = useProjectStore.getState();
+  const selected =
+    selection === undefined ? undefined : (store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id]);
+  return selected === undefined ? { newProjectName: projectNameFor(source) } : { projectId: selected };
+}
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -48,8 +87,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [progress, setProgress] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [problems, setProblems] = useState<ImportProblemWire[]>([]);
-  // An import has to land somewhere: with no project open the dialog offers to make one first.
-  const [needsProject, setNeedsProject] = useState(false);
   const tokenRef = useRef<string | undefined>(undefined);
   // Tokens for imports the user cancelled — the in-flight promise still settles after `onCancel`
   // returns, so its resolution/rejection must be ignored rather than surfaced as an error.
@@ -71,7 +108,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setImportError(undefined);
     setProgress(undefined);
     setProblems([]);
-    setNeedsProject(false);
   }
 
   function closeAndReset(): void {
@@ -136,10 +172,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     if (source === undefined) {
       return;
     }
-    if (useProjectStore.getState().project === null) {
-      setNeedsProject(true);
-      return;
-    }
     // A password typed but not Saved must not be silently dropped by pressing Import.
     const flushedRef = (await passwordFlushRef.current?.()) ?? passwordRef;
 
@@ -151,7 +183,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         useAuth && username.length > 0 && flushedRef !== undefined
           ? { auth: { username, passwordRef: flushedRef }, useForRequests }
           : undefined;
-      const summary = await useProjectStore.getState().importDefinition(source, options, token);
+      const summary = await useProjectStore.getState().importDefinition(importTarget(source), source, options, token);
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
@@ -308,20 +340,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
               />
             )}
           </div>
-
-          {needsProject && (
-            <div data-testid="import-needs-project" className="mt-3 rounded border border-hairline-strong p-2">
-              <p className="text-sm text-fg-default">
-                Interfaces are saved into a project folder. Create one to import into.
-              </p>
-              <div className="mt-2 flex gap-2">
-                <Button variant="primary" onClick={() => void projectActions.newProject()}>
-                  Create a project folder…
-                </Button>
-                <Button onClick={() => void projectActions.openProject()}>Open an existing project…</Button>
-              </div>
-            </div>
-          )}
 
           {progress !== undefined && <p className="mt-3 text-sm text-fg-subtle">{progress}</p>}
           {importError !== undefined && <p className="mt-3 text-sm text-status-danger">{importError}</p>}

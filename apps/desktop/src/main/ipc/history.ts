@@ -10,14 +10,20 @@ import type { HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
-import type { ProjectHost } from '../project-host.js';
+import type { ProjectRouter } from '../project-router.js';
+import type { PropertyScopes } from '@wirebench/engine';
 import type { HistorySendProject } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
 
 /** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject & Pick<ProjectHost, 'buildLiveSendInput'>;
+  readonly project: HistorySendProject & Pick<ProjectRouter, 'buildLiveSendInput'>;
+  /**
+   * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
+   * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
+   */
+  readonly adHocScopes?: () => PropertyScopes;
   readonly showSecrets?: { get(): boolean };
   /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
@@ -99,6 +105,7 @@ export function registerHistoryChannels(
       service,
       {
         project: deps.project,
+        ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
         ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
         history,
         ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),

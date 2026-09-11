@@ -5,7 +5,8 @@ import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@w
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { ProjectHost } from '../project-host.js';
+import type { PropertyScopes } from '@wirebench/engine';
+import type { ProjectRouter } from '../project-router.js';
 import type { HistoryService } from '../history-service.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
@@ -26,30 +27,48 @@ import type {
 } from '../../shared/wire-types.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectHost` surface the `request.*` channels drive; a stub stands in for it in tests. */
+/** The `ProjectRouter` surface the `request.*` channels drive; a stub stands in for it in tests. */
 export type RequestChannelProject = Pick<
-  ProjectHost,
+  ProjectRouter,
   | 'scopesFor'
   | 'preflight'
   | 'authFor'
   | 'requestMeta'
   | 'projectId'
+  | 'projectMutate'
   | 'requestSource'
   | 'buildLiveSendInput'
   | 'sendInputFor'
   | 'dumpFileFor'
-  | 'mutate'
 > &
   // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectHost, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
+  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
+
+/**
+ * The id of the project owning `entityId`, for the handful of calls that address the *project*
+ * (a mutation, a proxy lookup) while the renderer only named an entity inside it. Throws rather
+ * than guessing: with several projects open there is no "current" one to fall back to.
+ */
+function ownerOf(project: Pick<RequestChannelProject, 'projectId'>, entityId: string): string {
+  const projectId = project.projectId(entityId);
+  if (projectId === undefined) {
+    throw new ProjectError('unknown-entity', `No open project owns "${entityId}"`, { details: { entityId } });
+  }
+  return projectId;
+}
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
-  /** Supplies the scopes; `ProjectHost` in the app, a stub in tests. */
+  /** Supplies the scopes; `ProjectRouter` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
+  /**
+   * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
+   * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
+   */
+  readonly adHocScopes?: () => PropertyScopes;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
   /** Records every completed/failed send to the open project's history. Omitted in tests that don't care. */
@@ -263,7 +282,11 @@ async function recreate(
   // A recreate hands back a freshly built envelope, so it is formatted with the user's own
   // indent rather than whatever width the generator happened to use.
   const envelopeXml = prettyPrint(merged.xml, preferences?.editor.tabSize);
-  await project.mutate({ kind: 'update-request', requestId: request.requestId, patch: { envelopeXml } });
+  await project.projectMutate(ownerOf(project, request.requestId), {
+    kind: 'update-request',
+    requestId: request.requestId,
+    patch: { envelopeXml },
+  });
   return { envelopeXml, kept: merged.kept, added: merged.added, removed: merged.removed };
 }
 
@@ -284,7 +307,7 @@ async function curl(
   }
   const auth = deps.project.authFor(request.requestId);
   const effective = await service.effectiveSendInput(live, {
-    scopes: deps.project.scopesFor(),
+    scopes: deps.project.scopesFor(request.requestId),
     ...(auth !== undefined ? { auth } : {}),
   });
   const show = deps.showSecrets?.get() ?? false;
@@ -348,7 +371,7 @@ async function networkNote(
 ): Promise<string | undefined> {
   const parts: string[] = [];
   try {
-    const proxy = await project.proxyFor?.(endpoint);
+    const proxy = await project.proxyFor?.(ownerOf(project, requestId), endpoint);
     if (proxy !== undefined) {
       parts.push(`through proxy ${proxy.url}`);
     }
@@ -384,7 +407,7 @@ async function importCurl(
   request: RequestImportCurlRequest,
 ): Promise<RequestImportCurlResponse> {
   const parsed = fromCurl(request.command);
-  const created = await project.mutate({
+  const created = await project.projectMutate(ownerOf(project, request.interfaceId), {
     kind: 'add-request',
     interfaceId: request.interfaceId,
     bindingName: request.bindingName,
@@ -402,7 +425,7 @@ async function importCurl(
     ...(soapAction !== undefined ? { soapAction } : {}),
     ...(headers !== undefined ? { headers: Object.entries(headers).map(([name, value]) => ({ name, value })) } : {}),
   };
-  await project.mutate({ kind: 'update-request', requestId, patch });
+  await project.projectMutate(ownerOf(project, requestId), { kind: 'update-request', requestId, patch });
   return { requestId, problems: [...parsed.problems] };
 }
 

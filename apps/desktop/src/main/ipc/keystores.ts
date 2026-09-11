@@ -11,13 +11,13 @@ import { BrowserWindow, dialog } from 'electron';
 import type { WebContents } from 'electron';
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
-import type { ProjectHost } from '../project-host.js';
+import type { ProjectRouter } from '../project-router.js';
 import { registerHandler } from './register.js';
 
 /** What the `keystores.*` channels need; a stub stands in for each of these in tests. */
 export interface KeystoreChannelDeps {
   /** Reads and parses the keystore behind a registry id. */
-  readonly project: Pick<ProjectHost, 'inspectKeystore'>;
+  readonly project: Pick<ProjectRouter, 'inspectKeystore'>;
   /**
    * The session's picked-path memory. `pickFile` records what it returns here, which is the
    * only evidence `add-keystore` accepts for a file outside the project folder.

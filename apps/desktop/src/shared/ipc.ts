@@ -58,12 +58,10 @@ import {
   projectAddInterfaceResponseSchema,
   projectChangedEventSchema,
   projectChangedOnDiskEventSchema,
-  projectCreateRequestSchema,
   projectHydrationEventSchema,
   projectMutateRequestSchema,
   projectMutateResponseSchema,
-  projectOpenRequestSchema,
-  projectRecentResponseSchema,
+  projectIdRequestSchema,
   projectSaveResponseSchema,
   projectSnapshotResponseSchema,
   interfaceSummarySchema,
@@ -135,6 +133,22 @@ import {
   wsiExportHtmlRequestSchema,
   wsiExportHtmlResponseSchema,
   wsiReportWireSchema,
+  workspaceAddProjectRequestSchema,
+  workspaceAddProjectResponseSchema,
+  workspaceChangedEventSchema,
+  workspaceCreateRequestSchema,
+  workspaceExportProjectResponseSchema,
+  workspaceIdRequestSchema,
+  workspaceListResponseSchema,
+  workspaceMutateRequestSchema,
+  workspaceMutateResponseSchema,
+  workspaceProjectIdRequestSchema,
+  workspaceRemoveProjectRequestSchema,
+  workspaceRenameRequestSchema,
+  workspaceResponseSchema,
+  workspaceSetActiveEnvironmentRequestSchema,
+  workspaceSnapshotResponseSchema,
+  workspaceSummariesResponseSchema,
 } from './wire-types.js';
 
 /**
@@ -267,20 +281,64 @@ export const channels = {
     curl: defineChannel('request.curl', requestCurlRequestSchema, requestCurlResponseSchema),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
   },
+  // A workspace owns its projects: creating, opening and closing one is a `workspace.*` call,
+  // not a `project.*` one. What is left here addresses *one* project of the open workspace,
+  // named by `projectId` — never by a path, which the renderer never sees or sends.
   project: {
-    create: defineChannel('project.create', projectCreateRequestSchema, projectSnapshotResponseSchema),
-    open: defineChannel('project.open', projectOpenRequestSchema, projectSnapshotResponseSchema),
-    close: defineChannel('project.close', z.undefined(), projectSnapshotResponseSchema),
-    snapshot: defineChannel('project.snapshot', z.undefined(), projectSnapshotResponseSchema),
+    snapshot: defineChannel('project.snapshot', projectIdRequestSchema, projectSnapshotResponseSchema),
     mutate: defineChannel('project.mutate', projectMutateRequestSchema, projectMutateResponseSchema),
-    save: defineChannel('project.save', z.undefined(), projectSaveResponseSchema),
-    recent: defineChannel('project.recent', z.undefined(), projectRecentResponseSchema),
+    save: defineChannel('project.save', projectIdRequestSchema, projectSaveResponseSchema),
     addInterface: defineChannel(
       'project.addInterface',
       projectAddInterfaceRequestSchema,
       projectAddInterfaceResponseSchema,
     ),
-    reload: defineChannel('project.reload', z.undefined(), projectSnapshotResponseSchema),
+    reload: defineChannel('project.reload', projectIdRequestSchema, projectSnapshotResponseSchema),
+  },
+  // The workspace itself: the picker, the open workspace's manifest, and the project
+  // membership operations. `linkProject`, `importProjectFolder`, `exportProject` and
+  // `locateProject` take no path — each runs its own native dialog in main and records the
+  // pick, so a folder outside the workspace is only ever one the user chose in person.
+  workspace: {
+    list: defineChannel('workspace.list', z.undefined(), workspaceListResponseSchema),
+    create: defineChannel('workspace.create', workspaceCreateRequestSchema, workspaceResponseSchema),
+    open: defineChannel('workspace.open', workspaceIdRequestSchema, workspaceResponseSchema),
+    close: defineChannel('workspace.close', z.undefined(), workspaceSnapshotResponseSchema),
+    snapshot: defineChannel('workspace.snapshot', z.undefined(), workspaceSnapshotResponseSchema),
+    rename: defineChannel('workspace.rename', workspaceRenameRequestSchema, workspaceSummariesResponseSchema),
+    delete: defineChannel('workspace.delete', workspaceIdRequestSchema, workspaceSummariesResponseSchema),
+    addProject: defineChannel(
+      'workspace.addProject',
+      workspaceAddProjectRequestSchema,
+      workspaceAddProjectResponseSchema,
+    ),
+    linkProject: defineChannel('workspace.linkProject', z.undefined(), workspaceSnapshotResponseSchema),
+    importProjectFolder: defineChannel(
+      'workspace.importProjectFolder',
+      z.undefined(),
+      workspaceSnapshotResponseSchema,
+    ),
+    exportProject: defineChannel(
+      'workspace.exportProject',
+      workspaceProjectIdRequestSchema,
+      workspaceExportProjectResponseSchema,
+    ),
+    locateProject: defineChannel(
+      'workspace.locateProject',
+      workspaceProjectIdRequestSchema,
+      workspaceSnapshotResponseSchema,
+    ),
+    removeProject: defineChannel(
+      'workspace.removeProject',
+      workspaceRemoveProjectRequestSchema,
+      workspaceResponseSchema,
+    ),
+    setActiveEnvironment: defineChannel(
+      'workspace.setActiveEnvironment',
+      workspaceSetActiveEnvironmentRequestSchema,
+      workspaceResponseSchema,
+    ),
+    mutate: defineChannel('workspace.mutate', workspaceMutateRequestSchema, workspaceMutateResponseSchema),
   },
   globals: {
     get: defineChannel('globals.get', z.undefined(), globalsPropertiesResponseSchema),
@@ -443,6 +501,9 @@ export const events = {
   theme: {
     /** The OS flipped between light and dark; `system` re-resolves on it. */
     changed: defineEvent('theme.changed', themeChangedEventSchema),
+  },
+  workspace: {
+    changed: defineEvent('workspace.changed', workspaceChangedEventSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),

@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { PropertyTable } from '../properties/property-table.js';
-import { useProjectStore } from '../../state/project.js';
-import type { InterfaceWire, PropertyMapWire } from '../../../shared/wire-types.js';
+import { selectEnvironment, useProjectStore } from '../../state/project.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+import type { EnvironmentPatchWire, InterfaceWire, PropertyMapWire } from '../../../shared/wire-types.js';
 
 /** How long the name field waits after the last keystroke before it saves. */
 export const NAME_DEBOUNCE_MS = 300;
@@ -83,12 +84,31 @@ export interface EnvironmentEditorProps {
  * rebuilds the map from the mirror and hands main the complete result.
  */
 export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
-  const environment = useProjectStore((state) =>
-    state.environments.find((candidate) => candidate.id === environmentId),
+  const projectEnvironment = useProjectStore((state) => selectEnvironment(state, environmentId));
+  const workspaceEnvironment = useWorkspaceStore((state) =>
+    state.workspace?.environments.find((candidate) => candidate.id === environmentId),
   );
+  // A workspace environment and a project environment are edited through different channels,
+  // but the patch shape is the same, so the rest of this component does not care which it has.
+  const environment = workspaceEnvironment ?? projectEnvironment;
   const interfaces = useProjectStore((state) => state.interfaces);
+  const projectId = useProjectStore((state) => state.projectOf[environmentId]);
   const order = useProjectStore((state) => state.order);
-  const updateEnvironment = useProjectStore((state) => state.updateEnvironment);
+  const updateProjectEnvironment = useProjectStore((state) => state.updateEnvironment);
+  const mutateWorkspace = useWorkspaceStore((state) => state.mutate);
+  const isWorkspaceEnvironment = workspaceEnvironment !== undefined;
+  const updateEnvironment = useCallback(
+    async (id: string, patch: EnvironmentPatchWire): Promise<void> => {
+      if (isWorkspaceEnvironment) {
+        await mutateWorkspace({ kind: 'update-workspace-environment', environmentId: id, patch });
+        return;
+      }
+      if (projectId !== undefined) {
+        await updateProjectEnvironment(projectId, id, patch);
+      }
+    },
+    [isWorkspaceEnvironment, mutateWorkspace, projectId, updateProjectEnvironment],
+  );
 
   const [name, setName] = useState(environment?.name ?? '');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -138,10 +158,10 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
   // Reads the latest environment from the store rather than the value captured at render time:
   // two commits fired back-to-back (before either IPC round trip resolves) must each build their
   // map from what the other just wrote, or the second overwrites the first.
-  const latestEnvironment = (): typeof environment => {
-    const fromStore = useProjectStore.getState().environments.find((candidate) => candidate.id === environmentId);
-    return fromStore ?? environment;
-  };
+  const latestEnvironment = (): NonNullable<typeof environment> =>
+    useWorkspaceStore.getState().workspace?.environments.find((candidate) => candidate.id === environmentId) ??
+    selectEnvironment(useProjectStore.getState(), environmentId) ??
+    environment;
 
   const replaceEndpoints = (slug: string, url: string): void => {
     const current = latestEnvironment();
@@ -162,7 +182,12 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
     void updateEnvironment(environmentId, { properties });
   };
 
-  const summaries = order.map((id) => interfaces[id]).filter((iface): iface is InterfaceWire => iface !== undefined);
+  // Every interface of every open project: a workspace environment addresses them all, and a
+  // project environment's own grid is a strict subset of the same list.
+  const summaries = order
+    .flatMap((group) => group.interfaceIds)
+    .map((id) => interfaces[id])
+    .filter((iface): iface is InterfaceWire => iface !== undefined);
 
   return (
     <section

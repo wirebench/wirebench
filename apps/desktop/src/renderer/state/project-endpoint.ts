@@ -5,6 +5,7 @@
 
 import type { EndpointSourceWire, EndpointWire } from '../../shared/wire-types.js';
 import type { ProjectSnapshot } from './project.js';
+import { useWorkspaceStore } from './workspace.js';
 
 /** What {@link selectRequestEndpoint} answers: the URL, and which rule produced it. */
 export interface ResolvedEndpoint {
@@ -34,11 +35,19 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
   }
   const iface = state.interfaces[request.interfaceId];
 
-  if (iface !== undefined && state.activeEnvironmentId !== undefined) {
-    const environment = state.environments.find((candidate) => candidate.id === state.activeEnvironmentId);
-    const override = environment?.endpoints[iface.slug];
+  // The active environment is the *workspace's*, and its endpoint keys are
+  // `<projectSlug>/<interfaceSlug>` — read straight from the workspace store rather than
+  // threaded through every caller, since this whole module is an advisory mirror of what main
+  // will decide anyway (`request.preflight` is the authority).
+  if (iface !== undefined) {
+    const workspace = useWorkspaceStore.getState().workspace;
+    const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
+    const projectId = state.projectOf[iface.id];
+    const projectSlug = workspace?.projects.find((project) => project.id === projectId)?.slug;
+    const override =
+      projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
     if (override !== undefined) {
-      return { url: override, source: 'environment' };
+      return { url: override, source: 'workspace-environment' };
     }
   }
 

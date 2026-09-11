@@ -109,6 +109,11 @@ export interface InterfaceEditorStore {
    * dialog on an interface whose viewer is not mounted yet.
    */
   readonly setDialog: (interfaceId: string, dialog: InterfaceDialogId | undefined) => void;
+  /**
+   * Drops every cached definition, selection and dialog. Called when the workspace closes:
+   * everything here is keyed by an interface id of a project that is no longer open.
+   */
+  readonly reset: () => void;
 }
 
 const DEFAULT_TAB: InterfaceTabId = 'overview';
@@ -123,6 +128,10 @@ export const useInterfaceEditorStore = create<InterfaceEditorStore>((set, get) =
   data: {},
   selections: {},
   dialogs: {},
+
+  reset: () => {
+    set({ tabs: {}, data: {}, selections: {}, sourceTargets: {}, dialogs: {} });
+  },
 
   dataFor: (interfaceId) => get().data[interfaceId] ?? EMPTY_DATA,
 

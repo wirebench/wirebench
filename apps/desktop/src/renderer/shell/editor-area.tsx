@@ -1,10 +1,9 @@
 import { lazy, Suspense } from 'react';
 import { EnvironmentEditor } from '../features/environments/environment-editor.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
-import { WelcomeScreen } from '../features/welcome/welcome-screen.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
-import type { PreferencesSectionWire } from '../../shared/wire-types.js';
+import type { PreferencesSectionWire, ProjectWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
 // thing that pulls it in — is split out and fetched the first time a request tab is opened.
@@ -33,8 +32,15 @@ const PreferencesEditor = lazy(async () => {
   return { default: module.PreferencesEditor };
 });
 
-export interface EditorAreaProps {
-  readonly onImportDefinition: () => void;
+/** One environment's name, wherever in the open projects it lives — for a tab label. */
+function environmentName(projects: Readonly<Record<string, ProjectWire>>, environmentId: string): string | undefined {
+  for (const project of Object.values(projects)) {
+    const match = project.environments.find((environment) => environment.id === environmentId);
+    if (match !== undefined) {
+      return match.name;
+    }
+  }
+  return undefined;
 }
 
 const WELCOME_ID = 'welcome';
@@ -56,17 +62,17 @@ function isPreferencesSection(value: string | undefined): value is PreferencesSe
 }
 
 /**
- * The tabbed editor area. A Welcome tab is always present; opening a request from the
+ * The tabbed editor area. A placeholder tab is always present; opening a request from the
  * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
-export function EditorArea({ onImportDefinition }: EditorAreaProps) {
+export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
   const showWelcome = useEditorsStore((state) => state.showWelcome);
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
-  const environments = useProjectStore((state) => state.environments);
+  const projects = useProjectStore((state) => state.projects);
   const interfaces = useProjectStore((state) => state.interfaces);
 
   const activeTab = tabs.find((t) => t.id === activeId);
@@ -138,9 +144,7 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
               ? interfaces[tab.interfaceId]?.name
               : undefined) ??
             (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
-            (tab.environmentId !== undefined
-              ? environments.find((environment) => environment.id === tab.environmentId)?.name
-              : undefined) ??
+            (tab.environmentId !== undefined ? environmentName(projects, tab.environmentId) : undefined) ??
             tab.title;
           return (
             // One focusable control per tab. A nested close *button* would be interactive
@@ -192,7 +196,12 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         className="min-h-0 flex-1 overflow-hidden"
       >
         {showingWelcome ? (
-          <WelcomeScreen onImportDefinition={onImportDefinition} />
+          <div
+            data-testid="editor-empty"
+            className="flex h-full items-center justify-center px-6 text-sm text-fg-subtle"
+          >
+            Select a request in the Explorer, or import a definition to get started.
+          </div>
         ) : activeTab.kind === 'interface' && activeTab.interfaceId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <InterfaceEditor interfaceId={activeTab.interfaceId} />

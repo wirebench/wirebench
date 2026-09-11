@@ -1,0 +1,212 @@
+/**
+ * The renderer's mirror of the open workspace: the picker's list, the open workspace's
+ * manifest, and one action per `workspace.*` channel.
+ *
+ * This store is what decides whether the app shows the IDE at all — `workspace === null` is
+ * the picker. Closing a workspace therefore also resets every store keyed by entities of its
+ * projects (see {@link WorkspaceStore.applySnapshot}), so nothing survives into the next one.
+ */
+
+import { create } from 'zustand';
+import type { IpcError } from '../../shared/ipc.js';
+import type {
+  WorkspaceChange,
+  WorkspaceChangedEvent,
+  WorkspaceSummaryWire,
+  WorkspaceWire,
+} from '../../shared/wire-types.js';
+import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
+import { useEditorsStore } from './editors.js';
+import { useExchangesStore } from './exchanges.js';
+import { useProjectStore } from './project.js';
+import { ipc } from './ipc-client.js';
+
+function asError(error: IpcError): Error {
+  return Object.assign(new Error(error.message), { code: error.code });
+}
+
+/** The workspace store's serialisable state. */
+export interface WorkspaceSnapshot {
+  /** The open workspace, or `null` when the picker should be shown. */
+  readonly workspace: WorkspaceWire | null;
+  /** Every workspace on disk, newest-opened first; the picker's rows. */
+  readonly workspaces: readonly WorkspaceSummaryWire[];
+  /** Project folders from a leftover pre-workspace recent list, offered on the picker. */
+  readonly suggestions: readonly string[];
+  readonly status: 'idle' | 'loading' | 'error';
+  readonly error?: IpcError | undefined;
+}
+
+/** The workspace store: {@link WorkspaceSnapshot} plus one action per `workspace.*` channel. */
+export interface WorkspaceStore extends WorkspaceSnapshot {
+  /**
+   * Replaces the mirror wholesale. `null` (the workspace closed) also resets the editors,
+   * exchanges, interface-editor and project stores: every one of them is keyed by an entity id
+   * of a project that is no longer open.
+   */
+  readonly applySnapshot: (workspace: WorkspaceWire | null) => void;
+  readonly list: () => Promise<void>;
+  readonly refresh: () => Promise<void>;
+  readonly create: (name: string) => Promise<void>;
+  readonly open: (workspaceId: string) => Promise<void>;
+  readonly close: () => Promise<void>;
+  readonly rename: (workspaceId: string, name: string) => Promise<void>;
+  readonly remove: (workspaceId: string) => Promise<void>;
+  /** Creates a project inside the open workspace; returns its id. */
+  readonly addProject: (name: string) => Promise<string>;
+  /** Runs main's folder picker and links the project it names. `false` when cancelled. */
+  readonly linkProject: () => Promise<boolean>;
+  /** Runs main's folder picker and copies the project it names into the workspace. */
+  readonly importProjectFolder: () => Promise<boolean>;
+  /** Runs main's folder picker and writes the project out to it; the folder, or `null`. */
+  readonly exportProject: (projectId: string) => Promise<string | null>;
+  /** Re-points a missing linked project at a folder the user picks. `false` when cancelled. */
+  readonly locateProject: (projectId: string) => Promise<boolean>;
+  readonly removeProject: (projectId: string, deleteFiles: boolean) => Promise<void>;
+  /** Switches the workspace's active environment; `null` deactivates. */
+  readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
+  /** Applies one change to the workspace manifest; returns any entity it created. */
+  readonly mutate: (change: WorkspaceChange) => Promise<{ readonly createdEnvironmentId?: string }>;
+}
+
+export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
+  const apply = (workspace: WorkspaceWire | null): void => {
+    if (workspace === null) {
+      // Order matters only in that all of it happens before the shell rerenders: every one of
+      // these holds ids of projects that are about to stop existing.
+      useEditorsStore.getState().reset();
+      useExchangesStore.getState().reset();
+      useInterfaceEditorStore.getState().reset();
+      useProjectStore.getState().reset();
+    }
+    set({ workspace, status: 'idle', error: undefined });
+  };
+
+  /** Unwraps an `IpcResult`, throwing the error so every action reports failure the same way. */
+  const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: IpcError }): T => {
+    if (!result.ok) {
+      set({ status: 'error', error: result.error });
+      throw asError(result.error);
+    }
+    return result.value;
+  };
+
+  return {
+    workspace: null,
+    workspaces: [],
+    suggestions: [],
+    status: 'idle',
+
+    applySnapshot: apply,
+
+    list: async () => {
+      set({ status: 'loading' });
+      const result = await ipc().workspace.list(undefined);
+      if (!result.ok) {
+        set({ status: 'error', error: result.error });
+        return;
+      }
+      set({
+        workspaces: result.value.workspaces,
+        suggestions: result.value.suggestions ?? [],
+        status: 'idle',
+        error: undefined,
+      });
+    },
+
+    refresh: async () => {
+      const result = await ipc().workspace.snapshot(undefined);
+      if (result.ok) {
+        apply(result.value.workspace);
+      }
+    },
+
+    create: async (name) => {
+      apply(unwrap(await ipc().workspace.create({ name })).workspace);
+      await get().list();
+    },
+
+    open: async (workspaceId) => {
+      apply(unwrap(await ipc().workspace.open({ workspaceId })).workspace);
+      await get().list();
+    },
+
+    close: async () => {
+      apply(unwrap(await ipc().workspace.close(undefined)).workspace);
+      await get().list();
+    },
+
+    rename: async (workspaceId, name) => {
+      set({ workspaces: unwrap(await ipc().workspace.rename({ workspaceId, name })).workspaces });
+    },
+
+    remove: async (workspaceId) => {
+      set({ workspaces: unwrap(await ipc().workspace.delete({ workspaceId })).workspaces });
+    },
+
+    addProject: async (name) => {
+      const value = unwrap(await ipc().workspace.addProject({ name }));
+      apply(value.workspace);
+      return value.projectId;
+    },
+
+    linkProject: async () => {
+      const { workspace } = unwrap(await ipc().workspace.linkProject(undefined));
+      if (workspace === null) {
+        return false;
+      }
+      apply(workspace);
+      return true;
+    },
+
+    importProjectFolder: async () => {
+      const { workspace } = unwrap(await ipc().workspace.importProjectFolder(undefined));
+      if (workspace === null) {
+        return false;
+      }
+      apply(workspace);
+      return true;
+    },
+
+    exportProject: async (projectId) => unwrap(await ipc().workspace.exportProject({ projectId })).dir,
+
+    locateProject: async (projectId) => {
+      const { workspace } = unwrap(await ipc().workspace.locateProject({ projectId }));
+      if (workspace === null) {
+        return false;
+      }
+      apply(workspace);
+      return true;
+    },
+
+    removeProject: async (projectId, deleteFiles) => {
+      apply(unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
+    },
+
+    setActiveEnvironment: async (environmentId) => {
+      apply(unwrap(await ipc().workspace.setActiveEnvironment({ environmentId })).workspace);
+    },
+
+    mutate: async (change) => {
+      const value = unwrap(await ipc().workspace.mutate({ change }));
+      apply(value.workspace);
+      return value.createdEnvironmentId === undefined ? {} : { createdEnvironmentId: value.createdEnvironmentId };
+    },
+  };
+});
+
+/**
+ * Subscribes the mirror to `workspace.changed` and pulls the initial snapshot and list. Called
+ * once from the shell; returns an unsubscribe for symmetry with React effects.
+ */
+export function subscribeToWorkspace(): () => void {
+  const store = useWorkspaceStore.getState();
+  void store.refresh();
+  void store.list();
+  // `defineEvent` types every event's `name` as `string`, so the derived event map cannot
+  // narrow a payload by channel; the cast is the same one `subscribeToProject` uses.
+  const off = window.wirebench.on('workspace.changed', ((payload: WorkspaceChangedEvent) => {
+    useWorkspaceStore.getState().applySnapshot(payload.workspace);
+  }) as (payload: unknown) => void);
+  return off;
+}

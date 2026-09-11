@@ -1,5 +1,19 @@
 import { useEditorsStore } from '../../state/editors.js';
-import { useProjectStore } from '../../state/project.js';
+import { selectEnvironment, useProjectStore } from '../../state/project.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+
+/**
+ * One environment by id, from whichever scope owns it: the workspace's own environments, or a
+ * project's. Both appear in the same places (the sidebar list, an editor tab), and the id is
+ * unique across the open workspace, so the caller never has to say which kind it meant.
+ */
+function environmentById(environmentId: string): { readonly name: string } | undefined {
+  const workspace = useWorkspaceStore.getState().workspace;
+  return (
+    workspace?.environments.find((candidate) => candidate.id === environmentId) ??
+    selectEnvironment(useProjectStore.getState(), environmentId)
+  );
+}
 
 /** The editor-tab id an environment opens under; stable so re-opening focuses the same tab. */
 export function environmentTabId(environmentId: string): string {
@@ -8,7 +22,7 @@ export function environmentTabId(environmentId: string): string {
 
 /** Opens (or focuses) the editor tab for one environment. No-op for an unknown id. */
 export function openEnvironmentTab(environmentId: string): void {
-  const environment = useProjectStore.getState().environments.find((candidate) => candidate.id === environmentId);
+  const environment = environmentById(environmentId);
   if (environment === undefined) {
     return;
   }
@@ -25,13 +39,31 @@ export function openEnvironmentTab(environmentId: string): void {
  * endpoints and properties (both maps replace wholesale). Returns the new environment's id.
  */
 export async function duplicateEnvironment(environmentId: string): Promise<string | undefined> {
+  const workspace = useWorkspaceStore.getState();
+  const fromWorkspace = workspace.workspace?.environments.find((candidate) => candidate.id === environmentId);
+  if (fromWorkspace !== undefined) {
+    const { createdEnvironmentId } = await workspace.mutate({
+      kind: 'add-workspace-environment',
+      name: `${fromWorkspace.name} (copy)`,
+    });
+    if (createdEnvironmentId === undefined) {
+      return undefined;
+    }
+    await workspace.mutate({
+      kind: 'update-workspace-environment',
+      environmentId: createdEnvironmentId,
+      patch: { endpoints: { ...fromWorkspace.endpoints }, properties: { ...fromWorkspace.properties } },
+    });
+    return createdEnvironmentId;
+  }
   const store = useProjectStore.getState();
-  const source = store.environments.find((candidate) => candidate.id === environmentId);
-  if (source === undefined) {
+  const source = selectEnvironment(store, environmentId);
+  const projectId = store.projectOf[environmentId];
+  if (source === undefined || projectId === undefined) {
     return undefined;
   }
-  const createdId = await store.addEnvironment(`${source.name} (copy)`);
-  await store.updateEnvironment(createdId, {
+  const createdId = await store.addEnvironment(projectId, `${source.name} (copy)`);
+  await store.updateEnvironment(projectId, createdId, {
     endpoints: { ...source.endpoints },
     properties: { ...source.properties },
   });
