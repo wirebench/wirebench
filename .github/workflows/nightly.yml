@@ -1,0 +1,42 @@
+name: Nightly interop
+
+# The only workflow that talks to the public internet. `pnpm test:interop` imports four live
+# public WSDLs and makes one read-only SOAP call against each, which is the part a committed
+# fixture cannot prove: that today's contract still imports and today's service still answers.
+#
+# It runs on a schedule rather than on every push for two reasons — those are other people's
+# servers, and a red build caused by somebody else's outage must never block a pull request.
+# Nothing here is `continue-on-error`: a nightly failure is a real signal, to be read and
+# either fixed or documented. It opens no issues and reports nowhere; the workflow's own
+# status is the whole notification.
+on:
+  schedule:
+    # 04:17 UTC — off the hour, so this is not one of thousands of jobs starting at :00.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-interop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  interop:
+    runs-on: ubuntu-latest
+    # Two minutes is generous for four request/response pairs; anything longer is a hang.
+    timeout-minutes: 15
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Interop against the public SOAP services
+        env:
+          WIREBENCH_NETWORK_TESTS: '1'
+        run: pnpm test:interop
