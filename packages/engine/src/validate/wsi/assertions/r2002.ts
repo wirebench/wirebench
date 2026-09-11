@@ -8,6 +8,10 @@ import { bundledDocumentFor, findingAt, resolveAgainst, wsdlDocuments } from './
  * BP 1.1 R2002: to import XML Schema definitions, a description "MUST use the XML Schema 'import'
  * statement" — i.e. an `xs:import` inside `wsdl:types`, never a `wsdl:import`. This flags each
  * `wsdl:import` that resolves to an `xs:schema` document.
+ *
+ * Such an import also breaches {@link R2001} ("wsdl:import imports WSDL only"); this assertion is
+ * the more specific of the two, so R2001 defers the schema case to it and the construct is
+ * reported once.
  */
 export const R2002: WsiAssertion = {
   id: 'R2002',

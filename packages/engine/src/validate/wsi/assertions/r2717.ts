@@ -6,6 +6,9 @@ import { findingAt, soapExtensions } from './helpers.js';
 /**
  * BP 1.1 R2717: an rpc-literal binding "MUST have the namespace attribute specified" on every
  * contained `soapbind:body` — the operation wrapper element needs a namespace to live in.
+ *
+ * What that namespace may *be* is a separate requirement: {@link R2803} forbids a relative URI
+ * there. This assertion only checks that the attribute is present.
  */
 export const R2717: WsiAssertion = {
   id: 'R2717',

@@ -82,6 +82,12 @@ export interface WsiAssertion {
   readonly level: WsiAssertionLevel;
   /** The profile section the requirement belongs to, e.g. `4.1 Required Description Formats`. */
   readonly section: string;
+  /**
+   * Set when the requirement is real and implemented but its *number* could not be confirmed
+   * against the published profile. The generated catalogue marks such rows so a reader does not
+   * quote an id Wirebench is not sure of.
+   */
+  readonly unverifiedId?: boolean;
   /** Evaluates the requirement against one description. */
   check(context: WsiWsdlContext): WsiCheckOutcome;
 }

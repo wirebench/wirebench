@@ -37,10 +37,28 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
       'assertions (Task 44). The description-level array rules stay here as R2110/R2111.',
   },
   {
+    id: 'R2114',
+    level: 'REQUIRED',
+    title: 'A description’s schema constructs stay within the profile’s XML Schema subset',
+    notes: 'Id and requirement text not verified against the published profile.',
+  },
+  {
     id: 'R2202',
     level: 'RECOMMENDED',
     title: 'A description prefers the wrapped document-literal convention',
     notes: 'Planned.',
+  },
+  {
+    id: 'R2207',
+    level: 'REQUIRED',
+    title: 'A wsdl:message part uses either the element or the type attribute, not both',
+    notes: 'Id and requirement text not verified against the published profile.',
+  },
+  {
+    id: 'R2208',
+    level: 'REQUIRED',
+    title: 'An rpc-literal operation’s parameterOrder names only parts of its messages',
+    notes: 'Id and requirement text not verified against the published profile.',
   },
   {
     id: 'R2211',
@@ -55,10 +73,40 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
     notes: 'Message-level; part of the message assertion catalogue.',
   },
   {
+    id: 'R2302',
+    level: 'REQUIRED',
+    title: 'An rpc-literal envelope names its part accessors after the wsdl:parts',
+    notes: 'Message-level; part of the message assertion catalogue.',
+  },
+  {
+    id: 'R2305',
+    level: 'REQUIRED',
+    title: 'A document-literal envelope carries the element declared by the bound part',
+    notes: 'Message-level; part of the message assertion catalogue.',
+  },
+  {
     id: 'R2707',
     level: 'REQUIRED',
     title: 'Every soapbind element states the use attribute explicitly',
     notes: 'R2706 only checks the ones that state it; stating it is a separate requirement.',
+  },
+  {
+    id: 'R2724',
+    level: 'REQUIRED',
+    title: 'An instance places the parts a soapbind:header names in the SOAP header',
+    notes: 'Message-level; id and requirement text not verified against the published profile.',
+  },
+  {
+    id: 'R2725',
+    level: 'REQUIRED',
+    title: 'An instance places the parts a soapbind:headerfault names in a header fault',
+    notes: 'Message-level; id and requirement text not verified against the published profile.',
+  },
+  {
+    id: 'R2726',
+    level: 'REQUIRED',
+    title: 'An instance must not carry a soapbind:header part the binding does not declare',
+    notes: 'Message-level; id and requirement text not verified against the published profile.',
   },
   {
     id: 'R2802',
@@ -97,13 +145,21 @@ export function renderWsiAssertionsMarkdown(
     'does not occur. Profile requirement text is paraphrased; see the profile itself for the',
     'normative wording.',
     '',
+    'A row marked *id unverified* implements a requirement Wirebench is confident about but whose',
+    'requirement **number** could not be confirmed against the published profile; treat the id as',
+    'provisional. The Planned table lists every id in the ranges this catalogue covers',
+    '(`R2001`–`R2005`, `R2101`–`R2114`, `R2201`–`R2211`, `R2301`–`R2305`, `R2401`, `R2701`–`R2726`,',
+    '`R2801`–`R2803`) that is known to be missing, so the coverage above is not overstated.',
+    '',
     '## Implemented',
     '',
     '| Id | Level | Title | Status | Section |',
     '| --- | --- | --- | --- | --- |',
     ...assertions.map(
       (assertion) =>
-        `| ${assertion.id} | ${assertion.level} | ${cell(assertion.title)} | Implemented | ${cell(assertion.section)} |`,
+        `| ${assertion.id} | ${assertion.level} | ${cell(assertion.title)} | ${
+          assertion.unverifiedId === true ? 'Implemented (id unverified)' : 'Implemented'
+        } | ${cell(assertion.section)} |`,
     ),
     '',
     '## Planned',

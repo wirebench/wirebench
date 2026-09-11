@@ -11,6 +11,12 @@ assertion), `warning` (a `RECOMMENDED` one) or `notApplicable` when the construc
 does not occur. Profile requirement text is paraphrased; see the profile itself for the
 normative wording.
 
+A row marked *id unverified* implements a requirement Wirebench is confident about but whose
+requirement **number** could not be confirmed against the published profile; treat the id as
+provisional. The Planned table lists every id in the ranges this catalogue covers
+(`R2001`–`R2005`, `R2101`–`R2114`, `R2201`–`R2211`, `R2301`–`R2305`, `R2401`, `R2701`–`R2726`,
+`R2801`–`R2803`) that is known to be missing, so the coverage above is not overstated.
+
 ## Implemented
 
 | Id | Level | Title | Status | Section |
@@ -34,12 +40,12 @@ normative wording.
 | R2210 | REQUIRED | A document-literal body without a parts attribute binds a message of at most one part | Implemented | 4.7 SOAP Binding |
 | R2303 | REQUIRED | No Solicit-Response or Notification operations | Implemented | 4.6 Operations |
 | R2304 | REQUIRED | Operation names are distinct within a portType | Implemented | 4.6 Operations |
-| R2401 | REQUIRED | soapbind:address declares an absolute endpoint URI | Implemented | 4.8 Use of XML in SOAP Binding |
+| R2401 | REQUIRED | soapbind:address declares an absolute endpoint URI | Implemented (id unverified) | 4.7 SOAP Binding Extensions |
 | R2701 | REQUIRED | Every wsdl:binding is a SOAP binding | Implemented | 4.7 SOAP Binding |
 | R2702 | REQUIRED | soapbind:binding declares the HTTP transport | Implemented | 4.7 SOAP Binding |
-| R2705 | REQUIRED | A binding is entirely rpc-literal or entirely document-literal | Implemented | 4.7 SOAP Binding |
+| R2705 | REQUIRED | A binding does not mix the document and rpc styles (literal-ness is R2706) | Implemented | 4.7 SOAP Binding |
 | R2706 | REQUIRED | Every soapbind element that declares use declares "literal" | Implemented | 4.7 SOAP Binding |
-| R2710 | REQUIRED | Operation names are distinct within a binding | Implemented | 4.7 SOAP Binding |
+| R2710 | REQUIRED | Operation names are distinct within a binding (approximates wire-signature distinctness) | Implemented | 4.7 SOAP Binding |
 | R2716 | REQUIRED | document-literal soapbind elements declare no namespace attribute | Implemented | 4.7 SOAP Binding |
 | R2717 | REQUIRED | rpc-literal soapbind:body declares a namespace attribute | Implemented | 4.7 SOAP Binding |
 | R2718 | REQUIRED | A binding binds exactly the operations of its portType | Implemented | 4.7 SOAP Binding |
@@ -55,8 +61,16 @@ normative wording.
 | --- | --- | --- | --- | --- |
 | R2004 | REQUIRED | An xs:import must not name a document whose root element is not xs:schema | Planned | Needs the resolver to keep documents it could not classify as a schema. |
 | R2113 | REQUIRED | An envelope must not carry soapenc:arrayType on an element in a message | Planned | Message-level, not description-level: moved out of the WSDL catalogue and into the message assertions (Task 44). The description-level array rules stay here as R2110/R2111. |
+| R2114 | REQUIRED | A description’s schema constructs stay within the profile’s XML Schema subset | Planned | Id and requirement text not verified against the published profile. |
 | R2202 | RECOMMENDED | A description prefers the wrapped document-literal convention | Planned | Planned. |
+| R2207 | REQUIRED | A wsdl:message part uses either the element or the type attribute, not both | Planned | Id and requirement text not verified against the published profile. |
+| R2208 | REQUIRED | An rpc-literal operation’s parameterOrder names only parts of its messages | Planned | Id and requirement text not verified against the published profile. |
 | R2211 | REQUIRED | An rpc-literal envelope must not carry xsi:nil on a part accessor | Planned | Message-level; part of the message assertion catalogue. |
 | R2301 | REQUIRED | The order of body children matches the order of the wsdl:parts | Planned | Message-level; part of the message assertion catalogue. |
+| R2302 | REQUIRED | An rpc-literal envelope names its part accessors after the wsdl:parts | Planned | Message-level; part of the message assertion catalogue. |
+| R2305 | REQUIRED | A document-literal envelope carries the element declared by the bound part | Planned | Message-level; part of the message assertion catalogue. |
 | R2707 | REQUIRED | Every soapbind element states the use attribute explicitly | Planned | R2706 only checks the ones that state it; stating it is a separate requirement. |
+| R2724 | REQUIRED | An instance places the parts a soapbind:header names in the SOAP header | Planned | Message-level; id and requirement text not verified against the published profile. |
+| R2725 | REQUIRED | An instance places the parts a soapbind:headerfault names in a header fault | Planned | Message-level; id and requirement text not verified against the published profile. |
+| R2726 | REQUIRED | An instance must not carry a soapbind:header part the binding does not declare | Planned | Message-level; id and requirement text not verified against the published profile. |
 | R2802 | REQUIRED | The description declares the WSDL 1.1 namespaces the profile mandates | Planned | Planned. |
