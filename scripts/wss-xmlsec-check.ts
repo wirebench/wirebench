@@ -137,9 +137,41 @@ function supportsGcm(version: readonly [number, number, number] | undefined): bo
   return major > 1 || (major === 1 && (minor > 2 || (minor === 2 && patch >= 27)));
 }
 
+/**
+ * xmlsec 1.3 made key lookup strict: a key supplied on the command line is only used when it
+ * matches the document's own `KeyInfo` (by name, by certificate, …). WS-Security identifies
+ * keys by `SecurityTokenReference` forms xmlsec has no reason to follow, so under 1.3 every
+ * case fails with `KEY-NOT-FOUND` unless the pre-1.3 behaviour is asked for explicitly. The
+ * flag does not exist on 1.2, hence the version check rather than passing it unconditionally.
+ */
+function supportsLaxKeySearch(version: readonly [number, number, number] | undefined): boolean {
+  if (version === undefined) {
+    return false;
+  }
+  const [major, minor] = version;
+  return major > 1 || (major === 1 && minor >= 3);
+}
+
+/** `['--lax-key-search']` on xmlsec >= 1.3, where key search is strict by default; else `[]`. */
+export function laxKeySearchArgs(version: readonly [number, number, number] | undefined): string[] {
+  return supportsLaxKeySearch(version) ? ['--lax-key-search'] : [];
+}
+
 /** The `xmlsec1 --decrypt` argument list for `file`, unwrapping with `keyPath` (`key.pem,cert.pem`). */
-export function xmlsecDecryptArgs(file: string, keyPath: string, nodeName?: string): string[] {
-  return ['--decrypt', '--privkey-pem', keyPath, ...(nodeName === undefined ? [] : ['--node-name', nodeName]), file];
+export function xmlsecDecryptArgs(
+  file: string,
+  keyPath: string,
+  nodeName?: string,
+  extraArgs: readonly string[] = [],
+): string[] {
+  return [
+    '--decrypt',
+    '--privkey-pem',
+    keyPath,
+    ...extraArgs,
+    ...(nodeName === undefined ? [] : ['--node-name', nodeName]),
+    file,
+  ];
 }
 
 /** Everything between tags collapsed away, so two equivalent serializations compare equal. */
@@ -201,9 +233,11 @@ function inlineEncryptedKey(xml: string): string | undefined {
 }
 
 /** The `xmlsec1 --verify` argument list for `file`, verifying against `certPath`. */
-export function xmlsecVerifyArgs(file: string, certPath: string): string[] {
+export function xmlsecVerifyArgs(file: string, certPath: string, extraArgs: readonly string[] = []): string[] {
   return [
+    // Options go *after* the command: xmlsec treats the first argument as the command name.
     '--verify',
+    ...extraArgs,
     '--id-attr:Id',
     `${WSU_NS}:Timestamp`,
     '--id-attr:Id',
@@ -303,6 +337,7 @@ async function main(): Promise<void> {
   const keyPath = join(dir, 'key.pem');
   await writeFile(keyPath, signer.keyPem, 'utf8');
   const privkeyArgument = `${keyPath},${certPath}`;
+  const laxArgs = laxKeySearchArgs(xmlsecVersion());
 
   let failures = 0;
   let first: string | undefined;
@@ -315,7 +350,7 @@ async function main(): Promise<void> {
         const xml = await applyOutgoingWss(ENVELOPE, configFor(entry), ctx);
         await writeFile(file, xml, 'utf8');
         first ??= file;
-        const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath), { encoding: 'utf8' });
+        const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath, laxArgs), { encoding: 'utf8' });
         if (result.status === 0) {
           console.log(`ok   ${name}`);
         } else {
@@ -333,7 +368,7 @@ async function main(): Promise<void> {
       const file = join(dir, `${name}.xml`);
       const xml = await applyOutgoingWss(SOAP12_ENVELOPE, configFor(entry), ctx);
       await writeFile(file, xml, 'utf8');
-      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath), { encoding: 'utf8' });
+      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath, laxArgs), { encoding: 'utf8' });
       if (result.status === 0) {
         console.log(`ok   ${name}`);
       } else {
@@ -351,7 +386,7 @@ async function main(): Promise<void> {
       const file = join(dir, `${name}.xml`);
       const xml = await applyOutgoingWss(QNAME_ENVELOPE, configFor(entry), ctx);
       await writeFile(file, xml, 'utf8');
-      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath), { encoding: 'utf8' });
+      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath, laxArgs), { encoding: 'utf8' });
       if (result.status === 0) {
         console.log(`ok   ${name}`);
       } else {
@@ -382,7 +417,7 @@ async function main(): Promise<void> {
     const decryptCase = async (name: string, xml: string): Promise<void> => {
       const file = join(dir, `${name}.xml`);
       await writeFile(file, xml, 'utf8');
-      let result = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE), {
+      let result = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE, laxArgs), {
         encoding: 'utf8',
       });
       let note = '';
@@ -391,7 +426,9 @@ async function main(): Promise<void> {
         if (inlined !== undefined) {
           const inlinedFile = join(dir, `${name}-inlined.xml`);
           await writeFile(inlinedFile, inlined, 'utf8');
-          result = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument), { encoding: 'utf8' });
+          result = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument, undefined, laxArgs), {
+            encoding: 'utf8',
+          });
           note = ' (via inlined EncryptedKey)';
         }
       }
@@ -433,7 +470,7 @@ async function main(): Promise<void> {
       );
       const file = join(dir, `${name}.xml`);
       await writeFile(file, xml, 'utf8');
-      let decrypted = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE), {
+      let decrypted = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE, laxArgs), {
         encoding: 'utf8',
       });
       if (decrypted.status !== 0) {
@@ -441,7 +478,9 @@ async function main(): Promise<void> {
         if (inlined !== undefined) {
           const inlinedFile = join(dir, `${name}-inlined.xml`);
           await writeFile(inlinedFile, inlined, 'utf8');
-          decrypted = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument), { encoding: 'utf8' });
+          decrypted = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument, undefined, laxArgs), {
+            encoding: 'utf8',
+          });
         }
       }
       if (decrypted.status !== 0) {
@@ -450,7 +489,7 @@ async function main(): Promise<void> {
       } else {
         const verifyFile = join(dir, `${name}-decrypted.xml`);
         await writeFile(verifyFile, decrypted.stdout ?? '', 'utf8');
-        const verified = spawnSync('xmlsec1', xmlsecVerifyArgs(verifyFile, certPath), { encoding: 'utf8' });
+        const verified = spawnSync('xmlsec1', xmlsecVerifyArgs(verifyFile, certPath, laxArgs), { encoding: 'utf8' });
         if (verified.status === 0) {
           console.log(`ok   ${name}`);
         } else {
@@ -470,7 +509,7 @@ async function main(): Promise<void> {
       );
       const file = join(dir, `${name}.xml`);
       await writeFile(file, tampered, 'utf8');
-      const direct = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE), {
+      const direct = spawnSync('xmlsec1', xmlsecDecryptArgs(file, privkeyArgument, ENCRYPTED_KEY_NODE, laxArgs), {
         encoding: 'utf8',
       });
       const inlined = inlineEncryptedKey(tampered);
@@ -478,7 +517,9 @@ async function main(): Promise<void> {
       if (inlined !== undefined) {
         const inlinedFile = join(dir, `${name}-inlined.xml`);
         await writeFile(inlinedFile, inlined, 'utf8');
-        viaInlined = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument), { encoding: 'utf8' });
+        viaInlined = spawnSync('xmlsec1', xmlsecDecryptArgs(inlinedFile, privkeyArgument, undefined, laxArgs), {
+          encoding: 'utf8',
+        });
       }
       const restored = (result: { status: number | null; stdout?: string }): boolean =>
         result.status === 0 && withoutSecurityHeader(result.stdout ?? '') === expected;
@@ -494,8 +535,13 @@ async function main(): Promise<void> {
     if (first !== undefined) {
       const tampered = join(dir, 'tampered.xml');
       const { readFile } = await import('node:fs/promises');
-      await writeFile(tampered, (await readFile(first, 'utf8')).replace('>hello<', '>goodbye<'), 'utf8');
-      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(tampered, certPath), { encoding: 'utf8' });
+      const signed = await readFile(first, 'utf8');
+      const tamperedXml = signed.replace('>hello<', '>goodbye<');
+      if (tamperedXml === signed) {
+        throw new Error('the tamper did not change the signed envelope; the negative case would prove nothing');
+      }
+      await writeFile(tampered, tamperedXml, 'utf8');
+      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(tampered, certPath, laxArgs), { encoding: 'utf8' });
       if (result.status === 0) {
         failures += 1;
         console.error('FAIL tampered envelope verified — the cross-check is not actually checking anything');
