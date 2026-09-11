@@ -30,9 +30,23 @@ function attributes(commonName: string): Attribute[] {
   ];
 }
 
-/** A serial number forge accepts: a positive hex integer (a leading `00` keeps it unsigned). */
+/**
+ * Deterministic, per-call serial number counter. node-forge writes `cert.serialNumber` straight
+ * into the DER INTEGER's content bytes (`forge.util.hexToBytes(cert.serialNumber)`, see
+ * `pki.getTBSCertificate`) with no sign or minimality handling of its own. A random serial whose
+ * first byte has the high bit set therefore encodes as a *negative* integer, and an unconditional
+ * `00` prefix (the previous approach) produces a non-minimal encoding whenever the following byte's
+ * high bit is clear — both are invalid DER that a strict ASN.1/X.509 parser (Node's TLS stack
+ * included) can reject with errors like "illegal padding". A fixed `01` leading byte sidesteps both
+ * failure modes: the value is always positive, the encoding is always minimal, and serials stay
+ * reproducible across runs.
+ */
+let serialCounter = 0;
+
+/** A serial number forge encodes correctly: fixed positive leading byte + an even-length counter. */
 function serial(): string {
-  return `00${forge.util.bytesToHex(forge.random.getBytesSync(8))}`;
+  serialCounter += 1;
+  return `01${serialCounter.toString(16).padStart(16, '0')}`;
 }
 
 function newCertificate(publicKey: forge.pki.PublicKey, commonName: string): forge.pki.Certificate {
