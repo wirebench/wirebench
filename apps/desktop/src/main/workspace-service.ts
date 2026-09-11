@@ -12,8 +12,7 @@
  * `rm` of anything under `userData`, and never anything at all under a linked root).
  *
  * The one `electron` dependency is `./native-dialogs.js` — the folder picker itself, which is
- * the whole point of these methods taking a `WebContents`. Workspace environments and
- * `mutate` are deliberately absent; they land in a later task rather than as stubs here.
+ * the whole point of these methods taking a `WebContents`.
  */
 
 import { existsSync } from 'node:fs';
@@ -23,6 +22,7 @@ import {
   attachmentsDir,
   createProject,
   createWorkspace,
+  createWorkspaceEnvironment,
   definitionCacheDir,
   INTERFACES_DIR,
   loadProject,
@@ -40,7 +40,7 @@ import {
   workspaceManifestFile,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { FsLike, Project, Workspace, WorkspaceProjectRef } from '@wirebench/engine';
+import type { FsLike, Project, Workspace, WorkspaceEnvironment, WorkspaceProjectRef } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
@@ -56,6 +56,7 @@ import { WorkspaceState } from './workspace-state.js';
 import type {
   EngineProgressEvent,
   ProjectWire,
+  WorkspaceChange,
   WorkspaceEnvironmentWire,
   WorkspaceProjectWire,
   WorkspaceSummaryWire,
@@ -240,6 +241,29 @@ async function loadPickedProject(dir: string): Promise<Project> {
  * Only ever one workspace is open at a time: {@link open} closes the current one first, so the
  * set of hosts, the history files and the entity index are always those of a single workspace.
  */
+/**
+ * The environment `environmentId` names, or a `WorkspaceError` — a change addressed at an
+ * environment that is not there is a renderer bug, and applying it as a no-op would hide it.
+ *
+ * @throws WorkspaceError `environment-not-found`.
+ */
+function requireEnvironment(workspace: Workspace, environmentId: string): WorkspaceEnvironment {
+  const environment = workspace.environments.find((candidate) => candidate.id === environmentId);
+  if (environment === undefined) {
+    throw new WorkspaceError('environment-not-found', `No environment with id "${environmentId}" in this workspace.`, {
+      details: { environmentId },
+    });
+  }
+  return environment;
+}
+
+/** `workspace` with no active environment — the field dropped, not set to `undefined`. */
+function withoutActiveEnvironment(workspace: Workspace): Workspace {
+  const copy: Omit<Workspace, 'activeEnvironmentId'> & { activeEnvironmentId?: string } = { ...workspace };
+  delete copy.activeEnvironmentId;
+  return copy;
+}
+
 export class WorkspaceService implements ProjectRouter {
   /** The open workspace, or `undefined` when the user is at the picker. */
   private current: OpenWorkspace | undefined;
@@ -432,6 +456,13 @@ export class WorkspaceService implements ProjectRouter {
       this.deps.picks,
       this.deps.resolveSystemProxy,
     );
+    // The host resolves properties and endpoints through the workspace from here on. The
+    // closure re-reads `this.current` and `entry.ref` every time, so an environment switch or a
+    // relocated linked project is picked up without touching the host again.
+    host.setWorkspaceContext(() => {
+      const open = this.current;
+      return open === undefined ? undefined : { workspace: open.workspace, projectSlug: entry.ref.slug };
+    });
     try {
       const project = await host.openProject(entry.dir);
       entry.host = host;
@@ -788,6 +819,111 @@ export class WorkspaceService implements ProjectRouter {
     return picks;
   }
 
+  // ——— environments and properties ———————————————————————————————————————————————————————
+
+  /**
+   * Applies one {@link WorkspaceChange} to the open workspace: its name, its `${#Workspace#…}`
+   * properties, or one of its environments. Every change is written through `saveWorkspace`
+   * before it is announced, so what the renderer is shown is always what is on disk.
+   *
+   * `properties` and `endpoints` in an `update-workspace-environment` patch **replace** the
+   * whole map (like a project `EnvironmentPatchWire`): removing a key is sending the map
+   * without it. Removing the active environment clears `activeEnvironmentId` — an id pointing
+   * at an environment that no longer exists would silently resolve to "no environment" on the
+   * next send, which is the same outcome said out loud.
+   *
+   * @returns the fresh snapshot, plus the id of the environment an `add-workspace-environment`
+   * created (the UI has to select and focus it).
+   * @throws WorkspaceError `workspace-not-found` when none is open, `environment-not-found`
+   * when a change names an environment this workspace does not have.
+   */
+  async mutate(change: WorkspaceChange): Promise<{ workspace: WorkspaceWire; createdEnvironmentId?: string }> {
+    const open = this.requireOpen();
+    let createdEnvironmentId: string | undefined;
+
+    switch (change.kind) {
+      case 'rename-workspace':
+        open.workspace = { ...open.workspace, name: change.name };
+        break;
+      case 'set-workspace-property':
+        open.workspace = {
+          ...open.workspace,
+          properties: { ...open.workspace.properties, [change.name]: change.value },
+        };
+        break;
+      case 'remove-workspace-property': {
+        const properties = { ...open.workspace.properties };
+        delete properties[change.name];
+        open.workspace = { ...open.workspace, properties };
+        break;
+      }
+      case 'add-workspace-environment': {
+        const environment = createWorkspaceEnvironment(
+          change.name,
+          new Set(open.workspace.environments.map((candidate) => candidate.slug)),
+        );
+        createdEnvironmentId = environment.id;
+        open.workspace = { ...open.workspace, environments: [...open.workspace.environments, environment] };
+        break;
+      }
+      case 'update-workspace-environment': {
+        const existing = requireEnvironment(open.workspace, change.environmentId);
+        const updated: WorkspaceEnvironment = {
+          ...existing,
+          ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
+          ...(change.patch.properties !== undefined ? { properties: { ...change.patch.properties } } : {}),
+          ...(change.patch.endpoints !== undefined ? { endpoints: { ...change.patch.endpoints } } : {}),
+        };
+        open.workspace = {
+          ...open.workspace,
+          environments: open.workspace.environments.map((candidate) =>
+            candidate.id === updated.id ? updated : candidate,
+          ),
+        };
+        break;
+      }
+      case 'remove-workspace-environment': {
+        requireEnvironment(open.workspace, change.environmentId);
+        const environments = open.workspace.environments.filter((candidate) => candidate.id !== change.environmentId);
+        const base =
+          open.workspace.activeEnvironmentId === change.environmentId
+            ? withoutActiveEnvironment(open.workspace)
+            : open.workspace;
+        open.workspace = { ...base, environments };
+        break;
+      }
+    }
+
+    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+    this.deps.hooks?.onChanged?.(this.snapshot());
+    return {
+      workspace: this.requireSnapshot(),
+      ...(createdEnvironmentId !== undefined ? { createdEnvironmentId } : {}),
+    };
+  }
+
+  /**
+   * Switches the workspace's active environment, or clears it with `null`. Every open host
+   * resolves its endpoints and `${#Env#…}` properties through the workspace, so this is the one
+   * switch behind the status bar's `● dev ▾`.
+   *
+   * @throws WorkspaceError `environment-not-found` when `environmentId` names no environment of
+   * this workspace — an id the renderer could only have made up, and silently ignoring it would
+   * leave the UI showing an environment that is not applied.
+   */
+  async setActiveEnvironment(environmentId: string | null): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    if (environmentId === null) {
+      open.workspace = withoutActiveEnvironment(open.workspace);
+    } else {
+      requireEnvironment(open.workspace, environmentId);
+      open.workspace = { ...open.workspace, activeEnvironmentId: environmentId };
+    }
+    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+    this.deps.hooks?.onChanged?.(this.snapshot());
+    return this.requireSnapshot();
+  }
+
   // ——— snapshot ———————————————————————————————————————————————————————————————————————————
 
   /** The open workspace as the renderer sees it, or `null` when none is open. */
@@ -935,7 +1071,9 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  mutate(...[projectId, change]: Parameters<ProjectRouter['mutate']>): ReturnType<ProjectRouter['mutate']> {
+  projectMutate(
+    ...[projectId, change]: Parameters<ProjectRouter['projectMutate']>
+  ): ReturnType<ProjectRouter['projectMutate']> {
     return this.hostFor(projectId).mutate(change);
   }
 

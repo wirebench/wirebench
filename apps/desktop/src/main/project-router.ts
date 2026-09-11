@@ -31,8 +31,14 @@ export interface ProjectRouter {
    * the one the names block fixes.
    */
   projectSnapshot(projectId: string): ReturnType<ProjectHost['snapshot']>;
-  /** Applies one change to the addressed project. */
-  mutate(projectId: string, ...args: Parameters<ProjectHost['mutate']>): ReturnType<ProjectHost['mutate']>;
+  /**
+   * Applies one change to the addressed project.
+   *
+   * Named `projectMutate`, not `mutate`, for the same reason as {@link projectSnapshot}:
+   * `WorkspaceService.mutate(change: WorkspaceChange)` is the workspace's own, and the names
+   * block fixes that one.
+   */
+  projectMutate(projectId: string, ...args: Parameters<ProjectHost['mutate']>): ReturnType<ProjectHost['mutate']>;
   /** Saves one project. Saving *every* open project is `WorkspaceService.saveAll`. */
   save(projectId: string, ...args: Parameters<ProjectHost['save']>): ReturnType<ProjectHost['save']>;
   /** Resolves the proxy for `url` against one project's effective preferences. */

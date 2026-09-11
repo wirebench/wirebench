@@ -130,10 +130,22 @@ function toWire(ref: UnresolvedRef, field: ExpansionField, headerName?: string):
 }
 
 /**
+ * How a caller resolves the URL a request would be sent to. The default is the project's own
+ * {@link resolveEndpoint}; a project open inside a workspace passes the workspace resolution
+ * instead, so the endpoint the preflight reports (and the badge it feeds) is the one a send
+ * would really use.
+ */
+export type PreflightEndpointResolver = (
+  iface: Interface,
+  request: RequestDef,
+) => { url: string | undefined; source: EndpointSourceWire; endpoint?: Endpoint };
+
+/**
  * Resolves `requestId`'s endpoint and expands its send input against `scopes`.
  *
  * `envId` selects the environment endpoint overrides are read from; pass the project's active
  * environment; `defaultAction` is the WSDL-derived `wsa:Action` for the request's operation.
+ * `resolveUrl` overrides how the endpoint is resolved (see {@link PreflightEndpointResolver}).
  * Throws `ProjectError('not-found')` when the project holds no such request.
  */
 export function preflightRequest(
@@ -142,13 +154,15 @@ export function preflightRequest(
   scopes: PropertyScopes,
   envId?: string,
   defaultAction = '',
+  resolveUrl?: PreflightEndpointResolver,
 ): PreflightResult {
   const location = findRequest(project, requestId);
   if (location === undefined) {
     throw new ProjectError('not-found', `No request with id "${requestId}"`, { details: { id: requestId } });
   }
   const { iface, request } = location;
-  const resolved = resolveEndpoint(project, envId, iface, request);
+  const resolved =
+    resolveUrl !== undefined ? resolveUrl(iface, request) : resolveEndpoint(project, envId, iface, request);
   const endpoint = resolveAuthEndpoint(iface, request);
 
   const unresolved: UnresolvedRefWire[] = [];

@@ -38,6 +38,8 @@ import {
   resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
+  resolveWorkspaceEndpoint,
+  resolveWorkspaceScopes,
   projectFiles,
   saveProject,
   toSendInput,
@@ -49,6 +51,7 @@ import type {
   AttachmentResolvers,
   AttachmentSource,
   Endpoint,
+  EndpointSource,
   FsLike,
   Preferences,
   Interface,
@@ -57,7 +60,9 @@ import type {
   ProjectFiles,
   ProxyConfig,
   PropertyScopes,
+  RequestDef,
   SendAttachmentOptions,
+  Workspace,
 } from '@wirebench/engine';
 import {
   DEFAULT_WSA_CONFIG,
@@ -257,6 +262,16 @@ async function isEmptyDir(dir: string): Promise<boolean> {
   return (await readdir(dir)).length === 0;
 }
 
+/**
+ * Where a host learns that its project is open *inside* a workspace: the workspace as it stands
+ * right now, and the slug the workspace's manifest addresses this project by (the first half of
+ * an endpoint override's `<projectSlug>/<interfaceSlug>` key).
+ *
+ * A function rather than a value because the workspace is replaced on every edit — a host that
+ * held a snapshot would keep routing to the environment that was active when it opened.
+ */
+export type WorkspaceContext = () => { readonly workspace: Workspace; readonly projectSlug: string } | undefined;
+
 /** Owns the open project: its model, its folder, its autosave timer and its watcher. */
 export class ProjectHost {
   private open: OpenProject | undefined;
@@ -270,6 +285,12 @@ export class ProjectHost {
    * failed save resolves it so the next one still runs (the caller sees the rejection).
    */
   private saveQueue: Promise<void> = Promise.resolve();
+  /**
+   * Set by `WorkspaceService` for every host it opens; `undefined` for a host that owns a
+   * standalone project. Everything property- and endpoint-related branches on it, and with no
+   * context the host behaves exactly as it did before workspaces existed.
+   */
+  private workspaceContext: WorkspaceContext | undefined;
 
   constructor(
     private readonly engine: EngineService,
@@ -300,6 +321,44 @@ export class ProjectHost {
      */
     private readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>,
   ) {}
+
+  /**
+   * Tells this host which workspace its project is open inside. Injected after construction
+   * rather than through the constructor because the workspace owns the host, not the other way
+   * round: `WorkspaceService` builds the host, then hands it a closure over the entry it just
+   * created. Pass `undefined` to go back to standalone behaviour.
+   */
+  setWorkspaceContext(context: WorkspaceContext | undefined): void {
+    this.workspaceContext = context;
+  }
+
+  /**
+   * The URL a send of `request` would go to, resolved the way the project is actually open:
+   * through the workspace's active environment when there is a workspace context (spec §3.3 —
+   * a linked project's own environment wins, then the workspace environment's override for
+   * `<projectSlug>/<interfaceSlug>`, then the project's own resolution), and through the
+   * project's own active environment when there is not.
+   *
+   * The single place the choice is made, so the send path, the TLS lookup, the WS-A `To`
+   * header and the preflight badge can never disagree about where a request is going.
+   */
+  private resolveEndpointFor(
+    project: Project,
+    iface: Interface,
+    request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+  ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
+    const context = this.workspaceContext?.();
+    if (context === undefined) {
+      return resolveEndpoint(project, project.activeEnvironmentId, iface, request);
+    }
+    return resolveWorkspaceEndpoint({
+      workspace: context.workspace,
+      project,
+      projectSlug: context.projectSlug,
+      iface,
+      request,
+    });
+  }
 
   /**
    * Whether main may touch `resolved` on behalf of a request attachment.
@@ -350,9 +409,7 @@ export class ProjectHost {
       return undefined;
     }
     const { iface, request } = location;
-    const endpoint =
-      overrides?.endpoint ??
-      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, iface, request).url;
+    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request).url;
     if (endpoint === undefined) {
       return undefined;
     }
@@ -565,6 +622,18 @@ export class ProjectHost {
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }
+    const context = this.workspaceContext?.();
+    if (context !== undefined) {
+      // Inside a workspace the active environment is the *workspace's*, and the project
+      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`,
+      // which only ever names a project environment, has nothing to select here.
+      return resolveWorkspaceScopes({
+        workspace: context.workspace,
+        project: this.open.project,
+        globals,
+        system: process.env,
+      });
+    }
     return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
   }
 
@@ -581,6 +650,9 @@ export class ProjectHost {
       this.scopesFor(activeId),
       activeId,
       this.defaultWsaActionFor(requestId),
+      this.workspaceContext?.() === undefined
+        ? undefined
+        : (iface, request) => this.resolveEndpointFor(open.project, iface, request),
     );
   }
 
@@ -1079,8 +1151,7 @@ export class ProjectHost {
     const ca = await this.trustAnchors();
     const trustInvalid =
       location !== undefined &&
-      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
-        .endpoint?.trustInvalid === true;
+      this.resolveEndpointFor(this.open.project, location.iface, location.request).endpoint?.trustInvalid === true;
     if (identity === undefined && ca === undefined && !trustInvalid) {
       return undefined;
     }
@@ -1378,8 +1449,7 @@ export class ProjectHost {
     const endpoint =
       this.open === undefined || location === undefined
         ? ''
-        : (resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
-            .url ?? '');
+        : (this.resolveEndpointFor(this.open.project, location.iface, location.request).url ?? '');
     return applyWsaHeaders(this.envelopeFor(requestId, envelopeXml), wsa.config, {
       endpoint,
       ...(request?.soapAction !== undefined ? { soapAction: request.soapAction } : {}),

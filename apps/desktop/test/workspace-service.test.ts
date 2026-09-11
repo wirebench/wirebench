@@ -409,7 +409,7 @@ describe('WorkspaceService routing of addInterface and reload', () => {
     expect(service.projectSnapshot(plain.id)?.interfaces).toEqual([]);
 
     // `reload` takes what is on disk for that one project, discarding its unsaved rename.
-    await service.mutate(target.id, { kind: 'rename-project', name: 'Renamed but not saved' });
+    await service.projectMutate(target.id, { kind: 'rename-project', name: 'Renamed but not saved' });
     expect(service.projectSnapshot(target.id)?.name).toBe('Renamed but not saved');
     const reloaded = await service.reload(target.id);
     expect(reloaded?.name).toBe('Target');
@@ -433,7 +433,7 @@ describe('WorkspaceService saving', () => {
     const service = newService({ fs });
     await service.open(created.id);
 
-    await service.mutate(project.id, { kind: 'rename-project', name: 'Renamed before close' });
+    await service.projectMutate(project.id, { kind: 'rename-project', name: 'Renamed before close' });
     expect(service.projectSnapshot(project.id)?.dirty).toBe(true);
 
     arm();

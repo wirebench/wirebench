@@ -1584,6 +1584,8 @@ export const historyListRequestSchema = z.object({
   query: z.string().optional(),
   limit: z.number().optional(),
   before: z.string().optional(),
+  /** Narrows the merge to one project of the open workspace; absent means every project. */
+  projectId: z.string().optional(),
 });
 export const historyListResponseSchema = z.object({ entries: z.array(historyEntrySchema), total: z.number() });
 
@@ -2371,6 +2373,12 @@ export type SearchQueryRequest = z.infer<typeof searchQueryRequestSchema>;
  */
 export const searchMatchSchema = z.object({
   kind: z.enum(['request-body', 'request-header', 'document']),
+  /**
+   * Which project of the open workspace the match came from, and its display name — search
+   * spans every open project, so a row has to say where it is before it can be revealed.
+   */
+  projectId: z.string().optional(),
+  projectName: z.string().optional(),
   /** Set for the two request kinds: which request matched, and its display name. */
   requestId: z.string().optional(),
   requestName: z.string().optional(),
@@ -2467,3 +2475,35 @@ export const workspaceWireSchema = z.object({
   projects: z.array(workspaceProjectWireSchema),
 });
 export type WorkspaceWire = z.infer<typeof workspaceWireSchema>;
+
+/**
+ * The fields of a workspace environment the renderer may patch. `properties` and `endpoints`
+ * replace the whole map when present (like `EnvironmentPatchWire`), so removing a key is
+ * sending the map without it rather than inventing a per-key delete.
+ */
+export const workspaceEnvironmentPatchSchema = z.object({
+  name: z.string().optional(),
+  properties: z.record(z.string(), z.string()).optional(),
+  /** Keyed `<projectSlug>/<interfaceSlug>`; unknown keys are accepted, as for a project environment. */
+  endpoints: z.record(z.string(), z.string()).optional(),
+});
+export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
+
+/**
+ * One atomic change to the open workspace's own manifest — its name, its properties and its
+ * environments. Project data never travels through here: a change to a project is a
+ * `ProjectChange` addressed to that project's host.
+ */
+export const workspaceChangeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('rename-workspace'), name: z.string() }),
+  z.object({ kind: z.literal('set-workspace-property'), name: z.string(), value: z.string() }),
+  z.object({ kind: z.literal('remove-workspace-property'), name: z.string() }),
+  z.object({ kind: z.literal('add-workspace-environment'), name: z.string() }),
+  z.object({
+    kind: z.literal('update-workspace-environment'),
+    environmentId: z.string(),
+    patch: workspaceEnvironmentPatchSchema,
+  }),
+  z.object({ kind: z.literal('remove-workspace-environment'), environmentId: z.string() }),
+]);
+export type WorkspaceChange = z.infer<typeof workspaceChangeSchema>;
