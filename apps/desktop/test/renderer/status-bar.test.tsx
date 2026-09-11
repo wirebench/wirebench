@@ -69,4 +69,47 @@ describe('StatusBar', () => {
     render(<StatusBar />);
     expect(screen.getByTestId('status-bar-problems').textContent).toBe('0 problems');
   });
+
+  it('colours the problems button danger only when there is at least one error', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'content-type-mismatch', message: 'meh', source: 'structure' },
+        },
+      ],
+    });
+    render(<StatusBar />);
+
+    const button = screen.getByTestId('status-bar-problems');
+    expect(button.className).not.toContain('text-status-danger');
+    expect(button.className).toContain('text-status-warning');
+  });
+
+  it('colours the problems button danger when at least one problem is an error', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'content-type-mismatch', message: 'meh', source: 'structure' },
+        },
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'error',
+          requestId: 'req-1',
+          problem: { code: 'schema-invalid', message: 'bad', source: 'schema' },
+        },
+      ],
+    });
+    render(<StatusBar />);
+
+    expect(screen.getByTestId('status-bar-problems').className).toContain('text-status-danger');
+  });
 });

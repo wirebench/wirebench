@@ -14,18 +14,21 @@
  * validates in ~50 ms with a worst-case event-loop gap of ~6 ms). No extra
  * worker of our own is needed; a wall-clock timeout guards against a
  * pathological schema instead.
+ *
+ * Building the libxml2 file set itself — one synthetic file per schema
+ * document, the per-namespace glue files, and the `document`/`rpc` wrapper
+ * schemas — lives in `schema-file-set.ts`; this module only orchestrates
+ * validating one fragment against what that one builds.
  */
 
 import { validateXML } from 'xmllint-wasm';
-import type { Element, Node } from '@xmldom/xmldom';
-import { NS } from '../xml/namespaces.js';
-import { serializeXml } from '../xml/serialize.js';
-import { buildRangeTree, localNameOf, tokenizeXml } from '../xml/tolerant-tree.js';
+import { localNameOf, tokenizeXml, buildRangeTree } from '../xml/tolerant-tree.js';
 import type { XmlRangeNode } from '../xml/tolerant-tree.js';
-import { childElements, firstChildElement } from '../wsdl/dom-utils.js';
-import type { BundledDocument, DefinitionBundle } from '../wsdl/resolver.js';
-import type { SchemaSet } from '../xsd/schema-set.js';
 import { escapeAttribute } from '../xsd/xml-writer.js';
+import type { DefinitionBundle } from '../wsdl/resolver.js';
+import type { SchemaSet } from '../xsd/schema-set.js';
+import type { SchemaFileSet } from './schema-file-set.js';
+import { buildSchemaFileSet, documentWrapper, fileSetLabels, rpcWrapper } from './schema-file-set.js';
 import type { ValidationBinding, ValidationProblem } from './types.js';
 
 /** Default wall-clock budget for one validation, in milliseconds. */
@@ -45,267 +48,14 @@ export interface SchemaValidationOptions {
   readonly timeoutMs?: number;
 }
 
-/** One in-memory file handed to libxml2. */
-interface SchemaFile {
-  readonly fileName: string;
-  readonly contents: string;
-}
-
-/** The libxml2-ready form of one bundle: every schema as a file, plus one glue file per namespace. */
-interface SchemaFileSet {
-  /** Every synthetic schema document, plus the per-namespace glue files. */
-  readonly files: readonly SchemaFile[];
-  /** Target namespace -> the glue file that pulls in every document contributing to it. */
-  readonly glue: ReadonlyMap<string, string>;
-  /** Synthetic files with no target namespace of their own (and not a chameleon include). */
-  readonly noNamespace: readonly string[];
-}
-
 /**
- * Per-bundle cache of the built file set. Keyed by bundle identity, so a
- * re-import (a new bundle object) rebuilds and the old entry is collected.
+ * Bundles whose most recent schema validation timed out and is still running in the background,
+ * mapped to the still-outstanding `validateXML` call. A new validation for the same bundle
+ * refuses to start a second libxml2 instance while one is stuck (minor 4 of the Task 42 fix
+ * round): a runaway schema would otherwise spawn one WASM instance per keystroke. The entry is
+ * removed as soon as the stale call finally settles, one way or the other.
  */
-const fileSetCache = new WeakMap<DefinitionBundle, SchemaFileSet>();
-
-/** The `xmlns`/`xmlns:*` declarations in scope at `element` from its ancestors, nearest first. */
-function inheritedNamespaceDeclarations(element: Element): Map<string, string> {
-  const declarations = new Map<string, string>();
-  let current: Node | null = element.parentNode;
-  while (current !== null) {
-    if (current.nodeType === 1) {
-      const ancestor = current as Element;
-      for (let index = 0; index < ancestor.attributes.length; index += 1) {
-        const attribute = ancestor.attributes.item(index);
-        if (attribute === null) {
-          continue;
-        }
-        if ((attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:')) && !declarations.has(attribute.name)) {
-          declarations.set(attribute.name, attribute.value);
-        }
-      }
-    }
-    current = current.parentNode;
-  }
-  return declarations;
-}
-
-/** The `xs:import`/`xs:include`/`xs:redefine` elements of a schema, at any depth (they are top-level in practice). */
-function referenceElements(schema: Element): Element[] {
-  return ['import', 'include', 'redefine'].flatMap((name) => childElements(schema, NS.XSD, name));
-}
-
-/**
- * Clones `schema`, hoists the namespace declarations it inherited from its
- * WSDL ancestors (prefixes used in `type="s:int"` attribute values would
- * otherwise dangle), and rewrites every `schemaLocation` to the synthetic
- * file name the referenced document was given.
- */
-function synthesizeSchema(schema: Element, base: string, fileNameFor: ReadonlyMap<string, string>): string {
-  const clone = schema.cloneNode(true) as Element;
-  for (const reference of referenceElements(clone)) {
-    const location = reference.getAttribute('schemaLocation');
-    if (location === null || location === '') {
-      continue;
-    }
-    let resolved: string;
-    try {
-      resolved = new URL(location, base).toString();
-    } catch {
-      resolved = location;
-    }
-    const fileName = fileNameFor.get(resolved);
-    if (fileName === undefined) {
-      // The bundle never resolved this reference; dropping the location leaves
-      // a namespace-only import, which libxml2 treats as "assume it is declared
-      // elsewhere" instead of failing to compile the whole set.
-      reference.removeAttribute('schemaLocation');
-      continue;
-    }
-    reference.setAttribute('schemaLocation', fileName);
-  }
-
-  // The namespace declarations are injected into the serialized text rather than
-  // set as attributes: xmldom's serializer emits a declaration for the element's
-  // own prefix by itself, and setting the same one as an attribute would produce
-  // a duplicate (which libxml2 rejects as not well formed).
-  const text = serializeXml(clone);
-  const insertAt = text.search(/[\s/>]/);
-  const head = text.slice(0, text.indexOf('>'));
-  const extra = [...inheritedNamespaceDeclarations(schema)]
-    .filter(([name]) => !new RegExp(`[\\s<]${name.replace(':', '\\:')}\\s*=`).test(head))
-    .map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`)
-    .join('');
-  return `${text.slice(0, insertAt)}${extra}${text.slice(insertAt)}`;
-}
-
-/** Every `xs:schema` a bundled document contributes, with the document it came from. */
-function schemaElementsOf(document: BundledDocument): Element[] {
-  const root = document.document.documentElement;
-  if (root === null) {
-    return [];
-  }
-  if (document.kind === 'xsd') {
-    return root.namespaceURI === NS.XSD && root.localName === 'schema' ? [root] : [];
-  }
-  const types = firstChildElement(root, NS.WSDL, 'types');
-  return types === undefined ? [] : childElements(types, NS.XSD, 'schema');
-}
-
-/** Builds (or returns the cached) libxml2 file set for `bundle`. */
-function buildSchemaFileSet(bundle: DefinitionBundle): SchemaFileSet {
-  const cached = fileSetCache.get(bundle);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  // Pass 1: name every document, so pass 2 can rewrite references to those names.
-  const fileNameFor = new Map<string, string>();
-  const sources: { schema: Element; base: string; fileName: string; chameleon: boolean }[] = [];
-  let index = 0;
-  for (const document of bundle.documents) {
-    const schemas = schemaElementsOf(document);
-    schemas.forEach((schema, ordinal) => {
-      index += 1;
-      const fileName = document.kind === 'wsdl' ? `embedded-${String(index)}.xsd` : `doc-${String(index)}.xsd`;
-      if (ordinal === 0) {
-        fileNameFor.set(document.location, fileName);
-        fileNameFor.set(document.requestedLocation, fileName);
-      }
-      sources.push({
-        schema,
-        base: document.location,
-        fileName,
-        chameleon: document.chameleonFor !== undefined,
-      });
-    });
-  }
-
-  // Pass 2: synthesize each schema, and group them by their own target namespace.
-  const files: SchemaFile[] = [];
-  const byNamespace = new Map<string, string[]>();
-  const noNamespace: string[] = [];
-  for (const source of sources) {
-    files.push({ fileName: source.fileName, contents: synthesizeSchema(source.schema, source.base, fileNameFor) });
-    const targetNamespace = source.schema.getAttribute('targetNamespace');
-    if (targetNamespace === null || targetNamespace === '') {
-      // A chameleon include has no namespace of its own and is already pulled in
-      // by the schema that includes it; adding it again at the top level would
-      // redeclare its components.
-      if (!source.chameleon) {
-        noNamespace.push(source.fileName);
-      }
-      continue;
-    }
-    const bucket = byNamespace.get(targetNamespace);
-    if (bucket === undefined) {
-      byNamespace.set(targetNamespace, [source.fileName]);
-    } else {
-      bucket.push(source.fileName);
-    }
-  }
-
-  // Pass 3: one glue schema per namespace, so a namespace split across several
-  // documents can still be imported by a wrapper with a single `xs:import`.
-  const glue = new Map<string, string>();
-  let glueIndex = 0;
-  for (const [namespace, members] of byNamespace) {
-    glueIndex += 1;
-    const fileName = `ns-${String(glueIndex)}.xsd`;
-    const includes = members.map((member) => `  <xs:include schemaLocation="${escapeAttribute(member)}"/>`).join('\n');
-    files.push({
-      fileName,
-      contents: `<xs:schema xmlns:xs="${NS.XSD}" targetNamespace="${escapeAttribute(namespace)}">\n${includes}\n</xs:schema>`,
-    });
-    glue.set(namespace, fileName);
-  }
-
-  const fileSet: SchemaFileSet = { files, glue, noNamespace };
-  fileSetCache.set(bundle, fileSet);
-  return fileSet;
-}
-
-/** The `xs:import`/`xs:include` lines a wrapper needs to see every namespace but `own`. */
-function wrapperReferences(fileSet: SchemaFileSet, own: string | undefined): string {
-  const lines: string[] = [];
-  for (const [namespace, fileName] of fileSet.glue) {
-    lines.push(
-      namespace === own
-        ? `  <xs:include schemaLocation="${escapeAttribute(fileName)}"/>`
-        : `  <xs:import namespace="${escapeAttribute(namespace)}" schemaLocation="${escapeAttribute(fileName)}"/>`,
-    );
-  }
-  for (const fileName of fileSet.noNamespace) {
-    lines.push(`  <xs:include schemaLocation="${escapeAttribute(fileName)}"/>`);
-  }
-  return lines.join('\n');
-}
-
-/** The wrapper schema for `document` style: no declarations of its own, just every namespace. */
-function documentWrapper(fileSet: SchemaFileSet): string {
-  return `<xs:schema xmlns:xs="${NS.XSD}">\n${wrapperReferences(fileSet, undefined)}\n</xs:schema>`;
-}
-
-/**
- * The wrapper schema for `rpc` style: the body child is the operation wrapper
- * element, which no schema declares, so one is synthesized here with a child
- * per `wsdl:part`. `xs:all` rather than `xs:sequence`, because `parameterOrder`
- * (and SoapUI-style generation) may order the parts differently from the
- * `wsdl:message`, and part order is not something this validator should police.
- */
-function rpcWrapper(
-  fileSet: SchemaFileSet,
-  namespace: string,
-  elementName: string,
-  binding: ValidationBinding,
-): string {
-  const prefixes = new Map<string, string>([[NS.XSD, 'xs']]);
-  const prefixFor = (uri: string): string | undefined => {
-    const existing = prefixes.get(uri);
-    if (existing !== undefined) {
-      return existing;
-    }
-    if (!fileSet.glue.has(uri)) {
-      return undefined;
-    }
-    const prefix = `p${String(prefixes.size)}`;
-    prefixes.set(uri, prefix);
-    return prefix;
-  };
-
-  const particles = binding.parts.map((part) => {
-    const name = escapeAttribute(part.name);
-    if (part.element !== undefined) {
-      const prefix = prefixFor(part.element.namespaceUri);
-      if (prefix !== undefined) {
-        return `    <xs:element ref="${prefix}:${escapeAttribute(part.element.localName)}"/>`;
-      }
-      return `    <xs:element name="${name}"/>`;
-    }
-    if (part.type !== undefined) {
-      const prefix = prefixFor(part.type.namespaceUri);
-      if (prefix !== undefined) {
-        return `    <xs:element name="${name}" type="${prefix}:${escapeAttribute(part.type.localName)}"/>`;
-      }
-    }
-    // An unknown part type must not fail the whole compile: accept anything.
-    return `    <xs:element name="${name}"/>`;
-  });
-
-  const declarations = [...prefixes].map(([uri, prefix]) => `xmlns:${prefix}="${escapeAttribute(uri)}"`).join(' ');
-  const content =
-    particles.length === 0
-      ? '  <xs:complexType/>'
-      : `  <xs:complexType>\n   <xs:all>\n${particles.join('\n')}\n   </xs:all>\n  </xs:complexType>`;
-
-  return [
-    `<xs:schema ${declarations} targetNamespace="${escapeAttribute(namespace)}" elementFormDefault="unqualified">`,
-    wrapperReferences(fileSet, namespace),
-    ` <xs:element name="${escapeAttribute(elementName)}">`,
-    content,
-    ' </xs:element>',
-    '</xs:schema>',
-  ].join('\n');
-}
+const staleByBundle = new WeakMap<DefinitionBundle, Promise<unknown>>();
 
 /** The `xmlns`/`xmlns:*` declarations a range node carries, parsed out of its raw attribute text. */
 function declarationsOf(node: XmlRangeNode): Map<string, string> {
@@ -375,9 +125,16 @@ function bodyFragments(xml: string): BodyFragment[] {
   });
 }
 
-/** Strips libxml2's "Schemas validity error : " prefix from a message. */
-function cleanMessage(message: string): string {
-  return message.replace(/^Schemas\s+\w+\s+(?:error|warning)\s*:\s*/i, '').trim();
+/** Strips libxml2's "Schemas validity error : " prefix from a message, and every synthetic file
+ * name the file set might mention (`labels`) with a name the user actually recognizes. */
+function cleanMessage(message: string, labels: ReadonlyMap<string, string>): string {
+  let cleaned = message.replace(/^Schemas\s+\w+\s+(?:error|warning)\s*:\s*/i, '').trim();
+  for (const [fileName, label] of labels) {
+    if (cleaned.includes(fileName)) {
+      cleaned = cleaned.split(fileName).join(label);
+    }
+  }
+  return cleaned;
 }
 
 /** Runs `promise`, resolving to `fallback` when it takes longer than `ms`. */
@@ -405,8 +162,10 @@ async function validateFragment(
   wrapper: string,
   fileSet: SchemaFileSet,
   timeoutMs: number,
+  bundle: DefinitionBundle,
 ): Promise<ValidationProblem[]> {
   const path = `/Envelope/Body/${fragment.name}`;
+  const labels = fileSetLabels(fileSet);
   const timedOut: ValidationProblem[] = [
     {
       severity: 'warning',
@@ -418,17 +177,32 @@ async function validateFragment(
     },
   ];
 
+  const stale = staleByBundle.get(bundle);
+  if (stale !== undefined) {
+    // A previous validation for this interface is still stuck in libxml2; starting another one
+    // now would pile a second WASM instance on top of it. Refuse immediately, and let the stale
+    // call keep running in the background — see the `.then` below for when it clears.
+    return [
+      {
+        severity: 'warning',
+        code: 'schema-timeout',
+        message: `Schema validation of <${fragment.name}> was skipped: the interface's previous validation has not finished yet`,
+        source: 'schema',
+        line: fragment.line,
+        path,
+      },
+    ];
+  }
+
+  const call = validateXML({
+    xml: [{ fileName: 'body.xml', contents: fragment.contents }],
+    schema: [{ fileName: 'wrapper.xsd', contents: wrapper }],
+    preload: fileSet.files.map((file) => ({ fileName: file.fileName, contents: file.contents })),
+  });
+
   let result;
   try {
-    result = await withTimeout(
-      validateXML({
-        xml: [{ fileName: 'body.xml', contents: fragment.contents }],
-        schema: [{ fileName: 'wrapper.xsd', contents: wrapper }],
-        preload: fileSet.files.map((file) => ({ fileName: file.fileName, contents: file.contents })),
-      }),
-      timeoutMs,
-      undefined,
-    );
+    result = await withTimeout(call, timeoutMs, undefined);
   } catch (cause) {
     // A schema set that does not compile is a problem with the definition, not
     // with the message: report it once, as a warning, with no position.
@@ -436,13 +210,30 @@ async function validateFragment(
       {
         severity: 'warning',
         code: 'schema-unavailable',
-        message: `The interface's schemas could not be compiled: ${cause instanceof Error ? cleanMessage(cause.message) : String(cause)}`,
+        message: `The interface's schemas could not be compiled: ${cause instanceof Error ? cleanMessage(cause.message, labels) : String(cause)}`,
         source: 'schema',
       },
     ];
   }
 
   if (result === undefined) {
+    // Timed out: track the still-running call so a second validation for this interface refuses
+    // to start another libxml2 instance until this one settles, one way or the other, and
+    // terminate the tracking (not the call itself — libxml2 gives us no handle for that) once
+    // it does.
+    staleByBundle.set(bundle, call);
+    call.then(
+      () => {
+        if (staleByBundle.get(bundle) === call) {
+          staleByBundle.delete(bundle);
+        }
+      },
+      () => {
+        if (staleByBundle.get(bundle) === call) {
+          staleByBundle.delete(bundle);
+        }
+      },
+    );
     return timedOut;
   }
   if (result.valid) {
@@ -450,7 +241,7 @@ async function validateFragment(
   }
 
   return result.errors.flatMap((error) => {
-    const message = cleanMessage(error.message);
+    const message = cleanMessage(error.message, labels);
     const isBody = error.loc?.fileName === 'body.xml';
     if (!isBody) {
       // libxml2 warns when a namespace reachable through two files is imported
@@ -512,7 +303,7 @@ export async function validateAgainstSchemaSet(
       binding?.style === 'rpc'
         ? rpcWrapper(fileSet, fragment.namespaceUri, localNameOf(fragment.name), binding)
         : documentWrapper(fileSet);
-    problems.push(...(await validateFragment(fragment, wrapper, fileSet, timeoutMs)));
+    problems.push(...(await validateFragment(fragment, wrapper, fileSet, timeoutMs, target.bundle)));
   }
   return problems;
 }

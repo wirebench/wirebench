@@ -175,6 +175,41 @@ describe('checkSoapStructure', () => {
     expect(problems[0]?.severity).toBe('warning');
   });
 
+  it('reports both a media-type mismatch and an action mismatch on the same message', () => {
+    const xml = `<env:Envelope xmlns:env="${SOAP12}"><env:Body/></env:Envelope>`;
+    const problems = checkSoapStructure(xml, {
+      expectedVersion: '1.2',
+      contentType: 'text/xml; action="urn:x:Other"',
+      soapAction: 'urn:x:Add',
+    });
+    expect(codes(problems)).toEqual(['content-type-mismatch', 'soap-action-mismatch']);
+  });
+
+  it('accepts multipart/related with type="text/xml" as a 1.1 Content-Type', () => {
+    const problems = checkSoapStructure(envelope11('<soapenv:Body/>'), {
+      expectedVersion: '1.1',
+      contentType: 'multipart/related; type="text/xml"; start="<root>"; boundary="x"',
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it('accepts multipart/related with type="application/soap+xml" as a 1.2 Content-Type', () => {
+    const xml = `<env:Envelope xmlns:env="${SOAP12}"><env:Body/></env:Envelope>`;
+    const problems = checkSoapStructure(xml, {
+      expectedVersion: '1.2',
+      contentType: 'multipart/related; type="application/soap+xml"; boundary="x"',
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it('still flags a multipart/related message whose inner type does not match the version', () => {
+    const problems = checkSoapStructure(envelope11('<soapenv:Body/>'), {
+      expectedVersion: '1.1',
+      contentType: 'multipart/related; type="application/soap+xml"; boundary="x"',
+    });
+    expect(codes(problems)).toEqual(['content-type-mismatch']);
+  });
+
   it('ignores the action parameter when no SOAPAction is configured', () => {
     const xml = `<env:Envelope xmlns:env="${SOAP12}"><env:Body/></env:Envelope>`;
     expect(

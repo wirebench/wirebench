@@ -145,21 +145,38 @@ function unquote(value: string): string {
   return value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
 }
 
-/** Compares the transport metadata against the version in the envelope. */
+/** Whether `mediaType` is the media type SOAP `version` sends over the wire, MTOM included:
+ * an MTOM-wrapped message's own `Content-Type` is `multipart/related`, with the actual SOAP
+ * media type carried in its `type` parameter instead. */
+function matchesMediaType(contentType: string, mediaType: string, version: SoapEnvelopeVersion): boolean {
+  if (mediaType === MEDIA_TYPE[version]) {
+    return true;
+  }
+  if (mediaType !== 'multipart/related') {
+    return false;
+  }
+  const type = contentTypeParameter(contentType, 'type');
+  return type !== undefined && unquote(type).toLowerCase() === MEDIA_TYPE[version];
+}
+
+/**
+ * Compares the transport metadata against the version in the envelope. Media-type and
+ * `action`-parameter mismatches are independent findings — a message can carry both — so
+ * neither check short-circuits the other.
+ */
 function checkTransport(options: SoapStructureOptions, problems: ValidationProblem[]): void {
   const { contentType, expectedVersion, soapAction } = options;
   if (contentType === undefined) {
     return;
   }
   const mediaType = (contentType.split(';')[0] ?? '').trim().toLowerCase();
-  if (mediaType.length > 0 && mediaType !== MEDIA_TYPE[expectedVersion]) {
+  if (mediaType.length > 0 && !matchesMediaType(contentType, mediaType, expectedVersion)) {
     problems.push({
       severity: 'warning',
       code: 'content-type-mismatch',
       message: `SOAP ${expectedVersion} expects Content-Type ${MEDIA_TYPE[expectedVersion]}, not ${mediaType}`,
       source: 'structure',
     });
-    return;
   }
   if (expectedVersion !== '1.2' || soapAction === undefined) {
     return;

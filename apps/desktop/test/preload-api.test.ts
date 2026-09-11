@@ -21,6 +21,7 @@ describe('buildApi', () => {
       'attachments',
       'definition',
       'dialogs',
+      'env',
       'exchanges',
       'files',
       'fs',
@@ -39,6 +40,11 @@ describe('buildApi', () => {
       'xpath',
     ]);
     expect('ipcRenderer' in api).toBe(false);
+  });
+
+  it('defaults env.e2e to false, and carries whatever the caller passes', () => {
+    expect(buildApi(vi.fn(), vi.fn(), vi.fn()).env).toEqual({ e2e: false });
+    expect(buildApi(vi.fn(), vi.fn(), vi.fn(), { e2e: true }).env).toEqual({ e2e: true });
   });
 
   it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {

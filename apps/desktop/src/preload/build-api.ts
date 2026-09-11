@@ -46,6 +46,16 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
   files: {
     pathFor(file: File): string;
   };
+  /**
+   * Environment flags baked in at preload time, not IPC calls: `e2e` mirrors main's
+   * `WIREBENCH_E2E` env var, so the renderer can tell a Playwright-driven build apart from a
+   * real user's without reading `process.env` itself (a sandboxed renderer has none). Used to
+   * gate the `__wirebenchMonaco` handle e2e specs need (see `editor/markers.ts`) — nothing
+   * beyond `import.meta.env.DEV` should ever need to check this.
+   */
+  env: {
+    readonly e2e: boolean;
+  };
 };
 
 function isChannel(value: unknown): value is IpcChannel<z.ZodType, z.ZodType> {
@@ -73,11 +83,17 @@ function buildChannelApi(tree: ChannelTree, invoke: Invoke): Record<string, unkn
  * unit-tested with fake transports; `preload/index.ts` supplies the real `ipcRenderer`-backed
  * ones and never exposes `ipcRenderer` itself.
  */
-export function buildApi(invoke: Invoke, on: On, pathFor: (file: File) => string): WirebenchApi {
+export function buildApi(
+  invoke: Invoke,
+  on: On,
+  pathFor: (file: File) => string,
+  env: { readonly e2e: boolean } = { e2e: false },
+): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),
     files: { pathFor },
+    env,
   } as WirebenchApi;
 }

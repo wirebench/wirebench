@@ -19,6 +19,7 @@ export function StatusBar() {
   const last = useExchangesStore((state) => state.log.at(-1));
   const saveStatus = useProjectStore((state) => state.saveStatus);
   const problemCount = useProblemsStore((state) => state.items.length);
+  const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const lastSavedAt = useProjectStore((state) => state.lastSavedAt);
   const saveLabel =
@@ -48,7 +49,7 @@ export function StatusBar() {
           data-testid="status-bar-problems"
           title="Show the Problems panel"
           className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
-            problemCount > 0 ? 'text-status-danger' : ''
+            errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''
           }`}
           onClick={() => {
             showConsoleTab('problems');

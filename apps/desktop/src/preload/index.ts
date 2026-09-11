@@ -17,6 +17,7 @@ const api = buildApi(
     };
   },
   (file) => webUtils.getPathForFile(file),
+  { e2e: process.env['WIREBENCH_E2E'] === '1' },
 );
 
 contextBridge.exposeInMainWorld('wirebench', api);

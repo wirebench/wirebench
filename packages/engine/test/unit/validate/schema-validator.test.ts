@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { importDefinition } from '../../../src/import.js';
 import type { ImportResult } from '../../../src/types.js';
 import { validateAgainstSchemaSet } from '../../../src/validate/schema-validator.js';
@@ -122,13 +122,51 @@ describe('validateAgainstSchemaSet — Calculator (document/literal)', () => {
     const second = await validate(envelope(ADD_BODY));
     expect(first).toEqual(second);
   });
+});
 
-  it('validates a 500 KB body in under two seconds', async () => {
-    // One deep element repeated: `Add` only allows two children, so the size test uses
-    // a long (but legal) `intA` comment padding around a valid request instead.
-    const padding = `<!-- ${'x'.repeat(500 * 1024)} -->`;
+describe('validateAgainstSchemaSet — performance', () => {
+  it('validates a body padded past 500 KB with legal repeated elements in under two seconds', async () => {
+    // A recursive `Node` type with an unbounded, self-typed `child` element — a large but
+    // entirely legal document, unlike padding the body with a comment (which a real schema
+    // validation pass never actually has to parse as content).
+    const nodeWsdl = [
+      '<?xml version="1.0"?>',
+      '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"',
+      '             xmlns:tns="urn:wb:perf" xmlns:xs="http://www.w3.org/2001/XMLSchema"',
+      '             targetNamespace="urn:wb:perf" name="PerfService">',
+      '  <types>',
+      '    <xs:schema targetNamespace="urn:wb:perf" xmlns:tns="urn:wb:perf" elementFormDefault="qualified">',
+      '      <xs:complexType name="Node">',
+      '        <xs:sequence><xs:element name="child" type="tns:Node" minOccurs="0" maxOccurs="unbounded"/></xs:sequence>',
+      '      </xs:complexType>',
+      '      <xs:element name="NodeEl" type="tns:Node"/>',
+      '    </xs:schema>',
+      '  </types>',
+      '  <message name="NodeIn"><part name="parameters" element="tns:NodeEl"/></message>',
+      '  <message name="NodeOut"><part name="parameters" element="tns:NodeEl"/></message>',
+      '  <portType name="PT"><operation name="Op"><input message="tns:NodeIn"/><output message="tns:NodeOut"/></operation></portType>',
+      '  <binding name="B" type="tns:PT">',
+      '    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>',
+      '    <operation name="Op"><soap:operation soapAction="urn:wb:perf/Op"/>',
+      '      <input><soap:body use="literal"/></input><output><soap:body use="literal"/></output>',
+      '    </operation>',
+      '  </binding>',
+      '  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://example.invalid/"/></port></service>',
+      '</definitions>',
+    ].join('\n');
+    const perf = await importDefinition({ kind: 'text', text: nodeWsdl });
+    const target = { schemaSet: perf.schemaSet, bundle: perf.bundle };
+    const children = '<tns:child/>'.repeat(25_000);
+    const xml = [
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:wb:perf">',
+      '   <soapenv:Body>',
+      `      <tns:NodeEl>${children}</tns:NodeEl>`,
+      '   </soapenv:Body>',
+      '</soapenv:Envelope>',
+    ].join('\n');
+
     const started = performance.now();
-    const problems = await validate(envelope(`${ADD_BODY}\n      ${padding}`));
+    const problems = await validateAgainstSchemaSet(xml, target);
     expect(problems).toEqual([]);
     expect(performance.now() - started).toBeLessThan(2000);
   });
@@ -297,5 +335,111 @@ describe('validateAgainstSchemaSet — nested imports', () => {
       target,
     );
     expect(codes(problems)).toEqual(['schema-unknown-element']);
+  });
+});
+
+describe('validateAgainstSchemaSet — diagnostics never leak synthetic file names', () => {
+  const SYNTHETIC_NAME = /\b(ns-\d+\.xsd|doc-\d+\.xsd|embedded-\d+\.xsd|wrapper\.xsd|body\.xml)\b/;
+
+  it('replaces synthetic file names in a schema-set compile failure with a real label', async () => {
+    // `schema-constructs`'s `StringArray` type references `soapenc:Array` without importing
+    // its namespace, so the whole set fails to compile — libxml2's message names the synthetic
+    // glue file it was compiling at the time, which a user has no way to make sense of.
+    const constructs = await importDefinition({ kind: 'file', path: craftedPath('schema-constructs') });
+    const xml = [
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:wb:sc">',
+      '   <soapenv:Body>',
+      '      <tns:Level3El attr1="x" attr2="y" attr3="z"><a>x</a><b>1</b><c>RED</c></tns:Level3El>',
+      '   </soapenv:Body>',
+      '</soapenv:Envelope>',
+    ].join('\n');
+    const problems = await validateAgainstSchemaSet(xml, {
+      schemaSet: constructs.schemaSet,
+      bundle: constructs.bundle,
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.code).toBe('schema-unavailable');
+    expect(problems[0]?.message).not.toMatch(SYNTHETIC_NAME);
+    expect(problems[0]?.message).toContain('the schema set');
+  });
+});
+
+describe('validateAgainstSchemaSet — quote-aware synthesis', () => {
+  it('does not duplicate an inherited namespace declaration when an attribute value contains a raw ">"', async () => {
+    // A literal '>' needs no escaping inside an XML attribute value, but a naive
+    // `indexOf('>')` scan for the end of the `<xs:schema ...>` start tag stops there anyway,
+    // truncating the tag and hiding an attribute that comes after it — here, the `xmlns:extra`
+    // declaration the schema already carries, which would otherwise be injected a second time
+    // (a duplicate attribute, which libxml2 rejects as not well formed) because the ancestor
+    // `definitions` element declares the same prefix.
+    const quoteWsdl = [
+      '<?xml version="1.0"?>',
+      '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"',
+      '             xmlns:tns="urn:wb:quote" xmlns:extra="urn:extra" xmlns:xs="http://www.w3.org/2001/XMLSchema"',
+      '             targetNamespace="urn:wb:quote" name="QuoteAttrService">',
+      '  <types>',
+      '    <xs:schema version="1.0&gt;x" xmlns:extra="urn:extra" targetNamespace="urn:wb:quote" elementFormDefault="qualified">',
+      '      <xs:element name="Ping" type="xs:string"/>',
+      '    </xs:schema>',
+      '  </types>',
+      '  <message name="PingIn"><part name="parameters" element="tns:Ping"/></message>',
+      '  <message name="PingOut"><part name="parameters" element="tns:Ping"/></message>',
+      '  <portType name="PT"><operation name="Ping"><input message="tns:PingIn"/><output message="tns:PingOut"/></operation></portType>',
+      '  <binding name="B" type="tns:PT">',
+      '    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>',
+      '    <operation name="Ping"><soap:operation soapAction="urn:wb:quote/Ping"/>',
+      '      <input><soap:body use="literal"/></input><output><soap:body use="literal"/></output>',
+      '    </operation>',
+      '  </binding>',
+      '  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://example.invalid/"/></port></service>',
+      '</definitions>',
+    ].join('\n');
+    const quote = await importDefinition({ kind: 'text', text: quoteWsdl });
+    const target = { schemaSet: quote.schemaSet, bundle: quote.bundle };
+    const xml =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Ping xmlns="urn:wb:quote">hi</Ping></soapenv:Body></soapenv:Envelope>';
+    await expect(validateAgainstSchemaSet(xml, target)).resolves.toEqual([]);
+  });
+});
+
+describe('validateAgainstSchemaSet — timeout guard', () => {
+  it('refuses a second validation for the same interface while a timed-out one is still outstanding', async () => {
+    vi.resetModules();
+    let resolveFirst: (value: { valid: boolean; errors: never[] }) => void = () => undefined;
+    const fakeValidateXML = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    fakeValidateXML.mockResolvedValue({ valid: true, errors: [] });
+    vi.doMock('xmllint-wasm', () => ({ validateXML: fakeValidateXML }));
+
+    const { validateAgainstSchemaSet: validateWithFake } = await import('../../../src/validate/schema-validator.js');
+    const { importDefinition: importWithFake } = await import('../../../src/import.js');
+    const calculator = await importWithFake({ kind: 'file', path: publicPath('calculator') });
+    const target = { schemaSet: calculator.schemaSet, bundle: calculator.bundle };
+
+    const first = validateWithFake(envelope(ADD_BODY), target, { timeoutMs: 0 });
+    const firstProblems = await first;
+    expect(codes(firstProblems)).toEqual(['schema-timeout']);
+    expect(fakeValidateXML).toHaveBeenCalledTimes(1);
+
+    // The underlying libxml2 call from `first` never settled — a second validation for the
+    // same bundle must not start a second one, and reports the same "still running" finding.
+    const second = await validateWithFake(envelope(ADD_BODY), target, { timeoutMs: 0 });
+    expect(codes(second)).toEqual(['schema-timeout']);
+    expect(second[0]?.message).toContain('has not finished yet');
+    expect(fakeValidateXML).toHaveBeenCalledTimes(1);
+
+    // Once the stale call finally settles, a fresh validation is allowed to start again.
+    resolveFirst({ valid: true, errors: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const third = await validateWithFake(envelope(ADD_BODY), target, { timeoutMs: 10_000 });
+    expect(third).toEqual([]);
+    expect(fakeValidateXML).toHaveBeenCalledTimes(2);
+
+    vi.doUnmock('xmllint-wasm');
+    vi.resetModules();
   });
 });
