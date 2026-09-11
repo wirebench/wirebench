@@ -1,8 +1,8 @@
 /**
  * The recent-projects list: a small JSON file in Electron's `userData` directory holding the
  * last {@link MAX_RECENT} project folders, most recent first, deduped by directory. Folders
- * that no longer exist are kept in the file but reported as `exists: false`, so the Welcome
- * screen can show them disabled rather than silently forgetting a project on a detached drive.
+ * that no longer exist are kept in the file but reported as `exists: false`, so a list
+ * can show them disabled rather than silently forgetting a project on a detached drive.
  *
  * No `electron` import: the caller passes the `userData` directory in, which keeps this
  * unit-testable against a temp folder.

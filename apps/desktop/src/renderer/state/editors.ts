@@ -37,7 +37,7 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'welcome' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface';
+  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -87,11 +87,11 @@ export interface EditorsStore {
   readonly close: (id: string) => void;
   readonly activate: (id: string) => void;
   /**
-   * Leaves every tab unselected, which is what shows the Welcome screen. The editor area's
-   * Welcome tab selects with this: Welcome is not an entry in `tabs`, so `activate` — which
+   * Leaves every tab unselected, which is what shows the empty Start tab. The editor area's
+   * Start tab selects with this: Start is not an entry in `tabs`, so `activate` — which
    * only ever moves to a tab that exists — cannot reach it.
    */
-  readonly showWelcome: () => void;
+  readonly showStart: () => void;
   /** The Form view type for `requestId`, defaulting to `'full'` when never set. */
   readonly formViewTypeFor: (requestId: string) => FormViewType;
   readonly setFormViewType: (requestId: string, viewType: FormViewType) => void;
@@ -196,7 +196,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     }
   },
 
-  showWelcome: () => {
+  showStart: () => {
     set({ activeId: undefined });
   },
 

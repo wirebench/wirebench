@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FolderPlus } from 'lucide-react';
+import { FolderInput, FolderPlus, FolderSearch } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import { showToast } from '../../components/toast.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { workspaceActions } from './workspace-actions.js';
 
 /** `2026-09-10T08:30:00Z` as a short local date — precise enough to tell two sessions apart. */
 function formatOpenedAt(iso: string | undefined): string {
@@ -13,18 +13,25 @@ function formatOpenedAt(iso: string | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
 }
 
+/** The last path segment of a folder, whichever separator the platform used. */
+function folderName(dir: string): string {
+  const parts = dir.split(/[\\/]/).filter((part) => part.length > 0);
+  return parts[parts.length - 1] ?? dir;
+}
+
 /**
- * What the app shows before a workspace is open: the workspaces on disk, and a name field to
- * make another. Deliberately the minimum that lets the rest of the shell assume a workspace —
- * the full picker (rename, delete, import, the leftover-project suggestions) is a later task.
+ * What the app shows when no workspace is open: the workspaces on disk (name, project count,
+ * last opened), a name field to create another, *Import project folder…*, the folders of a
+ * pre-workspace recent list as one-click imports, and — when the workspace reopened at launch
+ * would not open — why.
  */
 export function WorkspacePicker() {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const suggestions = useWorkspaceStore((state) => state.suggestions);
   const status = useWorkspaceStore((state) => state.status);
   const error = useWorkspaceStore((state) => state.error);
+  const lastError = useWorkspaceStore((state) => state.lastError);
   const list = useWorkspaceStore((state) => state.list);
-  const create = useWorkspaceStore((state) => state.create);
-  const open = useWorkspaceStore((state) => state.open);
   const [name, setName] = useState('');
 
   useEffect(() => {
@@ -37,10 +44,11 @@ export function WorkspacePicker() {
       return;
     }
     setName('');
-    void create(trimmed).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : 'Could not create the workspace');
-    });
+    void workspaceActions.create(trimmed);
   };
+
+  // A failed action's error is the newer news; the launch-time failure is shown until then.
+  const banner = error?.message ?? lastError;
 
   return (
     <div data-testid="workspace-picker" className="flex h-full flex-col items-center overflow-auto px-6 py-10">
@@ -50,6 +58,12 @@ export function WorkspacePicker() {
           A workspace holds your projects and the environments they share. Everything lives in plain files you can read,
           diff and commit.
         </p>
+
+        {banner !== undefined && (
+          <p role="alert" className="mt-4 rounded-md border border-status-danger px-3 py-2 text-sm text-status-danger">
+            {banner}
+          </p>
+        )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <input
@@ -72,43 +86,85 @@ export function WorkspacePicker() {
             <FolderPlus size={14} aria-hidden="true" />
             Create workspace
           </Button>
+          <Button
+            data-testid="workspace-import-folder"
+            onClick={() => {
+              void workspaceActions.importProjectFolder();
+            }}
+          >
+            <FolderInput size={14} aria-hidden="true" />
+            Import project folder…
+          </Button>
         </div>
 
         <h2 className="mt-8 text-sm font-medium text-fg-muted">Workspaces</h2>
-        {error !== undefined && (
-          <p role="alert" className="mt-1 text-sm text-status-danger">
-            {error.message}
-          </p>
-        )}
         {workspaces.length === 0 ? (
           <p className="mt-1 text-sm text-fg-subtle">{status === 'loading' ? 'Loading…' : 'No workspaces yet.'}</p>
         ) : (
           <ul className="mt-1 flex flex-col">
-            {workspaces.map((workspace) => (
-              <li key={workspace.id}>
-                <button
-                  type="button"
-                  data-testid="workspace-picker-row"
-                  data-workspace-id={workspace.id}
-                  disabled={workspace.unreadable === true}
-                  title={workspace.unreadable === true ? `${workspace.dir} (unreadable)` : workspace.dir}
-                  onClick={() => {
-                    void open(workspace.id).catch((cause: unknown) => {
-                      showToast(cause instanceof Error ? cause.message : 'Could not open the workspace');
-                    });
-                  }}
-                  className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span className="shrink-0 text-sm text-fg-default">{workspace.name}</span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">{workspace.dir}</span>
-                  <span className="shrink-0 text-xs text-fg-faint">
-                    {workspace.projectCount} project{workspace.projectCount === 1 ? '' : 's'} ·{' '}
-                    {formatOpenedAt(workspace.lastOpenedAt)}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {workspaces.map((workspace) => {
+              const unreadable = workspace.unreadable === true;
+              return (
+                <li key={workspace.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    data-testid="workspace-picker-row"
+                    data-workspace-id={workspace.id}
+                    disabled={unreadable}
+                    title={unreadable ? `${workspace.dir} (unreadable)` : workspace.dir}
+                    onClick={() => {
+                      void workspaceActions.open(workspace.id);
+                    }}
+                    className="flex min-w-0 flex-1 items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="shrink-0 text-sm text-fg-default">{workspace.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">{workspace.dir}</span>
+                    <span className="shrink-0 text-xs text-fg-faint">
+                      {unreadable
+                        ? 'Cannot be read'
+                        : `${String(workspace.projectCount)} project${workspace.projectCount === 1 ? '' : 's'} · ${formatOpenedAt(workspace.lastOpenedAt)}`}
+                    </span>
+                  </button>
+                  {unreadable && (
+                    <Button
+                      aria-label={`Reveal the folder of ${workspace.name}`}
+                      onClick={() => {
+                        void workspaceActions.reveal(workspace.id);
+                      }}
+                    >
+                      <FolderSearch size={14} aria-hidden="true" />
+                      Reveal
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
+        )}
+
+        {suggestions.length > 0 && (
+          <>
+            <h2 className="mt-8 text-sm font-medium text-fg-muted">Project folders you opened before</h2>
+            <p className="mt-1 text-sm text-fg-subtle">Import one to copy it into a workspace.</p>
+            <ul className="mt-1 flex flex-col">
+              {suggestions.map((dir, index) => (
+                <li key={dir}>
+                  <button
+                    type="button"
+                    title={dir}
+                    onClick={() => {
+                      void workspaceActions.importSuggestion(index);
+                    }}
+                    className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-raised"
+                  >
+                    <span className="shrink-0 text-sm text-fg-default">{folderName(dir)}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">{dir}</span>
+                    <span className="shrink-0 text-xs text-accent">Import</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </div>

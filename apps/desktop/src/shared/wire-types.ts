@@ -2540,11 +2540,26 @@ export const workspaceListResponseSchema = z.object({
    * "you had these projects" rather than silently stranding them. Absent when there are none.
    */
   suggestions: z.array(z.string()).optional(),
+  /**
+   * Why the workspace reopened at launch would not open (or why the last close failed to
+   * save), for the picker's error banner. Absent when nothing went wrong.
+   */
+  lastError: z.string().optional(),
 });
 export type WorkspaceListResponse = z.infer<typeof workspaceListResponseSchema>;
 
 /** Request for every channel that names a workspace by id (`open`, `delete`). */
 export const workspaceIdRequestSchema = z.object({ workspaceId: z.string() });
+
+/**
+ * Request for `workspace.importSuggestion`: the position of a folder in the `suggestions` of the
+ * last `workspace.list`. An index, never the folder itself — main resolves it against the list
+ * it read, so the renderer cannot name a folder the app did not already hold.
+ */
+export const workspaceImportSuggestionRequestSchema = z.object({ index: z.number().int().nonnegative() });
+
+/** Response for `workspace.reveal`: nothing to report beyond success. */
+export const workspaceRevealResponseSchema = z.object({});
 
 /** Request for `workspace.create`. */
 export const workspaceCreateRequestSchema = z.object({ name: z.string() });

@@ -99,24 +99,28 @@ function fakeService() {
     locateProject: vi.fn().mockResolvedValue(WORKSPACE),
     setActiveEnvironment: vi.fn().mockResolvedValue(WORKSPACE),
     mutate: vi.fn().mockResolvedValue({ workspace: WORKSPACE, createdEnvironmentId: 'e1' }),
+    importKnownProjectFolder: vi.fn().mockResolvedValue(WORKSPACE),
+    lastError: vi.fn<() => string | undefined>().mockReturnValue(undefined),
   };
 }
 
 let service: ReturnType<typeof fakeService>;
 let suggestions: ReturnType<typeof vi.fn<() => Promise<readonly string[]>>>;
+let reveal: ReturnType<typeof vi.fn<(dir: string) => void>>;
 
 beforeEach(() => {
   handlers.clear();
   service = fakeService();
   suggestions = vi.fn<() => Promise<readonly string[]>>().mockResolvedValue([]);
-  registerWorkspaceChannels({ service, suggestions });
+  reveal = vi.fn<(dir: string) => void>();
+  registerWorkspaceChannels({ service, suggestions, reveal });
 });
 
 describe('workspace.* channels', () => {
   it('registers every channel the contract declares', () => {
     const declared = Object.values(channels.workspace).map((channel) => channel.name);
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(15);
+    expect(declared).toHaveLength(17);
   });
 
   it('none of them accepts a filesystem path from the renderer', () => {
@@ -142,6 +146,62 @@ describe('workspace.* channels', () => {
       ok: true,
       value: { workspaces: [SUMMARY], suggestions: ['/old/projects/calc'] },
     });
+  });
+
+  it('list carries the swallowed launch-time failure for the picker banner', async () => {
+    service.lastError.mockReturnValue('workspace.yaml: bad indentation');
+    await expect(invoke('workspace.list')).resolves.toEqual({
+      ok: true,
+      value: { workspaces: [SUMMARY], lastError: 'workspace.yaml: bad indentation' },
+    });
+  });
+
+  it('snapshot and list wait for the launch-time reopen to settle', async () => {
+    handlers.clear();
+    let settle: () => void = () => undefined;
+    const startup = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    registerWorkspaceChannels({ service, ready: () => startup });
+
+    let answered = false;
+    const pending = invoke('workspace.snapshot').then((result) => {
+      answered = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(answered).toBe(false);
+    settle();
+    await expect(pending).resolves.toEqual({ ok: true, value: { workspace: WORKSPACE } });
+
+    // A reopen that failed still ends the wait.
+    handlers.clear();
+    registerWorkspaceChannels({ service, ready: () => Promise.reject(new Error('broken')) });
+    await expect(invoke('workspace.list')).resolves.toMatchObject({ ok: true });
+  });
+
+  it("importSuggestion resolves the index against main's own list, never a renderer path", async () => {
+    suggestions.mockResolvedValue(['/old/projects/calc', '/old/projects/billing']);
+    await expect(invoke('workspace.importSuggestion', { index: 1 })).resolves.toEqual({
+      ok: true,
+      value: { workspace: WORKSPACE },
+    });
+    expect(service.importKnownProjectFolder).toHaveBeenCalledWith('/old/projects/billing');
+
+    const outOfRange = await invoke('workspace.importSuggestion', { index: 5 });
+    expect(outOfRange).toMatchObject({ ok: false, error: { code: 'project-folder-missing' } });
+    const pathShaped = await invoke('workspace.importSuggestion', { index: '/etc' });
+    expect(pathShaped.ok).toBe(false);
+    expect(service.importKnownProjectFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveal shows the folder of a listed workspace, by id only', async () => {
+    await expect(invoke('workspace.reveal', { workspaceId: 'w1' })).resolves.toEqual({ ok: true, value: {} });
+    expect(reveal).toHaveBeenCalledWith('/user-data/workspaces/w1');
+
+    const unknown = await invoke('workspace.reveal', { workspaceId: 'nope' });
+    expect(unknown).toMatchObject({ ok: false, error: { code: 'workspace-not-found' } });
+    expect(reveal).toHaveBeenCalledTimes(1);
   });
 
   it('create, open, close and snapshot forward and wrap the workspace', async () => {

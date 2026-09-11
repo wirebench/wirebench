@@ -7,6 +7,7 @@
  * answers, whether the caller is the `dialogs.*` channel or a feature handler.
  */
 
+import { delimiter } from 'node:path';
 import { BrowserWindow, dialog } from 'electron';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
@@ -17,11 +18,25 @@ export interface DialogFilter {
   readonly extensions: readonly string[];
 }
 
+/** How many entries of `WIREBENCH_E2E_DIALOG_FOLDERS` the folder pickers have consumed. */
+let queuedFolderAnswers = 0;
+
 /**
- * e2e cannot drive a native folder picker, so `WIREBENCH_E2E_DIALOG_FOLDER` short-circuits it
- * to a fixed path. Read at call time (not module load) so a spec can set it per launch.
+ * e2e cannot drive a native folder picker, so two variables short-circuit it. Both are read at
+ * call time (not module load) so a spec can set them per launch.
+ *
+ * `WIREBENCH_E2E_DIALOG_FOLDERS` is a queue — paths separated by `path.delimiter`, one answer
+ * per picker call, in order — for a spec that picks different folders in one launch (export a
+ * project, then link it back). Once it is used up, or when it is unset, every call answers
+ * with the single `WIREBENCH_E2E_DIALOG_FOLDER`.
  */
 function folderOverride(): string | undefined {
+  const queue = (process.env['WIREBENCH_E2E_DIALOG_FOLDERS'] ?? '').split(delimiter).filter((entry) => entry !== '');
+  const next = queue[queuedFolderAnswers];
+  if (next !== undefined) {
+    queuedFolderAnswers += 1;
+    return next;
+  }
   return process.env['WIREBENCH_E2E_DIALOG_FOLDER'];
 }
 

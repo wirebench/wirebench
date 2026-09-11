@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
@@ -91,13 +91,39 @@ describe('AppShell', () => {
   it('shows the empty editor placeholder when no tab is open', () => {
     render(<App />);
 
-    expect(screen.getByRole('tab', { name: 'Welcome' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Start' })).toBeTruthy();
     expect(screen.getByTestId('editor-empty')).toBeTruthy();
+  });
+
+  it('shows neither the picker nor the IDE until the first snapshot answers', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    installWirebenchApi({
+      workspace: {
+        snapshot: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+        ),
+      },
+    });
+    useWorkspaceStore.setState({ workspace: null, ready: false });
+    render(<App />);
+
+    expect(screen.getByTestId('workspace-loading')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-picker')).toBeNull();
+    expect(screen.queryByTestId('editor-area')).toBeNull();
+
+    await act(async () => {
+      answer({ ok: true, value: { workspace: workspaceWire() } });
+      await Promise.resolve();
+    });
+    expect(await screen.findByTestId('editor-area')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-picker')).toBeNull();
   });
 
   it('shows the workspace picker, under the title bar, when no workspace is open', async () => {
     stubWirebench(null);
-    useWorkspaceStore.setState({ workspace: null });
+    useWorkspaceStore.setState({ workspace: null, ready: false });
     render(<App />);
 
     expect(await screen.findByTestId('workspace-picker')).toBeTruthy();

@@ -7,8 +7,7 @@ import type { WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
-// The picker replaced the Welcome screen as "what the app shows before anything is open"; these
-// are the Welcome screen's tests, carried over to the thing that now does that job.
+// The picker is what the app shows before any workspace is open.
 
 const ROWS: WorkspaceSummaryWire[] = [
   {
@@ -35,7 +34,14 @@ function listing(workspaces: readonly WorkspaceSummaryWire[]) {
 
 describe('WorkspacePicker', () => {
   beforeEach(() => {
-    useWorkspaceStore.setState({ workspace: null, workspaces: [], suggestions: [], status: 'idle', error: undefined });
+    useWorkspaceStore.setState({
+      workspace: null,
+      workspaces: [],
+      suggestions: [],
+      status: 'idle',
+      error: undefined,
+      lastError: undefined,
+    });
   });
   afterEach(cleanup);
 
@@ -101,5 +107,62 @@ describe('WorkspacePicker', () => {
 
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe('userData is gone');
+  });
+
+  it('offers Reveal on an unreadable row, asking main by id', async () => {
+    const reveal = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    installWirebenchApi({ workspace: { list: listing(ROWS), reveal } });
+    render(<WorkspacePicker />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reveal the folder of broken' }));
+
+    await waitFor(() => expect(reveal).toHaveBeenCalledWith({ workspaceId: 'broken' }));
+    // Only the unreadable row has one.
+    expect(screen.getAllByRole('button', { name: /^Reveal the folder/ })).toHaveLength(1);
+  });
+
+  it('shows why the last workspace would not reopen at launch', async () => {
+    installWirebenchApi({
+      workspace: {
+        list: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { workspaces: ROWS, lastError: 'workspace.yaml: unexpected end of the stream' },
+        }),
+      },
+    });
+    render(<WorkspacePicker />);
+
+    expect((await screen.findByRole('alert')).textContent).toBe('workspace.yaml: unexpected end of the stream');
+  });
+
+  it('imports a project folder, which main turns into a workspace when none is open', async () => {
+    const importProjectFolder = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { workspace: workspaceWire({ name: 'Calculator' }) } });
+    installWirebenchApi({ workspace: { list: listing([]), importProjectFolder } });
+    render(<WorkspacePicker />);
+
+    await userEvent.click(screen.getByTestId('workspace-import-folder'));
+
+    await waitFor(() => expect(importProjectFolder).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useWorkspaceStore.getState().workspace?.name).toBe('Calculator'));
+  });
+
+  it('lists leftover project folders as one-click imports, sent by position', async () => {
+    const importSuggestion = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } });
+    installWirebenchApi({
+      workspace: {
+        list: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { workspaces: [], suggestions: ['/old/Calculator', '/old/Billing'] },
+        }),
+        importSuggestion,
+      },
+    });
+    render(<WorkspacePicker />);
+
+    await userEvent.click(await screen.findByTitle('/old/Billing'));
+
+    await waitFor(() => expect(importSuggestion).toHaveBeenCalledWith({ index: 1 }));
   });
 });

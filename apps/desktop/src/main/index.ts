@@ -190,9 +190,21 @@ void app.whenReady().then(() => {
     projectDirs: openProjectDirs,
     picks: dialogPicks,
   });
+  // The launch-time reopen of the last workspace. It waits for preferences (every host folds
+  // them into its send defaults, and a workspace opened before the load would hold the
+  // defaults), and a workspace that will not open is not an error the app dies of: the picker
+  // shows `lastError()`. `workspace.snapshot`/`list` wait on it, so the renderer's first answer
+  // is already the reopened workspace (or the picker with its error), never a flash of both.
+  const startup = preferencesService.ready().then(async () => {
+    await workspaceService.openLast().catch(() => null);
+  });
   registerWorkspaceChannels({
     service: workspaceService,
     suggestions: async () => await readLeftoverProjectFolders(app.getPath('userData')),
+    ready: () => startup,
+    reveal: (dir) => {
+      shell.showItemInFolder(dir);
+    },
   });
   registerGlobalsChannels(globalProperties, (properties) => {
     broadcast(events.globals.changed, { properties });
@@ -270,11 +282,7 @@ void app.whenReady().then(() => {
 
   // Opt-in, and only after the preferences are actually loaded — the default is off, so a
   // check that ran before the load would read "off" for every user who turned it on.
-  void preferencesService.ready().then(async () => {
-    // The last workspace is reopened only once preferences are loaded: every host folds them
-    // into its send defaults, and a workspace opened before the load would hold the defaults.
-    // A workspace that will not open is not an error the app dies of — the picker shows it.
-    await workspaceService.openLast().catch(() => null);
+  void startup.then(async () => {
     await updates.checkOnLaunch(() => preferencesService.get().updates.checkOnLaunch);
   });
 

@@ -39,7 +39,7 @@ export interface MenuContext {
  * anything unrecognised falls into Tools rather than vanishing from the menu bar.
  */
 const MENUS: readonly { readonly label: string; readonly categories: readonly string[] }[] = [
-  { label: 'File', categories: ['Project', 'Definition'] },
+  { label: 'File', categories: ['Workspace', 'Project', 'Definition'] },
   { label: 'Edit', categories: ['Editor'] },
   { label: 'View', categories: ['View'] },
   { label: 'Request', categories: ['Request'] },

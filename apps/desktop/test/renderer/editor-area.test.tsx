@@ -44,7 +44,7 @@ describe('EditorArea tabs', () => {
     expect(document.activeElement).toBe(tabs()[1]);
 
     fireEvent.keyDown(tabs()[1] as HTMLElement, { key: 'ArrowLeft' });
-    expect(screen.getByRole('tab', { name: 'Welcome' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Start' }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.keyDown(tabs()[0] as HTMLElement, { key: 'ArrowLeft' });
     expect(useEditorsStore.getState().activeId).toBe('b');
@@ -53,7 +53,7 @@ describe('EditorArea tabs', () => {
   it('jumps to the first and last tab with Home and End', () => {
     const tabs = () => screen.getAllByRole('tab');
     fireEvent.keyDown(tabs()[2] as HTMLElement, { key: 'Home' });
-    expect(screen.getByRole('tab', { name: 'Welcome' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Start' }).getAttribute('aria-selected')).toBe('true');
 
     fireEvent.keyDown(tabs()[0] as HTMLElement, { key: 'End' });
     expect(useEditorsStore.getState().activeId).toBe('b');

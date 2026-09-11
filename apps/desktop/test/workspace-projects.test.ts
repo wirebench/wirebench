@@ -382,6 +382,49 @@ describe('WorkspaceService.importProjectFolder', () => {
   }, 60_000);
 });
 
+describe('WorkspaceService.importProjectFolder with no workspace open', () => {
+  it('creates a workspace named after the folder, then imports into it', async () => {
+    const origin = await workspaceWithProject('Calculator');
+    const sourceDir = workspaceProjectDir(origin.workspace.dir, 'Calculator');
+    await origin.service.close();
+
+    const service = newService();
+    expect(service.snapshot()).toBeNull();
+    folderPick = sourceDir;
+    const workspace = await service.importProjectFolder(SENDER);
+
+    expect(workspace?.name).toBe('Calculator');
+    expect(workspace?.projects.map((project) => [project.slug, project.source, project.status])).toEqual([
+      ['Calculator', 'internal', 'ready'],
+    ]);
+    await service.close();
+  }, 60_000);
+
+  it('leaves no workspace behind when the folder holds no project', async () => {
+    const service = newService();
+    const empty = join(root, 'not-a-project');
+    await mkdir(empty, { recursive: true });
+    folderPick = empty;
+
+    await expect(service.importProjectFolder(SENDER)).rejects.toMatchObject({ code: 'project-folder-missing' });
+    expect(service.snapshot()).toBeNull();
+    expect(await service.list()).toEqual([]);
+  }, 60_000);
+
+  it('importKnownProjectFolder imports a folder main already holds, without a dialog', async () => {
+    const origin = await workspaceWithProject('Calculator');
+    const sourceDir = workspaceProjectDir(origin.workspace.dir, 'Calculator');
+    await origin.service.close();
+
+    const service = newService();
+    await service.create('Consumer');
+    folderPick = undefined;
+    const workspace = await service.importKnownProjectFolder(sourceDir);
+    expect(workspace.projects.map((project) => project.slug)).toEqual(['Calculator']);
+    await service.close();
+  }, 60_000);
+});
+
 describe('WorkspaceService.exportProject', () => {
   it('writes a project the target can load back, definition cache included', async () => {
     const { service, workspace, projectId } = await workspaceWithProject('Calculator');

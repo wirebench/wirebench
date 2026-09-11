@@ -24,6 +24,7 @@ export const COMMAND_IDS = [
   'preferences.open',
   'definition.import',
   'project.save',
+  'workspace.newProject',
   'explorer.importAnother',
   'explorer.removeInterface',
   'explorer.showInterface',
@@ -97,6 +98,7 @@ export type CommandId = (typeof COMMAND_IDS)[number];
 export type CommandCategory =
   | 'General'
   | 'View'
+  | 'Workspace'
   | 'Project'
   | 'Definition'
   | 'Explorer'
@@ -118,6 +120,7 @@ export type CommandCategory =
  */
 export const COMMAND_WHEN_SCOPES = {
   editor: 'an editor tab is open',
+  workspace: 'a workspace is open',
   'editor.request': 'a request tab is active',
   project: 'a project is open',
   'project.environments': 'the project has environments',

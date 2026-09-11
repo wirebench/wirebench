@@ -1,13 +1,14 @@
 import { checkForUpdates } from '../lib/update-status.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/project/project-actions.js';
+import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { ui } from './command-helpers.js';
 
-/** Registers the Project, Definition, Environment, Secrets and application commands. */
+/** Registers the Workspace, Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
   // No shortcut, and no `when`: checking for updates is always available and never urgent.
   registerCommand({
@@ -28,7 +29,18 @@ export function registerProjectCommands(): void {
     },
   });
   // `project.new` / `project.open` / `project.close` are gone: a project belongs to a
-  // workspace, so creating, opening and closing one is a workspace command (Task 11).
+  // workspace, so creating one is a workspace command, and it asks for a name only.
+  registerCommand({
+    id: 'workspace.newProject',
+    label: 'New Project…',
+    category: 'Workspace',
+    shortcut: 'Mod+Shift+N',
+    when: () => useWorkspaceStore.getState().workspace !== null,
+    whenScope: 'workspace',
+    run: () => {
+      workspaceActions.newProject();
+    },
+  });
   registerCommand({
     id: 'project.save',
     label: 'Save All',

@@ -33,6 +33,14 @@ export interface WorkspaceSnapshot {
   readonly workspaces: readonly WorkspaceSummaryWire[];
   /** Project folders from a leftover pre-workspace recent list, offered on the picker. */
   readonly suggestions: readonly string[];
+  /**
+   * `false` until the first `workspace.snapshot` pull has answered. Main holds that answer
+   * until its launch-time reopen settles, so while this is `false` the shell shows neither the
+   * picker nor the IDE — it does not yet know which one is right.
+   */
+  readonly ready: boolean;
+  /** Why the launch-time reopen (or the last close) failed, from `workspace.list`; the picker's banner. */
+  readonly lastError?: string | undefined;
   readonly status: 'idle' | 'loading' | 'error';
   readonly error?: IpcError | undefined;
 }
@@ -58,6 +66,10 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   readonly linkProject: () => Promise<boolean>;
   /** Runs main's folder picker and copies the project it names into the workspace. */
   readonly importProjectFolder: () => Promise<boolean>;
+  /** Copies the `index`th of {@link WorkspaceSnapshot.suggestions} into the workspace (creating one if none is open). */
+  readonly importSuggestion: (index: number) => Promise<void>;
+  /** Shows a workspace's folder in the OS file manager. */
+  readonly reveal: (workspaceId: string) => Promise<void>;
   /** Runs main's folder picker and writes the project out to it; the folder, or `null`. */
   readonly exportProject: (projectId: string) => Promise<string | null>;
   /** Re-points a missing linked project at a folder the user picks. `false` when cancelled. */
@@ -138,6 +150,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     workspace: null,
     workspaces: [],
     suggestions: [],
+    ready: false,
     status: 'idle',
 
     applySnapshot: apply,
@@ -152,15 +165,22 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       set({
         workspaces: result.value.workspaces,
         suggestions: result.value.suggestions ?? [],
+        lastError: result.value.lastError,
         status: 'idle',
         error: undefined,
       });
     },
 
     refresh: async () => {
-      const result = await ipc().workspace.snapshot(undefined);
-      if (result.ok) {
+      const result = await ipc()
+        .workspace.snapshot(undefined)
+        .catch(() => undefined);
+      if (result?.ok === true) {
         apply(result.value.workspace);
+      }
+      // Even a failed pull ends the wait: the picker (with its error) beats an endless spinner.
+      if (!get().ready) {
+        set({ ready: true });
       }
     },
 
@@ -208,7 +228,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
         return false;
       }
       apply(workspace);
+      // From the picker this may have created a workspace, which the list should now show.
+      await get().list();
       return true;
+    },
+
+    importSuggestion: async (index) => {
+      apply(unwrap(await ipc().workspace.importSuggestion({ index })).workspace);
+      await get().list();
+    },
+
+    reveal: async (workspaceId) => {
+      unwrap(await ipc().workspace.reveal({ workspaceId }));
     },
 
     exportProject: async (projectId) => unwrap(await ipc().workspace.exportProject({ projectId })).dir,

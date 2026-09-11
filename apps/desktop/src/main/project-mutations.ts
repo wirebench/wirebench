@@ -811,7 +811,7 @@ export async function applyChange(
   }
 }
 
-/** Derives a project's default name from its folder, matching what the Welcome screen suggests. */
+/** Derives a project's default name from its folder, the folder's last segment. */
 export function projectNameFromDir(dir: string): string {
   const segments = dir.split(/[\\/]/).filter((segment) => segment.length > 0);
   return slugify(segments.at(-1) ?? 'Project');

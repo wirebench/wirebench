@@ -139,6 +139,7 @@ import {
   workspaceCreateRequestSchema,
   workspaceExportProjectResponseSchema,
   workspaceIdRequestSchema,
+  workspaceImportSuggestionRequestSchema,
   workspaceListResponseSchema,
   workspaceMutateRequestSchema,
   workspaceMutateResponseSchema,
@@ -146,6 +147,7 @@ import {
   workspaceRemoveProjectRequestSchema,
   workspaceRenameRequestSchema,
   workspaceResponseSchema,
+  workspaceRevealResponseSchema,
   workspaceSetActiveEnvironmentRequestSchema,
   workspaceSnapshotResponseSchema,
   workspaceSummariesResponseSchema,
@@ -314,6 +316,14 @@ export const channels = {
     ),
     linkProject: defineChannel('workspace.linkProject', z.undefined(), workspaceSnapshotResponseSchema),
     importProjectFolder: defineChannel('workspace.importProjectFolder', z.undefined(), workspaceSnapshotResponseSchema),
+    // One of `workspace.list`'s suggestions, by position; creates a workspace when none is open.
+    importSuggestion: defineChannel(
+      'workspace.importSuggestion',
+      workspaceImportSuggestionRequestSchema,
+      workspaceResponseSchema,
+    ),
+    // Shows a workspace's folder in the OS file manager — the way out for an unreadable row.
+    reveal: defineChannel('workspace.reveal', workspaceIdRequestSchema, workspaceRevealResponseSchema),
     exportProject: defineChannel(
       'workspace.exportProject',
       workspaceProjectIdRequestSchema,

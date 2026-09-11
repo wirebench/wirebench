@@ -1,3 +1,4 @@
+import { WorkspaceError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { WorkspaceService } from '../workspace-service.js';
 import { registerHandler } from './register.js';
@@ -19,10 +20,12 @@ export type WorkspaceChannelService = Pick<
   | 'removeProject'
   | 'linkProject'
   | 'importProjectFolder'
+  | 'importKnownProjectFolder'
   | 'exportProject'
   | 'locateProject'
   | 'setActiveEnvironment'
   | 'mutate'
+  | 'lastError'
 >;
 
 /** What `workspace.*` needs beyond the service itself. */
@@ -34,6 +37,15 @@ export interface WorkspaceChannelDeps {
    * the caller's business, so the picker never learns a path the app did not already hold.
    */
   readonly suggestions?: () => Promise<readonly string[]>;
+  /**
+   * Settles once the launch-time reopen of the last workspace has finished (either way).
+   * `workspace.snapshot` and `workspace.list` wait for it, so the renderer's first answer is the
+   * final one: no picker flashing up before the reopened workspace replaces it, and no error
+   * banner missing because the list was read before the reopen failed.
+   */
+  readonly ready?: () => Promise<unknown>;
+  /** Shows a folder in the OS file manager (`shell.showItemInFolder` in production). */
+  readonly reveal?: (dir: string) => void;
 }
 
 /**
@@ -49,11 +61,44 @@ export interface WorkspaceChannelDeps {
  */
 export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   const { service } = deps;
+  const ready = async (): Promise<void> => {
+    await deps.ready?.().catch(() => undefined);
+  };
 
   registerHandler(channels.workspace.list, async () => {
+    await ready();
     const workspaces = await service.list();
     const suggestions = (await deps.suggestions?.()) ?? [];
-    return { workspaces, ...(suggestions.length > 0 ? { suggestions: [...suggestions] } : {}) };
+    const lastError = service.lastError();
+    return {
+      workspaces,
+      ...(suggestions.length > 0 ? { suggestions: [...suggestions] } : {}),
+      ...(lastError !== undefined ? { lastError } : {}),
+    };
+  });
+
+  registerHandler(channels.workspace.importSuggestion, async (request) => {
+    // Resolved against a fresh read of the same list the picker was shown, so the only folders
+    // this can reach are ones the app itself recorded.
+    const folder = ((await deps.suggestions?.()) ?? [])[request.index];
+    if (folder === undefined) {
+      throw new WorkspaceError('project-folder-missing', 'That project folder is no longer suggested.', {
+        details: { index: request.index },
+      });
+    }
+    return { workspace: await service.importKnownProjectFolder(folder) };
+  });
+
+  registerHandler(channels.workspace.reveal, async (request) => {
+    // Only a workspace the list knows about: the id is looked up, never turned into a path.
+    const row = (await service.list()).find((candidate) => candidate.id === request.workspaceId);
+    if (row === undefined) {
+      throw new WorkspaceError('workspace-not-found', `No workspace "${request.workspaceId}".`, {
+        details: { workspaceId: request.workspaceId },
+      });
+    }
+    deps.reveal?.(row.dir);
+    return {};
   });
 
   registerHandler(channels.workspace.create, async (request) => ({ workspace: await service.create(request.name) }));
@@ -62,7 +107,10 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
 
   registerHandler(channels.workspace.close, async () => ({ workspace: await service.close() }));
 
-  registerHandler(channels.workspace.snapshot, () => Promise.resolve({ workspace: service.snapshot() }));
+  registerHandler(channels.workspace.snapshot, async () => {
+    await ready();
+    return { workspace: service.snapshot() };
+  });
 
   registerHandler(channels.workspace.rename, async (request) => ({
     workspaces: await service.rename(request.workspaceId, request.name),

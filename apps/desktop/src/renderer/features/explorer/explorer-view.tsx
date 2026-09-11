@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { NodeApi, NodeRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
-import { Box, FileDown, Folder, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
+import { Box, FileDown, Folder, FolderPlus, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { IconButton } from '../../components/icon-button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { ExplorerContextMenu } from './context-menu.js';
+import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode } from './tree-nodes.js';
@@ -174,6 +175,15 @@ export function ExplorerView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-8 shrink-0 items-center justify-end gap-1 border-b border-hairline px-2">
+        <IconButton
+          data-testid="explorer-new-project"
+          label="New Project…"
+          onClick={() => {
+            workspaceActions.newProject();
+          }}
+        >
+          <FolderPlus size={14} aria-hidden="true" />
+        </IconButton>
         <IconButton label="Import WSDL…" onClick={openImportDialog}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>

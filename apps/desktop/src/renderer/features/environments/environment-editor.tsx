@@ -94,6 +94,8 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
   const interfaces = useProjectStore((state) => state.interfaces);
   const projectId = useProjectStore((state) => state.projectOf[environmentId]);
   const order = useProjectStore((state) => state.order);
+  const projectOf = useProjectStore((state) => state.projectOf);
+  const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects);
   const updateProjectEnvironment = useProjectStore((state) => state.updateEnvironment);
   const mutateWorkspace = useWorkspaceStore((state) => state.mutate);
   const isWorkspaceEnvironment = workspaceEnvironment !== undefined;
@@ -189,6 +191,18 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
     .map((id) => interfaces[id])
     .filter((iface): iface is InterfaceWire => iface !== undefined);
 
+  // A workspace environment addresses an interface as `<projectSlug>/<interfaceSlug>` (the key
+  // `project-endpoint.ts` resolves by); a project environment only knows its own interfaces, by
+  // their slug alone. An interface whose project the workspace does not list yet has no key.
+  const endpointKey = (iface: InterfaceWire): string | undefined => {
+    if (!isWorkspaceEnvironment) {
+      return iface.slug;
+    }
+    const owner = projectOf[iface.id];
+    const projectSlug = workspaceProjects?.find((candidate) => candidate.id === owner)?.slug;
+    return projectSlug === undefined ? undefined : `${projectSlug}/${iface.slug}`;
+  };
+
   return (
     <section
       data-testid="environment-editor"
@@ -221,16 +235,22 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
               </tr>
             </thead>
             <tbody>
-              {summaries.map((iface) => (
-                <EndpointRow
-                  key={iface.id}
-                  iface={iface}
-                  override={environment.endpoints[iface.slug]}
-                  onCommit={(url) => {
-                    replaceEndpoints(iface.slug, url);
-                  }}
-                />
-              ))}
+              {summaries.map((iface) => {
+                const key = endpointKey(iface);
+                if (key === undefined) {
+                  return null;
+                }
+                return (
+                  <EndpointRow
+                    key={iface.id}
+                    iface={iface}
+                    override={environment.endpoints[key]}
+                    onCommit={(url) => {
+                      replaceEndpoints(key, url);
+                    }}
+                  />
+                );
+              })}
             </tbody>
           </table>
         )}

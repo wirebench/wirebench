@@ -17,7 +17,7 @@
 
 import { existsSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import {
   attachmentsDir,
@@ -685,16 +685,36 @@ export class WorkspaceService implements ProjectRouter {
    * inside one open workspace. `secretRef`s are deliberately left alone: they name the user's
    * keychain entries, not the project's.
    *
+   * With no workspace open (the picker's *Import project folder…*), a workspace named after the
+   * folder is created first — but only once the folder is known to hold a project, so a wrong
+   * pick never leaves an empty workspace behind.
+   *
    * @returns the workspace, or `null` when the user cancelled the dialog.
    */
   async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
-    const open = this.requireOpen();
     const picked = await pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
     if (picked === undefined) {
       return null;
     }
+    return await this.importFrom(picked);
+  }
+
+  /**
+   * {@link importProjectFolder} for a folder main already holds — one of the picker's
+   * suggestions, read from the leftover pre-workspace recent list — rather than one picked in a
+   * dialog. The caller resolves the suggestion; no renderer-supplied path ever reaches here.
+   */
+  async importKnownProjectFolder(folder: string): Promise<WorkspaceWire> {
+    return await this.importFrom(folder);
+  }
+
+  private async importFrom(picked: string): Promise<WorkspaceWire> {
     const source = await realpath(picked);
     const copy = reidentifyProject(await loadPickedProject(source));
+    if (this.current === undefined) {
+      await this.create(basename(source));
+    }
+    const open = this.requireOpen();
     const slug = uniqueSlug(copy.name, this.takenSlugs());
     const dir = workspaceProjectDir(open.dir, slug);
     await mkdir(dir, { recursive: true });

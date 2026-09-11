@@ -16,6 +16,7 @@ import { subscribeToHistory } from '../state/history.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
+import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CommandPalette } from './command-palette.js';
@@ -61,6 +62,7 @@ export function AppShell() {
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   const workspace = useWorkspaceStore((state) => state.workspace);
+  const workspaceReady = useWorkspaceStore((state) => state.ready);
   // The title bar's dot means "something is unsaved": any open project will do.
   const dirty = useProjectStore((state) => Object.values(state.projects).some((project) => project.dirty));
 
@@ -130,7 +132,13 @@ export function AppShell() {
 
         {/* The title bar stays above the picker: it carries the window controls on every
             platform, and losing them with no workspace open would trap the user. */}
-        {workspace === null ? (
+        {workspace === null && !workspaceReady ? (
+          // Main answers the first snapshot only once its launch-time reopen settled; until
+          // then neither the picker nor the IDE is known to be right, so neither is shown.
+          <div data-testid="workspace-loading" role="status" aria-live="polite" className="min-h-0 flex-1">
+            <span className="sr-only">Opening the last workspace…</span>
+          </div>
+        ) : workspace === null ? (
           <div className="min-h-0 flex-1">
             <WorkspacePicker />
           </div>
@@ -209,6 +217,7 @@ export function AppShell() {
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
       />
+      <NewProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

@@ -43,7 +43,7 @@ function environmentName(projects: Readonly<Record<string, ProjectWire>>, enviro
   return undefined;
 }
 
-const WELCOME_ID = 'welcome';
+const START_ID = 'start';
 
 /** The `id` of a tab's button, and of the panel it controls — paired via ARIA both ways. */
 function tabId(id: string): string {
@@ -69,23 +69,23 @@ export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
-  const showWelcome = useEditorsStore((state) => state.showWelcome);
+  const showStart = useEditorsStore((state) => state.showStart);
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
   const projects = useProjectStore((state) => state.projects);
   const interfaces = useProjectStore((state) => state.interfaces);
 
   const activeTab = tabs.find((t) => t.id === activeId);
-  const showingWelcome = activeTab === undefined;
-  const selectedId = showingWelcome ? WELCOME_ID : (activeId ?? WELCOME_ID);
+  const showingStart = activeTab === undefined;
+  const selectedId = showingStart ? START_ID : (activeId ?? START_ID);
 
   // APG tabs: one tab stop for the whole list, Left/Right/Home/End move within it, and focus
   // carries the selection with it (automatic activation) — the panels are already mounted
   // lazily, so following focus costs nothing a click would not.
-  const order = [WELCOME_ID, ...tabs.map((tab) => tab.id)];
+  const order = [START_ID, ...tabs.map((tab) => tab.id)];
   const select = (id: string): void => {
-    if (id === WELCOME_ID) {
-      showWelcome();
+    if (id === START_ID) {
+      showStart();
       return;
     }
     activate(id);
@@ -125,18 +125,18 @@ export function EditorArea() {
         <button
           type="button"
           role="tab"
-          id={tabId(WELCOME_ID)}
-          aria-controls={panelId(WELCOME_ID)}
-          aria-selected={showingWelcome}
-          tabIndex={showingWelcome ? 0 : -1}
+          id={tabId(START_ID)}
+          aria-controls={panelId(START_ID)}
+          aria-selected={showingStart}
+          tabIndex={showingStart ? 0 : -1}
           onClick={() => {
-            showWelcome();
+            showStart();
           }}
           className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
-            showingWelcome ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+            showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
           }`}
         >
-          Welcome
+          Start
         </button>
         {tabs.map((tab) => {
           const label =
@@ -195,7 +195,7 @@ export function EditorArea() {
         aria-labelledby={tabId(selectedId)}
         className="min-h-0 flex-1 overflow-hidden"
       >
-        {showingWelcome ? (
+        {showingStart ? (
           <div
             data-testid="editor-empty"
             className="flex h-full items-center justify-center px-6 text-sm text-fg-subtle"
