@@ -10,7 +10,8 @@
  * licence); the rest of every assertion's description is a paraphrase.
  */
 
-import type { Document } from '@xmldom/xmldom';
+import type { Document, Element } from '@xmldom/xmldom';
+import type { SoapExchange } from '../../types.js';
 import type { WsdlDefinition } from '../../wsdl/model.js';
 import type { DefinitionBundle } from '../../wsdl/resolver.js';
 import type { SchemaSet } from '../../xsd/schema-set.js';
@@ -119,4 +120,71 @@ export interface WsiReport {
   readonly summary: WsiSummary;
   /** Every assertion when `verbose`, only the failed/warning ones otherwise. */
   readonly assertions: readonly WsiAssertionReport[];
+}
+
+// ---------------------------------------------------------------------------
+// Message-level assertions (the `R1xxx` messaging requirements, plus the handful of `R2xxx`
+// requirements that constrain an instance rather than a description).
+// ---------------------------------------------------------------------------
+
+/** Which half of an exchange an assertion is looking at. */
+export type WsiMessageDirection = 'request' | 'response';
+
+/**
+ * What the binding says about the messages of one operation. The message assertions need only
+ * this much of the description: whether a construct is legal usually turns on the SOAP version,
+ * the style and the `use`.
+ */
+export interface WsiMessageBinding {
+  readonly soapVersion: '1.1' | '1.2';
+  readonly style: 'document' | 'rpc';
+  readonly use: 'literal' | 'encoded';
+  /** The bound operation's name, for a readable finding. */
+  readonly operation?: string;
+  /** The `soapAction` the binding declares, when it declares one. */
+  readonly soapAction?: string;
+}
+
+/**
+ * One half of the exchange, prepared for the assertions: the HTTP metadata plus the parsed
+ * envelope. `document` is absent when the half carried no XML or could not be parsed — an
+ * assertion that needs a DOM reports {@link NOT_APPLICABLE} rather than guessing.
+ */
+export interface WsiMessageView {
+  readonly direction: WsiMessageDirection;
+  /** Header names lower-cased, as both `HttpExchange` halves already store them. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** The envelope text, when one is available. */
+  readonly envelopeXml?: string;
+  readonly document?: Document;
+  /** The document element, when it is a `soap:Envelope` of a SOAP version the profile knows. */
+  readonly envelope?: Element;
+  /** The envelope namespace actually used, which may differ from the bound version. */
+  readonly soapNs?: string;
+  /** HTTP status; responses only. */
+  readonly status?: number;
+}
+
+/** Everything a message-level assertion may inspect. */
+export interface WsiMessageContext {
+  readonly exchange: SoapExchange;
+  readonly binding: WsiMessageBinding;
+  /** The half the run was asked about; both halves are still offered in {@link messages}. */
+  readonly direction: WsiMessageDirection;
+  readonly request: WsiMessageView;
+  /** Absent when the send never got a response. */
+  readonly response?: WsiMessageView;
+  /** The request, then the response when there is one — what most assertions iterate. */
+  readonly messages: readonly WsiMessageView[];
+}
+
+/** One testable requirement of the profile that constrains a message rather than a description. */
+export interface WsiMessageAssertion {
+  readonly id: string;
+  readonly title: string;
+  readonly level: WsiAssertionLevel;
+  readonly section: string;
+  /** See {@link WsiAssertion.unverifiedId}. */
+  readonly unverifiedId?: boolean;
+  check(context: WsiMessageContext): WsiCheckOutcome;
 }

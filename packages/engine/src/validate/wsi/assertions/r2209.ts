@@ -10,7 +10,8 @@ import { boundMessages, findingAt } from './helpers.js';
  *
  * All four constructs count: a part left out of `soapbind:body/@parts` is still bound when a
  * `soapbind:header` or `soapbind:headerfault` of the same binding operation names it on this very
- * message (see `soapBoundParts`).
+ * message, and a fault message's part is bound when the binding's `wsdl:fault` carries a
+ * `soapbind:fault` (see `soapBoundParts`).
  */
 export const R2209: WsiAssertion = {
   id: 'R2209',

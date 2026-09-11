@@ -6,8 +6,9 @@
  * stays the single source of truth.
  */
 
-import type { WsiAssertion, WsiAssertionLevel } from './types.js';
+import type { WsiAssertion, WsiAssertionLevel, WsiMessageAssertion } from './types.js';
 import { WSI_WSDL_ASSERTIONS } from './assertions/index.js';
+import { WSI_MESSAGE_ASSERTIONS } from './assertions/message/index.js';
 
 /** One assertion the catalogue names but does not implement yet. */
 export interface PlannedAssertion {
@@ -27,14 +28,6 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
     level: 'REQUIRED',
     title: 'An xs:import must not name a document whose root element is not xs:schema',
     notes: 'Needs the resolver to keep documents it could not classify as a schema.',
-  },
-  {
-    id: 'R2113',
-    level: 'REQUIRED',
-    title: 'An envelope must not carry soapenc:arrayType on an element in a message',
-    notes:
-      'Message-level, not description-level: moved out of the WSDL catalogue and into the message ' +
-      'assertions (Task 44). The description-level array rules stay here as R2110/R2111.',
   },
   {
     id: 'R2114',
@@ -61,28 +54,22 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
     notes: 'Id and requirement text not verified against the published profile.',
   },
   {
-    id: 'R2211',
-    level: 'REQUIRED',
-    title: 'An rpc-literal envelope must not carry xsi:nil on a part accessor',
-    notes: 'Message-level; part of the message assertion catalogue.',
-  },
-  {
     id: 'R2301',
     level: 'REQUIRED',
     title: 'The order of body children matches the order of the wsdl:parts',
-    notes: 'Message-level; part of the message assertion catalogue.',
+    notes: 'Message-level; not yet in the message assertion catalogue (see the Messages table).',
   },
   {
     id: 'R2302',
     level: 'REQUIRED',
     title: 'An rpc-literal envelope names its part accessors after the wsdl:parts',
-    notes: 'Message-level; part of the message assertion catalogue.',
+    notes: 'Message-level; not yet in the message assertion catalogue (see the Messages table).',
   },
   {
     id: 'R2305',
     level: 'REQUIRED',
     title: 'A document-literal envelope carries the element declared by the bound part',
-    notes: 'Message-level; part of the message assertion catalogue.',
+    notes: 'Message-level; not yet in the message assertion catalogue (see the Messages table).',
   },
   {
     id: 'R2707',
@@ -121,15 +108,25 @@ function cell(value: string): string {
   return value.replace(/\|/g, '\\|');
 }
 
+/** Renders one assertion as a row of the implemented table. */
+function implementedRow(assertion: WsiAssertion | WsiMessageAssertion): string {
+  return `| ${assertion.id} | ${assertion.level} | ${cell(assertion.title)} | ${
+    assertion.unverifiedId === true ? 'Implemented (id unverified)' : 'Implemented'
+  } | ${cell(assertion.section)} |`;
+}
+
 /**
- * Renders the catalogue: one table of implemented assertions and one of the known gaps.
+ * Renders the catalogue: one table of implemented description assertions, one of implemented
+ * message assertions, and one of the known gaps.
  *
- * @param assertions the implemented catalogue (defaults to the registry)
+ * @param assertions the implemented description catalogue (defaults to the registry)
  * @param planned the known gaps (defaults to {@link WSI_PLANNED_ASSERTIONS})
+ * @param messages the implemented message catalogue (defaults to the registry)
  */
 export function renderWsiAssertionsMarkdown(
   assertions: readonly WsiAssertion[] = WSI_WSDL_ASSERTIONS,
   planned: readonly PlannedAssertion[] = WSI_PLANNED_ASSERTIONS,
+  messages: readonly WsiMessageAssertion[] = WSI_MESSAGE_ASSERTIONS,
 ): string {
   const lines: string[] = [
     '# WS-I Basic Profile 1.1 assertions',
@@ -139,7 +136,8 @@ export function renderWsiAssertionsMarkdown(
     '  Do not edit by hand: `pnpm wsi:docs --check` (and scripts/wsi-docs.test.ts) fail on drift.',
     '-->',
     '',
-    `Wirebench implements ${assertions.length} WSDL-level assertions of the WS-I Basic Profile 1.1.`,
+    `Wirebench implements ${assertions.length} description-level and ${messages.length} message-level`,
+    'assertions of the WS-I Basic Profile 1.1.',
     'Each is evaluated against a description and reports `passed`, `failed` (a `REQUIRED`',
     'assertion), `warning` (a `RECOMMENDED` one) or `notApplicable` when the construct it examines',
     'does not occur. Profile requirement text is paraphrased; see the profile itself for the',
@@ -151,16 +149,26 @@ export function renderWsiAssertionsMarkdown(
     '(`R2001`–`R2005`, `R2101`–`R2114`, `R2201`–`R2211`, `R2301`–`R2305`, `R2401`, `R2701`–`R2726`,',
     '`R2801`–`R2803`) that is known to be missing, so the coverage above is not overstated.',
     '',
-    '## Implemented',
+    '## Implemented — descriptions',
+    '',
+    'Evaluated against a WSDL description by `runWsdlAssertions`.',
     '',
     '| Id | Level | Title | Status | Section |',
     '| --- | --- | --- | --- | --- |',
-    ...assertions.map(
-      (assertion) =>
-        `| ${assertion.id} | ${assertion.level} | ${cell(assertion.title)} | ${
-          assertion.unverifiedId === true ? 'Implemented (id unverified)' : 'Implemented'
-        } | ${cell(assertion.section)} |`,
-    ),
+    ...assertions.map(implementedRow),
+    '',
+    '## Implemented — messages',
+    '',
+    'Evaluated against one SOAP exchange — request and response — by `runMessageAssertions`.',
+    'Every `R1xxx` row below is marked *id unverified*: the requirements are real and are',
+    'implemented as described, but ws-i.org could not be reached from the environment this',
+    "catalogue was written in, so the requirement **numbers** are Wirebench's best attribution",
+    'rather than a transcription. Quote the titles, not the ids, until they have been checked',
+    'against the published profile.',
+    '',
+    '| Id | Level | Title | Status | Section |',
+    '| --- | --- | --- | --- | --- |',
+    ...messages.map(implementedRow),
     '',
     '## Planned',
     '',

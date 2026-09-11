@@ -496,6 +496,10 @@ export type {
 
 export {
   WSI_WSDL_ASSERTIONS,
+  WSI_MESSAGE_ASSERTIONS,
+  messageBindingFor,
+  runMessageAssertions,
+  wsiMessageContext,
   runWsdlAssertions,
   wsiWsdlContext,
   wsiProblems,
@@ -516,6 +520,12 @@ export type {
   WsiSummary,
   WsiWsdlContext,
   WsiWsdlContextInput,
+  WsiMessageAssertion,
+  WsiMessageBinding,
+  WsiMessageContext,
+  WsiMessageDirection,
+  WsiMessageView,
+  RunMessageAssertionsOptions,
 } from './validate/wsi/index.js';
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
 export type { PlannedAssertion } from './validate/wsi/index.js';

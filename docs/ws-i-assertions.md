@@ -5,7 +5,8 @@
   Do not edit by hand: `pnpm wsi:docs --check` (and scripts/wsi-docs.test.ts) fail on drift.
 -->
 
-Wirebench implements 33 WSDL-level assertions of the WS-I Basic Profile 1.1.
+Wirebench implements 33 description-level and 23 message-level
+assertions of the WS-I Basic Profile 1.1.
 Each is evaluated against a description and reports `passed`, `failed` (a `REQUIRED`
 assertion), `warning` (a `RECOMMENDED` one) or `notApplicable` when the construct it examines
 does not occur. Profile requirement text is paraphrased; see the profile itself for the
@@ -17,7 +18,9 @@ provisional. The Planned table lists every id in the ranges this catalogue cover
 (`R2001`–`R2005`, `R2101`–`R2114`, `R2201`–`R2211`, `R2301`–`R2305`, `R2401`, `R2701`–`R2726`,
 `R2801`–`R2803`) that is known to be missing, so the coverage above is not overstated.
 
-## Implemented
+## Implemented — descriptions
+
+Evaluated against a WSDL description by `runWsdlAssertions`.
 
 | Id | Level | Title | Status | Section |
 | --- | --- | --- | --- | --- |
@@ -55,20 +58,53 @@ provisional. The Planned table lists every id in the ranges this catalogue cover
 | R2801 | REQUIRED | Type definitions use the XML Schema 1.0 namespace | Implemented | 4.9 Namespaces |
 | R2803 | REQUIRED | soapbind namespace attributes are absolute URIs | Implemented | 4.9 Namespaces |
 
+## Implemented — messages
+
+Evaluated against one SOAP exchange — request and response — by `runMessageAssertions`.
+Every `R1xxx` row below is marked *id unverified*: the requirements are real and are
+implemented as described, but ws-i.org could not be reached from the environment this
+catalogue was written in, so the requirement **numbers** are Wirebench's best attribution
+rather than a transcription. Quote the titles, not the ids, until they have been checked
+against the published profile.
+
+| Id | Level | Title | Status | Section |
+| --- | --- | --- | --- | --- |
+| R1001 | REQUIRED | Each message is a soap:Envelope of the SOAP version the binding declares | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1003 | REQUIRED | A message that declares an encoding declares UTF-8 or UTF-16 | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1005 | REQUIRED | A message contains no Document Type Declaration | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1006 | REQUIRED | A message contains no processing instructions | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1007 | REQUIRED | soap:Envelope has no element children other than soap:Header and soap:Body | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1011 | REQUIRED | No element child of soap:Envelope follows soap:Body | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1012 | REQUIRED | An envelope carries one soap:Body, at most one soap:Header, header first | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1013 | REQUIRED | soap:mustUnderstand carries a value the SOAP version admits | Implemented (id unverified) | 3.2 SOAP Processing Model |
+| R1014 | REQUIRED | The children of soap:Body are namespace-qualified | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1015 | REQUIRED | A literal message carries no soap:encodingStyle attribute | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1017 | REQUIRED | Every soap:Header block is namespace-qualified | Implemented (id unverified) | 3.2 SOAP Processing Model |
+| R1100 | REQUIRED | soap:Fault has only the four children SOAP 1.1 defines | Implemented (id unverified) | 3.5 SOAP Faults |
+| R1101 | REQUIRED | The children of a SOAP 1.1 soap:Fault are unqualified | Implemented (id unverified) | 3.5 SOAP Faults |
+| R1102 | REQUIRED | A faultcode is a QName whose prefix is declared in scope | Implemented (id unverified) | 3.5 SOAP Faults |
+| R1103 | REQUIRED | A response carrying a soap:Fault uses HTTP status 500 | Implemented (id unverified) | 3.5 SOAP Faults |
+| R1107 | REQUIRED | A fault detail carries no soap:encodingStyle | Implemented (id unverified) | 3.5 SOAP Faults |
+| R1109 | REQUIRED | The SOAPAction request header is a quoted string | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R1124 | RECOMMENDED | A non-fault response carries HTTP status 200 or 202 | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R1132 | REQUIRED | The HTTP request uses the POST method | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R1140 | REQUIRED | Content-Type states the media type the SOAP version defines | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R1141 | REQUIRED | Content-Type states a charset parameter | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R2113 | REQUIRED | An envelope carries no soapenc:arrayType attribute | Implemented | 4.3 Use of SOAP Encoding |
+| R2211 | REQUIRED | An rpc-literal part accessor carries no xsi:nil | Implemented | 4.4 rpc-literal |
+
 ## Planned
 
 | Id | Level | Title | Status | Notes |
 | --- | --- | --- | --- | --- |
 | R2004 | REQUIRED | An xs:import must not name a document whose root element is not xs:schema | Planned | Needs the resolver to keep documents it could not classify as a schema. |
-| R2113 | REQUIRED | An envelope must not carry soapenc:arrayType on an element in a message | Planned | Message-level, not description-level: moved out of the WSDL catalogue and into the message assertions (Task 44). The description-level array rules stay here as R2110/R2111. |
 | R2114 | REQUIRED | A description’s schema constructs stay within the profile’s XML Schema subset | Planned | Id and requirement text not verified against the published profile. |
 | R2202 | RECOMMENDED | A description prefers the wrapped document-literal convention | Planned | Planned. |
 | R2207 | REQUIRED | A wsdl:message part uses either the element or the type attribute, not both | Planned | Id and requirement text not verified against the published profile. |
 | R2208 | REQUIRED | An rpc-literal operation’s parameterOrder names only parts of its messages | Planned | Id and requirement text not verified against the published profile. |
-| R2211 | REQUIRED | An rpc-literal envelope must not carry xsi:nil on a part accessor | Planned | Message-level; part of the message assertion catalogue. |
-| R2301 | REQUIRED | The order of body children matches the order of the wsdl:parts | Planned | Message-level; part of the message assertion catalogue. |
-| R2302 | REQUIRED | An rpc-literal envelope names its part accessors after the wsdl:parts | Planned | Message-level; part of the message assertion catalogue. |
-| R2305 | REQUIRED | A document-literal envelope carries the element declared by the bound part | Planned | Message-level; part of the message assertion catalogue. |
+| R2301 | REQUIRED | The order of body children matches the order of the wsdl:parts | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |
+| R2302 | REQUIRED | An rpc-literal envelope names its part accessors after the wsdl:parts | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |
+| R2305 | REQUIRED | A document-literal envelope carries the element declared by the bound part | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |
 | R2707 | REQUIRED | Every soapbind element states the use attribute explicitly | Planned | R2706 only checks the ones that state it; stating it is a separate requirement. |
 | R2724 | REQUIRED | An instance places the parts a soapbind:header names in the SOAP header | Planned | Message-level; id and requirement text not verified against the published profile. |
 | R2725 | REQUIRED | An instance places the parts a soapbind:headerfault names in a header fault | Planned | Message-level; id and requirement text not verified against the published profile. |

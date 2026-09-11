@@ -105,6 +105,16 @@ describe('WS-I BP 1.1 WSDL assertions', () => {
     expect(report?.findings[0]?.message).toContain('extra');
   });
 
+  it('flags a fault part bound to no soapbind:fault, and passes when one binds it', async () => {
+    const unbound = await contextFor(`${fixtureRoot}wsi-fault-parts/unbound-fault.wsdl`);
+    const [report] = runWsdlAssertions(unbound, { ids: ['R2209'], verbose: true }).assertions;
+    expect(report?.result).toBe('warning');
+    expect(report?.findings.map((finding) => finding.message).join('\n')).toContain('detail');
+    // The compliant fixture binds the very same fault message with a soapbind:fault.
+    const [ok] = runWsdlAssertions(compliant, { ids: ['R2209'], verbose: true }).assertions;
+    expect(ok?.result).toBe('passed');
+  });
+
   it('omits passing rows unless verbose, but always counts them', async () => {
     const context = await contextFor(`${fixtureRoot}wsi-violations/R2204.wsdl`);
     const quiet = runWsdlAssertions(context);

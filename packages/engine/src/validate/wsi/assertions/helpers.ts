@@ -295,8 +295,8 @@ export interface BoundMessageView {
   readonly bindingView: SoapBindingView;
   /** The `wsdl:operation` inside the `wsdl:binding`. */
   readonly operation: Element;
-  readonly direction: 'input' | 'output';
-  /** The `wsdl:input`/`wsdl:output` inside the binding operation. */
+  readonly direction: 'input' | 'output' | 'fault';
+  /** The `wsdl:input`/`wsdl:output`/`wsdl:fault` inside the binding operation. */
   readonly messageElement: Element;
   readonly soapBody?: Element;
   readonly style: 'document' | 'rpc';
@@ -306,11 +306,17 @@ export interface BoundMessageView {
   readonly parts: readonly Element[];
   /** The names listed in `soapbind:body/@parts`, or `undefined` when the attribute is absent. */
   readonly declaredParts?: readonly string[];
-  /** The parts actually bound to the SOAP body: the declared subset, or all of them. */
+  /**
+   * The parts actually bound to the SOAP body: the declared subset, or all of them. Always empty
+   * for a `fault` view — a fault's part is bound by `soapbind:fault`, never by `soapbind:body`.
+   */
   readonly boundParts: readonly Element[];
   /**
    * The parts bound to *any* SOAP construct: the body-bound ones plus every part this binding
-   * operation's `soapbind:header`/`headerfault` elements name on the same abstract message.
+   * operation's `soapbind:header`/`headerfault` elements name on the same abstract message. For a
+   * `fault` view it is every part of the fault message when the `wsdl:fault` carries a
+   * `soapbind:fault`, and nothing otherwise: a fault message has a single, implicitly bound part,
+   * so the binding either declares the fault or leaves it unbound.
    */
   readonly soapBoundParts: readonly Element[];
 }
@@ -359,6 +365,42 @@ export function portTypeOf(
   return qname === undefined ? undefined : wsdlIndex(context).portTypes.get(qnameToString(qname));
 }
 
+/**
+ * Every side of one binding `wsdl:operation` a message can be bound on: its `wsdl:input`, its
+ * `wsdl:output`, and each of its `wsdl:fault`s (a binding operation may declare several, told
+ * apart by `@name`).
+ */
+function bindingSides(operation: Element): readonly (readonly ['input' | 'output' | 'fault', Element])[] {
+  const sides: (readonly ['input' | 'output' | 'fault', Element])[] = [];
+  for (const direction of ['input', 'output'] as const) {
+    const element = firstChildElement(operation, NS.WSDL, direction);
+    if (element !== undefined) {
+      sides.push([direction, element]);
+    }
+  }
+  for (const fault of childElements(operation, NS.WSDL, 'fault')) {
+    sides.push(['fault', fault]);
+  }
+  return sides;
+}
+
+/** The abstract `wsdl:input`/`output`/`fault` matching one binding side, when the port type has one. */
+function abstractSideFor(
+  abstractOperation: Element,
+  direction: 'input' | 'output' | 'fault',
+  messageElement: Element,
+): Element | undefined {
+  if (direction !== 'fault') {
+    return firstChildElement(abstractOperation, NS.WSDL, direction);
+  }
+  // Faults are matched by name: an operation may declare more than one, and only the abstract
+  // fault of the same name carries the wsdl:message the binding fault actually binds.
+  const name = optionalAttribute(messageElement, 'name');
+  return childElements(abstractOperation, NS.WSDL, 'fault').find(
+    (candidate) => optionalAttribute(candidate, 'name') === name,
+  );
+}
+
 /** Joins every binding operation's input/output to the abstract message it binds. */
 export function boundMessages(context: WsiWsdlContext): readonly BoundMessageView[] {
   const views: BoundMessageView[] = [];
@@ -380,13 +422,9 @@ export function boundMessages(context: WsiWsdlContext): readonly BoundMessageVie
             : childElements(portType.element, NS.WSDL, 'operation').find(
                 (candidate) => optionalAttribute(candidate, 'name') === operationName,
               );
-        for (const direction of ['input', 'output'] as const) {
-          const messageElement = firstChildElement(operation, NS.WSDL, direction);
-          if (messageElement === undefined) {
-            continue;
-          }
+        for (const [direction, messageElement] of bindingSides(operation)) {
           const abstractSide =
-            abstractOperation === undefined ? undefined : firstChildElement(abstractOperation, NS.WSDL, direction);
+            abstractOperation === undefined ? undefined : abstractSideFor(abstractOperation, direction, messageElement);
           const abstractMessage =
             abstractSide === undefined ? undefined : referencedMessage(context, abstractSide, 'message', tns);
           const parts = abstractMessage === undefined ? [] : messageParts(abstractMessage.element);
@@ -394,13 +432,18 @@ export function boundMessages(context: WsiWsdlContext): readonly BoundMessageVie
           const rawParts = soapBody === undefined ? undefined : optionalAttribute(soapBody, 'parts');
           const declaredParts = rawParts?.split(/\s+/).filter((name) => name.length > 0);
           const boundParts =
-            declaredParts === undefined
-              ? parts
-              : parts.filter((part) => declaredParts.includes(optionalAttribute(part, 'name') ?? ''));
+            direction === 'fault'
+              ? []
+              : declaredParts === undefined
+                ? parts
+                : parts.filter((part) => declaredParts.includes(optionalAttribute(part, 'name') ?? ''));
           const headerNames = headerBoundPartNames(context, operation, soapNs, tns, abstractMessage);
-          const soapBoundParts = parts.filter(
-            (part) => boundParts.includes(part) || headerNames.has(optionalAttribute(part, 'name') ?? ''),
-          );
+          const faultBound = direction === 'fault' && firstChildElement(messageElement, soapNs, 'fault') !== undefined;
+          const soapBoundParts = faultBound
+            ? parts
+            : parts.filter(
+                (part) => boundParts.includes(part) || headerNames.has(optionalAttribute(part, 'name') ?? ''),
+              );
           views.push({
             location: doc.location,
             bindingView,
