@@ -1,4 +1,6 @@
 import { channels } from '../../shared/ipc.js';
+import type { ReadPicks } from '../dialog-picks.js';
+import { checkedImportSource } from '../path-access.js';
 import type { ProjectRouter } from '../project-router.js';
 import { registerHandler } from './register.js';
 
@@ -11,6 +13,18 @@ export interface ProjectChannelDeps {
   readonly router: Pick<ProjectRouter, 'projectSnapshot' | 'projectMutate' | 'save' | 'addInterface' | 'reload'>;
   /** Creates a project inside the open workspace; used only by an `addInterface` that asks for one. */
   readonly addProject: (name: string) => Promise<{ readonly projectId: string }>;
+  /**
+   * Takes back a project `addInterface` created for a `newProjectName` target whose import then
+   * failed, so a failed import never leaves an empty project behind.
+   */
+  readonly removeProject: (projectId: string, options: { deleteFiles: boolean }) => Promise<unknown>;
+  /**
+   * The folders of every project open in the workspace. An `addInterface { kind: 'file' }` path
+   * is allowed when it is inside one of them — the same rule `definition.import` applies.
+   */
+  readonly projectDirs: () => readonly string[];
+  /** The session's dialog memory: proof a `file` source was picked by the user, not named. */
+  readonly picks: ReadPicks;
 }
 
 /**
@@ -34,19 +48,32 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
   registerHandler(channels.project.save, (request) => router.save(request.projectId, { reason: 'manual' }));
 
   registerHandler(channels.project.addInterface, async (request) => {
-    // A `newProjectName` target creates the project first, so importing into an empty
-    // workspace is one gesture rather than "make a project, then import into it".
-    const projectId =
-      'projectId' in request.target
-        ? request.target.projectId
-        : (await deps.addProject(request.target.newProjectName)).projectId;
-    const added = await router.addInterface(projectId, {
-      source: request.source,
+    // A `file` source is a read at a renderer-named path; it answers the containment/dialog-pick
+    // question (`checkedImportSource`, as `definition.import` does) before any project is
+    // created, so a refusal changes nothing.
+    const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const options = {
+      source,
       ...(request.auth !== undefined ? { auth: request.auth } : {}),
       ...(request.useForRequests !== undefined ? { useForRequests: request.useForRequests } : {}),
       ...(request.token !== undefined ? { token: request.token } : {}),
-    });
-    return { ...added, projectId };
+    };
+    if ('projectId' in request.target) {
+      const added = await router.addInterface(request.target.projectId, options);
+      return { ...added, projectId: request.target.projectId };
+    }
+    // A `newProjectName` target creates the project first, so importing into an empty
+    // workspace is one gesture rather than "make a project, then import into it". The project
+    // exists only for this import: if the import fails it goes again (to the trash — it is an
+    // internal project nobody has seen), and the import's own error is what the caller hears.
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      const added = await router.addInterface(projectId, options);
+      return { ...added, projectId };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
   });
 
   registerHandler(channels.project.reload, async (request) => ({ project: await router.reload(request.projectId) }));

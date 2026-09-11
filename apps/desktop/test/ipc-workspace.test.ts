@@ -9,6 +9,7 @@
  * not about `WorkspaceService` itself, which has suites of its own.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { registerWorkspaceChannels } from '../src/main/ipc/workspace.js';
 import { channels } from '../src/shared/ipc.js';
@@ -254,8 +255,9 @@ describe('project.* channels', () => {
       reload: vi.fn().mockResolvedValue(PROJECT),
     };
     const addProject = vi.fn().mockResolvedValue({ projectId: 'p-new' });
-    registerProjectChannels({ router, addProject });
-    return { router, addProject };
+    const removeProject = vi.fn().mockResolvedValue(undefined);
+    registerProjectChannels({ router, addProject, removeProject, projectDirs: () => [], picks: new DialogPicks() });
+    return { router, addProject, removeProject };
   }
 
   it('create, open, close and recent are gone from the contract', () => {

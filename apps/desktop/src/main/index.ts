@@ -157,14 +157,16 @@ void app.whenReady().then(() => {
     broadcast(events.app.updateStatus, { status });
   });
   registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
+  // Every open project's folder: the containment roots a renderer-named import path may sit in.
+  const openProjectDirs = (): readonly string[] =>
+    workspaceService
+      .hosts()
+      .map((host) => host.snapshot()?.dir)
+      .filter((dir): dir is string => dir !== undefined);
   registerDefinitionChannels(engineService, {
     project: workspaceService,
     picks: dialogPicks,
-    projectDirs: () =>
-      workspaceService
-        .hosts()
-        .map((host) => host.snapshot()?.dir)
-        .filter((dir): dir is string => dir !== undefined),
+    projectDirs: openProjectDirs,
   });
   registerRequestChannels(engineService, {
     project: workspaceService,
@@ -184,6 +186,9 @@ void app.whenReady().then(() => {
   registerProjectChannels({
     router: workspaceService,
     addProject: async (name) => await workspaceService.addProject(name),
+    removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),
+    projectDirs: openProjectDirs,
+    picks: dialogPicks,
   });
   registerWorkspaceChannels({
     service: workspaceService,

@@ -8,6 +8,7 @@ import { definitionCacheDir, loadProject, loadWorkspace, workspaceProjectDir } f
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
+import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
@@ -23,7 +24,15 @@ import type { WorkspaceWire } from '../src/shared/wire-types.js';
  */
 let folderPick: string | undefined;
 
+/** `project.*` handlers, registered for the one test that drives the channel end to end. */
+const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+
 vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    },
+  },
   BrowserWindow: { fromWebContents: () => undefined },
   dialog: {
     showOpenDialog: () =>
@@ -157,6 +166,34 @@ describe('WorkspaceService.addProject', () => {
 });
 
 describe('WorkspaceService.removeProject', () => {
+  it('takes back the project a failed project.addInterface { newProjectName } created', async () => {
+    const service = newService();
+    const created = await service.create('Payments');
+    const { projectId: existing } = await service.addProject('Billing API');
+    const before = service.snapshot()?.projects.map((project) => project.id);
+    registerProjectChannels({
+      router: service,
+      addProject: async (name) => await service.addProject(name),
+      removeProject: async (projectId, options) => await service.removeProject(projectId, options),
+      projectDirs: () => [],
+      picks,
+    });
+
+    const handler = handlers.get('project.addInterface');
+    const result = (await handler?.(
+      { sender: {} },
+      { target: { newProjectName: 'Calculator' }, source: { kind: 'text', text: '<not-a-wsdl/>' } },
+    )) as { ok: boolean };
+
+    expect(result.ok).toBe(false);
+    expect(service.snapshot()?.projects.map((project) => project.id)).toEqual(before);
+    expect((await loadWorkspace(created.dir)).workspace.projects.map((ref) => ref.id)).toEqual([existing]);
+    // Trash — never an `rm` — and only the folder the failed import created.
+    expect(trashed).toEqual([workspaceProjectDir(created.dir, 'Calculator')]);
+
+    await service.close();
+  }, 60_000);
+
   it('moves an internal project folder to the trash when asked to delete the files', async () => {
     const service = newService();
     const created = await service.create('Payments');

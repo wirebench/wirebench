@@ -9,6 +9,9 @@
  * here means a fix to either reaches every caller at once.
  */
 
+import { resolve } from 'node:path';
+import { WirebenchError } from '@wirebench/engine';
+import type { ImportSourceWire } from '../shared/wire-types.js';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 
@@ -29,4 +32,34 @@ export async function allowsReadPath(
     return true;
   }
   return isInsideAny(roots, resolved);
+}
+
+/**
+ * The import-side use of {@link allowsReadPath}, shared by `definition.import` and
+ * `project.addInterface`: a `file` source is a read at a renderer-named path, so it is allowed
+ * only inside one of `roots` (every open project folder) or when the user drove the "Browse…"
+ * Open dialog to it this session. Nothing else — not a drag-and-drop, not a typed-in path — is
+ * evidence; the import dialog's drop zone therefore reads the file in the renderer and imports
+ * it as `text`.
+ *
+ * @returns the source, with a `file` path resolved to the absolute path that was checked
+ * @throws WirebenchError `import-path-refused` when the path is neither contained nor picked
+ */
+export async function checkedImportSource(
+  roots: readonly string[],
+  picks: ReadPicks | undefined,
+  source: ImportSourceWire,
+): Promise<ImportSourceWire> {
+  if (source.kind !== 'file') {
+    return source;
+  }
+  const resolved = resolve(source.path);
+  if (!(await allowsReadPath(roots, picks, resolved))) {
+    throw new WirebenchError(
+      'import-path-refused',
+      `Wirebench will not read "${source.path}": use Browse… to pick a WSDL outside the project folder`,
+      { details: { path: source.path } },
+    );
+  }
+  return { kind: 'file', path: resolved };
 }
