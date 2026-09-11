@@ -107,8 +107,7 @@ test.describe('performance budgets', () => {
   test(`a 1 MB response scrolls at ${(1000 / BUDGETS.frameMs).toFixed(0)} fps and its views render promptly`, async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    const projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Perf');
-    tempDirs.push(userDataDir, projectDir);
+    tempDirs.push(userDataDir);
 
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
