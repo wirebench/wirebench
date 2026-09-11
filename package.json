@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --passWithNoTests",
     "test:e2e": "pnpm --filter @wirebench/e2e test",
+    "bench": "vitest bench --run",
     "test:interop": "WIREBENCH_NETWORK_TESTS=1 vitest run --project engine-interop --passWithNoTests",
     "test:wss-xmlsec": "pnpm --filter @wirebench/engine build && node scripts/wss-xmlsec-check.ts",
     "lint": "eslint . --max-warnings 0 && prettier --check .",

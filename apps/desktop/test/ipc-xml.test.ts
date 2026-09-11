@@ -1,12 +1,8 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerXmlChannels } from '../src/main/ipc/xml.js';
-
-function readPublicFixture(name: string): string {
-  return readFileSync(`${process.cwd()}/fixtures/wsdl/public/${name}/service.wsdl`, 'utf-8');
-}
+import { readCraftedFixture, readPublicFixture } from './helpers/fixtures.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -137,7 +133,7 @@ describe('xml.* IPC', () => {
     const summary = await constructsService.importDefinition({
       source: {
         kind: 'text',
-        text: readFileSync(`${process.cwd()}/fixtures/wsdl/crafted/schema-constructs/service.wsdl`, 'utf-8'),
+        text: readCraftedFixture('schema-constructs'),
         location: 'inline://schema-constructs.wsdl',
       },
     });

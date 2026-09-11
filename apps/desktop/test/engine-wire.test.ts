@@ -11,13 +11,9 @@ import {
 } from '../src/main/engine-wire.js';
 import * as redact from '../src/main/redact.js';
 import type { ExchangeSummary } from '../src/shared/wire-types.js';
+import { fixturePath, readPublicFixture } from './helpers/fixtures.js';
 
 const CALCULATOR_URL = 'http://example.test/calculator/service.wsdl';
-
-/** Reads a public WSDL fixture, resolved relative to the repo root vitest runs from. */
-function readPublicFixture(name: string): string {
-  return readFileSync(`${process.cwd()}/fixtures/wsdl/public/${name}/service.wsdl`, 'utf-8');
-}
 
 async function importCalculator() {
   return importDefinition({ kind: 'text', text: readPublicFixture('calculator'), location: CALCULATOR_URL });
@@ -67,7 +63,7 @@ describe('toInterfaceSummary', () => {
   });
 
   it('carries the binding mime parts through to the operation summary', async () => {
-    const location = `${process.cwd()}/fixtures/wsdl/crafted/attachments/service.wsdl`;
+    const location = fixturePath('wsdl/crafted/attachments/service.wsdl');
     const result = await importDefinition({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
     const summary = toInterfaceSummary(result, 'iface-3', location);
     expect(summary.operations.find((op) => op.name === 'Upload')?.inputMimeParts).toEqual([

@@ -9,7 +9,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run --project desktop",
+    "test": "vitest run --root ../.. --project desktop",
     "package": "echo 'packaging arrives in Task 51' && exit 0",
     "package:mac": "echo 'packaging arrives in Task 51' && exit 0",
     "package:win": "echo 'packaging arrives in Task 51' && exit 0",

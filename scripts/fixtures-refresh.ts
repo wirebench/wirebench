@@ -15,6 +15,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deriveFilename, extractReferences, resolveReferenceUrl } from './lib/wsdl-references.ts';
+import { writeLargeSchemaFixture } from '../packages/engine/test/helpers/large-schema.ts';
 
 const USER_AGENT = 'wirebench-fixtures/0.1';
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -200,11 +201,23 @@ async function main(): Promise<void> {
   }
 
   await writeSourcesIndex(manifests);
+  await refreshLargeSchema();
 
   if (anyFixtureEmpty) {
     console.error('One or more fixtures have no files at all; failing.');
     process.exitCode = 1;
   }
+}
+
+/**
+ * Regenerates the `crafted/large-schema` performance fixture. It is ~5 MB, so it is generated
+ * from {@link LARGE_SCHEMA_SEED} instead of being committed (see `.gitignore`); the perf suite
+ * writes its own copy into a temp directory and does not depend on this one.
+ */
+async function refreshLargeSchema(): Promise<void> {
+  const dir = join(repoRoot, 'fixtures', 'wsdl', 'crafted', 'large-schema');
+  const written = await writeLargeSchemaFixture(dir);
+  console.log(`[large-schema] generated ${(written.bytes / 1024 / 1024).toFixed(2)} MB into ${dir}`);
 }
 
 await main();

@@ -8,6 +8,7 @@ import fontoxpathModule from 'fontoxpath';
 import type { Node as XmldomNode } from '@xmldom/xmldom';
 import { getPosition, parseXml } from '../xml/parse.js';
 import { serializeXml } from '../xml/serialize.js';
+import { LineIndex } from '../xml/positions.js';
 import type { LinePosition } from '../xml/positions.js';
 import type { TextRange } from '../xsd/locate.js';
 
@@ -61,6 +62,8 @@ interface EvaluatedNode {
   readonly nodeValue?: string | null;
   readonly parentNode?: EvaluatedNode | null;
   readonly previousSibling?: EvaluatedNode | null;
+  readonly firstChild?: EvaluatedNode | null;
+  readonly nextSibling?: EvaluatedNode | null;
 }
 
 const NODE_TYPE: Record<number, QueryNodeItem['nodeKind']> = {
@@ -79,28 +82,73 @@ function isNode(value: unknown): value is EvaluatedNode {
   return typeof value === 'object' && value !== null && typeof (value as EvaluatedNode).nodeType === 'number';
 }
 
-/** The `/a/b[2]`-shaped path from the document root down to `node`. */
-function pathOf(node: EvaluatedNode): string {
-  const segments: string[] = [];
-  let current: EvaluatedNode | null | undefined = node.nodeType === 2 ? undefined : node;
-  // Attributes are addressed as `@name` appended to their owning element's path.
-  const attributeSuffix = node.nodeType === 2 ? `/@${node.nodeName ?? ''}` : '';
-  if (node.nodeType === 2) {
-    current = (node as unknown as { ownerElement?: EvaluatedNode }).ownerElement ?? undefined;
-  }
-  while (current !== undefined && current !== null && current.nodeType === 1) {
-    let index = 1;
-    let sibling = current.previousSibling ?? null;
-    while (sibling !== null && sibling !== undefined) {
-      if (sibling.nodeType === 1 && sibling.nodeName === current.nodeName) {
-        index += 1;
-      }
-      sibling = sibling.previousSibling ?? null;
+/**
+ * Builds `/a/b[2]`-shaped paths for the nodes of one result set.
+ *
+ * Doing this naively — walking `previousSibling` for every ancestor of every result — is
+ * quadratic in the number of siblings, and a 1 MB response is typically one element with tens
+ * of thousands of children. Both the per-element positional index (filled a whole sibling list
+ * at a time) and the finished path string are cached, so the whole result set costs one pass.
+ * Together with the shared `LineIndex` below, that took the budgeted 1 MB query from a median
+ * of 353 ms to 145 ms, and `…/p:Row` from 333 ms to 123 ms (see the Task 50 report).
+ */
+class PathIndex {
+  private readonly positions = new Map<EvaluatedNode, number>();
+  private readonly paths = new Map<EvaluatedNode, string>();
+
+  /** The path of `node`; attributes are addressed as `@name` on their owning element. */
+  path(node: EvaluatedNode): string {
+    if (node.nodeType === 2) {
+      const owner = (node as unknown as { ownerElement?: EvaluatedNode }).ownerElement ?? undefined;
+      const ownerPath = owner === undefined ? '/' : this.elementPath(owner);
+      return `${ownerPath}/@${node.nodeName ?? ''}`;
     }
-    segments.unshift(`${current.nodeName ?? '*'}[${index}]`);
-    current = current.parentNode ?? undefined;
+    return this.elementPath(node);
   }
-  return `/${segments.join('/')}${attributeSuffix}`;
+
+  /** The path of an element (or of the nearest element at or above a non-element node). */
+  private elementPath(node: EvaluatedNode): string {
+    if (node.nodeType !== 1) {
+      const parent = node.parentNode ?? undefined;
+      return parent === undefined || parent === null || parent.nodeType !== 1 ? '/' : this.elementPath(parent);
+    }
+    const cached = this.paths.get(node);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const parent = node.parentNode ?? undefined;
+    const prefix = parent === undefined || parent === null || parent.nodeType !== 1 ? '' : this.elementPath(parent);
+    const path = `${prefix}/${node.nodeName ?? '*'}[${this.position(node)}]`;
+    this.paths.set(node, path);
+    return path;
+  }
+
+  /** The 1-based position of `node` among its same-named element siblings. */
+  private position(node: EvaluatedNode): number {
+    const cached = this.positions.get(node);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const parent = node.parentNode ?? undefined;
+    if (parent === undefined || parent === null) {
+      this.positions.set(node, 1);
+      return 1;
+    }
+    // Index the entire sibling list in one forward pass: the next result node under the same
+    // parent — the common case for a query over a list — then costs nothing.
+    const counts = new Map<string, number>();
+    let child: EvaluatedNode | null | undefined = parent.firstChild ?? null;
+    while (child !== null && child !== undefined) {
+      if (child.nodeType === 1) {
+        const name = child.nodeName ?? '*';
+        const next = (counts.get(name) ?? 0) + 1;
+        counts.set(name, next);
+        this.positions.set(child, next);
+      }
+      child = child.nextSibling ?? null;
+    }
+    return this.positions.get(node) ?? 1;
+  }
 }
 
 /** Best-effort text range for a node: available whenever xmldom recorded a source position for
@@ -108,38 +156,33 @@ function pathOf(node: EvaluatedNode): string {
  * approximated from the serialised length, so it can drift on nodes containing entity
  * references or non-canonical whitespace; callers treat it as advisory ("Reveal" selection),
  * not as an exact byte-for-byte span. */
-function rangeOf(node: EvaluatedNode, xml: string, serialized: string): TextRange | undefined {
+function rangeOf(node: EvaluatedNode, lineIndex: LineIndex, serialized: string): TextRange | undefined {
   const position = getPosition(node as unknown as XmldomNode);
   if (position === undefined) {
     return undefined;
   }
-  const lines = xml.split('\n');
-  let start = 0;
-  for (let i = 0; i < position.line - 1 && i < lines.length; i += 1) {
-    start += (lines[i]?.length ?? 0) + 1;
-  }
-  start += position.column - 1;
+  const start = lineIndex.positionToOffset(position.line, position.column);
   return { start, end: start + serialized.length };
 }
 
 /** Renders one node-shaped result item. */
-function toNodeItem(node: EvaluatedNode, xml: string): QueryNodeItem {
+function toNodeItem(node: EvaluatedNode, lineIndex: LineIndex, paths: PathIndex): QueryNodeItem {
   const kind = NODE_TYPE[node.nodeType] ?? 'element';
   if (node.nodeType === 2) {
     const text = node.nodeValue ?? '';
-    return { text, nodeKind: 'attribute', path: pathOf(node) };
+    return { text, nodeKind: 'attribute', path: paths.path(node) };
   }
   if (node.nodeType === 3) {
     const text = node.nodeValue ?? '';
-    return { text, nodeKind: 'text', path: pathOf(node), ...withRange(node, xml, text) };
+    return { text, nodeKind: 'text', path: paths.path(node), ...withRange(node, lineIndex, text) };
   }
   const text = serializeXml(node as unknown as XmldomNode);
-  return { text, nodeKind: kind, path: pathOf(node), ...withRange(node, xml, text) };
+  return { text, nodeKind: kind, path: paths.path(node), ...withRange(node, lineIndex, text) };
 }
 
 /** Spreads `{range}` in only when one could be computed, keeping `exactOptionalPropertyTypes` happy. */
-function withRange(node: EvaluatedNode, xml: string, serialized: string): { range?: TextRange } {
-  const range = rangeOf(node, xml, serialized);
+function withRange(node: EvaluatedNode, lineIndex: LineIndex, serialized: string): { range?: TextRange } {
+  const range = rangeOf(node, lineIndex, serialized);
   return range === undefined ? {} : { range };
 }
 
@@ -255,7 +298,15 @@ export function evaluate(xml: string, expression: string, options: EvaluateOptio
   // itself never produces from a single path expression, but a hand-written FLWOR could)
   // falls back to "values" so nothing is silently dropped.
   if (nodeLike.length === capped.length) {
-    return { kind: 'nodes', items: capped.map((item) => toNodeItem(item as EvaluatedNode, xml)), truncated };
+    // One `LineIndex` for the whole result set: `rangeOf` used to re-split the source document
+    // per item, which on a 1 MB response cost more than the XPath evaluation itself.
+    const lineIndex = new LineIndex(xml);
+    const paths = new PathIndex();
+    return {
+      kind: 'nodes',
+      items: capped.map((item) => toNodeItem(item as EvaluatedNode, lineIndex, paths)),
+      truncated,
+    };
   }
 
   return {

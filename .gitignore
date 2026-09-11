@@ -13,3 +13,4 @@ coverage
 .idea/
 .claude/launch.json
 .claude/settings.local.json
+fixtures/wsdl/crafted/large-schema/

@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
 import type { ProjectChange, SoapSendInputWire } from '../src/shared/wire-types.js';
+import { readPublicFixture } from './helpers/fixtures.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -144,7 +144,7 @@ describe('request.recreate / curl / importCurl', () => {
     const summary = await engine.importDefinition({
       source: {
         kind: 'text',
-        text: readFileSync(`${process.cwd()}/fixtures/wsdl/public/calculator/service.wsdl`, 'utf-8'),
+        text: readPublicFixture('calculator'),
         location: 'inline://calculator.wsdl',
       },
     });

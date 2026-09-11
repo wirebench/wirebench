@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerDefinitionChannels } from '../src/main/ipc/definition.js';
@@ -10,10 +9,7 @@ import type {
   DefinitionDocumentTextResponse,
   DefinitionSchemaIndexResponse,
 } from '../src/shared/wire-types.js';
-
-function readPublicFixture(name: string): string {
-  return readFileSync(`${process.cwd()}/fixtures/wsdl/public/${name}/service.wsdl`, 'utf-8');
-}
+import { readPublicFixture } from './helpers/fixtures.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
@@ -6,11 +5,7 @@ import { EngineService } from '../src/main/engine-service.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
 import { channels } from '../src/shared/ipc.js';
 import type { EngineProgressEvent } from '../src/shared/wire-types.js';
-
-/** Reads a public WSDL fixture, resolved relative to the repo root vitest runs from. */
-function readPublicFixture(name: string): string {
-  return readFileSync(`${process.cwd()}/fixtures/wsdl/public/${name}/service.wsdl`, 'utf-8');
-}
+import { readPublicFixture } from './helpers/fixtures.js';
 
 /** A running local echo server plus its base URL and a way to shut it down. */
 interface EchoServer {
