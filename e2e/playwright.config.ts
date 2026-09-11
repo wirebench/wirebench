@@ -14,7 +14,13 @@ export default defineConfig({
   // between macOS, Linux and Windows, so a snapshot taken on one is never valid on another.
   // Only the macOS set is committed, and `a11y.spec.ts` skips the screenshot tests elsewhere.
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}-{platform}/{testFilePath}/{arg}{ext}',
-  projects: [{ name: 'electron' }],
+  projects: [
+    { name: 'electron', testIgnore: /perf\.spec\.ts$/ },
+    // The startup and interaction budgets are timing assertions: a second app instance on the
+    // same three-core runner is enough to push a cold start past its 2 s budget. This project
+    // holds only that spec and runs after everything else, so it has the machine to itself.
+    { name: 'electron-perf', testMatch: /perf\.spec\.ts$/, dependencies: ['electron'] },
+  ],
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
     trace: 'retain-on-failure',
