@@ -508,7 +508,7 @@ Rules: TDD for engine code (failing test first, then implementation); every bug 
 | Monaco bundle size / startup | Slow cold start | Lazy-load Monaco per editor, code-split features, measure cold start in e2e |
 | TypeScript 7 / tooling compatibility | Build breakage | Pin versions; fall back to TypeScript 5.9 if any tool lags (open question) |
 | Electron security regressions | Vulnerabilities | Security baseline enforced by tests (`webPreferences` snapshot test) and Electron Fuses |
-| Scope creep into testing/mocks | v1 slips | Boundaries §12; parity matrix marks phases |
+| Scope creep into testing/mocks | v1 slips | Boundaries §12; capability matrix marks phases |
 
 ---
 

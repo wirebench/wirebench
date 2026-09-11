@@ -418,7 +418,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
 - TypeScript 7 toolchain lag (typescript-eslint, electron-vite) — pin; fall back to 5.9 at T1 if `pnpm check` cannot pass.
 - Playwright Electron on Windows CI — flaky-retry 2, per-test userData dir, headless xvfb on Linux.
 - Engine in main process — CPU-heavy import of 5 MB schemas may stall menus; measured in T50; `utilityProcess` move behind `EngineService` if > 250 ms.
-- Scope creep (testing/mocks/load) — refuse in review; parity matrix marks phases.
+- Scope creep (testing/mocks/load) — refuse in review; capability matrix marks phases.
 
 ## Unresolved questions
 
