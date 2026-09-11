@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { inlineFiles } from '../../../../src/soap/mime/inline-files.js';
 
@@ -36,7 +37,9 @@ describe('inlineFiles', () => {
     const result = await inlineFiles('<Body><data>file:docs/a.txt</data></Body>', {
       enabled: true,
       resourceRoot: '/projects/demo/res',
-      resolveFile: resolverFor({ '/projects/demo/res/docs/a.txt': CONTENT }),
+      // The resolver is handed an OS path, so the key is built with `join`: on Windows the
+      // resource root and the relative reference are joined with `\`.
+      resolveFile: resolverFor({ [join('/projects/demo/res', 'docs/a.txt')]: CONTENT }),
     });
     expect(result.envelopeXml).toContain(BASE64);
     expect(result.problems).toEqual([]);

@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PropertyScopes } from '@wirebench/engine';
 import type { RequestSendRequest } from '../src/shared/wire-types.js';
@@ -491,7 +491,10 @@ describe('request.send applies the saved request properties', () => {
         projectId: () => undefined,
         ...noActionSupport,
         // A path whose parent is a file, so `mkdir` cannot create it.
-        dumpFileFor: () => ({ path: join(existingFile, 'nested', 'out.xml'), projectDir: '/' }),
+        // The project dir is the filesystem root the temp file lives on, so the containment
+        // check passes on every platform ('/' would be the *current drive*'s root on Windows,
+        // which need not be the drive holding the temp folder).
+        dumpFileFor: () => ({ path: join(existingFile, 'nested', 'out.xml'), projectDir: parse(existingFile).root }),
       },
     });
 

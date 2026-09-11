@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FuseV1Options } from '@electron/fuses';
 import { electronBinaryPath, hasRealSigningIdentity, isUniversalTempDir, WIREBENCH_FUSES } from './fuses.ts';
@@ -5,16 +6,20 @@ import { electronBinaryPath, hasRealSigningIdentity, isUniversalTempDir, WIREBEN
 describe('electronBinaryPath', () => {
   it('points inside the app bundle on macOS', () => {
     expect(electronBinaryPath('/out/mac-universal', 'darwin', 'Wirebench')).toBe(
-      '/out/mac-universal/Wirebench.app/Contents/MacOS/Wirebench',
+      join('/out/mac-universal', 'Wirebench.app', 'Contents', 'MacOS', 'Wirebench'),
     );
   });
 
   it('is the .exe on Windows', () => {
-    expect(electronBinaryPath('/out/win-unpacked', 'win32', 'Wirebench')).toBe('/out/win-unpacked/Wirebench.exe');
+    expect(electronBinaryPath('/out/win-unpacked', 'win32', 'Wirebench')).toBe(
+      join('/out/win-unpacked', 'Wirebench.exe'),
+    );
   });
 
   it('is the lower-cased, dash-joined name on Linux', () => {
-    expect(electronBinaryPath('/out/linux-unpacked', 'linux', 'Wirebench')).toBe('/out/linux-unpacked/wirebench');
+    expect(electronBinaryPath('/out/linux-unpacked', 'linux', 'Wirebench')).toBe(
+      join('/out/linux-unpacked', 'wirebench'),
+    );
   });
 });
 

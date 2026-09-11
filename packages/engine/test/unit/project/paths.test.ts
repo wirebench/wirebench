@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProjectError } from '../../../src/errors.js';
 import {
@@ -113,18 +114,20 @@ describe('assertWssRelativePath', () => {
 
 describe('path helpers', () => {
   it('builds the documented layout', () => {
-    expect(manifestFile('/p')).toBe('/p/wirebench.yaml');
-    expect(interfaceDir('/p', 'CountryInfo')).toBe('/p/interfaces/CountryInfo');
-    expect(interfaceFile('/p', 'CountryInfo')).toBe('/p/interfaces/CountryInfo/interface.yaml');
+    // The helpers return OS paths, so the expectations are built with `join` rather than
+    // hard-coded `/` separators: on Windows the same layout uses `\`.
+    expect(manifestFile('/p')).toBe(join('/p', 'wirebench.yaml'));
+    expect(interfaceDir('/p', 'CountryInfo')).toBe(join('/p', 'interfaces', 'CountryInfo'));
+    expect(interfaceFile('/p', 'CountryInfo')).toBe(join('/p', 'interfaces', 'CountryInfo', 'interface.yaml'));
     expect(operationDir('/p', 'CountryInfo', 'ListOfCountryNamesByCode')).toBe(
-      '/p/interfaces/CountryInfo/operations/ListOfCountryNamesByCode',
+      join('/p', 'interfaces', 'CountryInfo', 'operations', 'ListOfCountryNamesByCode'),
     );
     expect(requestFiles('/p', 'CountryInfo', 'Op', 'Request 1')).toEqual({
-      yaml: '/p/interfaces/CountryInfo/operations/Op/Request 1.request.yaml',
-      xml: '/p/interfaces/CountryInfo/operations/Op/Request 1.xml',
+      yaml: join('/p', 'interfaces', 'CountryInfo', 'operations', 'Op', 'Request 1.request.yaml'),
+      xml: join('/p', 'interfaces', 'CountryInfo', 'operations', 'Op', 'Request 1.xml'),
     });
-    expect(environmentFile('/p', 'dev')).toBe('/p/environments/dev.yaml');
-    expect(wssFile('/p', 'outgoing', 'prod-signature')).toBe('/p/wss/outgoing/prod-signature.yaml');
-    expect(keystoresFile('/p')).toBe('/p/wss/keystores.yaml');
+    expect(environmentFile('/p', 'dev')).toBe(join('/p', 'environments', 'dev.yaml'));
+    expect(wssFile('/p', 'outgoing', 'prod-signature')).toBe(join('/p', 'wss', 'outgoing', 'prod-signature.yaml'));
+    expect(keystoresFile('/p')).toBe(join('/p', 'wss', 'keystores.yaml'));
   });
 });
