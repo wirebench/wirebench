@@ -68,6 +68,17 @@ describe('wss.* IPC', () => {
     );
   });
 
+  it('does not mask a PasswordDigest in a preview', async () => {
+    const digestEnvelope =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header>' +
+      '<wsse:Security xmlns:wsse="urn:wsse"><wsse:UsernameToken><wsse:Username>bob</wsse:Username>' +
+      '<wsse:Password Type="urn:x#PasswordDigest">abc123==</wsse:Password></wsse:UsernameToken></wsse:Security>' +
+      '</soapenv:Header><soapenv:Body/></soapenv:Envelope>';
+    project.previewOutgoingWss.mockResolvedValueOnce(digestEnvelope);
+    const result = await invoke('wss.previewOutgoing', { requestId: 'r1', envelopeXml: '<x/>' });
+    expect((result as { value: { envelopeXml: string } }).value.envelopeXml).toContain('abc123==');
+  });
+
   it('removes the header', async () => {
     const result = await invoke('wss.removeOutgoing', { requestId: 'r1', envelopeXml: SECURED });
     expect((result as { value: { envelopeXml: string } }).value.envelopeXml).toBe('<clean/>');

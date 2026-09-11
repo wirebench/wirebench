@@ -62,14 +62,30 @@ export function redactResponseAttachments<T>(attachments: readonly T[]): T[] {
 /** Matches an (optionally namespace-prefixed) `<Password ...>...</Password>` element's text. */
 const WSSE_PASSWORD_RE = /(<(?:[\w-]+:)?Password\b[^>]*>)([\s\S]*?)(<\/(?:[\w-]+:)?Password>)/gi;
 
-/** Masks the text content of `wsse:Password` elements (any namespace prefix) in raw XML. */
+/** Matches a `Type` attribute in a `Password` open tag, capturing its value. */
+const TYPE_ATTR_RE = /\bType\s*=\s*"([^"]*)"|\bType\s*=\s*'([^']*)'/i;
+
+/**
+ * Whether a `<Password>` open tag's `Type` attribute marks the value as a `#PasswordDigest` —
+ * not a secret, and never masked. Any other `Type` (including the WSS `#PasswordText` profile
+ * URI) or a missing `Type` attribute is treated as a plaintext password and masked.
+ */
+function isPasswordDigest(openTag: string): boolean {
+  const match = TYPE_ATTR_RE.exec(openTag);
+  const value = match?.[1] ?? match?.[2];
+  return value !== undefined && value.endsWith('#PasswordDigest');
+}
+
+/**
+ * Masks the text content of `wsse:Password` elements (any namespace prefix) in raw XML — except
+ * a `#PasswordDigest` value, which is a hash, not a secret, and must reach the wire intact.
+ */
 export function redactXml(text: string, opts?: { show?: boolean }): string {
   if (opts?.show) {
     return text;
   }
-  return text.replace(
-    WSSE_PASSWORD_RE,
-    (_match, open: string, _content: string, close: string) => `${open}${REDACTED}${close}`,
+  return text.replace(WSSE_PASSWORD_RE, (match, open: string, _content: string, close: string) =>
+    isPasswordDigest(open) ? match : `${open}${REDACTED}${close}`,
   );
 }
 

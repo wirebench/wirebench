@@ -51,6 +51,20 @@ describe('redactXml', () => {
     const xml = '<wsse:Password>s3cret!</wsse:Password>';
     expect(redactXml(xml, { show: true })).toBe(xml);
   });
+
+  it('does not mask a PasswordDigest — it is not a secret', () => {
+    const xml =
+      '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">abc123==</wsse:Password>';
+    expect(redactXml(xml)).toBe(xml);
+  });
+
+  it('masks a PasswordText value', () => {
+    const xml =
+      '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">s3cret!</wsse:Password>';
+    expect(redactXml(xml)).toBe(
+      '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText"><redacted></wsse:Password>',
+    );
+  });
 });
 
 describe('redactRawHttp', () => {
