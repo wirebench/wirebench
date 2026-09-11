@@ -80,12 +80,19 @@ export type DumpFilePicks = { hasWrite(path: string): boolean };
  * e2e-only: extra trust anchors for every send, as one PEM file named by
  * `WIREBENCH_E2E_EXTRA_CA_FILE`.
  *
+ * Superseded, for real use, by the `ssl.caBundlePath` preference (see
+ * `ProjectService.trustAnchors`), which is how a user configures a private CA and which a spec
+ * can now drive through the picker with `WIREBENCH_E2E_FILE_DIALOG_PATH`. This hook survives for
+ * the specs that predate the preference and only need *some* anchor in place before the
+ * Preferences UI exists in their flow; it adds to `tls.ca` exactly as the preference does.
+ *
  * The Playwright suite talks to a TLS server signed by a CA it generates at run time, and
  * Wirebench must trust it *the way a user would* — by configuring trust, not by turning
  * verification off, and not by letting a client keystore double as a trust store (which is
  * exactly the confusion `toTlsClientIdentity` was changed to avoid). So a test build takes the
  * anchors from an env var no shipped build ever sets, alongside `WIREBENCH_E2E_OPEN_PATH`,
- * `WIREBENCH_E2E_SAVE_PATH`, `WIREBENCH_E2E_DIALOG_FOLDER` and `WIREBENCH_E2E_DIALOG_SAVE`.
+ * `WIREBENCH_E2E_SAVE_PATH`, `WIREBENCH_E2E_DIALOG_FOLDER`, `WIREBENCH_E2E_DIALOG_SAVE` and
+ * `WIREBENCH_E2E_FILE_DIALOG_PATH`.
  *
  * TLS verification itself is untouched: these anchors are *added* to a send's `tls.ca`, and
  * `rejectUnauthorized` keeps its default. The file is read once and remembered; an unset or

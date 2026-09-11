@@ -30,6 +30,15 @@ function saveOverride(): string | undefined {
   return process.env['WIREBENCH_E2E_DIALOG_SAVE'];
 }
 
+/**
+ * The open-file counterpart of {@link folderOverride}. A distinct variable from the keystore
+ * picker's `WIREBENCH_E2E_OPEN_PATH` so a spec can pin the two independently — a spec that adds
+ * a keystore *and* picks a CA bundle needs different answers from each.
+ */
+function openFileOverride(): string | undefined {
+  return process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'];
+}
+
 function windowOf(sender: WebContents): BrowserWindow | undefined {
   return BrowserWindow.fromWebContents(sender) ?? undefined;
 }
@@ -40,6 +49,13 @@ export async function pickFile(
   picks: RecordsReadPicks,
   options: { readonly title?: string; readonly filters?: readonly DialogFilter[] },
 ): Promise<string | undefined> {
+  // The override goes through `rememberRead` exactly as a real pick does, so e2e exercises the
+  // same containment path a user drives rather than a bypass of it.
+  const override = openFileOverride();
+  if (override !== undefined && override.length > 0) {
+    picks.rememberRead(override);
+    return override;
+  }
   const result = await dialog.showOpenDialog(windowOf(sender) as BrowserWindow, {
     properties: ['openFile'],
     ...(options.title !== undefined ? { title: options.title } : {}),
