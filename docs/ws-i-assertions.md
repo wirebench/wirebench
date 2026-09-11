@@ -19,12 +19,12 @@ normative wording.
 | R2002 | REQUIRED | Schemas are imported with xs:import, not wsdl:import | Implemented | 4.2 Document Structure |
 | R2003 | REQUIRED | xs:import appears only inside an xs:schema of wsdl:types | Implemented | 4.2 Document Structure |
 | R2005 | REQUIRED | An imported schema targetNamespace matches the xs:import namespace | Implemented | 4.2 Document Structure |
-| R2101 | REQUIRED | Part references name only imported or locally defined namespaces | Implemented | 4.4 XML Schema |
+| R2101 | REQUIRED | WSDL component references name only imported or locally defined namespaces | Implemented | 4.4 XML Schema |
+| R2102 | REQUIRED | Part element/type references name only imported or locally defined namespaces | Implemented | 4.4 XML Schema |
 | R2105 | REQUIRED | Every inline xs:schema declares a non-empty targetNamespace | Implemented | 4.4 XML Schema |
 | R2110 | REQUIRED | No type extends or restricts soapenc:Array | Implemented | 4.4 XML Schema |
 | R2111 | REQUIRED | No type declaration carries wsdl:arrayType | Implemented | 4.4 XML Schema |
 | R2112 | RECOMMENDED | Global declarations avoid the ArrayOfXXX naming convention | Implemented | 4.4 XML Schema |
-| R2113 | REQUIRED | No type declaration carries soapenc:arrayType | Implemented | 4.4 XML Schema |
 | R2201 | REQUIRED | A document-literal soapbind:body lists at most one part | Implemented | 4.7 SOAP Binding |
 | R2203 | REQUIRED | rpc-literal parts are declared with type, not element | Implemented | 4.7 SOAP Binding |
 | R2204 | REQUIRED | document-literal parts are declared with element, not type | Implemented | 4.7 SOAP Binding |
@@ -54,7 +54,7 @@ normative wording.
 | Id | Level | Title | Status | Notes |
 | --- | --- | --- | --- | --- |
 | R2004 | REQUIRED | An xs:import must not name a document whose root element is not xs:schema | Planned | Needs the resolver to keep documents it could not classify as a schema. |
-| R2102 | REQUIRED | A QName reference to a schema component uses that component’s target namespace | Planned | Subsumed for parts by R2101; a full check needs schema-internal references. |
+| R2113 | REQUIRED | An envelope must not carry soapenc:arrayType on an element in a message | Planned | Message-level, not description-level: moved out of the WSDL catalogue and into the message assertions (Task 44). The description-level array rules stay here as R2110/R2111. |
 | R2202 | RECOMMENDED | A description prefers the wrapped document-literal convention | Planned | Planned. |
 | R2211 | REQUIRED | An rpc-literal envelope must not carry xsi:nil on a part accessor | Planned | Message-level; part of the message assertion catalogue. |
 | R2301 | REQUIRED | The order of body children matches the order of the wsdl:parts | Planned | Message-level; part of the message assertion catalogue. |

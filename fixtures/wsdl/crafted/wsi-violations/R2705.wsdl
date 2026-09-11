@@ -30,6 +30,12 @@
   <wsdl:message name="EchoHeader">
     <wsdl:part name="auth" element="tns:AuthHeader"/>
   </wsdl:message>
+  <wsdl:message name="Echo2Request">
+    <wsdl:part name="value" type="xsd:string"/>
+  </wsdl:message>
+  <wsdl:message name="Echo2Response">
+    <wsdl:part name="result" type="xsd:string"/>
+  </wsdl:message>
   <wsdl:message name="EchoFaultMessage">
     <wsdl:part name="detail" element="tns:EchoFaultDetail"/>
   </wsdl:message>
@@ -41,9 +47,8 @@
       <wsdl:fault name="EchoFault" message="tns:EchoFaultMessage"/>
     </wsdl:operation>
     <wsdl:operation name="Echo2">
-      <wsdl:input message="tns:EchoRequest"/>
-      <wsdl:output message="tns:EchoResponse"/>
-      <wsdl:fault name="EchoFault" message="tns:EchoFaultMessage"/>
+      <wsdl:input message="tns:Echo2Request"/>
+      <wsdl:output message="tns:Echo2Response"/>
     </wsdl:operation>
   </wsdl:portType>
 

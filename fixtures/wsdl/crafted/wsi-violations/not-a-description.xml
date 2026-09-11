@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Named by R2001.wsdl's wsdl:import: a well-formed XML document that is neither a
+  wsdl:definitions nor an xs:schema, which is exactly the R2001 violation.
+-->
+<greeting xmlns="urn:wb:wsi:not-a-description">hello</greeting>

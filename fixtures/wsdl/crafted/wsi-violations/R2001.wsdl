@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  R2001: wsdl:import is used to import a document that is an XML Schema, not a WSDL description.
+  R2001: wsdl:import names a document whose root element is not wsdl:definitions.
 
   Generated as the wsi-compliant fixture with exactly this construct changed.
 -->
@@ -10,7 +10,7 @@
                   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
                   xmlns:tns="urn:wb:wsi"
                   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <wsdl:import namespace="urn:wb:wsi:imported" location="imported.xsd"/>
+  <wsdl:import namespace="urn:wb:wsi:imported" location="not-a-description.xml"/>
 
   <wsdl:types>
     <xsd:schema targetNamespace="urn:wb:wsi" elementFormDefault="qualified"

@@ -10,7 +10,6 @@
                   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
                   xmlns:tns="urn:wb:wsi"
                   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-      <xsd:import namespace="urn:wb:wsi:wrong" schemaLocation="other.xsd"/>
   <wsdl:types>
     <xsd:schema targetNamespace="urn:wb:wsi" elementFormDefault="qualified"
                 xmlns:xsd="http://www.w3.org/2001/XMLSchema">

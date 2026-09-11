@@ -107,7 +107,8 @@ export function runWsdlAssertions(context: WsiWsdlContext, options: RunWsdlAsser
  * can be shown in the same Problems panel as the message validators' output.
  *
  * Positions are document positions, not envelope positions: `path` carries the document location
- * alongside the element path so a consumer can tell the two apart.
+ * alongside the element path, as `<document>#<xpath>`, so a consumer can tell the two apart. A
+ * finding that has an xpath but no document (or neither) contributes no `path`.
  *
  * @param report the report to flatten
  */
@@ -122,7 +123,9 @@ export function wsiProblems(report: WsiReport): readonly ValidationProblem[] {
         source: 'ws-i',
         ...(finding.location?.line !== undefined ? { line: finding.location.line } : {}),
         ...(finding.location?.column !== undefined ? { column: finding.location.column } : {}),
-        ...(finding.location?.xpath !== undefined ? { path: finding.location.xpath } : {}),
+        ...(finding.location?.xpath !== undefined
+          ? { path: `${finding.location.document}#${finding.location.xpath}` }
+          : {}),
       });
     }
   }

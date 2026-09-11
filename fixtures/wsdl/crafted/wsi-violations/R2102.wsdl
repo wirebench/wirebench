@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  R2113: a type declaration carries the soapenc:arrayType attribute.
+  R2102: a wsdl:part references a schema element in a namespace that is neither defined nor imported.
 
   Generated as the wsi-compliant fixture with exactly this construct changed.
 -->
@@ -10,17 +10,9 @@
                   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
                   xmlns:tns="urn:wb:wsi"
                   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-      <xsd:complexType name="Holder">
-        <xsd:attribute name="items" type="xsd:string" soapenc:arrayType="xsd:string[]"
-                       xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"/>
-      </xsd:complexType>
   <wsdl:types>
     <xsd:schema targetNamespace="urn:wb:wsi" elementFormDefault="qualified"
                 xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-      <xsd:complexType name="Holder">
-        <xsd:attribute name="items" type="xsd:string" soapenc:arrayType="xsd:string[]"
-                       xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"/>
-      </xsd:complexType>
       <xsd:element name="Echo" type="xsd:string"/>
       <xsd:element name="EchoResult" type="xsd:string"/>
       <xsd:element name="Extra" type="xsd:string"/>
@@ -30,7 +22,7 @@
   </wsdl:types>
 
   <wsdl:message name="EchoRequest">
-    <wsdl:part name="body" element="tns:Echo"/>
+    <wsdl:part name="body" element="unk:Echo" xmlns:unk="urn:wb:wsi:unknown"/>
   </wsdl:message>
   <wsdl:message name="EchoResponse">
     <wsdl:part name="body" element="tns:EchoResult"/>

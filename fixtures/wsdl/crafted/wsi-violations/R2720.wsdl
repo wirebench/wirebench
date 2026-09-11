@@ -23,13 +23,13 @@
 
   <wsdl:message name="EchoRequest">
     <wsdl:part name="body" element="tns:Echo"/>
-    <wsdl:part name="extra" element="tns:Extra"/>
   </wsdl:message>
   <wsdl:message name="EchoResponse">
     <wsdl:part name="body" element="tns:EchoResult"/>
   </wsdl:message>
   <wsdl:message name="EchoHeader">
     <wsdl:part name="auth" element="tns:AuthHeader"/>
+    <wsdl:part name="extra" element="tns:Extra"/>
   </wsdl:message>
   <wsdl:message name="EchoFaultMessage">
     <wsdl:part name="detail" element="tns:EchoFaultDetail"/>

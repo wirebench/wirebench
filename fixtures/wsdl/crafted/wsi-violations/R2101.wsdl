@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  R2101: a wsdl:part references an element in a namespace that is neither defined nor imported.
+  R2101: wsdl:binding/@type references a portType in a namespace that is neither defined nor imported.
 
   Generated as the wsi-compliant fixture with exactly this construct changed.
 -->
@@ -22,7 +22,7 @@
   </wsdl:types>
 
   <wsdl:message name="EchoRequest">
-    <wsdl:part name="body" element="unk:Echo" xmlns:unk="urn:wb:wsi:unknown"/>
+    <wsdl:part name="body" element="tns:Echo"/>
   </wsdl:message>
   <wsdl:message name="EchoResponse">
     <wsdl:part name="body" element="tns:EchoResult"/>
@@ -42,7 +42,7 @@
     </wsdl:operation>
   </wsdl:portType>
 
-  <wsdl:binding name="EchoBinding" type="tns:EchoPortType">
+  <wsdl:binding name="EchoBinding" type="unk:EchoPortType" xmlns:unk="urn:wb:wsi:unknown">
     <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
     <wsdl:operation name="Echo">
       <soap:operation soapAction="urn:wb:wsi:Echo" style="document"/>

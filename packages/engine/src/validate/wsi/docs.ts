@@ -29,10 +29,12 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
     notes: 'Needs the resolver to keep documents it could not classify as a schema.',
   },
   {
-    id: 'R2102',
+    id: 'R2113',
     level: 'REQUIRED',
-    title: 'A QName reference to a schema component uses that component’s target namespace',
-    notes: 'Subsumed for parts by R2101; a full check needs schema-internal references.',
+    title: 'An envelope must not carry soapenc:arrayType on an element in a message',
+    notes:
+      'Message-level, not description-level: moved out of the WSDL catalogue and into the message ' +
+      'assertions (Task 44). The description-level array rules stay here as R2110/R2111.',
   },
   {
     id: 'R2202',

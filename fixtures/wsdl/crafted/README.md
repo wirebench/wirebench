@@ -91,11 +91,13 @@ Each is deliberately tiny but structurally valid.
   conforms to every WS-I Basic Profile 1.1 assertion implemented in
   `packages/engine/src/validate/wsi/assertions/`. One `Echo` operation with a `soap:header`, a
   `wsdl:fault` bound by a `soap:fault`, and a `soap:address` with an absolute location, so the
-  catalogue reports `passed` (25 assertions) or `notApplicable` (8) and never a failure.
+  catalogue reports `passed` or `notApplicable` and never a failure.
 
 - **wsi-violations/** — one WSDL per assertion (`R2xxx.wsdl`), each the `wsi-compliant` document
   with exactly the construct that assertion forbids changed; the leading comment names the
-  violation. `imported.xsd` is pulled in by a `wsdl:import` (the R2001/R2002 violation) and
+  violation. `not-a-description.xml` is pulled in by R2001's `wsdl:import` (a document that is
+  neither WSDL nor schema), `imported.xsd` by R2002's (a schema imported the wrong way) and
   `other.xsd` by the misplaced/mismatched `xs:import`s of R2003/R2005. The table-driven test
   (`packages/engine/test/unit/validate/wsi/wsdl.test.ts`) asserts each file produces exactly one
-  finding for its own assertion.
+  finding for its own assertion **and trips no other assertion**, so every fixture stays a
+  single-violation document.

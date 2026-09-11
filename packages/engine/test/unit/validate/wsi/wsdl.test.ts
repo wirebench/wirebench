@@ -58,6 +58,51 @@ describe('WS-I BP 1.1 WSDL assertions', () => {
       expect(report?.findings[0]?.location?.document).toContain(`${id}.wsdl`);
       expect(report?.findings[0]?.location?.xpath).toContain('definitions');
     });
+
+    it('is the only assertion its violation fixture trips', async () => {
+      const context = await contextFor(`${fixtureRoot}wsi-violations/${id}.wsdl`);
+      const report = runWsdlAssertions(context, { verbose: true });
+      const collateral = report.assertions.filter(
+        (entry) => entry.id !== id && entry.result !== 'passed' && entry.result !== 'notApplicable',
+      );
+      expect(collateral.map((entry) => entry.id)).toEqual([]);
+    });
+  });
+
+  it('fails R2105 for an inline schema whose targetNamespace is empty', async () => {
+    const context = await contextFor(`${fixtureRoot}wsi-compliant/service.wsdl`);
+    const empty = await importDefinition({
+      kind: 'text',
+      location: 'inline:empty-tns.wsdl',
+      text: `<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions name="S" targetNamespace="urn:wb:wsi"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xsd:schema targetNamespace=""/>
+  </wsdl:types>
+</wsdl:definitions>`,
+    });
+    const [report] = runWsdlAssertions(wsiWsdlContext(empty), { ids: ['R2105'], verbose: true }).assertions;
+    expect(report?.result).toBe('failed');
+    expect(report?.findings[0]?.message).toContain('empty targetNamespace');
+    // The compliant fixture, which declares a real one, still passes.
+    const [ok] = runWsdlAssertions(context, { ids: ['R2105'], verbose: true }).assertions;
+    expect(ok?.result).toBe('passed');
+  });
+
+  it('counts a header-bound part as bound for R2209', async () => {
+    const context = await contextFor(`${fixtureRoot}soap-headers/service.wsdl`);
+    const [report] = runWsdlAssertions(context, { ids: ['R2209'], verbose: true }).assertions;
+    expect(report?.findings).toEqual([]);
+    expect(report?.result).toBe('passed');
+  });
+
+  it('still reports a part bound to no SOAP construct at all', async () => {
+    const context = await contextFor(`${fixtureRoot}wsi-violations/R2209.wsdl`);
+    const [report] = runWsdlAssertions(context, { ids: ['R2209'], verbose: true }).assertions;
+    expect(report?.result).toBe('warning');
+    expect(report?.findings[0]?.message).toContain('extra');
   });
 
   it('omits passing rows unless verbose, but always counts them', async () => {
@@ -81,6 +126,7 @@ describe('WS-I BP 1.1 WSDL assertions', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatchObject({ severity: 'warning', code: 'R2112', source: 'ws-i' });
     expect(problems[0]?.message).toContain('R2112');
+    expect(problems[0]?.path).toContain('R2112.wsdl#/definitions');
     expect(problems[0]?.path).toContain('schema');
     expect(problems[0]?.line).toBeGreaterThan(0);
   });

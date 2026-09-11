@@ -12,11 +12,11 @@ import { R2002 } from './r2002.js';
 import { R2003 } from './r2003.js';
 import { R2005 } from './r2005.js';
 import { R2101 } from './r2101.js';
+import { R2102 } from './r2102.js';
 import { R2105 } from './r2105.js';
 import { R2110 } from './r2110.js';
 import { R2111 } from './r2111.js';
 import { R2112 } from './r2112.js';
-import { R2113 } from './r2113.js';
 import { R2201 } from './r2201.js';
 import { R2203 } from './r2203.js';
 import { R2204 } from './r2204.js';
@@ -48,11 +48,11 @@ export const WSI_WSDL_ASSERTIONS: readonly WsiAssertion[] = Object.freeze([
   R2003,
   R2005,
   R2101,
+  R2102,
   R2105,
   R2110,
   R2111,
   R2112,
-  R2113,
   R2201,
   R2203,
   R2204,
@@ -84,11 +84,11 @@ export {
   R2003,
   R2005,
   R2101,
+  R2102,
   R2105,
   R2110,
   R2111,
   R2112,
-  R2113,
   R2201,
   R2203,
   R2204,

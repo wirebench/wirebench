@@ -9,6 +9,13 @@ import { bundledDocumentFor, findingAt, resolveAgainst, wsdlDocuments } from './
  * description". Every `wsdl:import` is therefore checked to point at a document whose root element
  * is `wsdl:definitions`; an import whose target could not be fetched is left alone (the resolver
  * already reports that as its own problem).
+ *
+ * A `wsdl:import` of an *XML Schema* violates this requirement too, but it is the subject of the
+ * more specific {@link R2002} ("use xs:import for schemas"), so it is reported there only and
+ * skipped here — otherwise every such import would be flagged twice for one construct.
+ *
+ * A target the resolver could not classify at all never reaches the bundle; it shows up as a
+ * `not-xml` resolve problem instead, which is exactly the "not a WSDL description" case.
  */
 export const R2001: WsiAssertion = {
   id: 'R2001',
@@ -26,8 +33,14 @@ export const R2001: WsiAssertion = {
         }
         imports += 1;
         const resolved = resolveAgainst(location, doc.location);
+        // A bundled target is either 'wsdl' or 'xsd'; the schema case belongs to R2002, so the
+        // only violation left to report here is a target the resolver could not classify at all.
         const target = resolved === undefined ? undefined : bundledDocumentFor(context, resolved);
-        if (target !== undefined && target.kind !== 'wsdl') {
+        const unclassified =
+          target === undefined &&
+          resolved !== undefined &&
+          context.bundle.problems.some((problem) => problem.code === 'not-xml' && problem.location === resolved);
+        if (unclassified) {
           findings.push(
             findingAt(
               doc.location,

@@ -152,6 +152,35 @@ export function targetNamespaceOf(definitions: Element): string {
   return optionalAttribute(definitions, 'targetNamespace') ?? '';
 }
 
+/**
+ * Every namespace the description defines or imports: the `targetNamespace` of each
+ * `wsdl:definitions` and each `xs:schema` of the bundle, the `namespace` of each
+ * `wsdl:import`/`xs:import`, and the XML Schema namespace itself (always available to a
+ * description). This is the set R2101 and R2102 measure their QName references against.
+ */
+export function declaredNamespaces(context: WsiWsdlContext): ReadonlySet<string> {
+  const known = new Set<string>([NS.XSD, ...context.schemaSet.namespaces]);
+  for (const doc of wsdlDocuments(context)) {
+    known.add(targetNamespaceOf(doc.definitions));
+    for (const importEl of childElements(doc.definitions, NS.WSDL, 'import')) {
+      const namespace = optionalAttribute(importEl, 'namespace');
+      if (namespace !== undefined) {
+        known.add(namespace);
+      }
+    }
+  }
+  for (const view of schemaElements(context)) {
+    known.add(optionalAttribute(view.schema, 'targetNamespace') ?? '');
+    for (const importEl of childElements(view.schema, NS.XSD, 'import')) {
+      const namespace = optionalAttribute(importEl, 'namespace');
+      if (namespace !== undefined) {
+        known.add(namespace);
+      }
+    }
+  }
+  return known;
+}
+
 /** A bundle-wide index of the WSDL components assertions cross-reference, keyed by Clark name. */
 export interface WsdlIndex {
   readonly messages: ReadonlyMap<string, WsdlComponent>;
@@ -279,6 +308,45 @@ export interface BoundMessageView {
   readonly declaredParts?: readonly string[];
   /** The parts actually bound to the SOAP body: the declared subset, or all of them. */
   readonly boundParts: readonly Element[];
+  /**
+   * The parts bound to *any* SOAP construct: the body-bound ones plus every part this binding
+   * operation's `soapbind:header`/`headerfault` elements name on the same abstract message.
+   */
+  readonly soapBoundParts: readonly Element[];
+}
+
+/**
+ * The names of `abstractMessage`'s parts that a `soapbind:header` or `soapbind:headerfault` of
+ * `operation` binds. A header names its message explicitly, so only the headers pointing at this
+ * very message count.
+ */
+function headerBoundPartNames(
+  context: WsiWsdlContext,
+  operation: Element,
+  soapNs: string,
+  tns: string,
+  abstractMessage: WsdlComponent | undefined,
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  if (abstractMessage === undefined) {
+    return names;
+  }
+  for (const message of bindingMessages(operation)) {
+    for (const header of childElements(message, soapNs, 'header')) {
+      for (const element of [header, ...childElements(header, soapNs, 'headerfault')]) {
+        const referenced = referencedMessage(context, element, 'message', tns);
+        if (referenced?.element !== abstractMessage.element) {
+          continue;
+        }
+        for (const name of (optionalAttribute(element, 'part') ?? '').split(/\s+/)) {
+          if (name.length > 0) {
+            names.add(name);
+          }
+        }
+      }
+    }
+  }
+  return names;
 }
 
 /** The `wsdl:portType` a binding refers to, when it resolves. */
@@ -329,6 +397,10 @@ export function boundMessages(context: WsiWsdlContext): readonly BoundMessageVie
             declaredParts === undefined
               ? parts
               : parts.filter((part) => declaredParts.includes(optionalAttribute(part, 'name') ?? ''));
+          const headerNames = headerBoundPartNames(context, operation, soapNs, tns, abstractMessage);
+          const soapBoundParts = parts.filter(
+            (part) => boundParts.includes(part) || headerNames.has(optionalAttribute(part, 'name') ?? ''),
+          );
           views.push({
             location: doc.location,
             bindingView,
@@ -341,6 +413,7 @@ export function boundMessages(context: WsiWsdlContext): readonly BoundMessageVie
             parts,
             ...(declaredParts !== undefined ? { declaredParts } : {}),
             boundParts,
+            soapBoundParts,
           });
         }
       }
