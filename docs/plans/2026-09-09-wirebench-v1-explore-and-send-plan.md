@@ -370,7 +370,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
 
 ### M6 — IDE polish, network options, performance, packaging, release
 
-- [ ] **47. Command registry completeness + shortcuts + menus**
+- [x] **47. Command registry completeness + shortcuts + menus**
   - Every action in §5/§6 registered (`CommandId` audit list); app menu + context menus generated from the registry (`main/menu.ts` receives command list, dispatches back); ⌘P quick-open (operations/requests fuzzy); ⌥←/→ next/prev element value; ⇧Tab request↔response focus; Preferences → Shortcuts editor (rebind, conflict warning, reset); activity-bar Search view (`features/search/search-view.tsx`: text/regex across request bodies, headers, cached definitions; results open at range).
   - Acceptance: test: every `CommandId` has a handler; rebinding persists; e2e keyboard-only import → send.
   - Verify: `pnpm --filter @wirebench/desktop test`; `pnpm test:e2e -- --grep keyboard`
