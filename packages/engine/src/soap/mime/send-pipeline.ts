@@ -19,47 +19,64 @@ import type { MultipartPart, ResponseAttachment } from './types.js';
 export type SoapProblem = SoapExchange['problems'][number];
 
 /**
+ * Substitutes every `file:` reference in the envelope with the file's base64 bytes.
+ *
+ * This is envelope *text preparation*, exactly like property expansion, so it runs before the
+ * envelope transforms rather than with the attachment packaging that follows them (see
+ * `send.ts`): a WS-Security signature must cover the bytes that actually go on the wire, and
+ * signing the literal `file:/…` text and then replacing it would produce a signature no
+ * receiver can verify.
+ *
+ * A missing file is a problem, not a failure: the reference is left verbatim and the send
+ * continues, since the server's own error is usually more informative than a client-side abort.
+ * Without a `resolveFile` there is no way to read anything, so the property is inert.
+ *
+ * @param input the (already expanded) send input
+ * @param problems collects non-fatal issues, e.g. an inline file that is missing
+ * @returns the envelope with every readable `file:` reference replaced
+ */
+export async function substituteInlineFiles(input: SoapSendInput, problems: SoapProblem[]): Promise<string> {
+  const options = input.attachmentOptions;
+  if (options === undefined || !options.enableInlineFiles || options.resolveFile === undefined) {
+    return input.envelopeXml;
+  }
+  const inlined = await inlineFiles(input.envelopeXml, {
+    enabled: true,
+    resolveFile: options.resolveFile,
+    ...(options.resourceRoot !== undefined ? { resourceRoot: options.resourceRoot } : {}),
+  });
+  for (const problem of inlined.problems) {
+    problems.push({ code: problem.code, message: problem.message });
+  }
+  return inlined.envelopeXml;
+}
+
+/**
  * Runs the request-side attachment pipeline and returns the bytes to send.
  *
- * The order is fixed and matches SoapUI's: property expansion and the envelope transforms
- * have already happened, then inline files are substituted, then MTOM claims the
- * attachments its `cid:` references name, then everything left over rides along as SwA.
- * Only when something is actually packaged is the `Content-Type` replaced by the
- * multipart's — the caller's own content type (charset and all) becomes the root part's,
+ * The order is fixed and matches SoapUI's: property expansion, inline-file substitution
+ * ({@link substituteInlineFiles}) and the envelope transforms have already happened, then
+ * MTOM claims the attachments its `cid:` references name, then everything left over rides
+ * along as SwA. Only when something is actually packaged is the `Content-Type` replaced by
+ * the multipart's — the caller's own content type (charset and all) becomes the root part's,
  * so a request that sets one still gets what it asked for where it matters.
  *
  * "Disable Multiparts" short-circuits the whole stage, MTOM included: rewriting a `cid:`
  * reference into an `xop:Include` whose part is then not sent would produce a message no
  * server can read.
  *
- * @param input the (already expanded) send input
+ * @param input the (already expanded, already inlined) send input
  * @param headers the request headers, mutated when a multipart Content-Type takes over
- * @param problems collects non-fatal issues, e.g. an inline file that is missing
  */
-export async function packageRequestBody(
-  input: SoapSendInput,
-  headers: Record<string, string>,
-  problems: SoapProblem[],
-): Promise<Uint8Array> {
+export async function packageRequestBody(input: SoapSendInput, headers: Record<string, string>): Promise<Uint8Array> {
   const options = input.attachmentOptions;
   if (options === undefined) {
     return encodeBody(input.envelopeXml, input.encoding);
   }
 
+  // Inline files were already substituted, before the envelope transforms — see
+  // {@link substituteInlineFiles} and the pipeline order in `send.ts`.
   let envelopeXml = input.envelopeXml;
-  // Without a `resolveFile` there is no way to read the referenced files, so the property
-  // is inert rather than an error: the engine deliberately owns no file system of its own.
-  if (options.enableInlineFiles && options.resolveFile !== undefined) {
-    const inlined = await inlineFiles(envelopeXml, {
-      enabled: true,
-      resolveFile: options.resolveFile,
-      ...(options.resourceRoot !== undefined ? { resourceRoot: options.resourceRoot } : {}),
-    });
-    envelopeXml = inlined.envelopeXml;
-    for (const problem of inlined.problems) {
-      problems.push({ code: problem.code, message: problem.message });
-    }
-  }
 
   const attachments = input.attachments ?? [];
   const parts: MultipartPart[] = [];

@@ -173,14 +173,16 @@ export interface SoapSendInput {
   /** MTOM/SwA/inline-file behaviour plus the resolvers that turn references into bytes. */
   readonly attachmentOptions?: SendAttachmentOptions;
   /**
-   * WS-Security applied to the envelope after property expansion and before attachments, so
-   * the header is part of the envelope that actually goes on the wire (and that raw capture
-   * shows).
+   * WS-Security applied to the envelope after property expansion and inline-file substitution
+   * and before attachment packaging, so the header is part of the envelope that actually goes
+   * on the wire (and that raw capture shows), and a signature covers the substituted bytes
+   * rather than the `file:` reference they replaced.
    */
   readonly wss?: SoapSendWss;
   /**
-   * WS-Addressing applied to the envelope after property expansion and *before* WS-Security,
-   * so a signature configured to cover the `wsa:*` headers can actually reach them.
+   * WS-Addressing applied to the envelope after property expansion and inline-file
+   * substitution, and *before* WS-Security, so a signature configured to cover the `wsa:*`
+   * headers can actually reach them.
    */
   readonly wsa?: SoapSendWsa;
 }
@@ -222,7 +224,11 @@ export interface SendAttachmentOptions {
   readonly disableMultiparts: boolean;
   /** Base64 transfer encoding for SwA parts instead of binary. */
   readonly encodeAttachments: boolean;
-  /** Replace `file:<path>` element text with the file's base64 before sending. */
+  /**
+   * Replace `file:<path>` element text with the file's base64 before sending. Substitution
+   * happens with property expansion, *before* WS-Addressing and WS-Security, so what is signed
+   * is what is sent.
+   */
   readonly enableInlineFiles: boolean;
   /** Keep response parts listed as attachments even when they were expanded into the envelope. */
   readonly inlineResponseAttachments: boolean;

@@ -15,7 +15,12 @@ import { basicAuthorization, isBasicChallenge } from './http/auth/basic.js';
 import { ntlmHandshake } from './http/auth/ntlm-transport.js';
 import { headerValue, mergeHeaders } from './http/headers.js';
 import { charsetOf } from './soap/charset.js';
-import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
+import {
+  packageRequestBody,
+  readResponseBody,
+  substituteInlineFiles,
+  type SoapProblem,
+} from './soap/mime/send-pipeline.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import { applyWsaHeaders, effectiveAction } from './wsa/headers.js';
@@ -34,10 +39,15 @@ import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
  * {@link HttpError}; a non-2xx HTTP status is not an error and is returned
  * as a normal exchange for the caller to inspect.
  *
- * When `input.attachmentOptions` is given, the envelope additionally goes
- * through the attachment pipeline before it is sent — inline files, then MTOM,
- * then SwA — and a `multipart/related` response is unwrapped into its envelope
- * plus `response.attachments`. See `soap/mime/send-pipeline.ts`.
+ * When `input.attachmentOptions` is given, the envelope additionally goes through the
+ * attachment pipeline. Its stages are split across the send: inline `file:` references are
+ * substituted up front, with property expansion (they are envelope text, and WS-Security must
+ * sign what is actually sent), while MTOM and then SwA package the finished envelope after the
+ * WS-Addressing and WS-Security rewrites. A `multipart/related` response is unwrapped into its
+ * envelope plus `response.attachments`. See `soap/mime/send-pipeline.ts`.
+
+ * The full request order is: property expansion → inline files → WS-Addressing → WS-Security →
+ * MTOM → SwA → gzip.
  *
  * When `options.scopes` is given, `input.endpoint`, `input.envelopeXml`,
  * `input.soapAction` and every header name/value are first passed through
@@ -73,7 +83,19 @@ export async function sendSoapRequest(
     unresolved = expanded.unresolved;
   }
 
-  // WS-Addressing runs first of all the envelope rewrites: before WS-Security, so a signature
+  const problems: SoapProblem[] = [];
+
+  // Inline `file:` references are substituted first, with property expansion: both are envelope
+  // *text* preparation, and the envelope every later stage sees must be the one that goes on
+  // the wire. Doing it after WS-Security — as this pipeline used to — signed the literal
+  // `file:/…` text and then replaced it, leaving a signature that verifies over nothing that
+  // was sent. MTOM/SwA still run last, after WSS, so the header is inside the packaged envelope.
+  const inlinedEnvelopeXml = await substituteInlineFiles(effectiveInput, problems);
+  if (inlinedEnvelopeXml !== effectiveInput.envelopeXml) {
+    effectiveInput = { ...effectiveInput, envelopeXml: inlinedEnvelopeXml };
+  }
+
+  // WS-Addressing runs first of the envelope rewrites: before WS-Security, so a signature
   // configured to cover the `wsa:*` headers finds them already in place, and before the
   // attachment pipeline, so they are inside the envelope MTOM/SwA package and raw capture show.
   let wsaApplied: SoapExchange['wsa'] | undefined;
@@ -132,10 +154,9 @@ export async function sendSoapRequest(
     effectiveInput.headers ?? {},
   );
 
-  const problems: SoapProblem[] = [];
   // Attachments are packaged before compression, so gzip applies to the whole multipart
   // body exactly as it would to a plain envelope.
-  const encoded = await packageRequestBody(effectiveInput, headers, problems);
+  const encoded = await packageRequestBody(effectiveInput, headers);
   // Compression is applied after the headers are merged so a caller-supplied Content-Encoding
   // cannot silently disagree with what is actually on the wire.
   const body = effectiveInput.compressBody === 'gzip' ? new Uint8Array(gzipSync(encoded)) : encoded;
