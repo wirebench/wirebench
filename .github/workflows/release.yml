@@ -1,0 +1,135 @@
+name: Release
+
+# Tag-driven: `git tag v0.1.0 && git push --tags` builds the three OS artifact sets and
+# collects them into a *draft* GitHub Release. Nothing is published automatically — a human
+# reviews the draft, checks the artifacts, and presses publish.
+on:
+  push:
+    tags: ['v*']
+  # Same build, no release: for rehearsing a tag build before cutting one.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: package:mac
+            artifact: macos
+          - os: windows-latest
+            script: package:win
+            artifact: windows
+          - os: ubuntu-latest
+            script: package:linux
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The same gate every push has to pass; a tag is not an excuse to ship something red.
+      - run: pnpm check
+
+      # rpm packaging needs rpmbuild, which the Ubuntu runner does not ship with.
+      - name: Install rpm tooling (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      # Signing is opt-in. electron-builder reads the certificates and the Apple credentials
+      # out of the environment and skips signing (and notarization) when they are empty, so a
+      # repository with none of these secrets set still produces working, *unsigned* artifacts.
+      - name: Package
+        env:
+          # macOS signing + notarization. electron-builder notarizes only when all three
+          # Apple variables are present; with none of them it skips both steps.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows code signing, when a certificate is configured.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # Never publish from the build job; the release job below attaches the artifacts.
+          GH_TOKEN: ''
+        run: pnpm ${{ matrix.script }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wirebench-${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # The tag's own section of the changelog, when there is one; otherwise GitHub's
+      # generated notes. Never invents a body.
+      - name: Extract release notes
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$version" '
+              /^## / { if (found) exit; if (index($0, v)) { found = 1; next } }
+              found { print }
+            ' CHANGELOG.md > release-notes.md
+          fi
+          if [ ! -s release-notes.md ]; then
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create draft release (changelog section)
+        if: steps.notes.outputs.generate == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          # A `-rc`/`-beta` tag is marked as a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: release-notes.md
+          files: artifacts/**/*
+
+      - name: Create draft release (generated notes)
+        if: steps.notes.outputs.generate == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: artifacts/**/*

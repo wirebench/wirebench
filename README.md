@@ -56,6 +56,13 @@ Every action in Wirebench is a command with an id, and every shortcut is that co
 
 `Mod+Shift+F` is deliberately unassigned here: it is reserved for Format XML.
 
+## Packaging
+
+`pnpm package` (or `package:mac` / `package:win` / `package:linux`) builds an installable app
+into `apps/desktop/release/`. Releases are cut by pushing a `v*` tag; see
+[`docs/release.md`](docs/release.md) for the signing secrets, the Electron fuse table and how
+the opt-in update check behaves.
+
 ## Status
 
 Early scaffolding stage. See the design spec at
