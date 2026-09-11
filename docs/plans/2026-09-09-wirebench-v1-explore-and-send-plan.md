@@ -388,7 +388,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm vitest run packages/engine/test/integration/http/proxy packages/engine/test/integration/http/tls`
   - Files: packages/engine/src/http/{proxy.ts,tls.ts}, packages/engine/test/helpers/test-proxy.ts, packages/engine/test/integration/http/{proxy,tls}.test.ts, apps/desktop/src/renderer/features/preferences/network-section.tsx
 
-- [ ] **50. Performance budgets**
+- [x] **50. Performance budgets**
   - `test/bench/*.bench.ts` (CountryInfo import+generate < 300 ms; `crafted/large-schema` (5 MB) < 3 s; send overhead < 20 ms; fail CI at > 1.5× budget); `React.lazy` per editor view + Monaco chunk; e2e startup (`firstWindow` → ready mark) < 2 s on CI macOS; 1 MB XML scroll trace ≥ 50 fps; fix regressions found.
   - Acceptance: benches + startup budget green in CI.
   - Verify: `pnpm vitest bench --run`; `pnpm test:e2e -- --grep perf`

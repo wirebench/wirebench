@@ -16,7 +16,23 @@ pnpm test                          # vitest run
 pnpm lint                          # eslint . --max-warnings 0 && prettier --check .
 pnpm typecheck                     # tsc -b
 pnpm check                         # lint + typecheck + test ← the pre-commit and CI gate
+pnpm test:e2e                      # Playwright against the built Electron app
+pnpm bench                         # vitest benchmarks over the engine's budgeted scenarios
 ```
+
+### Performance budgets
+
+`pnpm check` includes the engine's performance gate (`packages/engine/test/perf/budgets.test.ts`), and `pnpm test:e2e`
+includes the app's (`e2e/specs/perf.spec.ts`). Both take the median of several samples and allow generous headroom, so
+they catch a real regression rather than a busy machine — but on a slow or heavily loaded one they can still be noise.
+Set `WIREBENCH_SKIP_PERF=1` to skip both:
+
+```
+WIREBENCH_SKIP_PERF=1 pnpm check
+```
+
+`pnpm bench` reports the same scenarios as trend numbers instead of pass/fail. The budgets themselves live in one map,
+`packages/engine/test/bench/budgets.ts`.
 
 ## Keyboard shortcuts
 

@@ -292,9 +292,29 @@ describe('verifySignature', () => {
     expect(rogueSignature).not.toBe('');
     const merged = first.replace('<ds:Signature', `${rogueSignature}<ds:Signature`);
 
-    // Index 0 is the planted, unrelated signature; index 1 is the genuine one.
-    expect(verifySignature(merged, { certPem: noSki.certPem, signature: { index: 0 } }).ok).toBe(true);
-    expect(verifySignature(merged, { certPem: signer.certPem, signature: { index: 1 } }).ok).toBe(true);
+    // Both signings go through `ctxFor`, which pins the clock and restarts the uuid counter, so
+    // the two envelopes carry byte-identical Timestamps and wsu:Ids. That is *why* a signature
+    // lifted out of one still verifies against the other, and it is the whole premise of this
+    // test — so assert it up front. A future change to id or timestamp generation then fails
+    // here, naming the cause, instead of surfacing as an unexplained `ok === false` below.
+    const withoutCredentials = (xml: string): string =>
+      xml
+        .replace(/<ds:Signature[\s\S]*?<\/ds:Signature>/, '')
+        .replace(/<wsse:BinarySecurityToken[\s\S]*?<\/wsse:BinarySecurityToken>/, '');
+    expect(withoutCredentials(rogue)).toBe(withoutCredentials(first));
+
+    // Index 0 is the planted, unrelated signature; index 1 is the genuine one. Each `ok` is
+    // paired with its `error`, so a failure reports what xml-crypto objected to rather than
+    // just `expected false to be true`.
+    const rogueAtZero = verifySignature(merged, { certPem: noSki.certPem, signature: { index: 0 } });
+    expect(rogueAtZero.error).toBeUndefined();
+    expect(rogueAtZero.ok).toBe(true);
+
+    const genuineAtOne = verifySignature(merged, { certPem: signer.certPem, signature: { index: 1 } });
+    expect(genuineAtOne.error).toBeUndefined();
+    expect(genuineAtOne.ok).toBe(true);
+
+    // The genuine signer's certificate must not validate the planted signature.
     expect(verifySignature(merged, { certPem: signer.certPem, signature: { index: 0 } }).ok).toBe(false);
   });
 });
