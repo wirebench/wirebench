@@ -32,6 +32,12 @@ files:
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing.
 afterPack: ../../scripts/fuses.ts
 
+# The generated third-party attribution file, alongside the app's own LICENSE obligations.
+# Regenerated and verified by `pnpm licenses:third-party [--check]`.
+extraResources:
+  - from: ../../THIRD-PARTY-LICENSES.md
+    to: THIRD-PARTY-LICENSES.md
+
 asar: true
 asarUnpack:
   - '**/node_modules/xmllint-wasm/**'
