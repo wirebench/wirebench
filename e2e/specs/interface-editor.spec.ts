@@ -24,8 +24,9 @@ async function explorerOperationCount(page: Page): Promise<number> {
   // react-arborist virtualises the tree: only the rows inside the scroll viewport exist in the
   // DOM, so counting what is mounted right now measures the window rather than the interface —
   // a CI display that clamps the shell shorter than a developer's simply holds fewer rows.
-  // Walk the list instead, collecting ids and scrolling the last mounted row into view to bring
-  // the next ones in, until a pass adds nothing new.
+  // Page the list a viewport at a time instead, collecting ids as they mount, until the
+  // container stops scrolling.
+  const list = page.getByTestId('explorer-tree-scroll');
   const seen = new Set<string>();
   const collect = async (): Promise<void> => {
     for (const row of await rows.all()) {
@@ -33,21 +34,34 @@ async function explorerOperationCount(page: Page): Promise<number> {
       if (id !== null) seen.add(id);
     }
   };
-  let previous = -1;
-  while (seen.size !== previous) {
-    previous = seen.size;
+  let previousTop = -1;
+  for (;;) {
     await collect();
-    await rows.last().scrollIntoViewIfNeeded();
-    await collect();
+    const top = await list.evaluate((element: { scrollTop: number; clientHeight: number }) => {
+      element.scrollTop += element.clientHeight;
+      return element.scrollTop;
+    });
+    if (top === previousTop) break;
+    previousTop = top;
+    // react-window mounts the newly revealed rows on the render that follows the scroll event.
+    await page.waitForTimeout(100);
   }
-  // Leave the explorer where it was found, so the caller's interface row is on screen again.
-  await page.locator('[data-testid="explorer-tree-row"]').first().scrollIntoViewIfNeeded();
+  await collect();
+  // Put the list back at the top before returning. Anything left scrolled has the tree's first
+  // rows — the interface row every caller goes on to right-click — unmounted, and a `hasText`
+  // lookup then lands on whatever *is* mounted (a `CalculatorSoap` binding row reads as
+  // "Calculator" too), whose context menu has no "Show Interface Viewer" in it.
+  await list.evaluate((element: { scrollTop: number }) => {
+    element.scrollTop = 0;
+  });
   return seen.size;
 }
 
 /** Opens the Interface editor from the explorer's interface row context menu. */
 async function showInterfaceViewer(page: Page, rowText: string): Promise<void> {
-  const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: rowText }).first();
+  // Scoped to an `iface:` row: a binding row is named after the binding, which carries the
+  // interface's name as a prefix (`CalculatorSoap`), so plain `hasText` can match one of those.
+  const row = page.locator('[data-testid="explorer-tree-row"][data-tree-id^="iface:"]', { hasText: rowText }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Show Interface Viewer' }).click();

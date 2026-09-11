@@ -58,7 +58,7 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
  */
 const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeof ListOuterElement>>(
   function FocusableListOuter(props, ref) {
-    return <ListOuterElement ref={ref} {...props} role="group" tabIndex={0} />;
+    return <ListOuterElement ref={ref} {...props} data-testid="explorer-tree-scroll" role="group" tabIndex={0} />;
   },
 );
 
