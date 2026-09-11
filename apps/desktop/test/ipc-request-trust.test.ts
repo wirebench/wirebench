@@ -93,6 +93,7 @@ async function register(sent: SentTls[]): Promise<void> {
         endpoint: 'https://dev.test/soap',
         endpointSource: 'request-endpoint',
         auth: { source: 'none', type: 'none' },
+        wsa: { enabled: false },
         unresolved: [],
       }),
       authFor: () => undefined,

@@ -79,6 +79,9 @@ import {
   attachmentsOpenResponseRequestSchema,
   attachmentsOpenResponseSchema,
   attachmentsPickFilesRequestSchema,
+  wsaInsertHeadersRequestSchema,
+  wsaRemoveHeadersRequestSchema,
+  wsaEnvelopeResponseSchema,
   wssPreviewOutgoingRequestSchema,
   wssInsertEntryRequestSchema,
   wssRemoveOutgoingRequestSchema,
@@ -276,6 +279,10 @@ export const channels = {
   keystores: {
     inspect: defineChannel('keystores.inspect', keystoresInspectRequestSchema, keystoresInspectResponseSchema),
     pickFile: defineChannel('keystores.pickFile', keystoresPickFileRequestSchema, keystoresPickFileResponseSchema),
+  },
+  wsa: {
+    insertHeaders: defineChannel('wsa.insertHeaders', wsaInsertHeadersRequestSchema, wsaEnvelopeResponseSchema),
+    removeHeaders: defineChannel('wsa.removeHeaders', wsaRemoveHeadersRequestSchema, wsaEnvelopeResponseSchema),
   },
   wss: {
     previewOutgoing: defineChannel('wss.previewOutgoing', wssPreviewOutgoingRequestSchema, wssEnvelopeResponseSchema),

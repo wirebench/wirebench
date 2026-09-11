@@ -10,6 +10,7 @@ import {
   generateEmptyRequest,
   generateRequest,
   importDefinition as engineImportDefinition,
+  normalizeWsa,
   sendSoapRequest,
   WirebenchError,
 } from '@wirebench/engine';
@@ -24,6 +25,7 @@ import type {
   SoapSendInput,
   SoapSendWss,
   TlsOptions,
+  WsaConfigPatch,
 } from '@wirebench/engine';
 import { resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
 import type { SendAuth } from '@wirebench/engine';
@@ -37,6 +39,7 @@ import type {
   RequestGenerateResponse,
   RequestSendRequest,
   SoapSendInputWire,
+  WsaConfigWire,
 } from '../shared/wire-types.js';
 import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
@@ -150,6 +153,18 @@ export function toEngineAuth(auth?: ResolvedAuth): SendAuth | undefined {
   return { type: 'basic', username: auth.username, password: auth.password, preemptive: auth.preemptive !== false };
 }
 
+/**
+ * Drops the explicitly-`undefined` keys a zod-parsed optional leaves behind, so the result is
+ * assignable to the engine's `WsaConfigPatch` under `exactOptionalPropertyTypes`.
+ */
+function stripUndefined(value: WsaConfigWire): WsaConfigPatch {
+  const patch: WsaConfigPatch = {};
+  return Object.entries(value).reduce<WsaConfigPatch>(
+    (accumulated, [key, entry]) => (entry === undefined ? accumulated : { ...accumulated, [key]: entry }),
+    patch,
+  );
+}
+
 /** Converts the wire `SoapSendInputWire` (plus a controller's signal) to the engine's `SoapSendInput`. */
 function toEngineSendInput(
   input: SoapSendInputWire,
@@ -173,6 +188,11 @@ function toEngineSendInput(
     ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
     ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
     ...(input.tls !== undefined ? { tls: toEngineTls(input.tls) } : {}),
+    // WS-Addressing carries no secret and no closure, so — unlike WS-Security — it rides on the
+    // wire input the renderer built and only needs its optionals normalised here.
+    ...(input.wsa !== undefined
+      ? { wsa: { config: normalizeWsa(stripUndefined(input.wsa.config)), defaultAction: input.wsa.defaultAction } }
+      : {}),
     // Attachments never cross IPC (the resolvers are closures over main's file system), so they
     // are folded in here rather than carried on `SoapSendInputWire`.
     ...(attachments !== undefined

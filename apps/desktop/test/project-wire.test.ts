@@ -33,6 +33,7 @@ function buildProject(): Project {
 }
 
 const summary: InterfaceSummary = {
+  wsa: { enabled: false, version: '2005/08', defaultActionByOperation: {} },
   id: 'iface-1',
   name: 'Calculator',
   definitionUrl: 'http://example.test/service.wsdl',

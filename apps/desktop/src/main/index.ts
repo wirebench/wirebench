@@ -15,6 +15,7 @@ import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
 import { clearAttachmentsTmp, registerAttachmentChannels } from './ipc/attachments.js';
 import { registerKeystoreChannels } from './ipc/keystores.js';
+import { registerWsaChannels } from './ipc/wsa.js';
 import { registerWssChannels } from './ipc/wss.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
@@ -164,6 +165,7 @@ void app.whenReady().then(() => {
     userDataDir: app.getPath('userData'),
   });
   registerKeystoreChannels({ project: projectService, picks: dialogPicks });
+  registerWsaChannels({ project: projectService });
   registerWssChannels({ project: projectService });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.

@@ -9,7 +9,15 @@
  * mutation that appears to succeed.
  */
 
-import { createRequest, defaultContentId, generateId, ProjectError, slugify, uniqueSlug } from '@wirebench/engine';
+import {
+  createRequest,
+  defaultContentId,
+  generateId,
+  normalizeWsa,
+  ProjectError,
+  slugify,
+  uniqueSlug,
+} from '@wirebench/engine';
 import type {
   Attachment,
   AttachmentSource,
@@ -21,6 +29,8 @@ import type {
   ProjectSettings,
   RequestDef,
   RequestProperties,
+  WsaConfig,
+  WsaConfigPatch,
 } from '@wirebench/engine';
 import type {
   AttachmentPatchWire,
@@ -28,6 +38,7 @@ import type {
   ProjectSettingsPatchWire,
   RequestPatchWire,
   RequestPropertiesPatchWire,
+  WsaConfigWire,
 } from '../shared/wire-types.js';
 import {
   addEnvironment,
@@ -302,6 +313,37 @@ function toEngineAuth(auth: {
     ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
     ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
   };
+}
+
+/**
+ * Normalises a wire `WsaConfigWire` (zod optionals type as `T | undefined`) into the engine's
+ * `WsaConfig`, filling every unset field with the v1 defaults.
+ */
+function toEngineWsa(wsa: WsaConfigWire): WsaConfig {
+  const patch = Object.entries(wsa).reduce<WsaConfigPatch>(
+    (accumulated, [key, value]) => (value === undefined ? accumulated : { ...accumulated, [key]: value }),
+    {},
+  );
+  return normalizeWsa(patch);
+}
+
+/**
+ * Sets (or clears, with `wsa: null`) one request's own WS-Addressing overrides. Clearing puts
+ * the request back on "inherit from the interface", which is a different state from an
+ * explicitly disabled configuration.
+ */
+function updateRequestWsa(project: Project, requestId: string, wsa: WsaConfig | null): MutationResult {
+  const location = findRequest(project, requestId) ?? notFound('request', requestId);
+  const next: RequestDef = { ...location.request };
+  const withWsa: RequestDef = wsa === null ? omitWsa(next) : { ...next, wsa };
+  return { project: replaceRequest(project, location, withWsa) };
+}
+
+/** A copy of `request` with `wsa` genuinely absent, which a spread cannot express. */
+function omitWsa(request: RequestDef): RequestDef {
+  const rest: Record<string, unknown> = { ...request };
+  delete rest['wsa'];
+  return rest as unknown as RequestDef;
 }
 
 /** Sets (or clears, with `auth: null`) one request's own `auth`, leaving every other field alone. */
@@ -615,6 +657,14 @@ export async function applyChange(
       // is dropped entirely rather than set to an explicit `undefined`.
       const nextDefault = iface.defaultEndpointId === change.endpointId ? endpoints[0]?.id : iface.defaultEndpointId;
       return { project: replaceInterface(project, rebuiltInterface(iface, endpoints, nextDefault)) };
+    }
+
+    case 'update-request-wsa':
+      return updateRequestWsa(project, change.requestId, change.wsa === null ? null : toEngineWsa(change.wsa));
+
+    case 'update-interface-wsa': {
+      const iface = requireInterface(project, change.interfaceId);
+      return { project: replaceInterface(project, { ...iface, wsa: toEngineWsa(change.wsa) }) };
     }
 
     case 'update-request-auth':

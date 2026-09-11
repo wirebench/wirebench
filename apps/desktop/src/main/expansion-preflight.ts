@@ -10,7 +10,17 @@
  * Pure: no `electron`, no `fs`, no network.
  */
 
-import { effectiveAuth, expand, ProjectError, resolveAuthEndpoint, resolveEndpoint } from '@wirebench/engine';
+import {
+  effectiveAction,
+  effectiveAuth,
+  effectiveMessageId,
+  effectiveTo,
+  effectiveWsa,
+  expand,
+  ProjectError,
+  resolveAuthEndpoint,
+  resolveEndpoint,
+} from '@wirebench/engine';
 import type {
   Endpoint,
   EndpointAuth,
@@ -34,6 +44,43 @@ export interface PreflightResult {
   readonly endpointSource: EndpointSourceWire;
   readonly unresolved: UnresolvedRefWire[];
   readonly auth: RequestAuthSourceWire;
+  /** The WS-Addressing this request would actually send; see {@link wsaSourceFor}. */
+  readonly wsa: {
+    readonly enabled: boolean;
+    readonly action?: string;
+    readonly to?: string;
+    readonly messageId?: string;
+  };
+}
+
+/**
+ * What a send of `request` would actually put in its `wsa:*` headers, after the interface →
+ * request merge and the Action/To/MessageID fallbacks. The MessageID is reported as the
+ * literal `auto` rather than a minted UUID: the real one is generated per send, and showing a
+ * value here that will never appear on the wire would be a lie.
+ */
+function wsaSourceFor(
+  iface: Interface,
+  request: RequestDef,
+  endpoint: string | undefined,
+  defaultAction: string,
+): PreflightResult['wsa'] {
+  const config = effectiveWsa(iface.wsa, request.wsa);
+  if (!config.enabled) {
+    return { enabled: false };
+  }
+  const action = effectiveAction(config, {
+    ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+    defaultAction,
+  });
+  const to = effectiveTo(config, endpoint ?? '');
+  const messageId = effectiveMessageId(config, () => 'auto');
+  return {
+    enabled: true,
+    ...(action !== undefined ? { action } : {}),
+    ...(to !== undefined ? { to } : {}),
+    ...(messageId !== undefined ? { messageId: messageId === 'urn:uuid:auto' ? 'auto' : messageId } : {}),
+  };
 }
 
 /**
@@ -86,13 +133,15 @@ function toWire(ref: UnresolvedRef, field: ExpansionField, headerName?: string):
  * Resolves `requestId`'s endpoint and expands its send input against `scopes`.
  *
  * `envId` selects the environment endpoint overrides are read from; pass the project's active
- * environment. Throws `ProjectError('not-found')` when the project holds no such request.
+ * environment; `defaultAction` is the WSDL-derived `wsa:Action` for the request's operation.
+ * Throws `ProjectError('not-found')` when the project holds no such request.
  */
 export function preflightRequest(
   project: Project,
   requestId: string,
   scopes: PropertyScopes,
   envId?: string,
+  defaultAction = '',
 ): PreflightResult {
   const location = findRequest(project, requestId);
   if (location === undefined) {
@@ -128,5 +177,6 @@ export function preflightRequest(
     endpointSource: resolved.source,
     unresolved,
     auth: authSourceFor(iface, request, endpoint),
+    wsa: wsaSourceFor(iface, request, resolved.url, defaultAction),
   };
 }

@@ -96,6 +96,11 @@ export function toInterfaceSummary(result: ImportResult, id: string, definitionU
     operations,
     problems,
     documentCount: result.bundle.documents.length,
+    wsa: {
+      enabled: result.wsa.enabled,
+      version: result.wsa.version,
+      defaultActionByOperation: { ...result.wsa.defaultActionByOperation },
+    },
   };
 }
 
@@ -263,6 +268,14 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
         }
       : {}),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
+    ...(exchange.wsa !== undefined
+      ? {
+          wsa: {
+            ...(exchange.wsa.messageId !== undefined ? { messageId: exchange.wsa.messageId } : {}),
+            ...(exchange.wsa.action !== undefined ? { action: exchange.wsa.action } : {}),
+          },
+        }
+      : {}),
     // Only booleans, details and subjects cross the bridge: `WssResult` is already free of key
     // material by construction, and this mapping keeps it that way field by field.
     ...(exchange.wss !== undefined

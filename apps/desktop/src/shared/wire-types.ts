@@ -62,6 +62,39 @@ const operationPortRefSchema = z.object({
 });
 
 /**
+ * A WS-Addressing configuration, at interface or request level. Mirrors the engine's
+ * `WsaConfig`; every field past `enabled` is optional so a snapshot from an older build (which
+ * only ever carried `{ enabled, version? }`) still parses, and so a request-level override can
+ * name only the fields it actually changes.
+ */
+export const wsaConfigWireSchema = z.object({
+  enabled: z.boolean(),
+  version: z.enum(['2005/08', '2004/08']).optional(),
+  mustUnderstand: z.enum(['none', 'true', 'false']).optional(),
+  action: z.string().optional(),
+  to: z.string().optional(),
+  /** The literal `auto` mints a fresh `urn:uuid:` per send; anything else is sent verbatim. */
+  messageId: z.string().optional(),
+  replyTo: z.string().optional(),
+  from: z.string().optional(),
+  faultTo: z.string().optional(),
+  relatesTo: z.string().optional(),
+  relationshipType: z.string().optional(),
+  addDefaultAction: z.boolean().optional(),
+  addDefaultTo: z.boolean().optional(),
+  generateMessageId: z.boolean().optional(),
+});
+export type WsaConfigWire = z.infer<typeof wsaConfigWireSchema>;
+
+/** What an import found out about WS-Addressing; mirrors the engine's `WsaSummary`. */
+export const wsaSummaryWireSchema = z.object({
+  enabled: z.boolean(),
+  version: z.enum(['2005/08', '2004/08']),
+  defaultActionByOperation: z.record(z.string(), z.string()),
+});
+export type WsaSummaryWire = z.infer<typeof wsaSummaryWireSchema>;
+
+/**
  * One `mime:content` an operation's `mime:multipartRelated` input declares — mirrors the
  * engine's `MimePartInfo`. Drives the "Part" column of the attachments table.
  */
@@ -107,6 +140,8 @@ export const interfaceSummarySchema = z.object({
   operations: z.array(operationSummaryWireSchema),
   problems: z.array(importProblemSchema),
   documentCount: z.number(),
+  /** What the WSDL says about WS-Addressing; absent in a summary built by a stub. */
+  wsa: wsaSummaryWireSchema.optional(),
 });
 export type InterfaceSummary = z.infer<typeof interfaceSummarySchema>;
 export type ServiceSummary = z.infer<typeof serviceSummarySchema>;
@@ -178,6 +213,12 @@ const soapSendInputWireSchema = z.object({
   /** XML-escape substituted property values inside the envelope. */
   entitize: z.boolean().optional(),
   tls: tlsOptionsSchema.optional(),
+  /**
+   * WS-Addressing for this send, present only when the effective configuration is enabled.
+   * Pure data (no secret, no closure), so unlike WS-Security it rides on the send input the
+   * renderer sees and the cURL export quotes.
+   */
+  wsa: z.object({ config: wsaConfigWireSchema, defaultAction: z.string() }).optional(),
 });
 export type SoapSendInputWire = z.infer<typeof soapSendInputWireSchema>;
 
@@ -418,6 +459,19 @@ export const requestPreflightResponseSchema = z.object({
   endpointSource: endpointSourceSchema,
   unresolved: z.array(unresolvedRefWireSchema),
   auth: requestAuthSourceSchema,
+  /**
+   * The WS-Addressing this request would actually send, after the interface/request merge and
+   * the Action/To/MessageID fallbacks — what the WS-A inspector shows greyed while inheriting.
+   * `.default(...)` is tolerance for a stub; `z.infer` still yields a required object.
+   */
+  wsa: z
+    .object({
+      enabled: z.boolean(),
+      action: z.string().optional(),
+      to: z.string().optional(),
+      messageId: z.string().optional(),
+    })
+    .default({ enabled: false }),
 });
 export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSchema>;
 
@@ -475,6 +529,8 @@ export const exchangeSummarySchema = z.object({
   unresolved: z.array(unresolvedRefWireSchema).optional(),
   /** Set only when the send was given WS-Security: what it applied, and what it made of the response. */
   wss: wssExchangeWireSchema.optional(),
+  /** Set only when the send carried WS-Addressing: the `Action` and `MessageID` it put on the wire. */
+  wsa: z.object({ messageId: z.string().optional(), action: z.string().optional() }).optional(),
 });
 export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 
@@ -571,6 +627,8 @@ export const interfaceWireSchema = interfaceSummarySchema.extend({
   defaultEndpointId: z.string().optional(),
   hydration: hydrationStatusSchema,
   auth: endpointAuthSchema.optional(),
+  /** The interface-level WS-Addressing defaults every request of it inherits. */
+  wsaConfig: wsaConfigWireSchema.optional(),
 });
 export type InterfaceWire = z.infer<typeof interfaceWireSchema>;
 
@@ -711,8 +769,8 @@ export const requestWireSchema = z.object({
   order: z.number(),
   auth: endpointAuthSchema.optional(),
   description: z.string().optional(),
-  /** Read-only until Task 41 wires up editing; `enabled` is the only field the Details grid shows. */
-  wsa: z.object({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() }).optional(),
+  /** This request's own WS-Addressing overrides; absent means "inherit from the interface". */
+  wsa: wsaConfigWireSchema.optional(),
   /** Id of a `wss/outgoing/<id>.yaml` configuration applied to the envelope at send time. */
   wssOutgoingRef: z.string().optional(),
   /** Id of a `wss/incoming/<id>.yaml` configuration used to verify/decrypt the response. */
@@ -985,6 +1043,9 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
   z.object({ kind: z.literal('update-request-auth'), requestId: z.string(), auth: endpointAuthSchema.nullable() }),
+  /** `wsa: null` clears the request's own overrides, putting it back on "inherit". */
+  z.object({ kind: z.literal('update-request-wsa'), requestId: z.string(), wsa: wsaConfigWireSchema.nullable() }),
+  z.object({ kind: z.literal('update-interface-wsa'), interfaceId: z.string(), wsa: wsaConfigWireSchema }),
   z.object({
     kind: z.literal('update-interface-auth'),
     interfaceId: z.string(),
@@ -1572,6 +1633,25 @@ export const wssInsertEntryRequestSchema = z.object({
   passwordRef: z.string().optional(),
 });
 export type WssInsertEntryRequest = z.infer<typeof wssInsertEntryRequestSchema>;
+
+/**
+ * `wsa.insertHeaders`: bakes the request's effective WS-Addressing headers into the envelope
+ * *text*, the editor-action counterpart of applying them on the way to the wire.
+ */
+export const wsaInsertHeadersRequestSchema = z.object({
+  requestId: z.string(),
+  envelopeXml: z.string().optional(),
+});
+export const wsaEnvelopeResponseSchema = z.object({ envelopeXml: z.string() });
+export type WsaInsertHeadersRequest = z.infer<typeof wsaInsertHeadersRequestSchema>;
+export type WsaEnvelopeResponse = z.infer<typeof wsaEnvelopeResponseSchema>;
+
+/** `wsa.removeHeaders`: strips every `wsa:*` header, of either version, from the envelope text. */
+export const wsaRemoveHeadersRequestSchema = z.object({
+  requestId: z.string(),
+  envelopeXml: z.string().optional(),
+});
+export type WsaRemoveHeadersRequest = z.infer<typeof wsaRemoveHeadersRequestSchema>;
 
 /** `wss.removeOutgoing`: strips the `wsse:Security` header the request's configuration writes. */
 export const wssRemoveOutgoingRequestSchema = z.object({

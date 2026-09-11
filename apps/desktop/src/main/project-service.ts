@@ -12,6 +12,7 @@
  * ("hydration"), which is what makes `request.generate` and `request.send` work offline.
  */
 
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
@@ -53,6 +54,10 @@ import type {
   SendAttachmentOptions,
 } from '@wirebench/engine';
 import {
+  DEFAULT_WSA_CONFIG,
+  applyWsaHeaders,
+  effectiveWsa,
+  stripWsaHeaders,
   applyOutgoingWss,
   createWssContext,
   loadKeystore,
@@ -69,6 +74,7 @@ import type {
   SoapSendWss,
   WssContext,
   WssEntry,
+  WsaConfig,
   WssIncomingConfig,
   WssOutgoingConfig,
 } from '@wirebench/engine';
@@ -326,6 +332,7 @@ export class ProjectService {
       overrides?.headers !== undefined
         ? Object.entries(overrides.headers).map(([name, value]) => ({ name, value }))
         : request.headers;
+    const wsa = this.wsaFor(requestId);
     const input = toSendInput({
       request: {
         properties: request.properties,
@@ -352,6 +359,7 @@ export class ProjectService {
       ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
       ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
       ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
+      ...(wsa !== undefined ? { wsa } : {}),
     };
   }
 
@@ -534,7 +542,13 @@ export class ProjectService {
   preflight(requestId: string, envId?: string): PreflightResult {
     const open = this.require();
     const activeId = envId ?? open.project.activeEnvironmentId;
-    return preflightRequest(open.project, requestId, this.scopesFor(activeId), activeId);
+    return preflightRequest(
+      open.project,
+      requestId,
+      this.scopesFor(activeId),
+      activeId,
+      this.defaultWsaActionFor(requestId),
+    );
   }
 
   /** Resolves a `secretRef` to plaintext for the duration of one import/send call. */
@@ -1074,6 +1088,81 @@ export class ProjectService {
   }
 
   /**
+   * The WSDL-derived default `wsa:Action` for a request's operation, as the import recorded it.
+   * An interface that never hydrated (or an operation the current WSDL no longer exposes)
+   * yields `''`, which the header builder treats as "no default action".
+   */
+  defaultWsaActionFor(requestId: string): string {
+    if (this.open === undefined) {
+      return '';
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return '';
+    }
+    const summary = this.open.runtime.get(location.iface.id)?.summary;
+    return summary?.wsa?.defaultActionByOperation[location.operation.name] ?? '';
+  }
+
+  /**
+   * The WS-Addressing half of a send of `requestId`, or `undefined` when the effective
+   * configuration is disabled. Unlike {@link wssFor} this is synchronous and carries no secret,
+   * so it rides on {@link sendInputFor}'s result rather than being folded in at send time.
+   */
+  wsaFor(requestId: string): { config: WsaConfig; defaultAction: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const config = effectiveWsa(location.iface.wsa, location.request.wsa);
+    return config.enabled ? { config, defaultAction: this.defaultWsaActionFor(requestId) } : undefined;
+  }
+
+  /**
+   * Bakes the request's effective WS-Addressing headers into an envelope — the editor action,
+   * as opposed to the send path, which writes the same headers on their way to the wire.
+   *
+   * @param requestId the request whose configuration to use
+   * @param envelopeXml the envelope to address; the saved one when omitted
+   * @throws WirebenchError `wsa-disabled` when the effective configuration is off
+   */
+  insertWsaHeaders(requestId: string, envelopeXml?: string): string {
+    const wsa = this.wsaFor(requestId);
+    if (wsa === undefined) {
+      throw new WirebenchError('wsa-disabled', 'WS-Addressing is not enabled for this request.', {
+        details: { requestId },
+      });
+    }
+    const location = this.open === undefined ? undefined : findRequest(this.open.project, requestId);
+    const request = location?.request;
+    const endpoint =
+      this.open === undefined || location === undefined
+        ? ''
+        : (resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
+            .url ?? '');
+    return applyWsaHeaders(this.envelopeFor(requestId, envelopeXml), wsa.config, {
+      endpoint,
+      ...(request?.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+      defaultAction: wsa.defaultAction,
+      uuid: () => randomUUID(),
+      envelopeVersion: request?.soapVersion ?? '1.1',
+    });
+  }
+
+  /**
+   * Strips every `wsa:*` header, of either version, from the request's envelope text.
+   *
+   * @param requestId the request whose envelope is being edited
+   * @param envelopeXml the envelope to clean; the saved one when omitted
+   */
+  removeWsaHeadersFrom(requestId: string, envelopeXml?: string): string {
+    return stripWsaHeaders(this.envelopeFor(requestId, envelopeXml));
+  }
+
+  /**
    * Applies the request's own outgoing configuration to an envelope, for the preview and the
    * "apply to editor" action. The caller redacts the result before it leaves main.
    *
@@ -1282,6 +1371,13 @@ export class ProjectService {
         operations: operationsFrom(summary),
       }),
       ...(savedAuth !== undefined ? { auth: savedAuth } : {}),
+      // A WSDL that declares WS-Addressing turns it on for the interface straight away: the
+      // alternative is the user discovering the requirement from a runtime fault.
+      wsa: {
+        ...DEFAULT_WSA_CONFIG,
+        enabled: summary.wsa?.enabled ?? false,
+        version: summary.wsa?.version ?? '2005/08',
+      },
     };
 
     open.project = { ...open.project, interfaces: [...open.project.interfaces, iface] };
