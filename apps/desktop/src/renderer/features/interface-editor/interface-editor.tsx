@@ -15,6 +15,8 @@ import { useProjectStore } from '../../state/project.js';
 import { useWsiStore } from '../../state/wsi.js';
 import { EndpointsTab } from './endpoints-tab.js';
 import { useInterfaceEditorStore, type InterfaceTabId } from './interface-editor-state.js';
+import { GenerateDocsDialog } from './generate-docs-dialog.js';
+import { UpdateDefinitionDialog } from './update-definition-dialog.js';
 import { OverviewTab } from './overview-tab.js';
 import { SchemaTab } from './schema-tab.js';
 import { WsdlContentTab } from './wsdl-content-tab.js';
@@ -74,6 +76,8 @@ function WsiTab({ interfaceId }: { readonly interfaceId: string }) {
 export function InterfaceEditor({ interfaceId }: InterfaceEditorProps) {
   const tab = useInterfaceEditorStore((state) => state.tabs[interfaceId] ?? 'overview');
   const setTab = useInterfaceEditorStore((state) => state.setTab);
+  const dialog = useInterfaceEditorStore((state) => state.dialogs[interfaceId]);
+  const setDialog = useInterfaceEditorStore((state) => state.setDialog);
   const load = useInterfaceEditorStore((state) => state.load);
   const name = useProjectStore((state) => state.interfaces[interfaceId]?.name);
   // A re-import stamps a new `loadedAt` on the summary, which re-runs `load` and refetches
@@ -107,6 +111,16 @@ export function InterfaceEditor({ interfaceId }: InterfaceEditorProps) {
           <WsiTab interfaceId={interfaceId} />
         )}
       </div>
+      <UpdateDefinitionDialog
+        open={dialog === 'update'}
+        onOpenChange={(next) => setDialog(interfaceId, next ? 'update' : undefined)}
+        interfaceId={interfaceId}
+      />
+      <GenerateDocsDialog
+        open={dialog === 'docs'}
+        onOpenChange={(next) => setDialog(interfaceId, next ? 'docs' : undefined)}
+        interfaceId={interfaceId}
+      />
     </section>
   );
 }

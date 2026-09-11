@@ -21,8 +21,11 @@ import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import {
   createInterface,
+  applyUpdate,
   createProject,
   definitionCacheDir,
+  exportDefinition,
+  generateDocs,
   generateId,
   interfaceDir,
   attachmentFile,
@@ -30,6 +33,7 @@ import {
   createFileAttachmentResolver,
   loadProject,
   ProjectError,
+  planUpdate,
   putAttachment,
   resolveAuthEndpoint,
   resolveEndpoint,
@@ -80,6 +84,9 @@ import type {
 } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
+  ApplyUpdateWire,
+  DefinitionUpdateOptions,
+  DefinitionUpdateSource,
   EngineProgressEvent,
   HydrationStatus,
   ImportSourceWire,
@@ -92,6 +99,7 @@ import type {
   RecentProject,
   SoapSendInputWire,
   TlsOptionsWire,
+  UpdatePlanWire,
 } from '../shared/wire-types.js';
 import type { EndpointAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
@@ -112,7 +120,7 @@ import {
   projectNameFromDir,
 } from './project-mutations.js';
 import type { InterfaceRuntime } from './project-wire.js';
-import { findRequest, toProjectWire } from './project-wire.js';
+import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
 import type { RecentProjects } from './recent-projects.js';
 
@@ -786,7 +794,9 @@ export class ProjectService {
   }
 
   /** Writes the project to disk. Also invoked by the autosave timer and on `before-quit`. */
-  async save(options: { reason: string } = { reason: 'manual' }): Promise<ProjectSaveResult> {
+  async save(
+    options: { reason: string; backups?: readonly string[] } = { reason: 'manual' },
+  ): Promise<ProjectSaveResult> {
     if (this.autosave !== undefined) {
       clearTimeout(this.autosave);
       this.autosave = undefined;
@@ -802,6 +812,7 @@ export class ProjectService {
     const result = await saveProject(model, open.dir, {
       ...(open.lastWritten !== undefined ? { previous: open.lastWritten } : {}),
       writer: `wirebench (${options.reason})`,
+      ...(options.backups !== undefined ? { backups: options.backups } : {}),
       ...(this.fs !== undefined ? { fs: this.fs } : {}),
     });
     open.watcher.expect([...result.written, ...result.removed]);
@@ -1456,6 +1467,117 @@ export class ProjectService {
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, interfaceId };
+  }
+
+  /** The open project's interface with `interfaceId`, or a `not-found` error. */
+  private requireInterface(interfaceId: string): Interface {
+    const open = this.require();
+    const iface = open.project.interfaces.find((candidate) => candidate.id === interfaceId);
+    if (iface === undefined) {
+      throw new ProjectError('not-found', `No interface with id "${interfaceId}"`, {
+        details: { id: interfaceId },
+      });
+    }
+    return iface;
+  }
+
+  /**
+   * Turns the renderer's Update Definition source into an engine source.
+   *
+   * A `url` is taken as written (the engine fetches it); a `path` is only accepted when it is
+   * inside the project folder or the user picked it through an Open dialog this session — the
+   * same rule every other main-side file read follows, so a renderer can never name an
+   * arbitrary file to read.
+   */
+  private async updateSource(source: DefinitionUpdateSource): Promise<ImportSourceWire> {
+    if (source.kind === 'url') {
+      return { kind: 'url', url: source.url };
+    }
+    const open = this.require();
+    const path = resolvePath(open.dir, source.path);
+    if (!(await allowsReadPath([open.dir], this.picks, path))) {
+      throw new ProjectError('path-not-allowed', `"${source.path}" is outside the project and was not picked`, {
+        details: { path: source.path },
+      });
+    }
+    return { kind: 'file', path };
+  }
+
+  /** The Basic credentials an interface's own auth resolves to, for re-fetching its WSDL. */
+  private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
+    const resolved =
+      iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+    return resolved?.username !== undefined && resolved.password !== undefined
+      ? { username: resolved.username, password: resolved.password }
+      : undefined;
+  }
+
+  /**
+   * Previews an Update Definition: fetches `source` and diffs it against the definition the
+   * interface is currently using. Nothing is stored, cached or changed — this is what the
+   * dialog shows before the user commits.
+   */
+  async planDefinitionUpdate(interfaceId: string, source: DefinitionUpdateSource): Promise<UpdatePlanWire> {
+    const iface = this.requireInterface(interfaceId);
+    const current = this.engine.resultFor(interfaceId);
+    const auth = await this.importAuthFor(iface);
+    const next = await this.engine.importPreview(await this.updateSource(source), auth);
+    return toUpdatePlanWire(planUpdate(current, next));
+  }
+
+  /**
+   * Applies an Update Definition: re-imports `source` (refreshing the interface's definition
+   * cache, so a reopen sees the new WSDL offline), reconciles the project against it per
+   * `options`, and saves — writing `<request>.xml.bak` backups first when asked.
+   */
+  async applyDefinitionUpdate(
+    interfaceId: string,
+    source: DefinitionUpdateSource,
+    options: DefinitionUpdateOptions,
+  ): Promise<Omit<ApplyUpdateWire, 'project'>> {
+    const open = this.require();
+    const iface = this.requireInterface(interfaceId);
+    const previous = this.engine.resultFor(interfaceId);
+    const auth = await this.importAuthFor(iface);
+    const summary = await this.engine.importForProject(
+      {
+        interfaceId,
+        source: await this.updateSource(source),
+        cache: { dir: definitionCacheDir(open.dir, iface.slug), mode: 'refresh' },
+        ...(auth !== undefined ? { auth } : {}),
+      },
+      { onProgress: (event) => this.hooks.onProgress?.(event) },
+    );
+    const next = this.engine.resultFor(interfaceId);
+    const plan = planUpdate(previous, next);
+    const applied = applyUpdate(open.project, interfaceId, plan, next, options);
+
+    open.project = applied.project;
+    open.runtime.set(interfaceId, { hydration: 'ready', summary });
+    open.dirty = true;
+    // The backups must be copied from the bytes currently on disk, so they are handed to the
+    // very save that overwrites them rather than written out of band afterwards.
+    await this.save({ reason: 'update-definition', backups: applied.backups });
+    return {
+      plan: toUpdatePlanWire(plan),
+      requestsCreated: [...applied.requestsCreated],
+      requestsRecreated: [...applied.requestsRecreated],
+      requestsOrphaned: [...applied.requestsOrphaned],
+      backups: [...applied.backups],
+    };
+  }
+
+  /** Writes the definition bundle of `interfaceId` into `dir`, returning the file names written. */
+  async exportDefinitionTo(interfaceId: string, dir: string): Promise<string[]> {
+    this.requireInterface(interfaceId);
+    const result = await exportDefinition(this.engine.resultFor(interfaceId).bundle, dir);
+    return result.files.map((file) => file.file);
+  }
+
+  /** Renders the documentation for `interfaceId`, titled with the interface's own name. */
+  definitionDocs(interfaceId: string, format: 'html' | 'markdown'): string {
+    const iface = this.requireInterface(interfaceId);
+    return generateDocs(this.engine.resultFor(interfaceId), { format, title: iface.name });
   }
 
   /**

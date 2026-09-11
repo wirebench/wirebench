@@ -22,6 +22,12 @@ export interface ExplorerNode {
   readonly soapAction?: string;
   /** Set on `request` nodes: the request draft id. */
   readonly requestId?: string;
+  /**
+   * Set on `request` nodes whose operation an Update Definition dropped from the WSDL. The
+   * request is still there (nothing is ever deleted); the row is badged so the user can see
+   * which ones no longer correspond to anything the service offers.
+   */
+  readonly orphaned?: boolean;
 }
 
 function endpointsNode(interfaceId: string, summary: InterfaceSummary): ExplorerNode {
@@ -45,7 +51,13 @@ function requestNodes(
     .filter(
       (r) => r.interfaceId === interfaceId && r.bindingName === operation.binding && r.operationName === operation.name,
     )
-    .map((r) => ({ id: `req:${r.id}`, kind: 'request' as const, label: r.name, requestId: r.id }));
+    .map((r) => ({
+      id: `req:${r.id}`,
+      kind: 'request' as const,
+      label: r.name,
+      requestId: r.id,
+      ...(r.orphaned === true ? { orphaned: true } : {}),
+    }));
 }
 
 function operationNode(

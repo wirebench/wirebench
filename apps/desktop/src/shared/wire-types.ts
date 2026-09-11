@@ -203,6 +203,85 @@ export type DefinitionDocumentTextRequest = z.infer<typeof definitionDocumentTex
 export const definitionDocumentTextResponseSchema = z.object({ text: z.string() });
 export type DefinitionDocumentTextResponse = z.infer<typeof definitionDocumentTextResponseSchema>;
 
+/** How an Update Definition names the definition to update from: a URL, or a user-picked file. */
+export const definitionUpdateSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('url'), url: z.string().min(1).max(4096) }),
+  z.object({ kind: z.literal('file'), path: z.string().min(1).max(4096) }),
+]);
+export type DefinitionUpdateSource = z.infer<typeof definitionUpdateSourceSchema>;
+
+/** Request payload for `definition.planUpdate` and `definition.applyUpdate`'s re-import. */
+export const definitionPlanUpdateRequestSchema = z.object({
+  interfaceId: z.string(),
+  source: definitionUpdateSourceSchema,
+});
+export type DefinitionPlanUpdateRequest = z.infer<typeof definitionPlanUpdateRequestSchema>;
+
+/** One operation of an update plan, as Clark-notation binding plus operation name. */
+export const updateOperationWireSchema = z.object({ bindingName: z.string(), operationName: z.string() });
+
+/** Why an operation is listed as changed; see the engine's `OperationChangeReason`. */
+export const updateChangeReasonSchema = z.enum(['input-schema', 'output-schema', 'soap-action', 'style', 'binding']);
+
+/** Response payload for `definition.planUpdate`: the preview the dialog shows before applying. */
+export const definitionUpdatePlanResponseSchema = z.object({
+  newOperations: z.array(updateOperationWireSchema),
+  removedOperations: z.array(updateOperationWireSchema),
+  changedOperations: z.array(z.object({ ref: updateOperationWireSchema, reason: updateChangeReasonSchema })),
+  endpointsAdded: z.array(z.string()),
+  endpointsRemoved: z.array(z.string()),
+});
+export type UpdatePlanWire = z.infer<typeof definitionUpdatePlanResponseSchema>;
+
+/**
+ * The checkbox state of the Update Definition dialog. `updateTestRequests` is a literal `false`:
+ * the control exists and is disabled, so the wire keeps the field rather than pretending the
+ * option is not there.
+ */
+export const definitionUpdateOptionsSchema = z.object({
+  createNewRequests: z.boolean(),
+  recreateRequests: z.boolean(),
+  recreateOptional: z.boolean(),
+  keepExisting: z.boolean(),
+  keepSoapHeaders: z.boolean(),
+  createBackups: z.boolean(),
+  updateTestRequests: z.literal(false),
+});
+export type DefinitionUpdateOptions = z.infer<typeof definitionUpdateOptionsSchema>;
+
+/** Request payload for `definition.applyUpdate`. */
+export const definitionApplyUpdateRequestSchema = z.object({
+  interfaceId: z.string(),
+  source: definitionUpdateSourceSchema,
+  options: definitionUpdateOptionsSchema,
+});
+export type DefinitionApplyUpdateRequest = z.infer<typeof definitionApplyUpdateRequestSchema>;
+
+/** Request payload for `definition.export`: main runs the folder picker itself. */
+export const definitionExportRequestSchema = z.object({ interfaceId: z.string() });
+
+/** Response payload for `definition.export`: the folder written, or a user cancellation. */
+export const definitionExportResponseSchema = z.object({
+  dir: z.string().optional(),
+  files: z.array(z.string()).default([]),
+  cancelled: z.boolean(),
+});
+export type DefinitionExportResponse = z.infer<typeof definitionExportResponseSchema>;
+
+/** Request payload for `definition.generateDocs`; main runs the save dialog and writes the file. */
+export const definitionGenerateDocsRequestSchema = z.object({
+  interfaceId: z.string(),
+  format: z.enum(['html', 'markdown']),
+});
+export type DefinitionGenerateDocsRequest = z.infer<typeof definitionGenerateDocsRequestSchema>;
+
+/** Response payload for `definition.generateDocs`: the file written, or a user cancellation. */
+export const definitionGenerateDocsResponseSchema = z.object({
+  path: z.string().optional(),
+  cancelled: z.boolean(),
+});
+export type DefinitionGenerateDocsResponse = z.infer<typeof definitionGenerateDocsResponseSchema>;
+
 /** Which kind of schema component a Schema-browser row (or a declaration lookup) points at. */
 export const schemaComponentKindSchema = z.enum(['element', 'complexType', 'simpleType', 'group', 'attributeGroup']);
 export type SchemaComponentKind = z.infer<typeof schemaComponentKindSchema>;
@@ -899,6 +978,11 @@ export const requestWireSchema = z.object({
    */
   attachments: z.array(attachmentWireSchema).default([]),
   properties: requestPropertiesSchema,
+  /**
+   * True when this request's operation is no longer in the interface's definition, after an
+   * Update Definition dropped it. Nothing is deleted; the explorer badges the row instead.
+   */
+  orphaned: z.boolean().optional(),
 });
 export type RequestWire = z.infer<typeof requestWireSchema>;
 
@@ -1089,6 +1173,17 @@ export const projectWireSchema = z.object({
   wssIncoming: z.array(wssIncomingWireSchema),
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
+
+/** Response payload for `definition.applyUpdate`: what changed, plus the fresh project snapshot. */
+export const definitionApplyUpdateResponseSchema = z.object({
+  plan: definitionUpdatePlanResponseSchema,
+  requestsCreated: z.array(z.string()),
+  requestsRecreated: z.array(z.string()),
+  requestsOrphaned: z.array(z.string()),
+  backups: z.array(z.string()),
+  project: projectWireSchema,
+});
+export type ApplyUpdateWire = z.infer<typeof definitionApplyUpdateResponseSchema>;
 
 /** The fields of a request the renderer may patch through `update-request`. */
 export const requestPatchSchema = z.object({

@@ -11,6 +11,7 @@ import {
   toWssIncomingConfig,
   toWssOutgoingConfig,
   wssIncomingFileSchema,
+  qnameToString,
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
 import type {
@@ -21,6 +22,7 @@ import type {
   OperationDef,
   Project,
   RequestDef,
+  UpdatePlan,
   WssEntry,
   WssRef,
 } from '@wirebench/engine';
@@ -30,6 +32,7 @@ import type {
   EnvironmentWire,
   HydrationStatus,
   InterfaceSummary,
+  UpdatePlanWire,
   InterfaceWire,
   KeystoreWire,
   WssEntryWire,
@@ -175,6 +178,22 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     attachments: request.attachments.map(toAttachmentWire),
     properties: { ...request.properties },
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+  };
+}
+
+/** Projects an engine {@link UpdatePlan} onto the wire, with Clark-notation binding names. */
+export function toUpdatePlanWire(plan: UpdatePlan): UpdatePlanWire {
+  const ref = (operation: UpdatePlan['newOperations'][number]): { bindingName: string; operationName: string } => ({
+    bindingName: qnameToString(operation.bindingName),
+    operationName: operation.operationName,
+  });
+  return {
+    newOperations: plan.newOperations.map(ref),
+    removedOperations: plan.removedOperations.map(ref),
+    changedOperations: plan.changedOperations.map((changed) => ({ ref: ref(changed.ref), reason: changed.reason })),
+    endpointsAdded: [...plan.endpointsAdded],
+    endpointsRemoved: [...plan.endpointsRemoved],
   };
 }
 

@@ -1,70 +1,34 @@
-import { BrowserWindow, dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
-import type { RecordsWritePicks } from '../dialog-picks.js';
+import type { RecordsReadPicks, RecordsWritePicks } from '../dialog-picks.js';
+import { pickFile, pickFolder, pickSaveFile } from '../native-dialogs.js';
 import { registerHandler } from './register.js';
 
 /**
- * e2e cannot drive a native folder picker, so `WIREBENCH_E2E_DIALOG_FOLDER` short-circuits
- * `dialogs.openFolder` to a fixed path. Read at call time (not module load) so a spec can set
- * it per launch; only ever consulted in a test build's environment.
- */
-function e2eFolderOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_DIALOG_FOLDER'];
-}
-
-/**
- * e2e cannot drive a native save dialog either, so `WIREBENCH_E2E_DIALOG_SAVE` short-circuits
- * `dialogs.saveFile` to a fixed path, mirroring the folder override above.
- */
-function e2eSaveOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_DIALOG_SAVE'];
-}
-
-/**
  * Registers the `dialogs.*` IPC channels: native file/folder pickers scoped to the caller's
- * window. `picks` records every path a Save-as dialog returns — today, only the Dump File
- * "Browse…" picker uses `saveFile` — so `request.send`'s containment check can treat a
- * user-picked path as an explicit exception to "stay inside the project".
+ * window, implemented in `main/native-dialogs.ts` so the features that run a picker of their
+ * own (Export Definition, Generate Documentation) behave identically.
+ *
+ * `picks` records every path the user actually chose — a Save-as target as a *write* pick, an
+ * Open-file target as a *read* pick — so main-side containment checks can treat a user-driven
+ * choice as an explicit exception to "stay inside the project" (see `main/path-access.ts`).
  */
-export function registerDialogsChannels(picks: RecordsWritePicks): void {
-  registerHandler(channels.dialogs.openFile, async (request, sender) => {
-    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-    const result = await dialog.showOpenDialog(window as BrowserWindow, {
-      properties: ['openFile'],
+export function registerDialogsChannels(picks: RecordsWritePicks & RecordsReadPicks): void {
+  registerHandler(channels.dialogs.openFile, async (request, sender) => ({
+    path: await pickFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
-    });
-    return { path: result.canceled ? undefined : result.filePaths[0] };
-  });
+    }),
+  }));
 
-  registerHandler(channels.dialogs.openFolder, async (request, sender) => {
-    const override = e2eFolderOverride();
-    if (override !== undefined) {
-      return { path: override };
-    }
-    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-    const result = await dialog.showOpenDialog(window as BrowserWindow, {
-      properties: ['openDirectory'],
-      ...(request.title !== undefined ? { title: request.title } : {}),
-    });
-    return { path: result.canceled ? undefined : result.filePaths[0] };
-  });
+  registerHandler(channels.dialogs.openFolder, async (request, sender) => ({
+    path: await pickFolder(sender, request.title !== undefined ? { title: request.title } : {}),
+  }));
 
-  registerHandler(channels.dialogs.saveFile, async (request, sender) => {
-    const override = e2eSaveOverride();
-    if (override !== undefined) {
-      picks.rememberWrite(override);
-      return { path: override };
-    }
-    const window = BrowserWindow.fromWebContents(sender) ?? undefined;
-    const result = await dialog.showSaveDialog(window as BrowserWindow, {
+  registerHandler(channels.dialogs.saveFile, async (request, sender) => ({
+    path: await pickSaveFile(sender, picks, {
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
       ...(request.defaultPath !== undefined ? { defaultPath: request.defaultPath } : {}),
-    });
-    if (!result.canceled && result.filePath !== undefined) {
-      picks.rememberWrite(result.filePath);
-    }
-    return { path: result.canceled ? undefined : result.filePath };
-  });
+    }),
+  }));
 }

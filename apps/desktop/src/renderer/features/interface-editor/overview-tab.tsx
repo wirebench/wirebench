@@ -4,8 +4,10 @@
  * own, and nothing here is editable (the definition owns these values).
  */
 
+import { Button } from '../../components/button.js';
 import { ReadOnlySetting, SettingsGroup } from '../../components/settings-grid.js';
 import { useProjectStore } from '../../state/project.js';
+import { exportDefinition, generateDocumentation, updateDefinition } from './interface-actions.js';
 import { useInterfaceEditorStore } from './interface-editor-state.js';
 
 export interface OverviewTabProps {
@@ -59,6 +61,19 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
         <ReadOnlySetting label="Endpoints" value={String(iface.endpoints.length)} testId="interface-endpoint-count" />
         <ReadOnlySetting label="Documents" value={String(documentCount)} testId="interface-document-count" />
         <ReadOnlySetting label="Problems" value={String(iface.problems.length)} />
+      </SettingsGroup>
+      <SettingsGroup title="Definition actions">
+        <div className="flex flex-wrap gap-2 py-1">
+          <Button data-testid="interface-update-definition" onClick={() => updateDefinition(interfaceId)}>
+            Update Definition…
+          </Button>
+          <Button data-testid="interface-export-definition" onClick={() => void exportDefinition(interfaceId)}>
+            Export Definition…
+          </Button>
+          <Button data-testid="interface-generate-docs" onClick={() => generateDocumentation(interfaceId)}>
+            Generate Documentation…
+          </Button>
+        </div>
       </SettingsGroup>
       <SettingsGroup title="Cache">
         <ReadOnlySetting label="Cache definition" value={iface.cacheDefinition ? 'On' : 'Off'} />

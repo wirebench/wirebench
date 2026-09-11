@@ -133,7 +133,7 @@ void app.whenReady().then(() => {
   });
 
   registerAppChannels();
-  registerDefinitionChannels(engineService);
+  registerDefinitionChannels(engineService, { project: projectService, picks: dialogPicks });
   registerRequestChannels(engineService, {
     project: projectService,
     showSecrets: showSecretsFlag,

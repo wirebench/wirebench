@@ -301,6 +301,22 @@ export class EngineService {
   }
 
   /**
+   * Imports a definition *without* storing it: the preview half of Update Definition, which
+   * must not replace the interface's live result until the user actually applies the plan.
+   * No cache is touched either — a plan the user cancels leaves nothing behind.
+   */
+  async importPreview(
+    source: ImportSourceWire,
+    auth?: { readonly username: string; readonly password: string },
+    signal?: AbortSignal,
+  ): Promise<ImportResult> {
+    return engineImportDefinition(toEngineSource(source), {
+      ...(auth !== undefined ? { auth } : {}),
+      ...(signal !== undefined ? { signal } : {}),
+    });
+  }
+
+  /**
    * Imports a definition on behalf of an open project: the caller supplies the interface id
    * (the project model owns it) and the definition-cache directory, so a reopened project can
    * re-hydrate from `interfaces/<slug>/definition/` without touching the network.

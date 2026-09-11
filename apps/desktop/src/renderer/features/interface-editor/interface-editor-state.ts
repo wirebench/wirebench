@@ -30,6 +30,9 @@ export interface SchemaSelection {
   readonly line?: number;
 }
 
+/** Which definition dialog one interface's viewer is showing, if any. */
+export type InterfaceDialogId = 'update' | 'docs';
+
 /** A document position the WSDL Content tab should scroll to. */
 export interface SourceTarget {
   readonly location: string;
@@ -97,6 +100,15 @@ export interface InterfaceEditorStore {
    * declaration is already revealed if the user later opens that tab.
    */
   readonly revealSource: (interfaceId: string, target: SourceTarget, options?: { readonly focus?: boolean }) => void;
+  readonly dialogs: Readonly<Record<string, InterfaceDialogId | undefined>>;
+  /** Which definition dialog `interfaceId`'s viewer is showing, or `undefined` for none. */
+  readonly dialogFor: (interfaceId: string) => InterfaceDialogId | undefined;
+  /**
+   * Opens (or, with `undefined`, closes) one of the viewer's definition dialogs. Kept in the
+   * store rather than in the viewer's own state so the explorer and the palette can ask for a
+   * dialog on an interface whose viewer is not mounted yet.
+   */
+  readonly setDialog: (interfaceId: string, dialog: InterfaceDialogId | undefined) => void;
 }
 
 const DEFAULT_TAB: InterfaceTabId = 'overview';
@@ -110,6 +122,7 @@ export const useInterfaceEditorStore = create<InterfaceEditorStore>((set, get) =
   tabs: {},
   data: {},
   selections: {},
+  dialogs: {},
 
   dataFor: (interfaceId) => get().data[interfaceId] ?? EMPTY_DATA,
 
@@ -181,6 +194,7 @@ export const useInterfaceEditorStore = create<InterfaceEditorStore>((set, get) =
       selections: without(get().selections, interfaceId),
       sourceTargets: without(get().sourceTargets, interfaceId),
       tabs: without(get().tabs, interfaceId),
+      dialogs: without(get().dialogs, interfaceId),
     });
   },
 
@@ -206,6 +220,14 @@ export const useInterfaceEditorStore = create<InterfaceEditorStore>((set, get) =
       return;
     }
     set({ sourceTargets: without(get().sourceTargets, interfaceId) });
+  },
+
+  dialogFor: (interfaceId) => get().dialogs[interfaceId],
+
+  setDialog: (interfaceId, dialog) => {
+    set({
+      dialogs: dialog === undefined ? without(get().dialogs, interfaceId) : { ...get().dialogs, [interfaceId]: dialog },
+    });
   },
 
   revealSource: (interfaceId, target, options) => {

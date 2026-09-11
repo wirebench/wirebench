@@ -5,7 +5,12 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingRequest } from './explorer-api.js';
 import { useWsiStore } from '../../state/wsi.js';
-import { openInterfaceTab } from '../interface-editor/interface-actions.js';
+import {
+  exportDefinition,
+  generateDocumentation,
+  openInterfaceTab,
+  updateDefinition,
+} from '../interface-editor/interface-actions.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -37,6 +42,29 @@ export const explorerActions = {
   showInterface(interfaceId: string | undefined): void {
     if (interfaceId !== undefined) {
       openInterfaceTab(interfaceId);
+    }
+  },
+
+  /** Opens the Update Definition dialog on the selected interface's viewer. */
+  updateDefinition(interfaceId: string | undefined): void {
+    if (interfaceId !== undefined) {
+      updateDefinition(interfaceId);
+    }
+  },
+
+  /** Exports the selected interface's definition bundle to a folder the user picks. */
+  exportDefinition(interfaceId: string | undefined): void {
+    if (interfaceId !== undefined) {
+      void exportDefinition(interfaceId).catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Export definition failed');
+      });
+    }
+  },
+
+  /** Opens the Generate Documentation dialog on the selected interface's viewer. */
+  generateDocs(interfaceId: string | undefined): void {
+    if (interfaceId !== undefined) {
+      generateDocumentation(interfaceId);
     }
   },
 

@@ -99,6 +99,15 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         ) : (
           <span className="min-w-0 flex-1 truncate">{node.data.label}</span>
         )}
+        {node.data.orphaned === true && (
+          <span
+            data-testid="explorer-orphaned-badge"
+            title="This operation is no longer in the definition"
+            className="shrink-0 rounded-full bg-warning px-1.5 text-xs text-fg-onAccent"
+          >
+            orphaned
+          </span>
+        )}
         {node.data.problemCount !== undefined && node.data.problemCount > 0 && (
           <span className="shrink-0 rounded-full bg-danger px-1.5 text-xs text-fg-onAccent">
             {node.data.problemCount}

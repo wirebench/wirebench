@@ -24,6 +24,39 @@ export function openInterfaceTab(interfaceId: string, tab?: InterfaceTabId): voi
   useEditorsStore.getState().open({ id: interfaceTabId(interfaceId), kind: 'interface', title, interfaceId });
 }
 
+/**
+ * Opens the viewer and its Update Definition dialog. The dialog lives in the viewer, so the
+ * tab is opened first — from the explorer or the palette the viewer may not exist yet.
+ */
+export function updateDefinition(interfaceId: string): void {
+  openInterfaceTab(interfaceId, 'overview');
+  useInterfaceEditorStore.getState().setDialog(interfaceId, 'update');
+}
+
+/** Opens the viewer and its Generate Documentation dialog. */
+export function generateDocumentation(interfaceId: string): void {
+  openInterfaceTab(interfaceId, 'overview');
+  useInterfaceEditorStore.getState().setDialog(interfaceId, 'docs');
+}
+
+/**
+ * Exports the interface's whole definition bundle to a folder. There is no dialog of our own:
+ * main runs the native folder picker and writes the files, and the outcome is a toast — a
+ * cancelled picker says nothing at all.
+ */
+export async function exportDefinition(interfaceId: string): Promise<void> {
+  const result = await ipc().definition.export({ interfaceId });
+  if (!result.ok) {
+    showToast(result.error.message);
+    return;
+  }
+  if (result.value.cancelled) {
+    return;
+  }
+  const count = result.value.files.length;
+  showToast(`Exported ${String(count)} ${count === 1 ? 'document' : 'documents'} to ${result.value.dir ?? ''}`);
+}
+
 /** Where in a request envelope the user asked for the schema declaration. */
 export interface DeclarationQuery {
   readonly interfaceId: string;

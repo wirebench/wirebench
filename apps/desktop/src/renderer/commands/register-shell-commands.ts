@@ -607,6 +607,33 @@ export function registerShellCommands(openPalette: () => void): void {
     },
   });
   registerCommand({
+    id: 'explorer.updateDefinition',
+    label: 'Explorer: Update Definition…',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: (ctx) => {
+      explorerActions.updateDefinition(ctx.selection?.interfaceId);
+    },
+  });
+  registerCommand({
+    id: 'explorer.exportDefinition',
+    label: 'Explorer: Export Definition…',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: (ctx) => {
+      explorerActions.exportDefinition(ctx.selection?.interfaceId);
+    },
+  });
+  registerCommand({
+    id: 'explorer.generateDocs',
+    label: 'Explorer: Generate Documentation…',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: (ctx) => {
+      explorerActions.generateDocs(ctx.selection?.interfaceId);
+    },
+  });
+  registerCommand({
     id: 'explorer.copyDefinitionUrl',
     label: 'Explorer: Copy Definition URL',
     category: 'Explorer',

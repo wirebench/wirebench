@@ -26,6 +26,27 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       >
         Show Interface Viewer
       </ContextMenu.Item>,
+      <ContextMenu.Item
+        key="update-definition"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.updateDefinition(node.interfaceId)}
+      >
+        Update Definition…
+      </ContextMenu.Item>,
+      <ContextMenu.Item
+        key="export-definition"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.exportDefinition(node.interfaceId)}
+      >
+        Export Definition…
+      </ContextMenu.Item>,
+      <ContextMenu.Item
+        key="generate-docs"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.generateDocs(node.interfaceId)}
+      >
+        Generate Documentation…
+      </ContextMenu.Item>,
       <ContextMenu.Item key="import-another" className={ITEM_CLASS} onSelect={() => explorerActions.importAnother()}>
         Import another WSDL…
       </ContextMenu.Item>,
