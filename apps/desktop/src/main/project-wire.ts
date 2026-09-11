@@ -230,7 +230,7 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
   };
 }
 
-/** One entry on the wire; anything this build cannot type becomes a bare `encryption`. */
+/** One entry on the wire, field by field. */
 function toWssEntryWire(entry: WssEntry): WssEntryWire {
   if (entry.kind === 'timestamp') {
     return {
@@ -263,7 +263,17 @@ function toWssEntryWire(entry: WssEntry): WssEntryWire {
       parts: entry.parts.map((part) => ({ name: part.name, namespace: part.namespace, encode: part.encode })),
     };
   }
-  return { kind: 'encryption' };
+  return {
+    kind: 'encryption',
+    keystoreRef: entry.keystoreRef,
+    ...(entry.alias !== undefined ? { alias: entry.alias } : {}),
+    keyIdentifierType: entry.keyIdentifierType,
+    symmetricAlgorithm: entry.symmetricAlgorithm,
+    keyTransportAlgorithm: entry.keyTransportAlgorithm,
+    embedKey: entry.embedKey,
+    encryptSymmetricKey: entry.encryptSymmetricKey,
+    parts: entry.parts.map((part) => ({ name: part.name, namespace: part.namespace, encode: part.encode })),
+  };
 }
 
 /** Converts the whole open project into the snapshot the renderer mirrors. */

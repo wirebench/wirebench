@@ -756,8 +756,24 @@ export const wssEntryWireSchema = z.discriminatedUnion('kind', [
     useSingleCertificate: z.boolean(),
     parts: z.array(z.object({ name: z.string(), namespace: z.string(), encode: z.enum(['Content', 'Element']) })),
   }),
-  /** Task 39 fills these in. */
-  z.object({ kind: z.literal('encryption') }),
+  z.object({
+    kind: z.literal('encryption'),
+    /** The `wss/keystores.yaml` registry id holding the *recipient's* certificate. */
+    keystoreRef: z.string(),
+    alias: z.string().optional(),
+    keyIdentifierType: z.enum([
+      'BinarySecurityToken',
+      'IssuerSerial',
+      'SubjectKeyIdentifier',
+      'X509KeyIdentifier',
+      'Thumbprint',
+    ]),
+    symmetricAlgorithm: z.enum(['aes128-cbc', 'aes256-cbc', 'aes128-gcm', 'aes256-gcm']),
+    keyTransportAlgorithm: z.enum(['rsa-oaep', 'rsa-1_5']),
+    embedKey: z.boolean(),
+    encryptSymmetricKey: z.boolean(),
+    parts: z.array(z.object({ name: z.string(), namespace: z.string(), encode: z.enum(['Content', 'Element']) })),
+  }),
 ]);
 export type WssEntryWire = z.infer<typeof wssEntryWireSchema>;
 

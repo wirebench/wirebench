@@ -15,7 +15,13 @@ import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore } from '../../state/project.js';
-import { SignatureFields, TimestampFields, UsernameTokenFields, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
+import {
+  EncryptionFields,
+  SignatureFields,
+  TimestampFields,
+  UsernameTokenFields,
+  WSS_FIELD_CLASS,
+} from './outgoing-entry-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
@@ -36,8 +42,13 @@ const DEFAULT_SIGNATURE_PARTS = [
   },
 ] as const;
 
+/** The parts a new encryption entry covers: the SOAP 1.1 `Body`'s content. */
+const DEFAULT_ENCRYPTION_PARTS = [
+  { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+] as const;
+
 /** The kinds the Add menu can create. */
-type NewEntryKind = 'timestamp' | 'username-token' | 'signature';
+type NewEntryKind = 'timestamp' | 'username-token' | 'signature' | 'encryption';
 
 /** A fresh entry of the kind the user picked from the Add menu. */
 function newEntry(kind: NewEntryKind): WssEntryWire {
@@ -47,15 +58,27 @@ function newEntry(kind: NewEntryKind): WssEntryWire {
   if (kind === 'username-token') {
     return { kind: 'username-token', username: '', passwordType: 'digest', addNonce: true, addCreated: true };
   }
+  if (kind === 'signature') {
+    return {
+      kind: 'signature',
+      keystoreRef: '',
+      keyIdentifierType: 'BinarySecurityToken',
+      signatureAlgorithm: 'rsa-sha256',
+      digestAlgorithm: 'sha256',
+      canonicalization: 'exc-c14n',
+      useSingleCertificate: true,
+      parts: DEFAULT_SIGNATURE_PARTS.map((part) => ({ ...part })),
+    };
+  }
   return {
-    kind: 'signature',
+    kind: 'encryption',
     keystoreRef: '',
     keyIdentifierType: 'BinarySecurityToken',
-    signatureAlgorithm: 'rsa-sha256',
-    digestAlgorithm: 'sha256',
-    canonicalization: 'exc-c14n',
-    useSingleCertificate: true,
-    parts: DEFAULT_SIGNATURE_PARTS.map((part) => ({ ...part })),
+    symmetricAlgorithm: 'aes256-gcm',
+    keyTransportAlgorithm: 'rsa-oaep',
+    embedKey: false,
+    encryptSymmetricKey: true,
+    parts: DEFAULT_ENCRYPTION_PARTS.map((part) => ({ ...part })),
   };
 }
 
@@ -85,7 +108,6 @@ interface EntryProps {
 }
 
 function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProps) {
-  const supported = entry.kind !== 'encryption';
   return (
     <li data-testid="wss-entry-row" className="rounded border border-hairline p-1">
       <div className="flex items-center gap-1">
@@ -119,7 +141,7 @@ function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProp
 
       {entry.kind === 'signature' && <SignatureFields entry={entry} onChange={onChange} />}
 
-      {!supported && <p className="mt-1 text-xs text-fg-faint">Not supported by this build yet.</p>}
+      {entry.kind === 'encryption' && <EncryptionFields entry={entry} onChange={onChange} />}
     </li>
   );
 }
@@ -251,7 +273,12 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               value=""
               onChange={(event) => {
                 const kind = event.target.value;
-                if (kind === 'timestamp' || kind === 'username-token' || kind === 'signature') {
+                if (
+                  kind === 'timestamp' ||
+                  kind === 'username-token' ||
+                  kind === 'signature' ||
+                  kind === 'encryption'
+                ) {
                   patchEntries([...config.entries, newEntry(kind)]);
                 }
                 event.target.value = '';
@@ -261,9 +288,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               <option value="timestamp">Timestamp</option>
               <option value="username-token">Username Token</option>
               <option value="signature">Signature</option>
-              <option value="encryption" disabled>
-                Encryption (Task 39)
-              </option>
+              <option value="encryption">Encryption</option>
             </select>
           </div>
 

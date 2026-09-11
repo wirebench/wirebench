@@ -366,14 +366,21 @@ export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
 export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
 export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
 export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
-export { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS, WSS_ENTRY_KINDS } from './wss/model.js';
+export {
+  createWssContext,
+  DEFAULT_WSS_ENCRYPTION_PARTS,
+  DEFAULT_WSS_SIGNATURE_PARTS,
+  WSS_ENTRY_KINDS,
+} from './wss/model.js';
 export type {
   WssContext,
   WssDigestAlgorithm,
   WssEncryptionEntry,
   WssEntry,
   WssKeyIdentifierType,
+  WssKeyTransportAlgorithm,
   WssPart,
+  WssSymmetricAlgorithm,
   WssIncomingConfig,
   WssOutgoingConfig,
   WssPasswordType,
@@ -388,6 +395,12 @@ export { buildUsernameToken, passwordDigest } from './wss/outgoing/username-toke
 export type { BuildUsernameTokenInput } from './wss/outgoing/username-token.js';
 export { signEnvelope, verifySignature } from './wss/outgoing/signature.js';
 export type { ResolvedSigningKey, VerifySignatureOptions, VerifySignatureResult } from './wss/outgoing/signature.js';
+export { decryptEnvelope, encryptEnvelope } from './wss/outgoing/encryption.js';
+export type {
+  DecryptEnvelopeOptions,
+  DecryptEnvelopeResult,
+  ResolvedEncryptionKey,
+} from './wss/outgoing/encryption.js';
 export {
   buildKeyIdentifier,
   certificateBase64,

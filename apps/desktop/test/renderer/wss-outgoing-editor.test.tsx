@@ -161,16 +161,72 @@ describe('OutgoingConfigEditor', () => {
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [{ ...signature, parts: [] }] });
   });
 
-  it('shows an unsupported entry as such and never offers to add one', () => {
-    setUp([{ ...config, entries: [{ kind: 'encryption' }] }]);
+  it('edits an encryption entry and its parts', () => {
+    const encryption: WssEntryWire = {
+      kind: 'encryption',
+      keystoreRef: 'ks1',
+      keyIdentifierType: 'BinarySecurityToken',
+      symmetricAlgorithm: 'aes256-gcm',
+      keyTransportAlgorithm: 'rsa-oaep',
+      embedKey: false,
+      encryptSymmetricKey: true,
+      parts: [{ name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+    };
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [encryption] }]);
     expand();
-    expect(screen.getByText('Not supported by this build yet.')).toBeTruthy();
+
+    expect(screen.getByTestId('wss-encryption-fields')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Encryption algorithm'), { target: { value: 'aes128-cbc' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...encryption, symmetricAlgorithm: 'aes128-cbc' }],
+    });
+
+    fireEvent.change(screen.getByLabelText('Key transport algorithm'), { target: { value: 'rsa-1_5' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...encryption, keyTransportAlgorithm: 'rsa-1_5' }],
+    });
+
+    fireEvent.click(screen.getByLabelText('Embed key'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [{ ...encryption, embedKey: true }] });
+
+    fireEvent.click(screen.getByLabelText('Encrypt symmetric key'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...encryption, encryptSymmetricKey: false }],
+    });
+
+    fireEvent.change(screen.getByLabelText('Part 1 encode'), { target: { value: 'Element' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...encryption, parts: [{ ...encryption.parts[0], encode: 'Element' }] }],
+    });
+  });
+
+  it('offers Encryption in the Add menu', () => {
+    const { updateWssOutgoing } = setUp();
+    expand();
     const add = screen.getByLabelText('Add entry');
     expect(
       within(add)
         .getByRole('option', { name: /Encryption/ })
         .hasAttribute('disabled'),
-    ).toBe(true);
+    ).toBe(false);
+
+    fireEvent.change(add, { target: { value: 'encryption' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [
+        ...config.entries,
+        {
+          kind: 'encryption',
+          keystoreRef: '',
+          keyIdentifierType: 'BinarySecurityToken',
+          symmetricAlgorithm: 'aes256-gcm',
+          keyTransportAlgorithm: 'rsa-oaep',
+          embedKey: false,
+          encryptSymmetricKey: true,
+          parts: [{ name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+        },
+      ],
+    });
   });
 
   it('removes a configuration after confirmation', () => {

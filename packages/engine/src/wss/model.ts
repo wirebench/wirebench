@@ -81,11 +81,39 @@ export const DEFAULT_WSS_SIGNATURE_PARTS: readonly WssPart[] = [
   { name: 'Timestamp', namespace: NS.WSU, encode: 'Content' },
 ];
 
-/** An XML Encryption entry. Task 39 defines the real fields; loose for the same reason. */
+/** The block ciphers (and modes) this build encrypts message parts with. */
+export type WssSymmetricAlgorithm = 'aes128-cbc' | 'aes256-cbc' | 'aes128-gcm' | 'aes256-gcm';
+
+/** How the per-message symmetric key is wrapped for the recipient. */
+export type WssKeyTransportAlgorithm = 'rsa-oaep' | 'rsa-1_5';
+
+/**
+ * An XML Encryption entry: whose certificate the message is encrypted *to*, how that
+ * certificate is referenced, which algorithms are used, and which parts are encrypted.
+ *
+ * Only the recipient's **certificate** is needed — encryption uses its public key, so the
+ * keystore alias this names never has to carry a private key.
+ */
 export interface WssEncryptionEntry {
   readonly kind: 'encryption';
-  readonly [field: string]: unknown;
+  /** The `wss/keystores.yaml` registry id holding the recipient's certificate. */
+  readonly keystoreRef: string;
+  /** Alias inside that keystore; falls back to the configuration's `defaultAlias`. */
+  readonly alias?: string;
+  readonly keyIdentifierType: WssKeyIdentifierType;
+  readonly symmetricAlgorithm: WssSymmetricAlgorithm;
+  readonly keyTransportAlgorithm: WssKeyTransportAlgorithm;
+  /** Embed the recipient certificate as a `wsse:BinarySecurityToken` rather than referencing one. */
+  readonly embedKey: boolean;
+  /** Wrap the symmetric key in an `xenc:EncryptedKey`; `false` means it is shared out of band. */
+  readonly encryptSymmetricKey: boolean;
+  readonly parts: readonly WssPart[];
 }
+
+/** The parts a new encryption entry covers: the SOAP `Body`'s content. */
+export const DEFAULT_WSS_ENCRYPTION_PARTS: readonly WssPart[] = [
+  { name: 'Body', namespace: NS.SOAP11_ENV, encode: 'Content' },
+];
 
 /** One element of an outgoing WS-Security configuration, applied in configuration order. */
 export type WssEntry = WssTimestampEntry | WssUsernameTokenEntry | WssSignatureEntry | WssEncryptionEntry;

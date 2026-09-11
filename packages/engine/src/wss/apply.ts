@@ -14,6 +14,7 @@ import type { SoapEnvelopeVersion } from '../soap/envelope.js';
 import { buildTimestamp } from './outgoing/timestamp.js';
 import { buildUsernameToken } from './outgoing/username-token.js';
 import { signEnvelope } from './outgoing/signature.js';
+import { encryptEnvelope } from './outgoing/encryption.js';
 import { selectAlias } from './keystore/index.js';
 import {
   actorAttribute,
@@ -23,7 +24,14 @@ import {
   securityActor,
 } from './security-header.js';
 import type { Keystore, KeystoreAlias } from './keystore/model.js';
-import type { WssContext, WssEntry, WssOutgoingConfig, WssPasswordType, WssSignatureEntry } from './model.js';
+import type {
+  WssContext,
+  WssEncryptionEntry,
+  WssEntry,
+  WssOutgoingConfig,
+  WssPasswordType,
+  WssSignatureEntry,
+} from './model.js';
 
 /** The namespace `xmlns:*` declarations themselves live in. */
 const XMLNS = 'http://www.w3.org/2000/xmlns/';
@@ -158,15 +166,15 @@ async function buildEntry(
   });
 }
 
-/** Loads the keystore a signature entry names and picks its alias. */
-async function resolveSigningKey(
-  entry: WssSignatureEntry,
+/** Loads the keystore a signature or encryption entry names and picks its alias. */
+async function resolveKeystoreAlias(
+  entry: WssSignatureEntry | WssEncryptionEntry,
   config: WssOutgoingConfig,
   ctx: WssContext,
 ): Promise<{ keystore: Keystore; alias: KeystoreAlias; actor?: string }> {
   const keystore = await ctx.keystores(entry.keystoreRef);
   if (keystore === undefined) {
-    throw new WssError('wss-keystore-missing', 'The keystore this signature signs with is not available.', {
+    throw new WssError('wss-keystore-missing', 'The keystore this entry needs is not available.', {
       details: { keystoreRef: entry.keystoreRef },
     });
   }
@@ -190,7 +198,7 @@ async function resolveSigningKey(
  * @param ctx the injected keystore/secret/clock/entropy capabilities
  * @param options request-level property overrides
  * @returns the serialized, secured envelope
- * @throws WssError `wss-not-an-envelope`, or `wss-entry-unsupported` for a signature/encryption entry
+ * @throws WssError `wss-not-an-envelope`, or `wss-entry-unsupported` for an unknown entry kind
  */
 export async function applyOutgoingWss(
   envelopeXml: string,
@@ -209,7 +217,11 @@ export async function applyOutgoingWss(
     const header = ensureHeader(doc, root, version);
     const security = ensureSecurity(doc, root, header, version, config);
     if (entry.kind === 'signature') {
-      await signEnvelope(doc, entry, await resolveSigningKey(entry, config, ctx), ctx);
+      await signEnvelope(doc, entry, await resolveKeystoreAlias(entry, config, ctx), ctx);
+      continue;
+    }
+    if (entry.kind === 'encryption') {
+      encryptEnvelope(doc, entry, await resolveKeystoreAlias(entry, config, ctx), ctx);
       continue;
     }
     security.appendChild(doc.importNode(await buildEntry(entry, config, ctx, options?.requestProperties), true));

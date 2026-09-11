@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WssError } from '../../../../src/errors.js';
 import { createWssContext } from '../../../../src/wss/model.js';
 import { applyOutgoingWss, removeOutgoingWss } from '../../../../src/wss/apply.js';
-import type { WssOutgoingConfig } from '../../../../src/wss/model.js';
+import type { WssEntry, WssOutgoingConfig } from '../../../../src/wss/model.js';
 
 const ctx = createWssContext({
   clock: () => new Date('2026-09-09T12:00:00Z'),
@@ -133,13 +133,14 @@ describe('applyOutgoingWss', () => {
     expect(xml).toContain('>hunter2</wsse:Password>');
   });
 
-  it('rejects a not-yet-supported entry kind', async () => {
-    await expect(applyOutgoingWss(SOAP11, config({ entries: [{ kind: 'encryption' }] }), ctx)).rejects.toMatchObject({
+  it('rejects an entry kind this build does not know', async () => {
+    // A document written by a later build: every kind this one understands is dispatched above,
+    // so anything else must fail loudly rather than be silently dropped from the header.
+    const future = [{ kind: 'saml-token' } as unknown as WssEntry];
+    await expect(applyOutgoingWss(SOAP11, config({ entries: future }), ctx)).rejects.toMatchObject({
       code: 'wss-entry-unsupported',
     });
-    await expect(applyOutgoingWss(SOAP11, config({ entries: [{ kind: 'encryption' }] }), ctx)).rejects.toBeInstanceOf(
-      WssError,
-    );
+    await expect(applyOutgoingWss(SOAP11, config({ entries: future }), ctx)).rejects.toBeInstanceOf(WssError);
   });
 
   it('rejects a document that is not a SOAP envelope', async () => {

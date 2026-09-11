@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
-import { DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
+import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
 
 const nonEmpty = z.string().min(1);
 const propertyMapSchema = z.record(z.string(), z.string());
@@ -215,8 +215,26 @@ const wssSignatureEntrySchema = z.looseObject({
     .default(DEFAULT_WSS_SIGNATURE_PARTS as { name: string; namespace: string; encode: 'Content' | 'Element' }[]),
 });
 
-/** An encryption entry. Task 39 defines its fields; loose for the same reason. */
-const wssEncryptionEntrySchema = z.looseObject({ kind: z.literal('encryption') });
+/**
+ * An encryption entry. Tolerant the same way the signature entry is: every field defaults, so a
+ * document written by hand (or by an older build) still loads as a usable entry rather than
+ * falling through the union to "unsupported".
+ */
+const wssEncryptionEntrySchema = z.looseObject({
+  kind: z.literal('encryption'),
+  keystoreRef: z.string().default(''),
+  alias: z.string().optional(),
+  keyIdentifierType: z
+    .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+    .default('BinarySecurityToken'),
+  symmetricAlgorithm: z.enum(['aes128-cbc', 'aes256-cbc', 'aes128-gcm', 'aes256-gcm']).default('aes256-gcm'),
+  keyTransportAlgorithm: z.enum(['rsa-oaep', 'rsa-1_5']).default('rsa-oaep'),
+  embedKey: z.boolean().default(false),
+  encryptSymmetricKey: z.boolean().default(true),
+  parts: z
+    .array(wssPartSchema)
+    .default(DEFAULT_WSS_ENCRYPTION_PARTS as { name: string; namespace: string; encode: 'Content' | 'Element' }[]),
+});
 
 /**
  * One entry as *persisted*. Deliberately loose about the entry's own shape — a `signature`

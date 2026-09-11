@@ -21,7 +21,7 @@ export interface WssChannelDeps {
   readonly project: Pick<ProjectService, 'previewOutgoingWss' | 'insertWssEntry' | 'removeOutgoingWssFrom'>;
 }
 
-/** The wire entry as the engine's model. Signature/encryption pass through and fail loudly there. */
+/** The wire entry as the engine's model, with `undefined` optionals stripped for exactOptionalPropertyTypes. */
 function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
   if (entry.kind === 'username-token') {
     const { passwordRef: own, ...rest } = entry;
@@ -35,6 +35,10 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
       ...(alias !== undefined ? { alias } : {}),
       ...(keyPasswordRef !== undefined ? { keyPasswordRef } : {}),
     };
+  }
+  if (entry.kind === 'encryption') {
+    const { alias, ...rest } = entry;
+    return { ...rest, ...(alias !== undefined ? { alias } : {}) };
   }
   return entry;
 }
