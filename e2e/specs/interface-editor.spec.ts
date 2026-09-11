@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { monacoEditor } from '../helpers/editor.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -20,7 +20,29 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function explorerOperationCount(page: Page): Promise<number> {
   const rows = page.locator('[data-testid="explorer-tree-row"][data-tree-id^="op:"]');
   await expect.poll(async () => await rows.count(), { timeout: 20_000 }).toBeGreaterThan(0);
-  return await rows.count();
+
+  // react-arborist virtualises the tree: only the rows inside the scroll viewport exist in the
+  // DOM, so counting what is mounted right now measures the window rather than the interface —
+  // a CI display that clamps the shell shorter than a developer's simply holds fewer rows.
+  // Walk the list instead, collecting ids and scrolling the last mounted row into view to bring
+  // the next ones in, until a pass adds nothing new.
+  const seen = new Set<string>();
+  const collect = async (): Promise<void> => {
+    for (const row of await rows.all()) {
+      const id = await row.getAttribute('data-tree-id');
+      if (id !== null) seen.add(id);
+    }
+  };
+  let previous = -1;
+  while (seen.size !== previous) {
+    previous = seen.size;
+    await collect();
+    await rows.last().scrollIntoViewIfNeeded();
+    await collect();
+  }
+  // Leave the explorer where it was found, so the caller's interface row is on screen again.
+  await page.locator('[data-testid="explorer-tree-row"]').first().scrollIntoViewIfNeeded();
+  return seen.size;
 }
 
 /** Opens the Interface editor from the explorer's interface row context menu. */
@@ -52,7 +74,7 @@ test.describe('Interface editor', () => {
       server = undefined;
     }
     if (projectDir.length > 0) {
-      rmSync(projectDir, { recursive: true, force: true });
+      removeDirSync(projectDir);
       projectDir = '';
     }
   });

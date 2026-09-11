@@ -339,13 +339,11 @@ test.describe('wss', () => {
 
     // The envelope the views work against is the decrypted one — Query resolves AddResult to 5
     // (2 + 3) — while the bytes that actually arrived are still ciphertext.
-    const responseEditor = page.getByTestId('response-editor');
     // Monaco renders only the lines in view, and the decrypted Body sits below a long
-    // BinarySecurityToken, so the cursor is taken to the end of the document first.
-    await responseEditor.getByRole('code').click();
-    await page.keyboard.press('ControlOrMeta+ArrowDown');
-    await page.keyboard.press('Control+End');
-    await expect(responseEditor).toContainText('AddResult', { timeout: 10_000 });
+    // BinarySecurityToken — how far below depends on the window height, so scrolling to the
+    // end and reading the DOM is a viewport test, not a content one. Read the model instead,
+    // the way every other deep-content assertion in this spec does.
+    await expect.poll(() => monacoModelText(page), { timeout: 15_000 }).toContain('AddResult');
 
     await page.getByRole('tab', { name: 'Raw' }).nth(1).click();
     const responseRaw = page.getByLabel('Response raw bytes');
