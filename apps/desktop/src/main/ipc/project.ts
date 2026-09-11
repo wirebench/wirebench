@@ -37,7 +37,9 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     // A `newProjectName` target creates the project first, so importing into an empty
     // workspace is one gesture rather than "make a project, then import into it".
     const projectId =
-      'projectId' in request.target ? request.target.projectId : (await deps.addProject(request.target.newProjectName)).projectId;
+      'projectId' in request.target
+        ? request.target.projectId
+        : (await deps.addProject(request.target.newProjectName)).projectId;
     const added = await router.addInterface(projectId, {
       source: request.source,
       ...(request.auth !== undefined ? { auth: request.auth } : {}),

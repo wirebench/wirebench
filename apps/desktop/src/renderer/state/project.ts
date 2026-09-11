@@ -138,11 +138,7 @@ export interface ProjectStore extends ProjectSnapshot {
    * Patches one project environment. `endpoints`/`properties` REPLACE the whole map (send the
    * complete map you want it to end up with); omit a map to leave it untouched.
    */
-  readonly updateEnvironment: (
-    projectId: string,
-    environmentId: string,
-    patch: EnvironmentPatchWire,
-  ) => Promise<void>;
+  readonly updateEnvironment: (projectId: string, environmentId: string, patch: EnvironmentPatchWire) => Promise<void>;
   readonly removeEnvironment: (projectId: string, environmentId: string) => Promise<void>;
   /** Registers a keystore file (already chosen through `keystores.pickFile`); returns its id. */
   readonly addKeystore: (
@@ -347,34 +343,48 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
 }
 
 /**
- * One project's environments, with any still-unacknowledged patch re-applied and in `order`.
- * A selector rather than store state: environments are per project now, and only the project
- * environment editor still reads them (the workspace's own live in `useWorkspaceStore`).
+ * The last patched copy handed out per environment object, with the patch it was built from.
+ * An environment with a pending patch must come back as the *same* object on every read until
+ * the patch or the environment changes — a selector returning a fresh object each call would
+ * make every `useProjectStore(selectEnvironment…)` consumer rerender forever.
  */
-export function selectProjectEnvironments(
-  state: ProjectSnapshot,
-  projectId: string | undefined,
-): readonly EnvironmentWire[] {
-  const project = projectId === undefined ? undefined : state.projects[projectId];
-  if (project === undefined) {
-    return NO_ENVIRONMENTS;
+const patchedEnvironments = new WeakMap<
+  EnvironmentWire,
+  { readonly patch: EnvironmentPatchWire; readonly result: EnvironmentWire }
+>();
+
+/** `environment` with its still-unacknowledged patch (if any) applied; referentially stable. */
+function withPendingPatch(environment: EnvironmentWire): EnvironmentWire {
+  const patch = pendingEnvironment.get(environment.id);
+  if (patch === undefined) {
+    return environment;
   }
-  return project.environments
-    .map((environment) => {
-      const patch = pendingEnvironment.get(environment.id);
-      return patch === undefined ? environment : withEnvironmentPatch(environment, patch);
-    })
-    .sort((a, b) => a.order - b.order);
+  const cached = patchedEnvironments.get(environment);
+  if (cached?.patch === patch) {
+    return cached.result;
+  }
+  const result = withEnvironmentPatch(environment, patch);
+  patchedEnvironments.set(environment, { patch, result });
+  return result;
 }
 
-/** A stable empty list, so a selector for a project with no environments never rerenders. */
-const NO_ENVIRONMENTS: readonly EnvironmentWire[] = [];
-
-/** One environment by id, wherever in the open projects it lives. */
+/**
+ * One environment by id, wherever in the open projects it lives, with any optimistic edit
+ * applied. A selector rather than store state: environments are per project now, and only the
+ * project environment editor still reads them (the workspace's own live in `useWorkspaceStore`).
+ */
 export function selectEnvironment(state: ProjectSnapshot, environmentId: string): EnvironmentWire | undefined {
-  return selectProjectEnvironments(state, state.projectOf[environmentId]).find(
-    (environment) => environment.id === environmentId,
-  );
+  const projectId = state.projectOf[environmentId];
+  const environment =
+    projectId === undefined
+      ? undefined
+      : state.projects[projectId]?.environments.find((candidate) => candidate.id === environmentId);
+  return environment === undefined ? undefined : withPendingPatch(environment);
+}
+
+/** One project's environments in `order`, optimistic edits applied. Not for use as a hook selector. */
+export function selectProjectEnvironments(state: ProjectSnapshot, projectId: string): readonly EnvironmentWire[] {
+  return (state.projects[projectId]?.environments ?? []).map(withPendingPatch).sort((a, b) => a.order - b.order);
 }
 
 const EMPTY: ProjectSnapshot = {
@@ -674,18 +684,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     updateEnvironment: async (projectId, environmentId, patch) => {
       // Applied locally first (and merged with any still-pending patch) so a second commit
       // fired before the first round trip resolves builds on top of both edits, not just the
-      // render-time snapshot; see `withEnvironmentPatch`/`pendingEnvironment` above.
+      // render-time snapshot; see `withPendingPatch`/`pendingEnvironment` above.
       const existing = pendingEnvironment.get(environmentId);
       const merged: EnvironmentPatchWire = { ...existing, ...patch };
       pendingEnvironment.set(environmentId, merged);
+      // The patch lives outside the state, so readers are told to look again.
+      set((state) => ({ ...state }));
       try {
         await mutate(projectId, { kind: 'update-environment', environmentId, patch });
       } finally {
         // The reply (or the failure) is authoritative either way: on success the snapshot
-        // already carries this edit, and on failure the optimistic one was never saved, so the
-        // patch must not keep being re-applied on top of what main actually has.
+        // already carries this edit, and on failure the optimistic one was never saved, so
+        // dropping the patch falls back to the last confirmed snapshot.
         if (pendingEnvironment.get(environmentId) === merged) {
           pendingEnvironment.delete(environmentId);
+          set((state) => ({ ...state }));
         }
       }
     },

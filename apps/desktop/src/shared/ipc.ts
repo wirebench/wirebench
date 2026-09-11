@@ -313,11 +313,7 @@ export const channels = {
       workspaceAddProjectResponseSchema,
     ),
     linkProject: defineChannel('workspace.linkProject', z.undefined(), workspaceSnapshotResponseSchema),
-    importProjectFolder: defineChannel(
-      'workspace.importProjectFolder',
-      z.undefined(),
-      workspaceSnapshotResponseSchema,
-    ),
+    importProjectFolder: defineChannel('workspace.importProjectFolder', z.undefined(), workspaceSnapshotResponseSchema),
     exportProject: defineChannel(
       'workspace.exportProject',
       workspaceProjectIdRequestSchema,

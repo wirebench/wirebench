@@ -45,6 +45,12 @@ export interface HistoryNameFallback {
   readonly requestName: string;
   readonly interfaceName: string;
   readonly operationName: string;
+  /**
+   * The project an entry for a send with no live request is keyed to. Only a resend supplies
+   * one — the project whose history the resent entry came from; with none, such a send is
+   * simply not recorded, since no project owns it.
+   */
+  readonly projectId?: string;
 }
 
 const AD_HOC_NAME: HistoryNameFallback = { requestName: 'Ad-hoc request', interfaceName: '', operationName: '' };
@@ -58,8 +64,8 @@ function errorDetail(error: unknown): { code: string; message: string } {
 
 /**
  * Sends `request` through `service.send`, then records a history entry for it (success, SOAP
- * fault, or transport error) against the open project — a no-op when no project is open or no
- * `HistoryService` was supplied. Rethrows whatever `service.send` throws, after recording.
+ * fault, or transport error) against the project that owns the request — a no-op when no
+ * project does (see {@link HistoryNameFallback.projectId}) or no `HistoryService` was supplied. Rethrows whatever `service.send` throws, after recording.
  */
 export async function sendAndRecordHistory(
   service: EngineService,
@@ -109,9 +115,11 @@ async function record(
   if (deps.history === undefined) {
     return;
   }
-  // The entry is keyed to the project the request came from; an ad-hoc send belongs to none,
-  // so it is simply not recorded.
-  const projectId = request.requestId === undefined ? undefined : deps.project.projectId(request.requestId);
+  // The entry is keyed to the project the request came from. A send with no live request
+  // belongs to no project, unless the caller named one (a resend of an orphaned entry goes
+  // back into the history it came from); otherwise it is simply not recorded.
+  const projectId =
+    (request.requestId === undefined ? undefined : deps.project.projectId(request.requestId)) ?? fallback.projectId;
   if (projectId === undefined) {
     return;
   }

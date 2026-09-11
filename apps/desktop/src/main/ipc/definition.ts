@@ -18,7 +18,12 @@ import { registerHandler } from './register.js';
  */
 export type DefinitionChannelProject = Pick<
   ProjectRouter,
-  'planDefinitionUpdate' | 'applyDefinitionUpdate' | 'exportDefinitionTo' | 'definitionDocs' | 'projectSnapshot' | 'projectId'
+  | 'planDefinitionUpdate'
+  | 'applyDefinitionUpdate'
+  | 'exportDefinitionTo'
+  | 'definitionDocs'
+  | 'projectSnapshot'
+  | 'projectId'
 >;
 
 /** What the Update/Export/Docs half of the `definition.*` channels needs beyond the engine. */

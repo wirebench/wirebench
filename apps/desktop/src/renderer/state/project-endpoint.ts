@@ -44,8 +44,7 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
     const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const projectId = state.projectOf[iface.id];
     const projectSlug = workspace?.projects.find((project) => project.id === projectId)?.slug;
-    const override =
-      projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
+    const override = projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
     if (override !== undefined) {
       return { url: override, source: 'workspace-environment' };
     }

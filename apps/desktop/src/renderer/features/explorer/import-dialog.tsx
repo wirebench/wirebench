@@ -41,8 +41,16 @@ function projectNameFor(source: ImportSourceWire): string {
       : source.kind === 'file'
         ? source.path
         : (source.location ?? '');
-  const segment = raw.split(/[\\/]/).filter((part) => part.length > 0).at(-1) ?? '';
-  const name = segment.replace(/\?.*$/, '').replace(/\.[^.]+$/, '').replace(/^dropped:/, '').trim();
+  const segment =
+    raw
+      .split(/[\\/]/)
+      .filter((part) => part.length > 0)
+      .at(-1) ?? '';
+  const name = segment
+    .replace(/\?.*$/, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/^dropped:/, '')
+    .trim();
   return name.length > 0 ? name : 'New Project';
 }
 
@@ -54,7 +62,7 @@ function importTarget(source: ImportSourceWire): ProjectAddInterfaceTarget {
   const selection = useUiStore.getState().selection;
   const store = useProjectStore.getState();
   const selected =
-    selection === undefined ? undefined : (store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id]);
+    selection === undefined ? undefined : store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id];
   return selected === undefined ? { newProjectName: projectNameFor(source) } : { projectId: selected };
 }
 

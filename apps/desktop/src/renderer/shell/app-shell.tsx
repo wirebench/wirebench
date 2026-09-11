@@ -13,7 +13,7 @@ import { hydrateUi, useUiStore } from '../state/ui.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
-import { subscribeToProject } from '../state/project.js';
+import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { ActivityBar } from './activity-bar.js';
@@ -61,6 +61,8 @@ export function AppShell() {
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   const workspace = useWorkspaceStore((state) => state.workspace);
+  // The title bar's dot means "something is unsaved": any open project will do.
+  const dirty = useProjectStore((state) => Object.values(state.projects).some((project) => project.dirty));
 
   useEffect(() => {
     hydrateUi();
@@ -121,7 +123,7 @@ export function AppShell() {
         <TitleBar
           platform={platform}
           projectName={workspace?.name ?? 'No workspace'}
-          dirty={false}
+          dirty={dirty}
           onOpenPalette={openPalette}
           onToggleTheme={dispatch('view.toggleTheme')}
         />
@@ -133,70 +135,70 @@ export function AppShell() {
             <WorkspacePicker />
           </div>
         ) : (
-        <div className="flex min-h-0 flex-1">
-          <ActivityBar platform={platform} />
+          <div className="flex min-h-0 flex-1">
+            <ActivityBar platform={platform} />
 
-          <Group
-            // Panels are added and removed as regions are toggled; keying the group on which
-            // are mounted lets it recompute its constraints instead of reconciling across shapes.
-            key={`${String(sidebar.visible)}-${String(details.visible)}`}
-            orientation="horizontal"
-            className="flex min-w-0 flex-1"
-          >
-            {sidebar.visible && (
-              <>
-                <Panel
-                  id="sidebar-panel"
-                  defaultSize={`${String(sidebar.size)}%`}
-                  minSize="12%"
-                  maxSize="40%"
-                  onResize={asPercentage(setSidebarSize)}
-                  className="border-r border-hairline"
-                >
-                  <Sidebar />
-                </Panel>
-                <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
-              </>
-            )}
+            <Group
+              // Panels are added and removed as regions are toggled; keying the group on which
+              // are mounted lets it recompute its constraints instead of reconciling across shapes.
+              key={`${String(sidebar.visible)}-${String(details.visible)}`}
+              orientation="horizontal"
+              className="flex min-w-0 flex-1"
+            >
+              {sidebar.visible && (
+                <>
+                  <Panel
+                    id="sidebar-panel"
+                    defaultSize={`${String(sidebar.size)}%`}
+                    minSize="12%"
+                    maxSize="40%"
+                    onResize={asPercentage(setSidebarSize)}
+                    className="border-r border-hairline"
+                  >
+                    <Sidebar />
+                  </Panel>
+                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
+                </>
+              )}
 
-            <Panel id="main-panel" minSize="30%">
-              <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
-                <Panel id="editors-panel" minSize="20%">
-                  <EditorArea />
-                </Panel>
-                {consoleState.visible && (
-                  <>
-                    <Separator aria-label="Resize" className={SEPARATOR_HORIZONTAL} />
-                    <Panel
-                      id="console-panel"
-                      defaultSize={`${String(consoleState.size)}%`}
-                      minSize="10%"
-                      maxSize="70%"
-                      onResize={asPercentage(setConsoleSize)}
-                    >
-                      <ConsolePanel />
-                    </Panel>
-                  </>
-                )}
-              </Group>
-            </Panel>
+              <Panel id="main-panel" minSize="30%">
+                <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
+                  <Panel id="editors-panel" minSize="20%">
+                    <EditorArea />
+                  </Panel>
+                  {consoleState.visible && (
+                    <>
+                      <Separator aria-label="Resize" className={SEPARATOR_HORIZONTAL} />
+                      <Panel
+                        id="console-panel"
+                        defaultSize={`${String(consoleState.size)}%`}
+                        minSize="10%"
+                        maxSize="70%"
+                        onResize={asPercentage(setConsoleSize)}
+                      >
+                        <ConsolePanel />
+                      </Panel>
+                    </>
+                  )}
+                </Group>
+              </Panel>
 
-            {details.visible && (
-              <>
-                <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
-                <Panel
-                  id="details-pane"
-                  defaultSize={`${String(details.size)}%`}
-                  minSize="12%"
-                  maxSize="40%"
-                  onResize={asPercentage(setDetailsSize)}
-                >
-                  <DetailsPanel />
-                </Panel>
-              </>
-            )}
-          </Group>
-        </div>
+              {details.visible && (
+                <>
+                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
+                  <Panel
+                    id="details-pane"
+                    defaultSize={`${String(details.size)}%`}
+                    minSize="12%"
+                    maxSize="40%"
+                    onResize={asPercentage(setDetailsSize)}
+                  >
+                    <DetailsPanel />
+                  </Panel>
+                </>
+              )}
+            </Group>
+          </div>
         )}
 
         <StatusBar />

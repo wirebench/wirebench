@@ -160,7 +160,11 @@ void app.whenReady().then(() => {
   registerDefinitionChannels(engineService, {
     project: workspaceService,
     picks: dialogPicks,
-    projectDirs: () => workspaceService.hosts().flatMap((host) => [host.snapshot()?.dir ?? []].flat()),
+    projectDirs: () =>
+      workspaceService
+        .hosts()
+        .map((host) => host.snapshot()?.dir)
+        .filter((dir): dir is string => dir !== undefined),
   });
   registerRequestChannels(engineService, {
     project: workspaceService,

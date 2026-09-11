@@ -115,7 +115,12 @@ export function registerHistoryChannels(
         ...(entry.requestId !== undefined ? { requestId: entry.requestId } : {}),
         input,
       },
-      { requestName: entry.requestName, interfaceName: entry.interfaceName, operationName: entry.operationName },
+      {
+        requestName: entry.requestName,
+        interfaceName: entry.interfaceName,
+        operationName: entry.operationName,
+        projectId: entry.projectId,
+      },
     );
   });
 }
