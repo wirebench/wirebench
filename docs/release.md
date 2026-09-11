@@ -73,14 +73,32 @@ Two consequences worth knowing:
 ## Cutting a release
 
 1. Bump `version` in `apps/desktop/package.json` (that is the version the artifacts carry).
-2. Add the release's section to `CHANGELOG.md` if the repository has one — the workflow uses
-   that section as the release body, and falls back to GitHub's generated notes.
+2. Add the release's section to [`../CHANGELOG.md`](../CHANGELOG.md) — the workflow extracts
+   the section whose heading contains the version and uses it as the release body, falling back
+   to GitHub's generated notes when there is none.
 3. Tag and push:
 
    ```bash
    git tag v0.1.0
    git push origin v0.1.0
    ```
+
+### Before the *first* release
+
+Two things are still placeholders and must be settled before `v1.0.0` is tagged, because the
+tag is what makes them permanent:
+
+- **The repository has no remote.** Nothing is pushed and no tag exists yet; `release.yml` has
+  therefore never run. Adding the remote and pushing the tag is a deliberate, human step — see
+  below — not something automation should do on its own.
+- **`repository` in `apps/desktop/package.json` is `https://github.com/wirebench/wirebench.git`,
+  a placeholder.** It is what the update feed is derived from (`githubFeedFrom`), so a release
+  built with the wrong value ships an app that checks a repository that is not yours. Correct it
+  first, or leave it absent — a missing or unrecognised URL disables the update check cleanly
+  rather than pointing somewhere wrong.
+
+`CHANGELOG.md` already carries a prepared `## [1.0.0] - 2026-09-11` section, so step 2 above is
+done for the first release; check the date still matches the day you tag.
 
 The workflow runs `pnpm check`, packages on all three runners, uploads the artifacts and
 creates a **draft** release (a tag containing `-`, such as `v0.1.0-rc.1`, is marked as a

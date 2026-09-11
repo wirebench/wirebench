@@ -400,7 +400,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm package`; tag `v0.1.0-rc.1` → artifacts
   - Files: apps/desktop/electron-builder.yml, apps/desktop/src/main/updater.ts, apps/desktop/resources/**, scripts/fuses.ts, .github/workflows/release.yml
 
-- [ ] **52. Docs, ADRs, interop suite, release**
+- [x] **52. Docs, ADRs, interop suite, release**
   - README (quick start ≤ 5 min with screenshots), CONTRIBUTING, CHANGELOG (keep-a-changelog), `docs/adr/0001-electron-stack.md`, `0002-engine-in-main-process.md`, `0003-project-folder-format.md`, `docs/architecture/overview.md`; `test/interop/*.test.ts` (5 public services) + `.github/workflows/nightly.yml` (`WIREBENCH_NETWORK_TESTS=1`); §13 evidence table (criterion → test/CI link); tag `v1.0.0`.
   - Acceptance: every §13 criterion linked to evidence; nightly interop green.
   - Verify: `pnpm check && pnpm test:e2e && pnpm test:interop`
