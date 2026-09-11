@@ -14,6 +14,7 @@ function summary(
   return {
     dir: `/tmp/workspaces/${patch.id}`,
     projectCount: 0,
+    internalProjectCount: 0,
     createdAt: '2026-09-11T00:00:00.000Z',
     ...patch,
   };

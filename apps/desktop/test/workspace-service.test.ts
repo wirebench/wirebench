@@ -117,6 +117,23 @@ describe('WorkspaceService lifecycle', () => {
     expect(reopened?.id).toBe(created.id);
   }, 60_000);
 
+  it('lists internalProjectCount as internal-only, distinct from the raw projectCount', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Mixed');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const internal = await seedProject(dir, 'internal', 'Internal');
+    await registerProjects(dir, [
+      internal,
+      { id: 'linked-project', slug: 'linked', source: 'linked', path: join(root, 'elsewhere') },
+    ]);
+
+    const listed = await newService().list();
+    const row = listed.find((entry) => entry.id === created.id);
+    expect(row).toMatchObject({ projectCount: 2, internalProjectCount: 1 });
+  }, 60_000);
+
   it('opens two internal projects as independent hosts, each with its own history file', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Two projects');

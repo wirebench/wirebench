@@ -13,19 +13,6 @@ function plural(count: number, noun: string): string {
 }
 
 /**
- * How many projects live *inside* a workspace's own folder, and so go to the trash with it.
- * Only the open workspace tells the renderer which of its projects are linked; for the others
- * the summary's count is all there is, so it is used as the upper bound it is.
- */
-function internalProjectCount(
-  row: WorkspaceSummaryWire,
-  openId: string | undefined,
-  open: readonly { source: string }[],
-): number {
-  return row.id === openId ? open.filter((project) => project.source === 'internal').length : row.projectCount;
-}
-
-/**
  * *Manage workspaces…*: one row per workspace, its name editable in place, and a way to delete
  * it. Renaming commits on Enter or on blur; deleting always asks first, and says what goes to
  * the trash — the workspace folder and the projects stored inside it, never a linked folder.
@@ -133,7 +120,7 @@ export function WorkspaceManageDialog() {
           pendingDelete === undefined
             ? ''
             : `“${pendingDelete.name}” and the ${plural(
-                internalProjectCount(pendingDelete, workspace?.id, workspace?.projects ?? []),
+                pendingDelete.internalProjectCount,
                 'project',
               )} stored inside it go to the trash. Linked project folders are left where they are.`
         }

@@ -62,6 +62,7 @@ const SUMMARY: WorkspaceSummaryWire = {
   name: 'Workspace 1',
   dir: '/user-data/workspaces/w1',
   projectCount: 1,
+  internalProjectCount: 1,
   createdAt: '2026-09-11T00:00:00.000Z',
 };
 

@@ -314,6 +314,7 @@ export class WorkspaceService implements ProjectRouter {
           name: workspace.name,
           dir,
           projectCount: workspace.projects.length,
+          internalProjectCount: workspace.projects.filter((ref) => ref.source === 'internal').length,
           createdAt: workspace.createdAt,
           ...(stamp !== undefined ? { lastOpenedAt: stamp } : {}),
         });
@@ -323,6 +324,7 @@ export class WorkspaceService implements ProjectRouter {
           name,
           dir,
           projectCount: 0,
+          internalProjectCount: 0,
           createdAt: '',
           ...(stamp !== undefined ? { lastOpenedAt: stamp } : {}),
           unreadable: true,

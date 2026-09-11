@@ -10,8 +10,22 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const ROWS: readonly WorkspaceSummaryWire[] = [
-  { id: 'w1', name: 'Workspace 1', dir: '/tmp/workspaces/w1', projectCount: 2, createdAt: '2026-09-11T00:00:00.000Z' },
-  { id: 'w2', name: 'Billing', dir: '/tmp/workspaces/w2', projectCount: 0, createdAt: '2026-09-11T00:00:00.000Z' },
+  {
+    id: 'w1',
+    name: 'Workspace 1',
+    dir: '/tmp/workspaces/w1',
+    projectCount: 2,
+    internalProjectCount: 1,
+    createdAt: '2026-09-11T00:00:00.000Z',
+  },
+  {
+    id: 'w2',
+    name: 'Billing',
+    dir: '/tmp/workspaces/w2',
+    projectCount: 2,
+    internalProjectCount: 1,
+    createdAt: '2026-09-11T00:00:00.000Z',
+  },
 ];
 
 /** The dialog pulls the list whenever it opens, so every case stubs `workspace.list`. */
@@ -98,6 +112,19 @@ describe('WorkspaceManageDialog', () => {
 
     await userEvent.click(screen.getByTestId('workspace-delete-confirm'));
     await waitFor(() => expect(remove).toHaveBeenCalledWith({ workspaceId: 'w1' }));
+  });
+
+  it('names the internal project count for a non-open workspace too, not its raw project count', async () => {
+    const remove = vi.fn().mockResolvedValue({ ok: true, value: { workspaces: [ROWS[0]] } });
+    installWirebenchApi({ workspace: { ...listStub(), delete: remove } });
+    await openManageDialog();
+
+    // w2 is not the open workspace; it has one linked project alongside the internal one, so the
+    // confirmation must still say 1, not the raw projectCount of 2.
+    await userEvent.click(screen.getAllByTestId('workspace-delete')[1] as HTMLElement);
+
+    expect(screen.getByText(/“Billing” and the 1 project stored inside it go to the trash\./)).toBeTruthy();
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('closes itself when the workspace it deleted was the open one', async () => {

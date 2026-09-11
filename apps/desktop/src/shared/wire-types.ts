@@ -2440,6 +2440,12 @@ export const workspaceSummaryWireSchema = z.object({
   /** Absolute path of the workspace folder. Shown so two same-named workspaces can be told apart. */
   dir: z.string(),
   projectCount: z.number().int().nonnegative(),
+  /**
+   * Of `projectCount`, how many are stored *inside* the workspace's own folder (`source ===
+   * 'internal'`) and so go to the trash when the workspace is deleted — a linked project's
+   * folder lives elsewhere and is never touched. 0 for an unreadable workspace.
+   */
+  internalProjectCount: z.number().int().nonnegative(),
   createdAt: z.string(),
   /** From `workspace-state.json`; absent until the workspace has been opened at least once. */
   lastOpenedAt: z.string().optional(),
