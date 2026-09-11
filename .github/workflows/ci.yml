@@ -12,6 +12,7 @@ concurrency:
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -51,6 +52,8 @@ jobs:
   wss-xmlsec:
     needs: check
     strategy:
+      # One OS's toolchain failing must not hide the other's result.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -79,6 +82,9 @@ jobs:
   e2e:
     needs: check
     strategy:
+      # One OS failing must not cancel the others: a Windows-only regression has to be
+      # visible even when the macOS screenshot comparison is unhappy, and vice versa.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}

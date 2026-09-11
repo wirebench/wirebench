@@ -16,7 +16,7 @@
     "package:linux": "pnpm build && pnpm --filter @wirebench/desktop package:linux",
     "test": "vitest run --project '!engine-perf' --project '!engine-interop' --passWithNoTests",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --project '!engine-perf' --project '!engine-interop' --coverage --passWithNoTests",
+    "test:coverage": "pnpm --filter @wirebench/engine build && vitest run --project '!engine-perf' --project '!engine-interop' --coverage --passWithNoTests",
     "test:perf": "vitest run --project engine-perf",
     "test:e2e": "pnpm --filter @wirebench/e2e test",
     "bench": "vitest bench --run",
