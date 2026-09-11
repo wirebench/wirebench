@@ -22,8 +22,11 @@
  * on mount), the component renders synchronously, with no suspend and no extra commit. If a tab
  * is somehow clicked before that finishes it suspends exactly like `React.lazy`, and the
  * `Suspense` boundary in each pane covers it.
+ *
+ * Every split view is also wrapped in {@link ViewErrorBoundary}, so a chunk that fails to load
+ * shows a retryable message in the pane instead of blanking it.
  */
-import type { ComponentType } from 'react';
+import { Component, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
 import type { FormViewProps } from './form-view.js';
 import type { OutlineViewProps } from './outline-view.js';
 import type { RawViewProps } from './raw-view.js';
@@ -36,22 +39,102 @@ interface SplitView<P> {
   readonly prefetch: () => void;
 }
 
+/** Props of {@link ViewErrorBoundary}. */
+interface ViewErrorBoundaryProps {
+  /** Clears the failed chunk's cache so the next render re-imports it. */
+  readonly onRetry: () => void;
+  readonly children: ReactNode;
+}
+
+/**
+ * The inline fallback for a view whose chunk could not be loaded — an offline update, a
+ * half-written install, a transient file-system error. Without it a failed `import()` leaves the
+ * pane blank forever (React unmounts the subtree it could not render) and, when the failure is
+ * re-thrown from every render, retries it in a loop.
+ *
+ * Kept deliberately small: a sentence and a Retry button, in the pane where the view would have
+ * been, so the rest of the app — the request, the response, the other tabs — stays usable.
+ */
+class ViewErrorBoundary extends Component<ViewErrorBoundaryProps, { readonly failed: boolean }> {
+  constructor(props: ViewErrorBoundaryProps) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError(): { readonly failed: boolean } {
+    return { failed: true };
+  }
+
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    // The renderer has no logger of its own; the console is where a user is asked to look when
+    // reporting this, and it is the only record of which chunk failed.
+    console.error('Wirebench: a view chunk failed to load', error, info.componentStack);
+  }
+
+  private readonly retry = (): void => {
+    this.props.onRetry();
+    this.setState({ failed: false });
+  };
+
+  override render(): ReactNode {
+    if (!this.state.failed) {
+      return this.props.children;
+    }
+    return (
+      <div className="flex flex-col items-start gap-2 p-4 text-sm text-fg-subtle">
+        <p>Could not load this view.</p>
+        <button
+          type="button"
+          className="rounded border border-hairline px-2 py-1 text-fg-default hover:bg-surface-raised"
+          onClick={this.retry}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+}
+
 /**
  * Wraps a dynamic import as a component that suspends only until the chunk has loaded once, and
  * renders synchronously ever after.
+ *
+ * A rejected import is remembered as an `Error` rather than re-attempted on every render: the
+ * next render throws it (a real `Error`, so {@link ViewErrorBoundary} catches it instead of
+ * treating it as another suspension), and only the boundary's Retry clears both caches and
+ * starts a fresh import.
+ *
+ * Exported for `test/renderer/lazy-views.test.tsx`, which drives it with a rejecting loader.
  */
-function splitView<P extends object>(load: () => Promise<ComponentType<P>>): SplitView<P> {
+export function splitView<P extends object>(load: () => Promise<ComponentType<P>>): SplitView<P> {
   let loaded: ComponentType<P> | undefined;
   let pending: Promise<void> | undefined;
+  let failure: Error | undefined;
 
   const start = (): Promise<void> => {
-    pending ??= load().then((component) => {
-      loaded = component;
-    });
+    pending ??= load().then(
+      (component) => {
+        loaded = component;
+      },
+      (cause: unknown) => {
+        // Resolved, not rejected: the throw-a-promise contract only retries the render once the
+        // promise settles, and the retried render is where `failure` is thrown as an Error.
+        failure = cause instanceof Error ? cause : new Error(String(cause));
+      },
+    );
     return pending;
   };
 
+  const reset = (): void => {
+    loaded = undefined;
+    pending = undefined;
+    failure = undefined;
+  };
+
   function Split(props: P): React.JSX.Element {
+    if (failure !== undefined) {
+      throw failure;
+    }
     if (loaded === undefined) {
       // Throwing a promise is the same Suspense contract React's own `lazy` uses: the nearest
       // boundary shows its fallback and retries once the promise settles. It is the one place a
@@ -63,14 +146,20 @@ function splitView<P extends object>(load: () => Promise<ComponentType<P>>): Spl
     return <Loaded {...props} />;
   }
 
+  function Guarded(props: P): React.JSX.Element {
+    return (
+      <ViewErrorBoundary onRetry={reset}>
+        <Split {...props} />
+      </ViewErrorBoundary>
+    );
+  }
+
   return {
-    Component: Split,
+    Component: Guarded,
     prefetch: () => {
-      // Failures are swallowed: this is an optimisation. A chunk that cannot be fetched now is
-      // retried — and its error surfaced properly — when the user actually selects that view.
-      void start().catch(() => {
-        pending = undefined;
-      });
+      // A failure here is not surfaced: this is an optimisation, and the same failure is shown
+      // properly by the boundary above if and when the user selects that view.
+      void start();
     },
   };
 }

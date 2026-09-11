@@ -9,6 +9,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateRequest } from '../../src/generate.js';
 import { importDefinition } from '../../src/import.js';
 import type { ImportResult } from '../../src/types.js';
@@ -34,7 +35,10 @@ export interface PreparedScenario {
   readonly dispose?: () => Promise<void>;
 }
 
-const REPO_ROOT = new URL('../../../../', import.meta.url).pathname;
+// `fileURLToPath` rather than `URL.pathname`: the latter keeps percent-encoding, so a checkout
+// under a path with a space (or any other escaped character) would produce a path that does not
+// exist on disk.
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
 /** Imports a WSDL from disk and generates a sample request for its first operation. */
 async function importAndGenerate(path: string): Promise<void> {
@@ -66,47 +70,42 @@ const ENVELOPE = `<?xml version="1.0" encoding="UTF-8"?>
 </soap:Envelope>`;
 
 /**
- * Measures what `sendSoapRequest` adds on top of the network exchange itself: the same POST is
- * issued twice per sample — once through the engine, once through a bare `fetch` — and the
- * budget covers the difference. That keeps the number independent of how fast the loopback
- * test server happens to be on the machine running it.
+ * Measures what `sendSoapRequest` adds on top of the exchange itself.
+ *
+ * The whole call is timed with `performance.now()` — everything the engine does: building the
+ * request, the HTTP client, decoding, parsing the response envelope — and the test server's own
+ * handling time (reported per request in `x-server-ms`) is subtracted. Overhead is therefore
+ * `wall − server`, which still includes the loopback transfer but nothing of how fast the
+ * fixture server answers, and unlike the engine's self-reported `durationMs` it cannot miss a
+ * regression that happens outside the client's own stopwatch.
  */
 async function prepareSendOverhead(): Promise<PreparedScenario> {
   const server: TestSoapServer = await startTestSoapServer({ fixture: 'calculator' });
   const endpoint = `${server.url}/soap`;
-  const send = async (): Promise<number> => {
+  const sample = async (): Promise<number> => {
+    const started = performance.now();
     const exchange = await sendSoapRequest({
       endpoint,
       envelopeXml: ENVELOPE,
       soapVersion: '1.1',
       soapAction: 'urn:Ping',
     });
-    return exchange.durationMs;
-  };
-  const bare = async (): Promise<number> => {
-    const started = performance.now();
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'text/xml; charset=utf-8', soapaction: '"urn:Ping"' },
-      body: ENVELOPE,
-    });
-    await response.text();
-    return performance.now() - started;
+    const wallMs = performance.now() - started;
+    const serverMs = Number(exchange.http.headers['x-server-ms']);
+    if (!Number.isFinite(serverMs)) {
+      throw new Error('test server did not report x-server-ms; the send-overhead budget cannot be measured');
+    }
+    return wallMs - serverMs;
   };
 
-  // Warm both paths so neither pays for the first connection.
-  await send();
-  await bare();
+  // Warm the path so the measured samples do not pay for the first connection.
+  await sample();
 
   return {
     run: async () => {
-      await send();
+      await sample();
     },
-    measure: async () => {
-      const engineMs = await send();
-      const bareMs = await bare();
-      return engineMs - bareMs;
-    },
+    measure: sample,
     dispose: () => server.close(),
   };
 }

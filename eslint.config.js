@@ -28,6 +28,29 @@ export default tseslint.config(
     },
   },
   {
+    // Monaco may only be pulled in at runtime through `editor/monaco-core.ts`, which imports the
+    // trimmed set of feature modules. A bare `import 'monaco-editor'` anywhere else re-registers
+    // every bundled language and the four language-service workers (17 MB of build output), and
+    // nothing else would catch it until the renderer bundle had already doubled. Type-only
+    // imports are fine: they disappear at build time.
+    files: ['apps/desktop/**/*.{ts,tsx,mts,cts}'],
+    ignores: ['apps/desktop/src/renderer/editor/monaco-core.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'monaco-editor',
+              allowTypeImports: true,
+              message: 'import Monaco through renderer/editor/monaco-core.ts; a bare import re-adds every worker',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/engine/**/*.{ts,tsx,mts,cts}'],
     rules: {
       'no-restricted-imports': [

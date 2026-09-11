@@ -179,7 +179,10 @@ export async function startTestSoapServer(options?: {
   const ntlmAuthenticator = createNtlmAuthenticator({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
 
   const listener = (req: IncomingMessage, res: ServerResponse): void => {
-    void handle(req, res).catch((err: unknown) => {
+    // Stamped the moment the request reaches the handler, so `/soap` can report how much of a
+    // client-side round trip was the server's own doing — see `x-server-ms` below.
+    const receivedAt = performance.now();
+    void handle(req, res, receivedAt).catch((err: unknown) => {
       if (!res.headersSent) res.writeHead(500);
       res.end(String(err));
     });
@@ -237,7 +240,7 @@ export async function startTestSoapServer(options?: {
     socket.on('close', () => sockets.delete(socket));
   });
 
-  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handle(req: IncomingMessage, res: ServerResponse, receivedAt: number): Promise<void> {
     const method = req.method ?? 'GET';
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const body = await readBody(req);
@@ -274,15 +277,20 @@ export async function startTestSoapServer(options?: {
 
     if (method === 'POST' && url.pathname === '/soap') {
       const fixtureName = options?.fixture ?? 'calculator';
+      // How long this server itself spent on the request (arrival of the request through to the
+      // response being written). The send-overhead budget subtracts it from the client's
+      // wall-clock time, so the number it gates on is Wirebench's own cost rather than however
+      // fast this fixture — or the loopback interface — happens to be on the machine running it.
+      const serverMs = (): string => (performance.now() - receivedAt).toFixed(3);
       if (fixtureName === 'calculator' && options?.respondToCalculatorAdd === true) {
         const addResponse = buildCalculatorAddResponse(body.toString('utf-8'));
         if (addResponse !== undefined) {
-          res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml' });
+          res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml', 'x-server-ms': serverMs() });
           res.end(addResponse);
           return;
         }
       }
-      res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml' });
+      res.writeHead(200, { 'content-type': req.headers['content-type'] ?? 'text/xml', 'x-server-ms': serverMs() });
       res.end(body);
       return;
     }

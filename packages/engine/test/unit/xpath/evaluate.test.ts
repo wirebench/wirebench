@@ -93,6 +93,44 @@ describe('evaluate (XPath 3.1)', () => {
     expect(result.items[0]).toMatchObject({ text: '42', nodeKind: 'attribute', path: '/root[1]/@id' });
   });
 
+  it('a text result reports its nearest element path', () => {
+    const xml = '<root><child>hello</child></root>';
+    const result = evaluate(xml, '//child/text()', { language: 'xpath' });
+    expect(result.kind).toBe('nodes');
+    if (result.kind !== 'nodes') throw new Error('expected nodes');
+    expect(result.items[0]).toMatchObject({ text: 'hello', nodeKind: 'text', path: '/root[1]/child[1]' });
+  });
+
+  it('a comment result reports its nearest element path', () => {
+    const xml = '<root><child><!-- note --></child></root>';
+    const result = evaluate(xml, '//comment()', { language: 'xpath' });
+    expect(result.kind).toBe('nodes');
+    if (result.kind !== 'nodes') throw new Error('expected nodes');
+    expect(result.items[0]).toMatchObject({ nodeKind: 'comment', path: '/root[1]/child[1]' });
+  });
+
+  it('a processing-instruction result reports its nearest element path', () => {
+    const xml = '<root><child><?target data?></child></root>';
+    const result = evaluate(xml, '//processing-instruction()', { language: 'xpath' });
+    expect(result.kind).toBe('nodes');
+    if (result.kind !== 'nodes') throw new Error('expected nodes');
+    expect(result.items[0]).toMatchObject({ nodeKind: 'pi', path: '/root[1]/child[1]' });
+  });
+
+  it('positions repeated siblings and walks deep nesting without recursing', () => {
+    // 20 000 levels is past the JS call-stack depth a recursive path walk survives, so this
+    // both pins the `[n]` positional index and proves the walk is iterative.
+    const depth = 20_000;
+    const xml = `<root>${'<a>'.repeat(depth)}<leaf/><leaf/>${'</a>'.repeat(depth)}</root>`;
+    const result = evaluate(xml, '//leaf', { language: 'xpath' });
+    expect(result.kind).toBe('nodes');
+    if (result.kind !== 'nodes') throw new Error('expected nodes');
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]?.path.endsWith('/a[1]/leaf[1]')).toBe(true);
+    expect(result.items[1]?.path.endsWith('/a[1]/leaf[2]')).toBe(true);
+    expect(result.items[0]?.path.startsWith('/root[1]/a[1]/')).toBe(true);
+  });
+
   it('an empty result set reports kind empty', () => {
     const result = evaluate(ADD_RESPONSE, '//nonexistent', { language: 'xpath', namespaces: { tem: TEM } });
     expect(result).toEqual({ kind: 'empty' });

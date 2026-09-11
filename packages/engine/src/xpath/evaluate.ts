@@ -28,7 +28,15 @@ export interface QueryNodeItem {
   readonly nodeKind: 'element' | 'attribute' | 'text' | 'document' | 'comment' | 'pi';
   /** Offsets of this node in the original `xml` text, when they could be recovered. */
   readonly range?: TextRange;
-  /** A simple `/a/b[2]`-shaped path to the node from the document root. */
+  /**
+   * A simple `/a/b[2]`-shaped path to the node from the document root, with a 1-based index
+   * among same-named siblings at every step.
+   *
+   * Only elements have steps of their own. A text, comment or processing-instruction result is
+   * reported at the path of the nearest enclosing element — the place to look for it in the
+   * document — and an attribute result appends `/@name` to its owning element's path. A result
+   * with no element at or above it (the document node itself) is reported as `/`.
+   */
   readonly path: string;
 }
 
@@ -106,21 +114,48 @@ class PathIndex {
     return this.elementPath(node);
   }
 
-  /** The path of an element (or of the nearest element at or above a non-element node). */
+  /**
+   * The path of an element — or of the nearest element at or above a non-element node.
+   *
+   * Iterative on purpose: a deeply nested document (an envelope wrapping thousands of levels)
+   * would otherwise overflow the call stack on what is only a walk to the root. Ancestors are
+   * collected upwards until a cached path (or the root) is reached, then the path is built back
+   * down, caching every ancestor on the way so the next result in the same subtree is free.
+   */
   private elementPath(node: EvaluatedNode): string {
-    if (node.nodeType !== 1) {
-      const parent = node.parentNode ?? undefined;
-      return parent === undefined || parent === null || parent.nodeType !== 1 ? '/' : this.elementPath(parent);
+    // Non-element nodes (text, comment, PI) have no step of their own: they are reported at the
+    // path of their owning element, which is what a user needs to locate them in the document.
+    let current: EvaluatedNode | null | undefined = node;
+    while (current !== null && current !== undefined && current.nodeType !== 1) {
+      current = current.parentNode ?? null;
     }
-    const cached = this.paths.get(node);
-    if (cached !== undefined) {
-      return cached;
+    if (current === null || current === undefined) {
+      return '/';
     }
-    const parent = node.parentNode ?? undefined;
-    const prefix = parent === undefined || parent === null || parent.nodeType !== 1 ? '' : this.elementPath(parent);
-    const path = `${prefix}/${node.nodeName ?? '*'}[${this.position(node)}]`;
-    this.paths.set(node, path);
-    return path;
+
+    const pending: EvaluatedNode[] = [];
+    let path: string | undefined;
+    let walk: EvaluatedNode | null | undefined = current;
+    while (walk !== null && walk !== undefined && walk.nodeType === 1) {
+      const cached = this.paths.get(walk);
+      if (cached !== undefined) {
+        path = cached;
+        break;
+      }
+      pending.push(walk);
+      walk = walk.parentNode ?? null;
+    }
+
+    let prefix = path ?? '';
+    for (let i = pending.length - 1; i >= 0; i -= 1) {
+      const element = pending[i];
+      if (element === undefined) {
+        continue;
+      }
+      prefix = `${prefix}/${element.nodeName ?? '*'}[${this.position(element)}]`;
+      this.paths.set(element, prefix);
+    }
+    return prefix === '' ? '/' : prefix;
   }
 
   /** The 1-based position of `node` among its same-named element siblings. */
