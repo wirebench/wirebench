@@ -29,8 +29,10 @@ files:
   # report that the built `dist/` does not need and that nothing at runtime resolves.
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
 
-# Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing.
-afterPack: ../../scripts/fuses.ts
+# Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
+# entry lives inside this package because electron-builder refuses hook paths that resolve
+# outside what it takes to be the workspace root — which, on Windows runners, is this directory.
+afterPack: after-pack.ts
 
 # The generated third-party attribution file, alongside the app's own LICENSE obligations.
 # Regenerated and verified by `pnpm licenses:third-party [--check]`.
@@ -89,6 +91,9 @@ nsis:
   createStartMenuShortcut: true
 
 linux:
+  # Without this the executable is named after the package (`@wirebench/desktop` minus the
+  # slash), which is what ends up in the .desktop file and the install tree.
+  executableName: wirebench
   target:
     - target: AppImage
       arch: [x64, arm64]

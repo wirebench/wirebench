@@ -71,7 +71,14 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           # Never publish from the build job; the release job below attaches the artifacts.
           GH_TOKEN: ''
-        run: pnpm ${{ matrix.script }}
+        # A secret that is not configured arrives as an empty string, and electron-builder
+        # treats an empty `CSC_LINK` as a certificate path (resolving to the project directory,
+        # "not a file") rather than as absent — so anything empty is unset before packaging.
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          pnpm ${{ matrix.script }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

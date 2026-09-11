@@ -45,7 +45,11 @@ export interface FusesPackContext {
   readonly appOutDir: string;
   /** `darwin`, `win32` or `linux`, as electron-builder names it. */
   readonly electronPlatformName: string;
-  readonly packager: { readonly appInfo: { readonly productFilename: string } };
+  readonly packager: {
+    readonly appInfo: { readonly productFilename: string };
+    /** Linux only: the name electron-builder actually gave the binary (`linux.executableName`). */
+    readonly executableName?: string;
+  };
 }
 
 /**
@@ -54,14 +58,21 @@ export interface FusesPackContext {
  * Pure and exported so a test can pin the three shapes without packaging anything: getting
  * this path wrong means `flipFuses` throws (or, worse, silently patches nothing).
  */
-export function electronBinaryPath(appOutDir: string, platform: string, productFilename: string): string {
+export function electronBinaryPath(
+  appOutDir: string,
+  platform: string,
+  productFilename: string,
+  executableName?: string,
+): string {
   if (platform === 'darwin') {
     return join(appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename);
   }
   if (platform === 'win32') {
     return join(appOutDir, `${productFilename}.exe`);
   }
-  return join(appOutDir, productFilename.toLowerCase().replace(/ /g, '-'));
+  // Linux names the binary after `linux.executableName`; the lower-cased product name is only
+  // the fallback for a packager that does not report one.
+  return join(appOutDir, executableName ?? productFilename.toLowerCase().replace(/ /g, '-'));
 }
 
 /**
@@ -137,6 +148,7 @@ export default async function afterPack(context: FusesPackContext): Promise<void
     context.appOutDir,
     context.electronPlatformName,
     context.packager.appInfo.productFilename,
+    context.packager.executableName,
   );
   await flipFuses(binary, {
     version: FuseVersion.V1,
