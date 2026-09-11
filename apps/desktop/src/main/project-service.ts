@@ -59,10 +59,19 @@ import {
   removeOutgoingWss,
   toKeystoreDef,
   toTlsClientIdentity,
+  toWssIncomingConfig,
   toWssOutgoingConfig,
   WirebenchError,
 } from '@wirebench/engine';
-import type { Keystore, KeystoreDef, SoapSendWss, WssContext, WssEntry, WssOutgoingConfig } from '@wirebench/engine';
+import type {
+  Keystore,
+  KeystoreDef,
+  SoapSendWss,
+  WssContext,
+  WssEntry,
+  WssIncomingConfig,
+  WssOutgoingConfig,
+} from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   EngineProgressEvent,
@@ -784,6 +793,8 @@ export class ProjectService {
     createdEnvironmentId?: string;
     createdAttachmentId?: string;
     createdKeystoreId?: string;
+    createdWssOutgoingId?: string;
+    createdWssIncomingId?: string;
   }> {
     const open = this.require();
     const result = await applyChange(open.project, change, {
@@ -826,6 +837,8 @@ export class ProjectService {
       ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
       ...(result.createdAttachmentId !== undefined ? { createdAttachmentId: result.createdAttachmentId } : {}),
       ...(result.createdKeystoreId !== undefined ? { createdKeystoreId: result.createdKeystoreId } : {}),
+      ...(result.createdWssOutgoingId !== undefined ? { createdWssOutgoingId: result.createdWssOutgoingId } : {}),
+      ...(result.createdWssIncomingId !== undefined ? { createdWssIncomingId: result.createdWssIncomingId } : {}),
     };
   }
 
@@ -952,6 +965,19 @@ export class ProjectService {
     return { cert: identity.cert, key: identity.key };
   }
 
+  /** The incoming WS-Security configuration with this id, or `undefined` when there is none. */
+  private wssIncomingConfig(configId: string): WssIncomingConfig | undefined {
+    const ref = this.open?.project.wss.incoming.find((candidate) => candidate.id === configId);
+    if (ref === undefined) {
+      return undefined;
+    }
+    try {
+      return toWssIncomingConfig(ref);
+    } catch {
+      return undefined;
+    }
+  }
+
   /** The outgoing WS-Security configuration with this id, or `undefined` when there is none. */
   private wssOutgoingConfig(configId: string): WssOutgoingConfig | undefined {
     const ref = this.open?.project.wss.outgoing.find((candidate) => candidate.id === configId);
@@ -981,8 +1007,8 @@ export class ProjectService {
   }
 
   /**
-   * The WS-Security half of a send of `requestId`, or `undefined` when the request selects no
-   * outgoing configuration. Async and secret-bearing, so — exactly like {@link tlsFor} — it is
+   * The WS-Security half of a send of `requestId`, or `undefined` when the request selects
+   * neither an outgoing nor an incoming configuration. Async and secret-bearing, so — exactly like {@link tlsFor} — it is
    * kept out of the synchronous {@link sendInputFor} whose result also feeds the cURL export
    * and the renderer.
    *
@@ -998,23 +1024,35 @@ export class ProjectService {
       return Promise.resolve(undefined);
     }
     const location = findRequest(this.open.project, requestId);
-    const configId = location?.request.wssOutgoingRef;
-    if (location === undefined || configId === undefined || configId.length === 0) {
+    const outgoingId = location?.request.wssOutgoingRef;
+    const incomingId = location?.request.wssIncomingRef;
+    const selected = (id: string | undefined): string | undefined =>
+      id === undefined || id.length === 0 ? undefined : id;
+    if (location === undefined || (selected(outgoingId) === undefined && selected(incomingId) === undefined)) {
       return Promise.resolve(undefined);
     }
-    const outgoing = this.wssOutgoingConfig(configId);
-    if (outgoing === undefined) {
-      return Promise.reject(
+    const missing = (configId: string): Promise<never> =>
+      Promise.reject(
         new WirebenchError(
           'wss-config-missing',
           'This request selects a WS-Security configuration the project no longer has.',
           { details: { configId } },
         ),
       );
+    const outgoingRef = selected(outgoingId);
+    const outgoing = outgoingRef === undefined ? undefined : this.wssOutgoingConfig(outgoingRef);
+    if (outgoingRef !== undefined && outgoing === undefined) {
+      return missing(outgoingRef);
+    }
+    const incomingRef = selected(incomingId);
+    const incoming = incomingRef === undefined ? undefined : this.wssIncomingConfig(incomingRef);
+    if (incomingRef !== undefined && incoming === undefined) {
+      return missing(incomingRef);
     }
     const properties = location.request.properties;
     return Promise.resolve({
-      outgoing,
+      ...(outgoing !== undefined ? { outgoing } : {}),
+      ...(incoming !== undefined ? { incoming } : {}),
       ctx: this.wssContext(),
       requestProperties: {
         ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),

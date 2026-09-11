@@ -429,6 +429,36 @@ export const authSummaryWireSchema = z.object({
 });
 export type AuthSummaryWire = z.infer<typeof authSummaryWireSchema>;
 
+/**
+ * One step of incoming WS-Security processing, as the response inspector lists it. Mirrors the
+ * engine's `WssAction` exactly — booleans, a human-readable detail and the signer's subject.
+ * No key material, no secret reference, nothing that could carry one.
+ */
+export const wssActionWireSchema = z.object({
+  kind: z.enum(['decrypt', 'signature', 'timestamp']),
+  ok: z.boolean(),
+  detail: z.string(),
+  signerSubject: z.string().optional(),
+  trusted: z.boolean().optional(),
+  created: z.string().optional(),
+  expires: z.string().optional(),
+});
+export type WssActionWire = z.infer<typeof wssActionWireSchema>;
+
+/** What WS-Security did during a send; mirrors the engine's `SoapExchange.wss`. */
+export const wssExchangeWireSchema = z.object({
+  /** The entry kinds applied to the outgoing envelope, in the order they were applied. */
+  applied: z.array(z.string()).optional(),
+  /** What incoming processing made of the response. */
+  incoming: z
+    .object({
+      actions: z.array(wssActionWireSchema),
+      errors: z.array(z.string()),
+    })
+    .optional(),
+});
+export type WssExchangeWire = z.infer<typeof wssExchangeWireSchema>;
+
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
   sendId: z.string(),
@@ -440,6 +470,8 @@ export const exchangeSummarySchema = z.object({
   auth: authSummaryWireSchema.optional(),
   /** Set only when the send expanded properties: the references that stayed unresolved. */
   unresolved: z.array(unresolvedRefWireSchema).optional(),
+  /** Set only when the send was given WS-Security: what it applied, and what it made of the response. */
+  wss: wssExchangeWireSchema.optional(),
 });
 export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 
@@ -806,6 +838,42 @@ export const wssOutgoingPatchSchema = z.object({
 export type WssOutgoingPatchWire = z.infer<typeof wssOutgoingPatchSchema>;
 
 /**
+ * One `wss/incoming/<id>.yaml` configuration as the renderer mirrors it: which keystore opens
+ * the response, which truststore its signatures are judged against, and how strict to be.
+ * Never key material — only registry ids and a `secretRef`.
+ */
+export const wssIncomingWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Registry id of the keystore whose private key opens `xenc:EncryptedKey` blocks. */
+  decryptKeystoreRef: z.string().optional(),
+  decryptAlias: z.string().optional(),
+  /** A `secretRef` for that private key's passphrase; never the passphrase itself. */
+  decryptKeyPasswordRef: z.string().optional(),
+  /** Registry id of the truststore: a keystore whose aliases are the trusted certificates. */
+  signatureKeystoreRef: z.string().optional(),
+  requireSignature: z.boolean(),
+  requireTimestamp: z.boolean(),
+  timestampSkewSeconds: z.number().int().nonnegative(),
+  verifyChain: z.boolean(),
+});
+export type WssIncomingWire = z.infer<typeof wssIncomingWireSchema>;
+
+/** The fields of an incoming configuration the renderer may patch; `null` clears an optional one. */
+export const wssIncomingPatchSchema = z.object({
+  name: z.string().optional(),
+  decryptKeystoreRef: z.string().nullable().optional(),
+  decryptAlias: z.string().nullable().optional(),
+  decryptKeyPasswordRef: z.string().nullable().optional(),
+  signatureKeystoreRef: z.string().nullable().optional(),
+  requireSignature: z.boolean().optional(),
+  requireTimestamp: z.boolean().optional(),
+  timestampSkewSeconds: z.number().int().nonnegative().optional(),
+  verifyChain: z.boolean().optional(),
+});
+export type WssIncomingPatchWire = z.infer<typeof wssIncomingPatchSchema>;
+
+/**
  * One `wss/keystores.yaml` entry as the renderer sees it. Deliberately never carries the
  * password, the private key or any certificate PEM — only the registry metadata; the material
  * itself stays in main (see `keystores.inspect` for the alias summaries).
@@ -840,6 +908,8 @@ export const projectWireSchema = z.object({
   keystores: z.array(keystoreWireSchema),
   /** The project's outgoing WS-Security configurations; empty when it has none. */
   wssOutgoing: z.array(wssOutgoingWireSchema),
+  /** The project's incoming WS-Security configurations; empty when it has none. */
+  wssIncoming: z.array(wssIncomingWireSchema),
 });
 export type ProjectWire = z.infer<typeof projectWireSchema>;
 
@@ -988,6 +1058,13 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     patch: wssOutgoingPatchSchema,
   }),
   z.object({ kind: z.literal('remove-wss-outgoing'), configId: z.string() }),
+  z.object({ kind: z.literal('add-wss-incoming'), name: z.string().optional() }),
+  z.object({
+    kind: z.literal('update-wss-incoming'),
+    configId: z.string(),
+    patch: wssIncomingPatchSchema,
+  }),
+  z.object({ kind: z.literal('remove-wss-incoming'), configId: z.string() }),
 ]);
 export type ProjectChange = z.infer<typeof projectChangeSchema>;
 
@@ -1013,6 +1090,8 @@ export const projectMutateResponseSchema = z.object({
   createdKeystoreId: z.string().optional(),
   /** Set by `add-wss-outgoing`: the id of the configuration that was created. */
   createdWssOutgoingId: z.string().optional(),
+  /** Set by `add-wss-incoming`: the id of the configuration that was created. */
+  createdWssIncomingId: z.string().optional(),
 });
 export type ProjectMutateResponse = z.infer<typeof projectMutateResponseSchema>;
 

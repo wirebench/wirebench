@@ -21,6 +21,7 @@ function project(dirty: boolean): ProjectWire {
     problems: [],
     keystores: [],
     wssOutgoing: [],
+    wssIncoming: [],
   };
 }
 

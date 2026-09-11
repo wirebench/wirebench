@@ -21,6 +21,7 @@ const PROJECT: ProjectWire = {
   problems: [],
   keystores: [],
   wssOutgoing: [],
+  wssIncoming: [],
 };
 
 describe('GetDataDialog', () => {

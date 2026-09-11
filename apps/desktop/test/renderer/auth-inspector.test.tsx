@@ -187,7 +187,7 @@ describe('AuthInspector', () => {
 describe('AuthInspector WS-Security selectors', () => {
   afterEach(() => {
     cleanup();
-    useProjectStore.setState({ wssOutgoing: [] } as never);
+    useProjectStore.setState({ wssOutgoing: [], wssIncoming: [] } as never);
   });
 
   it('selects an outgoing configuration and clears it again', async () => {
@@ -215,6 +215,7 @@ describe('AuthInspector WS-Security selectors', () => {
     useProjectStore.setState({
       requests: { 'req-1': makeDraft({ wssOutgoingRef: 'gone' }) },
       wssOutgoing: [],
+      wssIncoming: [],
     } as never);
     render(<AuthInspector requestId="req-1" />);
     expect(screen.getByText('gone (missing)')).toBeTruthy();

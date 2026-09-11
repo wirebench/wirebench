@@ -40,7 +40,7 @@ function expand(): void {
 
 afterEach(() => {
   cleanup();
-  useProjectStore.setState({ project: null, keystores: [], wssOutgoing: [] });
+  useProjectStore.setState({ project: null, keystores: [], wssOutgoing: [], wssIncoming: [] });
 });
 
 describe('OutgoingConfigEditor', () => {

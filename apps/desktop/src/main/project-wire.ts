@@ -4,7 +4,15 @@
  * mirrors. No `electron`, no `fs`: unit-tested directly against real engine models.
  */
 
-import { keystoreEntrySchema, toKeystoreDef, toWssOutgoingConfig, wssOutgoingFileSchema } from '@wirebench/engine';
+import {
+  DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
+  keystoreEntrySchema,
+  toKeystoreDef,
+  toWssIncomingConfig,
+  toWssOutgoingConfig,
+  wssIncomingFileSchema,
+  wssOutgoingFileSchema,
+} from '@wirebench/engine';
 import type {
   Attachment,
   Endpoint,
@@ -25,6 +33,7 @@ import type {
   InterfaceWire,
   KeystoreWire,
   WssEntryWire,
+  WssIncomingWire,
   WssOutgoingWire,
   OperationSummaryWire,
   ProjectProblemWire,
@@ -293,6 +302,38 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     settings: { ...project.settings },
     keystores: project.wss.keystores.map(toKeystoreWire),
     wssOutgoing: project.wss.outgoing.map(toWssOutgoingWire),
+    wssIncoming: project.wss.incoming.map(toWssIncomingWire),
+  };
+}
+
+/**
+ * One incoming WS-Security configuration, projected for the renderer: registry ids, a secret
+ * reference and the strictness knobs — never a certificate, a key or a password. A document
+ * that is not a configuration at all becomes a defaults-only one, so the row stays visible and
+ * removable rather than silently vanishing.
+ */
+function toWssIncomingWire(ref: WssRef): WssIncomingWire {
+  const defaults = {
+    requireSignature: false,
+    requireTimestamp: false,
+    timestampSkewSeconds: DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
+    verifyChain: true,
+  };
+  if (!wssIncomingFileSchema.safeParse(ref.document).success) {
+    return { id: ref.id, name: ref.name, ...defaults };
+  }
+  const config = toWssIncomingConfig(ref);
+  return {
+    id: config.id,
+    name: config.name,
+    ...(config.decryptKeystoreRef !== undefined ? { decryptKeystoreRef: config.decryptKeystoreRef } : {}),
+    ...(config.decryptAlias !== undefined ? { decryptAlias: config.decryptAlias } : {}),
+    ...(config.decryptKeyPasswordRef !== undefined ? { decryptKeyPasswordRef: config.decryptKeyPasswordRef } : {}),
+    ...(config.signatureKeystoreRef !== undefined ? { signatureKeystoreRef: config.signatureKeystoreRef } : {}),
+    requireSignature: config.requireSignature,
+    requireTimestamp: config.requireTimestamp,
+    timestampSkewSeconds: config.timestampSkewSeconds,
+    verifyChain: config.verifyChain,
   };
 }
 

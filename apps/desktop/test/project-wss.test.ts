@@ -6,7 +6,14 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createProject } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { addWssOutgoing, removeWssOutgoing, updateWssOutgoing } from '../src/main/project-wss-mutations.js';
+import {
+  addWssIncoming,
+  addWssOutgoing,
+  removeWssIncoming,
+  removeWssOutgoing,
+  updateWssIncoming,
+  updateWssOutgoing,
+} from '../src/main/project-wss-mutations.js';
 import { ProjectService } from '../src/main/project-service.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { Project } from '@wirebench/engine';
@@ -29,7 +36,7 @@ function newService(secrets?: { get(ref: string): Promise<string | undefined> })
 }
 
 /** A project with one request, so the ref-clearing and send paths have something to point at. */
-function projectWithRequest(base: Project, wssOutgoingRef?: string): Project {
+function projectWithRequest(base: Project, wssOutgoingRef?: string, wssIncomingRef?: string): Project {
   return {
     ...base,
     interfaces: [
@@ -61,6 +68,7 @@ function projectWithRequest(base: Project, wssOutgoingRef?: string): Project {
                 headers: [],
                 attachments: [],
                 ...(wssOutgoingRef !== undefined ? { wssOutgoingRef } : {}),
+                ...(wssIncomingRef !== undefined ? { wssIncomingRef } : {}),
                 properties: { encoding: 'UTF-8' },
               },
             ],
@@ -209,5 +217,108 @@ describe('ProjectService WS-Security', () => {
     const yaml = await readFile(join(dir, 'wss', 'outgoing', `${configId}.yaml`), 'utf8');
     expect(yaml).toContain('passwordRef: secret:pw');
     expect(yaml).not.toContain('hunter2');
+  });
+});
+
+describe('incoming WS-Security mutations', () => {
+  const base = createProject('Demo');
+
+  it("creates a configuration with this build's defaults and an id-based file", () => {
+    const first = addWssIncoming(base, {});
+    expect(first.project.wss.incoming[0]?.name).toBe('Incoming WSS');
+    expect(first.project.wss.incoming[0]?.file).toBe(`wss/incoming/${first.configId}.yaml`);
+    expect(first.project.wss.incoming[0]?.document).toMatchObject({
+      requireSignature: false,
+      requireTimestamp: false,
+      timestampSkewSeconds: 300,
+      verifyChain: true,
+    });
+    expect(addWssIncoming(first.project, {}).project.wss.incoming[1]?.name).toBe('Incoming WSS 2');
+    expect(addWssIncoming(base, { name: '  Gateway ' }).project.wss.incoming[0]?.name).toBe('Gateway');
+  });
+
+  it('patches fields and clears the optional refs', () => {
+    const { project, configId } = addWssIncoming(base, {});
+    const patched = updateWssIncoming(project, configId, {
+      name: 'Gateway in',
+      decryptKeystoreRef: 'k1',
+      decryptAlias: 'client',
+      decryptKeyPasswordRef: 'secret:key',
+      signatureKeystoreRef: 'trust',
+      requireSignature: true,
+      timestampSkewSeconds: 60,
+      verifyChain: false,
+    });
+    expect(patched.wss.incoming[0]?.document).toMatchObject({
+      name: 'Gateway in',
+      decryptKeystoreRef: 'k1',
+      decryptAlias: 'client',
+      decryptKeyPasswordRef: 'secret:key',
+      signatureKeystoreRef: 'trust',
+      requireSignature: true,
+      timestampSkewSeconds: 60,
+      verifyChain: false,
+    });
+    const cleared = updateWssIncoming(patched, configId, {
+      decryptKeystoreRef: null,
+      decryptAlias: null,
+      decryptKeyPasswordRef: null,
+      signatureKeystoreRef: '',
+    });
+    for (const key of ['decryptKeystoreRef', 'decryptAlias', 'decryptKeyPasswordRef', 'signatureKeystoreRef']) {
+      expect(cleared.wss.incoming[0]?.document[key]).toBeUndefined();
+    }
+  });
+
+  it('reports an unknown id', () => {
+    expect(() => updateWssIncoming(base, 'nope', { name: 'x' })).toThrow(/No incoming WS-Security/);
+    expect(() => removeWssIncoming(base, 'nope')).toThrow(/No incoming WS-Security/);
+  });
+
+  it('clears wssIncomingRef on every request that selected the removed configuration', () => {
+    const { project, configId } = addWssIncoming(base, {});
+    const removed = removeWssIncoming(projectWithRequest(project, undefined, configId), configId);
+    expect(removed.wss.incoming).toHaveLength(0);
+    expect(removed.interfaces[0]?.operations[0]?.requests[0]?.wssIncomingRef).toBeUndefined();
+  });
+});
+
+describe('ProjectService incoming WS-Security', () => {
+  it('mirrors the configuration and builds a send input for a request that selects only it', async () => {
+    const dir = tempDir('proj');
+    const service = newService();
+    await service.create({ dir, name: 'Demo' });
+    const open = (service as unknown as { open: { project: Project } }).open;
+    const added = addWssIncoming(open.project, { name: 'Gateway in' });
+    open.project = projectWithRequest(added.project);
+    await service.mutate({
+      kind: 'update-wss-incoming',
+      configId: added.configId,
+      patch: { signatureKeystoreRef: 'trust', requireSignature: true },
+    });
+    const { project } = await service.mutate({
+      kind: 'update-request',
+      requestId: 'r1',
+      patch: { wssIncomingRef: added.configId },
+    });
+    expect(project.wssIncoming[0]).toMatchObject({ name: 'Gateway in', requireSignature: true });
+    expect(project.requests[0]?.wssIncomingRef).toBe(added.configId);
+
+    const wss = await service.wssFor('r1');
+    expect(wss?.outgoing).toBeUndefined();
+    expect(wss?.incoming).toMatchObject({ signatureKeystoreRef: 'trust', requireSignature: true });
+
+    await service.save();
+    const yaml = await readFile(join(dir, 'wss', 'incoming', `${added.configId}.yaml`), 'utf8');
+    expect(yaml).toContain('signatureKeystoreRef: trust');
+  });
+
+  it('refuses to send when the selected incoming configuration is gone', async () => {
+    const dir = tempDir('proj');
+    const service = newService();
+    await service.create({ dir, name: 'Demo' });
+    const open = (service as unknown as { open: { project: Project } }).open;
+    open.project = projectWithRequest(open.project, undefined, 'gone');
+    await expect(service.wssFor('r1')).rejects.toThrow(/no longer has/);
   });
 });

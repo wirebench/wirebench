@@ -66,6 +66,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
     problems: [],
     keystores: [],
     wssOutgoing: [],
+    wssIncoming: [],
     ...overrides,
   };
 }

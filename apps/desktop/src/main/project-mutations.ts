@@ -36,7 +36,14 @@ import {
   updateEnvironment,
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
-import { addWssOutgoing, removeWssOutgoing, updateWssOutgoing } from './project-wss-mutations.js';
+import {
+  addWssIncoming,
+  addWssOutgoing,
+  removeWssIncoming,
+  removeWssOutgoing,
+  updateWssIncoming,
+  updateWssOutgoing,
+} from './project-wss-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
 
@@ -81,6 +88,7 @@ export interface MutationResult {
   readonly createdAttachmentId?: string;
   readonly createdKeystoreId?: string;
   readonly createdWssOutgoingId?: string;
+  readonly createdWssIncomingId?: string;
 }
 
 function notFound(what: string, id: string): never {
@@ -733,6 +741,17 @@ export async function applyChange(
 
     case 'remove-wss-outgoing':
       return { project: removeWssOutgoing(project, change.configId) };
+
+    case 'add-wss-incoming': {
+      const added = addWssIncoming(project, { ...(change.name !== undefined ? { name: change.name } : {}) });
+      return { project: added.project, createdWssIncomingId: added.configId };
+    }
+
+    case 'update-wss-incoming':
+      return { project: updateWssIncoming(project, change.configId, change.patch) };
+
+    case 'remove-wss-incoming':
+      return { project: removeWssIncoming(project, change.configId) };
   }
 }
 

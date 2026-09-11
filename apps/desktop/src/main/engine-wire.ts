@@ -263,6 +263,31 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
         }
       : {}),
     ...(exchange.unresolved !== undefined ? { unresolved: exchange.unresolved.map(toUnresolvedRefWire) } : {}),
+    // Only booleans, details and subjects cross the bridge: `WssResult` is already free of key
+    // material by construction, and this mapping keeps it that way field by field.
+    ...(exchange.wss !== undefined
+      ? {
+          wss: {
+            ...(exchange.wss.applied !== undefined ? { applied: [...exchange.wss.applied] } : {}),
+            ...(exchange.wss.incoming !== undefined
+              ? {
+                  incoming: {
+                    actions: exchange.wss.incoming.actions.map((action) => ({
+                      kind: action.kind,
+                      ok: action.ok,
+                      detail: action.detail,
+                      ...(action.signerSubject !== undefined ? { signerSubject: action.signerSubject } : {}),
+                      ...(action.trusted !== undefined ? { trusted: action.trusted } : {}),
+                      ...(action.created !== undefined ? { created: action.created } : {}),
+                      ...(action.expires !== undefined ? { expires: action.expires } : {}),
+                    })),
+                    errors: [...exchange.wss.incoming.errors],
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
