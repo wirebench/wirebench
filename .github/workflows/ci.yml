@@ -27,14 +27,22 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      # Lint, formatting, the generated-docs, contrast, doc-path, banned-term and licence checks
+      # are properties of the source tree, not of the OS running them: they run once, on Linux
+      # (`pnpm check`). macOS and Windows run what can actually differ there — the type build
+      # and the test suites (`pnpm check:tests`). Line endings, the one thing Prettier could
+      # catch per OS, are pinned by `.gitattributes`.
+      - run: ${{ matrix.os == 'ubuntu-latest' && 'pnpm check' || 'pnpm check:tests' }}
+
+  # The jobs below do not wait for `check`: each fails on its own, and serialising them behind
+  # the slowest check runner only stretched the wall-clock — a red `check` never made a green
+  # e2e result less informative, and vice versa.
 
   # Coverage runs once, on Linux only: it re-executes the engine's unit/integration suite under
   # v8 coverage instrumentation, which is slower than the plain run `check` already did on every
   # OS above, and the 85% thresholds (`vitest.config.ts`) are a property of the engine's source
   # and tests, not of the OS running them.
   coverage:
-    needs: check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,7 +58,6 @@ jobs:
       - run: pnpm test:coverage
 
   wss-xmlsec:
-    needs: check
     strategy:
       # One OS's toolchain failing must not hide the other's result.
       fail-fast: false
@@ -80,7 +87,6 @@ jobs:
   # macOS only: only the macOS snapshots are committed (see e2e/specs/a11y.spec.ts), and those
   # two tests skip themselves elsewhere. Everything else in the suite runs everywhere.
   e2e:
-    needs: check
     strategy:
       # One OS failing must not cancel the others: a Windows-only regression has to be
       # visible even when the macOS screenshot comparison is unhappy, and vice versa.
