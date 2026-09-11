@@ -218,7 +218,7 @@ test.describe('accessibility and theming', () => {
 
       await expect(window).toHaveScreenshot(`shell-${theme}.png`, {
         mask: dynamicRegions(window),
-        maxDiffPixelRatio: 0.01,
+        maxDiffPixelRatio: 0.002,
         animations: 'disabled',
       });
     });

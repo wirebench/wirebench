@@ -376,7 +376,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm --filter @wirebench/desktop test`; `pnpm test:e2e -- --grep keyboard`
   - Files: apps/desktop/src/shared/commands.ts, apps/desktop/src/main/menu.ts, apps/desktop/src/renderer/lib/keybindings.ts, apps/desktop/src/renderer/features/preferences/shortcuts-editor.tsx, apps/desktop/src/renderer/features/search/search-view.tsx, e2e/specs/keyboard.spec.ts
 
-- [ ] **48. Light theme + accessibility pass**
+- [x] **48. Light theme + accessibility pass**
   - Light tokens; follow-OS via `nativeTheme` + `theme.changed` event; theme command; focus-visible rings; ARIA on tree/tabs/tables; reduced-motion; `scripts/contrast-check.ts` (text tokens ≥ 4.5:1); axe scan in e2e (`@axe-core/playwright`, Q1).
   - Acceptance: both themes screenshot-snapshotted; axe: no serious violations on welcome, editor, interface editor.
   - Verify: `pnpm test:e2e -- --grep "theme|a11y"`; `pnpm tsx scripts/contrast-check.ts`
