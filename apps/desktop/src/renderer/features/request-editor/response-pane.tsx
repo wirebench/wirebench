@@ -10,7 +10,8 @@ import type { ExchangeState } from '../../state/exchanges.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { ResponseViewType } from '../../state/editors.js';
-import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { WssInspector, wssTabLabel } from './inspectors/wss-inspector.js';
 import { ResponseAttachmentsInspector } from './inspectors/response-attachments-inspector.js';
 import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
@@ -38,17 +39,18 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
 }
 
 /**
- * The response pane's inspector strip. WSS is a placeholder until its task lands.
+ * The response pane's inspector strip.
  *
- * The Attachments tab carries its count (`Attachments (2)`) because it is the one tab whose
- * emptiness is a property of the *response* rather than of the app: without the badge you have
- * to open it to learn a send brought parts back.
+ * The Attachments tab carries its count (`Attachments (2)`), and the WSS tab a ✓/✗ badge,
+ * because their emptiness (or outcome) is a property of the *response* rather than of the app:
+ * without the badge you would have to open the tab to learn a send brought parts back, or that
+ * a signature did not hold.
  */
-function responseInspectors(attachmentCount: number): readonly InspectorItem[] {
+function responseInspectors(attachmentCount: number, wssLabel: string): readonly InspectorItem[] {
   return [
     { id: 'headers', label: 'Headers' },
     { id: 'attachments', label: attachmentCount > 0 ? `Attachments (${String(attachmentCount)})` : 'Attachments' },
-    { id: 'wss', label: 'WSS' },
+    { id: 'wss', label: wssLabel },
     { id: 'ssl', label: 'SSL Info' },
   ];
 }
@@ -193,7 +195,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
         requestId={requestId}
         pane="response"
         label="Response inspectors"
-        items={responseInspectors(response?.attachments.length ?? 0)}
+        items={responseInspectors(response?.attachments.length ?? 0, wssTabLabel(exchange))}
         render={(inspector) =>
           inspector === 'headers' ? (
             <ResponseHeadersInspector exchange={exchange} />
@@ -202,7 +204,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
           ) : inspector === 'attachments' ? (
             <ResponseAttachmentsInspector exchange={exchange} />
           ) : (
-            <InspectorPlaceholder name="WS-Security" task={40} />
+            <WssInspector exchange={exchange} requestId={requestId} />
           )
         }
       />

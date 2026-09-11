@@ -235,7 +235,7 @@ interface SignatureFieldsProps {
  * The alias names of one keystore, loaded through `keystores.inspect` — main reads the
  * keystore; the renderer only ever sees alias names and certificate metadata, never a key.
  */
-function useKeystoreAliases(keystoreRef: string): readonly KeystoreAliasWire[] {
+export function useKeystoreAliases(keystoreRef: string): readonly KeystoreAliasWire[] {
   const [aliases, setAliases] = useState<readonly KeystoreAliasWire[]>([]);
 
   useEffect(() => {

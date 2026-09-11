@@ -260,13 +260,14 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
  * resolved in main) on its way to the wire. The editor actions in the request context menu are
  * the other half — they bake a header into the envelope *text* instead.
  *
- * The Incoming list stays empty until Task 40 mirrors incoming configurations; the select
- * exists so a ref an imported project already carries is visible and clearable.
+ * A ref the registry no longer has stays selectable in either list, so it is visible rather
+ * than silently reset to "none" the moment the request is opened.
  */
 function WssSelectors({ requestId }: { readonly requestId: string }) {
   const outgoingRef = useProjectStore((state) => state.requests[requestId]?.wssOutgoingRef);
   const incomingRef = useProjectStore((state) => state.requests[requestId]?.wssIncomingRef);
   const configs = useProjectStore((state) => state.wssOutgoing);
+  const incomingConfigs = useProjectStore((state) => state.wssIncoming);
   const updateRequest = useProjectStore((state) => state.updateRequest);
 
   return (
@@ -307,7 +308,14 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           }}
         >
           <option value="">—</option>
-          {incomingRef !== undefined && <option value={incomingRef}>{incomingRef}</option>}
+          {incomingConfigs.map((config) => (
+            <option key={config.id} value={config.id}>
+              {config.name}
+            </option>
+          ))}
+          {incomingRef !== undefined && !incomingConfigs.some((config) => config.id === incomingRef) && (
+            <option value={incomingRef}>{`${incomingRef} (missing)`}</option>
+          )}
         </select>
       </label>
     </div>
