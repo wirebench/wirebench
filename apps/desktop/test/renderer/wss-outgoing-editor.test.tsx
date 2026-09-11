@@ -190,10 +190,10 @@ describe('OutgoingConfigEditor', () => {
     fireEvent.click(screen.getByLabelText('Embed key'));
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [{ ...encryption, embedKey: true }] });
 
-    fireEvent.click(screen.getByLabelText('Encrypt symmetric key'));
-    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
-      entries: [{ ...encryption, encryptSymmetricKey: false }],
-    });
+    // Out-of-band symmetric keys are not supported (the engine rejects them), so there is no
+    // control that could ask for one.
+    expect(screen.queryByLabelText('Encrypt symmetric key')).toBeNull();
+    expect(screen.getByTestId('wss-encryption-fields').textContent).toContain('always encrypted');
 
     fireEvent.change(screen.getByLabelText('Part 1 encode'), { target: { value: 'Element' } });
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {

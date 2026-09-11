@@ -526,17 +526,10 @@ export function EncryptionFields({ entry, onChange }: EncryptionFieldsProps) {
         />
         Embed certificate as a Binary Security Token
       </label>
-      <label className="flex items-center gap-1 text-xs text-fg-subtle">
-        <input
-          type="checkbox"
-          aria-label="Encrypt symmetric key"
-          checked={entry.encryptSymmetricKey}
-          onChange={(event) => {
-            onChange({ ...entry, encryptSymmetricKey: event.target.checked });
-          }}
-        />
-        Encrypt the symmetric key
-      </label>
+      <p className="text-xs text-fg-subtle">
+        The symmetric key is always encrypted to the recipient certificate. Out-of-band symmetric keys are not supported
+        yet.
+      </p>
 
       <PartsTable
         label="Encrypted parts"

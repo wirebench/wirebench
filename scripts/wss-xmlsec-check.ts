@@ -178,11 +178,26 @@ function inlineEncryptedKey(xml: string): string | undefined {
   }
   const encryptedKey = keyMatch[0].replace(/<xenc:ReferenceList>[\s\S]*?<\/xenc:ReferenceList>/, '');
   const withoutKey = xml.replace(keyMatch[0], '');
-  const replaced = withoutKey.replace(
+  // Anchored inside the EncryptedData's own ds:KeyInfo: in a sign-then-encrypt envelope the
+  // *first* SecurityTokenReference in the document is the ds:Signature's, and replacing that
+  // one would both destroy the signature's key reference and leave the EncryptedData without
+  // a key to find.
+  const dataMatch = /<xenc:EncryptedData[\s\S]*?<\/xenc:EncryptedData>/.exec(withoutKey);
+  if (dataMatch === null) {
+    return undefined;
+  }
+  const keyInfoMatch = /<ds:KeyInfo[\s>][\s\S]*?<\/ds:KeyInfo>/.exec(dataMatch[0]);
+  if (keyInfoMatch === null) {
+    return undefined;
+  }
+  const keyInfo = keyInfoMatch[0].replace(
     /<wsse:SecurityTokenReference[^>]*>[\s\S]*?<\/wsse:SecurityTokenReference>/,
     encryptedKey,
   );
-  return replaced === withoutKey ? undefined : replaced;
+  if (keyInfo === keyInfoMatch[0]) {
+    return undefined;
+  }
+  return withoutKey.replace(dataMatch[0], dataMatch[0].replace(keyInfoMatch[0], keyInfo));
 }
 
 /** The `xmlsec1 --verify` argument list for `file`, verifying against `certPath`. */

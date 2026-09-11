@@ -257,5 +257,10 @@ test.describe('wss', () => {
     await expect(requestRaw).toBeVisible({ timeout: 10_000 });
     await expect(requestRaw).toContainText('xenc:EncryptedData');
     await expect(requestRaw).not.toContainText('intA');
+
+    // --- and it replaced the Body's content, not something else ------------------------------
+    const raw = (await requestRaw.textContent()) ?? '';
+    const body = /<soapenv:Body[\s\S]*?<\/soapenv:Body>/.exec(raw)?.[0] ?? '';
+    expect(body).toContain('xenc:EncryptedData');
   });
 });
