@@ -31,7 +31,7 @@ import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { goToSchemaDefinition } from './schema-navigation.js';
 import { ViewTabs } from './view-tabs.js';
-import { FormView, OutlineView, RawView, ViewFallback } from './views/lazy-views.js';
+import { FormView, OutlineView, prefetchViews, RawView, ViewFallback } from './views/lazy-views.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
@@ -166,6 +166,14 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   // the timer would fire a moment later and write the old text back over the new one (the
   // Task 15 ruling). An `envelopeXml` this pane itself committed is not such a replacement —
   // it is the mirror echoing that very edit back, and a keystroke made since must survive it.
+  // Warm the other view chunks once the pane has settled, so the first click on Form, Outline
+  // or Raw renders straight away instead of waiting on a module fetch. Both panes call this;
+  // it is idempotent.
+  useEffect(() => {
+    const handle = setTimeout(prefetchViews, 0);
+    return () => clearTimeout(handle);
+  }, []);
+
   useEffect(() => {
     if (envelopeXml === committedRef.current) {
       return;

@@ -118,6 +118,30 @@ function buildCalculatorAddResponse(requestBody: string): string | undefined {
 }
 
 /**
+ * A well-formed SOAP 1.1 response envelope of roughly `targetBytes` bytes, made of repeated
+ * `<Row>` elements. Deterministic: the same target always produces the same bytes, so a spec
+ * measuring render or scroll cost over it compares like with like between runs.
+ */
+export function buildLargeSoapResponse(targetBytes: number): string {
+  const head =
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n' +
+    '  <soapenv:Body>\n    <Rows xmlns="urn:wirebench:perf">\n';
+  const tail = '    </Rows>\n  </soapenv:Body>\n</soapenv:Envelope>\n';
+  const parts: string[] = [head];
+  let size = head.length + tail.length;
+  let index = 0;
+  while (size < targetBytes) {
+    const row = `      <Row id="${index}"><Name>Row ${index}</Name><Value>${(index * 37) % 100000}</Value></Row>\n`;
+    parts.push(row);
+    size += row.length;
+    index += 1;
+  }
+  parts.push(tail);
+  return parts.join('');
+}
+
+/**
  * Reads the request body, transparently gunzipping it when the client announced
  * `Content-Encoding: gzip` — so a spec asserting on what the server received sees the
  * envelope, not the compressed bytes. A body that claims gzip but is not is left as-is.
@@ -460,6 +484,17 @@ export async function startTestSoapServer(options?: {
         if (!res.write(chunk)) await new Promise((resolve) => res.once('drain', resolve));
       }
       res.end();
+      return;
+    }
+
+    const bigSoapMatch = /^\/big-soap\/(\d+)$/.exec(url.pathname);
+    if (method === 'POST' && bigSoapMatch !== null) {
+      // `/big/<n>` above is `n` MB of opaque bytes, which the app renders as a non-SOAP body.
+      // This is its SOAP counterpart: a well-formed envelope of roughly `n` MB, so the response
+      // pane puts it in the XML editor, the Outline and the Query view — what the e2e
+      // performance budgets need something large to measure.
+      res.writeHead(200, { 'content-type': 'text/xml; charset=utf-8' });
+      res.end(buildLargeSoapResponse(Number(bigSoapMatch[1]) * 1024 * 1024));
       return;
     }
 

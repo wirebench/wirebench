@@ -21,7 +21,7 @@ import { SslInspector } from './inspectors/ssl-inspector.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
-import { FaultOverview, OutlineView, QueryView, RawView, ViewFallback } from './views/lazy-views.js';
+import { FaultOverview, OutlineView, prefetchViews, QueryView, RawView, ViewFallback } from './views/lazy-views.js';
 import type { TextRange } from './views/xml-model.js';
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column — mirrors `request-pane.tsx`'s
@@ -90,6 +90,13 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     }
     return decodeBase64Text(exchange.http.bodyBase64) ?? '';
   }, [exchange, response, autoFormat, tabSize]);
+
+  // Warm the view chunks as soon as the pane exists, so the first click on Raw, Outline, Query
+  // or Fault renders synchronously instead of suspending. Idempotent; the request pane does the
+  // same, and whichever mounts first pays for it.
+  useEffect(() => {
+    prefetchViews();
+  }, []);
 
   // A fault just arrived: switch to the Fault tab, unless the user already pinned another one.
   // `status` is in the deps (not just `sendId`) because a send's `sendId` is assigned once, at
