@@ -24,6 +24,9 @@ export interface ProblemDetail {
   readonly endColumn?: number | undefined;
 }
 
+/** Which half of an exchange a `validation` problem was found in; absent for every other source. */
+export type ProblemDirection = 'request' | 'response';
+
 /** One problem shown in the Problems view, tagged with where it came from. */
 export interface Problem {
   /** A grouping key (e.g. the interface id) so a re-import replaces only its own entries. */
@@ -32,6 +35,8 @@ export interface Problem {
   readonly severity: ProblemSeverity;
   /** Set for problems that belong to one request, so a send can clear just its own. */
   readonly requestId?: string;
+  /** For a `validation` problem, which editor (request or response) its position belongs to. */
+  readonly direction?: ProblemDirection;
   readonly problem: ProblemDetail;
 }
 
@@ -45,9 +50,15 @@ export interface ProblemsStore {
   /**
    * Replaces the validation problems of one run. `groupId` is
    * `validation:<requestId>:<direction>`, so a request's two directions are validated (and
-   * cleared) independently.
+   * cleared) independently. `direction` is stamped on every entry so a click on the row knows
+   * whether to reveal the position in the request or the response editor.
    */
-  readonly setValidation: (groupId: string, requestId: string, items: readonly ValidationProblemWire[]) => void;
+  readonly setValidation: (
+    groupId: string,
+    requestId: string,
+    direction: ProblemDirection,
+    items: readonly ValidationProblemWire[],
+  ) => void;
   /** Drops every problem of one group, whatever its source. */
   readonly clear: (groupId: string) => void;
   /** Drops every problem of one source, optionally narrowed to a single request. */
@@ -67,7 +78,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
     });
   },
 
-  setValidation: (groupId, requestId, items) => {
+  setValidation: (groupId, requestId, direction, items) => {
     const rest = get().items.filter((item) => item.groupId !== groupId);
     set({
       items: [
@@ -77,6 +88,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
           source: 'validation' as const,
           severity: problem.severity,
           requestId,
+          direction,
           problem,
         })),
       ],

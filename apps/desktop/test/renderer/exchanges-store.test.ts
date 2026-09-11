@@ -123,6 +123,22 @@ describe('useExchangesStore', () => {
     expect(sendFn).toHaveBeenCalledTimes(1);
   });
 
+  it('send() proceeds when validation itself is unavailable (an infra failure is a warning, not a gate)', async () => {
+    autoValidateOn();
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    const message = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'unknown-interface', message: 'not loaded' } });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() }, validate: { message } });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(sendFn).toHaveBeenCalledTimes(1);
+    expect(useProblemsStore.getState().items).toMatchObject([
+      { severity: 'warning', problem: { code: 'validation-unavailable' } },
+    ]);
+  });
+
   it('send() does not validate at all when the preference is off', async () => {
     const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
     const message = vi.fn();

@@ -9,6 +9,7 @@
 import type { ValidationProblemWire } from '../../../shared/wire-types.js';
 import { showToast } from '../../components/toast.js';
 import { getActiveRequestEditor } from '../../editor/active-request-editor.js';
+import { getActiveResponseEditor } from '../../editor/active-response-editor.js';
 import { setValidationMarkers } from '../../editor/markers.js';
 import { explorerActions } from '../explorer/explorer-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
@@ -61,17 +62,22 @@ export async function runValidation(
   });
 
   if (!result.ok) {
-    // A failure to validate is itself worth showing: it means the interface is not loaded, or
-    // the request no longer maps to an operation.
+    // A failure to validate is an infrastructure problem — the interface is not loaded, or the
+    // request no longer maps to an operation — not a finding about the message itself, so it is
+    // a warning (`validation-unavailable`) rather than an error: it must never block a send the
+    // way a real validation error does (see the auto-validate-on-send gate in `exchanges.ts`).
     const problems: ValidationProblemWire[] = [
-      { severity: 'error', code: result.error.code, message: result.error.message, source: 'structure' },
+      { severity: 'warning', code: 'validation-unavailable', message: result.error.message, source: 'structure' },
     ];
-    useProblemsStore.getState().setValidation(validationGroupId(requestId, direction), requestId, problems);
+    useProblemsStore.getState().setValidation(validationGroupId(requestId, direction), requestId, direction, problems);
     syncMarkers(requestId, direction, []);
+    showToast(`Could not validate: ${result.error.message}`);
     return problems;
   }
 
-  useProblemsStore.getState().setValidation(validationGroupId(requestId, direction), requestId, result.value.problems);
+  useProblemsStore
+    .getState()
+    .setValidation(validationGroupId(requestId, direction), requestId, direction, result.value.problems);
   syncMarkers(requestId, direction, result.value.problems);
   return result.value.problems;
 }
@@ -116,15 +122,27 @@ export async function validateAndReport(
   return problems;
 }
 
-/** Opens (or focuses) the request a problem belongs to and selects the line it points at. */
-export function revealProblem(requestId: string, line?: number, column?: number): void {
+/**
+ * Opens (or focuses) the request a problem belongs to and selects the line it points at — in
+ * the *request* editor for a `request`-direction problem, and in the *response* editor for a
+ * `response`-direction one. A response problem's position is a line in the response envelope;
+ * revealing it in the request editor next to it would select the wrong text (and the wrong
+ * document entirely, once the two diverge).
+ */
+export function revealProblem(requestId: string, direction: ValidationDirection, line?: number, column?: number): void {
   explorerActions.openRequest(requestId);
+  if (direction === 'response') {
+    // The response pane may be showing another view (Outline, Raw, …); the reveal needs its XML
+    // view on screen so there is an editor to select in.
+    useEditorsStore.getState().setResponseView(requestId, 'xml');
+  }
   if (line === undefined) {
     return;
   }
-  // The tab may only mount on the next render, so the reveal waits a turn for the editor.
+  // The tab (and, for a response reveal, the view switch above) may only take effect on the
+  // next render, so the reveal waits a turn for the editor to mount.
   setTimeout(() => {
-    const editor = getActiveRequestEditor();
+    const editor = direction === 'response' ? getActiveResponseEditor() : getActiveRequestEditor();
     const model = editor?.getModel();
     if (editor === undefined || model === null || model === undefined) {
       return;

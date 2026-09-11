@@ -104,7 +104,7 @@ export function ProblemsView() {
                   data-testid="problem-row"
                   onClick={() => {
                     if (source === 'validation') {
-                      revealProblem(requestId, problem.line, problem.column);
+                      revealProblem(requestId, item.direction ?? 'request', problem.line, problem.column);
                       return;
                     }
                     explorerActions.openRequest(requestId);

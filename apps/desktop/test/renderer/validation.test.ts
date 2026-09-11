@@ -1,15 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setValidationMarkers, toMarkerData, VALIDATION_MARKER_OWNER } from '../../src/renderer/editor/markers.js';
 import type { MarkerApi } from '../../src/renderer/editor/markers.js';
+import { showToast } from '../../src/renderer/components/toast.js';
+import { getActiveRequestEditor } from '../../src/renderer/editor/active-request-editor.js';
+import { getActiveResponseEditor } from '../../src/renderer/editor/active-response-editor.js';
 import {
   clearValidation,
+  revealProblem,
   runValidation,
   validateAndReport,
   validationGroupId,
 } from '../../src/renderer/features/request-editor/validate-actions.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
-import type { ValidationProblemWire } from '../../src/shared/wire-types.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import type { RequestWire, ValidationProblemWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/editor/active-request-editor.js', () => ({ getActiveRequestEditor: vi.fn() }));
+vi.mock('../../src/renderer/editor/active-response-editor.js', () => ({ getActiveResponseEditor: vi.fn() }));
 
 const model = { getLineCount: () => 10, getLineMaxColumn: (line: number) => line * 10 };
 
@@ -90,7 +100,17 @@ describe('runValidation', () => {
       source: 'validation',
       severity: 'error',
       requestId: 'req-1',
+      direction: 'request',
     });
+  });
+
+  it('stamps a response-direction run with direction "response"', async () => {
+    installWirebenchApi({
+      validate: { message: vi.fn().mockResolvedValue({ ok: true, value: { problems: [problem()], durationMs: 1 } }) },
+    });
+
+    await runValidation('req-1', 'response', '<Envelope/>');
+    expect(useProblemsStore.getState().items[0]).toMatchObject({ requestId: 'req-1', direction: 'response' });
   });
 
   it('replaces the previous run of the same direction only', async () => {
@@ -109,15 +129,20 @@ describe('runValidation', () => {
     expect(useProblemsStore.getState().items.map((item) => item.problem.code)).toEqual(['other']);
   });
 
-  it('records a failed validation call as a problem of its own', async () => {
+  it('records a failed validation call as a warning, not an error, and toasts it', async () => {
     installWirebenchApi({
       validate: {
         message: vi.fn().mockResolvedValue({ ok: false, error: { code: 'unknown-interface', message: 'nope' } }),
       },
     });
     const problems = await runValidation('req-1', 'request');
-    expect(problems.map((item) => item.code)).toEqual(['unknown-interface']);
+    // The code is a stable `validation-unavailable`, not whatever the IPC call happened to
+    // fail with: this is "the validator itself is broken", never a finding about the message.
+    expect(problems.map((item) => item.code)).toEqual(['validation-unavailable']);
+    expect(problems[0]?.severity).toBe('warning');
     expect(useProblemsStore.getState().items).toHaveLength(1);
+    expect(useProblemsStore.getState().items[0]).toMatchObject({ severity: 'warning', direction: 'request' });
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('nope') as unknown);
   });
 
   it('clearValidation drops both directions', async () => {
@@ -135,5 +160,76 @@ describe('runValidation', () => {
       validate: { message: vi.fn().mockResolvedValue({ ok: true, value: { problems: [], durationMs: 1 } }) },
     });
     await expect(validateAndReport('req-1', 'request')).resolves.toEqual([]);
+  });
+});
+
+describe('revealProblem', () => {
+  const request = {
+    id: 'req-1',
+    interfaceId: 'iface-1',
+    bindingName: '{tns}B',
+    operationName: 'Add',
+    name: 'Request 1',
+    envelopeXml: '<Envelope/>',
+    soapVersion: '1.1',
+    headers: [],
+    order: 0,
+  } as unknown as RequestWire;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useEditorsStore.setState({ tabs: [], activeId: undefined, responseViewTypes: {} });
+    useProjectStore.setState({ requests: { 'req-1': request } });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(getActiveRequestEditor).mockReset();
+    vi.mocked(getActiveResponseEditor).mockReset();
+  });
+
+  it('selects the request editor for a request-direction problem and leaves the response alone', () => {
+    const requestModel = { getLineCount: () => 10, getLineMaxColumn: () => 20 };
+    const requestEditor = {
+      getModel: () => requestModel,
+      revealRangeInCenter: vi.fn(),
+      setSelection: vi.fn(),
+      focus: vi.fn(),
+    };
+    const responseEditor = { setSelection: vi.fn(), getModel: () => ({ getLineCount: () => 10 }) };
+
+    vi.mocked(getActiveRequestEditor).mockReturnValue(requestEditor as never);
+    vi.mocked(getActiveResponseEditor).mockReturnValue(responseEditor as never);
+
+    revealProblem('req-1', 'request', 6, 2);
+    vi.runAllTimers();
+
+    expect(requestEditor.setSelection).toHaveBeenCalledWith(
+      expect.objectContaining({ startLineNumber: 6, startColumn: 2 }),
+    );
+    expect(responseEditor.setSelection).not.toHaveBeenCalled();
+  });
+
+  it('selects the response editor for a response-direction problem and leaves the request alone', () => {
+    const requestEditor = { getModel: () => ({ getLineCount: () => 10 }), setSelection: vi.fn() };
+    const responseModel = { getLineCount: () => 10, getLineMaxColumn: () => 20 };
+    const responseEditor = {
+      getModel: () => responseModel,
+      revealRangeInCenter: vi.fn(),
+      setSelection: vi.fn(),
+      focus: vi.fn(),
+    };
+
+    vi.mocked(getActiveRequestEditor).mockReturnValue(requestEditor as never);
+    vi.mocked(getActiveResponseEditor).mockReturnValue(responseEditor as never);
+
+    revealProblem('req-1', 'response', 4, 3);
+    expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('xml');
+    vi.runAllTimers();
+
+    expect(responseEditor.setSelection).toHaveBeenCalledWith(
+      expect.objectContaining({ startLineNumber: 4, startColumn: 3 }),
+    );
+    expect(requestEditor.setSelection).not.toHaveBeenCalled();
   });
 });

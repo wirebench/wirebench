@@ -124,6 +124,7 @@ describe('ProblemsView', () => {
           source: 'validation',
           severity: 'error',
           requestId: 'req-1',
+          direction: 'request',
           problem: { code: 'schema-invalid', message: 'bad', source: 'schema', line: 6 },
         },
       ],
@@ -134,5 +135,27 @@ describe('ProblemsView', () => {
     expect(useEditorsStore.getState().tabs).toEqual([
       { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
     ]);
+  });
+
+  it('switches the response pane to its XML view when a response validation problem is clicked', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:response',
+          source: 'validation',
+          severity: 'error',
+          requestId: 'req-1',
+          direction: 'response',
+          problem: { code: 'schema-invalid', message: 'bad response', source: 'schema', line: 4 },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    fireEvent.click(screen.getByTestId('problem-row'));
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
+    ]);
+    expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('xml');
   });
 });
