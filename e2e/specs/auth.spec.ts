@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
@@ -39,7 +39,7 @@ test.describe('auth', () => {
       server = undefined;
     }
     for (const dir of [userDataDir, projectDir]) {
-      if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+      if (dir !== undefined) removeDirSync(dir);
     }
     userDataDir = undefined;
     projectDir = undefined;
@@ -116,7 +116,6 @@ test.describe('auth', () => {
       }
     };
     plaintextLeakChecks(projectDir);
-    plaintextLeakChecks(userDataDir);
 
     // --- a wrong password surfaces the final 401 as a normal response ------------------------
     await panel.getByRole('button', { name: 'Replace…' }).click();
@@ -138,6 +137,15 @@ test.describe('auth', () => {
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
     await expect(page.getByTestId('response-status')).not.toContainText('Authenticated after 401 challenge');
+
+    // The profile is scanned only once the app has let go of it: Chromium keeps its own files
+    // (the profile lock, the leveldb logs) open with a share mode Windows refuses a reader,
+    // which made `readFileSync` throw EBUSY there. Closing first also makes this the *final*
+    // state of the profile — after all three passwords were saved — which is strictly more
+    // than the mid-test read covered.
+    await launched.close();
+    launched = undefined;
+    plaintextLeakChecks(userDataDir);
   });
 
   test('NTLM authenticates through the three-leg handshake and fails with a wrong password', async () => {

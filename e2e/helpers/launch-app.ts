@@ -22,6 +22,18 @@ import { MAIN_PATH } from '../global-setup.js';
 export const PACKAGED_APP = process.env['WIREBENCH_PACKAGED_APP'];
 
 /**
+ * Removes a throwaway directory, retrying the "still held open" errors Windows raises.
+ *
+ * `rmSync`'s `force` only swallows `ENOENT`. A `userData` directory an Electron process has just
+ * released — or that Defender is still scanning — fails with `EPERM`/`EBUSY` on win32 for a
+ * moment afterwards, which is why every removal here goes through Node's own retry loop instead
+ * of a bare `rmSync`.
+ */
+export function removeDirSync(dir: string): void {
+  rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+}
+
+/**
  * The executable inside a packaged bundle. A macOS `.app` keeps it under
  * `Contents/MacOS/<name>`; on the other platforms the path already is the executable.
  */
@@ -101,7 +113,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
       async close(): Promise<void> {
         await app!.close();
         if (options.keepUserDataDir !== true) {
-          rmSync(userDataDir, { recursive: true, force: true });
+          removeDirSync(userDataDir);
         }
         const unexpected = consoleErrors.filter(
           (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
@@ -118,7 +130,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
       }
     }
     if (options.keepUserDataDir !== true) {
-      rmSync(userDataDir, { recursive: true, force: true });
+      removeDirSync(userDataDir);
     }
     throw error;
   }
@@ -202,7 +214,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
         await browser!.close();
         child.kill();
         if (options.keepUserDataDir !== true) {
-          rmSync(userDataDir, { recursive: true, force: true });
+          removeDirSync(userDataDir);
         }
         const unexpected = consoleErrors.filter(
           (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
@@ -214,7 +226,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
     await browser?.close().catch(() => undefined);
     child.kill();
     if (options.keepUserDataDir !== true) {
-      rmSync(userDataDir, { recursive: true, force: true });
+      removeDirSync(userDataDir);
     }
     throw error;
   }
