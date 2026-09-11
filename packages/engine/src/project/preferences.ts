@@ -128,6 +128,15 @@ export interface UiPreferences {
   readonly historyCap: number;
 }
 
+/**
+ * Software-update preferences. `checkOnLaunch` is off by default and stays off until the user
+ * turns it on: Wirebench contacts the release feed when asked, not when started.
+ */
+export interface UpdatePreferences {
+  /** Check GitHub Releases for a newer version once, shortly after the app starts. */
+  readonly checkOnLaunch: boolean;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -137,6 +146,7 @@ export interface Preferences {
   readonly wsi: WsiPreferences;
   readonly editor: EditorPreferences;
   readonly ui: UiPreferences;
+  readonly updates: UpdatePreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -185,6 +195,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     confirmOnDelete: true,
     historyCap: 1000,
   }),
+  updates: Object.freeze({ checkOnLaunch: false }),
   shortcuts: Object.freeze({}),
 });
 
@@ -263,6 +274,7 @@ export const preferencesSchema = z.object({
       historyCap: z.number().optional(),
     })
     .optional(),
+  updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -319,6 +331,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     wsi: parseSection(shape.wsi, root['wsi']),
     editor: parseSection(shape.editor, root['editor']),
     ui: parseSection(shape.ui, root['ui']),
+    updates: parseSection(shape.updates, root['updates']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -332,6 +345,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
       ...mergeSection(base.ui, value.ui),
       defaultLayout: mergeSection(base.ui.defaultLayout, value.ui?.defaultLayout),
     },
+    updates: mergeSection(base.updates, value.updates),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }

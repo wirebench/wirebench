@@ -1,3 +1,4 @@
+import { checkForUpdates } from '../lib/update-status.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/welcome/project-actions.js';
 import { registerCommand } from '../lib/commands.js';
@@ -5,8 +6,17 @@ import { useProjectStore } from '../state/project.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { ui } from './command-helpers.js';
 
-/** Registers the Project, Definition, Environment and Secrets commands. */
+/** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
+  // No shortcut, and no `when`: checking for updates is always available and never urgent.
+  registerCommand({
+    id: 'app.checkForUpdates',
+    label: 'Check for Updates…',
+    category: 'General',
+    run: () => {
+      void checkForUpdates();
+    },
+  });
   registerCommand({
     id: 'definition.import',
     label: 'Import WSDL…',

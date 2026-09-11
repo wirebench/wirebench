@@ -2154,12 +2154,23 @@ export const preferencesWireSchema = z.object({
     confirmOnDelete: z.boolean(),
     historyCap: z.number(),
   }),
+  updates: z.object({ checkOnLaunch: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
 
 /** The section names `preferences.reset` accepts. */
-export const preferencesSectionSchema = z.enum(['http', 'proxy', 'ssl', 'wsdl', 'wsi', 'editor', 'ui', 'shortcuts']);
+export const preferencesSectionSchema = z.enum([
+  'http',
+  'proxy',
+  'ssl',
+  'wsdl',
+  'wsi',
+  'editor',
+  'ui',
+  'updates',
+  'shortcuts',
+]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
 
 /**
@@ -2175,6 +2186,7 @@ export const preferencesPatchWireSchema = z.object({
   wsi: z.record(z.string(), z.unknown()).optional(),
   editor: z.record(z.string(), z.unknown()).optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
+  updates: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
@@ -2275,6 +2287,27 @@ export type MenuCommandWire = z.infer<typeof menuCommandSchema>;
 /** Request payload for `app.registerMenu`. */
 export const appRegisterMenuRequestSchema = z.object({ items: z.array(menuCommandSchema).max(MAX_MENU_ITEMS) });
 export type AppRegisterMenuRequest = z.infer<typeof appRegisterMenuRequestSchema>;
+
+/**
+ * Where an update check got to. Mirrors `main/updater.ts`'s `UpdateStatus` — it is both the
+ * `app.checkForUpdates` response and the payload of the `app.updateStatus` event, so the
+ * status bar and the toast speak the same vocabulary.
+ */
+export const updateStatusSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('checking') }),
+  z.object({ kind: z.literal('busy') }),
+  z.object({ kind: z.literal('up-to-date') }),
+  z.object({ kind: z.literal('downloading'), percent: z.number() }),
+  z.object({ kind: z.literal('declined'), version: z.string() }),
+  z.object({ kind: z.literal('downloaded'), version: z.string() }),
+  z.object({ kind: z.literal('installing'), version: z.string() }),
+  z.object({ kind: z.literal('error'), message: z.string() }),
+]);
+export type UpdateStatusWire = z.infer<typeof updateStatusSchema>;
+
+/** Response for `app.checkForUpdates`, and the payload of the `app.updateStatus` event. */
+export const appUpdateStatusSchema = z.object({ status: updateStatusSchema });
+export type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
 
 /** Response for `app.registerMenu`: how many entries the built menu carries. */
 export const appRegisterMenuResponseSchema = z.object({ items: z.number() });

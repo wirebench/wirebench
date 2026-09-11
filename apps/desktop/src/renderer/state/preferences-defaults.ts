@@ -49,5 +49,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     confirmOnDelete: true,
     historyCap: 1000,
   },
+  updates: { checkOnLaunch: false },
   shortcuts: {},
 };

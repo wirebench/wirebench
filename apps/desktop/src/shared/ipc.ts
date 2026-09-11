@@ -21,6 +21,7 @@ import {
   definitionInterfaceRequestSchema,
   definitionSchemaIndexResponseSchema,
   appRegisterMenuRequestSchema,
+  appUpdateStatusSchema,
   appRegisterMenuResponseSchema,
   commandInvokeEventSchema,
   themeChangedEventSchema,
@@ -199,6 +200,11 @@ export const channels = {
      * once per window at startup, and again whenever the effective keymap changes.
      */
     registerMenu: defineChannel('app.registerMenu', appRegisterMenuRequestSchema, appRegisterMenuResponseSchema),
+    /**
+     * Runs one update check (the "Check for Updates…" command). Nothing is downloaded or
+     * installed without a further, separate confirmation from the user; see `main/updater.ts`.
+     */
+    checkForUpdates: defineChannel('app.checkForUpdates', z.undefined(), appUpdateStatusSchema),
   },
   search: {
     /**
@@ -418,6 +424,8 @@ export type EventPayload<E> = E extends IpcEvent<infer Payload> ? z.infer<Payloa
 export const events = {
   app: {
     ready: defineEvent('app.ready', z.object({ at: z.string() })),
+    /** Progress of an update check/download, for the status bar. */
+    updateStatus: defineEvent('app.updateStatus', appUpdateStatusSchema),
   },
   command: {
     /** A menu item was clicked; the renderer runs it through the command registry. */

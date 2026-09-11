@@ -35,6 +35,7 @@ import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
+import { createUpdateController } from './update-service.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import type { z } from 'zod';
 import type { ProjectWire } from '../shared/wire-types.js';
@@ -138,7 +139,10 @@ void app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  registerAppChannels();
+  const updates = createUpdateController((status) => {
+    broadcast(events.app.updateStatus, { status });
+  });
+  registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
   registerDefinitionChannels(engineService, { project: projectService, picks: dialogPicks });
   registerRequestChannels(engineService, {
     project: projectService,
@@ -227,6 +231,12 @@ void app.whenReady().then(() => {
   });
   createMainWindow();
   applyWindowTitle(projectService.snapshot());
+
+  // Opt-in, and only after the preferences are actually loaded — the default is off, so a
+  // check that ran before the load would read "off" for every user who turned it on.
+  void preferencesService.ready().then(async () => {
+    await updates.checkOnLaunch(() => preferencesService.get().updates.checkOnLaunch);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

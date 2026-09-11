@@ -3,6 +3,7 @@ import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { useAppVersion } from '../lib/use-app-version.js';
+import { updateStatusLabel, useUpdateStatus } from '../lib/update-status.js';
 import { formatBytes } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
 import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
@@ -55,6 +56,7 @@ function formatClock(iso: string): string {
 /** The bottom strip: environment and connection state on the left, the last exchange on the right. */
 export function StatusBar() {
   const version = useAppVersion();
+  const updateLabel = updateStatusLabel(useUpdateStatus());
   const last = useExchangesStore((state) => state.log.at(-1));
   const saveStatus = useProjectStore((state) => state.saveStatus);
   const problemCount = useProblemsStore((state) => state.items.length);
@@ -119,6 +121,14 @@ export function StatusBar() {
           ·
         </span>
         <ThemeIndicator />
+        {updateLabel !== undefined && (
+          <>
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+            <span data-testid="status-bar-update">{updateLabel}</span>
+          </>
+        )}
         {version !== undefined && (
           <>
             <span aria-hidden="true" className="text-fg-faint">

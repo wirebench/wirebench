@@ -9,6 +9,7 @@
  * default shortcut table lists one — a default keybinding.
  */
 export const COMMAND_IDS = [
+  'app.checkForUpdates',
   'palette.open',
   'palette.quickOpen',
   'view.toggleSidebar',

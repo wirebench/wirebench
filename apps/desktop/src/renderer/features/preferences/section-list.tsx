@@ -10,6 +10,7 @@ const SECTIONS: readonly { readonly id: PreferencesSectionWire; readonly label: 
   { id: 'wsi', label: 'WS-I' },
   { id: 'editor', label: 'Editor' },
   { id: 'ui', label: 'UI' },
+  { id: 'updates', label: 'Updates' },
   { id: 'shortcuts', label: 'Shortcuts' },
 ];
 

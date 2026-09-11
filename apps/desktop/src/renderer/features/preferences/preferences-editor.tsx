@@ -9,6 +9,7 @@ import { WsiSection } from './sections/connection-sections.js';
 import { ProxySection, SslSection } from './network-section.js';
 import { WsdlSection } from './sections/wsdl-section.js';
 import { EditorSection, UiSection } from './sections/editor-section.js';
+import { UpdatesSection } from './sections/updates-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
 
 /** The tab id the Preferences editor always opens under, so it is focused rather than duplicated. */
@@ -27,6 +28,7 @@ const SECTIONS: readonly SectionEntry[] = [
   { id: 'wsi', label: 'WS-I' },
   { id: 'editor', label: 'Editor' },
   { id: 'ui', label: 'UI' },
+  { id: 'updates', label: 'Updates' },
   { id: 'shortcuts', label: 'Shortcuts' },
 ];
 
@@ -105,6 +107,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
         {active === 'wsi' && <WsiSection {...sectionProps} />}
         {active === 'editor' && <EditorSection {...sectionProps} />}
         {active === 'ui' && <UiSection {...sectionProps} />}
+        {active === 'updates' && <UpdatesSection {...sectionProps} />}
         {active === 'shortcuts' && <ShortcutsSection context={commandContext} />}
       </div>
     </div>

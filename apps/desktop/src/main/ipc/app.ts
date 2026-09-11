@@ -3,14 +3,17 @@ import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
 import type { MenuApi } from '../menu.js';
 import { emitEvent } from './events.js';
+import type { UpdateStatusWire } from '../../shared/wire-types.js';
 import { registerHandler } from './register.js';
 
 /**
- * Registers the `app.*` IPC channels: the version triple, and the application menu the
- * renderer generates from its command registry.
+ * Registers the `app.*` IPC channels: the version triple, the application menu the renderer
+ * generates from its command registry, and the user-run update check.
  *
  * `menuApi` is injectable so the menu can be asserted on with a fake `Menu`; production passes
- * Electron's own.
+ * Electron's own. `checkForUpdates` is injectable for the same reason, and is absent in a
+ * development run — the channel still answers, with the same "could not check" the offline
+ * case gets, so the renderer needs no second code path.
  */
 export function registerAppChannels(
   menuApi: MenuApi = {
@@ -18,6 +21,8 @@ export function registerAppChannels(
       Menu.setApplicationMenu(Menu.buildFromTemplate(template));
     },
   },
+  checkForUpdates: () => Promise<UpdateStatusWire> = () =>
+    Promise.resolve({ kind: 'error', message: 'Could not check for updates' }),
 ): void {
   registerHandler(channels.app.version, () =>
     Promise.resolve({
@@ -26,6 +31,8 @@ export function registerAppChannels(
       node: process.versions.node,
     }),
   );
+
+  registerHandler(channels.app.checkForUpdates, async () => ({ status: await checkForUpdates() }));
 
   registerHandler(channels.app.registerMenu, (request, sender) => {
     const items = applyCommandMenu(

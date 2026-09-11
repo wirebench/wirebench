@@ -336,6 +336,7 @@ export type {
   ProxyPreferences,
   SslPreferences,
   UiPreferences,
+  UpdatePreferences,
   WsdlPreferences,
   WsiPreferences,
 } from './project/preferences.js';
