@@ -13,12 +13,14 @@ function report(error: unknown, fallback: string): void {
  * anything better with the error.
  */
 export const workspaceActions = {
-  /** Creates a workspace by name and opens it. */
-  async create(name: string): Promise<void> {
+  /** Creates a workspace by name and opens it. `false` when main refused (already reported). */
+  async create(name: string): Promise<boolean> {
     try {
       await useWorkspaceStore.getState().create(name);
+      return true;
     } catch (error) {
       report(error, 'Could not create the workspace');
+      return false;
     }
   },
 
@@ -28,6 +30,62 @@ export const workspaceActions = {
       await useWorkspaceStore.getState().open(workspaceId);
     } catch (error) {
       report(error, 'Could not open the workspace');
+    }
+  },
+
+  /** Renames a workspace, open or not. `false` when main refused (already reported). */
+  async rename(workspaceId: string, name: string): Promise<boolean> {
+    try {
+      await useWorkspaceStore.getState().rename(workspaceId, name);
+      await useWorkspaceStore.getState().refresh();
+      return true;
+    } catch (error) {
+      report(error, 'Could not rename the workspace');
+      return false;
+    }
+  },
+
+  /**
+   * Moves a workspace to the trash. Deleting the open one leaves no workspace open, which is
+   * the picker — main closes it and the `workspace.changed` event brings the renderer along.
+   */
+  async remove(workspaceId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().remove(workspaceId);
+      // Its remembered tabs name entities that no longer exist anywhere.
+      useUiStore.getState().setWorkspaceUi(workspaceId, undefined);
+    } catch (error) {
+      report(error, 'Could not delete the workspace');
+    }
+  },
+
+  /** Adds a project folder the user picks to the workspace, leaving it where it is. */
+  async linkProject(): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().linkProject();
+    } catch (error) {
+      report(error, 'Could not link the project folder');
+    }
+  },
+
+  /** Writes one project out to a folder the user picks. */
+  async exportProject(projectId: string): Promise<void> {
+    try {
+      const dir = await useWorkspaceStore.getState().exportProject(projectId);
+      if (dir !== null) {
+        showToast(`Exported to ${dir}`);
+      }
+    } catch (error) {
+      report(error, 'Could not export the project');
+    }
+  },
+
+  /** Removes a project from the workspace; its folder is left on disk either way here. */
+  async removeProject(projectId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().removeProject(projectId, false);
+    } catch (error) {
+      report(error, 'Could not remove the project');
     }
   },
 

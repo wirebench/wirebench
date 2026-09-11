@@ -3,10 +3,12 @@ import type { Platform } from '../lib/platform.js';
 import { shortcutFor } from '../lib/keybindings.js';
 import { IconButton } from '../components/icon-button.js';
 import { useUiStore } from '../state/ui.js';
+import { WorkspaceSwitcher } from '../features/workspace/switcher.js';
 
 export interface TitleBarProps {
   readonly platform: Platform;
-  readonly projectName: string;
+  /** The open workspace's name, or `null` when none is open (the picker is showing). */
+  readonly workspaceName: string | null;
   /** True when the project has edits the autosave has not written out yet. */
   readonly dirty?: boolean;
   readonly onOpenPalette: () => void;
@@ -17,7 +19,7 @@ export interface TitleBarProps {
  * The custom title bar. On macOS the window is `hiddenInset`, so this strip both drags the
  * window and carries the traffic lights' inset — hence the leading spacer.
  */
-export function TitleBar({ platform, projectName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
+export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette, onToggleTheme }: TitleBarProps) {
   const theme = useUiStore((state) => state.theme);
   const paletteShortcut = shortcutFor('palette.open', platform) ?? '';
 
@@ -27,11 +29,18 @@ export function TitleBar({ platform, projectName, dirty = false, onOpenPalette, 
       className="wb-drag flex h-title-bar shrink-0 items-center gap-3 border-b border-hairline bg-surface-sunken px-3"
     >
       {platform === 'mac' && <div className="w-[68px] shrink-0" aria-hidden="true" />}
-      <span className="shrink-0 text-sm text-fg-muted">
-        wirebench <span className="text-fg-faint">·</span> <span className="text-fg-default">{projectName}</span>
+      <span className="flex shrink-0 items-center gap-1 text-sm text-fg-muted">
+        wirebench
+        {workspaceName !== null && (
+          <>
+            <span className="text-fg-faint">·</span>
+            {/* The name is the dropdown's trigger: with a workspace open, the way to another
+                one is the name itself. With none open the picker is already that. */}
+            <WorkspaceSwitcher />
+          </>
+        )}
         {dirty && (
           <span data-testid="title-bar-dirty" title="Unsaved changes" className="text-fg-muted">
-            {' '}
             •
           </span>
         )}

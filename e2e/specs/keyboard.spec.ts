@@ -93,6 +93,38 @@ test.describe('keyboard', () => {
     await expect(page.getByTestId('response-editor')).toContainText('AddResult');
   });
 
+  test('creates a second workspace and switches back, from the palette alone', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused();
+    await page.keyboard.type('Alpha');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Alpha/, { timeout: 20_000 });
+
+    // Create Workspace… from the palette: the new one opens, which closes Alpha.
+    await page.keyboard.press(`${MOD}+Shift+P`);
+    await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.type('Create Workspace');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused({ timeout: 20_000 });
+    await page.keyboard.type('Beta');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Beta/, { timeout: 20_000 });
+
+    // Switch Workspace… opens the title bar's dropdown with the keyboard already in it.
+    await page.keyboard.press(`${MOD}+Shift+P`);
+    await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.type('Switch Workspace');
+    await page.keyboard.press('Enter');
+    const alpha = page.getByTestId('workspace-switcher-item').filter({ hasText: 'Alpha' });
+    await expect(alpha).toBeVisible({ timeout: 20_000 });
+    // Enter on the row, with no pointer anywhere near it: the menu is operable by key alone.
+    await alpha.press('Enter');
+
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Alpha/, { timeout: 20_000 });
+  });
+
   test('a rebound Send survives a relaunch, and the old chord no longer sends', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     let page = launched.window;

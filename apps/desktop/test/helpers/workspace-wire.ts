@@ -12,12 +12,13 @@ export function workspaceWire(
     readonly projects?: readonly WorkspaceProjectWire[];
     readonly properties?: Readonly<Record<string, string>>;
     readonly name?: string;
+    readonly id?: string;
   } = {},
 ): WorkspaceWire {
   return {
-    id: 'w1',
+    id: patch.id ?? 'w1',
     name: patch.name ?? 'Workspace 1',
-    dir: '/tmp/workspaces/w1',
+    dir: `/tmp/workspaces/${patch.id ?? 'w1'}`,
     properties: { ...patch.properties },
     environments: [...(patch.environments ?? [])],
     ...(patch.activeEnvironmentId !== undefined ? { activeEnvironmentId: patch.activeEnvironmentId } : {}),

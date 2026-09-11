@@ -3,8 +3,9 @@ import { useInterfaceEditorStore } from '../../src/renderer/features/interface-e
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { ProjectWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire, WorkspaceProjectWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
@@ -31,6 +32,21 @@ const PROJECT: ProjectWire = {
   keystores: [],
   wssOutgoing: [],
   wssIncoming: [],
+};
+
+/** The workspace's view of `PROJECT`, and a snapshot of it holding one request. */
+const PROJECT_REF: WorkspaceProjectWire = {
+  id: 'p1',
+  name: 'Calculator',
+  slug: 'calculator',
+  source: 'internal',
+  dir: '/tmp/workspaces/w1/projects/Calculator',
+  status: 'ready',
+};
+
+const PROJECT_WITH_REQUEST: ProjectWire = {
+  ...PROJECT,
+  requests: [{ id: 'r1', name: 'Add', interfaceId: 'i1', operationName: 'Add', bindingName: 'b' } as never],
 };
 
 function resetStores(): void {
@@ -305,5 +321,45 @@ describe('useWorkspaceStore', () => {
 
     off();
     expect(listeners.has('workspace.changed')).toBe(false);
+  });
+});
+
+describe('useWorkspaceStore tab memory', () => {
+  beforeEach(() => {
+    resetStores();
+    useUiStore.setState({ workspaces: {} });
+    installWirebenchApi();
+  });
+
+  it("saves the outgoing workspace's tabs on a switch and restores them on the way back", async () => {
+    const second = workspaceWire({ id: 'w2', name: 'Billing' });
+    installWirebenchApi({
+      workspace: {
+        open: vi
+          .fn()
+          .mockResolvedValueOnce({ ok: true, value: { workspace: second } })
+          .mockResolvedValueOnce({ ok: true, value: { workspace: workspaceWire({ projects: [PROJECT_REF] }) } }),
+        list: vi.fn().mockResolvedValue({ ok: true, value: { workspaces: [] } }),
+      },
+      project: { snapshot: vi.fn().mockResolvedValue({ ok: true, value: { project: PROJECT_WITH_REQUEST } }) },
+    });
+
+    // Workspace 1 is open with one request tab.
+    useWorkspaceStore.getState().applySnapshot(workspaceWire({ projects: [PROJECT_REF] }));
+    await vi.waitFor(() => expect(useProjectStore.getState().projects['p1']).toBeDefined());
+    useEditorsStore.getState().open({ id: 'request:r1', kind: 'request', title: 'Add', requestId: 'r1' });
+
+    await useWorkspaceStore.getState().open('w2');
+
+    expect(useUiStore.getState().workspaces['w1']?.tabs).toEqual([{ kind: 'request', id: 'r1' }]);
+    // The other workspace starts on a clean editor area: those tabs named its projects' requests.
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+
+    await useWorkspaceStore.getState().open('w1');
+
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['request:r1']);
+    });
+    expect(useEditorsStore.getState().activeId).toBe('request:r1');
   });
 });

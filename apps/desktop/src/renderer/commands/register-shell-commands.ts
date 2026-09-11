@@ -5,6 +5,7 @@ import { registerHistoryCommands } from './register-history-commands.js';
 import { registerProjectCommands } from './register-project-commands.js';
 import { registerRequestCommands } from './register-request-commands.js';
 import { registerViewCommands } from './register-view-commands.js';
+import { registerWorkspaceCommands } from './register-workspace-commands.js';
 
 /**
  * Registers every shell command. Called once at startup; safe to call again (it resets first)
@@ -18,6 +19,7 @@ import { registerViewCommands } from './register-view-commands.js';
 export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-open') => void): void {
   resetCommands();
   registerViewCommands(openPalette);
+  registerWorkspaceCommands();
   registerProjectCommands();
   registerRequestCommands();
   registerEditorCommands();

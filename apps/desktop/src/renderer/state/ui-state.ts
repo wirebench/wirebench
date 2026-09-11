@@ -16,6 +16,25 @@ export interface EditorLayoutSnapshot {
   readonly mode: 'split' | 'tabs';
 }
 
+/**
+ * One editor tab remembered across restarts. Only the three kinds that name a durable entity
+ * are persisted: a diff, a history entry or the preferences tab describes a moment, not a
+ * thing the next session can reopen.
+ */
+export interface PersistedTab {
+  readonly kind: 'request' | 'interface' | 'environment';
+  /** The entity id — the request, interface or environment the tab edits. */
+  readonly id: string;
+}
+
+/** What one workspace leaves behind when it is closed, so reopening it looks the same. */
+export interface PersistedWorkspaceUi {
+  readonly tabs: readonly PersistedTab[];
+  /** The entity id of the tab that was active, when one was. */
+  readonly activeId?: string;
+  readonly sidebarView?: SidebarView;
+}
+
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
 export type ThemePreference = 'dark' | 'light' | 'system';
 
@@ -35,6 +54,11 @@ export interface UiSnapshot {
   readonly editorLineNumbers: boolean;
   /** The default request-editor layout; a request may override it for the session. */
   readonly editorLayout: EditorLayoutSnapshot;
+  /**
+   * Per-workspace editor state, keyed by workspace id. Everything above is global — one theme,
+   * one sidebar width — but which tabs are open is a property of the workspace you were in.
+   */
+  readonly workspaces: Readonly<Record<string, PersistedWorkspaceUi>>;
 }
 
 /** `localStorage` key holding the persisted layout. */
@@ -45,7 +69,7 @@ export const UI_STORAGE_KEY = 'wirebench.ui';
  * field to a section handled by a merge function (e.g. `details`, whose new `tab`/`codeShell`
  * fall back to their defaults per key in {@link mergeDetails}) does not need a bump.
  */
-export const UI_STORAGE_VERSION = 2;
+export const UI_STORAGE_VERSION = 3;
 
 /** The layout a first run gets: everything visible, Explorer selected, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
@@ -55,6 +79,7 @@ export const DEFAULT_UI_STATE: UiSnapshot = {
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
+  workspaces: {},
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -112,6 +137,49 @@ function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
   };
 }
 
+const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'search', 'history', 'wss', 'settings'];
+
+/** Reads one persisted tab, or `undefined` for anything that is not a `{ kind, id }` pair. */
+function readTab(value: unknown): PersistedTab | undefined {
+  const record = asRecord(value);
+  const kind = record?.['kind'];
+  const id = record?.['id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    return undefined;
+  }
+  return kind === 'request' || kind === 'interface' || kind === 'environment' ? { kind, id } : undefined;
+}
+
+/**
+ * Reads the per-workspace map, dropping anything malformed entry by entry: a corrupt entry for
+ * one workspace must not cost the user the tabs of every other one.
+ */
+function mergeWorkspaces(stored: unknown): Record<string, PersistedWorkspaceUi> {
+  const record = asRecord(stored);
+  if (record === undefined) {
+    return {};
+  }
+  const merged: Record<string, PersistedWorkspaceUi> = {};
+  for (const [workspaceId, value] of Object.entries(record)) {
+    const entry = asRecord(value);
+    if (entry === undefined) {
+      continue;
+    }
+    const rawTabs = entry['tabs'];
+    const tabs = Array.isArray(rawTabs)
+      ? rawTabs.map(readTab).filter((tab): tab is PersistedTab => tab !== undefined)
+      : [];
+    const activeId = entry['activeId'];
+    const sidebarView = entry['sidebarView'];
+    merged[workspaceId] = {
+      tabs,
+      ...(typeof activeId === 'string' ? { activeId } : {}),
+      ...(SIDEBAR_VIEWS.includes(sidebarView as SidebarView) ? { sidebarView: sidebarView as SidebarView } : {}),
+    };
+  }
+  return merged;
+}
+
 /**
  * Reads the persisted layout, merging it over {@link DEFAULT_UI_STATE}. Every failure mode —
  * storage unavailable, absent key, corrupt JSON, a payload from another version — yields the
@@ -138,6 +206,7 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,
       editorLayout: mergeEditorLayout(stored['editorLayout']),
+      workspaces: mergeWorkspaces(stored['workspaces']),
     };
   } catch {
     return DEFAULT_UI_STATE;

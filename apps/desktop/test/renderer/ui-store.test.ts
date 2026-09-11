@@ -194,6 +194,7 @@ describe('useUiStore', () => {
       'editorLineNumbers',
       'sidebar',
       'theme',
+      'workspaces',
     ]);
   });
 

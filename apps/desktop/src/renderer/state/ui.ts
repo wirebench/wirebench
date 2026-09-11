@@ -6,6 +6,7 @@ import type {
   ConsoleTab,
   DetailsTab,
   EditorLayoutSnapshot,
+  PersistedWorkspaceUi,
   SidebarView,
   ThemePreference,
   UiSnapshot,
@@ -43,6 +44,14 @@ export interface UiStore extends UiSnapshot {
   readonly confirmDeleteRequestId: string | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
+  /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
+  readonly workspaceSwitcherOpen: boolean;
+  /** Whether the Manage workspaces dialog is open. Transient — never persisted. */
+  readonly workspaceManageOpen: boolean;
+  /** Whether the Create workspace dialog (a name, nothing else) is open. Transient. */
+  readonly workspaceCreateOpen: boolean;
+  /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
+  readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
@@ -50,10 +59,16 @@ export interface UiStore extends UiSnapshot {
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
   readonly setEnvSwitcherOpen: (open: boolean) => void;
+  readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
+  readonly setWorkspaceManageOpen: (open: boolean) => void;
+  readonly setWorkspaceCreateOpen: (open: boolean) => void;
+  readonly requestRemoveProject: (projectId: string | undefined) => void;
   readonly toggleSidebar: () => void;
   readonly toggleConsole: () => void;
   readonly toggleDetails: () => void;
   readonly showSidebarView: (view: SidebarView) => void;
+  /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
+  readonly setSidebarView: (view: SidebarView) => void;
   readonly showConsoleTab: (tab: ConsoleTab) => void;
   /** Switches the Details panel's tab, leaving its visibility alone. */
   readonly setDetailsTab: (tab: DetailsTab) => void;
@@ -69,6 +84,8 @@ export interface UiStore extends UiSnapshot {
   readonly toggleEditorLineNumbers: () => void;
   /** Sets the gutter preference directly — how the preferences mirror pushes its value in. */
   readonly setEditorLineNumbers: (lineNumbers: boolean) => void;
+  /** Remembers (or, with `undefined`, forgets) one workspace's editor tabs and sidebar view. */
+  readonly setWorkspaceUi: (workspaceId: string, entry: PersistedWorkspaceUi | undefined) => void;
   /** Replaces the default request-editor layout (persisted); see `request-editor/layout.ts`. */
   readonly setEditorLayout: (layout: EditorLayoutSnapshot) => void;
   /** The layout without the actions — what commands and keybindings receive as context. */
@@ -97,6 +114,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
     envSwitcherOpen: false,
+    workspaceSwitcherOpen: false,
+    workspaceManageOpen: false,
+    workspaceCreateOpen: false,
+    confirmRemoveProjectId: undefined,
 
     setSelection: (selection) => {
       set({ selection });
@@ -118,6 +139,18 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setEnvSwitcherOpen: (open) => {
       set({ envSwitcherOpen: open });
+    },
+    setWorkspaceSwitcherOpen: (open) => {
+      set({ workspaceSwitcherOpen: open });
+    },
+    setWorkspaceManageOpen: (open) => {
+      set({ workspaceManageOpen: open });
+    },
+    setWorkspaceCreateOpen: (open) => {
+      set({ workspaceCreateOpen: open });
+    },
+    requestRemoveProject: (projectId) => {
+      set({ confirmRemoveProjectId: projectId });
     },
 
     toggleSidebar: () =>
@@ -142,6 +175,10 @@ export const useUiStore = create<UiStore>((set, get) => {
         }
         draft.sidebar.view = view;
         draft.sidebar.visible = true;
+      }),
+    setSidebarView: (view) =>
+      update((draft) => {
+        draft.sidebar.view = view;
       }),
     showConsoleTab: (tab) =>
       update((draft) => {
@@ -193,14 +230,23 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.editorLineNumbers = lineNumbers;
       }),
 
+    setWorkspaceUi: (workspaceId, entry) =>
+      update((draft) => {
+        if (entry === undefined) {
+          delete draft.workspaces[workspaceId];
+          return;
+        }
+        draft.workspaces[workspaceId] = entry as Draft<PersistedWorkspaceUi>;
+      }),
+
     setEditorLayout: (layout) =>
       update((draft) => {
         draft.editorLayout = layout;
       }),
 
     snapshot: () => {
-      const { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout } = get();
-      return { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout };
+      const { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces } = get();
+      return { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces };
     },
 
     persistTo: (storage) => {

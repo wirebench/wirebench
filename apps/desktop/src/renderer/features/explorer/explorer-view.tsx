@@ -3,7 +3,7 @@ import type { NodeApi, NodeRendererProps } from 'react-arborist';
 import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import { Box, FileDown, Folder, FolderPlus, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
-import * as AlertDialog from '@radix-ui/react-alert-dialog';
+import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
@@ -292,77 +292,45 @@ export function ExplorerView() {
         )}
       </div>
 
-      <AlertDialog.Root
+      <ConfirmDialog
         open={confirmRemoveInterfaceId !== undefined}
-        onOpenChange={(open) => !open && requestRemoveInterface(undefined)}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
-          <AlertDialog.Content className="fixed top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg">
-            <AlertDialog.Title className="text-md font-medium text-fg-default">Remove interface?</AlertDialog.Title>
-            <AlertDialog.Description className="mt-1 text-sm text-fg-subtle">
-              This closes the imported definition and discards its request drafts.
-            </AlertDialog.Description>
-            <div className="mt-4 flex justify-end gap-2">
-              <AlertDialog.Cancel asChild>
-                <button type="button" className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">
-                  Cancel
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  type="button"
-                  className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
-                  onClick={() => {
-                    if (confirmRemoveInterfaceId !== undefined) {
-                      void removeInterface(confirmRemoveInterfaceId);
-                    }
-                  }}
-                >
-                  Remove
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        onOpenChange={(open) => {
+          if (!open) {
+            requestRemoveInterface(undefined);
+          }
+        }}
+        title="Remove interface?"
+        description="This closes the imported definition and discards its request drafts."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (confirmRemoveInterfaceId !== undefined) {
+            void removeInterface(confirmRemoveInterfaceId);
+          }
+        }}
+      />
 
-      <AlertDialog.Root
+      <ConfirmDialog
         open={confirmDeleteRequestId !== undefined}
-        onOpenChange={(open) => !open && requestDeleteRequest(undefined)}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
-          <AlertDialog.Content className="fixed top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg">
-            <AlertDialog.Title className="text-md font-medium text-fg-default">Delete request?</AlertDialog.Title>
-            <AlertDialog.Description className="mt-1 text-sm text-fg-subtle">
-              {requestPendingDeletion !== undefined
-                ? `"${requestPendingDeletion.name}" will be deleted. This cannot be undone.`
-                : 'This cannot be undone.'}
-            </AlertDialog.Description>
-            <div className="mt-4 flex justify-end gap-2">
-              <AlertDialog.Cancel asChild>
-                <button type="button" className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">
-                  Cancel
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  type="button"
-                  className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
-                  onClick={() => {
-                    if (confirmDeleteRequestId !== undefined) {
-                      void removeRequest(confirmDeleteRequestId);
-                    }
-                  }}
-                >
-                  Delete
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        onOpenChange={(open) => {
+          if (!open) {
+            requestDeleteRequest(undefined);
+          }
+        }}
+        title="Delete request?"
+        description={
+          requestPendingDeletion !== undefined
+            ? `"${requestPendingDeletion.name}" will be deleted. This cannot be undone.`
+            : 'This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (confirmDeleteRequestId !== undefined) {
+            void removeRequest(confirmDeleteRequestId);
+          }
+        }}
+      />
     </div>
   );
 }

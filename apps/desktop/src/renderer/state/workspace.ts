@@ -19,6 +19,7 @@ import { useInterfaceEditorStore } from '../features/interface-editor/interface-
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
+import { restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
 
 function asError(error: IpcError): Error {
@@ -92,38 +93,55 @@ const pulling = new Set<string>();
  *
  * A reply is applied only if it is still wanted: the workspace is still open with that project
  * in it, and no `project.changed` has filled the mirror in the meantime (that one is newer).
+ *
+ * @returns a promise that settles once every pull this call started has been applied — what
+ * the tab restore waits on, since a tab can only be reopened once its entity is in the mirror.
  */
-function pullMissingProjects(workspace: WorkspaceWire): void {
+function pullMissingProjects(workspace: WorkspaceWire): Promise<void> {
   const mirrored = useProjectStore.getState().projects;
+  const pulls: Promise<void>[] = [];
   for (const project of workspace.projects) {
     if (project.status !== 'ready' || mirrored[project.id] !== undefined || pulling.has(project.id)) {
       continue;
     }
     const projectId = project.id;
     pulling.add(projectId);
-    void ipc()
-      .project.snapshot({ projectId })
-      .then((result) => {
-        const current = useWorkspaceStore.getState().workspace;
-        const stillWanted =
-          current !== null &&
-          current.id === workspace.id &&
-          current.projects.some((candidate) => candidate.id === projectId) &&
-          useProjectStore.getState().projects[projectId] === undefined;
-        if (result.ok && result.value.project !== null && stillWanted) {
-          useProjectStore.getState().applySnapshot(projectId, result.value.project);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        pulling.delete(projectId);
-      });
+    pulls.push(
+      ipc()
+        .project.snapshot({ projectId })
+        .then((result) => {
+          const current = useWorkspaceStore.getState().workspace;
+          const stillWanted =
+            current !== null &&
+            current.id === workspace.id &&
+            current.projects.some((candidate) => candidate.id === projectId) &&
+            useProjectStore.getState().projects[projectId] === undefined;
+          if (result.ok && result.value.project !== null && stillWanted) {
+            useProjectStore.getState().applySnapshot(projectId, result.value.project);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          pulling.delete(projectId);
+        }),
+    );
   }
+  return Promise.all(pulls).then(() => undefined);
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
+  /** Which workspace the tabs currently on screen belong to; `undefined` when none is open. */
+  let tabsOwner: string | undefined;
+
   const apply = (workspace: WorkspaceWire | null): void => {
-    if (workspace === null) {
+    const leaving = tabsOwner !== undefined && tabsOwner !== workspace?.id;
+    if (leaving && tabsOwner !== undefined) {
+      // Recorded while the outgoing workspace's tabs are still open, so neither closing it nor
+      // replacing it with another one takes them with it.
+      saveWorkspaceTabs(tabsOwner);
+      tabsOwner = undefined;
+    }
+    if (leaving || workspace === null) {
       // Order matters only in that all of it happens before the shell rerenders: every one of
       // these holds ids of projects that are about to stop existing.
       useEditorsStore.getState().reset();
@@ -132,8 +150,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       useProjectStore.getState().reset();
     }
     set({ workspace, status: 'idle', error: undefined });
-    if (workspace !== null) {
-      pullMissingProjects(workspace);
+    if (workspace === null) {
+      return;
+    }
+    const opening = tabsOwner === undefined;
+    tabsOwner = workspace.id;
+    const pulled = pullMissingProjects(workspace);
+    if (opening) {
+      // The remembered tabs name entities of projects the mirror may not hold yet, so the
+      // restore waits for the pull rather than dropping every tab as unresolvable.
+      void pulled.then(() => {
+        if (useWorkspaceStore.getState().workspace?.id === workspace.id) {
+          restoreWorkspaceTabs(workspace.id);
+        }
+      });
     }
   };
 

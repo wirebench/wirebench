@@ -18,6 +18,9 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
+import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
+import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
+import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CommandPalette } from './command-palette.js';
@@ -125,7 +128,7 @@ export function AppShell() {
       <div className="flex h-full flex-col bg-surface-base text-fg-default">
         <TitleBar
           platform={platform}
-          projectName={workspace?.name ?? 'No workspace'}
+          workspaceName={workspace?.name ?? null}
           dirty={dirty}
           onOpenPalette={openPalette}
           onToggleTheme={dispatch('view.toggleTheme')}
@@ -225,6 +228,9 @@ export function AppShell() {
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
       />
       <NewProjectDialog />
+      <CreateWorkspaceDialog />
+      <WorkspaceManageDialog />
+      <RemoveProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );
