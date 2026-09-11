@@ -13,7 +13,7 @@
  */
 
 import { watch, type FSWatcher } from 'node:fs';
-import { readdirSync } from 'node:fs';
+import { readdirSync, realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /** How long events are coalesced before `onChange` fires. */
@@ -76,6 +76,21 @@ export function isManagedPath(path: string): boolean {
   return (path.startsWith('environments/') || path.startsWith('wss/')) && path.endsWith('.yaml');
 }
 
+/**
+ * The path to hand `fs.watch`, resolved with the OS's own idea of the name. On Windows the
+ * path the app was given may be a short (8.3) or differently-cased form of the directory
+ * libuv later reports events under, which trips an assertion inside libuv's `fs-event.c`
+ * (`!_wcsnicmp(filename, dir, dirlen)`); `realpathSync.native` returns the canonical form.
+ * Falls back to the path as given when it cannot be resolved (a folder not created yet).
+ */
+function watchableDir(dir: string): string {
+  try {
+    return realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
+}
+
 /** Watches one project folder; created per open project and disposed on close. */
 export class ProjectWatcher {
   private readonly options: Required<Omit<ProjectWatcherOptions, 'onChange'>> & Pick<ProjectWatcherOptions, 'onChange'>;
@@ -87,7 +102,7 @@ export class ProjectWatcher {
 
   constructor(options: ProjectWatcherOptions) {
     this.options = {
-      dir: options.dir,
+      dir: watchableDir(options.dir),
       onChange: options.onChange,
       debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       selfWriteTtlMs: options.selfWriteTtlMs ?? SELF_WRITE_TTL_MS,
