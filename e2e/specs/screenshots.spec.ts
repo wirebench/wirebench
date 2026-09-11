@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -26,6 +26,10 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  * so nothing here depends on a network or on the developer's own projects. These are written
  * files, not compared snapshots — pixel comparison is `a11y.spec.ts`'s job, and doing both here
  * would make re-shooting the docs a test failure.
+ *
+ * The response capture masks the response-status line and any HTTP log rows (see
+ * `timingRegions`): both carry a real request's wall-clock duration, which is neither
+ * reproducible nor anyone's business to publish in a committed screenshot.
  */
 
 /** Repo root, from `e2e/specs/` up two levels. */
@@ -65,12 +69,27 @@ async function setTheme(page: Page, preference: 'dark' | 'light'): Promise<void>
   throw new Error(`the theme indicator never reached ${preference}`);
 }
 
+/**
+ * Regions carrying a real request's timing — a response's duration/status line, and any HTTP
+ * log rows in the console — masked out of the README captures. Unlike `a11y.spec.ts`'s
+ * `dynamicRegions` (masked so a *pixel comparison* never depends on when it ran), these are
+ * masked because they are wall-clock numbers off whoever's machine re-shoots the docs: a
+ * committed screenshot should not silently vary with — or leak — a maintainer's local timing.
+ */
+function timingRegions(page: Page): Locator[] {
+  return [page.getByTestId('response-status'), page.locator('[data-testid="http-log-row"]')];
+}
+
 /** Shoots the whole window into `docs/images/<name>.png` and fails if it got too heavy. */
-async function capture(page: Page, name: string): Promise<void> {
+async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
   // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
   // otherwise a Retina machine produces a 2560x1600 file (and a different one from a non-Retina
   // machine), which is both heavier than a README wants and not reproducible across developers.
-  const buffer = await page.screenshot({ animations: 'disabled', scale: 'css' });
+  const buffer = await page.screenshot({
+    animations: 'disabled',
+    scale: 'css',
+    ...(options.mask !== undefined ? { mask: options.mask } : {}),
+  });
   expect(buffer.byteLength, `${name}.png is ${String(buffer.byteLength)} bytes; keep README images small`).toBeLessThan(
     MAX_BYTES,
   );
@@ -139,7 +158,7 @@ test.describe('README screenshots', () => {
     // …and the response it gets back from the test server.
     await window.getByTestId('request-send').click();
     await expect(window.getByTestId('response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await capture(window, 'response');
+    await capture(window, 'response', { mask: timingRegions(window) });
   });
 
   test('the helpers used above still match the shared project flow', async () => {

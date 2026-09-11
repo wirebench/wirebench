@@ -141,6 +141,7 @@ the real repository before the first release.
 - [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0005
 - [Success criteria and their evidence](docs/success-criteria.md) — every v1 criterion, and what proves it
 - [Release checklist](docs/release.md)
+- [Roadmap follow-ups](docs/roadmap.md) — noticed while building v1, deliberately out of scope for it
 - [WS-I assertions implemented](docs/ws-i-assertions.md)
 - [Design spec](docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md) and
   [implementation plan](docs/plans/2026-09-09-wirebench-v1-explore-and-send-plan.md)

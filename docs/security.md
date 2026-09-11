@@ -37,10 +37,18 @@ Preload publishes exactly one object, `window.wirebench.*`, through `contextBrid
 way to reach a channel that was not deliberately published.
 
 Every channel is declared once, in `apps/desktop/src/shared/ipc.ts`, with a zod schema for the
-request *and* for the response. Both directions are validated, and the request schemas are
-`strictObject` — an unexpected field is a rejection, not a silently ignored extra. A malformed
-or hostile message fails at the boundary with a typed error instead of somewhere deeper where
-it would be a bug.
+request *and* for the response. Both directions are validated: a malformed or hostile message
+fails at the boundary with a typed error instead of somewhere deeper where it would be a bug.
+Most request schemas are plain `z.object`, which strips unknown fields rather than rejecting
+them — an extra field the renderer sends is silently dropped, not returned as an error. That is
+an acceptable relaxation at this boundary: the renderer is our own code, unknown fields carry no
+authority (only the fields the schema declares are ever read), and stripping keeps this trust
+boundary from becoming a place where every unrelated renderer change has to be coordinated with
+the schema. The one exception is `sendTlsOptionsSchema` (`apps/desktop/src/shared/wire-types.ts`),
+which is `z.strictObject`: TLS options control certificate verification, so a field the schema
+does not know about — for instance a typo'd `rejectUnauthorized` — is rejected outright rather
+than silently ignored, since silently ignoring it there could leave a user believing an option
+took effect when it did not.
 
 ## Secrets live in the OS keychain, behind references
 

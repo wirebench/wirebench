@@ -49,9 +49,15 @@ describe('hasRealSigningIdentity', () => {
     expect(hasRealSigningIdentity({ CSC_LINK: '', CSC_NAME: '' })).toBe(false);
   });
 
+  it('is false with only a key password: that unlocks a certificate, it is not one', () => {
+    expect(hasRealSigningIdentity({ CSC_KEY_PASSWORD: 'hunter2' })).toBe(false);
+  });
+
   it('is true when a certificate or identity name is configured', () => {
     expect(hasRealSigningIdentity({ CSC_LINK: 'https://example.invalid/cert.p12' })).toBe(true);
-    expect(hasRealSigningIdentity({ CSC_KEY_PASSWORD: 'hunter2' })).toBe(true);
+    expect(hasRealSigningIdentity({ CSC_LINK: 'https://example.invalid/cert.p12', CSC_KEY_PASSWORD: 'hunter2' })).toBe(
+      true,
+    );
     expect(hasRealSigningIdentity({ CSC_NAME: 'Developer ID Application: Someone (TEAMID)' })).toBe(true);
   });
 

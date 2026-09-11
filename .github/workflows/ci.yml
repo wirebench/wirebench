@@ -28,6 +28,26 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
 
+  # Coverage runs once, on Linux only: it re-executes the engine's unit/integration suite under
+  # v8 coverage instrumentation, which is slower than the plain run `check` already did on every
+  # OS above, and the 85% thresholds (`vitest.config.ts`) are a property of the engine's source
+  # and tests, not of the OS running them.
+  coverage:
+    needs: check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:coverage
+
   wss-xmlsec:
     needs: check
     strategy:

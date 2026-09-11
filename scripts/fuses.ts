@@ -88,12 +88,13 @@ export function isUniversalTempDir(appOutDir: string): boolean {
  * something ad-hoc signed that looks fine locally. `CSC_IDENTITY_AUTO_DISCOVERY` is the one
  * that can go either way: explicitly `false` means "do not look for an identity", so the ad-hoc
  * signature is still needed.
+ *
+ * `CSC_KEY_PASSWORD` alone does not count: it is the passphrase that unlocks a `CSC_LINK`
+ * certificate, not an identity by itself. With no certificate, name or auto-discovery there is
+ * nothing to sign with, so a stray key password should not skip the ad-hoc signature.
  */
 export function hasRealSigningIdentity(env: Readonly<Record<string, string | undefined>>): boolean {
   if (env.CSC_LINK !== undefined && env.CSC_LINK !== '') {
-    return true;
-  }
-  if (env.CSC_KEY_PASSWORD !== undefined && env.CSC_KEY_PASSWORD !== '') {
     return true;
   }
   if (env.CSC_NAME !== undefined && env.CSC_NAME !== '') {
