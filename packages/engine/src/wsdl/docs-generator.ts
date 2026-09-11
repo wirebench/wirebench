@@ -55,6 +55,20 @@ function escapeMarkdownCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
+/**
+ * Escapes free text — `wsdl:documentation` and the document title — before it goes into the
+ * Markdown output verbatim. Both can come straight from the WSDL author, so they are HTML-escaped
+ * (many Markdown renderers pass raw HTML through) and any line-leading `#`, `>` or `-` is
+ * neutralised so the text can't inject a heading, blockquote or list item into the document's
+ * own structure.
+ */
+function escapeMarkdownText(value: string): string {
+  return escapeHtml(value)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*)([#>-])/, '$1\\$2'))
+    .join('\n');
+}
+
 /** A stable, URL-safe anchor for a heading, deduplicated by the caller's `taken` set. */
 function anchorOf(heading: string, taken: Set<string>): string {
   const base =
@@ -111,6 +125,12 @@ function messageParts(definition: WsdlDefinition, name: QName | undefined): stri
  * @param line the 1-based line the declaration's start tag opens on
  * @param maxLines how many lines to keep before cutting the snippet with an ellipsis
  * @returns the declaration's source, dedented, or `''` when `line` is out of range
+ *
+ * Deliberately duplicated, not shared, with `apps/desktop/src/renderer/features/interface-editor/source-snippet.ts`
+ * (used by the Schema tab): that one must stay dependency-free JS the sandboxed renderer can run without pulling
+ * in `@wirebench/engine`'s main entry, which drags in Node built-ins (`node:crypto`, `node:fs`, …) the renderer
+ * cannot load. Keep the two in sync using `packages/engine/test/helpers/source-snippet-cases.ts`, a fixture both
+ * test suites run against.
  */
 export function sourceSnippet(text: string, line: number, maxLines = 30): string {
   const lines = text.split(/\r?\n/);
@@ -335,9 +355,23 @@ function titleOf(result: ImportResult, options: GenerateDocsOptions): string {
   return result.bundle.root.location.split('/').pop() ?? 'Definition';
 }
 
-function renderHtmlBlock(block: Block, level: number, taken: Set<string>): string {
+/**
+ * Assigns every block (recursively, document order) a deduplicated anchor into `anchors`,
+ * sharing one `taken` set across the whole tree. Called once, up front, so the table of
+ * contents and the body headings are guaranteed to agree — see {@link renderHtml}.
+ */
+function collectAnchors(blocks: readonly Block[], taken: Set<string>, anchors: Map<Block, string>): void {
+  for (const block of blocks) {
+    anchors.set(block, anchorOf(block.heading, taken));
+    if (block.children !== undefined) {
+      collectAnchors(block.children, taken, anchors);
+    }
+  }
+}
+
+function renderHtmlBlock(block: Block, level: number, anchors: ReadonlyMap<Block, string>): string {
   const tag = `h${String(Math.min(level, 6))}`;
-  const anchor = anchorOf(block.heading, taken);
+  const anchor = anchors.get(block) ?? '';
   const parts: string[] = [`<${tag} id="${escapeHtml(anchor)}">${escapeHtml(block.heading)}</${tag}>`];
   if (block.fields !== undefined && block.fields.length > 0) {
     parts.push(
@@ -360,7 +394,7 @@ function renderHtmlBlock(block: Block, level: number, taken: Set<string>): strin
     parts.push(`<pre><code>${escapeHtml(block.code)}</code></pre>`);
   }
   for (const child of block.children ?? []) {
-    parts.push(renderHtmlBlock(child, level + 1, taken));
+    parts.push(renderHtmlBlock(child, level + 1, anchors));
   }
   return parts.join('\n');
 }
@@ -385,9 +419,12 @@ footer { color: rgba(128,128,128,1); font-size: 0.85rem; margin-top: 3rem; }
 `.trim();
 
 function renderHtml(title: string, blocks: readonly Block[]): string {
-  const taken = new Set<string>();
-  const toc = blocks.map((block) => ({ heading: block.heading, anchor: anchorOf(block.heading, new Set(taken)) }));
-  const body = blocks.map((block) => renderHtmlBlock(block, 2, taken)).join('\n');
+  // One shared pre-pass over the whole tree: the TOC and the body headings then look up the
+  // very same anchors instead of each computing (and potentially deduplicating) their own.
+  const anchors = new Map<Block, string>();
+  collectAnchors(blocks, new Set<string>(), anchors);
+  const toc = blocks.map((block) => ({ heading: block.heading, anchor: anchors.get(block) ?? '' }));
+  const body = blocks.map((block) => renderHtmlBlock(block, 2, anchors)).join('\n');
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
@@ -416,7 +453,7 @@ function renderMarkdownBlock(block: Block, level: number): string {
     parts.push(block.fields.map((field) => `- **${field.label}:** ${escapeMarkdownCell(field.value)}`).join('\n'));
   }
   for (const paragraph of block.paragraphs ?? []) {
-    parts.push(paragraph);
+    parts.push(escapeMarkdownText(paragraph));
   }
   if (block.table !== undefined && block.table.rows.length > 0) {
     const head = `| ${block.table.columns.join(' | ')} |`;
@@ -437,7 +474,7 @@ function renderMarkdown(title: string, blocks: readonly Block[]): string {
   const taken = new Set<string>();
   const toc = blocks.map((block) => `- [${block.heading}](#${anchorOf(block.heading, taken)})`);
   return [
-    `# ${title}`,
+    `# ${escapeMarkdownText(title)}`,
     '## Contents',
     toc.join('\n'),
     ...blocks.map((block) => renderMarkdownBlock(block, 2)),

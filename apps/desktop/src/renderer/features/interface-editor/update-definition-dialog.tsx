@@ -34,13 +34,17 @@ const DEFAULT_OPTIONS: DefinitionUpdateOptions = {
 };
 
 /** The checkboxes, in SoapUI's order and with its wording. */
-const OPTION_LABELS: readonly { key: keyof DefinitionUpdateOptions; label: string }[] = [
+const OPTION_LABELS: readonly { key: keyof DefinitionUpdateOptions; label: string; hint?: string }[] = [
   { key: 'createNewRequests', label: 'Create new requests' },
   { key: 'recreateRequests', label: 'Recreate requests' },
   { key: 'recreateOptional', label: 'Recreate optional elements' },
   { key: 'keepExisting', label: 'Keep existing values' },
   { key: 'keepSoapHeaders', label: 'Keep SOAP headers' },
-  { key: 'createBackups', label: 'Create backups' },
+  {
+    key: 'createBackups',
+    label: 'Create backups',
+    hint: 'Kept next to the request file, one per update.',
+  },
   { key: 'updateTestRequests', label: 'Update TestRequests' },
 ];
 
@@ -49,10 +53,18 @@ const INPUT_CLASS = 'h-row w-full rounded-md border border-hairline bg-surface-b
 /** How a change reason reads in the plan preview. */
 const REASONS: Readonly<Record<UpdatePlanWire['changedOperations'][number]['reason'], string>> = {
   'input-schema': 'request schema',
-  'output-schema': 'response schema',
+  'output-schema': 'response schema (heuristic)',
   'soap-action': 'SOAPAction',
   style: 'style',
   binding: 'binding',
+};
+
+/** Tooltip for reasons whose detection is a heuristic rather than a direct comparison. */
+const REASON_TITLES: Partial<Record<UpdatePlanWire['changedOperations'][number]['reason'], string>> = {
+  'output-schema':
+    'There is no response builder to diff directly, so this compares a structural fingerprint of the ' +
+    "output message instead — a sample of every part's element or type. A fingerprint mismatch means the " +
+    'response shape probably changed, but it can also catch reordering or renaming that leaves behaviour the same.',
 };
 
 /** The local name of a Clark-notation binding QName, for a compact operation label. */
@@ -61,7 +73,13 @@ function operationLabel(ref: { bindingName: string; operationName: string }): st
   return `${local}.${ref.operationName}`;
 }
 
-function PlanList({ title, items, testId }: { title: string; items: readonly string[]; testId: string }) {
+/** One `PlanList` row: its display text, and an optional tooltip explaining how it was detected. */
+interface PlanListItem {
+  readonly text: string;
+  readonly title?: string;
+}
+
+function PlanList({ title, items, testId }: { title: string; items: readonly PlanListItem[]; testId: string }) {
   return (
     <div data-testid={testId} className="min-w-0">
       <p className="text-xs font-medium text-fg-muted">
@@ -72,8 +90,8 @@ function PlanList({ title, items, testId }: { title: string; items: readonly str
       ) : (
         <ul className="mt-0.5 max-h-28 overflow-auto text-xs text-fg-default">
           {items.map((item) => (
-            <li key={item} className="truncate">
-              {item}
+            <li key={item.text} className="truncate" title={item.title}>
+              {item.text}
             </li>
           ))}
         </ul>
@@ -229,34 +247,45 @@ export function UpdateDefinitionDialog({ open, onOpenChange, interfaceId }: Upda
               <PlanList
                 title="New operations"
                 testId="update-plan-new"
-                items={plan.newOperations.map(operationLabel)}
+                items={plan.newOperations.map((ref) => ({ text: operationLabel(ref) }))}
               />
               <PlanList
                 title="Removed operations"
                 testId="update-plan-removed"
-                items={plan.removedOperations.map(operationLabel)}
+                items={plan.removedOperations.map((ref) => ({ text: operationLabel(ref) }))}
               />
               <PlanList
                 title="Changed operations"
                 testId="update-plan-changed"
-                items={plan.changedOperations.map(
-                  (changed) => `${operationLabel(changed.ref)} — ${REASONS[changed.reason]}`,
-                )}
+                items={plan.changedOperations.map((changed) => {
+                  const title = REASON_TITLES[changed.reason];
+                  return {
+                    text: `${operationLabel(changed.ref)} — ${REASONS[changed.reason]}`,
+                    ...(title !== undefined ? { title } : {}),
+                  };
+                })}
               />
-              <PlanList title="Endpoints added" testId="update-plan-endpoints-added" items={plan.endpointsAdded} />
               <PlanList
-                title="Endpoints removed"
-                testId="update-plan-endpoints-removed"
-                items={plan.endpointsRemoved}
+                title="Endpoints added"
+                testId="update-plan-endpoints-added"
+                items={plan.endpointsAdded.map((url) => ({ text: url }))}
               />
+              <div>
+                <PlanList
+                  title="Endpoints removed"
+                  testId="update-plan-endpoints-removed"
+                  items={plan.endpointsRemoved.map((url) => ({ text: url }))}
+                />
+                <p className="mt-1 text-xs text-fg-faint">Endpoints are added, never removed.</p>
+              </div>
             </div>
           )}
 
           <fieldset className="mt-4 border-t border-hairline pt-3">
             <legend className="sr-only">Update options</legend>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {OPTION_LABELS.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 text-sm text-fg-default">
+              {OPTION_LABELS.map(({ key, label, hint }) => (
+                <label key={key} className="flex items-center gap-2 text-sm text-fg-default" title={hint}>
                   <input
                     type="checkbox"
                     data-testid={`update-option-${key}`}

@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+// Imported by relative path, not `@wirebench/engine/test-helpers`: that barrel also pulls in
+// `test-soap-server.ts`, which resolves a `file://` URL at import time and breaks under this
+// suite's jsdom environment. `source-snippet-cases.ts` itself has no such dependency.
+import { SOURCE_SNIPPET_CASES } from '../../../../packages/engine/test/helpers/source-snippet-cases.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -44,6 +48,14 @@ describe('sourceSnippet', () => {
   it('is empty without a line', () => {
     expect(sourceSnippet(XSD, undefined)).toBe('');
   });
+
+  // Shared with the engine's own `sourceSnippet` (packages/engine/src/wsdl/docs-generator.ts)
+  // — a deliberate second implementation, not a copy of it; see the comment atop this file.
+  for (const testCase of SOURCE_SNIPPET_CASES) {
+    it(`matches the engine's implementation: ${testCase.name}`, () => {
+      expect(sourceSnippet(testCase.text, testCase.line, testCase.maxLines)).toBe(testCase.expected);
+    });
+  }
 });
 
 describe('documentLabel', () => {

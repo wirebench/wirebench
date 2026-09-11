@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { importDefinition } from '../../../src/import.js';
 import type { ImportResult } from '../../../src/types.js';
 import { generateDocs, sourceSnippet } from '../../../src/wsdl/docs-generator.js';
+import { SOURCE_SNIPPET_CASES } from '../../helpers/source-snippet-cases.js';
 
 const fixtureRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/', import.meta.url));
 
@@ -113,6 +114,14 @@ describe('sourceSnippet', () => {
   it('returns the line itself when it opens no element', () => {
     expect(sourceSnippet('plain text\nmore', 1)).toBe('plain text');
   });
+
+  // Shared with the renderer's own `sourceSnippet` (apps/desktop) — a deliberate second
+  // implementation, not a copy of this one; see the comment atop `wsdl/docs-generator.ts`.
+  for (const testCase of SOURCE_SNIPPET_CASES) {
+    it(`matches the renderer's implementation: ${testCase.name}`, () => {
+      expect(sourceSnippet(testCase.text, testCase.line, testCase.maxLines)).toBe(testCase.expected);
+    });
+  }
 });
 
 describe('generateDocs — other definition shapes', () => {

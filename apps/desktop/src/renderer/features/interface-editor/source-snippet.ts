@@ -2,6 +2,13 @@
  * Pulls the source XML of a schema component out of the document text the Schema tab already
  * has. Purely textual — the renderer has no parser and no fs — and deliberately tolerant: a
  * declaration whose end cannot be found falls back to the single line it starts on.
+ *
+ * Deliberately duplicated, not imported, from `packages/engine/src/wsdl/docs-generator.ts`'s
+ * own `sourceSnippet` (used by Generate Documentation): the renderer bundle must not import
+ * `@wirebench/engine`'s main entry, which pulls in Node built-ins (`node:crypto`, `node:fs`,
+ * …) the sandboxed renderer cannot load, and there is no browser-safe subpath that exports it.
+ * Keep the two in sync using `packages/engine/test/helpers/source-snippet-cases.ts`, a fixture
+ * both test suites run against.
  */
 
 /** Byte offset of the start of 1-based `line` in `text`. */
