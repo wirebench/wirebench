@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveResponseEditor } from '../../editor/active-response-editor.js';
+import { FOCUS_OTHER_PANE_KEYBINDING } from '../../editor/monaco.js';
+import { focusOtherPane } from './pane-focus.js';
 import { EmptyState } from '../../components/empty-state.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { decodeBase64Text } from '../../lib/format-size.js';
@@ -116,6 +118,11 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     (editor) => {
       editorRef.current = editor;
       setActiveResponseEditor(editor);
+      // ⇧⇥ back to the request editor; see `FOCUS_OTHER_PANE_KEYBINDING` for why the binding
+      // has to live on the editor and not only on the window.
+      editor.addCommand(FOCUS_OTHER_PANE_KEYBINDING, () => {
+        focusOtherPane();
+      });
       const pending = pendingSelectionRef.current;
       if (pending !== undefined) {
         pendingSelectionRef.current = undefined;

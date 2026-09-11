@@ -28,4 +28,13 @@ export const GOTO_LINE_KEYBINDING = 2048 | 37;
 /** `monaco.KeyCode.F12`. */
 export const GOTO_DEFINITION_KEYBINDING = 70;
 
+/** `monaco.KeyMod.Alt | monaco.KeyCode.RightArrow`. */
+export const NEXT_VALUE_KEYBINDING = 512 | 17;
+
+/** `monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow`. */
+export const PREVIOUS_VALUE_KEYBINDING = 512 | 15;
+
+/** `monaco.KeyMod.Shift | monaco.KeyCode.Tab`. */
+export const FOCUS_OTHER_PANE_KEYBINDING = 1024 | 2;
+
 export const BASE_EDITOR_OPTIONS = { tabSize: 3, wordWrap: 'on' } as const;

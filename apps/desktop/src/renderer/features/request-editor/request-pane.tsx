@@ -2,9 +2,14 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveRequestEditor } from '../../editor/active-request-editor.js';
+import { focusOtherPane } from './pane-focus.js';
+import { moveToAdjacentValue } from './value-navigation.js';
 import { setMarkerApi } from '../../editor/markers.js';
 import {
+  FOCUS_OTHER_PANE_KEYBINDING,
   FORMAT_KEYBINDING,
+  NEXT_VALUE_KEYBINDING,
+  PREVIOUS_VALUE_KEYBINDING,
   GOTO_DEFINITION_KEYBINDING,
   GOTO_LINE_KEYBINDING,
   SEND_KEYBINDING,
@@ -205,6 +210,15 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       });
       editor.addCommand(GOTO_DEFINITION_KEYBINDING, () => {
         void goToSchemaDefinition(editor, interfaceId);
+      });
+      editor.addCommand(NEXT_VALUE_KEYBINDING, () => {
+        moveToAdjacentValue('next');
+      });
+      editor.addCommand(PREVIOUS_VALUE_KEYBINDING, () => {
+        moveToAdjacentValue('previous');
+      });
+      editor.addCommand(FOCUS_OTHER_PANE_KEYBINDING, () => {
+        focusOtherPane();
       });
       // Mod+click is the second half of go-to-definition; `onMouseDown` is absent from the
       // lightweight editor double used under jsdom, hence the guard.

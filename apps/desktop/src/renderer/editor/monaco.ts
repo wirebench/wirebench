@@ -57,6 +57,18 @@ export const GOTO_LINE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG;
 /** Monaco's numeric encoding of F12: "Go to Schema Definition". */
 export const GOTO_DEFINITION_KEYBINDING = monaco.KeyCode.F12;
 
+/**
+ * ⌥→ / ⌥← ("next/previous element value") and ⇧⇥ ("focus the other pane").
+ *
+ * Unlike the Mod-based chords above, Monaco binds all three itself (word-wise caret motion and
+ * outdent), and its keybinding service consumes a keystroke it has a binding for before the
+ * window-level dispatcher can see it. So these have to be registered on the editor as well, or
+ * the design's SoapUI-parity moves would only work with focus outside the editor.
+ */
+export const NEXT_VALUE_KEYBINDING = monaco.KeyMod.Alt | monaco.KeyCode.RightArrow;
+export const PREVIOUS_VALUE_KEYBINDING = monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow;
+export const FOCUS_OTHER_PANE_KEYBINDING = monaco.KeyMod.Shift | monaco.KeyCode.Tab;
+
 /** Editor options shared by the request and response panes; per-pane overrides sit alongside. */
 export const BASE_EDITOR_OPTIONS = {
   automaticLayout: true,

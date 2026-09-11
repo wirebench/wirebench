@@ -201,8 +201,17 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                 <input
                   id="import-url"
                   data-testid="import-url-input"
+                  // The dialog is most often reached from the keyboard (⌘I, or the palette), so
+                  // it opens with the caret already in the field, and Enter imports.
+                  autoFocus
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !importing) {
+                      e.preventDefault();
+                      void onImport();
+                    }
+                  }}
                   placeholder="http://example.test/service.wsdl"
                   className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                 />
