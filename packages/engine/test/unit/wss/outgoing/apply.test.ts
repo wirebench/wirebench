@@ -78,6 +78,27 @@ describe('applyOutgoingWss', () => {
     expect(twice.match(/wsu:Timestamp/g)).toHaveLength(4);
   });
 
+  it('removes mustUnderstand when reusing a Security header and the config now says false', async () => {
+    const once = await applyOutgoingWss(SOAP12, config({ mustUnderstand: true }), ctx);
+    expect(once).toContain('soapenv:mustUnderstand="true"');
+    const twice = await applyOutgoingWss(once, config({ mustUnderstand: false }), ctx);
+    expect(twice).not.toContain('mustUnderstand');
+  });
+
+  it('removes a stray role attribute on a reused Security header when the config names no actor', async () => {
+    // A Security block hand-authored (or written by another tool) with an empty `role` — which
+    // `securityActor` treats as "no actor", so the no-actor config below reuses this block —
+    // but the attribute itself is still present and must be cleaned up, not left behind.
+    const withStrayRole = SOAP12.replace(
+      '<soapenv:Header/>',
+      '<soapenv:Header><wsse:Security ' +
+        'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
+        'soapenv:role=""/></soapenv:Header>',
+    );
+    const applied = await applyOutgoingWss(withStrayRole, config(), ctx);
+    expect(applied).not.toContain('soapenv:role');
+  });
+
   it('adds a second Security header for a different actor', async () => {
     const once = await applyOutgoingWss(SOAP12, config({ actor: 'a' }), ctx);
     const twice = await applyOutgoingWss(once, config({ actor: 'b' }), ctx);
@@ -145,5 +166,19 @@ describe('removeOutgoingWss', () => {
   it('leaves a document without a Security header alone', () => {
     expect(removeOutgoingWss(SOAP11)).toContain('<Ping/>');
     expect(removeOutgoingWss('<nope/>')).toBe('<nope/>');
+  });
+
+  it('drops a Header left holding only whitespace after the Security block is removed', async () => {
+    const pretty =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">\n' +
+      '  <soapenv:Header>\n    PLACEHOLDER\n  </soapenv:Header>\n' +
+      '  <soapenv:Body><Ping/></soapenv:Body>\n</soapenv:Envelope>';
+    const xml = await applyOutgoingWss(SOAP11, config(), ctx);
+    const security = /<wsse:Security[\s\S]*<\/wsse:Security>/.exec(xml)?.[0];
+    const withWhitespace = pretty.replace('PLACEHOLDER', `${security}\n  `);
+    const cleaned = removeOutgoingWss(withWhitespace);
+    expect(cleaned).not.toContain('wsse:Security');
+    expect(cleaned).not.toContain('soapenv:Header');
+    expect(cleaned).toContain('<Ping/>');
   });
 });

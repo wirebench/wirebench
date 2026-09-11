@@ -50,6 +50,19 @@ function childElement(parent: Element, namespace: string, localName: string): El
   return undefined;
 }
 
+/** True when `header` has no element children and only whitespace (or no) text content. */
+function headerHasOnlyWhitespace(header: Element): boolean {
+  for (let node = header.firstChild; node !== null; node = node.nextSibling) {
+    if (node.nodeType === 1) {
+      return false;
+    }
+    if (node.nodeType === 3 && (node.nodeValue ?? '').trim() !== '') {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Every `wsse:Security` header block in `header`. */
 function securityHeaders(header: Element): Element[] {
   const found: Element[] = [];
@@ -116,11 +129,16 @@ function ensureSecurity(
     header.appendChild(security);
   }
   const prefix = envelopePrefix(root);
+  const envelopeNs = envelopeNamespace(version);
   if (config.actor !== undefined && config.actor !== '') {
-    security.setAttributeNS(envelopeNamespace(version), `${prefix}:${actorAttribute(version)}`, config.actor);
+    security.setAttributeNS(envelopeNs, `${prefix}:${actorAttribute(version)}`, config.actor);
+  } else {
+    security.removeAttributeNS(envelopeNs, actorAttribute(version));
   }
   if (config.mustUnderstand) {
-    security.setAttributeNS(envelopeNamespace(version), `${prefix}:mustUnderstand`, mustUnderstandValue(version));
+    security.setAttributeNS(envelopeNs, `${prefix}:mustUnderstand`, mustUnderstandValue(version));
+  } else {
+    security.removeAttributeNS(envelopeNs, 'mustUnderstand');
   }
   return security;
 }
@@ -230,7 +248,7 @@ export function removeOutgoingWss(envelopeXml: string, actor?: string): string {
   if (!removed) {
     return envelopeXml;
   }
-  if (childElement(header, NS.WSSE, 'Security') === undefined && header.firstChild === null) {
+  if (childElement(header, NS.WSSE, 'Security') === undefined && headerHasOnlyWhitespace(header)) {
     root.removeChild(header);
   }
   return serializeXml(doc);

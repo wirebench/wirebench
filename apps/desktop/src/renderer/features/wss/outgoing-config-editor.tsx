@@ -15,6 +15,7 @@ import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore } from '../../state/project.js';
+import { TimestampFields, UsernameTokenFields, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
@@ -46,7 +47,7 @@ function move(entries: readonly WssEntryWire[], index: number, delta: number): r
   return next;
 }
 
-const FIELD = 'w-full rounded border border-hairline bg-surface-sunken px-1 py-0.5 text-xs text-fg-default';
+const FIELD = WSS_FIELD_CLASS;
 
 interface EntryProps {
   readonly entry: WssEntryWire;
@@ -86,95 +87,9 @@ function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProp
         </IconButton>
       </div>
 
-      {entry.kind === 'timestamp' && (
-        <div className="mt-1 flex flex-col gap-1">
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Time to live (s)</span>
-            <input
-              type="number"
-              min={0}
-              aria-label="Time to live (seconds)"
-              className={FIELD}
-              value={entry.timeToLiveSeconds}
-              onChange={(event) => {
-                onChange({ ...entry, timeToLiveSeconds: Math.max(0, Number(event.target.value) || 0) });
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              checked={entry.millisecondPrecision}
-              onChange={(event) => {
-                onChange({ ...entry, millisecondPrecision: event.target.checked });
-              }}
-            />
-            Millisecond precision
-          </label>
-        </div>
-      )}
+      {entry.kind === 'timestamp' && <TimestampFields entry={entry} onChange={onChange} />}
 
-      {entry.kind === 'username-token' && (
-        <div className="mt-1 flex flex-col gap-1">
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Username</span>
-            <input
-              aria-label="Username"
-              className={FIELD}
-              value={entry.username}
-              onChange={(event) => {
-                onChange({ ...entry, username: event.target.value });
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <span className="w-24 shrink-0">Password type</span>
-            <select
-              aria-label="Password type"
-              className={FIELD}
-              value={entry.passwordType}
-              onChange={(event) => {
-                onChange({ ...entry, passwordType: event.target.value as 'text' | 'digest' | 'none' });
-              }}
-            >
-              <option value="digest">Digest</option>
-              <option value="text">Text</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          <div data-testid="wss-entry-password">
-            <SecretField
-              label="WS-Security password"
-              value={entry.passwordRef}
-              onChange={(ref) => {
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
-                const { passwordRef: dropped, ...rest } = entry;
-                onChange(ref === undefined ? rest : { ...rest, passwordRef: ref });
-              }}
-            />
-          </div>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              checked={entry.addNonce}
-              onChange={(event) => {
-                onChange({ ...entry, addNonce: event.target.checked });
-              }}
-            />
-            Add nonce
-          </label>
-          <label className="flex items-center gap-1 text-xs text-fg-subtle">
-            <input
-              type="checkbox"
-              checked={entry.addCreated}
-              onChange={(event) => {
-                onChange({ ...entry, addCreated: event.target.checked });
-              }}
-            />
-            Add created
-          </label>
-        </div>
-      )}
+      {entry.kind === 'username-token' && <UsernameTokenFields entry={entry} onChange={onChange} />}
 
       {!supported && <p className="mt-1 text-xs text-fg-faint">Not supported by this build yet.</p>}
     </li>

@@ -993,35 +993,34 @@ export class ProjectService {
    * @returns the configuration, the context and the request's WSS property overrides
    * @throws WirebenchError `wss-config-missing` when the project no longer has the configuration
    */
-  /* eslint-disable-next-line @typescript-eslint/require-await --
-     async so a missing configuration rejects rather than throwing synchronously, matching
-     every other send-time resolver. */
-  async wssFor(requestId: string): Promise<SoapSendWss | undefined> {
+  wssFor(requestId: string): Promise<SoapSendWss | undefined> {
     if (this.open === undefined) {
-      return undefined;
+      return Promise.resolve(undefined);
     }
     const location = findRequest(this.open.project, requestId);
     const configId = location?.request.wssOutgoingRef;
     if (location === undefined || configId === undefined || configId.length === 0) {
-      return undefined;
+      return Promise.resolve(undefined);
     }
     const outgoing = this.wssOutgoingConfig(configId);
     if (outgoing === undefined) {
-      throw new WirebenchError(
-        'wss-config-missing',
-        'This request selects a WS-Security configuration the project no longer has.',
-        { details: { configId } },
+      return Promise.reject(
+        new WirebenchError(
+          'wss-config-missing',
+          'This request selects a WS-Security configuration the project no longer has.',
+          { details: { configId } },
+        ),
       );
     }
     const properties = location.request.properties;
-    return {
+    return Promise.resolve({
       outgoing,
       ctx: this.wssContext(),
       requestProperties: {
         ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
         ...(properties.wssTimeToLive !== undefined ? { wssTimeToLive: properties.wssTimeToLive } : {}),
       },
-    };
+    });
   }
 
   /** The envelope a WS-Security editor action starts from: what the editor holds, else the saved one. */
