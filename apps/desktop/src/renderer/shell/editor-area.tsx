@@ -81,35 +81,54 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         >
           Welcome
         </button>
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tab"
-            aria-selected={tab.id === activeId}
-            className={`group inline-flex shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
-              tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
-            }`}
-          >
-            <button type="button" onClick={() => activate(tab.id)}>
-              {(tab.kind === 'interface' && tab.interfaceId !== undefined
-                ? interfaces[tab.interfaceId]?.name
-                : undefined) ??
-                (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
-                (tab.environmentId !== undefined
-                  ? environments.find((environment) => environment.id === tab.environmentId)?.name
-                  : undefined) ??
-                tab.title}
-            </button>
+        {tabs.map((tab) => {
+          const label =
+            (tab.kind === 'interface' && tab.interfaceId !== undefined
+              ? interfaces[tab.interfaceId]?.name
+              : undefined) ??
+            (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
+            (tab.environmentId !== undefined
+              ? environments.find((environment) => environment.id === tab.environmentId)?.name
+              : undefined) ??
+            tab.title;
+          return (
+            // One focusable control per tab. A nested close *button* would be interactive
+            // content inside a `tab` widget, which screen readers do not announce reliably, so
+            // the × is a decorative click target and the keyboard path to closing is Delete (or
+            // Backspace) on the focused tab — what `aria-keyshortcuts` advertises.
             <button
+              key={tab.id}
               type="button"
-              aria-label={`Close ${tab.title}`}
-              className="text-fg-subtle hover:text-fg-default"
-              onClick={() => close(tab.id)}
+              role="tab"
+              aria-selected={tab.id === activeId}
+              aria-keyshortcuts="Delete"
+              onClick={() => activate(tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Delete' || event.key === 'Backspace') {
+                  event.preventDefault();
+                  close(tab.id);
+                }
+              }}
+              className={`group inline-flex shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
+                tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+              }`}
             >
-              ×
+              {label}
+              <span
+                aria-hidden="true"
+                data-testid="editor-tab-close"
+                title={`Close ${label}`}
+                className="text-fg-subtle hover:text-fg-default"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  close(tab.id);
+                }}
+              >
+                ×
+              </span>
             </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">

@@ -62,7 +62,7 @@ test.describe('request properties and preferences', () => {
 
     // …and the failure is a Problems entry, not just a transient status line.
     await page.getByRole('tab', { name: /Problems/ }).click();
-    await expect(page.getByRole('list', { name: 'Problems' })).toContainText('timeout', { ignoreCase: true });
+    await expect(page.getByRole('grid', { name: 'Problems' })).toContainText('timeout', { ignoreCase: true });
   });
 
   test('the Editor tab size drives a recreated envelope, and the UI theme drives the shell', async () => {

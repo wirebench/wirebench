@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NodeApi, NodeRendererProps } from 'react-arborist';
-import { Tree } from 'react-arborist';
+import { forwardRef } from 'react';
+import { ListOuterElement, Tree } from 'react-arborist';
 import { Box, FileDown, Folder, Network, Plug, RefreshCw, FoldVertical } from 'lucide-react';
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { IconButton } from '../../components/icon-button.js';
@@ -44,6 +45,22 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   operations: Folder,
   binding: Network,
 };
+
+/**
+ * react-arborist's scroll container, made focusable.
+ *
+ * The virtualised list is what actually scrolls, and a scrollable region nothing inside it can
+ * focus is unreachable by keyboard alone (axe `scrollable-region-focusable`); the rows carry
+ * `tabindex=-1`, so the container needs the tab stop. It is a `group` rather than
+ * `presentation`: a presentational role is ignored on a focusable element, which would leave a
+ * focusable generic sitting between the `tree` and its `treeitem`s, and `group` is a child the
+ * `tree` role is allowed to own.
+ */
+const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeof ListOuterElement>>(
+  function FocusableListOuter(props, ref) {
+    return <ListOuterElement ref={ref} {...props} role="group" tabIndex={0} />;
+  },
+);
 
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
@@ -194,6 +211,7 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               rowHeight={26}
+              outerElementType={FocusableListOuter}
               openByDefault
               disableEdit={(node) => node.kind !== 'request'}
               aria-label="Explorer"
