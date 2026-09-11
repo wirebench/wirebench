@@ -9,6 +9,15 @@ import { registerHandler } from './register.js';
 /** The `ProjectHost` surface `search.query` needs; a stub stands in for it in tests. */
 export type SearchChannelProject = Pick<ProjectHost, 'snapshot'>;
 
+/**
+ * Where the corpus comes from: every host the open workspace holds. Search spans all projects
+ * (spec §3.4), so the channel is given the router rather than one project —
+ * `WorkspaceService.hosts()` satisfies this structurally.
+ */
+export interface SearchChannelProjects {
+  hosts(): readonly SearchChannelProject[];
+}
+
 /** The `EngineService` surface `search.query` needs. */
 export type SearchChannelEngine = Pick<EngineService, 'resultFor'>;
 
@@ -21,23 +30,40 @@ export type SearchChannelEngine = Pick<EngineService, 'resultFor'>;
  * when a user reaches for find.
  */
 export function searchCorpus(
-  project: SearchChannelProject,
+  projects: SearchChannelProjects,
   engine: SearchChannelEngine,
   scopes: SearchQueryRequest['scopes'],
 ): readonly SearchDocument[] {
+  const documents: SearchDocument[] = [];
+  for (const host of projects.hosts()) {
+    collectFrom(host, engine, scopes, documents);
+  }
+  return documents;
+}
+
+/** Appends one project's documents to `documents`, each tagged with the project it came from. */
+function collectFrom(
+  project: SearchChannelProject,
+  engine: SearchChannelEngine,
+  scopes: SearchQueryRequest['scopes'],
+  documents: SearchDocument[],
+): void {
   const snapshot = project.snapshot();
   if (snapshot === null) {
-    return [];
+    return;
   }
   const interfaceName = (id: string): string =>
     snapshot.interfaces.find((candidate) => candidate.id === id)?.name ?? id;
-  const documents: SearchDocument[] = [];
+  const projectId = snapshot.id;
+  const projectName = snapshot.name;
 
   for (const request of snapshot.requests) {
     if (scopes.requestBodies) {
       documents.push({
         kind: 'request-body',
         text: request.envelopeXml,
+        projectId,
+        projectName,
         requestId: request.id,
         requestName: request.name,
         interfaceId: request.interfaceId,
@@ -49,6 +75,8 @@ export function searchCorpus(
         kind: 'request-header',
         // One header per line, so a match's line number points at the header that matched.
         text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
+        projectId,
+        projectName,
         requestId: request.id,
         requestName: request.name,
         interfaceId: request.interfaceId,
@@ -69,6 +97,8 @@ export function searchCorpus(
         documents.push({
           kind: 'document',
           text: document.text,
+          projectId,
+          projectName,
           interfaceId: summary.id,
           interfaceName: summary.name,
           location: document.location,
@@ -76,13 +106,11 @@ export function searchCorpus(
       }
     }
   }
-
-  return documents;
 }
 
-/** Registers `search.query`: project-wide find over requests, headers and cached definitions. */
-export function registerSearchChannels(engine: SearchChannelEngine, project: SearchChannelProject): void {
+/** Registers `search.query`: workspace-wide find over requests, headers and cached definitions. */
+export function registerSearchChannels(engine: SearchChannelEngine, projects: SearchChannelProjects): void {
   registerHandler(channels.search.query, (request) =>
-    Promise.resolve(searchDocuments(searchCorpus(project, engine, request.scopes), request)),
+    Promise.resolve(searchDocuments(searchCorpus(projects, engine, request.scopes), request)),
   );
 }

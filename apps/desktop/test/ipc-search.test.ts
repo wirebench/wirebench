@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
 
 const { registerSearchChannels, searchCorpus } = await import('../src/main/ipc/search.js');
 type SearchChannelEngine = Parameters<typeof registerSearchChannels>[0];
-type SearchChannelProject = Parameters<typeof registerSearchChannels>[1];
+type SearchChannelProjects = Parameters<typeof registerSearchChannels>[1];
 
 const ALL_SCOPES = { requestBodies: true, headers: true, definitions: true } as const;
 
@@ -27,10 +27,10 @@ function invoke(payload: unknown): Promise<unknown> {
   return handler({ sender: {} }, payload);
 }
 
-function project(): ProjectWire {
+function project(id = 'p1', name = 'Demo'): ProjectWire {
   return {
-    id: 'p1',
-    name: 'Demo',
+    id,
+    name,
     dir: '/tmp/demo',
     dirty: false,
     interfaces: [
@@ -86,15 +86,36 @@ function engineWith(text: string | undefined): SearchChannelEngine {
   };
 }
 
-const projectWith = (snapshot: ProjectWire | null): SearchChannelProject => ({ snapshot: () => snapshot });
+/** One open workspace holding exactly these project snapshots, in order. */
+const projectsWith = (...snapshots: (ProjectWire | null)[]): SearchChannelProjects => ({
+  hosts: () => snapshots.map((snapshot) => ({ snapshot: () => snapshot })),
+});
 
 describe('searchCorpus', () => {
   it('is empty with no project open', () => {
-    expect(searchCorpus(projectWith(null), engineWith('x'), ALL_SCOPES)).toEqual([]);
+    expect(searchCorpus(projectsWith(null), engineWith('x'), ALL_SCOPES)).toEqual([]);
+    expect(searchCorpus(projectsWith(), engineWith('x'), ALL_SCOPES)).toEqual([]);
+  });
+
+  it('tags every document with the project it came from, across all open projects', () => {
+    const corpus = searchCorpus(
+      projectsWith(project(), project('p2', 'Billing')),
+      engineWith('<wsdl:definitions/>'),
+      ALL_SCOPES,
+    );
+
+    expect(corpus.map((document) => [document.projectId, document.projectName])).toEqual([
+      ['p1', 'Demo'],
+      ['p1', 'Demo'],
+      ['p1', 'Demo'],
+      ['p2', 'Billing'],
+      ['p2', 'Billing'],
+      ['p2', 'Billing'],
+    ]);
   });
 
   it('collects request bodies, headers and definition documents', () => {
-    const corpus = searchCorpus(projectWith(project()), engineWith('<wsdl:definitions/>'), ALL_SCOPES);
+    const corpus = searchCorpus(projectsWith(project()), engineWith('<wsdl:definitions/>'), ALL_SCOPES);
 
     expect(corpus.map((document) => document.kind)).toEqual(['request-body', 'request-header', 'document']);
     expect(corpus[1]?.text).toBe('X-Trace: abc-123');
@@ -102,7 +123,7 @@ describe('searchCorpus', () => {
   });
 
   it('honours the scope toggles', () => {
-    const corpus = searchCorpus(projectWith(project()), engineWith('<wsdl:definitions/>'), {
+    const corpus = searchCorpus(projectsWith(project()), engineWith('<wsdl:definitions/>'), {
       requestBodies: true,
       headers: false,
       definitions: false,
@@ -112,7 +133,7 @@ describe('searchCorpus', () => {
   });
 
   it('skips an interface whose definition is not loaded rather than failing', () => {
-    const corpus = searchCorpus(projectWith(project()), engineWith(undefined), ALL_SCOPES);
+    const corpus = searchCorpus(projectsWith(project()), engineWith(undefined), ALL_SCOPES);
 
     expect(corpus.map((document) => document.kind)).toEqual(['request-body', 'request-header']);
   });
@@ -124,7 +145,7 @@ describe('search.query', () => {
   });
 
   it('answers with matches across every scope', async () => {
-    registerSearchChannels(engineWith('<wsdl:operation name="Add"/>'), projectWith(project()));
+    registerSearchChannels(engineWith('<wsdl:operation name="Add"/>'), projectsWith(project()));
 
     const result = (await invoke({ query: 'Add', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -136,7 +157,7 @@ describe('search.query', () => {
   });
 
   it('finds a header value', async () => {
-    registerSearchChannels(engineWith(undefined), projectWith(project()));
+    registerSearchChannels(engineWith(undefined), projectsWith(project()));
 
     const result = (await invoke({ query: 'abc-123', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: true;
@@ -146,8 +167,23 @@ describe('search.query', () => {
     expect(result.value.matches[0]).toMatchObject({ kind: 'request-header', snippet: 'X-Trace: abc-123' });
   });
 
+  it('carries the project each match came from, for two open projects', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(project(), project('p2', 'Billing')));
+
+    const result = (await invoke({ query: 'Add', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { projectId: string; projectName: string; kind: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(2);
+    expect(result.value.matches.map((match) => [match.projectId, match.projectName])).toEqual([
+      ['p1', 'Demo'],
+      ['p2', 'Billing'],
+    ]);
+  });
+
   it('reports an invalid regex as an error envelope rather than throwing', async () => {
-    registerSearchChannels(engineWith(undefined), projectWith(project()));
+    registerSearchChannels(engineWith(undefined), projectsWith(project()));
 
     const result = (await invoke({ query: '(', regex: true, caseSensitive: false, scopes: ALL_SCOPES })) as {
       ok: false;

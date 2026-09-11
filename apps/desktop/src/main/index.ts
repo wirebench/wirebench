@@ -203,7 +203,8 @@ void app.whenReady().then(() => {
       },
     },
   });
-  registerSearchChannels(engineService, projectHost);
+  // One host today; Task 8 passes the `WorkspaceService`, whose `hosts()` is the real thing.
+  registerSearchChannels(engineService, { hosts: () => [projectHost] });
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({

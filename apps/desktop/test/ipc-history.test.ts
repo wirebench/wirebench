@@ -96,6 +96,25 @@ describe('registerHistoryChannels', () => {
     expect(filtered).toEqual({ ok: true, value: { entries: [entries[0]], total: 1 } });
   });
 
+  it('history.list passes the project filter through to the history service', async () => {
+    const entries = [
+      makeEntry({ id: 'a', requestName: 'Alpha', projectId: 'proj-1' }),
+      makeEntry({ id: 'b', requestName: 'Beta', projectId: 'proj-2' }),
+    ];
+    const history = fakeHistory(entries);
+    registerHistoryChannels(new EngineService(), history as never, {
+      project: noLiveRequests(),
+    });
+
+    const result = await invoke('history.list', { projectId: 'proj-2' });
+
+    expect(result).toEqual({ ok: true, value: { entries: [entries[1]], total: 1 } });
+    expect(history.list).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 'proj-2' }));
+    // Absent means every project: the key must not be forwarded as `undefined`.
+    await invoke('history.list', {});
+    expect(history.list.mock.calls.at(-1)?.[0]).not.toHaveProperty('projectId');
+  });
+
   it('history.get returns the entry or undefined', async () => {
     const entries = [makeEntry({ id: 'a' })];
     const history = fakeHistory(entries);

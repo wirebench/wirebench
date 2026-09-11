@@ -53,6 +53,7 @@ export function registerHistoryChannels(
         ...(request.query !== undefined ? { query: request.query } : {}),
         limit: request.limit ?? 200,
         ...(request.before !== undefined ? { before: request.before } : {}),
+        ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
       }),
     ),
   );
