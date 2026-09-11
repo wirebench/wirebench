@@ -60,6 +60,19 @@ export interface VerifySignatureResult {
 export interface VerifySignatureOptions {
   /** The signer's certificate, PEM encoded. */
   readonly certPem: string;
+  /**
+   * Which `ds:Signature` to verify, when `xml` carries more than one. `index` counts among every
+   * `ds:Signature` element in the document, in document order (depth-first, pre-order) — the
+   * same order {@link findAllSignatures} and `verifyIncoming`'s own signature list use, so the
+   * two never disagree about which signature `index` names. Defaults to `0` (the first).
+   *
+   * Selecting by index against the *unmodified* document — rather than stripping every other
+   * `ds:Signature` before verifying — matters because a genuine signature's own references can
+   * cover the `wsse:Security` header (an enveloped-signature transform over a header that holds
+   * a second signature): removing that second signature before verification would change the
+   * bytes the first signature's digest was computed over, and it would fail.
+   */
+  readonly signature?: { readonly index: number };
 }
 
 /** True when `element` already carries a `wsu:Id`. */
@@ -209,9 +222,21 @@ export async function signEnvelope(
   }
 }
 
-/** The first `ds:Signature` element in `root`, searched depth-first. */
-function findSignature(root: Element): Element | undefined {
-  return findElement(root, NS.DS, 'Signature');
+/** Every `ds:Signature` element under `root`, in document order (depth-first, pre-order). */
+function findAllSignatures(root: Element): Element[] {
+  const found: Element[] = [];
+  const walk = (node: Element): void => {
+    if (node.namespaceURI === NS.DS && node.localName === 'Signature') {
+      found.push(node);
+    }
+    for (let child = node.firstChild; child !== null; child = child.nextSibling) {
+      if (child.nodeType === 1) {
+        walk(child as Element);
+      }
+    }
+  };
+  walk(root);
+  return found;
 }
 
 /** The `URI`s of a signature's `ds:Reference` children, without their leading `#`. */
@@ -245,7 +270,8 @@ export function verifySignature(xml: string, options: VerifySignatureOptions): V
   let signature: Element | undefined;
   try {
     const root = parseXml(xml, { location: 'envelope' }).documentElement;
-    signature = root === null ? undefined : findSignature(root);
+    const signatures = root === null ? [] : findAllSignatures(root);
+    signature = signatures[options.signature?.index ?? 0];
   } catch (error) {
     return { ok: false, references: [], error: error instanceof Error ? error.message : String(error) };
   }

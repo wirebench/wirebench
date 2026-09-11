@@ -379,31 +379,6 @@ function isTrusted(
   }
 }
 
-/**
- * `xml` — this document, serialized — with every `ds:Signature` but `keep` removed, so each is
- * verified on its own and `verifySignature`'s "first signature in the document" is this one.
- *
- * Removal is by *node identity* on the single parsed document, and every removed node is put
- * back exactly where it was before returning. Re-parsing and removing by positional index (as
- * this once did) lets a `ds:Signature` planted anywhere earlier in the document shift which
- * signature is verified — precisely the signature-wrapping trick this code exists to expose.
- */
-function isolateSignature(doc: ReturnType<typeof parseXml>, signatures: readonly Element[], keep: Element): string {
-  const removed = signatures
-    .filter((signature) => signature !== keep)
-    .map((signature) => ({ node: signature, parent: signature.parentNode, next: signature.nextSibling }));
-  for (const entry of removed) {
-    entry.parent?.removeChild(entry.node);
-  }
-  try {
-    return serializeXml(doc);
-  } finally {
-    for (const entry of [...removed].reverse()) {
-      entry.parent?.insertBefore(entry.node, entry.next);
-    }
-  }
-}
-
 /** The `URI`s of a `ds:Signature`'s references, without their leading `#`. */
 function referenceIds(signature: Element): string[] {
   const signedInfo = childElement(signature, NS.DS, 'SignedInfo');
@@ -488,7 +463,6 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
   if (doc === undefined || root === undefined) {
     return { signatures: [] };
   }
-  const document = doc;
   const securities = findAll(root, NS.WSSE, 'Security');
   const securitySignatures = new Set(securities.flatMap((security) => findAll(security, NS.DS, 'Signature')));
   // Document order, and every `ds:Signature` — including one planted outside a `wsse:Security`
@@ -499,6 +473,23 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
   const ids = idIndex(root);
   const body = bodyElement(root);
   const at = options.clock();
+
+  // A `ds:Signature` outside every `wsse:Security` header is never itself validated (see the
+  // early return below) — it is noise a wrapping attack planted to be picked up as content, not
+  // a signature this build ever trusts. Removing that noise once, up front, is not the isolation
+  // this code once did per signature (which stripped *every other* signature, including a
+  // legitimate sibling in the same `wsse:Security` header, corrupting the digest of any
+  // reference — such as an enveloped-signature transform over the header itself — that
+  // legitimately covered that sibling). A header signature is always verified against the
+  // document exactly as its Security header holds it; only content that could never have been
+  // part of a real signature's input is taken out first.
+  const headerSignatures = signatures.filter((signature) => securitySignatures.has(signature));
+  for (const signature of signatures) {
+    if (!securitySignatures.has(signature)) {
+      signature.parentNode?.removeChild(signature);
+    }
+  }
+  const sanitizedXml = serializeXml(doc);
 
   const results: IncomingSignatureResult[] = signatures.map((signature) => {
     const empty = { references: [], referenceNames: [], coversBody: false, trusted: false } as const;
@@ -524,7 +515,14 @@ export function verifyIncoming(xml: string, options: VerifyIncomingOptions): Ver
       };
     }
     const certPem = forge.pki.certificateToPem(certificate);
-    const result = verifySignature(isolateSignature(document, signatures, signature), { certPem });
+    // Verified by the signature's position among `wsse:Security` header signatures — never by
+    // isolating it from its own header siblings, which would change the bytes a signature whose
+    // own references cover the wsse:Security header (an enveloped-signature transform over a
+    // header that holds a second signature) was actually computed over.
+    const result = verifySignature(sanitizedXml, {
+      certPem,
+      signature: { index: headerSignatures.indexOf(signature) },
+    });
     const covered = result.references.map((id) => uniqueById(ids, id));
     return {
       ok: result.ok,

@@ -284,4 +284,17 @@ describe('verifySignature', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toBeDefined();
   });
+
+  it('selects the ds:Signature at options.signature.index rather than the first one', async () => {
+    const first = await signed(signatureEntry());
+    const rogue = await signed(signatureEntry(), keystoreOf(noSki));
+    const rogueSignature = /<ds:Signature[\s\S]*?<\/ds:Signature>/.exec(rogue)?.[0] ?? '';
+    expect(rogueSignature).not.toBe('');
+    const merged = first.replace('<ds:Signature', `${rogueSignature}<ds:Signature`);
+
+    // Index 0 is the planted, unrelated signature; index 1 is the genuine one.
+    expect(verifySignature(merged, { certPem: noSki.certPem, signature: { index: 0 } }).ok).toBe(true);
+    expect(verifySignature(merged, { certPem: signer.certPem, signature: { index: 1 } }).ok).toBe(true);
+    expect(verifySignature(merged, { certPem: signer.certPem, signature: { index: 0 } }).ok).toBe(false);
+  });
 });

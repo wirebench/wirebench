@@ -4,12 +4,19 @@
  * identifier form is exercised exactly as it goes on the wire.
  */
 
+import { createHash, createSign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { ExclusiveCanonicalization } from 'xml-crypto';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { loadKeystore } from '../../../../src/wss/keystore/index.js';
 import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
 import { verifyIncoming } from '../../../../src/wss/incoming/verify.js';
 import { decryptIncoming } from '../../../../src/wss/incoming/decrypt.js';
+import { parseXml } from '../../../../src/xml/parse.js';
+import { serializeXml } from '../../../../src/xml/serialize.js';
+import { NS } from '../../../../src/xml/namespaces.js';
+import { certificateBase64 } from '../../../../src/wss/key-identifiers.js';
+import type { Element } from '@xmldom/xmldom';
 import type { Keystore } from '../../../../src/wss/keystore/model.js';
 import type { WssKeyIdentifierType, WssOutgoingConfig, WssPart } from '../../../../src/wss/model.js';
 import { generateSigningCert, generateTestCa, generateUntrustedCert } from '../../../helpers/test-certs.js';
@@ -150,6 +157,65 @@ describe('verifyIncoming', () => {
     expect(result.signatures[1]?.trusted).toBe(false);
   });
 
+  it('verifies both signatures when the second covers the wsse:Security header with an enveloped-signature transform', async () => {
+    const first = await sign('BinarySecurityToken');
+    const doc = parseXml(first, { location: 'envelope' });
+    const root = doc.documentElement;
+    if (root === null) {
+      throw new Error('expected a parsed envelope');
+    }
+    const security = findByNs(root, NS.WSSE, 'Security');
+    if (security === undefined) {
+      throw new Error('expected a wsse:Security header');
+    }
+    security.setAttributeNS(NS.WSU, 'wsu:Id', 'Sec-1');
+
+    // A second signature, whose only reference is the wsse:Security header itself via the
+    // enveloped-signature transform — the real-world shape of a second signature that also
+    // covers the header it lives in (and, with it, the first signature already sitting there).
+    //
+    // Built directly against xml-crypto's canonicalization (rather than through `SignedXml`'s
+    // own `computeSignature`, whose enveloped-signature transform strips "the first ds:Signature
+    // child" it finds when it does not yet know its own identity — the first signature already
+    // present here, not itself) so the digest is computed exactly as `verifyIncoming`'s own
+    // `checkSignature` will recompute it: over the Security header with the first signature
+    // present and the second (not yet existing at signing time) absent.
+    const digestValue = digestOf(security);
+    const signedInfoXml =
+      '<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+      '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>' +
+      '<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>' +
+      '<ds:Reference URI="#Sec-1"><ds:Transforms>' +
+      '<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>' +
+      '<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>' +
+      '</ds:Transforms>' +
+      '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>' +
+      `<ds:DigestValue>${digestValue}</ds:DigestValue></ds:Reference></ds:SignedInfo>`;
+    const signedInfoElement = parseXml(signedInfoXml, { location: 'signed-info' }).documentElement;
+    if (signedInfoElement === null) {
+      throw new Error('expected a parsed SignedInfo');
+    }
+    const canonicalSignedInfo = new ExclusiveCanonicalization().process(signedInfoElement, {});
+    const signatureValue = createSign('RSA-SHA256').update(canonicalSignedInfo).sign(signer.keyPem, 'base64');
+    const certificateBody = certificateBase64(signer.certPem);
+    const signatureXml =
+      '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+      signedInfoXml +
+      `<ds:SignatureValue>${signatureValue}</ds:SignatureValue>` +
+      `<ds:KeyInfo><ds:X509Data><ds:X509Certificate>${certificateBody}</ds:X509Certificate></ds:X509Data></ds:KeyInfo>` +
+      '</ds:Signature>';
+    const signatureElement = parseXml(signatureXml, { location: 'signature' }).documentElement;
+    if (signatureElement === null) {
+      throw new Error('expected a parsed Signature');
+    }
+    security.appendChild(doc.importNode(signatureElement, true));
+
+    const result = verifyIncoming(serializeXml(doc), { ...options, truststore });
+    expect(result.signatures).toHaveLength(2);
+    expect(result.signatures[0]).toMatchObject({ ok: true, trusted: true });
+    expect(result.signatures[1]).toMatchObject({ ok: true, trusted: true, references: ['Sec-1'] });
+  });
+
   it('is not shifted by a decoy ds:Signature planted in the Body', async () => {
     const rogue = await sign('BinarySecurityToken', generateUntrustedCert());
     const decoy = /<ds:Signature[\s\S]*?<\/ds:Signature>/.exec(rogue)?.[0] ?? '';
@@ -236,6 +302,29 @@ describe('decryptIncoming', () => {
     });
   });
 });
+
+/** The `DigestValue` an exc-c14n `ds:Reference` to `element` (as it stands right now) would carry. */
+function digestOf(element: Element): string {
+  const canonical = new ExclusiveCanonicalization().process(element.cloneNode(true) as Element, {});
+  return createHash('sha256').update(canonical, 'utf-8').digest('base64');
+}
+
+/** The first descendant-or-self of `root` in `namespace` with local name `localName`. */
+function findByNs(root: Element, namespace: string, localName: string): Element | undefined {
+  if (root.namespaceURI === namespace && root.localName === localName) {
+    return root;
+  }
+  for (let node = root.firstChild; node !== null; node = node.nextSibling) {
+    if (node.nodeType !== 1) {
+      continue;
+    }
+    const found = findByNs(node as Element, namespace, localName);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
 
 /** An envelope whose `wsse:Security` carries only the given `wsu:Timestamp` children. */
 function timestampEnvelope(children: string): string {
