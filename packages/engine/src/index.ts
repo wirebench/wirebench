@@ -3,6 +3,7 @@ export {
   WsdlParseError,
   SchemaError,
   HttpError,
+  WsaError,
   WssError,
   ProjectError,
   ValidationError,
@@ -233,6 +234,7 @@ export type {
   SendAuth,
   SoapExchange,
   SoapSendInput,
+  SoapSendWsa,
   SoapSendWss,
 } from './types.js';
 
@@ -364,6 +366,27 @@ export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from 
 export { effectiveAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
 export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
+// ---------------------------------------------------------------------------
+// WS-Addressing (Task 41)
+// ---------------------------------------------------------------------------
+export { DEFAULT_WSA_CONFIG, effectiveWsa, normalizeWsa } from './wsa/model.js';
+export type { WsaConfigPatch, WsaMustUnderstand, WsaVersion } from './wsa/model.js';
+export {
+  WSA_PREFIX,
+  anonymousAddress,
+  applyWsaHeaders,
+  buildWsaHeaders,
+  defaultRelationshipType,
+  effectiveAction,
+  effectiveMessageId,
+  effectiveTo,
+  stripWsaHeaders,
+  wsaNamespace,
+} from './wsa/headers.js';
+export type { WsaHeaderContext } from './wsa/headers.js';
+export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
+export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
+
 export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
 export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
 export {

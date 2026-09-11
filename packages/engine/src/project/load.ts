@@ -27,6 +27,7 @@ import { FORMAT_VERSION } from './model.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
 import { migrate } from './migrate.js';
+import { normalizeWsa } from '../wsa/model.js';
 import { ENVIRONMENTS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX, WSS_DIR } from './paths.js';
 import {
   environmentFileSchema,
@@ -129,7 +130,7 @@ async function loadRequests(fs: FsLike, root: string, dir: string, problems: Pro
       headers: parsed.headers,
       attachments: parsed.attachments.map((a) => exact<Attachment>(a)),
       ...optional('auth', parsed.auth),
-      ...optional('wsa', parsed.wsa),
+      ...(parsed.wsa !== undefined ? { wsa: normalizeWsa(parsed.wsa) } : {}),
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),
       ...optional('wssIncomingRef', parsed.wssIncomingRef),
       properties: exact<RequestProperties>(parsed.properties),
@@ -203,7 +204,7 @@ async function loadInterface(
     ...optional('targetNamespace', parsed.targetNamespace),
     endpoints,
     ...optional('defaultEndpointId', parsed.defaultEndpointId),
-    wsa: parsed.wsa,
+    wsa: normalizeWsa(parsed.wsa),
     ...optional('auth', parsed.auth),
     operations: operations.sort(byOrder),
   };

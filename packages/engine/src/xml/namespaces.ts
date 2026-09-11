@@ -26,6 +26,7 @@ export const NS = {
   WSA_200408: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
   WSAW: 'http://www.w3.org/2006/05/addressing/wsdl',
   WSAM: 'http://www.w3.org/2007/05/addressing/metadata',
+  WSAP_2004: 'http://schemas.xmlsoap.org/ws/2004/08/addressing/policy',
   WSP: 'http://www.w3.org/ns/ws-policy',
   WSP_2004: 'http://schemas.xmlsoap.org/ws/2004/09/policy',
 } as const;
@@ -57,6 +58,7 @@ export const PREFIX: Record<keyof typeof NS, string> = {
   WSA_200408: 'wsa',
   WSAW: 'wsaw',
   WSAM: 'wsam',
+  WSAP_2004: 'wsap',
   WSP: 'wsp',
   WSP_2004: 'wsp',
 };

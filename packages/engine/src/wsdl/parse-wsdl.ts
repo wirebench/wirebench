@@ -63,6 +63,7 @@ function parseMessageRef(el: Element, location: string, defaultNamespace: string
   return {
     ...(name !== undefined ? { name } : {}),
     message: parseQName(requireAttribute(el, 'message', location), el, defaultNamespace),
+    sourceElement: el,
   };
 }
 

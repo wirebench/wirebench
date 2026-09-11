@@ -423,7 +423,7 @@ describe('parseWsdlDocument — imports, faults, and remaining binding shapes', 
     expect(op?.faults).toEqual([{ name: 'Failure', use: 'encoded' }]);
 
     const service = def.services[0];
-    expect(service?.ports[0]).toEqual({
+    expect(service?.ports[0]).toMatchObject({
       name: 'NoAddressPort',
       binding: { namespaceUri: 'urn:x', localName: 'B' },
     });

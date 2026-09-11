@@ -3,6 +3,7 @@
  * response: SOAP version, fault, or "not actually SOAP" detection.
  */
 
+import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import type { Dispatcher } from 'undici';
 import { WirebenchError } from './errors.js';
@@ -17,6 +18,7 @@ import { charsetOf } from './soap/charset.js';
 import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/mime/send-pipeline.js';
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
+import { applyWsaHeaders, effectiveAction } from './wsa/headers.js';
 import { applyOutgoingWss } from './wss/apply.js';
 import { processIncomingWss } from './wss/incoming/index.js';
 import type { WssResult } from './wss/incoming/index.js';
@@ -69,6 +71,41 @@ export async function sendSoapRequest(
     const expanded = expandSendInput(input, options.scopes, { entitize: input.entitize ?? false });
     effectiveInput = expanded.input;
     unresolved = expanded.unresolved;
+  }
+
+  // WS-Addressing runs first of all the envelope rewrites: before WS-Security, so a signature
+  // configured to cover the `wsa:*` headers finds them already in place, and before the
+  // attachment pipeline, so they are inside the envelope MTOM/SwA package and raw capture show.
+  let wsaApplied: SoapExchange['wsa'] | undefined;
+  const wsa = effectiveInput.wsa;
+  if (wsa !== undefined && wsa.config.enabled) {
+    let messageId: string | undefined;
+    const uuid = wsa.uuid ?? (() => randomUUID());
+    const envelopeXml = applyWsaHeaders(effectiveInput.envelopeXml, wsa.config, {
+      endpoint: effectiveInput.endpoint,
+      ...(effectiveInput.soapAction !== undefined ? { soapAction: effectiveInput.soapAction } : {}),
+      defaultAction: wsa.defaultAction,
+      uuid: () => {
+        const value = uuid();
+        messageId = `urn:uuid:${value}`;
+        return value;
+      },
+      envelopeVersion: effectiveInput.soapVersion,
+    });
+    const action = effectiveAction(wsa.config, {
+      ...(effectiveInput.soapAction !== undefined ? { soapAction: effectiveInput.soapAction } : {}),
+      defaultAction: wsa.defaultAction,
+    });
+    // A fixed MessageID never goes through the uuid factory, so read it back off the config.
+    const fixed = wsa.config.messageId;
+    if (messageId === undefined && fixed !== undefined && fixed.length > 0 && fixed !== 'auto') {
+      messageId = fixed;
+    }
+    effectiveInput = { ...effectiveInput, envelopeXml };
+    wsaApplied = {
+      ...(messageId !== undefined ? { messageId } : {}),
+      ...(action !== undefined ? { action } : {}),
+    };
   }
 
   // WS-Security runs on the expanded envelope and before the attachment pipeline, so the
@@ -220,6 +257,7 @@ export async function sendSoapRequest(
     ...(authSummary !== undefined ? { auth: authSummary } : {}),
     problems,
     ...(unresolved !== undefined ? { unresolved } : {}),
+    ...(wsaApplied !== undefined ? { wsa: wsaApplied } : {}),
     ...(wssApplied !== undefined || wssIncoming !== undefined
       ? {
           wss: {

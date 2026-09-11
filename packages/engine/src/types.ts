@@ -18,6 +18,8 @@ import type { AttachmentResolver, ResponseAttachment } from './soap/mime/types.j
 import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from './wss/model.js';
 import type { WssResult } from './wss/incoming/index.js';
 import type { WssRequestProperties } from './wss/apply.js';
+import type { WsaConfig } from './wsa/model.js';
+import type { WsaSummary } from './wsa/policy-detect.js';
 
 /** Where a WSDL definition comes from. */
 export type ImportSource =
@@ -95,6 +97,8 @@ export interface ImportResult {
   readonly schemaSet: SchemaSet;
   readonly problems: readonly ImportProblem[];
   readonly operations: readonly OperationSummary[];
+  /** What the definition itself says about WS-Addressing; see `summarizeWsa`. */
+  readonly wsa: WsaSummary;
   /** True when this result was resolved entirely from the definition cache, with no network access. */
   readonly fromCache?: boolean;
 }
@@ -172,6 +176,20 @@ export interface SoapSendInput {
    * shows).
    */
   readonly wss?: SoapSendWss;
+  /**
+   * WS-Addressing applied to the envelope after property expansion and *before* WS-Security,
+   * so a signature configured to cover the `wsa:*` headers can actually reach them.
+   */
+  readonly wsa?: SoapSendWsa;
+}
+
+/** The WS-Addressing half of a send: the effective configuration and what it needs to resolve. */
+export interface SoapSendWsa {
+  readonly config: WsaConfig;
+  /** The WSDL-derived default `wsa:Action` for this operation; see `defaultAction`. */
+  readonly defaultAction: string;
+  /** Mints the MessageID's UUID; defaults to `crypto.randomUUID`. Injected by golden tests. */
+  readonly uuid?: () => string;
 }
 
 /** The WS-Security half of a send: the configuration, its capabilities, and the overrides. */
@@ -246,6 +264,11 @@ export interface SoapExchange {
   readonly auth?: AuthSummary;
   /** Property expansions in the request that could not be resolved (set only when `options.scopes` was given). */
   readonly unresolved?: readonly UnresolvedRef[];
+  /** What WS-Addressing put on the wire, when the send was given {@link SoapSendInput.wsa}. */
+  readonly wsa?: {
+    readonly messageId?: string;
+    readonly action?: string;
+  };
   /** What WS-Security did, when the send was given {@link SoapSendInput.wss}. */
   readonly wss?: {
     /** The entry kinds applied to the outgoing envelope, in the order they were applied. */

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions name="WsAddressingService"
+                  targetNamespace="urn:wb:wsa"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:wsa"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:wsaw="http://www.w3.org/2006/05/addressing/wsdl"
+                  xmlns:wsam="http://www.w3.org/2007/05/addressing/metadata"
+                  xmlns:wsp="http://www.w3.org/ns/ws-policy"
+                  xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:wsa"
+                elementFormDefault="qualified"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <xsd:element name="Echo">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="EchoResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Ping">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="beat" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="PingResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="beat" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <!-- Referenced by `WsaPolicyBinding` below through a `wsp:PolicyReference` URI. -->
+  <wsp:Policy wsu:Id="AddressingPolicy">
+    <wsp:ExactlyOne>
+      <wsp:All>
+        <wsam:Addressing wsp:Optional="false">
+          <wsp:Policy/>
+        </wsam:Addressing>
+      </wsp:All>
+    </wsp:ExactlyOne>
+  </wsp:Policy>
+
+  <wsdl:message name="EchoRequest">
+    <wsdl:part name="body" element="tns:Echo"/>
+  </wsdl:message>
+  <wsdl:message name="EchoResponse">
+    <wsdl:part name="body" element="tns:EchoResponse"/>
+  </wsdl:message>
+  <wsdl:message name="PingRequest">
+    <wsdl:part name="body" element="tns:Ping"/>
+  </wsdl:message>
+  <wsdl:message name="PingResponse">
+    <wsdl:part name="body" element="tns:PingResponse"/>
+  </wsdl:message>
+
+  <wsdl:portType name="WsaPortType">
+    <!-- `Echo` declares its action explicitly; `Ping` leaves it to the soapAction fallback. -->
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest" wsam:Action="urn:wb:wsa:EchoAction"/>
+      <wsdl:output message="tns:EchoResponse" wsam:Action="urn:wb:wsa:EchoActionResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="Ping">
+      <wsdl:input message="tns:PingRequest"/>
+      <wsdl:output message="tns:PingResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <!-- Shape 1: `wsaw:UsingAddressing` directly on the binding. -->
+  <wsdl:binding name="WsaBinding" type="tns:WsaPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsaw:UsingAddressing wsdl:required="true"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:wsa:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Ping">
+      <soap:operation soapAction="urn:wb:wsa:Ping" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 2: a `wsp:PolicyReference` to the `wsam:Addressing` policy above. -->
+  <wsdl:binding name="WsaPolicyBinding" type="tns:WsaPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsp:PolicyReference URI="#AddressingPolicy"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Ping">
+      <soap:operation soapAction="" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- Shape 3: no addressing at all, so detection must stay off for this binding. -->
+  <wsdl:binding name="PlainBinding" type="tns:WsaPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Ping">
+      <soap:operation soapAction="urn:wb:wsa:Ping" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="WsAddressingService">
+    <wsdl:port name="WsaPort" binding="tns:WsaBinding">
+      <soap:address location="http://example.invalid/wsa"/>
+    </wsdl:port>
+    <wsdl:port name="WsaPolicyPort" binding="tns:WsaPolicyBinding">
+      <soap:address location="http://example.invalid/wsa"/>
+    </wsdl:port>
+    <wsdl:port name="PlainPort" binding="tns:PlainBinding">
+      <soap:address location="http://example.invalid/wsa"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

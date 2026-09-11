@@ -7,6 +7,7 @@
 import { pathToFileURL } from 'node:url';
 import { HttpError, ProjectError, WsdlParseError } from './errors.js';
 import { summarizeOperations } from './operations.js';
+import { summarizeWsa } from './wsa/policy-detect.js';
 import type { ImportCacheOptions, ImportOptions, ImportProblem, ImportResult, ImportSource } from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
 import { createDefaultFetchDocument } from './wsdl/fetch.js';
@@ -181,5 +182,13 @@ export async function importDefinition(source: ImportSource, options?: ImportOpt
 
   options?.onProgress?.({ phase: 'done' });
 
-  return { definition, bundle, schemaSet, problems, operations, ...(fromCache ? { fromCache: true } : {}) };
+  return {
+    definition,
+    bundle,
+    schemaSet,
+    problems,
+    operations,
+    wsa: summarizeWsa(definition),
+    ...(fromCache ? { fromCache: true } : {}),
+  };
 }

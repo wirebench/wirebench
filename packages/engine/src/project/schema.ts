@@ -47,7 +47,27 @@ const endpointSchema = z.looseObject({
   authMode: z.enum(['override', 'complement']),
 });
 
-const wsaSchema = z.looseObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']).optional() });
+/**
+ * A stored WS-Addressing configuration. Every field beyond `enabled` is optional so a project
+ * written before the WS-Addressing task — which only ever held `{ enabled, version? }` — still
+ * loads; `normalizeWsa` fills the rest in with the v1 defaults.
+ */
+const wsaSchema = z.looseObject({
+  enabled: z.boolean(),
+  version: z.enum(['2005/08', '2004/08']).optional(),
+  mustUnderstand: z.enum(['none', 'true', 'false']).optional(),
+  action: z.string().optional(),
+  to: z.string().optional(),
+  messageId: z.string().optional(),
+  replyTo: z.string().optional(),
+  from: z.string().optional(),
+  faultTo: z.string().optional(),
+  relatesTo: z.string().optional(),
+  relationshipType: z.string().optional(),
+  addDefaultAction: z.boolean().optional(),
+  addDefaultTo: z.boolean().optional(),
+  generateMessageId: z.boolean().optional(),
+});
 
 const operationEntrySchema = z.looseObject({
   name: nonEmpty,
@@ -85,7 +105,7 @@ export const interfaceFileSchema = z.looseObject({
   targetNamespace: z.string().optional(),
   endpoints: z.array(endpointSchema),
   defaultEndpointId: z.string().optional(),
-  wsa: z.looseObject({ enabled: z.boolean(), version: z.enum(['2005/08', '2004/08']) }),
+  wsa: wsaSchema,
   auth: endpointAuthSchema.optional(),
   operations: z.array(operationEntrySchema),
 });

@@ -21,6 +21,12 @@ export interface Message {
 export interface MessageRef {
   readonly name?: string;
   readonly message: QName;
+  /**
+   * The `wsdl:input`/`wsdl:output` element this reference was parsed from, kept so extension
+   * attributes and elements no parser models (notably `wsam:Action`) stay reachable. Absent
+   * only for a reference built programmatically rather than parsed.
+   */
+  readonly sourceElement?: Element;
 }
 
 /** A `wsdl:fault` within a `wsdl:operation`. */
@@ -123,6 +129,8 @@ export interface Binding {
   readonly style: 'document' | 'rpc';
   readonly transport?: string;
   readonly operations: readonly BindingOperation[];
+  /** The `wsdl:binding` element, kept for extensions no parser models (`wsaw:UsingAddressing`, `wsp:Policy`). */
+  readonly sourceElement?: Element;
 }
 
 /** A `wsdl:port` within a `wsdl:service`. */
@@ -130,6 +138,8 @@ export interface Port {
   readonly name: string;
   readonly binding: QName;
   readonly address?: string;
+  /** The `wsdl:port` element, kept for extensions no parser models (`wsaw:UsingAddressing`, `wsp:Policy`). */
+  readonly sourceElement?: Element;
 }
 
 /** A `wsdl:service` definition. */

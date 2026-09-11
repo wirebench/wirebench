@@ -4,7 +4,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
 import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tls';
 import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
-import { readPublicFixture } from './fixtures.js';
+import { readFixtureWsdl } from './fixtures.js';
 import { createNtlmAuthenticator } from './ntlm-server.js';
 import { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 
@@ -206,7 +206,7 @@ export async function startTestSoapServer(options?: {
 
     if (method === 'GET' && url.pathname === '/service') {
       const fixtureName = options?.fixture ?? 'calculator';
-      const wsdl = readPublicFixture(fixtureName).replace(/location="[^"]*"/g, `location="${baseUrl}/soap"`);
+      const wsdl = readFixtureWsdl(fixtureName).replace(/location="[^"]*"/g, `location="${baseUrl}/soap"`);
       res.writeHead(200, { 'content-type': 'text/xml' });
       res.end(wsdl);
       return;

@@ -28,4 +28,4 @@ export {
   type NtlmServer,
   type NtlmServerOptions,
 } from './ntlm-server.js';
-export { readPublicFixture } from './fixtures.js';
+export { readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtures.js';

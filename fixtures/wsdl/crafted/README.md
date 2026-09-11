@@ -74,3 +74,12 @@ Each is deliberately tiny but structurally valid.
   `soap12:headerfault`) and `trace` (a `TraceHeader` part of a separate `TraceMessage`). A second
   operation, `Legacy`, has a document-style part declared with `type` instead of `element` (a
   non-WS-I shape seen in the wild), exercising the builder's type-part branch.
+
+- **ws-addressing/** — the three WS-Addressing declaration shapes a WSDL can carry
+  (`urn:wb:wsa`), over one `WsaPortType` whose `Echo` input declares
+  `wsam:Action="urn:wb:wsa:EchoAction"` and whose `Ping` input declares none.
+  `WsaBinding` carries `wsaw:UsingAddressing` directly; `WsaPolicyBinding` carries a
+  `wsp:PolicyReference URI="#AddressingPolicy"` to a top-level `wsp:Policy` holding
+  `wsam:Addressing` (and its operations set an empty `soapAction`, so the default-action
+  fallback runs all the way to `<tns>/<portType>/<operation>Request`); `PlainBinding`
+  declares nothing at all, so detection must stay off for it.

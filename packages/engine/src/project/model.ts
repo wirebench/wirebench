@@ -13,6 +13,10 @@
 
 import { ulid } from 'ulidx';
 import { slugify } from './paths.js';
+import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
+import type { WsaConfig } from '../wsa/model.js';
+
+export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
 /** The on-disk format version written to (and required by) `wirebench.yaml`. */
 export const FORMAT_VERSION = 1;
@@ -42,12 +46,6 @@ export interface Endpoint {
   readonly auth?: EndpointAuth;
   /** `override` replaces request credentials, `complement` only fills in blanks. */
   readonly authMode: 'override' | 'complement';
-}
-
-/** WS-Addressing settings (fleshed out in the WS-A task; `enabled` is the stable part). */
-export interface WsaConfig {
-  readonly enabled: boolean;
-  readonly version?: '2005/08' | '2004/08';
 }
 
 /**
@@ -193,7 +191,7 @@ export interface Interface {
   readonly targetNamespace?: string;
   readonly endpoints: readonly Endpoint[];
   readonly defaultEndpointId?: string;
-  readonly wsa: WsaConfig & { readonly version: '2005/08' | '2004/08' };
+  readonly wsa: WsaConfig;
   /** Interface-level default credentials, overridable per endpoint and per request. */
   readonly auth?: EndpointAuth;
   readonly operations: readonly OperationDef[];
@@ -323,7 +321,7 @@ export function createInterface(name: string, input: CreateInterfaceInput): Inte
       : endpoints[0] !== undefined
         ? { defaultEndpointId: endpoints[0].id }
         : {}),
-    wsa: { enabled: false, version: '2005/08' },
+    wsa: DEFAULT_WSA_CONFIG,
     operations: input.operations ?? [],
   };
 }

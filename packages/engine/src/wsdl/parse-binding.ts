@@ -165,6 +165,7 @@ export function parseBinding(bindingEl: Element, location: string, defaultNamesp
     style: styleAttr === 'rpc' ? 'rpc' : 'document',
     ...(transport !== undefined ? { transport } : {}),
     operations,
+    sourceElement: bindingEl,
   };
 }
 
@@ -184,6 +185,7 @@ function parsePort(portEl: Element, location: string, defaultNamespace: string):
     name: requireAttribute(portEl, 'name', location),
     binding: parseQName(requireAttribute(portEl, 'binding', location), portEl, defaultNamespace),
     ...(address !== undefined ? { address } : {}),
+    sourceElement: portEl,
   };
 }
 

@@ -1,3 +1,4 @@
+import { normalizeWsa } from '../../../src/wsa/model.js';
 import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,7 +97,7 @@ export function sampleProject(): Project {
           { id: countryEndpointId, name: 'prod', url: 'https://prod.example.test/country', authMode: 'complement' },
         ],
         defaultEndpointId: countryEndpointId,
-        wsa: { enabled: false, version: '2005/08' },
+        wsa: normalizeWsa({ enabled: false, version: '2005/08' }),
         operations: [
           {
             name: 'ListOfCountryNamesByCode',
@@ -112,7 +113,7 @@ export function sampleProject(): Project {
                 description: 'uses every optional field',
                 endpointUrl: 'https://override.example.test/country',
                 auth: { type: 'basic', username: 'u', passwordRef: 'secret://country/basic' },
-                wsa: { enabled: true, version: '2004/08' },
+                wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
                 wssOutgoingRef: 'prod-signature',
                 wssIncomingRef: 'default',
                 attachments: [
@@ -169,7 +170,7 @@ export function sampleProject(): Project {
           },
         ],
         defaultEndpointId: ordersEndpointId,
-        wsa: { enabled: true, version: '2004/08' },
+        wsa: normalizeWsa({ enabled: true, version: '2004/08' }),
         auth: { type: 'ntlm', username: 'corp-svc', domain: 'CORP', passwordRef: 'secret://orders/ntlm' },
         operations: [
           {

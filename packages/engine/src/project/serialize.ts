@@ -62,7 +62,7 @@ function interfaceDocument(iface: Interface): Record<string, unknown> {
       compact({ ...e, auth: e.auth === undefined ? undefined : compact({ ...e.auth }) }),
     ),
     defaultEndpointId: iface.defaultEndpointId,
-    wsa: { enabled: iface.wsa.enabled, version: iface.wsa.version },
+    wsa: compact({ ...iface.wsa }),
     auth: iface.auth === undefined ? undefined : compact({ ...iface.auth }),
     operations: iface.operations.map((op) => ({
       name: op.name,

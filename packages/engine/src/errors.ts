@@ -59,6 +59,14 @@ export class WssError extends WirebenchError {
   }
 }
 
+/** Thrown for WS-Addressing header construction failures. */
+export class WsaError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'WsaError';
+  }
+}
+
 /** Thrown for project file (load/save/migration) failures. */
 export class ProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {
