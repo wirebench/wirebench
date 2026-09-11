@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  R2110: a complexType restricts soapenc:Array.
+
+  Generated as the wsi-compliant fixture with exactly this construct changed.
+-->
+<wsdl:definitions name="WsiService"
+                  targetNamespace="urn:wb:wsi"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:wsi"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <xsd:complexType name="StringArray">
+        <xsd:complexContent>
+          <xsd:restriction base="soapenc:Array" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"/>
+        </xsd:complexContent>
+      </xsd:complexType>
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:wsi" elementFormDefault="qualified"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <xsd:complexType name="StringArray">
+        <xsd:complexContent>
+          <xsd:restriction base="soapenc:Array" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"/>
+        </xsd:complexContent>
+      </xsd:complexType>
+      <xsd:element name="Echo" type="xsd:string"/>
+      <xsd:element name="EchoResult" type="xsd:string"/>
+      <xsd:element name="Extra" type="xsd:string"/>
+      <xsd:element name="AuthHeader" type="xsd:string"/>
+      <xsd:element name="EchoFaultDetail" type="xsd:string"/>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest">
+    <wsdl:part name="body" element="tns:Echo"/>
+  </wsdl:message>
+  <wsdl:message name="EchoResponse">
+    <wsdl:part name="body" element="tns:EchoResult"/>
+  </wsdl:message>
+  <wsdl:message name="EchoHeader">
+    <wsdl:part name="auth" element="tns:AuthHeader"/>
+  </wsdl:message>
+  <wsdl:message name="EchoFaultMessage">
+    <wsdl:part name="detail" element="tns:EchoFaultDetail"/>
+  </wsdl:message>
+
+  <wsdl:portType name="EchoPortType">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+      <wsdl:fault name="EchoFault" message="tns:EchoFaultMessage"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="EchoBinding" type="tns:EchoPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:wsi:Echo" style="document"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+        <soap:header message="tns:EchoHeader" part="auth" use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+      <wsdl:fault name="EchoFault">
+        <soap:fault name="EchoFault" use="literal"/>
+      </wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="EchoService">
+    <wsdl:port name="EchoPort" binding="tns:EchoBinding">
+      <soap:address location="http://example.invalid/wsi"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

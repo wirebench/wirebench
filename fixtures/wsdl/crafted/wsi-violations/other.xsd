@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Imported by R2005.wsdl under the wrong namespace, and by R2003.wsdl from the wrong place. -->
+<xsd:schema targetNamespace="urn:wb:wsi:other"
+            xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="Other" type="xsd:string"/>
+</xsd:schema>

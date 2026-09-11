@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Imported through a wsdl:import by R2001.wsdl/R2002.wsdl, which is exactly the violation. -->
+<xsd:schema targetNamespace="urn:wb:wsi:imported"
+            xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="Imported" type="xsd:string"/>
+</xsd:schema>

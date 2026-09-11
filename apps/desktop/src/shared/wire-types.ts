@@ -1751,7 +1751,7 @@ export const validationProblemSchema = z.object({
   column: z.number().optional(),
   endLine: z.number().optional(),
   endColumn: z.number().optional(),
-  source: z.enum(['schema', 'structure']),
+  source: z.enum(['schema', 'structure', 'ws-i']),
   path: z.string().optional(),
 });
 export type ValidationProblemWire = z.infer<typeof validationProblemSchema>;

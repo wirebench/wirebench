@@ -9,8 +9,8 @@
 /** How badly a validation finding matters. */
 export type ValidationSeverity = 'error' | 'warning';
 
-/** Which validator raised a finding. */
-export type ValidationSource = 'schema' | 'structure';
+/** Which validator raised a finding: the XSD validator, the SOAP structure checks, or WS-I. */
+export type ValidationSource = 'schema' | 'structure' | 'ws-i';
 
 /** One finding about a SOAP message. */
 export interface ValidationProblem {

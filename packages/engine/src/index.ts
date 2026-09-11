@@ -493,3 +493,29 @@ export type {
   ValidationSeverity,
   ValidationSource,
 } from './validate/index.js';
+
+export {
+  WSI_WSDL_ASSERTIONS,
+  runWsdlAssertions,
+  wsiWsdlContext,
+  wsiProblems,
+  NOT_APPLICABLE,
+  isNotApplicable,
+} from './validate/wsi/index.js';
+export type {
+  RunWsdlAssertionsOptions,
+  WsiAssertion,
+  WsiAssertionLevel,
+  WsiAssertionReport,
+  WsiAssertionResult,
+  WsiCheckOutcome,
+  WsiFinding,
+  WsiLocation,
+  WsiNotApplicable,
+  WsiReport,
+  WsiSummary,
+  WsiWsdlContext,
+  WsiWsdlContextInput,
+} from './validate/wsi/index.js';
+export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
+export type { PlannedAssertion } from './validate/wsi/index.js';
