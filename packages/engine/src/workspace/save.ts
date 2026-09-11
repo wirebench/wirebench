@@ -72,6 +72,9 @@ export async function saveWorkspace(
   const unchanged: string[] = [];
   for (const [relative, content] of desired) {
     const absolute = toAbsolute(root, relative);
+    // When a `previous` map was supplied, trust it as the full picture (a missing key means
+    // "not previously written", not "go check disk"); only fall back to a real disk read when
+    // no `previous` map was given at all.
     const previous =
       options?.previous?.get(relative) ??
       (options?.previous !== undefined ? undefined : (await readFileIfExists(fs, absolute))?.toString('utf8'));
