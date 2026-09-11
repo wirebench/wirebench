@@ -1,0 +1,61 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderWsiReportHtml > matches the snapshot for a fixed generatedAt 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WS-I BP1.1 report — Echo — Add</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 2rem; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+  .target { color: #555; margin: 0 0 1.5rem; word-break: break-all; }
+  .summary { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0 0 1.5rem; padding: 0; }
+  .summary li { border: 1px solid #ccc; border-radius: 999px; padding: 0.15rem 0.75rem; }
+  .summary .count { font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+  th { border-bottom-width: 2px; white-space: nowrap; }
+  td.id, td.level, td.result { white-space: nowrap; }
+  .findings { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+  .findings li { color: #444; }
+  .where { color: #777; }
+  .r-failed { color: #a11; font-weight: 600; }
+  .r-warning { color: #a60; font-weight: 600; }
+  .r-passed { color: #161; }
+  .r-notApplicable { color: #777; }
+  .empty { color: #555; font-style: italic; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181c; color: #e6e6e6; }
+    .target, .findings li, .empty { color: #b9b9b9; }
+    th, td { border-color: #333; }
+    .summary li { border-color: #444; }
+    .r-failed { color: #ff8b8b; } .r-warning { color: #f0b429; } .r-passed { color: #7fd08a; }
+  }
+</style>
+</head>
+<body>
+<h1>WS-I BP1.1 report — Echo — Add</h1>
+<p class="target">http://example.invalid/wsi?a=1&amp;b=2 · generated 2026-01-02T03:04:05.000Z</p>
+<ul class="summary">
+<li>Passed: <span class="count">12</span></li>
+<li>Failed: <span class="count">2</span></li>
+<li>Warning: <span class="count">1</span></li>
+<li>Not applicable: <span class="count">8</span></li>
+</ul>
+<table>
+<thead><tr><th>Id</th><th>Level</th><th>Result</th><th>Assertion</th><th>Section</th></tr></thead>
+<tbody>
+<tr><td class="id">R1015</td><td class="level">REQUIRED</td><td class="result r-failed">Failed</td><td>A literal message carries no soap:encodingStyle attribute<ul class="findings"><li>&quot;tns:Echo&quot; carries soap:encodingStyle=&quot;http://schemas.xmlsoap.org/soap/encoding/&quot; <span class="where">(request:5 /Envelope/Body/Echo)</span></li></ul></td><td>3.1 XML Representation of SOAP Messages</td></tr>
+<tr><td class="id">R1109</td><td class="level">REQUIRED</td><td class="result r-failed">Failed</td><td>The SOAPAction request header is a quoted string<ul class="findings"><li>SOAPAction: urn:&lt;script&gt;alert(1)&lt;/script&gt; is not a quoted string</li></ul></td><td>3.4 Use of SOAP in HTTP</td></tr>
+<tr><td class="id">R1124</td><td class="level">RECOMMENDED</td><td class="result r-warning">Warning</td><td>A non-fault response carries HTTP status 200 or 202<ul class="findings"><li>the HTTP status is 418 <span class="where">(response)</span></li></ul></td><td>3.4 Use of SOAP in HTTP</td></tr>
+<tr><td class="id">R1141</td><td class="level">REQUIRED</td><td class="result r-passed">Passed</td><td>Content-Type states a charset parameter</td><td>3.4 Use of SOAP in HTTP</td></tr>
+<tr><td class="id">R2211</td><td class="level">REQUIRED</td><td class="result r-notApplicable">Not applicable</td><td>An rpc-literal part accessor carries no xsi:nil</td><td>4.4 rpc-literal</td></tr>
+</tbody>
+</table>
+</body>
+</html>
+"
+`;

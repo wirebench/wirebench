@@ -500,6 +500,8 @@ export {
   messageBindingFor,
   runMessageAssertions,
   wsiMessageContext,
+  renderWsiReportHtml,
+  escapeHtml,
   runWsdlAssertions,
   wsiWsdlContext,
   wsiProblems,
@@ -526,6 +528,7 @@ export type {
   WsiMessageDirection,
   WsiMessageView,
   RunMessageAssertionsOptions,
+  RenderWsiReportHtmlOptions,
 } from './validate/wsi/index.js';
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
 export type { PlannedAssertion } from './validate/wsi/index.js';

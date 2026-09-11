@@ -28,5 +28,7 @@ export type { RunWsdlAssertionsOptions, WsiWsdlContextInput } from './run-wsdl.j
 export { WSI_MESSAGE_ASSERTIONS } from './assertions/message/index.js';
 export { messageBindingFor, runMessageAssertions, wsiMessageContext } from './run-message.js';
 export type { RunMessageAssertionsOptions } from './run-message.js';
+export { escapeHtml, renderWsiReportHtml } from './report-html.js';
+export type { RenderWsiReportHtmlOptions } from './report-html.js';
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './docs.js';
 export type { PlannedAssertion } from './docs.js';
