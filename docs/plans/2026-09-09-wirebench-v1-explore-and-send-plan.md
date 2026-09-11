@@ -394,7 +394,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm vitest bench --run`; `pnpm test:e2e -- --grep perf`
   - Files: packages/engine/test/bench/{import.bench.ts,send.bench.ts}, fixtures/wsdl/crafted/large-schema/**, apps/desktop/src/renderer/features/request-editor/request-editor.tsx, e2e/specs/perf.spec.ts
 
-- [ ] **51. Packaging + auto-update**
+- [x] **51. Packaging + auto-update**
   - `electron-builder.yml` (appId `io.wirebench.desktop`; mac dmg+zip universal; win nsis; linux AppImage+deb+rpm; icons), Electron Fuses via `@electron/fuses` (Q1: `runAsNode` off, `enableCookieEncryption` on, `onlyLoadAppFromAsar` on), `main/updater.ts` (electron-updater, GitHub Releases provider, opt-in "check on launch", `app.checkForUpdates` command, consent before download/install), `.github/workflows/release.yml` on `v*` tags (3 OS artifacts; signing/notarization steps gated on secrets).
   - Acceptance: CI artifacts install on each OS; offline update check fails gracefully.
   - Verify: `pnpm package`; tag `v0.1.0-rc.1` → artifacts
