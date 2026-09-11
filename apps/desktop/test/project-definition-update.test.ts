@@ -5,12 +5,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FsLike } from '@wirebench/engine';
+import { definitionCacheDir, nodeFs } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectService } from '../src/main/project-service.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+
+/**
+ * An `FsLike` that behaves exactly like the real file system until `fail()` is called, after
+ * which every write to `interface.yaml` throws — simulating a save that fails partway through,
+ * for the "applyDefinitionUpdate is transactional" test below.
+ */
+function failingFs(): { fs: FsLike; fail: () => void } {
+  let failing = false;
+  return {
+    fail: () => {
+      failing = true;
+    },
+    fs: {
+      ...nodeFs,
+      async writeFile(path, data) {
+        if (failing && path.includes('interface.yaml')) {
+          throw new Error('simulated disk failure');
+        }
+        await nodeFs.writeFile(path, data);
+      },
+    },
+  };
+}
 
 const craftedRoot = fileURLToPath(new URL('../../../fixtures/wsdl/crafted/', import.meta.url));
 
@@ -133,6 +158,56 @@ describe('ProjectService — Update Definition', () => {
       { ...DEFAULTS, createBackups: false },
     );
     expect(applied.backups).toEqual([]);
+  });
+
+  it('is transactional: a failing save leaves the live result and the cache untouched', async () => {
+    const { fs, fail } = failingFs();
+    const txUserData = tempDir('userdata-tx');
+    const txProjectDir = join(tempDir('projects-tx'), 'VersionedTx');
+    const txPicks = new DialogPicks();
+    const txService = new ProjectService(
+      new EngineService(),
+      new RecentProjects(txUserData),
+      {},
+      fs,
+      undefined,
+      undefined,
+      undefined,
+      txPicks,
+    );
+    try {
+      await txService.create({ dir: txProjectDir, name: 'VersionedTx' });
+      txPicks.rememberRead(v1Path);
+      const added = await txService.addInterface({ source: { kind: 'file', path: v1Path } });
+      const txInterfaceId = added.interfaceId;
+      const before = txService.snapshot() as ProjectWire;
+
+      fail();
+      txPicks.rememberRead(v2Path);
+      await expect(
+        txService.applyDefinitionUpdate(txInterfaceId, { kind: 'file', path: v2Path }, DEFAULTS),
+      ).rejects.toThrow(/simulated disk failure/);
+
+      // The project model is exactly what it was before the failed apply.
+      const after = txService.snapshot() as ProjectWire;
+      expect(after).toEqual(before);
+      expect(after.interfaces[0]?.definitionUrl).toContain('versioned/v1');
+
+      // The live `ImportResult` was never swapped: a plan against v2 still reports it as new,
+      // which is only possible if the "previous" side of the diff is still v1.
+      const plan = await txService.planDefinitionUpdate(txInterfaceId, { kind: 'file', path: v2Path });
+      expect(plan.newOperations.map((ref) => ref.operationName)).toEqual(['Subtract']);
+      expect(plan.removedOperations.map((ref) => ref.operationName)).toEqual(['Legacy']);
+
+      // The definition cache on disk was never (re)written with v2 either.
+      const cacheDir = definitionCacheDir(txProjectDir, before.interfaces[0]?.slug ?? '');
+      const manifest = await readFile(join(cacheDir, 'manifest.yaml'), 'utf8');
+      expect(manifest).not.toContain('versioned/v2');
+    } finally {
+      await txService.close();
+      rmSync(txUserData, { recursive: true, force: true });
+      rmSync(txProjectDir, { recursive: true, force: true });
+    }
   });
 
   it('refuses a file that was never picked and is outside the project', async () => {

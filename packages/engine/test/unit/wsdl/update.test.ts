@@ -276,14 +276,17 @@ describe('saveProject backups', () => {
     const before = projectFromV1();
     await saveProject(before, dir);
 
-    const backupRelative = 'interfaces/versionedservice/operations/echo/request-1.xml.bak';
     const envelopeRelative = 'interfaces/versionedservice/operations/echo/request-1.xml';
     const original = await readFile(join(dir, ...envelopeRelative.split('/')), 'utf8');
 
     const updated = applyUpdate(before, 'if-1', planUpdate(v1, v2), v2, { ...DEFAULT_OPTIONS, newId: counterIds() });
-    await saveProject(updated.project, dir, { backups: updated.backups });
+    const saved = await saveProject(updated.project, dir, {
+      backups: updated.backups,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
 
-    expect(await readFile(join(dir, ...backupRelative.split('/')), 'utf8')).toBe(original);
+    expect(saved.backups).toEqual(['interfaces/versionedservice/operations/echo/request-1.20260101-000000.xml.bak']);
+    expect(await readFile(join(dir, ...(saved.backups[0] ?? '').split('/')), 'utf8')).toBe(original);
     expect(await readFile(join(dir, ...envelopeRelative.split('/')), 'utf8')).not.toBe(original);
   });
 

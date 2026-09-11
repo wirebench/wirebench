@@ -42,6 +42,7 @@ import {
   saveProject,
   toSendInput,
   uniqueSlug,
+  writeDefinitionCache,
 } from '@wirebench/engine';
 import type {
   Attachment,
@@ -831,6 +832,7 @@ export class ProjectService {
       savedAt: open.lastSavedAt,
       written: result.written.length,
       removed: result.removed.length,
+      ...(options.backups !== undefined ? { backups: result.backups } : {}),
     };
   }
 
@@ -1539,31 +1541,44 @@ export class ProjectService {
     const iface = this.requireInterface(interfaceId);
     const previous = this.engine.resultFor(interfaceId);
     const auth = await this.importAuthFor(iface);
-    const summary = await this.engine.importForProject(
-      {
-        interfaceId,
-        source: await this.updateSource(source),
-        cache: { dir: definitionCacheDir(open.dir, iface.slug), mode: 'refresh' },
-        ...(auth !== undefined ? { auth } : {}),
-      },
-      { onProgress: (event) => this.hooks.onProgress?.(event) },
-    );
-    const next = this.engine.resultFor(interfaceId);
+    // Fetched into a scratch result only: nothing about the live `ImportResult` or the
+    // definition cache changes here. If the save below fails, the interface must look exactly
+    // as it did before this call — see the fix1 finding on this method.
+    const next = await this.engine.importPreview(await this.updateSource(source), auth);
     const plan = planUpdate(previous, next);
     const applied = applyUpdate(open.project, interfaceId, plan, next, options);
 
+    const priorProject = open.project;
+    const priorDirty = open.dirty;
     open.project = applied.project;
-    open.runtime.set(interfaceId, { hydration: 'ready', summary });
     open.dirty = true;
-    // The backups must be copied from the bytes currently on disk, so they are handed to the
-    // very save that overwrites them rather than written out of band afterwards.
-    await this.save({ reason: 'update-definition', backups: applied.backups });
+    let saveResult: ProjectSaveResult;
+    try {
+      // The backups must be copied from the bytes currently on disk, so they are handed to the
+      // very save that overwrites them rather than written out of band afterwards.
+      saveResult = await this.save({ reason: 'update-definition', backups: applied.backups });
+    } catch (error) {
+      // Roll the in-memory model back: the live `ImportResult`/definition cache were never
+      // touched, so undoing `open.project`/`open.dirty` is enough to leave everything as it
+      // was before this call.
+      open.project = priorProject;
+      open.dirty = priorDirty;
+      throw error;
+    }
+
+    // Only a successful save may make the new definition live.
+    await writeDefinitionCache(next.bundle, definitionCacheDir(open.dir, iface.slug));
+    const summary = this.engine.commitResult(interfaceId, next, next.bundle.root.location);
+    open.runtime.set(interfaceId, { hydration: 'ready', summary });
+
     return {
       plan: toUpdatePlanWire(plan),
       requestsCreated: [...applied.requestsCreated],
       requestsRecreated: [...applied.requestsRecreated],
       requestsOrphaned: [...applied.requestsOrphaned],
-      backups: [...applied.backups],
+      // The actual timestamped `.xml.bak` paths the save wrote, not the pre-timestamp names
+      // `applyUpdate` requested — see `save.ts`'s timestamped-backup policy.
+      backups: [...(saveResult.backups ?? [])],
     };
   }
 

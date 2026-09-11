@@ -27,6 +27,12 @@ export interface SaveResult {
   readonly removed: readonly string[];
   /** Files that were already byte-identical and therefore left alone. */
   readonly unchanged: readonly string[];
+  /**
+   * The `.bak` files actually written for this save's {@link SaveProjectOptions.backups}
+   * request, one per requested `<slug>.xml.bak`, timestamped and in the same order. Empty when
+   * `backups` was omitted or every requested source was missing.
+   */
+  readonly backups: readonly string[];
 }
 
 /** Options for {@link saveProject}. */
@@ -41,15 +47,22 @@ export interface SaveProjectOptions {
   /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
   readonly writer?: string;
   /**
-   * Relative `<slug>.xml.bak` paths to write before this save overwrites the corresponding
-   * `<slug>.xml`, as produced by `wsdl/update-definition.ts`'s `applyUpdate`. The bytes copied
-   * are whatever is on disk *now*, so the backup is the envelope as the user last saw it — and
-   * it is written whenever the source exists, even if this save turns out not to change it, so
-   * that ticking "Create backups" always produces the file the user was promised. A path whose
-   * `.xml` does not exist is skipped silently. `.bak` files are not part of the managed file
-   * set, so nothing ever deletes them again.
+   * Relative `<slug>.xml.bak` paths naming the requests to back up before this save overwrites
+   * their `<slug>.xml`, as produced by `wsdl/update-definition.ts`'s `applyUpdate`. The bytes
+   * copied are whatever is on disk *now*, so the backup is the envelope as the user last saw it
+   * — and one is written whenever its source exists, even if this save turns out not to change
+   * it, so that ticking "Create backups" always produces the file the user was promised. A path
+   * whose `.xml` does not exist is skipped silently.
+   *
+   * Each backup is actually written as `<slug>.<YYYYMMDD-HHmmss>.xml.bak` (UTC), never
+   * overwriting a previous backup of the same request — every Update Definition run gets its
+   * own file, kept next to the request file, one per update. The timestamped paths actually
+   * written are returned as {@link SaveResult.backups}. `.bak` files are not part of the
+   * managed file set, so nothing ever deletes them again.
    */
   readonly backups?: Iterable<string>;
+  /** Clock the backup timestamp is read from. Defaults to `() => new Date()`; tests inject it. */
+  readonly now?: () => Date;
 }
 
 function toAbsolute(root: string, relative: string): string {
@@ -167,6 +180,7 @@ export async function saveProject(project: Project, root: string, options?: Save
   const desired = projectFiles(project, options?.writer !== undefined ? { writer: options.writer } : undefined);
   const existing = await listManagedFiles(fs, root);
 
+  const backupsWritten: string[] = [];
   for (const backup of options?.backups ?? []) {
     if (!backup.endsWith('.xml.bak')) {
       continue;
@@ -176,7 +190,9 @@ export async function saveProject(project: Project, root: string, options?: Save
     if (current === undefined) {
       continue;
     }
-    await writeFileAtomic(fs, toAbsolute(root, backup), current);
+    const timestamped = await timestampedBackupPath(fs, root, backup, options?.now ?? (() => new Date()));
+    await writeFileAtomic(fs, toAbsolute(root, timestamped), current);
+    backupsWritten.push(timestamped);
   }
 
   const written: string[] = [];
@@ -225,5 +241,33 @@ export async function saveProject(project: Project, root: string, options?: Save
   written.sort();
   removed.sort();
   unchanged.sort();
-  return { written, removed, unchanged };
+  backupsWritten.sort();
+  return { written, removed, unchanged, backups: backupsWritten };
+}
+
+/** UTC `YYYYMMDD-HHmmss` for `date`, the backup timestamp format. */
+function backupStamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${String(date.getUTCFullYear())}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
+    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`
+  );
+}
+
+/**
+ * Turns a requested `<slug>.xml.bak` path into `<slug>.<stamp>.xml.bak`, picking a stamp from
+ * `now` and, in the vanishingly unlikely case that path is already taken (two backups of the
+ * same request within the same second), appending a counter so it never overwrites a previous
+ * backup.
+ */
+async function timestampedBackupPath(fs: FsLike, root: string, backup: string, now: () => Date): Promise<string> {
+  const base = backup.slice(0, -'.xml.bak'.length);
+  const stamp = backupStamp(now());
+  let candidate = `${base}.${stamp}.xml.bak`;
+  let n = 2;
+  while ((await readFileIfExists(fs, toAbsolute(root, candidate))) !== undefined) {
+    candidate = `${base}.${stamp}-${String(n)}.xml.bak`;
+    n += 1;
+  }
+  return candidate;
 }

@@ -374,6 +374,19 @@ export class EngineService {
   }
 
   /**
+   * Adopts `result` (already fetched via {@link importPreview}) as `interfaceId`'s live
+   * definition, without fetching or touching the definition cache itself. Used by Update
+   * Definition once the project save it depends on has actually succeeded — see
+   * `ProjectService.applyDefinitionUpdate`, which fetches the preview, saves, and only then
+   * calls this to make the new definition live.
+   */
+  commitResult(interfaceId: string, result: ImportResult, definitionUrl: string): InterfaceSummary {
+    const loadedAt = Date.now();
+    this.definitions.set(interfaceId, { result, definitionUrl, loadedAt });
+    return { ...toInterfaceSummary(result, interfaceId, definitionUrl), loadedAt };
+  }
+
+  /**
    * The input a send would actually put on the wire: the effective Basic-auth header applied
    * (its `passwordRef` resolved), every `${#…#name}` reference expanded, and — when the request
    * has WS-Addressing enabled — its `wsa:*` headers applied to the envelope, exactly as

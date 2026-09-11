@@ -1376,6 +1376,8 @@ export const projectSaveResponseSchema = z.object({
   savedAt: z.string().optional(),
   written: z.number(),
   removed: z.number(),
+  /** Timestamped `.xml.bak` paths this save actually wrote, when backups were requested. */
+  backups: z.array(z.string()).readonly().optional(),
 });
 export type ProjectSaveResult = z.infer<typeof projectSaveResponseSchema>;
 
