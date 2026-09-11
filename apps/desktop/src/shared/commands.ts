@@ -51,6 +51,8 @@ export type CommandId =
   | 'request.removeWsaHeaders'
   | 'request.addAttachment'
   | 'request.removeAttachment'
+  | 'request.validate'
+  | 'response.validate'
   | 'editor.formatXml'
   | 'editor.gotoLine'
   | 'editor.toggleLineNumbers'

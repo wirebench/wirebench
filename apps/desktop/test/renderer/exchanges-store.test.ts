@@ -4,6 +4,8 @@ import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
@@ -59,6 +61,75 @@ describe('useExchangesStore', () => {
       activeEnvironmentId: undefined,
     });
     useProblemsStore.setState({ items: [] });
+    usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
+  });
+
+  /** Turns `editor.autoValidateOnSend` on for one test. */
+  function autoValidateOn(): void {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULT_PREFERENCES_WIRE,
+        editor: { ...DEFAULT_PREFERENCES_WIRE.editor, autoValidateOnSend: true },
+      },
+    });
+  }
+
+  it('send() blocks on validation errors when auto-validate is on', async () => {
+    autoValidateOn();
+    const sendFn = vi.fn();
+    const message = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        problems: [{ severity: 'error', code: 'schema-invalid', message: 'bad', source: 'schema', line: 3 }],
+        durationMs: 1,
+      },
+    });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() }, validate: { message } });
+
+    await useExchangesStore.getState().send('r1');
+
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(useProblemsStore.getState().items.map((item) => item.source)).toEqual(['validation']);
+  });
+
+  it('send(requestId, true) sends anyway, skipping the validation gate', async () => {
+    autoValidateOn();
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    const message = vi.fn();
+    stubIpc({
+      request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() },
+      validate: { message },
+    });
+
+    await useExchangesStore.getState().send('r1', true);
+
+    expect(message).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().byRequest['r1']?.status).toBe('done');
+  });
+
+  it('send() proceeds when auto-validate finds only warnings', async () => {
+    autoValidateOn();
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    const message = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        problems: [{ severity: 'warning', code: 'content-type-mismatch', message: 'meh', source: 'structure' }],
+        durationMs: 1,
+      },
+    });
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() }, validate: { message } });
+
+    await useExchangesStore.getState().send('r1');
+    expect(sendFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('send() does not validate at all when the preference is off', async () => {
+    const sendFn = vi.fn().mockResolvedValue({ ok: true, value: exchangeSummary('send-1') });
+    const message = vi.fn();
+    stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() }, validate: { message } });
+
+    await useExchangesStore.getState().send('r1');
+    expect(message).not.toHaveBeenCalled();
   });
 
   it('send() transitions idle -> sending -> done and appends to the log', async () => {

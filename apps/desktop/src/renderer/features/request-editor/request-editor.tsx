@@ -15,6 +15,7 @@ import { ViewTabs } from './view-tabs.js';
 import { WssUsernameTokenDialog, WsTimestampDialog } from './wss-entry-dialogs.js';
 import { ResponsePane } from './response-pane.js';
 import { RequestToolbar } from './toolbar.js';
+import { clearValidation, validateAndReport } from './validate-actions.js';
 
 export interface RequestEditorProps {
   readonly requestId: string;
@@ -73,9 +74,16 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const onEnvelopeChange = useCallback(
     (envelopeXml: string) => {
       updateRequest(requestId, { envelopeXml });
+      // Last run's findings described text that no longer exists; keeping the markers around
+      // would point at lines the user has already fixed (or moved).
+      clearValidation(requestId, 'request');
     },
     [updateRequest, requestId],
   );
+  const onValidate = useCallback(() => {
+    requestPaneRef.current?.flush();
+    void validateAndReport(requestId, 'request', useProjectStore.getState().requests[requestId]?.envelopeXml);
+  }, [requestId]);
   const onEndpointChange = useCallback(
     (endpoint: string) => {
       setEndpoint(requestId, endpoint);
@@ -116,6 +124,8 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
         onCancel={onCancel}
         onEndpointChange={onEndpointChange}
         sendShortcut={shortcutFor('request.send', platform)}
+        onValidate={onValidate}
+        validateShortcut={shortcutFor('request.validate', platform)}
       />
 
       {layout.mode === 'tabs' ? (

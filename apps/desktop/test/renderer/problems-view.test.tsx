@@ -82,4 +82,57 @@ describe('ProblemsView', () => {
       { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
     ]);
   });
+  it('shows a validation problem with its location and request name, and filters by severity', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'error',
+          requestId: 'req-1',
+          problem: { code: 'schema-invalid', message: "'abc' is not a valid xs:int", source: 'schema', line: 6 },
+        },
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'content-type-mismatch', message: 'Content-Type disagrees', source: 'structure' },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    expect(screen.getByTestId('problem-location').textContent).toBe('6');
+    expect(screen.getAllByText('Request 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('problem-row')).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId('problems-filter-error'));
+    const rows = screen.getAllByTestId('problem-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain('is not a valid xs:int');
+
+    fireEvent.click(screen.getByTestId('problems-filter-warning'));
+    expect(screen.getAllByTestId('problem-row')[0]?.textContent).toContain('Content-Type disagrees');
+  });
+
+  it('opens the request a validation problem belongs to when its row is clicked', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'error',
+          requestId: 'req-1',
+          problem: { code: 'schema-invalid', message: 'bad', source: 'schema', line: 6 },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    fireEvent.click(screen.getByTestId('problem-row'));
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
+    ]);
+  });
 });

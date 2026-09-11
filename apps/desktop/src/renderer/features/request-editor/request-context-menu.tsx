@@ -15,6 +15,9 @@ import { copyAsCurl, recreateRequest } from './request-actions.js';
 import { openRequestDialog } from './request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from './wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
+import { validateAndReport } from './validate-actions.js';
+import { useExchangesStore } from '../../state/exchanges.js';
+import { useProjectStore } from '../../state/project.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -39,6 +42,11 @@ function goToLine(): void {
   }
 }
 
+/** The last response's envelope for `requestId`, or `undefined` when nothing has been received. */
+function responseEnvelopeXml(requestId: string): string | undefined {
+  return useExchangesStore.getState().byRequest[requestId]?.exchange?.response?.envelopeXml;
+}
+
 export function RequestContextMenu({ draft, children }: RequestContextMenuProps) {
   return (
     <ContextMenu.Root>
@@ -47,6 +55,28 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className="min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              getActiveRequestPaneHandle()?.flush();
+              void validateAndReport(draft.id, 'request', useProjectStore.getState().requests[draft.id]?.envelopeXml);
+            }}
+          >
+            Validate request
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            disabled={responseEnvelopeXml(draft.id) === undefined}
+            onSelect={() => {
+              const envelopeXml = responseEnvelopeXml(draft.id);
+              if (envelopeXml !== undefined) {
+                void validateAndReport(draft.id, 'response', envelopeXml);
+              }
+            }}
+          >
+            Validate response
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={SEPARATOR_CLASS} />
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {

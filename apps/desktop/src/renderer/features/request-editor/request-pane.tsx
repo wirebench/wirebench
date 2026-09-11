@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveRequestEditor } from '../../editor/active-request-editor.js';
+import { setMarkerApi } from '../../editor/markers.js';
 import { FORMAT_KEYBINDING, GOTO_LINE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
@@ -198,6 +199,9 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       });
       editorRef.current = editor;
       setActiveRequestEditor(editor, interfaceId, handle);
+      // Markers go through the namespace the mounted editor hands over, so `editor/markers.ts`
+      // (reached from the Problems view and the send flow) never has to import Monaco itself.
+      setMarkerApi(monacoNS as typeof Monaco);
       // `monacoNS.languages` is absent from the lightweight test double swapped in under jsdom
       // (see `test/mocks/monaco-editor-react.tsx`); the real Monaco always has it.
       if ((monacoNS as { languages?: unknown }).languages !== undefined) {

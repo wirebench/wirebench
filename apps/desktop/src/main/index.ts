@@ -23,6 +23,7 @@ import { registerExchangeChannels } from './ipc/exchanges.js';
 import { registerFsChannels } from './ipc/fs.js';
 import { registerXmlChannels } from './ipc/xml.js';
 import { registerXpathChannels } from './ipc/xpath.js';
+import { registerValidateChannels } from './ipc/validate.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
@@ -156,6 +157,7 @@ void app.whenReady().then(() => {
   registerFsChannels();
   registerXmlChannels(engineService);
   registerXpathChannels();
+  registerValidateChannels(engineService, projectService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({

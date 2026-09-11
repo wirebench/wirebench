@@ -15,6 +15,8 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 /** The items, in the order the brief fixes them. */
 const ITEMS = [
+  'Validate request',
+  'Validate response',
   'Recreate request (keep values)',
   'Recreate (discard values)',
   'Create empty',

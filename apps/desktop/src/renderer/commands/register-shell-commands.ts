@@ -9,6 +9,7 @@ import {
   removeSelectedAttachment,
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
+import { validateAndReport } from '../features/request-editor/validate-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
@@ -257,6 +258,46 @@ export function registerShellCommands(openPalette: () => void): void {
       if (requestId !== undefined) {
         void useExchangesStore.getState().cancel(requestId);
       }
+    },
+  });
+
+  registerCommand({
+    id: 'request.validate',
+    label: 'Validate Request',
+    category: 'Request',
+    shortcut: 'Mod+Shift+V',
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId === undefined) {
+        return;
+      }
+      // Flush first: the debounced envelope edit may not have reached the store yet, and
+      // validating a stale copy would put markers on lines the user has already changed.
+      getActiveRequestPaneHandle()?.flush();
+      void validateAndReport(requestId, 'request', useProjectStore.getState().requests[requestId]?.envelopeXml);
+    },
+  });
+  registerCommand({
+    id: 'response.validate',
+    label: 'Validate Response',
+    category: 'Request',
+    when: () => {
+      const requestId = activeRequestId();
+      return (
+        requestId !== undefined && useExchangesStore.getState().byRequest[requestId]?.exchange?.response !== undefined
+      );
+    },
+    run: () => {
+      const requestId = activeRequestId();
+      const envelopeXml =
+        requestId === undefined
+          ? undefined
+          : useExchangesStore.getState().byRequest[requestId]?.exchange?.response?.envelopeXml;
+      if (requestId === undefined || envelopeXml === undefined) {
+        return;
+      }
+      void validateAndReport(requestId, 'response', envelopeXml);
     },
   });
 

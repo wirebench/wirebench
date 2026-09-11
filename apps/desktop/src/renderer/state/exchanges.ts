@@ -2,8 +2,11 @@ import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
+import { showToast } from '../components/toast.js';
+import { runValidation } from '../features/request-editor/validate-actions.js';
 import type { ExchangeSummary, UnresolvedRefWire } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
+import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
@@ -32,7 +35,12 @@ export interface ExchangesSnapshot {
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
 export interface ExchangesStore extends ExchangesSnapshot {
-  readonly send: (requestId: string) => Promise<void>;
+  /**
+   * Sends one request. With `editor.autoValidateOnSend` on, the envelope is validated first and
+   * a send with validation errors is blocked (the toast offers "Send anyway"); the response is
+   * validated once it arrives. `force` skips that gate — it is what "Send anyway" calls.
+   */
+  readonly send: (requestId: string, force?: boolean) => Promise<void>;
   readonly cancel: (requestId: string) => Promise<void>;
   /** Clears the exchange state for a removed request (keeps the log). */
   readonly clearRequest: (requestId: string) => void;
@@ -76,7 +84,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     byRequest: {},
     log: [],
 
-    send: async (requestId) => {
+    send: async (requestId, force) => {
       const projectState = useProjectStore.getState();
       const draftRequest = projectState.requests[requestId];
       if (draftRequest === undefined) {
@@ -94,6 +102,21 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // stands now.
       useProblemsStore.getState().clearSource('expansion', requestId);
       useProblemsStore.getState().clearSource('send', requestId);
+
+      const autoValidate = usePreferencesStore.getState().preferences.editor.autoValidateOnSend;
+      if (autoValidate && force !== true) {
+        const problems = await runValidation(requestId, 'request', draftRequest.envelopeXml);
+        const errors = problems.filter((problem) => problem.severity === 'error').length;
+        if (errors > 0) {
+          showToast(`Request has ${String(errors)} validation error${errors === 1 ? '' : 's'}`, {
+            label: 'Send anyway',
+            onClick: () => {
+              void get().send(requestId, true);
+            },
+          });
+          return;
+        }
+      }
 
       // `sending` is entered before the preflight round trip, so the UI reacts to the click
       // rather than to the reply, and a cancel issued in between still finds this send.
@@ -170,6 +193,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       );
       if (extra.length > 0) {
         useProblemsStore.getState().add(extra);
+      }
+
+      if (autoValidate) {
+        const responseXml = result.value.response?.envelopeXml;
+        if (responseXml !== undefined) {
+          void runValidation(requestId, 'response', responseXml);
+        }
       }
 
       update((draft) => {

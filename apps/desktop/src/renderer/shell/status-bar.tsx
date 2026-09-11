@@ -3,7 +3,9 @@ import { useAppVersion } from '../lib/use-app-version.js';
 import { formatBytes } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
 import { useExchangesStore } from '../state/exchanges.js';
+import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
+import { useUiStore } from '../state/ui.js';
 
 /** `2026-09-10T08:30:00Z` as `HH:MM:SS` in the user's locale. */
 function formatClock(iso: string): string {
@@ -16,6 +18,8 @@ export function StatusBar() {
   const version = useAppVersion();
   const last = useExchangesStore((state) => state.log.at(-1));
   const saveStatus = useProjectStore((state) => state.saveStatus);
+  const problemCount = useProblemsStore((state) => state.items.length);
+  const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const lastSavedAt = useProjectStore((state) => state.lastSavedAt);
   const saveLabel =
     saveStatus === 'saving' ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;
@@ -36,6 +40,22 @@ export function StatusBar() {
             <span data-testid="status-bar-save">{saveLabel}</span>
           </>
         )}
+        <span aria-hidden="true" className="text-fg-faint">
+          ·
+        </span>
+        <button
+          type="button"
+          data-testid="status-bar-problems"
+          title="Show the Problems panel"
+          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+            problemCount > 0 ? 'text-status-danger' : ''
+          }`}
+          onClick={() => {
+            showConsoleTab('problems');
+          }}
+        >
+          {problemCount} {problemCount === 1 ? 'problem' : 'problems'}
+        </button>
         <span aria-hidden="true" className="text-fg-faint">
           ·
         </span>

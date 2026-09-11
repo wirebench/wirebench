@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { StatusBar } from '../../src/renderer/shell/status-bar.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
+import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import { makeExchange } from '../mocks/exchange-fixtures.js';
 
 describe('StatusBar', () => {
@@ -11,6 +13,7 @@ describe('StatusBar', () => {
       value: { app: { version: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }) } },
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
+    useProblemsStore.setState({ items: [] });
   });
 
   afterEach(() => {
@@ -40,5 +43,30 @@ describe('StatusBar', () => {
     render(<StatusBar />);
 
     expect(screen.getByText('503').className).toContain('text-status-danger');
+  });
+  it('counts the problems and opens the Problems panel when clicked', () => {
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'validation:req-1:request',
+          source: 'validation',
+          severity: 'error',
+          requestId: 'req-1',
+          problem: { code: 'schema-invalid', message: 'bad', source: 'schema', line: 2 },
+        },
+      ],
+    });
+    render(<StatusBar />);
+
+    const button = screen.getByTestId('status-bar-problems');
+    expect(button.textContent).toBe('1 problem');
+    fireEvent.click(button);
+    expect(useUiStore.getState().console.activeTab).toBe('problems');
+    expect(useUiStore.getState().console.visible).toBe(true);
+  });
+
+  it('pluralises an empty problem count', () => {
+    render(<StatusBar />);
+    expect(screen.getByTestId('status-bar-problems').textContent).toBe('0 problems');
   });
 });

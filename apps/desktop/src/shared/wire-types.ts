@@ -1729,6 +1729,41 @@ export const xpathNamespacesResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Message validation (Task 42): XSD + SOAP structure checks, run in main so
+// libxml2 (`xmllint-wasm`) and the interface's schema set stay out of the
+// renderer bundle.
+// ---------------------------------------------------------------------------
+
+/** Request payload for `validate.message`; `xml` overrides the saved envelope (the live editor text). */
+export const validateMessageRequestSchema = z.object({
+  requestId: z.string(),
+  direction: z.enum(['request', 'response']),
+  xml: z.string().optional(),
+});
+export type ValidateMessageRequestWire = z.infer<typeof validateMessageRequestSchema>;
+
+/** One validation finding; mirrors the engine's `ValidationProblem`. */
+export const validationProblemSchema = z.object({
+  severity: z.enum(['error', 'warning']),
+  code: z.string(),
+  message: z.string(),
+  line: z.number().optional(),
+  column: z.number().optional(),
+  endLine: z.number().optional(),
+  endColumn: z.number().optional(),
+  source: z.enum(['schema', 'structure']),
+  path: z.string().optional(),
+});
+export type ValidationProblemWire = z.infer<typeof validationProblemSchema>;
+
+/** Response for `validate.message`: every finding, plus how long the run took. */
+export const validateMessageResponseSchema = z.object({
+  problems: z.array(validationProblemSchema),
+  durationMs: z.number(),
+});
+export type ValidateMessageResponseWire = z.infer<typeof validateMessageResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Preferences (Task 30): user-scoped settings, persisted in `userData`.
 // ---------------------------------------------------------------------------
 

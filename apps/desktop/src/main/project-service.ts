@@ -579,6 +579,42 @@ export class ProjectService {
   }
 
   /**
+   * Everything `validate.message` needs about a saved request: which imported interface (and
+   * binding operation) it belongs to, the envelope as last saved, and the transport metadata
+   * the SOAP structure checks cross-check the envelope against.
+   *
+   * `undefined` when no project is open or the request is unknown.
+   */
+  validationTargetFor(requestId: string):
+    | {
+        readonly interfaceId: string;
+        readonly bindingName: string;
+        readonly operationName: string;
+        readonly envelopeXml: string;
+        readonly soapAction?: string;
+        readonly contentType?: string;
+      }
+    | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    const { iface, operation, request } = location;
+    const contentType = request.headers.find((header) => header.name.toLowerCase() === 'content-type')?.value;
+    return {
+      interfaceId: iface.id,
+      bindingName: operation.bindingName,
+      operationName: operation.name,
+      envelopeXml: request.envelopeXml,
+      ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
+      ...(contentType !== undefined ? { contentType } : {}),
+    };
+  }
+
+  /**
    * The saved request's name and owning interface/operation, for labelling a history entry.
    * `undefined` when no project is open or the request is unknown (an ad-hoc/raw send).
    */

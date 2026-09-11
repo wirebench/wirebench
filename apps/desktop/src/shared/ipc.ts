@@ -101,6 +101,8 @@ import {
   xpathEvaluateResponseSchema,
   xpathNamespacesRequestSchema,
   xpathNamespacesResponseSchema,
+  validateMessageRequestSchema,
+  validateMessageResponseSchema,
 } from './wire-types.js';
 
 /**
@@ -292,6 +294,9 @@ export const channels = {
   xpath: {
     evaluate: defineChannel('xpath.evaluate', xpathEvaluateRequestSchema, xpathEvaluateResponseSchema),
     namespaces: defineChannel('xpath.namespaces', xpathNamespacesRequestSchema, xpathNamespacesResponseSchema),
+  },
+  validate: {
+    message: defineChannel('validate.message', validateMessageRequestSchema, validateMessageResponseSchema),
   },
 } as const;
 

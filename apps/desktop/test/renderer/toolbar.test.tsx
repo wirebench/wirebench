@@ -27,6 +27,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -47,6 +48,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -64,6 +66,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -83,6 +86,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -102,6 +106,7 @@ describe('RequestToolbar', () => {
         onSend={onSend}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -119,6 +124,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -136,6 +142,7 @@ describe('RequestToolbar', () => {
         onSend={noop}
         onCancel={onCancel}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
 
@@ -260,6 +267,7 @@ describe('RequestToolbar actions', () => {
         onSend={noop}
         onCancel={noop}
         onEndpointChange={noop}
+        onValidate={noop}
       />,
     );
   }

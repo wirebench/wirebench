@@ -108,6 +108,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       clear: fail('history.clear'),
       resend: fail('history.resend'),
     },
+    validate: { message: fail('validate.message') },
     files: { pathFor: vi.fn().mockReturnValue('') },
     on: vi.fn().mockReturnValue(() => undefined),
   };

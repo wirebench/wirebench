@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Code2, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
+import { Check, Code2, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { RequestDraft } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
@@ -26,6 +26,9 @@ export interface RequestToolbarProps {
   readonly onEndpointChange: (endpoint: string) => void;
   /** The formatted `Mod+Enter` shortcut, shown on the Send button's title. */
   readonly sendShortcut?: string | undefined;
+  readonly onValidate: () => void;
+  /** The formatted `Mod+Shift+V` shortcut, shown on the Validate button's title. */
+  readonly validateShortcut?: string | undefined;
 }
 
 /**
@@ -43,6 +46,8 @@ export function RequestToolbar({
   onCancel,
   onEndpointChange,
   sendShortcut,
+  onValidate,
+  validateShortcut,
 }: RequestToolbarProps) {
   const layout = useEditorLayout(draft.id);
   const showDetails = useUiStore((state) => state.showDetails);
@@ -98,6 +103,17 @@ export function RequestToolbar({
           onEditEndpoints={() => setEndpointsOpen(true)}
         />
       )}
+
+      <button
+        type="button"
+        aria-label="Validate request"
+        data-testid="request-validate"
+        className={ICON_BUTTON_CLASS}
+        title={validateShortcut === undefined ? 'Validate request' : `Validate request (${validateShortcut})`}
+        onClick={onValidate}
+      >
+        <Check size={14} aria-hidden="true" />
+      </button>
 
       <button
         type="button"

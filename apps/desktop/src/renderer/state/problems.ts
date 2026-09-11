@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { ImportProblemWire } from '../../shared/wire-types.js';
+import type { ImportProblemWire, ValidationProblemWire } from '../../shared/wire-types.js';
 
 /**
- * Where a problem came from: importing a definition, expanding properties before a send, or
- * the send itself failing at the transport level (a timeout, a refused connection, …).
+ * Where a problem came from: importing a definition, expanding properties before a send, the
+ * send itself failing at the transport level (a timeout, a refused connection, …), or
+ * validating a message against its schema set (`validate.message`).
  */
-export type ProblemSource = 'import' | 'expansion' | 'send';
+export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';
@@ -19,9 +20,11 @@ export interface ProblemDetail {
   readonly location?: string | undefined;
   readonly line?: number | undefined;
   readonly column?: number | undefined;
+  readonly endLine?: number | undefined;
+  readonly endColumn?: number | undefined;
 }
 
-/** One problem shown in the (minimal, pre-Task-42) Problems view, tagged with where it came from. */
+/** One problem shown in the Problems view, tagged with where it came from. */
 export interface Problem {
   /** A grouping key (e.g. the interface id) so a re-import replaces only its own entries. */
   readonly groupId: string;
@@ -39,6 +42,12 @@ export interface ProblemsStore {
   readonly set: (groupId: string, items: readonly ImportProblemWire[]) => void;
   /** Appends problems. Callers clear what they own first — see {@link ProblemsStore.clearSource}. */
   readonly add: (items: readonly Problem[]) => void;
+  /**
+   * Replaces the validation problems of one run. `groupId` is
+   * `validation:<requestId>:<direction>`, so a request's two directions are validated (and
+   * cleared) independently.
+   */
+  readonly setValidation: (groupId: string, requestId: string, items: readonly ValidationProblemWire[]) => void;
   /** Drops every problem of one group, whatever its source. */
   readonly clear: (groupId: string) => void;
   /** Drops every problem of one source, optionally narrowed to a single request. */
@@ -54,6 +63,22 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => ({
       items: [
         ...rest,
         ...items.map((problem) => ({ groupId, source: 'import' as const, severity: 'error' as const, problem })),
+      ],
+    });
+  },
+
+  setValidation: (groupId, requestId, items) => {
+    const rest = get().items.filter((item) => item.groupId !== groupId);
+    set({
+      items: [
+        ...rest,
+        ...items.map((problem) => ({
+          groupId,
+          source: 'validation' as const,
+          severity: problem.severity,
+          requestId,
+          problem,
+        })),
       ],
     });
   },
