@@ -336,31 +336,31 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
 
 ### M5 — Validation, WS-I, interface editor, definition lifecycle
 
-- [ ] **42. Schema validation + SOAP structure checks + Problems panel**
+- [x] **42. Schema validation + SOAP structure checks + Problems panel**
   - `validate/schema-validator.ts` (xmllint-wasm: schema set as in-memory files with rewritten `schemaLocation`s + wrapper schema importing every namespace; libxml2 line/col → ranges), `validate/soap-structure.ts` (envelope NS/version vs binding, Header before Body, single Body, fault shape, SOAPAction/Content-Type consistency), `validate/index.ts` (`validateMessage`); Problems tab (click → range), Monaco markers, ⌘⇧V, "auto-validate on send" preference.
   - Acceptance: string in `intA` flagged at right line; missing required element; 1.2 envelope on 1.1 binding flagged; valid Calculator clean.
   - Verify: `pnpm vitest run packages/engine/test/unit/validate`; e2e markers
   - Files: packages/engine/src/validate/{schema-validator.ts,soap-structure.ts,index.ts}, packages/engine/test/unit/validate/{schema-validator,soap-structure}.test.ts, apps/desktop/src/renderer/features/problems/problems-view.tsx, apps/desktop/src/renderer/editor/markers.ts
 
-- [ ] **43. WS-I BP 1.1 WSDL assertions**
+- [x] **43. WS-I BP 1.1 WSDL assertions**
   - `validate/wsi/types.ts` (`WsiReport {target, assertions: [{id, level, result: 'passed'|'failed'|'warning'|'notApplicable', findings: [{message, location?}]}]}`), `run-wsdl.ts`, `assertions/R*.ts` one per assertion (id, BP text, level, `check(bundle, model)`); initial catalogue ≥ 30 across imports (R2001–R2005), schema (R2101–R2114), style/parts (R2201–R2211), ordering/names (R2301–R2305), soap:address (R2401), binding/transport/soapAction (R2701–R2724), namespaces (R2801–R2803); exact list + status in `docs/ws-i-assertions.md`; fixtures `crafted/wsi-compliant`, `crafted/wsi-violations`.
   - Acceptance: compliant → all pass; violations fixture fails each implemented assertion exactly once (table keyed by id).
   - Verify: `pnpm vitest run packages/engine/test/unit/validate/wsi/wsdl`
   - Files: packages/engine/src/validate/wsi/{types.ts,run-wsdl.ts,assertions/*.ts}, packages/engine/test/unit/validate/wsi/wsdl.test.ts, fixtures/wsdl/crafted/{wsi-compliant,wsi-violations}/**, docs/ws-i-assertions.md
 
-- [ ] **44. WS-I message assertions + report UI + HTML export**
+- [x] **44. WS-I message assertions + report UI + HTML export**
   - `validate/wsi/run-message.ts` (BP §4 subset: envelope/encodingStyle/mustUnderstand R1001–R1033, faults R1100s, HTTP/Content-Type/SOAPAction R1140s) over a `SoapExchange`; `report-html.ts`; Interface editor WS-I tab (run, table, filter failed, Export HTML via `dialogs.saveFile`); console "WS-I Report" tab; request action "Check WS-I compliance" on last exchange.
   - Acceptance: echo exchange passes; bad exchange (no charset, encodingStyle in doc/lit) fails expected ids; HTML snapshot.
   - Verify: `pnpm vitest run packages/engine/test/unit/validate/wsi/message`; e2e export
   - Files: packages/engine/src/validate/wsi/{run-message.ts,report-html.ts}, packages/engine/test/unit/validate/wsi/message.test.ts, apps/desktop/src/renderer/features/interface-editor/wsi-tab.tsx, apps/desktop/src/renderer/features/console/wsi-report.tsx
 
-- [ ] **45. Interface editor + schema browser + go-to-definition**
+- [x] **45. Interface editor + schema browser + go-to-definition**
   - `features/interface-editor/{interface-editor.tsx, overview-tab.tsx, endpoints-tab.tsx (add/edit/remove, default auth + mode), wsdl-content-tab.tsx (documents list, read-only Monaco, prev/next), schema-tab.tsx (namespace → elements/types/groups, detail panel)}`; ⌘-click in XML editor → `declarationOf` → Schema tab; explorer "Show Interface Viewer".
   - Acceptance: CountryInfo: 24 ops, 2 endpoints, 1 doc; nested-imports: 4 docs; ⌘-click `intA` lands on declaration (e2e).
   - Verify: `pnpm test:e2e -- --grep interface`
   - Files: apps/desktop/src/renderer/features/interface-editor/{interface-editor.tsx,overview-tab.tsx,endpoints-tab.tsx,wsdl-content-tab.tsx,schema-tab.tsx}, e2e/specs/interface-editor.spec.ts
 
-- [ ] **46. Update Definition + Export + Documentation**
+- [x] **46. Update Definition + Export + Documentation**
   - `wsdl/update-definition.ts` (`planUpdate(old, new) → {newOps, removedOps, changedOps}`, `applyUpdate(project, plan, opts: {createNewRequests, recreateRequests, recreateOptional, keepExisting (T29 merge), keepSoapHeaders, createBackups (*.bak), updateTestRequests: false})`), `wsdl/docs-generator.ts` (HTML + Markdown: services, operations, messages, types; inline CSS); dialogs: Update Definition (SoapUI field parity), Export Definition (folder), Generate Documentation (save); explorer context menu entries.
   - Acceptance: `crafted/versioned/v1→v2` adds an op → request created, edits kept, backups written; docs golden; export → re-import equality.
   - Verify: `pnpm vitest run packages/engine/test/unit/wsdl/update packages/engine/test/unit/wsdl/docs`; e2e dialog
