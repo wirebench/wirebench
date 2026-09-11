@@ -51,7 +51,7 @@ describe('writeDefinitionCache / readDefinitionCache — nested-imports', () => 
       const bundled = bundle.documents.find((d) => d.location === entry.location);
       expect(bundled).toBeDefined();
       expect(sha256(bundled!.bytes)).toBe(entry.sha256);
-      const originalFile = new URL(entry.location).pathname;
+      const originalFile = fileURLToPath(entry.location);
       expect(sha256(await readFile(originalFile))).toBe(entry.sha256);
     }
   });

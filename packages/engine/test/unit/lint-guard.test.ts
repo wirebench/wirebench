@@ -1,9 +1,12 @@
 import { ESLint } from 'eslint';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = new URL('../../../..', import.meta.url).pathname;
+// `.pathname` of a file: URL is not a path on Windows ('/D:/a/...'); only
+// `fileURLToPath` turns it into one.
+const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url));
 
 describe('engine lint guard', () => {
   it('rejects importing electron from within packages/engine/src', async () => {

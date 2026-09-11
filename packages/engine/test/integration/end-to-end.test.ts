@@ -1,9 +1,12 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../src/errors.js';
 import { generateRequest } from '../../src/generate.js';
 import { importDefinition } from '../../src/import.js';
 import { sendSoapRequest } from '../../src/send.js';
+import { fileUrl } from '../helpers/fixtures.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -226,7 +229,7 @@ describe('engine facade — end to end', () => {
     const result = await importDefinition({
       kind: 'text',
       text,
-      location: 'file:///tmp/wirebench-missing-import/root.wsdl',
+      location: fileUrl(join(tmpdir(), 'wirebench-missing-import', 'root.wsdl')),
     });
 
     const fetchFailed = result.problems.filter((p) => p.code === 'fetch-failed');

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
 import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
@@ -325,7 +326,7 @@ describe('resolveDefinition — CountryInfo public fixture via parseWsdl', () =>
 describe('createDefaultFetchDocument — file: fixtures', () => {
   it('resolves the nested-imports fixture chain from disk', async () => {
     const fetchDocument = createDefaultFetchDocument();
-    const rootUrl = new URL('service.wsdl', `file://${craftedRoot}nested-imports/`).toString();
+    const rootUrl = pathToFileURL(join(craftedRoot, 'nested-imports', 'service.wsdl')).href;
     const bundle = await resolveDefinition({ location: rootUrl }, { fetchDocument });
 
     expect(bundle.problems).toEqual([]);

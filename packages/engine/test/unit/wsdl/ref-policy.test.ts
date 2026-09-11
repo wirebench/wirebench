@@ -10,7 +10,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS, classifyLocation } from '../../../src/wsdl/ref-policy.js';
+import {
+  MAX_IMPORT_DEPTH,
+  MAX_IMPORT_DOCUMENTS,
+  classifyLocation,
+  referencePolicyFor,
+} from '../../../src/wsdl/ref-policy.js';
 import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
 import type { FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
@@ -75,6 +80,35 @@ describe('classifyLocation', () => {
     expect(classifyLocation('file:///tmp/x.wsdl')).toBe('file');
     expect(classifyLocation('inline:wsdl')).toBe('inline');
     expect(classifyLocation('./relative.xsd')).toBe('relative');
+  });
+});
+
+/**
+ * A `file:` URL that this platform cannot turn into a path: a non-localhost host is rejected
+ * on POSIX, while on Windows that form is a legal UNC path and a missing drive letter is the
+ * rejected one instead.
+ */
+const UNUSABLE_FILE_URL =
+  process.platform === 'win32' ? 'file:///no-drive-letter.wsdl' : 'file://elsewhere.example/x.wsdl';
+
+describe('referencePolicyFor — an unusable file: root', () => {
+  it('refuses local references instead of throwing', async () => {
+    const policy = referencePolicyFor(UNUSABLE_FILE_URL);
+
+    expect(await policy.allows('file:///etc/hosts')).toEqual({
+      reason: "the definition's own location is not a usable file: URL",
+    });
+  });
+
+  it('is reported as a refused reference rather than crashing the resolve', async () => {
+    const root = UNUSABLE_FILE_URL;
+    const bundle = await resolveDefinition(
+      { location: root, text: wsdlImporting('file:///etc/hosts') },
+      { fetchDocument: makeFetcher({}) },
+    );
+
+    expect(bundle.problems.filter((problem) => problem.code === 'import-ref-refused')).toHaveLength(1);
+    expect(readFileSpy).not.toHaveBeenCalled();
   });
 });
 

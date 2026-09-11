@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseXml } from '../../../src/xml/parse.js';
 import { NS } from '../../../src/xml/namespaces.js';
@@ -8,10 +7,7 @@ import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import type { SchemaSet } from '../../../src/xsd/schema-set.js';
 import type { All, Choice, ComplexType, LocalElement, Particle, Sequence, SimpleType } from '../../../src/xsd/model.js';
-import { readPublicFixture } from '../../helpers/fixtures.js';
-
-const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
-const craftedRoot = `${repoRoot}fixtures/wsdl/crafted/`;
+import { fileUrl, fixtureUrl, readPublicFixture } from '../../helpers/fixtures.js';
 
 const TNS = 'urn:wb:sc';
 const OTHER = 'urn:wb:sc:other';
@@ -53,7 +49,7 @@ describe('buildSchemaSet — crafted/schema-constructs', () => {
 
   beforeAll(async () => {
     const bundle = await resolveDefinition(
-      { location: new URL('schema-constructs/service.wsdl', `file://${craftedRoot}`).toString() },
+      { location: fixtureUrl('wsdl/crafted/schema-constructs/service.wsdl') },
       { fetchDocument: createDefaultFetchDocument() },
     );
     set = buildSchemaSet(bundle);
@@ -239,7 +235,7 @@ describe('resolveContent — crafted/schema-constructs', () => {
 
   beforeAll(async () => {
     const definition = await parseWsdl(
-      { location: new URL('schema-constructs/service.wsdl', `file://${craftedRoot}`).toString() },
+      { location: fixtureUrl('wsdl/crafted/schema-constructs/service.wsdl') },
       { fetchDocument: createDefaultFetchDocument(), resolveImports: true },
     );
     set = buildSchemaSet(definition);
@@ -446,7 +442,7 @@ describe('buildSchemaSet — problems and edge cases', () => {
 
   it('adopts the including namespace for a chameleon include', async () => {
     const bundle = await resolveDefinition(
-      { location: new URL('chameleon-include/service.wsdl', `file://${craftedRoot}`).toString() },
+      { location: fixtureUrl('wsdl/crafted/chameleon-include/service.wsdl') },
       { fetchDocument: createDefaultFetchDocument() },
     );
     const set = buildSchemaSet(bundle);
@@ -571,7 +567,7 @@ describe('buildSchemaSet — public fixtures', () => {
     ['calculator', 'http://tempuri.org/', 'Add'],
   ])('builds %s with no problems', async (name, ns, element) => {
     const definition = await parseWsdl(
-      { location: `file:///fixtures/${name}/service.wsdl`, text: readPublicFixture(name) },
+      { location: fileUrl(`/fixtures/${name}/service.wsdl`), text: readPublicFixture(name) },
       {
         fetchDocument: () => Promise.reject(new Error('no fetch')),
         resolveImports: false,
@@ -586,7 +582,7 @@ describe('buildSchemaSet — public fixtures', () => {
 
   it.each(['numberconversion', 'tempconvert'])('builds %s with no problems', async (name) => {
     const definition = await parseWsdl(
-      { location: `file:///fixtures/${name}/service.wsdl`, text: readPublicFixture(name) },
+      { location: fileUrl(`/fixtures/${name}/service.wsdl`), text: readPublicFixture(name) },
       {
         fetchDocument: () => Promise.reject(new Error('no fetch')),
         resolveImports: false,

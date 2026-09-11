@@ -9,10 +9,8 @@ import type { SchemaSet } from '../../../src/xsd/schema-set.js';
 import { generateElement, generateSoapEncArray, generateType } from '../../../src/xsd/sample-generator.js';
 import type { GenerateOptions } from '../../../src/xsd/sample-generator.js';
 import { PLACEHOLDER, sampleValueFor, typeCommentFor } from '../../../src/xsd/sample-values.js';
-import { readPublicFixture } from '../../helpers/fixtures.js';
+import { fileUrl, fixtureUrl, readPublicFixture } from '../../helpers/fixtures.js';
 
-const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
-const craftedRoot = `${repoRoot}fixtures/wsdl/crafted/`;
 const goldenDir = fileURLToPath(new URL('../../fixtures/samples/', import.meta.url));
 
 const TNS = 'urn:wb:sc';
@@ -39,7 +37,7 @@ let set: SchemaSet;
 
 beforeAll(async () => {
   const bundle = await resolveDefinition(
-    { location: new URL('schema-constructs/service.wsdl', `file://${craftedRoot}`).toString() },
+    { location: fixtureUrl('wsdl/crafted/schema-constructs/service.wsdl') },
     { fetchDocument: createDefaultFetchDocument() },
   );
   set = buildSchemaSet(bundle);
@@ -280,7 +278,7 @@ describe('generateType and generateSoapEncArray', () => {
 
 describe('public fixtures', () => {
   it('generates the Calculator Add request body', async () => {
-    const calc = await schemaSetFromWsdlText(readPublicFixture('calculator'), 'file:///calculator.wsdl');
+    const calc = await schemaSetFromWsdlText(readPublicFixture('calculator'), fileUrl('/calculator.wsdl'));
     const xml = generateElement(calc, q('http://tempuri.org/', 'Add'), {
       prefixes: { 'http://tempuri.org/': 'tem' },
     }).xml;
@@ -290,7 +288,7 @@ describe('public fixtures', () => {
   });
 
   it('generates CountryInfo ListOfCountryNamesByCode without error', async () => {
-    const country = await schemaSetFromWsdlText(readPublicFixture('countryinfo'), 'file:///countryinfo.wsdl');
+    const country = await schemaSetFromWsdlText(readPublicFixture('countryinfo'), fileUrl('/countryinfo.wsdl'));
     const xml = generateElement(
       country,
       q('http://www.oorsprong.org/websamples.countryinfo', 'ListOfCountryNamesByCode'),
@@ -302,7 +300,10 @@ describe('public fixtures', () => {
   });
 
   it('generates NumberConversion NumberToWords with a placeholder and a typed sample', async () => {
-    const numbers = await schemaSetFromWsdlText(readPublicFixture('numberconversion'), 'file:///numberconversion.wsdl');
+    const numbers = await schemaSetFromWsdlText(
+      readPublicFixture('numberconversion'),
+      fileUrl('/numberconversion.wsdl'),
+    );
     const name = q('http://www.dataaccess.com/webservicesserver/', 'NumberToWords');
     expect(generateElement(numbers, name).xml).toContain('<ns1:ubiNum>?</ns1:ubiNum>');
     expect(generateElement(numbers, name, { sampleValues: true }).xml).toContain('<ns1:ubiNum>1</ns1:ubiNum>');

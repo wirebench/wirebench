@@ -62,6 +62,15 @@ export interface ReferencePolicy {
   allows(reference: string): Promise<RefusedReference | undefined>;
 }
 
+/** The directory of a `file:` URL, or `undefined` when it is not a usable file path here. */
+function toDirOrUndefined(location: string): string | undefined {
+  try {
+    return dirname(fileURLToPath(location));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Builds the {@link ReferencePolicy} for a graph rooted at `rootLocation`.
  *
@@ -69,7 +78,10 @@ export interface ReferencePolicy {
  */
 export function referencePolicyFor(rootLocation: string): ReferencePolicy {
   const rootClass = classifyLocation(rootLocation);
-  const rootDir = rootClass === 'file' ? dirname(fileURLToPath(rootLocation)) : undefined;
+  // A `file:` URL that no platform can turn into a path (`file:///x` has no drive letter on
+  // Windows) leaves the graph with no folder to be confined to. That is a refusal, not a
+  // crash: resolving must report a problem, never throw out of the fetcher.
+  const rootDir = rootClass === 'file' ? toDirOrUndefined(rootLocation) : undefined;
 
   return {
     async allows(reference: string): Promise<RefusedReference | undefined> {
@@ -79,9 +91,11 @@ export function referencePolicyFor(rootLocation: string): ReferencePolicy {
         if (rootDir === undefined) {
           return {
             reason:
-              rootClass === 'http'
-                ? 'a remote definition may not reference local files'
-                : 'only a definition imported from a file may reference local files',
+              rootClass === 'file'
+                ? "the definition's own location is not a usable file: URL"
+                : rootClass === 'http'
+                  ? 'a remote definition may not reference local files'
+                  : 'only a definition imported from a file may reference local files',
           };
         }
         let path: string;
