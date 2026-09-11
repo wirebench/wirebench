@@ -93,6 +93,16 @@ function entityIds(service: WorkspaceService, projectIds: readonly string[]): st
   });
 }
 
+/**
+ * The service resolves picked and linked folders with `fs.promises.realpath`, which on Windows
+ * expands 8.3 short names (`RUNNER~1` → `runneradmin`). The plain `realpathSync` used for `root`
+ * below does not, so an expected `dir` built from a temp path under `root` needs this instead to
+ * match what the service actually stores.
+ */
+function realDir(path: string): string {
+  return realpathSync.native(path);
+}
+
 beforeEach(async () => {
   server = await startTestSoapServer({ fixture: 'calculator' });
   root = realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-projects-')));
@@ -217,7 +227,7 @@ describe('WorkspaceService.linkProject', () => {
     const exportDir = join(root, 'exported');
     await mkdir(exportDir, { recursive: true });
     folderPick = exportDir;
-    expect(await source.service.exportProject(source.projectId, SENDER)).toEqual({ dir: exportDir });
+    expect(await source.service.exportProject(source.projectId, SENDER)).toEqual({ dir: realDir(exportDir) });
     await source.service.close();
 
     const service = newService();
@@ -230,14 +240,14 @@ describe('WorkspaceService.linkProject', () => {
         name: 'Calculator',
         slug: 'Calculator',
         source: 'linked',
-        dir: exportDir,
+        dir: realDir(exportDir),
         status: 'ready',
       }),
     ]);
     expect(picks.hasRead(exportDir)).toBe(true);
     expect((await loadWorkspace(created.dir)).workspace.projects[0]).toMatchObject({
       source: 'linked',
-      path: exportDir,
+      path: realDir(exportDir),
     });
 
     await service.close();
@@ -343,7 +353,7 @@ describe('WorkspaceService.exportProject', () => {
     await mkdir(target, { recursive: true });
     folderPick = target;
 
-    expect(await service.exportProject(projectId, SENDER)).toEqual({ dir: target });
+    expect(await service.exportProject(projectId, SENDER)).toEqual({ dir: realDir(target) });
 
     // The write target went into the *write* half of the picks, not the read half.
     expect(picks.hasWrite(target)).toBe(true);
@@ -416,9 +426,9 @@ describe('WorkspaceService.locateProject', () => {
     folderPick = movedDir;
     const workspace = await reopened.locateProject(origin.projectId, SENDER);
 
-    expect(workspace?.projects[0]).toMatchObject({ status: 'ready', dir: movedDir, source: 'linked' });
+    expect(workspace?.projects[0]).toMatchObject({ status: 'ready', dir: realDir(movedDir), source: 'linked' });
     expect(picks.hasRead(movedDir)).toBe(true);
-    expect((await loadWorkspace(created.dir)).workspace.projects[0]).toMatchObject({ path: movedDir });
+    expect((await loadWorkspace(created.dir)).workspace.projects[0]).toMatchObject({ path: realDir(movedDir) });
     expect(reopened.hostFor(origin.projectId).snapshot()?.name).toBe('Calculator');
 
     await reopened.close();
