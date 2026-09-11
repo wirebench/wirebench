@@ -148,16 +148,16 @@ export interface SoapSendInput {
   readonly timeoutMs?: number;
   /** Default 'utf-8'; charset in Content-Type and body encoding. Other encodings use node Buffer when supported. */
   readonly encoding?: string;
-  /** Default false (SoapUI default). */
+  /** Default false. */
   readonly followRedirects?: boolean;
   readonly maxSizeBytes?: number;
   readonly skipSoapAction?: boolean;
-  /** Local network interface address to bind the outgoing socket to (SoapUI's "Bind Address"). */
+  /** Local network interface address to bind the outgoing socket to ("Bind Address"). */
   readonly localAddress?: string;
   /** Compress the request body and set `Content-Encoding` accordingly. Default: uncompressed. */
   readonly compressBody?: 'gzip';
   /**
-   * XML-escape every property value substituted into `envelopeXml` (SoapUI's "Entitize
+   * XML-escape every property value substituted into `envelopeXml` ("Entitize
    * Properties"). Only meaningful when the send is given property scopes to expand against.
    */
   readonly entitize?: boolean;
@@ -210,8 +210,8 @@ export interface SoapSendWss {
  * resolvers that read bytes (the engine never touches the file system on its own —
  * see `createFileAttachmentResolver`).
  *
- * `expandMtomAttachments` and `inlineResponseAttachments` are separate knobs, as in
- * SoapUI: the first replaces each `xop:Include` in the response envelope with the
+ * `expandMtomAttachments` and `inlineResponseAttachments` are separate knobs: the
+ * first replaces each `xop:Include` in the response envelope with the
  * referenced part's base64, the second keeps those parts listed as attachments even
  * once they have been expanded into the envelope.
  */

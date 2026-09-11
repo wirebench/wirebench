@@ -1,7 +1,7 @@
 /**
  * MTOM/XOP (SOAP Message Transmission Optimization Mechanism).
  *
- * Outgoing, this implements the rule SoapUI exposes in the request editor: an element
+ * Outgoing, this implements the rule the request editor exposes: an element
  * whose text is exactly `cid:<content-id>` names an attachment, and enabling MTOM replaces
  * that text with an `<xop:Include>` while the bytes travel unencoded in their own MIME
  * part. Nothing is inferred from the schema — a base64Binary element that does not carry a
@@ -9,7 +9,7 @@
  * is (the server may know what it means).
  *
  * Incoming, an `<xop:Include>` can either be expanded back into base64 inside the envelope
- * (SoapUI's "Expand MTOM Attachments") or left in place with the part listed alongside.
+ * ("Expand MTOM Attachments") or left in place with the part listed alongside.
  */
 
 import type { Attachment } from '../../project/model.js';
@@ -24,7 +24,7 @@ export const XOP_NS = 'http://www.w3.org/2004/08/xop/include';
 
 /** Knobs for {@link prepareMtomRequest}. */
 export interface MtomOptions {
-  /** SoapUI's "Force MTOM": package as MTOM even when nothing was optimised. */
+  /** "Force MTOM": package as MTOM even when nothing was optimised. */
   readonly force: boolean;
   readonly resolver: AttachmentResolver;
 }

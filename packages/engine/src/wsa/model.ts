@@ -13,7 +13,7 @@ export type WsaVersion = '2005/08' | '2004/08';
 
 /**
  * Whether (and how) a `soap:mustUnderstand` attribute is put on every `wsa:*` header:
- * `'none'` writes no attribute at all, which is what SoapUI does by default.
+ * `'none'` writes no attribute at all, and is the default.
  */
 export type WsaMustUnderstand = 'none' | 'true' | 'false';
 

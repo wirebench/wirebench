@@ -56,7 +56,8 @@ export interface Endpoint {
 }
 
 /**
- * How an attachment participates in the outgoing message, following SoapUI's naming:
+ * How an attachment participates in the outgoing message, under the names classic SOAP
+ * workbenches use:
  * `XOP` for an MTOM/XOP-optimised binary, `SWAREF` for a `ref:swaRef`-referenced part,
  * `MIME` for a WSDL `mime:content` part, `CONTENT` for an unreferenced body attachment,
  * and `UNKNOWN` when nothing in the definition says.

@@ -1,5 +1,5 @@
 /**
- * SoapUI-style "Update Definition": re-import a WSDL and reconcile an existing
+ * "Update Definition": re-import a WSDL and reconcile an existing
  * project against it.
  *
  * The two halves are deliberately separate. {@link planUpdate} is a pure diff of
@@ -11,8 +11,8 @@
  * itself.
  *
  * Nothing is ever deleted. Requests belonging to an operation the new definition
- * no longer has are kept and flagged {@link RequestDef.orphaned}, exactly as
- * SoapUI keeps them — the user decides whether a vanished operation means "clean
+ * no longer has are kept and flagged {@link RequestDef.orphaned} rather than
+ * removed — the user decides whether a vanished operation means "clean
  * this up" or "the new WSDL is wrong".
  */
 
@@ -210,8 +210,8 @@ export function planUpdate(oldImport: ImportResult, newImport: ImportResult): Up
 }
 
 /**
- * What {@link applyUpdate} is allowed to do, mirroring the checkbox names of
- * SoapUI's Update Definition dialog.
+ * What {@link applyUpdate} is allowed to do, named after the checkboxes of
+ * the Update Definition dialog.
  */
 export interface ApplyUpdateOptions {
   /** "Create new requests": add a `Request 1` for every operation the new definition adds. */
@@ -296,7 +296,7 @@ function withAddedEndpoints(iface: Interface, plan: UpdatePlan, newId: IdGenerat
  * @param interfaceId the interface the plan belongs to
  * @param plan the diff from {@link planUpdate}
  * @param newImport the freshly imported definition the plan was built against
- * @param options which of SoapUI's update behaviours to perform
+ * @param options which of the update behaviours to perform
  * @throws Error when `interfaceId` names no interface of `project`
  */
 export function applyUpdate(

@@ -22,7 +22,7 @@ export interface GenerateOptions {
   readonly maxDepth: number;
   /** Choice strategy; only `'first'` exists today (all alternatives are shown, the first is canonical). */
   readonly choice: 'first';
-  /** Indent per level; three spaces by default, matching SoapUI. */
+  /** Indent per level; three spaces by default. */
   readonly indent?: string;
   /** Preferred prefix per namespace URI; unlisted namespaces get `ns1`, `ns2`, … in first-use order. */
   readonly prefixes?: Readonly<Record<string, string>>;
@@ -140,7 +140,7 @@ function fillComplex(ctx: Context, node: XmlElementNode, complexType: ComplexTyp
   }
 }
 
-/** The SoapUI comment introducing a particle's occurrence constraints, if any. */
+/** The comment introducing a particle's occurrence constraints, if any. */
 function occurrenceComment(occurs: Occurs): string | undefined {
   if (occurs.max === 'unbounded' || occurs.max > 1) {
     if (occurs.min === 0) {
@@ -191,7 +191,7 @@ function emitElement(ctx: Context, decl: ElementDecl, depth: number): XmlNode {
 /**
  * Emits one instance of an element particle, with its occurrence comment.
  * `forceInclude` bypasses the `includeOptional` gate: it is set for a particle
- * that is a direct alternative of a `choice` (SoapUI emits every alternative
+ * that is a direct alternative of a `choice` (every alternative is emitted
  * regardless of options — the user picks one and deletes the rest).
  */
 function emitElementParticle(
@@ -220,8 +220,8 @@ function emitElementParticle(
 /**
  * Emits one particle. `forceInclude` bypasses the `includeOptional` gate for
  * this particle only (not its descendants): it is set when this particle is a
- * direct alternative of an enclosing `choice`, since SoapUI emits every
- * alternative of a choice regardless of options — the optional/occurrence
+ * direct alternative of an enclosing `choice`, since every alternative of a
+ * choice is emitted regardless of options — the optional/occurrence
  * gating of a compositor otherwise applies only outside a choice.
  */
 function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: number, forceInclude = false): void {
@@ -255,7 +255,7 @@ function emitParticle(ctx: Context, particle: Particle, out: XmlNode[], depth: n
         out.push(comment(text));
       }
       if (particle.kind === 'choice') {
-        // SoapUI announces the alternatives and then emits every one of them,
+        // The alternatives are announced and then every one of them is emitted,
         // leaving the user to delete the ones they do not want. Every direct
         // alternative is emitted regardless of `includeOptional` (the user
         // picks one); optionality/occurrence gating still applies to content
@@ -292,7 +292,7 @@ function finish(ctx: Context, node: XmlElementNode): GeneratedFragment {
 
 /**
  * Generates a sample XML fragment for a global element declaration, following
- * SoapUI's conventions: `?` placeholders (or typed sample values), comment
+ * the usual conventions: `?` placeholders (or typed sample values), comment
  * markers for optional, repeating and choice particles, `xsi:type` for abstract
  * types, and a recursion cut-off at {@link GenerateOptions.maxDepth}.
  *

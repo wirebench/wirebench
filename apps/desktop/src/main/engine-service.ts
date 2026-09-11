@@ -138,7 +138,7 @@ export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth):
 /**
  * Converts resolved credentials into the engine's `SendAuth`, or `undefined` when there is
  * nothing to send (no auth configured, `type: 'none'`, or an incomplete pair). Basic defaults
- * to preemptive, matching SoapUI; a non-preemptive send waits for the 401 challenge.
+ * to preemptive; a non-preemptive send waits for the 401 challenge.
  */
 export function toEngineAuth(auth?: ResolvedAuth): SendAuth | undefined {
   if (auth === undefined || auth.type === 'none') {

@@ -1,5 +1,5 @@
 /**
- * The envelope transforms SoapUI applies on the way out, per request property:
+ * The envelope transforms applied on the way out, per request property:
  * "Remove Empty Content", "Strip Whitespaces", "Pretty Print" and "Entitize Properties".
  *
  * All four are text transforms over a tolerant tokenizer, never a DOM round trip: an envelope
@@ -7,7 +7,7 @@
  * attribute quoting) on the way to the wire is worse than one that does nothing. Every function
  * here returns its input unchanged when it cannot understand the document.
  *
- * Entitizing is the odd one out. SoapUI escapes the values substituted by property expansion,
+ * Entitizing is the odd one out. It escapes the values substituted by property expansion,
  * which cannot be identified after the fact — by the time an envelope is a string, a `&` that
  * came from a property is indistinguishable from one the user typed. So {@link entitizeValue}
  * is applied *during* expansion instead (see `project/properties.ts`'s `entitize` option), and
@@ -21,7 +21,7 @@ import type { XmlRangeNode, XmlToken } from '../xml/tolerant-tree.js';
 /** SOAP wrapper elements that "Remove Empty Content" must never delete. */
 const WRAPPERS = new Set(['Envelope', 'Header', 'Body']);
 
-/** The `?` SoapUI (and our sample generator) writes for an untouched leaf. */
+/** The `?` the sample generator writes for an untouched leaf. */
 const PLACEHOLDER_ONLY = /^[\s?]*$/;
 
 /**
@@ -76,7 +76,7 @@ function cut(text: string, ranges: readonly { start: number; end: number }[]): s
 }
 
 /**
- * SoapUI's "Remove Empty Content": drops every element that has no attributes and whose whole
+ * "Remove Empty Content": drops every element that has no attributes and whose whole
  * content is empty, whitespace, or `?` placeholders — recursively, so a parent left with
  * nothing but removed children goes too. The `Envelope`/`Header`/`Body` wrappers are never
  * removed, however empty they are.
@@ -130,7 +130,7 @@ export function removeEmptyContent(xml: string): string {
 }
 
 /**
- * SoapUI's "Strip Whitespaces": drops whitespace-only text nodes between elements and trims
+ * "Strip Whitespaces": drops whitespace-only text nodes between elements and trims
  * the leading/trailing whitespace of every other text node. CDATA sections, comments and
  * processing instructions are left exactly as they are.
  *
@@ -150,7 +150,7 @@ export function stripWhitespaces(xml: string): string {
 }
 
 /**
- * SoapUI's "Pretty Print": reformats the envelope with the given indent width.
+ * "Pretty Print": reformats the envelope with the given indent width.
  *
  * @param xml the envelope text
  * @param indentWidth spaces per nesting level; defaults to 3, the editor's default tab size
@@ -162,7 +162,7 @@ export function prettyPrint(xml: string, indentWidth = 3): string {
 }
 
 /**
- * SoapUI's "Entitize Properties", applied to one substituted property value: escapes the three
+ * "Entitize Properties", applied to one substituted property value: escapes the three
  * characters that would otherwise be read as markup once the value lands inside an envelope.
  *
  * `"` and `'` are deliberately left alone: expansion targets element content far more often

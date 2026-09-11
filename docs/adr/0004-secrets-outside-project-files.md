@@ -11,8 +11,8 @@ UsernameToken passwords, PKCS#12 and PEM keystore passwords, proxy credentials. 
 folder is meant to be committed to git and shared with a team (ADR-0003). Those two facts
 cannot both be honoured by a format that stores the credential.
 
-SoapUI's answer — an encrypted-with-a-project-password blob inside the project file — makes
-the secret travel with the project and reduces its safety to one shared passphrase.
+The traditional answer — an encrypted-with-a-project-password blob inside the project file —
+makes the secret travel with the project and reduces its safety to one shared passphrase.
 
 ## Decision
 

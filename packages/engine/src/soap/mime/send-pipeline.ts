@@ -54,7 +54,7 @@ export async function substituteInlineFiles(input: SoapSendInput, problems: Soap
 /**
  * Runs the request-side attachment pipeline and returns the bytes to send.
  *
- * The order is fixed and matches SoapUI's: property expansion, inline-file substitution
+ * The order is fixed: property expansion, inline-file substitution
  * ({@link substituteInlineFiles}) and the envelope transforms have already happened, then
  * MTOM claims the attachments its `cid:` references name, then everything left over rides
  * along as SwA. Only when something is actually packaged is the `Content-Type` replaced by
@@ -123,7 +123,7 @@ export async function packageRequestBody(input: SoapSendInput, headers: Record<s
  * its root part plus attachments.
  *
  * A response is unwrapped whether or not the request asked for attachments — a server may
- * answer with MTOM regardless — but the two SoapUI knobs only apply when the request
+ * answer with MTOM regardless — but the two response knobs only apply when the request
  * carried them: `expandMtomAttachments` writes each referenced part back into the envelope
  * as base64, and `inlineResponseAttachments` decides whether those parts stay listed
  * afterwards.

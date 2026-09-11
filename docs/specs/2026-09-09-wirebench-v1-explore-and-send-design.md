@@ -10,9 +10,9 @@
 
 ## 1. Objective
 
-**What.** An open-source, cross-platform desktop workbench for SOAP/WSDL services with the same or greater capabilities than SoapUI's SOAP feature set (https://www.soapui.org/docs/soap-and-wsdl/), wrapped in a modern IDE shell modeled on the Claude Code desktop app (sidebar, tabbed editors, bottom console, command palette, keyboard-first, dark theme).
+**What.** An open-source, cross-platform desktop workbench for SOAP/WSDL services covering the full capability set teams expect of a SOAP workbench, and then some, wrapped in a modern IDE shell modeled on the Claude Code desktop app (sidebar, tabbed editors, bottom console, command palette, keyboard-first, dark theme).
 
-**Why.** SoapUI Open Source is a Java/Swing app: slow start, one giant XML project file with plaintext passwords, no environments, XPath 2.0 only, EUPL-licensed, and effectively in maintenance mode. Teams that still run SOAP (banking, telco, government, ERP integrations) need a fast, git-friendly, native-feeling tool.
+**Why.** The established open-source options in this space are Java/Swing apps: slow start, one giant XML project file with plaintext passwords, no environments, XPath 2.0 only, copyleft-licensed, and effectively in maintenance mode. Teams that still run SOAP (banking, telco, government, ERP integrations) need a fast, git-friendly, native-feeling tool.
 
 **Who.** Integration/backend engineers and QA engineers testing SOAP services; developers exploring third-party WSDLs.
 
@@ -36,15 +36,15 @@
 8. I switch environment (dev → uat) and endpoints/properties change accordingly.
 9. I find any previously sent request in History and re-send or diff it.
 
-**Non-goals (v1).** Functional testing (TestSuites/assertions), mock services, load testing, WSDL coverage/refactoring, code generation, REST/HTTP client (planned later, §14), GraphQL/JMS/JDBC/AMF, Groovy compatibility, WSDL 2.0, SoapUI project import (phase 1.1), plugin API, AI features, telemetry.
+**Non-goals (v1).** Functional testing (TestSuites/assertions), mock services, load testing, WSDL coverage/refactoring, code generation, REST/HTTP client (planned later, §14), GraphQL/JMS/JDBC/AMF, Groovy compatibility, WSDL 2.0, legacy project import (phase 1.1), plugin API, AI features, telemetry.
 
 ---
 
-## 2. Parity matrix (SoapUI SOAP/WSDL → Wirebench)
+## 2. Capability matrix
 
-Legend: **v1** = first release · **1.1** = fast-follow · **v2/v3/v4** = later phases (§14) · **✚** = beyond SoapUI OSS.
+Legend: **v1** = first release · **1.1** = fast-follow · **v2/v3/v4** = later phases (§14) · **✚** = beyond what comparable open-source SOAP tools offer.
 
-| SoapUI capability | Wirebench | Notes |
+| Capability | Wirebench | Notes |
 |---|---|---|
 | Import WSDL from URL/file; multiple services/ports/bindings | v1 | Full `wsdl:import`, `xsd:import`/`include`, relative + absolute locations, HTTP auth for fetching |
 | WSDL caching ("Cache Definition") | v1 | Exact bytes cached in project folder; toggle per interface |
@@ -52,10 +52,10 @@ Legend: **v1** = first release · **1.1** = fast-follow · **v2/v3/v4** = later 
 | Export Definition (incl. imported docs) | v1 | Rewrites `schemaLocation`/`location` to relative paths |
 | Generate HTML documentation | v1 | Also Markdown ✚ |
 | Interface editor: Overview, Service Endpoints, WSDL Content (navigable), WS-I Compliance | v1 | |
-| Interface Viewer / schema browser (Pro) | v1 ✚ | Element/type/namespace navigation; "go to definition" from XML |
+| Interface viewer / schema browser | v1 ✚ | Element/type/namespace navigation; "go to definition" from XML |
 | Sample request generation (optional elements, type comments, sample values, headers) | v1 | document/literal wrapped+bare, rpc/literal, rpc/encoded, SOAP 1.1 + 1.2 |
 | Request actions: Submit, Recreate, Create Empty, Clone, Cancel, endpoint dropdown | v1 | |
-| Editors: XML, Raw, Outline (Pro), Form (Pro), Overview (Pro) | v1 | Monaco-based XML editor |
+| Editors: XML, Raw, Outline, Form, Overview | v1 | Monaco-based XML editor |
 | Editor layout: split/tabs, horizontal/vertical | v1 | |
 | XML editor actions: Validate, Format, Add WSS-Username Token, Add WS-Timestamp, Outgoing WSS, WS-A headers, Save as / Load from, Go to line | v1 | |
 | HTTP headers (custom, override standard, property expansion) | v1 | |
@@ -74,13 +74,13 @@ Legend: **v1** = first release · **1.1** = fast-follow · **v2/v3/v4** = later 
 | Request properties (timeout, encoding, MTOM flags, inline files, remove empty content, entitize, pretty print, strip whitespace, WS-A, dump file, max size, bind address, follow redirects, SOAPAction skip) | v1 | |
 | Preferences (HTTP, proxy, SSL, WSDL, WS-I, editor, UI) | v1 | |
 | Property expansion `${#Project#x}`, `${#Global#x}`, `${#System#x}` | v1 | plus `${#Env#x}` ✚ |
-| Environments (Pro) | v1 ✚ | endpoint + property overrides |
+| Environments | v1 ✚ | endpoint + property overrides |
 | Request history (persistent, searchable, re-send, diff) | v1 ✚ | |
-| XPath/XQuery scratchpad on response | v1 ✚ | XPath 3.1 / XQuery 3.1 (SoapUI: XPath 2.0 / XQuery 1.0) |
+| XPath/XQuery scratchpad on response | v1 ✚ | XPath 3.1 / XQuery 3.1, where comparable tools stop at XPath 2.0 / XQuery 1.0 |
 | Copy as cURL / import cURL | v1 ✚ | |
-| Git-friendly project folder; secrets in OS keychain | v1 ✚ | SoapUI: one XML with plaintext passwords |
+| Git-friendly project folder; secrets in OS keychain | v1 ✚ | The usual alternative is one XML file with plaintext passwords |
 | WS-I Basic Profile 1.1 validation (WSDL + message) | v1 (documented subset) | Full assertion port is "ask first" (§12) |
-| SoapUI project (`*-soapui-project.xml`) import | 1.1 | |
+| Legacy single-XML project import | 1.1 | The one-file-per-project XML format used by older SOAP workbenches |
 | TestSuites/TestCases/TestSteps, all assertion types, property transfer, data-driven, scripting, CLI runner + reports | v2 | Scripting in sandboxed JS/TS, not Groovy |
 | MockResponse test step (async services) | v2 | |
 | Mock services (dispatch: sequence/random/XPath/script/query-match; start/stop/OnRequest/AfterRequest scripts; headless runner) | v3 | WAR export replaced by standalone runner |
@@ -169,15 +169,15 @@ Principles.
 ```
 
 - **Activity bar** (left edge): Explorer, Search (find in project), History, Settings.
-- **Sidebar**: project tree (Interfaces → Endpoints / Operations → Requests; Environments; WS-Security configs; Properties). Context menus mirror SoapUI's interface/operation/request actions.
+- **Sidebar**: project tree (Interfaces → Endpoints / Operations → Requests; Environments; WS-Security configs; Properties). Context menus carry the interface/operation/request actions.
 - **Editor area**: tabbed editors — Request editor (request/response split, toggle split/tabs and horizontal/vertical), Interface editor (Overview · Endpoints · WSDL Content · Schema · WS-I), Environment editor, WSS config editor, Preferences.
-- **Details panel** (right, toggleable): properties of the selected node with inline editing (SoapUI's Properties inspector).
+- **Details panel** (right, toggleable): properties of the selected node with inline editing (the Properties inspector).
 - **Console** (bottom, toggleable): HTTP Log (raw request/response, timings), Problems (validation/WS-I with click-to-navigate), WS-I Report, Errors.
 - **Command palette** (⌘K / ⌘⇧P): every action is a command with an id, label, shortcut, and context; menus and context menus are generated from the same command registry.
 - **History** view: every sent request (time, endpoint, operation, status, duration); open, re-send, compare (diff) with current.
 - **Status bar**: active environment, TLS state of last call, last status/duration/size, cursor position.
 - **Theme**: dark default (near-black surfaces, warm accent, subtle borders), light theme, follows OS; monospace for XML, system UI font; respects reduced motion; every control keyboard reachable with visible focus.
-- **Shortcuts (default)**: ⌘⏎ send · Esc cancel · ⌘K palette · ⌘P quick-open operation/request · ⌘⇧F format XML · ⌘⇧V validate · ⌘S save project · ⌘W close tab · ⌘B toggle sidebar · ⌘J toggle console · ⌘\ toggle split · ⌥←/→ next/prev element value (SoapUI parity) · ⇧Tab request↔response focus.
+- **Shortcuts (default)**: ⌘⏎ send · Esc cancel · ⌘K palette · ⌘P quick-open operation/request · ⌘⇧F format XML · ⌘⇧V validate · ⌘S save project · ⌘W close tab · ⌘B toggle sidebar · ⌘J toggle console · ⌘\ toggle split · ⌥←/→ next/prev element value · ⇧Tab request↔response focus.
 
 ---
 
@@ -188,17 +188,17 @@ Principles.
 - Resolves `wsdl:import`, `xsd:import`, `xsd:include`, `xsd:redefine` (import only; redefine flagged unsupported), chameleon includes, relative/absolute locations, HTTP redirects; detects cycles.
 - Model: definitions → types (schema set) → messages/parts → portTypes/operations (in/out/fault, parameterOrder) → bindings (SOAP 1.1/1.2, style document/rpc, use literal/encoded, transport, soapAction, header/headerfault parts, mime multipart parts) → services/ports (addresses). WS-Policy attachments parsed for WS-Addressing (`wsaw:UsingAddressing`, `wsam:Action`, policy `Addressing`) only; other policies surfaced as raw XML.
 - Cache Definition on/off per interface; cached files stored byte-exact under `interfaces/<name>/definition/` with a `manifest.yaml` mapping original locations.
-- Update Definition dialog with SoapUI's options (create new requests, recreate requests, recreate optional, keep existing values, keep SOAP headers, create backups, open request list). Value-preserving merge uses element paths.
+- Update Definition dialog with the full option set (create new requests, recreate requests, recreate optional, keep existing values, keep SOAP headers, create backups, open request list). Value-preserving merge uses element paths.
 - Export Definition to a folder; Generate Documentation (HTML + Markdown).
 - Interface editor tabs: Overview (URL, target namespace, SOAP version, style/use, WS-A detection), Endpoints (add/edit/remove; default auth per endpoint: username/password/domain/WSS/mode override|complement), WSDL Content (each document, navigable, syntax highlighted), Schema (browse namespaces → elements/types/groups; jump from XML editor to definition), WS-I Compliance (run + report).
 
 ### 6.2 Request generation
 - One sample request per operation on import ("Request 1"); any number of requests per operation; clone/rename/delete.
-- Generator follows SoapUI's SampleXmlUtil behaviour: sequence/choice(first branch, others commented)/all, groups, attributes, `minOccurs=0` elements included only with "Create optional" (default from preferences), `maxOccurs>1` emits one instance + comment (`<!--Zero or more repetitions:-->`), enumerations listed in comments, restrictions honoured for sample values (`?` placeholder by default, or type-appropriate samples when "Sample values" preference on), abstract/derived types via `xsi:type`, substitution groups, `nillable`, `anyType`/`any` comments, recursion depth limit, soapenc arrays for rpc/encoded, SOAP header parts from binding into `soapenv:Header`, correct SOAPAction / `action=` parameter for SOAP 1.2.
+- Generator behaviour: sequence/choice(first branch, others commented)/all, groups, attributes, `minOccurs=0` elements included only with "Create optional" (default from preferences), `maxOccurs>1` emits one instance + comment (`<!--Zero or more repetitions:-->`), enumerations listed in comments, restrictions honoured for sample values (`?` placeholder by default, or type-appropriate samples when "Sample values" preference on), abstract/derived types via `xsi:type`, substitution groups, `nillable`, `anyType`/`any` comments, recursion depth limit, soapenc arrays for rpc/encoded, SOAP header parts from binding into `soapenv:Header`, correct SOAPAction / `action=` parameter for SOAP 1.2.
 - Actions: Recreate request (with keep-values option), Create Empty, Clone, Add WSS-Username Token, Add WS-Timestamp.
 
 ### 6.3 Request editor
-- Views: **XML** (Monaco; XML highlighting, folding, find/replace, go to line, line numbers, format, validate with gutter markers, autocomplete of child elements from schema ✚), **Form** (schema-driven: required/optional, enum dropdowns, date/time/number editors, repeat add/remove, "hide empty/optional" view types, Get Data → insert property expansion), **Outline** (tree of elements with schema type column; edit values; no add/remove, SoapUI parity), **Raw** (exact bytes sent incl. HTTP headers and MIME parts, after property expansion and WSS/WS-A processing).
+- Views: **XML** (Monaco; XML highlighting, folding, find/replace, go to line, line numbers, format, validate with gutter markers, autocomplete of child elements from schema ✚), **Form** (schema-driven: required/optional, enum dropdowns, date/time/number editors, repeat add/remove, "hide empty/optional" view types, Get Data → insert property expansion), **Outline** (tree of elements with schema type column; edit values; no add/remove), **Raw** (exact bytes sent incl. HTTP headers and MIME parts, after property expansion and WSS/WS-A processing).
 - Response views: XML (formatted, read-only), Outline, Raw (exact bytes received), **Query** ✚ (XPath 3.1/XQuery 3.1 evaluation with namespace panel; results as values or highlighted nodes), Overview for faults (code/reason/detail rendered).
 - Toolbar: Submit, Cancel, Recreate, Create Empty, Clone, Copy as cURL, Endpoint dropdown (edit/add/delete), layout toggles.
 - Inspectors (request): Headers, Attachments, Auth, WS-A, SSL (client cert selection). Inspectors (response): Headers, Attachments, WSS (processing results), SSL Info (peer chain, protocol, cipher, validity).
@@ -446,20 +446,20 @@ Rules: TDD for engine code (failing test first, then implementation); every bug 
 - Redact `Authorization`, WSS passwords, and decrypted keys from the HTTP log and history unless the user enables "show secrets" for the session.
 - Keep TLS verification on by default; any per-endpoint bypass shows a persistent warning.
 - Record architecture decisions as ADRs in `docs/adr`; update this design doc when scope or design changes.
-- Implement protocol behaviour from the public specs (WSDL 1.1, SOAP 1.1/1.2, XOP/MTOM, SwA, WS-Security 1.1, WS-Addressing, WS-I BP 1.1) and SoapUI's *documentation*, never from SoapUI's source.
+- Implement protocol behaviour from the public specs (WSDL 1.1, SOAP 1.1/1.2, XOP/MTOM, SwA, WS-Security 1.1, WS-Addressing, WS-I BP 1.1) and published, user-facing *documentation* — clean-room; never from another tool's source.
 
 **Ask first**
 - Adding any runtime dependency, or any native module (`kerberos`, `libxmljs2`, …).
 - Changing the project folder format (`formatVersion`), the IPC contract, or default keyboard shortcuts.
 - Changing CI, release, signing, or auto-update configuration; changing the license.
 - Porting the full WS-I assertion catalogue or bundling third-party test tools.
-- Pulling scope from later phases (testing, mocks, load, codegen, SoapUI import) into v1.
+- Pulling scope from later phases (testing, mocks, load, codegen, legacy project import) into v1.
 - Adding any telemetry, crash reporting, or network calls not initiated by the user.
 - Deleting or rewriting golden fixtures, or lowering coverage thresholds.
 
 **Never**
 - Commit secrets, real credentials, customer WSDLs, or keystores; commit `.env` files.
-- Copy code from SoapUI/ReadyAPI (EUPL) or any GPL/AGPL project.
+- Copy code from other SOAP tools (many are copyleft, incompatible with Apache-2.0) or from any GPL/AGPL project.
 - Set `nodeIntegration: true`, disable `contextIsolation`/`sandbox`/`webSecurity`, load remote URLs in the app window, or expose `ipcRenderer` to the renderer.
 - Ship with certificate verification disabled, log secrets in plaintext, or store passwords in project files.
 - Remove or skip failing tests to make CI pass; merge with lint warnings.
@@ -488,8 +488,8 @@ Rules: TDD for engine code (failing test first, then implementation); every bug 
 
 ## 14. Roadmap (after v1)
 
-- **1.1** SPNEGO/Kerberos (native `kerberos`, optional dependency), WS-ReliableMessaging, SAML tokens (form + XML), JKS keystores, SoapUI project import (interfaces/requests/endpoints/WSS configs), HTTP/2 default evaluation.
-- **v2 Functional testing.** TestSuites/TestCases/TestSteps (SOAP Request, Property Transfer, Script in sandboxed JS/TS with typed context, Properties, Conditional Goto, Delay, Run TestCase, MockResponse, DataSource/DataSink/DataGen/Loop), all SoapUI assertions (XPath/XQuery match, Contains/Not Contains, Schema Compliance, SOAP Response, SOAP Fault/Not SOAP Fault, WS-Security Status, WS-A Request/Response, Response SLA, Valid/Invalid HTTP status, Script, Message Content), property transfers, `wirebench run` CLI with JUnit/HTML reports, CI recipes.
+- **1.1** SPNEGO/Kerberos (native `kerberos`, optional dependency), WS-ReliableMessaging, SAML tokens (form + XML), JKS keystores, legacy single-XML project import (interfaces/requests/endpoints/WSS configs), HTTP/2 default evaluation.
+- **v2 Functional testing.** TestSuites/TestCases/TestSteps (SOAP Request, Property Transfer, Script in sandboxed JS/TS with typed context, Properties, Conditional Goto, Delay, Run TestCase, MockResponse, DataSource/DataSink/DataGen/Loop), the full assertion catalogue (XPath/XQuery match, Contains/Not Contains, Schema Compliance, SOAP Response, SOAP Fault/Not SOAP Fault, WS-Security Status, WS-A Request/Response, Response SLA, Valid/Invalid HTTP status, Script, Message Content), property transfers, `wirebench run` CLI with JUnit/HTML reports, CI recipes.
 - **v3 Mock services.** Generate from WSDL; dispatch sequence/random/XPath/script/query-match; Start/Stop/OnRequest/AfterRequest/response scripts; serve WSDL; headless `wirebench mock`; record responses from live traffic ✚.
 - **v4** Load testing (strategies, load assertions, live charts), WSDL coverage, WSDL refactoring wizard, code generation (external toolchains + built-in TypeScript client ✚), TCP monitor proxy.
 - **REST/HTTP client, Postman-style (after v2, can run in parallel with v3/v4).** Collections and requests beside SOAP interfaces in the same project and environments; OpenAPI import; query/path/form/multipart/body editors; auth reuse (Basic/NTLM/Bearer/OAuth2); the v2 test steps and assertions extend to REST (JSONPath, JSON Schema). Engine gains `rest/`; renderer gains a REST request editor; `kind: rest` activates the reserved discriminator.
@@ -501,10 +501,10 @@ Rules: TDD for engine code (failing test first, then implementation); every bug 
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Sample generation edge cases (substitution groups, recursive types, rpc/encoded arrays, `xs:any`) | Wrong requests → user distrust | Golden tests per construct in `fixtures/wsdl/crafted`; compare against SoapUI output for the same WSDLs during development (manual) |
+| Sample generation edge cases (substitution groups, recursive types, rpc/encoded arrays, `xs:any`) | Wrong requests → user distrust | Golden tests per construct in `fixtures/wsdl/crafted`; compare against reference output for the same WSDLs during development (manual) |
 | WS-Security interop with WSS4J/WCF/.NET services | Signatures rejected in the field | `xmlsec1` cross-check in CI; key-identifier matrix tests; early beta testers with real services; keep RSA-SHA1/AES-CBC legacy options |
 | NTLMv2 in-house implementation | Auth failures on Windows-hosted services | Test vectors from MS-NLMP; simulated server; fallback plan: optional native SSPI module in 1.1 |
-| WS-I parity expectations | "Not the same as SoapUI" | Publish the implemented assertion list; report clearly labels scope; full port is a tracked ask-first item |
+| WS-I coverage expectations | "Not the full catalogue" | Publish the implemented assertion list; report clearly labels scope; full port is a tracked ask-first item |
 | Monaco bundle size / startup | Slow cold start | Lazy-load Monaco per editor, code-split features, measure cold start in e2e |
 | TypeScript 7 / tooling compatibility | Build breakage | Pin versions; fall back to TypeScript 5.9 if any tool lags (open question) |
 | Electron security regressions | Vulnerabilities | Security baseline enforced by tests (`webPreferences` snapshot test) and Electron Fuses |

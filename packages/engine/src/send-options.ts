@@ -63,7 +63,7 @@ function isDefaultEncoding(encoding: string): boolean {
 }
 
 /**
- * Applies the envelope transforms a request asks for, in SoapUI's order: content removal
+ * Applies the envelope transforms a request asks for, in a fixed order: content removal
  * first (so whitespace and formatting decisions see the final element set), then whitespace
  * stripping, then pretty printing. Entitizing is not here — it happens during property
  * expansion; see `soap/transforms.ts`.

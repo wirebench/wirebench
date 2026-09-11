@@ -20,7 +20,7 @@ export interface BuiltinType {
    * for realistic sample data. The default everywhere is {@link BuiltinType.placeholder}.
    */
   readonly sampleValue: string;
-  /** The SoapUI-parity placeholder emitted by default for every built-in. */
+  /** The placeholder emitted by default for every built-in. */
   readonly placeholder: '?';
 }
 

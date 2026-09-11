@@ -16,7 +16,7 @@ export interface RequestPropertiesProps {
 }
 
 /**
- * One line per attachment flag, matching SoapUI's semantics. They are the tooltip on each row's
+ * One line per attachment flag. They are the tooltip on each row's
  * label, because the flags interact (Force MTOM only means anything with MTOM enabled, Disable
  * multiparts overrides both) and the label alone does not say which way.
  */
@@ -35,7 +35,7 @@ const SSL_KEYSTORE_HINT = 'The client certificate this request presents. Manage 
 
 /**
  * The `Encoding` property's closed set of choices: every label Node's `Buffer` can encode a
- * request body as, plus `ISO-8859-1` — a valid SoapUI encoding that `Buffer` itself does not
+ * request body as, plus `ISO-8859-1` — a valid encoding label that `Buffer` itself does not
  * recognise by that name (`encodeBody` maps it to `latin1` internally, see `send.ts`).
  */
 const ENCODING_OPTIONS = [
@@ -48,7 +48,7 @@ const ENCODING_OPTIONS = [
 ];
 
 /**
- * The per-request property grid of the Details panel — SoapUI's request property list, in three
+ * The per-request property grid of the Details panel — the per-request property list, in three
  * groups: the general transport and envelope knobs, the attachment/MTOM flags, and the
  * WS-Security defaults.
  *

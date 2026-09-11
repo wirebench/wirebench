@@ -146,7 +146,7 @@ describe('buildSampleRequest golden envelopes', () => {
   it('soap-headers Legacy names a type-only document part after the part itself', () => {
     const request = build(fixture('crafted/soap-headers'), 'SoapHeadersBinding', 'Legacy');
     expect(request.envelopeXml).toBe(golden('soap-headers-legacy.xml'));
-    // Non-WS-I, but not a problem: SoapUI does the same.
+    // Non-WS-I, but not a problem: the part name is a well-established fallback.
     expect(request.problems).toEqual([]);
     expect(request.envelopeXml).toContain('<payload>');
   });

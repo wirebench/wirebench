@@ -14,7 +14,7 @@ export function charsetOf(contentType: string | undefined): string | undefined {
 /**
  * Encodes `text` for the wire, per `encoding` (default utf-8).
  *
- * `ISO-8859-1` is a valid encoding label (SoapUI offers it, and it is what the Encoding
+ * `ISO-8859-1` is a valid encoding label (it is one of the choices the Encoding
  * property's `<select>` shows), but it is not one of the labels Node's `Buffer` recognises —
  * `iso-8859-1` is instead spelled `latin1` there. That is the one label this function
  * translates; every other name is handed to `Buffer` as-is.

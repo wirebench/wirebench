@@ -15,9 +15,9 @@ import type { AttachmentResolver, MultipartPart, ResponseAttachment } from './ty
 /** Knobs for {@link prepareSwaRequest}. */
 export interface SwaOptions {
   readonly resolver: AttachmentResolver;
-  /** SoapUI's "Encode Attachments": base64 transfer encoding instead of binary. */
+  /** "Encode Attachments": base64 transfer encoding instead of binary. */
   readonly encodeAttachments: boolean;
-  /** SoapUI's "Disable Multiparts": send the envelope alone and ignore every attachment. */
+  /** "Disable Multiparts": send the envelope alone and ignore every attachment. */
   readonly disableMultiparts?: boolean;
 }
 
@@ -40,8 +40,7 @@ function contentIdOf(attachment: Attachment): string {
  *
  * The envelope is never modified; it is only scanned, so the caller can tell which
  * attachments a `cid:` reference in the body actually points at (an unreferenced
- * attachment is still sent, which is what SoapUI does and what "anonymous" MIME parts are
- * for).
+ * attachment is still sent, which is what "anonymous" MIME parts are for).
  *
  * @param envelopeXml the envelope as it will be sent
  * @param attachments the attachments to package

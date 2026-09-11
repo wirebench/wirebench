@@ -68,7 +68,7 @@ export const GOTO_DEFINITION_KEYBINDING = monaco.KeyCode.F12;
  * Unlike the Mod-based chords above, Monaco binds all three itself (word-wise caret motion and
  * outdent), and its keybinding service consumes a keystroke it has a binding for before the
  * window-level dispatcher can see it. So these have to be registered on the editor as well, or
- * the design's SoapUI-parity moves would only work with focus outside the editor.
+ * the design's element-value moves would only work with focus outside the editor.
  */
 export const NEXT_VALUE_KEYBINDING = monaco.KeyMod.Alt | monaco.KeyCode.RightArrow;
 export const PREVIOUS_VALUE_KEYBINDING = monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow;

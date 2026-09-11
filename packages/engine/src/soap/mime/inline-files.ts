@@ -1,8 +1,8 @@
 /**
- * SoapUI's "Enable Inline Files": an element whose text is exactly `file:<path>` has that
+ * "Enable Inline Files": an element whose text is exactly `file:<path>` has that
  * file's bytes substituted, base64-encoded, at send time.
  *
- * The decision is syntactic, not schema-driven — the same rule SoapUI applies — so a
+ * The decision is syntactic, not schema-driven, so a
  * request can carry a file reference before its schema is even known. A reference that
  * cannot be read is reported and left verbatim in the envelope rather than failing the
  * send: the server's own error is usually more informative than a client-side abort.

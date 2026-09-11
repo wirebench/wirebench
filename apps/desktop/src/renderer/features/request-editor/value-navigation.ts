@@ -1,5 +1,5 @@
 /**
- * ⌥←/⌥→ — "previous/next element value", SoapUI's XML-editor parity move. The ranges come from
+ * ⌥←/⌥→ — "previous/next element value", the XML editor's value-wise caret move. The ranges come from
  * the very same tolerant model the Form and Outline views are built on
  * (`views/xml-model.ts`), so what the caret jumps between is exactly what those views let you
  * edit: a leaf element's text content, and each attribute value.

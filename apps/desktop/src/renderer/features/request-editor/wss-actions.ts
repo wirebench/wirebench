@@ -3,7 +3,8 @@
  * text, applying the request's outgoing configuration to it, and stripping the header again.
  *
  * These are deliberately distinct from `wssOutgoingRef`, which applies a configuration at send
- * time and never touches the saved envelope — SoapUI has both, and they are not interchangeable.
+ * time and never touches the saved envelope. The two exist side by side and are not
+ * interchangeable.
  * Main builds every one of these headers and masks any `wsse:Password` on the way back, so what
  * lands in the editor (and therefore in the project file) never carries a plaintext secret; the
  * real password is only ever substituted on the wire.

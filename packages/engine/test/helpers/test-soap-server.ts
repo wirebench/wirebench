@@ -96,7 +96,7 @@ function buildCalculatorAddResponse(requestBody: string): string | undefined {
   if (intAMatch?.[1] === undefined || intBMatch?.[1] === undefined) {
     return undefined;
   }
-  // The request editor's default draft uses the SoapUI-style `?` placeholder for untouched
+  // The request editor's default draft uses the `?` placeholder for untouched
   // leaves (see `sampleValueFor` in the engine's xsd/sample-values.ts) rather than a real
   // number, so unparseable operands are treated as 0 instead of falling back to an echo.
   const toOperand = (text: string): number => {

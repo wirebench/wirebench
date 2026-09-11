@@ -1,7 +1,7 @@
 /**
  * Deterministic, readable namespace prefixes for generated SOAP envelopes.
  *
- * SoapUI names a namespace after a short mnemonic taken from its URI
+ * The established convention names a namespace after a short mnemonic taken from its URI
  * (`http://tempuri.org/` → `tem`), which reads far better in a hand-edited
  * request than `ns1`. This module reproduces that convention from the URI
  * alone, without ever colliding with the prefixes the envelope reserves.
@@ -10,7 +10,7 @@
 /** Prefixes an envelope always owns; a mnemonic never takes one of these. */
 export const RESERVED_PREFIXES: readonly string[] = ['soapenv', 'soapenc', 'xsi', 'xsd', 'xs', 'xml', 'xmlns'];
 
-/** The mnemonic length: three letters, as SoapUI uses. */
+/** The mnemonic length: three letters, per the convention. */
 const MNEMONIC_LENGTH = 3;
 
 /**

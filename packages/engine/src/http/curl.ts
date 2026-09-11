@@ -1,5 +1,5 @@
 /**
- * Beyond-SoapUI convenience: export a SOAP send as a `curl` command, and
+ * Interoperability convenience: export a SOAP send as a `curl` command, and
  * parse a pasted `curl` command back into a partial send input.
  */
 

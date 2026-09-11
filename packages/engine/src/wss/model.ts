@@ -34,7 +34,7 @@ export interface WssUsernameTokenEntry {
 
 /**
  * One message part a signature covers (or, from Task 39 on, an encryption entry encrypts),
- * named the way SoapUI's "Parts" table names it: by local name and namespace.
+ * named the way the "Parts" table names it: by local name and namespace.
  */
 export interface WssPart {
   readonly name: string;

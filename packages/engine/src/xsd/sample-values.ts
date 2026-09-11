@@ -12,14 +12,14 @@ export interface SampleValueContext {
 
 /** Options controlling how a leaf's content is produced. */
 export interface SampleValueOptions {
-  /** When false, every leaf is the SoapUI placeholder `?`. */
+  /** When false, every leaf is the placeholder `?`. */
   readonly sampleValues: boolean;
 }
 
 /** A reference to a simple type: a name, an inline definition, or nothing. */
 export type SimpleTypeRef = QName | SimpleType | undefined;
 
-/** The SoapUI placeholder emitted for every leaf when sample values are off. */
+/** The placeholder emitted for every leaf when sample values are off. */
 export const PLACEHOLDER = '?';
 
 const INTEGER_NAMES = new Set([
@@ -263,7 +263,7 @@ function sampleFor(ctx: SampleValueContext, ref: SimpleTypeRef, visited: Set<str
 }
 
 /**
- * Produces the text content for a simple-typed leaf: the SoapUI placeholder
+ * Produces the text content for a simple-typed leaf: the placeholder
  * `?` unless `sampleValues` is on, in which case a facet- and built-in-derived
  * example value is returned. Callers apply `fixed`/`default` themselves; those
  * always win over anything computed here.

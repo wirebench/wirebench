@@ -197,7 +197,7 @@ describe('generateElement — rules', () => {
     const xml = generateElement(set, q(TNS, 'AnyHolderEl'), { includeOptional: true }).xml;
     expect(xml).toContain('<!--You may enter ANY elements at this point-->');
     expect(xml).toContain('<ns1:blob>?</ns1:blob>');
-    // anyAttribute is ignored entirely, like SoapUI.
+    // anyAttribute is ignored entirely.
     expect(xml).not.toContain('ANY attributes');
   });
 

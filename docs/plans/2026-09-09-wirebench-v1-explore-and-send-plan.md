@@ -14,7 +14,7 @@ Executors: superpowers:subagent-driven-development (fresh subagent per task, rev
 - Renderer: no network/fs/secrets; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP; IPC = one zod schema pair per channel; never expose `ipcRenderer`.
 - Secrets only via `safeStorage` + `secretRef`; never in project files or logs (redact `Authorization`, WSS passwords).
 - TDD for engine; engine coverage ≥ 85% lines/branches (CI gate); golden fixtures deterministic (injected clock/uuid); no network in tests except `test/interop`.
-- Never copy SoapUI/ReadyAPI source (EUPL); implement from public specs + SoapUI docs. Name is Wirebench everywhere (`@wirebench/*`, `io.wirebench.desktop`, `WIREBENCH_*`); never "SoapHub".
+- Clean-room; do not copy code from other SOAP tools (many are copyleft, incompatible with Apache-2.0). Implement from public specs + published documentation. Name is Wirebench everywhere (`@wirebench/*`, `io.wirebench.desktop`, `WIREBENCH_*`); never "SoapHub".
 - New runtime deps/native modules, project-format changes, IPC-contract changes, CI/release changes = ask first (§12). Deps already approved: those in §3.
 - Layout per §9; docs per `docs/specs`, `docs/plans`, `docs/adr`; commands exactly as §8.
 
@@ -361,7 +361,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Files: apps/desktop/src/renderer/features/interface-editor/{interface-editor.tsx,overview-tab.tsx,endpoints-tab.tsx,wsdl-content-tab.tsx,schema-tab.tsx}, e2e/specs/interface-editor.spec.ts
 
 - [x] **46. Update Definition + Export + Documentation**
-  - `wsdl/update-definition.ts` (`planUpdate(old, new) → {newOps, removedOps, changedOps}`, `applyUpdate(project, plan, opts: {createNewRequests, recreateRequests, recreateOptional, keepExisting (T29 merge), keepSoapHeaders, createBackups (*.bak), updateTestRequests: false})`), `wsdl/docs-generator.ts` (HTML + Markdown: services, operations, messages, types; inline CSS); dialogs: Update Definition (SoapUI field parity), Export Definition (folder), Generate Documentation (save); explorer context menu entries.
+  - `wsdl/update-definition.ts` (`planUpdate(old, new) → {newOps, removedOps, changedOps}`, `applyUpdate(project, plan, opts: {createNewRequests, recreateRequests, recreateOptional, keepExisting (T29 merge), keepSoapHeaders, createBackups (*.bak), updateTestRequests: false})`), `wsdl/docs-generator.ts` (HTML + Markdown: services, operations, messages, types; inline CSS); dialogs: Update Definition (full option set), Export Definition (folder), Generate Documentation (save); explorer context menu entries.
   - Acceptance: `crafted/versioned/v1→v2` adds an op → request created, edits kept, backups written; docs golden; export → re-import equality.
   - Verify: `pnpm vitest run packages/engine/test/unit/wsdl/update packages/engine/test/unit/wsdl/docs`; e2e dialog
   - Files: packages/engine/src/wsdl/{update-definition.ts,docs-generator.ts}, packages/engine/test/unit/wsdl/{update,docs}.test.ts, fixtures/wsdl/crafted/versioned/**, apps/desktop/src/renderer/features/interface-editor/update-definition-dialog.tsx
@@ -410,7 +410,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
 
 ## Risks
 
-- Sample generation edge cases (substitution groups, recursion, rpc/encoded arrays, `xs:any`) — T7/T8 are the earliest engine tasks; golden per construct; side-by-side with SoapUI output where available (Q3).
+- Sample generation edge cases (substitution groups, recursion, rpc/encoded arrays, `xs:any`) — T7/T8 are the earliest engine tasks; golden per construct; side-by-side with reference output where available (Q3).
 - WS-Security interop — xmlsec1 cross-check from T38 on; key-identifier × algorithm matrix; legacy SHA-1/CBC kept.
 - NTLMv2 in-house (T35) — MS-NLMP vectors + simulated server; fallback native SSPI in 1.1 if field reports fail.
 - xmllint-wasm with multi-namespace schema sets — wrapper-schema approach validated early in T42 spike (first hour); fallback: pre-merge into one schema per namespace.
@@ -424,6 +424,6 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
 
 1. New deps (spec §12 "ask first") to approve before their tasks: `ulidx` (MIT, ULIDs — T17; or switch §7 to `crypto.randomUUID()`), `node-forge` (BSD-3, PKCS#12 + test cert generation — T31/T36), `jsdom` dev (T12), `@electron/fuses` dev (T51), `@axe-core/playwright` dev (T48). Default if silent: approve all.
 2. Execution mode: subagent-driven (fresh subagent per task, review between) vs inline in-session? Default: subagent-driven.
-3. Is a SoapUI install available on this Mac for side-by-side sample-generation comparison during T8? Default: docs + fixtures only.
+3. Is reference output available on this Mac for side-by-side sample-generation comparison during T8? Default: docs + fixtures only.
 4. GitHub org/repo `wirebench` must exist before T4 (CI) — user action. Until then CI config is committed but unverified.
 5. Test-time cert/keystore generation (node-forge) vs committing pre-generated test-only certs (expire; conflicts with "never commit keystores"). Default: generate at test time.

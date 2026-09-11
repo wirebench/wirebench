@@ -150,7 +150,7 @@ export function registerEditorCommands(): void {
     },
   });
 
-  // ⌥←/⌥→. SoapUI parity: step the caret through the envelope's element values, not its tags.
+  // ⌥←/⌥→: step the caret through the envelope's element values, not its tags.
   registerCommand({
     id: 'editor.nextValue',
     label: 'Go to Next Element Value',

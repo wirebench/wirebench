@@ -1,7 +1,7 @@
 /**
  * SOAP envelope assembly: wraps already-rendered header and body fragments in
- * a `soapenv:Envelope`, matching SoapUI's output conventions (three-space
- * indent, `soapenv` prefix, an always-present `Header`).
+ * a `soapenv:Envelope`, following the conventions classic SOAP workbenches
+ * produce (three-space indent, `soapenv` prefix, an always-present `Header`).
  */
 
 import type { Document } from '@xmldom/xmldom';
@@ -56,7 +56,7 @@ function indentBlock(text: string, pad: string): string {
  * Wraps `parts` in a SOAP envelope.
  *
  * The `Header` element is always emitted (empty when there are no header
- * blocks), mirroring SoapUI: it gives the user somewhere to paste a security
+ * blocks): it gives the user somewhere to paste a security
  * header without re-typing the element. Every namespace in
  * {@link EnvelopeParts.namespaces} is declared on the `Envelope` root, so the
  * fragments inside carry no `xmlns` declarations of their own.
@@ -65,7 +65,7 @@ function indentBlock(text: string, pad: string): string {
  *
  * @param version which SOAP envelope namespace to bind
  * @param parts the header/body fragments and the namespaces they use
- * @param options `indent` defaults to three spaces (SoapUI's)
+ * @param options `indent` defaults to three spaces
  */
 export function createEnvelope(
   version: SoapEnvelopeVersion,

@@ -9,8 +9,9 @@
 Wirebench is a desktop workbench for SOAP/WSDL: it has to parse and edit large XML documents,
 speak HTTP with fine-grained control over headers, TLS, proxies and connection affinity, do
 XML-DSig and XML-Enc, and present all of that in an IDE-shaped UI on macOS, Windows and Linux.
-The reference point for the UI is Claude Code's desktop shell; the reference point for the
-feature set is SoapUI, whose source may never be copied (it is EUPL).
+The reference point for the UI is Claude Code's desktop shell; the feature set is the one
+classic SOAP workbenches established, reimplemented clean-room — no code from other SOAP tools
+is copied (many are copyleft, incompatible with Apache-2.0).
 
 Two questions had to be answered together: what the app is built on, and where the protocol
 work lives.

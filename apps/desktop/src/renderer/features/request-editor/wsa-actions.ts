@@ -3,8 +3,8 @@
  * the envelope text, and stripping them again.
  *
  * Deliberately distinct from the request's saved WS-A configuration, which is applied on the
- * way to the wire and never touches the stored envelope — SoapUI has both, and they are not
- * interchangeable. A MessageID baked in here is fixed in the project file from then on; the
+ * way to the wire and never touches the stored envelope. The two exist side by side and are
+ * not interchangeable. A MessageID baked in here is fixed in the project file from then on; the
  * send path is what mints a fresh one per send.
  */
 

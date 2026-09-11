@@ -159,7 +159,7 @@ describe('UpdateDefinitionDialog', () => {
     expect(screen.queryByTestId('update-definition-plan-preview')).toBeNull();
   });
 
-  it('offers SoapUI’s options with its defaults, and Update TestRequests disabled', async () => {
+  it('offers the update options with their defaults, and Update TestRequests disabled', async () => {
     const user = userEvent.setup();
     render(<InterfaceEditor interfaceId="if-1" />);
     await user.click(await screen.findByTestId('interface-update-definition'));

@@ -6,9 +6,10 @@
 
 ## Context
 
-SoapUI keeps a project in one large XML file. That file is the thing teams actually fight
-with: two people editing different requests produce a conflict in the same document, a
-one-character change produces an unreadable diff, and the file is where credentials end up.
+The traditional format for this kind of tool is one large XML file per project. That file is
+the thing teams actually fight with: two people editing different requests produce a conflict in
+the same document, a one-character change produces an unreadable diff, and the file is where
+credentials end up.
 
 Wirebench projects are meant to live in git next to the service they exercise.
 

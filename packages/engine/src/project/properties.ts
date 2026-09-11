@@ -1,10 +1,10 @@
 /**
- * SoapUI-compatible property expansion: `${#Project#name}`, `${#Env#name}`,
- * `${#Global#name}`, `${#System#name}` and the shorthand `${name}` which
- * resolves through the scope chain Env -> Project -> Global (System is never
+ * Property expansion over the `${#Project#name}`, `${#Env#name}`,
+ * `${#Global#name}` and `${#System#name}` syntax, plus the shorthand
+ * `${name}` which resolves through the scope chain Env -> Project -> Global (System is never
  * implicit). Values are themselves expanded recursively (cycle-safe, depth
- * limited); unresolved expressions are left verbatim in the output (SoapUI
- * parity) and reported via `unresolved`.
+ * limited); unresolved expressions are left verbatim in the output and
+ * reported via `unresolved`.
  *
  * Pure module: no I/O beyond reading the `scopes.system` map the caller
  * passes in (default `process.env`).
@@ -184,7 +184,7 @@ function tokenize(text: string): Token[] {
 interface ExpandContext {
   readonly scopes: PropertyScopes;
   readonly maxDepth: number;
-  /** XML-escape every substituted value (SoapUI's "Entitize Properties"). */
+  /** XML-escape every substituted value ("Entitize Properties"). */
   readonly entitize: boolean;
   readonly unresolved: UnresolvedRef[];
   readonly used: { scope: string; name: string }[];
@@ -342,7 +342,7 @@ function expandAt(
 export interface ExpandOptions {
   readonly maxDepth?: number;
   /**
-   * XML-escape every substituted value (SoapUI's "Entitize Properties"). Off by default; the
+   * XML-escape every substituted value ("Entitize Properties"). Off by default; the
    * send path turns it on only for the envelope, never for headers or the endpoint.
    */
   readonly entitize?: boolean;

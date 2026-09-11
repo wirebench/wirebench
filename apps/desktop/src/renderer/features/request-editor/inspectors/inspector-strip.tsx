@@ -43,7 +43,7 @@ export interface InspectorStripProps {
 
 /**
  * The inspector strip that sits under a pane's editor: a tab per inspector along the bottom
- * edge, with the selected inspector's panel opening *above* it (SoapUI's layout). Both the
+ * edge, with the selected inspector's panel opening *above* it. Both the
  * selection and whether the panel is open live in the editors store, keyed per request and
  * per pane, so switching tabs and coming back finds the strip as it was left.
  */

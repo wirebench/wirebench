@@ -476,7 +476,7 @@ export type ResolvedSendInputWire = Omit<SoapSendInputWire, 'tls'> & { readonly 
 /** A {@link RequestSendRequest} whose input has been through that same resolution. */
 export type ResolvedSendRequest = Omit<RequestSendRequest, 'input'> & { readonly input: ResolvedSendInputWire };
 
-/** Request payload for `request.recreate` — SoapUI's "Recreate Request", applied to a saved request. */
+/** Request payload for `request.recreate` — "Recreate Request", applied to a saved request. */
 export const requestRecreateRequestSchema = z.object({
   requestId: z.string(),
   /** Copy matching leaf values out of the current envelope into the regenerated structure. */

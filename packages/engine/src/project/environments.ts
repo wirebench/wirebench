@@ -1,5 +1,5 @@
 /**
- * Environment resolution: SoapUI Pro's "environments" feature, which lets a
+ * Environment resolution: named sets of endpoints and property overrides, which let a
  * saved project be pointed at different deployments (endpoints + property
  * overrides) without editing the project itself.
  *

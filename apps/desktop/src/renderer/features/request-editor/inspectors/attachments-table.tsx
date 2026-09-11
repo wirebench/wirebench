@@ -24,7 +24,7 @@ const COMMON_CONTENT_TYPES = [
   'text/xml',
 ];
 
-/** Every value the model's `type` may take, in the order SoapUI lists them. */
+/** Every value the model's `type` may take, in the order the picker lists them. */
 const ATTACHMENT_TYPES: readonly AttachmentTypeWire[] = ['XOP', 'MIME', 'SWAREF', 'CONTENT', 'UNKNOWN'];
 
 /** Shown next to a `path`-source attachment main has refused to read this session. */
@@ -102,7 +102,7 @@ export interface AttachmentsTableProps {
 }
 
 /**
- * The attachment grid: one row per attachment, with the editable cells SoapUI's attachments tab
+ * The attachment grid: one row per attachment, with the editable cells the attachments tab
  * offers. Selection lives with the caller (it is also what the `request.removeAttachment`
  * command acts on); the arrow keys move it and Delete detaches the selected row.
  */

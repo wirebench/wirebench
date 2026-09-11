@@ -2,7 +2,7 @@
  * Update Definition: re-import an interface's WSDL from a new location and reconcile the
  * project against it.
  *
- * Two steps on purpose, as in SoapUI. "Plan" fetches the new definition and shows what would
+ * Two steps on purpose. "Plan" fetches the new definition and shows what would
  * change — new, removed and changed operations, plus added/removed endpoints — and only then
  * does "Update" apply it. Nothing is ever deleted: the requests of a removed operation stay and
  * are badged orphaned in the explorer.
@@ -22,7 +22,7 @@ export interface UpdateDefinitionDialogProps {
   readonly interfaceId: string;
 }
 
-/** SoapUI's defaults for the update options; `updateTestRequests` is not implemented yet. */
+/** The defaults for the update options; `updateTestRequests` is not implemented yet. */
 const DEFAULT_OPTIONS: DefinitionUpdateOptions = {
   createNewRequests: true,
   recreateRequests: true,
@@ -33,7 +33,7 @@ const DEFAULT_OPTIONS: DefinitionUpdateOptions = {
   updateTestRequests: false,
 };
 
-/** The checkboxes, in SoapUI's order and with its wording. */
+/** The checkboxes, in the order the dialog presents them. */
 const OPTION_LABELS: readonly { key: keyof DefinitionUpdateOptions; label: string; hint?: string }[] = [
   { key: 'createNewRequests', label: 'Create new requests' },
   { key: 'recreateRequests', label: 'Recreate requests' },

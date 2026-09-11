@@ -234,7 +234,7 @@ function cacheFor(interfaceId: string): Map<string, DescribeResult | null> {
 }
 
 /**
- * SoapUI-parity Outline: an element/attribute tree with Name, Value (inline-editable) and Type
+ * Outline: an element/attribute tree with Name, Value (inline-editable) and Type
  * columns. Never adds or removes nodes — every edit calls `onEdit` with the exact range to
  * replace in the underlying XML text, which the caller writes back via `applyValueEdit`.
  *

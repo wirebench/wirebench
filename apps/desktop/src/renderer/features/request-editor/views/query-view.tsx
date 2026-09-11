@@ -1,6 +1,6 @@
 /**
  * The response Query view: an XPath 3.1 / XQuery 3.1 scratchpad over the response envelope,
- * beyond SoapUI OSS (whose assertions only offer XPath 2.0). Evaluation runs in main
+ * ahead of any assertion and over the full response. Evaluation runs in main
  * (`xpath.evaluate`) so the renderer never bundles `fontoxpath`.
  */
 

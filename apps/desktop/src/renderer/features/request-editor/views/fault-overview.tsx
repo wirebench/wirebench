@@ -48,8 +48,8 @@ export interface FaultOverviewProps {
 
 /**
  * Renders a parsed SOAP fault's fields: version, code (with the SOAP 1.2 subcode chain),
- * reason, actor/role/node, and the fault detail as formatted, read-only XML. SoapUI shows the
- * same fields; this additionally makes any URL in the reason text clickable.
+ * reason, actor/role/node, and the fault detail as formatted, read-only XML. Any URL in the
+ * reason text is additionally made clickable.
  */
 export function FaultOverview({ fault }: FaultOverviewProps) {
   return (

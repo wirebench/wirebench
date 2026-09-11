@@ -1,7 +1,7 @@
 /**
  * Finding the `cid:` references an envelope makes, without a DOM.
  *
- * Both MTOM and SwA key off the same syntactic rule SoapUI uses: an element whose text
+ * Both MTOM and SwA key off the same syntactic rule: an element whose text
  * content is *exactly* a `cid:` reference points at an attachment. Anything else — a
  * sentence that merely mentions `cid:`, an attribute, a mixed-content element — is left
  * alone. The tolerant scanner is used (rather than a strict parse) because a request being

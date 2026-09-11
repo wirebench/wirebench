@@ -1,5 +1,5 @@
 /**
- * SoapUI-style "Generate Documentation": renders an imported definition as a
+ * "Generate Documentation": renders an imported definition as a
  * single self-contained document — HTML (inline CSS, no scripts, everything
  * escaped) or Markdown (with a table of contents).
  *

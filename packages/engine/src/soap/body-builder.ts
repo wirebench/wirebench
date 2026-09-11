@@ -90,7 +90,7 @@ function isUnknownType(ctx: BodyBuildContext, type: QName): boolean {
  * parts, which are always element-like whatever the body style is).
  *
  * A part declaring a `type` rather than an `element` is not WS-I conformant,
- * but is common in the wild; like SoapUI, the part's own name is used as the
+ * but is common in the wild; the part's own name is then used as the
  * (unqualified) element name and no problem is reported.
  */
 export function buildDocumentPart(ctx: BodyBuildContext, part: Part): string | undefined {

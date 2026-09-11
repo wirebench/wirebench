@@ -75,7 +75,7 @@ describe('XSD built-in type table', () => {
     ['dateTime', '2000-01-01T00:00:00'],
     ['anyURI', 'http://example.com'],
     ['base64Binary', 'YQ=='],
-  ])('%s has the SoapUI-parity sample value %s', (name, sample) => {
+  ])('%s has the sample value %s', (name, sample) => {
     expect(lookupBuiltin({ namespaceUri: NS.XSD, localName: name })?.sampleValue).toBe(sample);
   });
 

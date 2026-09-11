@@ -157,7 +157,7 @@ function withExtraTrustAnchors(request: ResolvedSendRequest): ResolvedSendReques
 /**
  * Resolves a dump-file target against the project folder and refuses one that would land
  * outside it, unless the exact path was chosen through the Dump File "Browse…" picker this
- * session — SoapUI's dump file can point anywhere the *user* has explicitly picked, but a
+ * session — a dump file may point anywhere the *user* has explicitly picked, but a
  * relative path (or an absolute one merely typed into the property) must stay inside the
  * project.
  */
@@ -185,7 +185,7 @@ async function resolveDumpPath(
 }
 
 /**
- * SoapUI's "Dump File": writes the response body of a completed send to the path the request
+ * "Dump File": writes the response body of a completed send to the path the request
  * names, resolving a relative path against the project folder and refusing to write (or create
  * directories) anywhere outside it — see {@link resolveDumpPath}. A write failure (or the
  * refusal itself) is reported as a problem on the exchange rather than failing the send — the
@@ -229,7 +229,7 @@ function unknownRequest(requestId: string): ProjectError {
 }
 
 /**
- * SoapUI's "Recreate Request": regenerate the operation's envelope, merge the saved one into
+ * "Recreate Request": regenerate the operation's envelope, merge the saved one into
  * it (unless `empty`, which starts from a bare envelope), then save the result through the
  * project service so the renderer's mirror and the folder on disk both follow.
  */

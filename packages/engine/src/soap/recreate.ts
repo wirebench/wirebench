@@ -1,5 +1,5 @@
 /**
- * SoapUI-style "Recreate Request": merge a freshly generated envelope
+ * "Recreate Request": merge a freshly generated envelope
  * (the source of structure) with an existing edited envelope (the source of
  * values), by matching elements on a root-relative path of
  * `localName[siblingIndex]` steps rather than by DOM identity.
@@ -104,7 +104,7 @@ function escapeXmlAttr(value: string): string {
 }
 
 /**
- * Merges `generatedXml` (structure) with `currentXml` (values), per SoapUI's
+ * Merges `generatedXml` (structure) with `currentXml` (values), per the
  * "Recreate Request" semantics.
  */
 export function recreateRequest(currentXml: string, generatedXml: string, options: RecreateOptions): RecreateResult {

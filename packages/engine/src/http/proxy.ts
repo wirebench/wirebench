@@ -76,7 +76,7 @@ function matchesCidr(host: string, cidr: string): boolean {
   return (ipv4ToInt(host) & mask) >>> 0 === (ipv4ToInt(network) & mask) >>> 0;
 }
 
-/** The loopback spellings the `localhost` shorthand stands for, as SoapUI's exclude list does. */
+/** The loopback spellings the `localhost` shorthand stands for in a proxy exclude list. */
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /** Turns a hostname glob (`*.corp.test`) into an anchored, case-insensitive regular expression. */
@@ -90,8 +90,8 @@ function globToRegExp(pattern: string): RegExp {
  *
  * An entry matches when it is the host verbatim, a glob the host matches, a CIDR block the
  * host's IPv4 literal falls in, or the `localhost` shorthand and the host is any loopback
- * spelling. A leading `.` (`.corp.test`) is read as "this domain and its subdomains", which is
- * how both SoapUI and `no_proxy` spell it.
+ * spelling. A leading `.` (`.corp.test`) is read as "this domain and its subdomains", which
+ * is how `no_proxy` and the usual proxy exclude lists spell it.
  *
  * @param hostname the host being connected to, without port or brackets
  * @param excludes the configured exclude entries

@@ -130,7 +130,7 @@ function seedNamespaces(input: RequestBuildInput, bindingOperation: BindingOpera
 
 /** Options accepted by {@link buildSampleRequest} beyond the generator's own. */
 export interface RequestBuildOptions extends SoapActionOptions {
-  /** Indent per level; three spaces by default, matching SoapUI. */
+  /** Indent per level; three spaces by default. */
   readonly indent?: string;
 }
 
@@ -216,7 +216,7 @@ export function buildSampleRequest(
 }
 
 /**
- * Builds an empty envelope for one binding operation — SoapUI's "Create Empty"
+ * Builds an empty envelope for one binding operation — the "Create Empty"
  * request. The envelope carries an empty `Header` and `Body`, while the SOAP
  * version, action and `Content-Type` are exactly those of a sample request.
  */

@@ -32,8 +32,7 @@ import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
 /**
  * Sends `input.envelopeXml` to `input.endpoint` over HTTP, computing the
  * `Content-Type`/`SOAPAction` headers for `input.soapVersion` and merging in
- * any caller-supplied `input.headers` (which override the computed ones,
- * matching SoapUI's behaviour).
+ * any caller-supplied `input.headers`, which override the computed ones.
  *
  * HTTP-layer failures (timeout, abort, DNS, TLS, ...) propagate as
  * {@link HttpError}; a non-2xx HTTP status is not an error and is returned

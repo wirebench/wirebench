@@ -6,7 +6,7 @@
  * back: it replaces one such range with an escaped value and returns the whole new document,
  * so the request pane can commit it through the very same path as a keystroke.
  *
- * Deliberately never adds or removes nodes — SoapUI's Outline editor only ever edits values in
+ * Deliberately never adds or removes nodes — the Outline editor only ever edits values in
  * place, and this module has no API surface for anything else.
  */
 

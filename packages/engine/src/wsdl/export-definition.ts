@@ -1,6 +1,6 @@
 /**
  * Writes an entire resolved definition (the root WSDL and every document it
- * imports/includes) to a plain folder, SoapUI-"Export Definition" style: the
+ * imports/includes) to a plain folder — "Export Definition": the
  * folder is self-contained and portable, with every cross-document reference
  * rewritten to a relative file name so the exported set opens standalone.
  *

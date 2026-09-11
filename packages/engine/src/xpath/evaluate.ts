@@ -1,7 +1,7 @@
 /**
  * XPath 3.1 / XQuery 3.1 evaluation against a response document, for the response Query
- * scratchpad. SoapUI OSS only offers XPath 2.0 inside assertions; this runs both languages,
- * over the actual bytes the server returned, ahead of any assertion.
+ * scratchpad. Where classic SOAP workbenches limit querying to XPath 2.0 inside assertions,
+ * this runs both languages over the actual bytes the server returned, ahead of any assertion.
  */
 
 import fontoxpathModule from 'fontoxpath';

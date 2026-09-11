@@ -256,7 +256,7 @@ export function documentWrapper(fileSet: SchemaFileSet): string {
  * The wrapper schema for `rpc` style: the body child is the operation wrapper
  * element, which no schema declares, so one is synthesized here with a child
  * per `wsdl:part`. `xs:all` rather than `xs:sequence`, because `parameterOrder`
- * (and SoapUI-style generation) may order the parts differently from the
+ * (and sample generation) may order the parts differently from the
  * `wsdl:message`, and part order is not something this validator should police.
  */
 export function rpcWrapper(
