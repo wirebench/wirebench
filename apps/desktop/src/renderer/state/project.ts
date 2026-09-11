@@ -409,12 +409,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   const apply = (projectId: string, project: ProjectWire | null): void => {
     set((state) => {
       const projects = { ...state.projects };
-      if (project === null) {
-        delete projects[projectId];
-      } else {
+      if (project !== null) {
         projects[project.id] = project;
+        return { ...state, projects, ...indexesOf(projects) };
       }
-      return { ...state, projects, ...indexesOf(projects) };
+      // A removed project takes its per-project state and its unacknowledged patches with it.
+      const removed = projects[projectId];
+      for (const request of removed?.requests ?? []) {
+        pending.delete(request.id);
+      }
+      for (const environment of removed?.environments ?? []) {
+        pendingEnvironment.delete(environment.id);
+      }
+      delete projects[projectId];
+      const saveStatus = { ...state.saveStatus };
+      delete saveStatus[projectId];
+      const changedOnDisk = { ...state.changedOnDisk };
+      delete changedOnDisk[projectId];
+      return { ...state, projects, saveStatus, changedOnDisk, ...indexesOf(projects) };
     });
   };
 
@@ -430,12 +442,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     return projectId;
   };
 
+  /**
+   * Bumped by `reset()`. A mutation reply that lands after the workspace closed belongs to a
+   * project that is gone, and applying it would put that project back into an empty mirror.
+   */
+  let generation = 0;
+
   const mutate = async (projectId: string, change: ProjectChange): Promise<ProjectMutateResponse> => {
+    const sentIn = generation;
     const result = await ipc().project.mutate({ projectId, change });
     if (!result.ok) {
       throw asError(result.error);
     }
-    apply(projectId, result.value.project);
+    if (sentIn === generation) {
+      apply(projectId, result.value.project);
+    }
     return result.value;
   };
 
@@ -468,6 +489,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     applySnapshot: apply,
 
     reset: () => {
+      generation += 1;
       pending.clear();
       pendingEnvironment.clear();
       set((state) => ({ ...state, ...EMPTY }));

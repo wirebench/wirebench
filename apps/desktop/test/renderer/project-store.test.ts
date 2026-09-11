@@ -716,6 +716,43 @@ describe('useProjectStore: several projects at once', () => {
     expect(state.order).toEqual([{ projectId: 'proj-2', interfaceIds: ['iface-2'] }]);
   });
 
+  it('removing a project drops its save status and changed-on-disk paths', () => {
+    applyProject();
+    useProjectStore.getState().applySnapshot('proj-2', billing());
+    useProjectStore.setState({
+      saveStatus: { 'proj-1': 'saved', 'proj-2': 'error' },
+      changedOnDisk: { 'proj-1': ['wirebench.yaml'], 'proj-2': [] },
+    });
+
+    useProjectStore.getState().applySnapshot('proj-1', null);
+
+    expect(useProjectStore.getState().saveStatus).toEqual({ 'proj-2': 'error' });
+    expect(useProjectStore.getState().changedOnDisk).toEqual({ 'proj-2': [] });
+  });
+
+  it('drops a mutation reply that lands after reset()', async () => {
+    applyProject();
+    type Reply = { ok: true; value: { project: ProjectWire } };
+    let answer: ((reply: Reply) => void) | undefined;
+    installWirebenchApi({
+      project: {
+        mutate: vi.fn(
+          () =>
+            new Promise<Reply>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    });
+
+    const inFlight = useProjectStore.getState().setProjectProperty('proj-1', 'host', 'x');
+    useProjectStore.getState().reset();
+    answer?.({ ok: true, value: { project: projectWire() } });
+    await inFlight;
+
+    expect(useProjectStore.getState().projects).toEqual({});
+  });
+
   it('routes an entity-addressed action to the project that owns the entity', async () => {
     applyProject();
     useProjectStore.getState().applySnapshot('proj-2', billing());
