@@ -167,6 +167,7 @@ export const requestFileSchema = z.looseObject({
   wssOutgoingRef: z.string().optional(),
   wssIncomingRef: z.string().optional(),
   properties: requestPropertiesSchema,
+  orphaned: z.boolean().optional(),
 });
 
 /** `environments/<slug>.yaml`. */

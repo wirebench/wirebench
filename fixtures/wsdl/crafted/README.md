@@ -101,3 +101,11 @@ Each is deliberately tiny but structurally valid.
   (`packages/engine/test/unit/validate/wsi/wsdl.test.ts`) asserts each file produces exactly one
   finding for its own assertion **and trips no other assertion**, so every fixture stays a
   single-violation document.
+
+- **versioned/** — the `v1` → `v2` pair driving Update Definition
+  (`packages/engine/src/wsdl/update-definition.ts`). Both are single, self-contained documents
+  (`versioned/v1/service.wsdl`, `versioned/v2/service.wsdl`) so the e2e test SOAP server, which
+  serves only a fixture's root WSDL, can serve either. `v2` adds the `Subtract` operation, adds an
+  optional `note` child to the `Echo` input element, removes the `Legacy` operation and adds a
+  second port (`VersionedAltPort`) with a second `soap:address` — one instance of every
+  `UpdatePlan` category.

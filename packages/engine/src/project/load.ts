@@ -134,6 +134,7 @@ async function loadRequests(fs: FsLike, root: string, dir: string, problems: Pro
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),
       ...optional('wssIncomingRef', parsed.wssIncomingRef),
       properties: exact<RequestProperties>(parsed.properties),
+      ...(parsed.orphaned === true ? { orphaned: true } : {}),
       envelopeXml: envelope === undefined ? '' : envelope.toString('utf8'),
     });
   }

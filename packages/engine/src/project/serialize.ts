@@ -46,6 +46,7 @@ function requestDocument(request: RequestDef): Record<string, unknown> {
     wssOutgoingRef: request.wssOutgoingRef,
     wssIncomingRef: request.wssIncomingRef,
     properties: compact({ ...request.properties }),
+    orphaned: request.orphaned === true ? true : undefined,
   });
 }
 

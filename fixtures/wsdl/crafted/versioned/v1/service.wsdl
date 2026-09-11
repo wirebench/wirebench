@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Version 1 of the "versioned" fixture pair (see ../v2/service.wsdl). Deliberately a single,
+  self-contained document so the e2e test SOAP server — which serves only a fixture's root
+  WSDL — can serve either version over HTTP.
+-->
+<wsdl:definitions name="VersionedService"
+                  targetNamespace="urn:wb:versioned"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:versioned"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:versioned" elementFormDefault="qualified"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <xsd:element name="Echo">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="EchoResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="text" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Add">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="a" type="xsd:int"/>
+            <xsd:element name="b" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AddResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="result" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="Legacy" type="xsd:string"/>
+      <xsd:element name="LegacyResponse" type="xsd:string"/>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest"><wsdl:part name="body" element="tns:Echo"/></wsdl:message>
+  <wsdl:message name="EchoReply"><wsdl:part name="body" element="tns:EchoResponse"/></wsdl:message>
+  <wsdl:message name="AddRequest"><wsdl:part name="body" element="tns:Add"/></wsdl:message>
+  <wsdl:message name="AddReply"><wsdl:part name="body" element="tns:AddResponse"/></wsdl:message>
+  <wsdl:message name="LegacyRequest"><wsdl:part name="body" element="tns:Legacy"/></wsdl:message>
+  <wsdl:message name="LegacyReply"><wsdl:part name="body" element="tns:LegacyResponse"/></wsdl:message>
+
+  <wsdl:portType name="VersionedPortType">
+    <wsdl:operation name="Echo">
+      <wsdl:documentation>Echoes the supplied text back to the caller.</wsdl:documentation>
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoReply"/>
+    </wsdl:operation>
+    <wsdl:operation name="Add">
+      <wsdl:input message="tns:AddRequest"/>
+      <wsdl:output message="tns:AddReply"/>
+    </wsdl:operation>
+    <wsdl:operation name="Legacy">
+      <wsdl:documentation>Removed in v2.</wsdl:documentation>
+      <wsdl:input message="tns:LegacyRequest"/>
+      <wsdl:output message="tns:LegacyReply"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="VersionedBinding" type="tns:VersionedPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:versioned:Echo" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Add">
+      <soap:operation soapAction="urn:wb:versioned:Add" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Legacy">
+      <soap:operation soapAction="urn:wb:versioned:Legacy" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="VersionedService">
+    <wsdl:port name="VersionedPort" binding="tns:VersionedBinding">
+      <soap:address location="http://example.invalid/versioned"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

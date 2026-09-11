@@ -40,6 +40,16 @@ export interface SaveProjectOptions {
   readonly fs?: FsLike;
   /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
   readonly writer?: string;
+  /**
+   * Relative `<slug>.xml.bak` paths to write before this save overwrites the corresponding
+   * `<slug>.xml`, as produced by `wsdl/update-definition.ts`'s `applyUpdate`. The bytes copied
+   * are whatever is on disk *now*, so the backup is the envelope as the user last saw it — and
+   * it is written whenever the source exists, even if this save turns out not to change it, so
+   * that ticking "Create backups" always produces the file the user was promised. A path whose
+   * `.xml` does not exist is skipped silently. `.bak` files are not part of the managed file
+   * set, so nothing ever deletes them again.
+   */
+  readonly backups?: Iterable<string>;
 }
 
 function toAbsolute(root: string, relative: string): string {
@@ -156,6 +166,18 @@ export async function saveProject(project: Project, root: string, options?: Save
   const fs = options?.fs ?? nodeFs;
   const desired = projectFiles(project, options?.writer !== undefined ? { writer: options.writer } : undefined);
   const existing = await listManagedFiles(fs, root);
+
+  for (const backup of options?.backups ?? []) {
+    if (!backup.endsWith('.xml.bak')) {
+      continue;
+    }
+    const source = backup.slice(0, -'.bak'.length);
+    const current = await readFileIfExists(fs, toAbsolute(root, source));
+    if (current === undefined) {
+      continue;
+    }
+    await writeFileAtomic(fs, toAbsolute(root, backup), current);
+  }
 
   const written: string[] = [];
   const unchanged: string[] = [];

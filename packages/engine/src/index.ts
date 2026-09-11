@@ -70,6 +70,14 @@ export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } 
 export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
 export { exportDefinition } from './wsdl/export-definition.js';
 export type { ExportDefinitionOptions, ExportedFile, ExportResult } from './wsdl/export-definition.js';
+export { applyUpdate, planUpdate } from './wsdl/update-definition.js';
+export type {
+  ApplyUpdateOptions,
+  ApplyUpdateResult,
+  ChangedOperation,
+  OperationChangeReason,
+  UpdatePlan,
+} from './wsdl/update-definition.js';
 
 export { buildSchemaSet } from './xsd/schema-set.js';
 export type { SchemaSet, SchemaSetInput, SchemaElementsInput } from './xsd/schema-set.js';

@@ -164,6 +164,13 @@ export interface RequestDef {
   /** Name of a `wss/incoming/<name>.yaml` configuration. */
   readonly wssIncomingRef?: string;
   readonly properties: RequestProperties;
+  /**
+   * True when the operation this request belongs to is no longer in the interface's definition
+   * (see `wsdl/update-definition.ts`). Nothing is ever deleted on an update, so the request
+   * survives with this flag and the UI badges it; clearing it is what a later definition that
+   * brings the operation back does.
+   */
+  readonly orphaned?: boolean;
   /** Stored verbatim in the sibling `.xml` file, byte for byte. */
   readonly envelopeXml: string;
 }
