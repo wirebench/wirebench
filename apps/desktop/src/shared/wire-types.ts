@@ -154,6 +154,82 @@ export type OperationSummaryWire = z.infer<typeof operationSummaryWireSchema>;
 export const definitionCloseRequestSchema = z.object({ interfaceId: z.string() });
 export const definitionCloseResponseSchema = z.object({ closed: z.boolean() });
 
+/** Request payload for `definition.documents`, `definition.schemaIndex`. */
+export const definitionInterfaceRequestSchema = z.object({ interfaceId: z.string() });
+
+/** One document of an imported definition's bundle, with its full text (read from main's cache, never refetched). */
+export const definitionDocumentWireSchema = z.object({
+  location: z.string(),
+  kind: z.enum(['wsdl', 'xsd']),
+  /** Byte length of the document as fetched. */
+  size: z.number(),
+  text: z.string(),
+  /** The document's `targetNamespace`, when it declares one. */
+  namespace: z.string().optional(),
+});
+export type DefinitionDocumentWire = z.infer<typeof definitionDocumentWireSchema>;
+
+/** Response payload for `definition.documents`: the bundle in discovery order, root first. */
+export const definitionDocumentsResponseSchema = z.object({
+  documents: z.array(definitionDocumentWireSchema),
+  /** Epoch milliseconds at which main last loaded this definition into memory. */
+  loadedAt: z.number(),
+});
+export type DefinitionDocumentsResponse = z.infer<typeof definitionDocumentsResponseSchema>;
+
+/** Which kind of schema component a Schema-browser row (or a declaration lookup) points at. */
+export const schemaComponentKindSchema = z.enum(['element', 'complexType', 'simpleType', 'group', 'attributeGroup']);
+export type SchemaComponentKind = z.infer<typeof schemaComponentKindSchema>;
+
+/** One named global schema component, with where it was declared. */
+export const schemaComponentWireSchema = z.object({
+  name: z.string(),
+  /** Clark-notation type reference for an element; absent for an anonymous (inline) type. */
+  typeName: z.string().optional(),
+  /** Document location the component was declared in. */
+  document: z.string(),
+  line: z.number().optional(),
+});
+export type SchemaComponentWire = z.infer<typeof schemaComponentWireSchema>;
+
+/** Every global component of one namespace, grouped by kind. */
+export const schemaNamespaceWireSchema = z.object({
+  uri: z.string(),
+  elements: z.array(schemaComponentWireSchema),
+  complexTypes: z.array(schemaComponentWireSchema),
+  simpleTypes: z.array(schemaComponentWireSchema),
+  groups: z.array(schemaComponentWireSchema),
+  attributeGroups: z.array(schemaComponentWireSchema),
+});
+export type SchemaNamespaceWire = z.infer<typeof schemaNamespaceWireSchema>;
+
+/** Response payload for `definition.schemaIndex`. */
+export const definitionSchemaIndexResponseSchema = z.object({ namespaces: z.array(schemaNamespaceWireSchema) });
+export type DefinitionSchemaIndexResponse = z.infer<typeof definitionSchemaIndexResponseSchema>;
+
+/** Request payload for `definition.declarationAt`: a caret offset into one request envelope. */
+export const definitionDeclarationAtRequestSchema = z.object({
+  interfaceId: z.string(),
+  /** Clark-notation binding QName; carried for symmetry with the other editor channels. */
+  bindingName: z.string().optional(),
+  operationName: z.string().optional(),
+  envelopeXml: z.string(),
+  offset: z.number(),
+});
+export type DefinitionDeclarationAtRequest = z.infer<typeof definitionDeclarationAtRequestSchema>;
+
+/** Response payload for `definition.declarationAt`: the declaration found, or `null`. */
+export const definitionDeclarationAtResponseSchema = z
+  .object({
+    namespace: z.string(),
+    name: z.string(),
+    kind: schemaComponentKindSchema,
+    document: z.string(),
+    line: z.number().optional(),
+  })
+  .nullable();
+export type DefinitionDeclarationAtResponse = z.infer<typeof definitionDeclarationAtResponseSchema>;
+
 const generateOptionsSchema = z.object({
   includeOptional: z.boolean().optional(),
   sampleValues: z.boolean().optional(),

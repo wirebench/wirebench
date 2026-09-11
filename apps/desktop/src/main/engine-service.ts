@@ -50,6 +50,8 @@ import type { SendAttachmentInput } from './project-service.js';
 interface StoredDefinition {
   readonly result: ImportResult;
   readonly definitionUrl: string;
+  /** Epoch milliseconds at which this definition was loaded into memory — the Interface editor's "last import". */
+  readonly loadedAt: number;
 }
 
 /** Hooks the IPC layer supplies so `EngineService` never has to know about `ipcMain`/`webContents`. */
@@ -285,7 +287,7 @@ export class EngineService {
       }
     }
     const definitionUrl = result.bundle.root.location;
-    this.definitions.set(id, { result, definitionUrl });
+    this.definitions.set(id, { result, definitionUrl, loadedAt: Date.now() });
     const summary = toInterfaceSummary(result, id, definitionUrl);
     hooks.onProgress?.({
       kind: 'import',
@@ -341,7 +343,7 @@ export class EngineService {
       }
     }
     const definitionUrl = result.bundle.root.location;
-    this.definitions.set(input.interfaceId, { result, definitionUrl });
+    this.definitions.set(input.interfaceId, { result, definitionUrl, loadedAt: Date.now() });
     const summary = toInterfaceSummary(result, input.interfaceId, definitionUrl);
     hooks.onProgress?.({
       kind: 'import',
@@ -437,6 +439,15 @@ export class EngineService {
   /** The whole in-memory `ImportResult` for `interfaceId`. Throws `unknown-interface` if absent. */
   resultFor(interfaceId: string): ImportResult {
     return this.lookup(interfaceId);
+  }
+
+  /** When `interfaceId`'s definition was last loaded into memory (epoch ms). Throws `unknown-interface` if absent. */
+  loadedAtFor(interfaceId: string): number {
+    const stored = this.definitions.get(interfaceId);
+    if (stored === undefined) {
+      this.lookup(interfaceId);
+    }
+    return stored?.loadedAt ?? 0;
   }
 
   private lookup(interfaceId: string): ImportResult {

@@ -33,6 +33,9 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       import: fail('definition.import'),
       close: fail('definition.close'),
       cancelImport: fail('definition.cancelImport'),
+      documents: fail('definition.documents'),
+      schemaIndex: fail('definition.schemaIndex'),
+      declarationAt: fail('definition.declarationAt'),
     },
     request: {
       generate: fail('request.generate'),
