@@ -676,6 +676,7 @@ export type UnresolvedRefWire = z.infer<typeof unresolvedRefWireSchema>;
 /** Where the URL a request will actually be sent to came from — mirrors the engine's `EndpointSource`. */
 export const endpointSourceSchema = z.enum([
   'environment',
+  'workspace-environment',
   'request-custom',
   'request-endpoint',
   'interface-default',

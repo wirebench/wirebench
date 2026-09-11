@@ -5,6 +5,7 @@ import type { SoapSendInput } from '../../../src/types.js';
 const scopes: PropertyScopes = {
   project: { name: 'proj-name', which: 'name', selfRef: '${#Project#selfRef}' },
   env: { name: 'env-name', host: 'example.test' },
+  workspace: { name: 'workspace-name', onlyWorkspace: 'w-value' },
   global: { name: 'global-name', onlyGlobal: 'g-value' },
   system: { MY_VAR: 'sys-value' },
 };
@@ -13,6 +14,7 @@ describe('expand', () => {
   it.each([
     ['${#Project#name}', 'proj-name'],
     ['${#Env#name}', 'env-name'],
+    ['${#Workspace#name}', 'workspace-name'],
     ['${#Global#name}', 'global-name'],
     ['${#System#MY_VAR}', 'sys-value'],
   ])('resolves explicit scope form %s', (input, expected) => {
@@ -21,9 +23,36 @@ describe('expand', () => {
     expect(result.unresolved).toEqual([]);
   });
 
-  it('shorthand prefers env over project over global', () => {
+  it('resolves ${#Workspace#x} and reports it unresolved when missing', () => {
+    const result = expand('${#Workspace#onlyWorkspace}', scopes);
+    expect(result.text).toBe('w-value');
+    expect(result.unresolved).toEqual([]);
+
+    const missing = expand('${#Workspace#missing}', scopes);
+    expect(missing.text).toBe('${#Workspace#missing}');
+    expect(missing.unresolved).toEqual([
+      expect.objectContaining({ scope: 'Workspace', name: 'missing', code: 'missing' }),
+    ]);
+  });
+
+  it('shorthand prefers env over project over workspace over global', () => {
     expect(expand('${name}', scopes).text).toBe('env-name');
+    expect(expand('${onlyWorkspace}', scopes).text).toBe('w-value');
     expect(expand('${onlyGlobal}', scopes).text).toBe('g-value');
+  });
+
+  it.each([
+    ['Env', { env: { dup: 'env-value' }, project: { dup: 'proj-value' }, workspace: { dup: 'ws-value' } }],
+    ['Project', { project: { dup: 'proj-value' }, workspace: { dup: 'ws-value' } }],
+    ['Workspace', { workspace: { dup: 'ws-value' } }],
+  ])('shorthand order: %s wins when present', (expectedScope, overrides) => {
+    const result = expand('${dup}', { ...scopes, ...overrides, global: { ...scopes.global, dup: 'global-value' } });
+    const expected: Record<string, string> = {
+      Env: 'env-value',
+      Project: 'proj-value',
+      Workspace: 'ws-value',
+    };
+    expect(result.text).toBe(expected[expectedScope]);
   });
 
   it('shorthand never implicitly reaches System', () => {

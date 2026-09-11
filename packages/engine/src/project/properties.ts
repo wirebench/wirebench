@@ -1,10 +1,11 @@
 /**
  * Property expansion over the `${#Project#name}`, `${#Env#name}`,
- * `${#Global#name}` and `${#System#name}` syntax, plus the shorthand
- * `${name}` which resolves through the scope chain Env -> Project -> Global (System is never
- * implicit). Values are themselves expanded recursively (cycle-safe, depth
- * limited); unresolved expressions are left verbatim in the output and
- * reported via `unresolved`.
+ * `${#Workspace#name}`, `${#Global#name}` and `${#System#name}` syntax, plus
+ * the shorthand `${name}` which resolves through the scope chain
+ * Env -> Project -> Workspace -> Global (System is never implicit). Values
+ * are themselves expanded recursively (cycle-safe, depth limited);
+ * unresolved expressions are left verbatim in the output and reported via
+ * `unresolved`.
  *
  * Pure module: no I/O beyond reading the `scopes.system` map the caller
  * passes in (default `process.env`).
@@ -18,6 +19,8 @@ import type { SoapSendInput } from '../types.js';
 export interface PropertyScopes {
   readonly project: PropertyMap;
   readonly env?: PropertyMap;
+  /** Workspace-level properties, when expanding within a workspace. */
+  readonly workspace?: PropertyMap;
   readonly global: PropertyMap;
   /** Defaults to `process.env` when omitted. */
   readonly system?: Readonly<Record<string, string | undefined>>;
@@ -57,7 +60,7 @@ export interface ExpandResult {
 }
 
 const DEFAULT_MAX_DEPTH = 8;
-const SCOPE_NAMES = new Set(['Project', 'Env', 'Global', 'System']);
+const SCOPE_NAMES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System']);
 
 interface ParsedExpr {
   /** Explicit scope (`Project`/`Env`/`Global`/`System`), or undefined for the shorthand form. */
@@ -86,6 +89,8 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
       return scopes.project[name];
     case 'Env':
       return scopes.env?.[name];
+    case 'Workspace':
+      return scopes.workspace?.[name];
     case 'Global':
       return scopes.global[name];
     case 'System':
@@ -95,13 +100,16 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
   }
 }
 
-/** Resolves the shorthand `${name}` through Env -> Project -> Global. */
+/** Resolves the shorthand `${name}` through Env -> Project -> Workspace -> Global. */
 function lookupShorthand(name: string, scopes: PropertyScopes): { scope: string; value: string } | undefined {
   if (scopes.env !== undefined && Object.hasOwn(scopes.env, name)) {
     return { scope: 'Env', value: scopes.env[name]! };
   }
   if (Object.hasOwn(scopes.project, name)) {
     return { scope: 'Project', value: scopes.project[name]! };
+  }
+  if (scopes.workspace !== undefined && Object.hasOwn(scopes.workspace, name)) {
+    return { scope: 'Workspace', value: scopes.workspace[name]! };
   }
   if (Object.hasOwn(scopes.global, name)) {
     return { scope: 'Global', value: scopes.global[name]! };
