@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { OutgoingConfigEditor } from '../../src/renderer/features/wss/outgoing-config-editor.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import type { ProjectWire, WssOutgoingWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire, WssEntryWire, WssOutgoingWire } from '../../src/shared/wire-types.js';
 
 const project = { id: 'p1', name: 'Demo', dir: '/tmp/demo' } as unknown as ProjectWire;
 
@@ -89,6 +89,76 @@ describe('OutgoingConfigEditor', () => {
 
     fireEvent.click(screen.getByLabelText('Remove Timestamp'));
     expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [config.entries[1]] });
+  });
+
+  it("adds a signature entry with this build's defaults", () => {
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [] }]);
+    expand();
+    fireEvent.change(screen.getByLabelText('Add entry'), { target: { value: 'signature' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [
+        {
+          kind: 'signature',
+          keystoreRef: '',
+          keyIdentifierType: 'BinarySecurityToken',
+          signatureAlgorithm: 'rsa-sha256',
+          digestAlgorithm: 'sha256',
+          canonicalization: 'exc-c14n',
+          useSingleCertificate: true,
+          parts: [
+            { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+            {
+              name: 'Timestamp',
+              namespace: 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd',
+              encode: 'Content',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('edits a signature entry and its parts', () => {
+    const signature: WssEntryWire = {
+      kind: 'signature',
+      keystoreRef: 'ks1',
+      keyIdentifierType: 'BinarySecurityToken',
+      signatureAlgorithm: 'rsa-sha256',
+      digestAlgorithm: 'sha256',
+      canonicalization: 'exc-c14n',
+      useSingleCertificate: true,
+      parts: [{ name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' }],
+    };
+    const { updateWssOutgoing } = setUp([{ ...config, entries: [signature] }]);
+    expand();
+
+    fireEvent.change(screen.getByLabelText('Key identifier type'), { target: { value: 'Thumbprint' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, keyIdentifierType: 'Thumbprint' }],
+    });
+
+    fireEvent.change(screen.getByLabelText('Signature algorithm'), { target: { value: 'rsa-sha1' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, signatureAlgorithm: 'rsa-sha1' }],
+    });
+
+    fireEvent.click(screen.getByLabelText('Use single certificate'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, useSingleCertificate: false }],
+    });
+
+    fireEvent.change(screen.getByLabelText('Part 1 name'), { target: { value: 'Echo' } });
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, parts: [{ ...signature.parts[0], name: 'Echo' }] }],
+    });
+
+    fireEvent.click(screen.getByTestId('wss-part-add'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', {
+      entries: [{ ...signature, parts: [...signature.parts, { name: '', namespace: '', encode: 'Content' }] }],
+    });
+
+    fireEvent.click(screen.getByLabelText('Remove part 1'));
+    expect(updateWssOutgoing).toHaveBeenLastCalledWith('w1', { entries: [{ ...signature, parts: [] }] });
   });
 
   it('shows an unsupported entry as such and never offers to add one', () => {

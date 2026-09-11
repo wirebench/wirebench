@@ -15,7 +15,7 @@ import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { useProjectStore } from '../../state/project.js';
-import { TimestampFields, UsernameTokenFields, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
+import { SignatureFields, TimestampFields, UsernameTokenFields, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
@@ -26,11 +26,37 @@ const ENTRY_LABEL: Readonly<Record<WssEntryWire['kind'], string>> = {
   encryption: 'Encryption',
 };
 
+/** The parts a new signature covers: the SOAP 1.1 `Body` and the WS-Security `Timestamp`. */
+const DEFAULT_SIGNATURE_PARTS = [
+  { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+  {
+    name: 'Timestamp',
+    namespace: 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd',
+    encode: 'Content',
+  },
+] as const;
+
+/** The kinds the Add menu can create. */
+type NewEntryKind = 'timestamp' | 'username-token' | 'signature';
+
 /** A fresh entry of the kind the user picked from the Add menu. */
-function newEntry(kind: 'timestamp' | 'username-token'): WssEntryWire {
-  return kind === 'timestamp'
-    ? { kind: 'timestamp', timeToLiveSeconds: 300, millisecondPrecision: false }
-    : { kind: 'username-token', username: '', passwordType: 'digest', addNonce: true, addCreated: true };
+function newEntry(kind: NewEntryKind): WssEntryWire {
+  if (kind === 'timestamp') {
+    return { kind: 'timestamp', timeToLiveSeconds: 300, millisecondPrecision: false };
+  }
+  if (kind === 'username-token') {
+    return { kind: 'username-token', username: '', passwordType: 'digest', addNonce: true, addCreated: true };
+  }
+  return {
+    kind: 'signature',
+    keystoreRef: '',
+    keyIdentifierType: 'BinarySecurityToken',
+    signatureAlgorithm: 'rsa-sha256',
+    digestAlgorithm: 'sha256',
+    canonicalization: 'exc-c14n',
+    useSingleCertificate: true,
+    parts: DEFAULT_SIGNATURE_PARTS.map((part) => ({ ...part })),
+  };
 }
 
 /** Moves the entry at `index` by `delta`, or returns the list unchanged at either end. */
@@ -59,7 +85,7 @@ interface EntryProps {
 }
 
 function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProps) {
-  const supported = entry.kind === 'timestamp' || entry.kind === 'username-token';
+  const supported = entry.kind !== 'encryption';
   return (
     <li data-testid="wss-entry-row" className="rounded border border-hairline p-1">
       <div className="flex items-center gap-1">
@@ -90,6 +116,8 @@ function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProp
       {entry.kind === 'timestamp' && <TimestampFields entry={entry} onChange={onChange} />}
 
       {entry.kind === 'username-token' && <UsernameTokenFields entry={entry} onChange={onChange} />}
+
+      {entry.kind === 'signature' && <SignatureFields entry={entry} onChange={onChange} />}
 
       {!supported && <p className="mt-1 text-xs text-fg-faint">Not supported by this build yet.</p>}
     </li>
@@ -223,7 +251,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               value=""
               onChange={(event) => {
                 const kind = event.target.value;
-                if (kind === 'timestamp' || kind === 'username-token') {
+                if (kind === 'timestamp' || kind === 'username-token' || kind === 'signature') {
                   patchEntries([...config.entries, newEntry(kind)]);
                 }
                 event.target.value = '';
@@ -232,9 +260,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               <option value="">Add entry…</option>
               <option value="timestamp">Timestamp</option>
               <option value="username-token">Username Token</option>
-              <option value="signature" disabled>
-                Signature (Task 38)
-              </option>
+              <option value="signature">Signature</option>
               <option value="encryption" disabled>
                 Encryption (Task 39)
               </option>
