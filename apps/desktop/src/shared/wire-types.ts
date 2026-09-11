@@ -2401,3 +2401,69 @@ export const searchQueryResponseSchema = z.object({
   reason: z.enum(['limit', 'timeout']).optional(),
 });
 export type SearchQueryResponse = z.infer<typeof searchQueryResponseSchema>;
+
+/**
+ * One row of the workspace picker: what a directory scan of `<userData>/workspaces/*` found,
+ * without opening anything. `unreadable` marks a folder whose `workspace.yaml` is missing or
+ * corrupt — it is still listed (with a Reveal action) rather than silently dropped, and then
+ * `name` falls back to the folder name and `createdAt` is empty.
+ */
+export const workspaceSummaryWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** Absolute path of the workspace folder. Shown so two same-named workspaces can be told apart. */
+  dir: z.string(),
+  projectCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  /** From `workspace-state.json`; absent until the workspace has been opened at least once. */
+  lastOpenedAt: z.string().optional(),
+  unreadable: z.boolean().optional(),
+});
+export type WorkspaceSummaryWire = z.infer<typeof workspaceSummaryWireSchema>;
+
+/**
+ * One project of the open workspace, as the explorer's project root node sees it. `status`
+ * reports the outcome of opening it: `loading` while its host is still opening, `ready` once
+ * the model is in memory, `missing` when the folder is gone, `error` with a `message` when it
+ * would not open. A workspace always opens, whatever its projects do.
+ */
+export const workspaceProjectWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  source: z.enum(['internal', 'linked']),
+  /** Absolute: `projects/<slug>` inside the workspace, or the linked folder's own path. */
+  dir: z.string(),
+  status: z.enum(['loading', 'ready', 'missing', 'error']),
+  message: z.string().optional(),
+});
+export type WorkspaceProjectWire = z.infer<typeof workspaceProjectWireSchema>;
+
+/**
+ * One workspace environment. `endpoints` is keyed `<projectSlug>/<interfaceSlug>`, which is
+ * what lets one environment address interfaces across every project of the workspace.
+ */
+export const workspaceEnvironmentWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number().int().nonnegative(),
+  properties: z.record(z.string(), z.string()),
+  endpoints: z.record(z.string(), z.string()),
+});
+export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
+
+/** The open workspace as the renderer sees it: the manifest, its environments and its projects. */
+export const workspaceWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** Absolute path of the workspace folder. */
+  dir: z.string(),
+  properties: z.record(z.string(), z.string()),
+  environments: z.array(workspaceEnvironmentWireSchema),
+  /** The environment endpoints/properties resolve against, or absent when none is active. */
+  activeEnvironmentId: z.string().optional(),
+  projects: z.array(workspaceProjectWireSchema),
+});
+export type WorkspaceWire = z.infer<typeof workspaceWireSchema>;
