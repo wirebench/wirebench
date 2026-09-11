@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveResponseEditor } from '../../editor/active-response-editor.js';
@@ -21,10 +21,7 @@ import { SslInspector } from './inspectors/ssl-inspector.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
-import { OutlineView } from './views/outline-view.js';
-import { RawView } from './views/raw-view.js';
-import { QueryView } from './views/query-view.js';
-import { FaultOverview } from './views/fault-overview.js';
+import { FaultOverview, OutlineView, QueryView, RawView, ViewFallback } from './views/lazy-views.js';
 import type { TextRange } from './views/xml-model.js';
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column — mirrors `request-pane.tsx`'s
@@ -171,40 +168,42 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
       </div>
 
       <div data-testid="response-editor" className="min-h-0 flex-1">
-        {state?.status === 'sending' ? (
-          <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
-            <Loader2 size={14} aria-hidden="true" className="animate-spin" />
-            Sending… (Esc to cancel)
-          </div>
-        ) : view === 'raw' ? (
-          <RawView
-            base64={exchange?.http.rawResponseBase64}
-            ariaLabel="Response raw bytes"
-            emptyTitle="No response yet"
-            emptyDescription="Send this request to see the raw bytes."
-          />
-        ) : view === 'query' ? (
-          <QueryView requestId={requestId} xml={body} onReveal={handleReveal} />
-        ) : view === 'fault' && fault !== undefined ? (
-          <FaultOverview fault={fault} />
-        ) : exchange === undefined ? (
-          <EmptyState
-            title="No response yet"
-            description={
-              state?.error !== undefined
-                ? 'The last send did not complete. Fix the problem above and send again.'
-                : 'Send this request to see the response envelope, timings, and the raw exchange.'
-            }
-          />
-        ) : response?.isSoap === true && view === 'outline' ? (
-          <OutlineView xml={body} interfaceId={interfaceId} readOnly />
-        ) : response?.isSoap === true ? (
-          <XmlEditor ariaLabel="Response envelope XML" value={body} onMount={handleMount} readOnly />
-        ) : (
-          <pre className="h-full overflow-auto p-3 font-mono text-sm break-words whitespace-pre-wrap text-fg-default">
-            {body}
-          </pre>
-        )}
+        <Suspense fallback={<ViewFallback />}>
+          {state?.status === 'sending' ? (
+            <div role="status" className="flex h-full items-center justify-center gap-2 text-sm text-fg-muted">
+              <Loader2 size={14} aria-hidden="true" className="animate-spin" />
+              Sending… (Esc to cancel)
+            </div>
+          ) : view === 'raw' ? (
+            <RawView
+              base64={exchange?.http.rawResponseBase64}
+              ariaLabel="Response raw bytes"
+              emptyTitle="No response yet"
+              emptyDescription="Send this request to see the raw bytes."
+            />
+          ) : view === 'query' ? (
+            <QueryView requestId={requestId} xml={body} onReveal={handleReveal} />
+          ) : view === 'fault' && fault !== undefined ? (
+            <FaultOverview fault={fault} />
+          ) : exchange === undefined ? (
+            <EmptyState
+              title="No response yet"
+              description={
+                state?.error !== undefined
+                  ? 'The last send did not complete. Fix the problem above and send again.'
+                  : 'Send this request to see the response envelope, timings, and the raw exchange.'
+              }
+            />
+          ) : response?.isSoap === true && view === 'outline' ? (
+            <OutlineView xml={body} interfaceId={interfaceId} readOnly />
+          ) : response?.isSoap === true ? (
+            <XmlEditor ariaLabel="Response envelope XML" value={body} onMount={handleMount} readOnly />
+          ) : (
+            <pre className="h-full overflow-auto p-3 font-mono text-sm break-words whitespace-pre-wrap text-fg-default">
+              {body}
+            </pre>
+          )}
+        </Suspense>
       </div>
 
       <InspectorStrip

@@ -1,5 +1,8 @@
 import { loader } from '@monaco-editor/react';
-import * as monaco from 'monaco-editor';
+// Not `monaco-editor` itself: that entry registers every bundled language and the TS/CSS/HTML/
+// JSON language services, whose four web workers dominated the renderer's build output. See
+// `monaco-core.ts` for the trimmed set (editor features + XML/JSON/plaintext only).
+import { monaco } from './monaco-core.js';
 // Vite emits this as its own chunk and hands back a `Worker` subclass, so the worker is loaded
 // from the app's own origin (`default-src 'self'`) instead of the CDN `loader` Monaco defaults
 // to — that default would be blocked by the CSP and is the reason `loader.config` runs here.
@@ -18,7 +21,8 @@ let configured = false;
  * themes. Idempotent, and safe to call from more than one editor instance.
  *
  * XML has no language worker in Monaco — it is a pure tokenizer — so every label resolves to
- * the base editor worker, which is all the editor itself needs (diffing, link detection).
+ * the base editor worker, which is all the editor itself needs (diffing, link detection), and
+ * it is the only worker `monaco-core.ts` leaves reachable.
  */
 export function configureMonaco(): typeof monaco {
   if (configured) {

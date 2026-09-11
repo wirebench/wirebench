@@ -44,5 +44,24 @@ export default defineConfig({
   renderer: {
     resolve: { alias: sharedAlias },
     plugins: [react(), tailwindcss(), cspMetaPlugin()],
+    build: {
+      rollupOptions: {
+        output: {
+          /**
+           * Keep Monaco out of the entry chunk.
+           *
+           * Every Monaco consumer already sits behind a `React.lazy` boundary, but four of
+           * those lazy chunks import it, and Rollup hoists a module shared by several dynamic
+           * chunks into the common entry chunk. The effect was that `index.js` — the one script
+           * the window parses before it can paint — carried all ~9 MB of Monaco, so "lazy"
+           * bought nothing at startup. Naming it here makes it a sibling chunk that loads when
+           * the first editor does instead.
+           */
+          manualChunks(id: string): string | undefined {
+            return id.includes('node_modules/monaco-editor/') ? 'monaco' : undefined;
+          },
+        },
+      },
+    },
   },
 });

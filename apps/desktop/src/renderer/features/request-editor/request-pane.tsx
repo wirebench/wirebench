@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, Suspense, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveRequestEditor } from '../../editor/active-request-editor.js';
@@ -31,9 +31,7 @@ import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { goToSchemaDefinition } from './schema-navigation.js';
 import { ViewTabs } from './view-tabs.js';
-import { FormView } from './views/form-view.js';
-import { OutlineView } from './views/outline-view.js';
-import { RawView } from './views/raw-view.js';
+import { FormView, OutlineView, RawView, ViewFallback } from './views/lazy-views.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
@@ -295,42 +293,44 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {view === 'form' ? (
-          <FormView
-            xml={local}
-            interfaceId={interfaceId}
-            bindingName={bindingName}
-            operationName={operationName}
-            onValueEdit={handleOutlineEdit}
-            onEnvelopeReplace={commitNow}
-            viewType={formViewType}
-            onViewTypeChange={(next) => setFormViewType(requestId, next)}
-          />
-        ) : view === 'outline' ? (
-          <OutlineView
-            xml={local}
-            interfaceId={interfaceId}
-            readOnly={false}
-            onEdit={handleOutlineEdit}
-            onSelectRange={handleOutlineSelectRange}
-          />
-        ) : view === 'raw' ? (
-          <RawView
-            base64={rawRequestBase64}
-            ariaLabel="Request raw bytes"
-            emptyTitle="No request sent yet"
-            emptyDescription="Send this request to see the raw bytes."
-          />
-        ) : (
-          <XmlEditor
-            ariaLabel="Request envelope XML"
-            value={local}
-            onChange={handleChange}
-            onMount={handleMount}
-            lineNumbers={lineNumbers}
-            contextMenu={false}
-          />
-        )}
+        <Suspense fallback={<ViewFallback />}>
+          {view === 'form' ? (
+            <FormView
+              xml={local}
+              interfaceId={interfaceId}
+              bindingName={bindingName}
+              operationName={operationName}
+              onValueEdit={handleOutlineEdit}
+              onEnvelopeReplace={commitNow}
+              viewType={formViewType}
+              onViewTypeChange={(next) => setFormViewType(requestId, next)}
+            />
+          ) : view === 'outline' ? (
+            <OutlineView
+              xml={local}
+              interfaceId={interfaceId}
+              readOnly={false}
+              onEdit={handleOutlineEdit}
+              onSelectRange={handleOutlineSelectRange}
+            />
+          ) : view === 'raw' ? (
+            <RawView
+              base64={rawRequestBase64}
+              ariaLabel="Request raw bytes"
+              emptyTitle="No request sent yet"
+              emptyDescription="Send this request to see the raw bytes."
+            />
+          ) : (
+            <XmlEditor
+              ariaLabel="Request envelope XML"
+              value={local}
+              onChange={handleChange}
+              onMount={handleMount}
+              lineNumbers={lineNumbers}
+              contextMenu={false}
+            />
+          )}
+        </Suspense>
       </div>
       <InspectorStrip
         requestId={requestId}
