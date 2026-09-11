@@ -59,8 +59,15 @@ interface SentTls {
   readonly rejectUnauthorized?: boolean;
 }
 
-/** Registers the channels against a stubbed engine; every send lands in `sent`. */
-async function register(sent: SentTls[]): Promise<void> {
+/**
+ * Registers the channels against a stubbed engine; every send lands in `sent`, and `sends`
+ * counts how many reached the engine at all (so a *rejected* send can be told apart from one
+ * that went out carrying nothing).
+ */
+async function register(
+  sent: SentTls[],
+  options: { readonly tlsFor?: () => Promise<Record<string, unknown> | undefined> } = {},
+): Promise<void> {
   const { registerRequestChannels } = await import('../src/main/ipc/request.js');
   const engine = new EngineService();
   const response = {
@@ -111,16 +118,17 @@ async function register(sent: SentTls[]): Promise<void> {
       },
       sendInputFor: () => undefined,
       dumpFileFor: () => undefined,
+      ...(options.tlsFor !== undefined ? { tlsFor: options.tlsFor } : {}),
     },
   });
 }
 
-async function sendOnce(payload: Record<string, unknown>): Promise<void> {
+async function sendOnce(payload: Record<string, unknown>): Promise<unknown> {
   const handler = handlers.get('request.send');
   if (handler === undefined) {
     throw new Error('request.send was never registered');
   }
-  await handler({ sender: {} }, payload);
+  return await handler({ sender: {} }, payload);
 }
 
 describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
@@ -140,14 +148,17 @@ describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
     expect(sent[0]?.rejectUnauthorized).toBeUndefined();
   });
 
-  it('keeps the anchors the request already carries and adds to them', async () => {
+  it('keeps the anchors main already resolved and adds to them', async () => {
     process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
     const sent: SentTls[] = [];
-    await register(sent);
+    // The anchors a send starts with come from `ProjectService.tlsFor` — the CA-bundle
+    // preference — never from the renderer, which cannot name `ca` at all.
+    await register(sent, { tlsFor: () => Promise.resolve({ ca: ['OWN'] }) });
 
     await sendOnce({
       sendId: 'send-1',
-      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1', tls: { ca: ['OWN'] } },
+      requestId: 'req-1',
+      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
     });
 
     expect(sent[0]?.ca).toEqual(['OWN', ANCHOR]);
@@ -163,5 +174,52 @@ describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
     });
 
     expect(sent[0]).toEqual({ absent: true });
+  });
+});
+
+/**
+ * The send wire carries one TLS knob and one only: `minVersion`. Trust anchors, a client
+ * identity and — above all — `rejectUnauthorized` are main's to decide, from the CA-bundle
+ * preference, the selected keystore and the endpoint's own `trustInvalid` flag. A renderer that
+ * names any of them is refused by the schema *before* a handler runs, so there is no "was it
+ * ignored, or honoured?" to reason about.
+ */
+describe('the send wire cannot loosen TLS', () => {
+  it.each([
+    ['rejectUnauthorized', { rejectUnauthorized: false }],
+    ['ca', { ca: ['-----BEGIN CERTIFICATE-----'] }],
+    ['cert', { cert: 'pem' }],
+    ['key', { key: 'pem' }],
+    ['passphrase', { passphrase: 'p' }],
+    ['servername', { servername: 'evil.test' }],
+  ])('rejects a send naming tls.%s, without sending anything', async (_name, tls) => {
+    const sent: SentTls[] = [];
+    await register(sent);
+
+    const result = (await sendOnce({
+      sendId: 'send-1',
+      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1', tls },
+    })) as { ok: boolean; error?: { code: string } };
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
+    expect(sent).toEqual([]);
+  });
+
+  it('still accepts the one knob it owns, tls.minVersion', async () => {
+    const sent: SentTls[] = [];
+    await register(sent);
+
+    const result = (await sendOnce({
+      sendId: 'send-1',
+      input: {
+        endpoint: 'https://dev.test/soap',
+        envelopeXml: '<a/>',
+        soapVersion: '1.1',
+        tls: { minVersion: 'TLSv1.3' },
+      },
+    })) as { ok: boolean };
+
+    expect(result.ok).toBe(true);
+    expect(sent[0]).toMatchObject({ minVersion: 'TLSv1.3' });
   });
 });

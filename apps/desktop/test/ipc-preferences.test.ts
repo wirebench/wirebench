@@ -92,6 +92,40 @@ describe('preferences.* IPC', () => {
     });
   });
 
+  /**
+   * `ssl.caBundlePath` names a file main reads on every send. A renderer that could write it
+   * could point main at any file on the disk, which is exactly what the pick-or-contain rule
+   * exists to prevent — so the patch is refused, not filtered, and the path moves only through
+   * `ssl.pickCaBundle`.
+   */
+  it.each([
+    ['caBundlePath', { caBundlePath: '/etc/shadow' }],
+    ['caBundlePickedByMain', { caBundlePickedByMain: true }],
+    ['both', { caBundlePath: '/etc/shadow', caBundlePickedByMain: true }],
+    ['an empty path (the old Clear button)', { caBundlePath: '' }],
+  ])('rejects a patch carrying ssl.%s, and writes nothing', async (_name, ssl) => {
+    const changed: PreferencesWire[] = [];
+    const service = new PreferencesService(dir);
+    registerPreferencesChannels(service, (next) => changed.push(next));
+
+    const result = (await invoke('preferences.update', { patch: { ssl } })) as {
+      ok: boolean;
+      error?: { code: string };
+    };
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'preference-read-only' } });
+    expect(changed).toEqual([]);
+    expect((await new PreferencesService(dir).ready()).ssl.caBundlePath).toBeUndefined();
+  });
+
+  it('still accepts the ssl fields the renderer does own', async () => {
+    registerPreferencesChannels(new PreferencesService(dir));
+    const result = (await invoke('preferences.update', { patch: { ssl: { minVersion: 'TLSv1.3' } } })) as {
+      value: { preferences: PreferencesWire };
+    };
+    expect(result.value.preferences.ssl.minVersion).toBe('TLSv1.3');
+  });
+
   it('ignores unknown keys inside a patch', async () => {
     registerPreferencesChannels(new PreferencesService(dir));
     const result = (await invoke('preferences.update', { patch: { editor: { tabSize: 2, nonsense: 9 } } })) as {

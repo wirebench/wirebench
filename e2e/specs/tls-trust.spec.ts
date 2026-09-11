@@ -67,7 +67,7 @@ test.describe('endpoint TLS trust', () => {
       userDataDir,
       folderDialogPath: projectDir,
       keepUserDataDir: true,
-      extraEnv: { WIREBENCH_E2E_FILE_DIALOG_PATH: bundlePath },
+      extraEnv: { WIREBENCH_E2E_OPEN_PATH: bundlePath },
     });
     const page = launched.window;
     await createProjectWithCalculator(page, plain, { expectProjectName: 'CA Project' });
@@ -77,8 +77,12 @@ test.describe('endpoint TLS trust', () => {
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
     await page.getByTestId('preferences-editor').getByRole('button', { name: 'SSL', exact: true }).click();
+    // The path is never typed: Browse… asks main to run the picker (pinned here with
+    // `WIREBENCH_E2E_OPEN_PATH`), and main records the pick and persists the path itself. The
+    // field is read-only, so what it shows is what main stored.
     await page.getByTestId('ssl-ca-bundle-browse').click();
     await expect(page.getByTestId('ssl-ca-bundle')).toHaveValue(bundlePath);
+    await expect(page.getByTestId('ssl-ca-bundle')).toHaveAttribute('readonly', '');
     // Verification itself is untouched: the anchor is added, nothing is trusted blindly.
     const trustAll = page.getByLabel('Trust all certificates');
     await expect(trustAll).not.toBeChecked();

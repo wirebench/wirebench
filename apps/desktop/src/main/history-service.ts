@@ -12,7 +12,12 @@ import { join } from 'node:path';
 import { generateHistoryId, openHistory } from '@wirebench/engine';
 import type { HistoryEntry, HistoryFile, HistoryListQuery } from '@wirebench/engine';
 import { redactHeaderPairs, redactHeaders, redactXml } from './redact.js';
-import type { ExchangeSummary, HeaderEntryWire, HistoryEntryWire, SoapSendInputWire } from '../shared/wire-types.js';
+import type {
+  ExchangeSummary,
+  HeaderEntryWire,
+  HistoryEntryWire,
+  ResolvedSendInputWire,
+} from '../shared/wire-types.js';
 
 /**
  * Converts the engine's `HistoryEntry` (all `readonly` fields/arrays) to the plain, mutable
@@ -35,8 +40,8 @@ export interface RecordSendInput {
   readonly requestName: string;
   readonly interfaceName: string;
   readonly operationName: string;
-  /** The `SoapSendInputWire` actually sent (post-expansion endpoint, as-authored envelope/headers). */
-  readonly input: SoapSendInputWire;
+  /** The input actually sent (post-expansion endpoint, as-authored envelope/headers). */
+  readonly input: ResolvedSendInputWire;
   /** The UNREDACTED exchange summary, when the send completed (even as a SOAP fault). */
   readonly exchange?: ExchangeSummary;
   /** Set instead of `exchange` when the send never got a response (network error, abort, ...). */
@@ -55,7 +60,7 @@ function isOk(exchange: ExchangeSummary | undefined): boolean {
 }
 
 /** Approximate on-the-wire size of a completed exchange, from its base64 response bytes. */
-function sizeOf(exchange: ExchangeSummary | undefined, input: SoapSendInputWire): number {
+function sizeOf(exchange: ExchangeSummary | undefined, input: ResolvedSendInputWire): number {
   if (exchange === undefined) {
     return Buffer.byteLength(input.envelopeXml, 'utf8');
   }

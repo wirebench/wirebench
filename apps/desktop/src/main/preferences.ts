@@ -30,6 +30,33 @@ export function toPreferencesWire(preferences: Preferences): PreferencesWire {
   return JSON.parse(JSON.stringify(preferences)) as PreferencesWire;
 }
 
+/**
+ * Re-records a CA bundle the user picked in an earlier session as a read pick for this one.
+ *
+ * Only a path carrying `ssl.caBundlePickedByMain` qualifies: that marker is written by
+ * `ssl.pickCaBundle` after a native dialog and by nothing else, so it is the same evidence a
+ * fresh pick would be. A `preferences.yaml` edited by hand — or a path that reached the file
+ * some other way — has no marker and gets no pick, which leaves the bundle untrusted (see
+ * `ProjectService.trustAnchors`, which still runs the full `allowsReadPath` check) until the
+ * user picks it again. Without this, every restart would silently stop trusting a bundle that
+ * lives outside the project folder.
+ *
+ * @param preferences the loaded preferences document
+ * @param picks the session's picked-path memory
+ * @returns the path that was re-recorded, or `undefined` when none was
+ */
+export function rememberPickedCaBundle(
+  preferences: Preferences,
+  picks: { rememberRead(path: string): void },
+): string | undefined {
+  const { caBundlePath, caBundlePickedByMain } = preferences.ssl;
+  if (caBundlePickedByMain !== true || caBundlePath === undefined || caBundlePath.length === 0) {
+    return undefined;
+  }
+  picks.rememberRead(caBundlePath);
+  return caBundlePath;
+}
+
 /** File name (inside `userData`) the preferences are persisted to. */
 export const PREFERENCES_FILE = 'preferences.yaml';
 

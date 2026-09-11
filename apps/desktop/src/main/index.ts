@@ -6,7 +6,7 @@ import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
-import { PreferencesService, toPreferencesWire } from './preferences.js';
+import { PreferencesService, rememberPickedCaBundle, toPreferencesWire } from './preferences.js';
 import { ProjectService } from './project-service.js';
 import { RecentProjects } from './recent-projects.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
@@ -32,6 +32,7 @@ import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerSslChannels } from './ipc/ssl.js';
 import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
 import type { IpcEvent } from '../shared/ipc.js';
@@ -129,16 +130,6 @@ const projectService = new ProjectService(
   async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
 );
 
-// A CA bundle the user picked in an earlier session is remembered as a read pick at startup.
-// The path comes from main's own `userData/preferences.yaml` — written only after a native
-// dialog — so it is the same evidence a fresh pick would be, and without this every restart
-// would silently stop trusting a bundle that lives outside the project folder. See
-// `ProjectService.trustAnchors`, which still runs the full `allowsReadPath` check.
-const storedCaBundle = preferencesService.get().ssl.caBundlePath;
-if (storedCaBundle !== undefined && storedCaBundle.length > 0) {
-  dialogPicks.rememberRead(storedCaBundle);
-}
-
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
   registerAppProtocol();
@@ -168,6 +159,13 @@ void app.whenReady().then(() => {
   });
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
+  });
+  registerSslChannels({
+    preferences: preferencesService,
+    picks: dialogPicks,
+    onChanged: (preferences) => {
+      broadcast(events.preferences.changed, { preferences });
+    },
   });
   registerThemeChannels((payload) => {
     broadcast(events.theme.changed, payload);
@@ -220,6 +218,11 @@ void app.whenReady().then(() => {
   // Same warm-up for preferences: the send path reads them synchronously, and any renderer that
   // asked before the load finished is corrected by the broadcast.
   void preferencesService.load().then((preferences) => {
+    // A CA bundle *main itself picked* in an earlier session becomes a read pick again here —
+    // and only one carrying the `caBundlePickedByMain` marker, so a hand-edited preferences
+    // file cannot smuggle a path into the read-pick set. It has to happen after the load
+    // resolves: before it, the in-memory document is still the defaults.
+    rememberPickedCaBundle(preferences, dialogPicks);
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();

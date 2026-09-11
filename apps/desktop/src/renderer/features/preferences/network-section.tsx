@@ -5,10 +5,12 @@
  * `ProjectService.proxyFor` and `tlsFor`) — which is why they are no longer in
  * `connection-sections.tsx` alongside the still-informational WS-I group.
  *
- * Two rules shape the UI. The proxy password is never a value: it goes through `SecretField`,
- * which stores it in the OS keychain and hands back a `secretRef`. And there is no global
- * "trust all certificates" — the checkbox exists only to say so, permanently disabled, with
- * the per-endpoint opt-in named as the alternative.
+ * Three rules shape the UI. The proxy password is never a value: it goes through `SecretField`,
+ * which stores it in the OS keychain and hands back a `secretRef`. There is no global "trust
+ * all certificates" — the checkbox exists only to say so, permanently disabled, with the
+ * per-endpoint opt-in named as the alternative. And the CA bundle path is read-only here:
+ * main reads that file on every send, so it is set only by `ssl.pickCaBundle`, which runs a
+ * native picker in main and persists what the user actually chose.
  */
 
 import { useState } from 'react';
@@ -104,16 +106,10 @@ export function SslSection({ preferences, update }: SectionProps) {
   async function pickBundle(): Promise<void> {
     setPicking(true);
     try {
-      const result = await ipc().dialogs.openFile({
-        title: 'Choose a CA bundle',
-        filters: [
-          { name: 'PEM certificates', extensions: ['pem', 'crt', 'cer'] },
-          { name: 'All files', extensions: ['*'] },
-        ],
-      });
-      if (result.ok && result.value.path !== undefined) {
-        update({ ssl: { caBundlePath: result.value.path } });
-      }
+      // Main runs the dialog, records the pick and persists the path itself; the answer arrives
+      // as a `preferences.changed` broadcast. The renderer never names the path — see
+      // `main/ipc/ssl.ts`.
+      await ipc().ssl.pickCaBundle({});
     } finally {
       setPicking(false);
     }
@@ -135,9 +131,10 @@ export function SslSection({ preferences, update }: SectionProps) {
         label="CA bundle"
         value={ssl.caBundlePath ?? ''}
         monospace
+        readOnly
         testId="ssl-ca-bundle"
-        hint="A PEM file of extra trust anchors. Added to the system store; nothing is replaced."
-        onCommit={(caBundlePath) => update({ ssl: { caBundlePath } })}
+        hint="A PEM file of extra trust anchors, chosen with Browse…. Added to the system store; nothing is replaced."
+        onCommit={() => undefined}
       />
       <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
         <span />
@@ -156,7 +153,9 @@ export function SslSection({ preferences, update }: SectionProps) {
             <Button
               variant="secondary"
               data-testid="ssl-ca-bundle-clear"
-              onClick={() => update({ ssl: { caBundlePath: '' } })}
+              onClick={() => {
+                void ipc().ssl.clearCaBundle({});
+              }}
             >
               Clear
             </Button>

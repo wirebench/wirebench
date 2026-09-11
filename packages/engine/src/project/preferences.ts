@@ -55,6 +55,14 @@ export interface SslPreferences {
   readonly minVersion: 'TLSv1.2' | 'TLSv1.3';
   /** Absolute path to a PEM bundle of extra trust anchors; read in main, never by the engine. */
   readonly caBundlePath?: string;
+  /**
+   * Set by the desktop main process when, and only when, {@link caBundlePath} came from a
+   * native file picker it ran itself. It is the evidence that the path was *chosen* rather than
+   * typed, pasted over IPC or edited into `preferences.yaml` by hand — and main re-records the
+   * path as a read pick at startup only when it is present, so a hand-edited file adds no trust
+   * until the bundle is picked again. Never settable through `preferences.update`.
+   */
+  readonly caBundlePickedByMain?: boolean;
   /** Id of a `wss/keystores.yaml` entry used as the client identity when a request selects none. */
   readonly clientKeystoreRef?: string;
   /**
@@ -214,6 +222,7 @@ export const preferencesSchema = z.object({
     .object({
       minVersion: z.enum(['TLSv1.2', 'TLSv1.3']).optional(),
       caBundlePath: z.string().optional(),
+      caBundlePickedByMain: z.boolean().optional(),
       clientKeystoreRef: z.string().optional(),
     })
     .optional(),

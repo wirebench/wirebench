@@ -39,8 +39,10 @@ import type {
   ProxyOptionsWire,
   RequestGenerateRequest,
   RequestGenerateResponse,
-  RequestSendRequest,
+  ResolvedSendInputWire,
+  ResolvedSendRequest,
   SoapSendInputWire,
+  TlsOptionsWire,
   WsaConfigWire,
 } from '../shared/wire-types.js';
 import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
@@ -97,7 +99,7 @@ function toEngineGenerateOptions(options: RequestGenerateRequest['options']): Pa
 }
 
 /** Converts wire-shaped TLS options to the engine's `TlsOptions`, dropping `undefined` keys. */
-function toEngineTls(tls: NonNullable<SoapSendInputWire['tls']>): TlsOptions {
+function toEngineTls(tls: TlsOptionsWire): TlsOptions {
   return {
     ...(tls.rejectUnauthorized !== undefined ? { rejectUnauthorized: tls.rejectUnauthorized } : {}),
     ...(tls.ca !== undefined ? { ca: tls.ca } : {}),
@@ -169,9 +171,15 @@ function stripUndefined(value: WsaConfigWire): WsaConfigPatch {
   );
 }
 
-/** Converts the wire `SoapSendInputWire` (plus a controller's signal) to the engine's `SoapSendInput`. */
+/**
+ * Converts a send input (plus a controller's signal) to the engine's `SoapSendInput`.
+ *
+ * The input is the *resolved* one: the wire shape only carries `tls.minVersion`, and every
+ * other TLS field has been added by main from the CA-bundle preference, the selected keystore
+ * and the endpoint's `trustInvalid`.
+ */
 function toEngineSendInput(
-  input: SoapSendInputWire,
+  input: ResolvedSendInputWire,
   signal: AbortSignal,
   attachments?: SendAttachmentInput,
   auth?: SendAuth,
@@ -517,7 +525,7 @@ export class EngineService {
    * returned summary's `unresolved`.
    */
   async send(
-    request: RequestSendRequest,
+    request: ResolvedSendRequest,
     options: {
       scopes?: PropertyScopes;
       auth?: EndpointAuth;

@@ -35,6 +35,10 @@ import {
   preferencesResetRequestSchema,
   preferencesResponseSchema,
   preferencesUpdateRequestSchema,
+  sslClearCaBundleRequestSchema,
+  sslClearCaBundleResponseSchema,
+  sslPickCaBundleRequestSchema,
+  sslPickCaBundleResponseSchema,
   dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
@@ -290,6 +294,13 @@ export const channels = {
     get: defineChannel('preferences.get', z.undefined(), preferencesResponseSchema),
     update: defineChannel('preferences.update', preferencesUpdateRequestSchema, preferencesResponseSchema),
     reset: defineChannel('preferences.reset', preferencesResetRequestSchema, preferencesResponseSchema),
+  },
+  // The CA bundle preference has channels of its own because only main may set it: the path is
+  // a file main reads on every send, so it comes from a native picker main ran, never from a
+  // string the renderer sends (`preferences.update` refuses one).
+  ssl: {
+    pickCaBundle: defineChannel('ssl.pickCaBundle', sslPickCaBundleRequestSchema, sslPickCaBundleResponseSchema),
+    clearCaBundle: defineChannel('ssl.clearCaBundle', sslClearCaBundleRequestSchema, sslClearCaBundleResponseSchema),
   },
   // No `secrets.get`: the renderer may create/replace/check/delete/list secret refs, but can
   // never read a value back — resolution happens only in main, at send/import time.

@@ -9,7 +9,7 @@ import { isWirebenchError } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import type { HistoryService } from './history-service.js';
 import type { ProjectService } from './project-service.js';
-import type { ExchangeSummary, HistoryEntryWire, RequestSendRequest } from '../shared/wire-types.js';
+import type { ExchangeSummary, HistoryEntryWire, ResolvedSendRequest } from '../shared/wire-types.js';
 
 /** What `sendAndRecordHistory` needs from `ProjectService`, so tests can stub a minimal object. */
 export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
@@ -55,7 +55,7 @@ function errorDetail(error: unknown): { code: string; message: string } {
 export async function sendAndRecordHistory(
   service: EngineService,
   deps: SendWithHistoryDeps,
-  request: RequestSendRequest,
+  request: ResolvedSendRequest,
   fallback: HistoryNameFallback = AD_HOC_NAME,
 ): Promise<ExchangeSummary> {
   const auth = request.requestId !== undefined ? deps.project.authFor(request.requestId) : undefined;
@@ -89,7 +89,7 @@ export async function sendAndRecordHistory(
 async function record(
   service: EngineService,
   deps: SendWithHistoryDeps,
-  request: RequestSendRequest,
+  request: ResolvedSendRequest,
   fallback: HistoryNameFallback,
   opts: { durationMs: number; error?: { code: string; message: string } },
 ): Promise<void> {

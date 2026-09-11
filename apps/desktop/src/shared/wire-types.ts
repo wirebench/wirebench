@@ -379,6 +379,24 @@ export const tlsOptionsSchema = z.object({
 export type TlsOptionsWire = z.infer<typeof tlsOptionsSchema>;
 
 /**
+ * The TLS options a *send* may carry on the wire: the minimum protocol version, and nothing
+ * else.
+ *
+ * Everything else about a handshake is main's to decide and the renderer's to never name —
+ * trust anchors come from the CA-bundle preference (a file only main can point at, see
+ * `ssl.pickCaBundle`), the client identity from the selected keystore, and `rejectUnauthorized`
+ * only ever from an endpoint's `trustInvalid` flag. A renderer could otherwise turn
+ * verification off for a single send with no trace anywhere in the project.
+ *
+ * `strictObject`, not a subset: a send naming `rejectUnauthorized` is *rejected* rather than
+ * quietly stripped, so a bug on either side of the bridge is loud.
+ */
+export const sendTlsOptionsSchema = z.strictObject({
+  minVersion: z.enum(['TLSv1.2', 'TLSv1.3']).optional(),
+});
+export type SendTlsOptionsWire = z.infer<typeof sendTlsOptionsSchema>;
+
+/**
  * The resolved proxy one send goes through. Main-only: it is built in `ProjectService.proxyFor`
  * from the preferences plus the OS keychain and handed straight to the engine, and is NOT part
  * of `soapSendInputWireSchema` — a renderer must never be able to name a proxy, nor see the
@@ -407,7 +425,7 @@ const soapSendInputWireSchema = z.object({
   compressBody: z.literal('gzip').optional(),
   /** XML-escape substituted property values inside the envelope. */
   entitize: z.boolean().optional(),
-  tls: tlsOptionsSchema.optional(),
+  tls: sendTlsOptionsSchema.optional(),
   /** Offer HTTP/2 in the ALPN handshake (the HTTP preference). Off unless explicitly set. */
   allowH2: z.boolean().optional(),
   /**
@@ -432,6 +450,17 @@ export const requestSendRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 export type RequestSendRequest = z.infer<typeof requestSendRequestSchema>;
+
+/**
+ * A send input after main has folded in the TLS material the renderer may never name (see
+ * {@link sendTlsOptionsSchema}): the CA bundle's anchors, the client identity, and an
+ * endpoint's `trustInvalid`. Main-only by construction — there is no schema for it, because it
+ * never travels *towards* main.
+ */
+export type ResolvedSendInputWire = Omit<SoapSendInputWire, 'tls'> & { readonly tls?: TlsOptionsWire | undefined };
+
+/** A {@link RequestSendRequest} whose input has been through that same resolution. */
+export type ResolvedSendRequest = Omit<RequestSendRequest, 'input'> & { readonly input: ResolvedSendInputWire };
 
 /** Request payload for `request.recreate` — SoapUI's "Recreate Request", applied to a saved request. */
 export const requestRecreateRequestSchema = z.object({
@@ -2091,6 +2120,8 @@ export const preferencesWireSchema = z.object({
   ssl: z.object({
     minVersion: z.enum(['TLSv1.2', 'TLSv1.3']),
     caBundlePath: z.string().optional(),
+    /** True when main picked `caBundlePath` through a native dialog; see `SslPreferences`. */
+    caBundlePickedByMain: z.boolean().optional(),
     clientKeystoreRef: z.string().optional(),
     trustAll: z.literal(false),
   }),
@@ -2156,6 +2187,25 @@ export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
 /** Request payload for `preferences.reset`. */
 export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });
+
+/**
+ * `ssl.pickCaBundle` / `ssl.clearCaBundle`: the *only* ways the CA bundle preference changes.
+ *
+ * The renderer cannot name the path — `preferences.update` refuses a patch carrying
+ * `ssl.caBundlePath` — because main reads that file on every send, and a path a renderer can
+ * write is a path any renderer bug can point at anything. So main runs the picker, records the
+ * result as a read pick (the same evidence `keystores.pickFile` produces) and persists the path
+ * itself, marked `caBundlePickedByMain`. `ssl.clearCaBundle` is the matching way back.
+ */
+export const sslPickCaBundleRequestSchema = z.object({});
+export const sslPickCaBundleResponseSchema = z.object({
+  /** The chosen path, absent when the user cancelled the dialog. */
+  path: z.string().optional(),
+  preferences: preferencesWireSchema,
+});
+export type SslPickCaBundleResponse = z.infer<typeof sslPickCaBundleResponseSchema>;
+export const sslClearCaBundleRequestSchema = z.object({});
+export const sslClearCaBundleResponseSchema = z.object({ preferences: preferencesWireSchema });
 
 /**
  * The largest single file a drag-and-drop may add (32 MiB).

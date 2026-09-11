@@ -15,6 +15,7 @@ import type {
   ExchangeSummary,
   HistoryEntryWire,
   RequestSendRequest,
+  ResolvedSendRequest,
   RequestCurlRequest,
   RequestCurlResponse,
   RequestImportCurlRequest,
@@ -121,7 +122,7 @@ function extraTrustAnchors(): readonly string[] {
 async function withRequestProperties(
   project: RequestChannelProject,
   request: RequestSendRequest,
-): Promise<RequestSendRequest> {
+): Promise<ResolvedSendRequest> {
   if (request.requestId === undefined) {
     return withExtraTrustAnchors(request);
   }
@@ -144,7 +145,7 @@ async function withRequestProperties(
 }
 
 /** Appends {@link extraTrustAnchors} to a send's `tls.ca`; a no-op outside the e2e suite. */
-function withExtraTrustAnchors(request: RequestSendRequest): RequestSendRequest {
+function withExtraTrustAnchors(request: ResolvedSendRequest): ResolvedSendRequest {
   const anchors = extraTrustAnchors();
   if (anchors.length === 0) {
     return request;
