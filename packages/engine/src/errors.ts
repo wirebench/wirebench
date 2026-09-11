@@ -75,6 +75,14 @@ export class ProjectError extends WirebenchError {
   }
 }
 
+/** Thrown for workspace file (load/save/migration) failures. */
+export class WorkspaceError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'WorkspaceError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {
