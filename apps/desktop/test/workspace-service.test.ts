@@ -1,0 +1,372 @@
+// @vitest-environment node
+import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  loadWorkspace,
+  nodeFs,
+  saveWorkspace,
+  workspaceDir,
+  workspaceManifestFile,
+  workspaceProjectDir,
+} from '@wirebench/engine';
+import type { FsLike, WorkspaceProjectRef } from '@wirebench/engine';
+import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
+import { EngineService } from '../src/main/engine-service.js';
+import { HistoryService } from '../src/main/history-service.js';
+import { ProjectHost } from '../src/main/project-host.js';
+import { RecentProjects } from '../src/main/recent-projects.js';
+import { WorkspaceService } from '../src/main/workspace-service.js';
+import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+
+let server: TestSoapServer | undefined;
+let root: string;
+
+/**
+ * Wraps {@link nodeFs} so `writeFile` blocks on a gate that starts open and can be closed
+ * (`arm()`) / reopened (`release()`) around the write under test — the same helper
+ * `project-host.test.ts` uses to simulate a slow disk exactly where a test needs one.
+ */
+function deferredWriteFs(): { fs: FsLike; arm: () => void; release: () => void } {
+  let gate: Promise<void> = Promise.resolve();
+  let unblock: (() => void) | undefined;
+  const fs: FsLike = {
+    ...nodeFs,
+    async writeFile(path, data) {
+      await gate;
+      await nodeFs.writeFile(path, data);
+    },
+  };
+  return {
+    fs,
+    arm: () => {
+      gate = new Promise((resolve) => {
+        unblock = resolve;
+      });
+    },
+    release: () => unblock?.(),
+  };
+}
+
+/** A service over the temp `userData`, with a real engine and its own history files. */
+function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
+  return new WorkspaceService({
+    userDataDir: root,
+    engine: new EngineService(),
+    history: new HistoryService(root),
+    ...overrides,
+  });
+}
+
+/**
+ * Creates a real project folder at `projects/<slug>` inside `wsDir` and returns the manifest
+ * reference for it — the id is the project's own, as the spec requires.
+ */
+async function seedProject(wsDir: string, slug: string, name: string): Promise<WorkspaceProjectRef> {
+  const host = new ProjectHost(new EngineService(), new RecentProjects(root));
+  const project = await host.create({ dir: workspaceProjectDir(wsDir, slug), name });
+  await host.close();
+  return { id: project.id, slug, source: 'internal' };
+}
+
+/** Rewrites `wsDir`'s manifest so it references `refs`. */
+async function registerProjects(wsDir: string, refs: readonly WorkspaceProjectRef[]): Promise<void> {
+  const { workspace } = await loadWorkspace(wsDir);
+  await saveWorkspace({ ...workspace, projects: refs }, wsDir);
+}
+
+/** Every file under `dir`, recursively, as paths relative to it. */
+async function filesUnder(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  return entries.filter((entry) => entry.isFile()).map((entry) => relative(dir, join(entry.parentPath, entry.name)));
+}
+
+beforeEach(async () => {
+  server = await startTestSoapServer({ fixture: 'calculator' });
+  root = mkdtempSync(join(tmpdir(), 'wirebench-workspace-'));
+});
+
+afterEach(async () => {
+  await server?.close();
+  server = undefined;
+  rmSync(root, { recursive: true, force: true });
+});
+
+describe('WorkspaceService lifecycle', () => {
+  it('creates, lists and reopens a workspace', async () => {
+    const service = newService();
+
+    const created = await service.create('Payments team');
+    expect(created.name).toBe('Payments team');
+    expect(created.projects).toEqual([]);
+    // The folder is named by the id, never by the display name.
+    expect(created.dir).toBe(workspaceDir(root, created.id));
+    expect(await filesUnder(created.dir)).toContain('workspace.yaml');
+
+    const listed = await service.list();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: created.id, name: 'Payments team', projectCount: 0 });
+    expect(listed[0]?.lastOpenedAt).toEqual(expect.any(String));
+
+    await service.close();
+    expect(service.snapshot()).toBeNull();
+
+    const reopened = await newService().openLast();
+    expect(reopened?.id).toBe(created.id);
+  }, 60_000);
+
+  it('opens two internal projects as independent hosts, each with its own history file', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Two projects');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const countries = await seedProject(dir, 'countries', 'Countries');
+    const payments = await seedProject(dir, 'payments', 'Payments');
+    await registerProjects(dir, [countries, payments]);
+
+    const history = new HistoryService(root);
+    const service = newService({ history });
+    const workspace = await service.open(created.id);
+
+    expect(workspace.projects.map((project) => project.name)).toEqual(['Countries', 'Payments']);
+    expect(workspace.projects.map((project) => project.status)).toEqual(['ready', 'ready']);
+    expect(workspace.projects.map((project) => project.source)).toEqual(['internal', 'internal']);
+
+    const hosts = service.hosts();
+    expect(hosts).toHaveLength(2);
+    expect(hosts[0]).not.toBe(hosts[1]);
+    expect(service.hostFor(countries.id)).toBe(hosts[0]);
+    expect(service.hostFor(payments.id)).toBe(hosts[1]);
+    expect(history.openProjectIds()).toEqual([countries.id, payments.id]);
+
+    await service.close();
+    expect(history.openProjectIds()).toEqual([]);
+  }, 60_000);
+
+  it('lists a corrupt workspace as unreadable rather than dropping it', async () => {
+    const service = newService();
+    const created = await service.create('Healthy');
+    await service.close();
+
+    const brokenId = '01J8K3Q7Z2M5N9RVTX4W6Y8BAD';
+    const brokenDir = workspaceDir(root, brokenId);
+    await mkdir(brokenDir, { recursive: true });
+    await writeFile(workspaceManifestFile(brokenDir), 'formatVersion: 1\nid: [not, a, string]\n', 'utf8');
+
+    const listed = await service.list();
+    expect(listed).toHaveLength(2);
+    const broken = listed.find((row) => row.unreadable === true);
+    expect(broken).toMatchObject({ id: brokenId, name: brokenId, dir: brokenDir, projectCount: 0, createdAt: '' });
+    expect(listed.some((row) => row.id === created.id)).toBe(true);
+  }, 60_000);
+
+  it('opens the workspace even when a project folder is gone, marking that project missing', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Half broken');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const present = await seedProject(dir, 'present', 'Present');
+    await registerProjects(dir, [present, { id: 'gone-project', slug: 'gone', source: 'internal' }]);
+
+    const service = newService();
+    const workspace = await service.open(created.id);
+
+    expect(workspace.projects.map((project) => project.status)).toEqual(['ready', 'missing']);
+    expect(workspace.projects[1]?.message).toContain('gone');
+    expect(service.hosts()).toHaveLength(1);
+
+    await service.close();
+  }, 60_000);
+
+  it('openLast returns null and keeps the reason when the workspace will not open', async () => {
+    const service = newService();
+    const created = await service.create('Doomed');
+    await service.close();
+    await writeFile(workspaceManifestFile(workspaceDir(root, created.id)), 'formatVersion: 1\nid: 7\n', 'utf8');
+
+    const reopened = newService();
+    expect(await reopened.openLast()).toBeNull();
+    expect(reopened.lastError()).toEqual(expect.any(String));
+    expect(reopened.snapshot()).toBeNull();
+  }, 60_000);
+
+  it('openLast returns null when no workspace has ever been opened', async () => {
+    expect(await newService().openLast()).toBeNull();
+  });
+});
+
+describe('WorkspaceService manifest operations', () => {
+  it('renames the open workspace and a closed one', async () => {
+    const service = newService();
+    const open = await service.create('Before');
+    const other = await newService().create('Other');
+    // `other` was created by a second service, so it is not the one `service` holds open.
+
+    const afterOpenRename = await service.rename(open.id, 'After');
+    expect(afterOpenRename.find((row) => row.id === open.id)?.name).toBe('After');
+    expect(service.snapshot()?.name).toBe('After');
+
+    const afterClosedRename = await service.rename(other.id, 'Renamed while closed');
+    expect(afterClosedRename.find((row) => row.id === other.id)?.name).toBe('Renamed while closed');
+    // Still the workspace this service holds open — renaming another one does not switch.
+    expect(service.snapshot()?.id).toBe(open.id);
+
+    const { workspace } = await loadWorkspace(workspaceDir(root, other.id));
+    expect(workspace.name).toBe('Renamed while closed');
+  }, 60_000);
+
+  it('refuses a workspace id that is not a folder name', async () => {
+    const service = newService({ trash: () => Promise.resolve() });
+    // The picker's row id is the one workspace value that comes from the renderer: a traversal
+    // must never reach `join`.
+    await expect(service.open('../../etc')).rejects.toThrow(/Not a workspace id/);
+    await expect(service.rename('..', 'x')).rejects.toThrow(/Not a workspace id/);
+    await expect(service.delete('a/b')).rejects.toThrow(/Not a workspace id/);
+  });
+
+  it('deletes through the injected trash and drops the workspace from the list', async () => {
+    const trashed: string[] = [];
+    const service = newService({
+      trash: (path) => {
+        trashed.push(path);
+        rmSync(path, { recursive: true, force: true });
+        return Promise.resolve();
+      },
+    });
+    const created = await service.create('Doomed');
+
+    const remaining = await service.delete(created.id);
+
+    expect(trashed).toEqual([workspaceDir(root, created.id)]);
+    expect(remaining).toEqual([]);
+    // Deleting the open workspace closes it first.
+    expect(service.snapshot()).toBeNull();
+    // And it is no longer what `openLast` would reopen.
+    expect(await newService().openLast()).toBeNull();
+  }, 60_000);
+});
+
+describe('WorkspaceService routing', () => {
+  it('finds the host of a request id, and refuses an unknown entity', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Routing');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const plain = await seedProject(dir, 'plain', 'Plain');
+    const calculator = await seedProject(dir, 'calculator', 'Calculator');
+    await registerProjects(dir, [plain, calculator]);
+
+    const service = newService();
+    await service.open(created.id);
+
+    const host = service.hostFor(calculator.id);
+    await host.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+
+    const snapshot = service.projectSnapshot(calculator.id);
+    const requestId = snapshot?.requests[0]?.id;
+    const interfaceId = snapshot?.interfaces[0]?.id;
+    expect(requestId).toEqual(expect.any(String));
+
+    expect(service.hostOfEntity(requestId!)).toBe(host);
+    expect(service.hostOfEntity(interfaceId!)).toBe(host);
+    expect(service.hostOfEntity(calculator.id)).toBe(host);
+    expect(service.projectId(requestId!)).toBe(calculator.id);
+    // The other project's host holds none of those ids.
+    expect(service.hostOfEntity(plain.id)).toBe(service.hostFor(plain.id));
+
+    // Routed calls land on the owning host without the caller naming a project.
+    expect(service.requestMeta(requestId!)?.requestName).toEqual(expect.any(String));
+    expect(service.validationTargetFor(requestId!)?.interfaceId).toBe(interfaceId);
+    expect(service.projectSnapshot(plain.id)?.requests).toEqual([]);
+
+    expect(() => service.hostOfEntity('01J8NOTHINGATALL')).toThrow(/No open project holds the entity/);
+    expect(() => service.hostFor('01J8NOTAPROJECT')).toThrow(/No open project with id/);
+
+    await service.close();
+  }, 60_000);
+});
+
+describe('WorkspaceService saving', () => {
+  it('saves a dirty host on close, waiting for the write to land', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Saving');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'dirty', 'Dirty');
+    await registerProjects(dir, [project]);
+
+    const { fs, arm, release } = deferredWriteFs();
+    const service = newService({ fs });
+    await service.open(created.id);
+
+    await service.mutate(project.id, { kind: 'rename-project', name: 'Renamed before close' });
+    expect(service.projectSnapshot(project.id)?.dirty).toBe(true);
+
+    arm();
+    let closed = false;
+    const closing = service.close().then(() => {
+      closed = true;
+    });
+    // The close is blocked on the save's write, which is the point: a close that resolved here
+    // would have dropped the edit. Several macrotask turns, so this is not just a microtask race.
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(closed).toBe(false);
+
+    release();
+    await closing;
+
+    const onDisk = await loadWorkspace(dir);
+    expect(onDisk.workspace.projects).toHaveLength(1);
+    const projectYaml = await readFile(join(workspaceProjectDir(dir, 'dirty'), 'wirebench.yaml'), 'utf8');
+    expect(projectYaml).toContain('Renamed before close');
+  }, 60_000);
+
+  it('keeps no secret material anywhere in the workspace folder', async () => {
+    const password = 'hunter2-workspace';
+    const bootstrap = newService();
+    const created = await bootstrap.create('Secrets');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'secretive', 'Secretive');
+    await registerProjects(dir, [project]);
+
+    const secrets = { get: (ref: string) => Promise.resolve(ref === 'secret:pw' ? password : undefined) };
+    const service = new WorkspaceService({
+      userDataDir: root,
+      engine: new EngineService((ref) => secrets.get(ref)),
+      history: new HistoryService(root),
+      secrets,
+    });
+    await service.open(created.id);
+
+    await service.hostFor(project.id).addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { username: 'alice', passwordRef: 'secret:pw' },
+      useForRequests: true,
+    });
+    await service.saveAll('test');
+
+    // Same discipline as the project-level "passwordRef, never the password" checks: grep the
+    // whole saved workspace, project folders and definition cache included.
+    const files = await filesUnder(dir);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if ((await readFile(join(dir, file), 'utf8')).includes(password)) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+    expect(files.some((file) => file.startsWith(join('projects', 'secretive')))).toBe(true);
+
+    await service.close();
+  }, 60_000);
+});
