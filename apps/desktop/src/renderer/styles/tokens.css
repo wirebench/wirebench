@@ -25,13 +25,13 @@
   /* Foreground scale, loudest to quietest. */
   --wb-fg-default: #ece9e3;
   --wb-fg-muted: #a49d93;
-  --wb-fg-subtle: #756e66;
+  --wb-fg-subtle: #8d8780;
   --wb-fg-faint: #4c4741;
   --wb-fg-on-accent: #1a1210;
 
   /* Hairlines. */
   --wb-border-default: #2a2724;
-  --wb-border-strong: #3b3733;
+  --wb-border-strong: #696663;
   --wb-border-focus: var(--wb-accent-default);
   --wb-focus-ring-width: 2px;
   --wb-focus-ring-offset: -1px;
@@ -93,20 +93,20 @@
 
   --wb-fg-default: #22201d;
   --wb-fg-muted: #5c564e;
-  --wb-fg-subtle: #837c73;
+  --wb-fg-subtle: #6d675f;
   --wb-fg-faint: #b3ada4;
   --wb-fg-on-accent: #ffffff;
 
   --wb-border-default: #e0dcd5;
-  --wb-border-strong: #c9c4bb;
+  --wb-border-strong: #94908a;
 
-  --wb-accent-default: #bf5730;
-  --wb-accent-hover: #a94a27;
+  --wb-accent-default: #a94d2b;
+  --wb-accent-hover: #8e3f21;
   --wb-accent-muted: #e0a891;
   --wb-accent-surface: #fbeee8;
 
-  --wb-status-success: #2f7d52;
-  --wb-status-warning: #9a6b12;
+  --wb-status-success: #2b7550;
+  --wb-status-warning: #8b6010;
   --wb-status-danger: #b23b33;
   --wb-status-info: #3d6ba8;
 

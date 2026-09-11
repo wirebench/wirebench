@@ -23,9 +23,10 @@
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc -b && pnpm --filter @wirebench/desktop typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
-    "check": "pnpm lint && pnpm typecheck && pnpm wsi:docs --check && pnpm test",
+    "check": "pnpm lint && pnpm typecheck && pnpm wsi:docs --check && pnpm contrast:check && pnpm test",
     "fixtures:refresh": "node scripts/fixtures-refresh.ts",
-    "wsi:docs": "node scripts/wsi-docs.ts"
+    "wsi:docs": "node scripts/wsi-docs.ts",
+    "contrast:check": "node scripts/contrast-check.ts"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
