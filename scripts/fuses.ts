@@ -11,7 +11,8 @@
  * This has to run *before* signing (which `afterPack` does — `afterSign` would be too late):
  * flipping a fuse rewrites bytes in the executable and invalidates any signature over it.
  * On macOS the ad-hoc signature electron-builder's own packing leaves behind is reset here so
- * the later signing step starts from a clean binary.
+ * the later signing step starts from a clean binary — and re-applied only when no real signing
+ * identity is configured; see {@link hasRealSigningIdentity}.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -78,17 +79,47 @@ export function isUniversalTempDir(appOutDir: string): boolean {
 }
 
 /**
+ * True when the environment names a real macOS signing identity, in which case electron-builder
+ * will sign the bundle itself once `afterPack` returns.
+ *
+ * Ad-hoc signing in that case is wasted work at best and harmful at worst: it rewrites the
+ * bundle's `_CodeSignature` with a signature electron-builder then has to replace, and a build
+ * that expects a Developer ID should fail loudly if that identity is missing rather than ship
+ * something ad-hoc signed that looks fine locally. `CSC_IDENTITY_AUTO_DISCOVERY` is the one
+ * that can go either way: explicitly `false` means "do not look for an identity", so the ad-hoc
+ * signature is still needed.
+ */
+export function hasRealSigningIdentity(env: Readonly<Record<string, string | undefined>>): boolean {
+  if (env.CSC_LINK !== undefined && env.CSC_LINK !== '') {
+    return true;
+  }
+  if (env.CSC_KEY_PASSWORD !== undefined && env.CSC_KEY_PASSWORD !== '') {
+    return true;
+  }
+  if (env.CSC_NAME !== undefined && env.CSC_NAME !== '') {
+    return true;
+  }
+  const autoDiscovery = env.CSC_IDENTITY_AUTO_DISCOVERY;
+  return autoDiscovery !== undefined && autoDiscovery !== '' && autoDiscovery.toLowerCase() !== 'false';
+}
+
+/**
  * Re-applies an ad-hoc signature to a macOS bundle whose binary was just re-written.
  *
  * `EnableEmbeddedAsarIntegrityValidation` makes the runtime check the asar against the hash in
  * `Info.plist`, and on macOS it only trusts that plist through the bundle's code signature —
  * so an app whose signature was invalidated by the fuse flip does not start at all (it hangs
- * before the first window, with nothing on stderr). electron-builder signs properly later when
- * a Developer ID is configured, `--force` replacing this; without one, this ad-hoc signature is
- * what makes the unsigned local build runnable at all.
+ * before the first window, with nothing on stderr). Without a Developer ID this ad-hoc
+ * signature is what makes the unsigned local build runnable at all; with one,
+ * {@link hasRealSigningIdentity} skips this entirely and electron-builder signs properly.
+ *
+ * No `--deep`: Apple deprecated it years ago (it re-signs nested code with the *outer* bundle's
+ * entitlements, which is exactly what you do not want for Electron's helper apps). Only the
+ * main executable's signature was invalidated by the fuse flip — the nested helpers were not
+ * touched — so signing the bundle itself is both sufficient and the supported spelling.
  */
 function adHocSign(appBundle: string): void {
-  execFileSync('codesign', ['--force', '--deep', '--sign', '-', appBundle], { stdio: 'inherit' });
+  execFileSync('codesign', ['--force', '--sign', '-', appBundle], { stdio: 'inherit' });
 }
 
 /**
@@ -114,7 +145,7 @@ export default async function afterPack(context: FusesPackContext): Promise<void
     resetAdHocDarwinSignature: context.electronPlatformName === 'darwin',
     ...WIREBENCH_FUSES,
   });
-  if (context.electronPlatformName === 'darwin') {
+  if (context.electronPlatformName === 'darwin' && !hasRealSigningIdentity(process.env)) {
     adHocSign(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`));
   }
   process.stdout.write(`[fuses] flipped ${Object.keys(WIREBENCH_FUSES).length} fuses on ${binary}\n`);

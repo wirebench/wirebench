@@ -57,13 +57,24 @@ export interface UpdateControllerOptions {
 }
 
 /**
+ * Matches a GitHub repository URL *whole*, with `github.com` anchored as the host.
+ *
+ * The anchoring is the point: an unanchored `github.com[:/]…` also matches
+ * `https://github.com.evil.example/a/b` and `https://evil.example/github.com/a/b`, which would
+ * hand the updater an owner/repo pair derived from a host nobody vetted. Only the scheme, an
+ * optional `user@`, the literal host, and exactly two path segments are accepted.
+ */
+const GITHUB_REPOSITORY_URL =
+  /^(?:git\+)?(?:(?:https?|git|ssh):\/\/)?(?:[^@/]+@)?github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/;
+
+/**
  * Parses `owner`/`repo` out of a `package.json` `repository.url`. Only github.com is
  * recognised — the GitHub Releases provider is the only feed Wirebench ships — so a missing,
  * malformed or non-GitHub URL yields `undefined`, which the controller reports as a failed
  * check rather than pointing the updater at a feed that cannot exist.
  */
 export function githubFeedFrom(url: string | undefined): { readonly owner: string; readonly repo: string } | undefined {
-  const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/.exec(url ?? '');
+  const match = GITHUB_REPOSITORY_URL.exec(url ?? '');
   const owner = match?.[1];
   const repo = match?.[2];
   return owner === undefined || repo === undefined ? undefined : { owner, repo };

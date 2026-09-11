@@ -65,6 +65,15 @@ describe('githubFeedFrom', () => {
     expect(githubFeedFrom('')).toBeUndefined();
     expect(githubFeedFrom('https://gitlab.com/wirebench/wirebench.git')).toBeUndefined();
   });
+
+  it('does not treat a look-alike host as github.com', () => {
+    // Each of these contains the literal `github.com/owner/repo`, but none of them *is* a
+    // GitHub repository: the host is attacker-chosen, so the feed must not be configured.
+    expect(githubFeedFrom('https://github.com.evil.example/wirebench/wirebench.git')).toBeUndefined();
+    expect(githubFeedFrom('https://evil.example/github.com/wirebench/wirebench.git')).toBeUndefined();
+    expect(githubFeedFrom('https://notgithub.com/wirebench/wirebench')).toBeUndefined();
+    expect(githubFeedFrom('https://github.com/wirebench/wirebench/extra')).toBeUndefined();
+  });
 });
 
 describe('UpdateController', () => {

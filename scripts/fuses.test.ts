@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FuseV1Options } from '@electron/fuses';
-import { electronBinaryPath, isUniversalTempDir, WIREBENCH_FUSES } from './fuses.ts';
+import { electronBinaryPath, hasRealSigningIdentity, isUniversalTempDir, WIREBENCH_FUSES } from './fuses.ts';
 
 describe('electronBinaryPath', () => {
   it('points inside the app bundle on macOS', () => {
@@ -40,5 +40,24 @@ describe('isUniversalTempDir', () => {
   it('does not recognise a directory that ships', () => {
     expect(isUniversalTempDir('/out/mac-universal')).toBe(false);
     expect(isUniversalTempDir('/out/win-unpacked')).toBe(false);
+  });
+});
+
+describe('hasRealSigningIdentity', () => {
+  it('is false with no signing environment at all', () => {
+    expect(hasRealSigningIdentity({})).toBe(false);
+    expect(hasRealSigningIdentity({ CSC_LINK: '', CSC_NAME: '' })).toBe(false);
+  });
+
+  it('is true when a certificate or identity name is configured', () => {
+    expect(hasRealSigningIdentity({ CSC_LINK: 'https://example.invalid/cert.p12' })).toBe(true);
+    expect(hasRealSigningIdentity({ CSC_KEY_PASSWORD: 'hunter2' })).toBe(true);
+    expect(hasRealSigningIdentity({ CSC_NAME: 'Developer ID Application: Someone (TEAMID)' })).toBe(true);
+  });
+
+  it('treats auto-discovery as an identity unless it is explicitly disabled', () => {
+    expect(hasRealSigningIdentity({ CSC_IDENTITY_AUTO_DISCOVERY: 'true' })).toBe(true);
+    expect(hasRealSigningIdentity({ CSC_IDENTITY_AUTO_DISCOVERY: 'false' })).toBe(false);
+    expect(hasRealSigningIdentity({ CSC_IDENTITY_AUTO_DISCOVERY: 'FALSE' })).toBe(false);
   });
 });
