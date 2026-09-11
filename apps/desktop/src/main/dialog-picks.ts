@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
  * A path that merely arrived over IPC has neither — a compromised or buggy renderer can name
  * any string it likes — so every main-side check that turns renderer text into a file read,
  * write or `shell.openPath` consults this set as its only escape hatch (see
- * `ipc/request.ts`'s dump-file check and `ProjectService`'s attachment containment).
+ * `ipc/request.ts`'s dump-file check and `ProjectHost`'s attachment containment).
  *
  * The set is split into a **read** half and a **write** half, kept as two independent `Set`s
  * on the same instance. `attachments.pickFiles` (an Open dialog — "let me attach this file")

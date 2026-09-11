@@ -3,7 +3,7 @@
  * a file *read*: "is this path inside a folder we own, or did the user drive an OS dialog to it
  * this session?".
  *
- * Attachments asked it first (`ProjectService.allowsAttachmentPath`), keystores ask it now, and
+ * Attachments asked it first (`ProjectHost.allowsAttachmentPath`), keystores ask it now, and
  * anything that reads a user-named file next will ask it too. Keeping the two halves of the
  * answer — containment (`path-containment.ts`) and dialog evidence (`dialog-picks.ts`) — joined
  * here means a fix to either reaches every caller at once.

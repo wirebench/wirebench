@@ -44,7 +44,7 @@ const preflight: PreflightResult = {
 
 const TEM = 'http://tempuri.org/';
 
-/** A minimal stand-in for the parts of `ProjectService` the `request.*` actions use. */
+/** A minimal stand-in for the parts of `ProjectHost` the `request.*` actions use. */
 class FakeProject {
   envelopeXml = '';
   endpointUrl = 'http://dev.test/calc.asmx';

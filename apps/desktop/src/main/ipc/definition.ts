@@ -7,17 +7,17 @@ import type { ReadPicks, RecordsWritePicks } from '../dialog-picks.js';
 import { allowsReadPath } from '../path-access.js';
 import type { EngineService } from '../engine-service.js';
 import { pickFolder, pickSaveFile } from '../native-dialogs.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import { declarationAtOffset, schemaIndexOf } from '../schema-index.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
 /**
- * The `ProjectService` surface the Update/Export/Docs channels drive; a stub stands in for it
+ * The `ProjectHost` surface the Update/Export/Docs channels drive; a stub stands in for it
  * in tests, exactly as `request.*` does.
  */
 export type DefinitionChannelProject = Pick<
-  ProjectService,
+  ProjectHost,
   'planDefinitionUpdate' | 'applyDefinitionUpdate' | 'exportDefinitionTo' | 'definitionDocs' | 'snapshot'
 >;
 

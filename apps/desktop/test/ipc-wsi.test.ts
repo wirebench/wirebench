@@ -91,7 +91,7 @@ describe('wsi.* IPC', () => {
     });
   });
 
-  /** A `ProjectService` stub answering with one saved request on one imported interface. */
+  /** A `ProjectHost` stub answering with one saved request on one imported interface. */
   const project = (target: unknown = SAVED_TARGET): WsiChannelProject =>
     ({
       validationTargetFor: () => target,

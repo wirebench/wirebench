@@ -411,7 +411,7 @@ export const sendTlsOptionsSchema = z.strictObject({
 export type SendTlsOptionsWire = z.infer<typeof sendTlsOptionsSchema>;
 
 /**
- * The resolved proxy one send goes through. Main-only: it is built in `ProjectService.proxyFor`
+ * The resolved proxy one send goes through. Main-only: it is built in `ProjectHost.proxyFor`
  * from the preferences plus the OS keychain and handed straight to the engine, and is NOT part
  * of `soapSendInputWireSchema` — a renderer must never be able to name a proxy, nor see the
  * password that reaching one needs.
@@ -2241,7 +2241,7 @@ export const sslClearCaBundleResponseSchema = z.object({ preferences: preference
  * drop is an easy way to wedge the app. Adding a bigger file through the Add… picker is
  * unaffected: that path streams from disk and never crosses the bridge. This is the single
  * source of truth for the cap — the renderer's drop handler, the `addDropped` request schema,
- * and `ProjectService.addAttachmentBytes`'s decoded-length check all read it from here.
+ * and `ProjectHost.addAttachmentBytes`'s decoded-length check all read it from here.
  */
 export const MAX_DROPPED_ATTACHMENT_BYTES = 32 * 1024 * 1024;
 

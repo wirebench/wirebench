@@ -8,18 +8,18 @@
 import { isWirebenchError } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import type { HistoryService } from './history-service.js';
-import type { ProjectService } from './project-service.js';
+import type { ProjectHost } from './project-host.js';
 import type { ExchangeSummary, HistoryEntryWire, ResolvedSendRequest } from '../shared/wire-types.js';
 
-/** What `sendAndRecordHistory` needs from `ProjectService`, so tests can stub a minimal object. */
-export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
+/** What `sendAndRecordHistory` needs from `ProjectHost`, so tests can stub a minimal object. */
+export type HistorySendProject = Pick<ProjectHost, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
   // Optional so the many test stubs (and any ad-hoc caller with no project) stay valid: a send
   // without it simply carries no attachments, which is what an ad-hoc send should do anyway.
   // `wssFor` is optional for the same reason, and async besides: it resolves a password out of
   // the secret store, which is why it cannot live on the synchronous send input.
   // `proxyFor` is optional for the same reason, and async besides: resolving the proxy password
   // means a round trip to the OS keychain.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
+  Partial<Pick<ProjectHost, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
 
 /** Dependencies for {@link sendAndRecordHistory}. */
 export interface SendWithHistoryDeps {

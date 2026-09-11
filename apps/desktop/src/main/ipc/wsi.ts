@@ -21,12 +21,12 @@ import type { QName, WsiReport } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { WsiReportWire } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import type { RecordsWritePicks } from '../dialog-picks.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectService` surface the `wsi.*` channels need; a stub stands in for it in tests. */
-export type WsiChannelProject = Pick<ProjectService, 'validationTargetFor' | 'snapshot'>;
+/** The `ProjectHost` surface the `wsi.*` channels need; a stub stands in for it in tests. */
+export type WsiChannelProject = Pick<ProjectHost, 'validationTargetFor' | 'snapshot'>;
 
 /** How the caller asks for a save location; `dialogs.saveFile`'s own handler is not reusable here. */
 export interface WsiSaveDialog {

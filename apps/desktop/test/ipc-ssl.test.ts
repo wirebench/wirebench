@@ -124,7 +124,7 @@ describe('rememberPickedCaBundle', () => {
   /**
    * The adversarial case the whole marker exists for: someone edits `preferences.yaml` by hand
    * (or anything else writes a path into it) and restarts. Without a main-set marker the path
-   * gets no read pick, so `ProjectService.trustAnchors` refuses to read it.
+   * gets no read pick, so `ProjectHost.trustAnchors` refuses to read it.
    */
   it('records no pick for a hand-edited preferences file with a path but no marker', async () => {
     writeFileSync(

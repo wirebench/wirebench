@@ -7,7 +7,7 @@ import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
 import { PreferencesService, rememberPickedCaBundle, toPreferencesWire } from './preferences.js';
-import { ProjectService } from './project-service.js';
+import { ProjectHost } from './project-host.js';
 import { RecentProjects } from './recent-projects.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
@@ -90,7 +90,7 @@ const dialogPicks = new DialogPicks();
 /** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
 
-const projectService = new ProjectService(
+const projectHost = new ProjectHost(
   engineService,
   new RecentProjects(app.getPath('userData')),
   {
@@ -143,9 +143,9 @@ void app.whenReady().then(() => {
     broadcast(events.app.updateStatus, { status });
   });
   registerAppChannels(undefined, async () => await updates.check({ trigger: 'user' }));
-  registerDefinitionChannels(engineService, { project: projectService, picks: dialogPicks });
+  registerDefinitionChannels(engineService, { project: projectHost, picks: dialogPicks });
   registerRequestChannels(engineService, {
-    project: projectService,
+    project: projectHost,
     showSecrets: showSecretsFlag,
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
@@ -153,11 +153,11 @@ void app.whenReady().then(() => {
     dialogPicks,
   });
   registerHistoryChannels(engineService, historyService, {
-    project: projectService,
+    project: projectHost,
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
   });
-  registerProjectChannels(projectService);
+  registerProjectChannels(projectHost);
   registerGlobalsChannels(globalProperties, (properties) => {
     broadcast(events.globals.changed, { properties });
   });
@@ -178,9 +178,9 @@ void app.whenReady().then(() => {
   registerFsChannels();
   registerXmlChannels(engineService);
   registerXpathChannels();
-  registerValidateChannels(engineService, projectService);
+  registerValidateChannels(engineService, projectHost);
   registerWsiChannels(engineService, {
-    project: projectService,
+    project: projectHost,
     picks: dialogPicks,
     dialog: {
       // Mirrors `dialogs.saveFile`, including its e2e override: a Playwright run cannot drive a
@@ -199,18 +199,18 @@ void app.whenReady().then(() => {
       },
     },
   });
-  registerSearchChannels(engineService, projectService);
+  registerSearchChannels(engineService, projectHost);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
-    project: projectService,
+    project: projectHost,
     picks: dialogPicks,
     userDataDir: app.getPath('userData'),
   });
-  registerKeystoreChannels({ project: projectService, picks: dialogPicks });
-  registerWsaChannels({ project: projectService });
-  registerWssChannels({ project: projectService });
+  registerKeystoreChannels({ project: projectHost, picks: dialogPicks });
+  registerWsaChannels({ project: projectHost });
+  registerWssChannels({ project: projectHost });
   // Last session's decrypted attachment copies are disposable; sweep them off the disk without
   // making the first window wait on it.
   void clearAttachmentsTmp(app.getPath('userData'));
@@ -230,7 +230,7 @@ void app.whenReady().then(() => {
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();
-  applyWindowTitle(projectService.snapshot());
+  applyWindowTitle(projectHost.snapshot());
 
   // Opt-in, and only after the preferences are actually loaded — the default is off, so a
   // check that ran before the load would read "off" for every user who turned it on.
@@ -253,7 +253,7 @@ app.on('before-quit', (event) => {
     return;
   }
   event.preventDefault();
-  void projectService
+  void projectHost
     .save({ reason: 'quit' })
     .catch(() => undefined)
     .finally(() => {

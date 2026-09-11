@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
-import type { ProjectService } from '../src/main/project-service.js';
+import type { ProjectHost } from '../src/main/project-host.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -30,7 +30,7 @@ describe('project.addInterface', () => {
     // `useForRequests` is what persists `Interface.auth`; dropping it here silently produced an
     // interface whose requests then went out unauthenticated.
     const addInterface = vi.fn().mockResolvedValue({ project: null, interfaceId: 'iface-1' });
-    registerProjectChannels({ addInterface } as unknown as ProjectService);
+    registerProjectChannels({ addInterface } as unknown as ProjectHost);
 
     await invoke('project.addInterface', {
       source: { kind: 'url', url: 'http://example.test/x?wsdl' },

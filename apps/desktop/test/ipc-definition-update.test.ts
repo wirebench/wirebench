@@ -74,7 +74,7 @@ const SNAPSHOT = {
   wssIncoming: [],
 } as unknown as ProjectWire;
 
-/** A recording stand-in for `ProjectService`, so the channels are tested, not the project. */
+/** A recording stand-in for `ProjectHost`, so the channels are tested, not the project. */
 function stubProject(overrides: Partial<DefinitionChannelProject> = {}): DefinitionChannelProject & {
   calls: unknown[];
 } {

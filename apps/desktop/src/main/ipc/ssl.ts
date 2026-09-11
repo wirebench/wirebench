@@ -24,7 +24,7 @@ import { registerHandler } from './register.js';
 export interface SslChannelDeps {
   /** The preferences document; main writes `ssl.caBundlePath` through it and nothing else does. */
   readonly preferences: Pick<PreferencesService, 'update'>;
-  /** The session's picked-path memory, the only evidence `ProjectService.trustAnchors` accepts. */
+  /** The session's picked-path memory, the only evidence `ProjectHost.trustAnchors` accepts. */
   readonly picks: RecordsReadPicks;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
   readonly onChanged?: (preferences: PreferencesWire) => void;

@@ -10,7 +10,7 @@ import { definitionCacheDir, nodeFs } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
-import { ProjectService } from '../src/main/project-service.js';
+import { ProjectHost } from '../src/main/project-host.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 
@@ -55,7 +55,7 @@ const DEFAULTS = {
 let userData = '';
 let projectDir = '';
 let picks: DialogPicks;
-let service: ProjectService;
+let service: ProjectHost;
 let interfaceId = '';
 
 function tempDir(prefix: string): string {
@@ -71,7 +71,7 @@ beforeEach(async () => {
   userData = tempDir('userdata');
   projectDir = join(tempDir('projects'), 'Versioned');
   picks = new DialogPicks();
-  service = new ProjectService(
+  service = new ProjectHost(
     new EngineService(),
     new RecentProjects(userData),
     {},
@@ -94,7 +94,7 @@ afterEach(async () => {
   rmSync(projectDir, { recursive: true, force: true });
 });
 
-describe('ProjectService — Update Definition', () => {
+describe('ProjectHost — Update Definition', () => {
   it('plans the v1 → v2 update without changing anything', async () => {
     picks.rememberRead(v2Path);
     const plan = await service.planDefinitionUpdate(interfaceId, { kind: 'file', path: v2Path });
@@ -165,7 +165,7 @@ describe('ProjectService — Update Definition', () => {
     const txUserData = tempDir('userdata-tx');
     const txProjectDir = join(tempDir('projects-tx'), 'VersionedTx');
     const txPicks = new DialogPicks();
-    const txService = new ProjectService(
+    const txService = new ProjectHost(
       new EngineService(),
       new RecentProjects(txUserData),
       {},
@@ -231,7 +231,7 @@ describe('ProjectService — Update Definition', () => {
   });
 });
 
-describe('ProjectService — Export Definition and documentation', () => {
+describe('ProjectHost — Export Definition and documentation', () => {
   it('exports every document of the bundle into a folder', async () => {
     const target = tempDir('export');
     try {

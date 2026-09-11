@@ -1,13 +1,13 @@
 import { channels } from '../../shared/ipc.js';
 import type { SearchQueryRequest } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import { searchDocuments } from '../search.js';
 import type { SearchDocument } from '../search.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectService` surface `search.query` needs; a stub stands in for it in tests. */
-export type SearchChannelProject = Pick<ProjectService, 'snapshot'>;
+/** The `ProjectHost` surface `search.query` needs; a stub stands in for it in tests. */
+export type SearchChannelProject = Pick<ProjectHost, 'snapshot'>;
 
 /** The `EngineService` surface `search.query` needs. */
 export type SearchChannelEngine = Pick<EngineService, 'resultFor'>;

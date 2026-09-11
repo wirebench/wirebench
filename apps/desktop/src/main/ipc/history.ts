@@ -10,14 +10,14 @@ import type { HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import type { HistorySendProject } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
 
 /** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject & Pick<ProjectService, 'buildLiveSendInput'>;
+  readonly project: HistorySendProject & Pick<ProjectHost, 'buildLiveSendInput'>;
   readonly showSecrets?: { get(): boolean };
   /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;

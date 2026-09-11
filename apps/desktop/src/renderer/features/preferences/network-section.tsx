@@ -2,7 +2,7 @@
  * The Preferences → Network surfaces: Proxy and SSL/TLS.
  *
  * Both are live — every field here is read by the main process on the next send (see
- * `ProjectService.proxyFor` and `tlsFor`) — which is why they are no longer in
+ * `ProjectHost.proxyFor` and `tlsFor`) — which is why they are no longer in
  * `connection-sections.tsx` alongside the still-informational WS-I group.
  *
  * Three rules shape the UI. The proxy password is never a value: it goes through `SecretField`,

@@ -5,7 +5,7 @@ import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@w
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import type { HistoryService } from '../history-service.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
@@ -26,9 +26,9 @@ import type {
 } from '../../shared/wire-types.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectService` surface the `request.*` channels drive; a stub stands in for it in tests. */
+/** The `ProjectHost` surface the `request.*` channels drive; a stub stands in for it in tests. */
 export type RequestChannelProject = Pick<
-  ProjectService,
+  ProjectHost,
   | 'scopesFor'
   | 'preflight'
   | 'authFor'
@@ -44,11 +44,11 @@ export type RequestChannelProject = Pick<
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
+  Partial<Pick<ProjectHost, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
-  /** Supplies the scopes; `ProjectService` in the app, a stub in tests. */
+  /** Supplies the scopes; `ProjectHost` in the app, a stub in tests. */
   readonly project: RequestChannelProject;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
@@ -82,7 +82,7 @@ export type DumpFilePicks = { hasWrite(path: string): boolean };
  * `WIREBENCH_E2E_EXTRA_CA_FILE`.
  *
  * Superseded, for real use, by the `ssl.caBundlePath` preference (see
- * `ProjectService.trustAnchors`), which is how a user configures a private CA and which a spec
+ * `ProjectHost.trustAnchors`), which is how a user configures a private CA and which a spec
  * can now drive through the picker with `WIREBENCH_E2E_FILE_DIALOG_PATH`. This hook survives for
  * the specs that predate the preference and only need *some* anchor in place before the
  * Preferences UI exists in their flow; it adds to `tls.ca` exactly as the preference does.

@@ -145,7 +145,7 @@ export interface SendAttachmentInput {
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 
 /** Events the service raises; the IPC layer forwards them to the renderer. */
-export interface ProjectServiceHooks {
+export interface ProjectHostHooks {
   /** After any mutation, save, open, close or reload. `null` means no project is open. */
   readonly onChanged?: (project: ProjectWire | null) => void;
   /** Files under the project folder changed outside the app. */
@@ -194,7 +194,7 @@ function sanitizeDroppedName(name: string): string {
  * would try them: an absolute path is itself the only candidate; a relative one is tried under
  * `resourceRoot` first (when the project has one), then under the project folder. Kept in sync
  * with that function deliberately, so the path main checks is always the path the engine would
- * actually read — see {@link ProjectService.attachmentResolvers}'s `resolver`.
+ * actually read — see {@link ProjectHost.attachmentResolvers}'s `resolver`.
  */
 function attachmentPathCandidates(projectDir: string, resourceRoot: string | undefined, path: string): string[] {
   if (isAbsolute(path)) {
@@ -258,7 +258,7 @@ async function isEmptyDir(dir: string): Promise<boolean> {
 }
 
 /** Owns the open project: its model, its folder, its autosave timer and its watcher. */
-export class ProjectService {
+export class ProjectHost {
   private open: OpenProject | undefined;
   /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
@@ -274,7 +274,7 @@ export class ProjectService {
   constructor(
     private readonly engine: EngineService,
     private readonly recent: RecentProjects,
-    private readonly hooks: ProjectServiceHooks = {},
+    private readonly hooks: ProjectHostHooks = {},
     /** Overrides the filesystem `saveProject` writes through. Test-only (deferred writes). */
     private readonly fs?: FsLike,
     /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */

@@ -23,7 +23,7 @@ flowchart TB
 
   subgraph M["Main — the only process with authority"]
     IPC["IPC handlers<br/>one zod request/response pair per channel"]
-    Proj["ProjectService<br/>load · watch · mutate · save"]
+    Proj["ProjectHost<br/>load · watch · mutate · save"]
     Sec["Secrets<br/>safeStorage · secretRef · redaction"]
     Paths["Path safety<br/>containment · dialog picks"]
     Hist["History · preferences · recent projects"]

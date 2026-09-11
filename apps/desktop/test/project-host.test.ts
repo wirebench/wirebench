@@ -12,7 +12,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
-import { ProjectService } from '../src/main/project-service.js';
+import { ProjectHost } from '../src/main/project-host.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/wire-types.js';
 import { RecentProjects } from '../src/main/recent-projects.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
@@ -25,8 +25,8 @@ function tempDir(prefix: string): string {
 }
 
 /** A service wired to its own engine, over a shared `userData` directory for the recent list. */
-function newService(userDataDir: string, fs?: FsLike, picks?: DialogPicks): ProjectService {
-  return new ProjectService(
+function newService(userDataDir: string, fs?: FsLike, picks?: DialogPicks): ProjectHost {
+  return new ProjectHost(
     new EngineService(),
     new RecentProjects(userDataDir),
     {},
@@ -78,12 +78,12 @@ afterEach(async () => {
   }
 });
 
-describe('ProjectService', () => {
+describe('ProjectHost', () => {
   it('re-sends the interface auth when hydrating a reopened project', async () => {
     const userData = root!;
     const dir = join(tempDir('project'), 'Auth Project');
     const secrets = { get: (ref: string) => Promise.resolve(ref === 'sec_pw' ? 's3cret!' : undefined) };
-    const service = new ProjectService(
+    const service = new ProjectHost(
       new EngineService((ref) => secrets.get(ref)),
       new RecentProjects(userData),
       {},
@@ -104,7 +104,7 @@ describe('ProjectService', () => {
     // reaches the engine (a cache miss is what would put them back on the wire).
     const engine = new EngineService((ref) => secrets.get(ref));
     const importSpy = vi.spyOn(engine, 'importForProject');
-    const reopened = new ProjectService(engine, new RecentProjects(userData), {}, undefined, undefined, secrets);
+    const reopened = new ProjectHost(engine, new RecentProjects(userData), {}, undefined, undefined, secrets);
     await reopened.openProject(dir);
     await reopened.whenHydrated();
 
@@ -344,13 +344,13 @@ describe('ProjectService', () => {
   }, 60_000);
 });
 
-describe('ProjectService: environments and property scopes', () => {
+describe('ProjectHost: environments and property scopes', () => {
   it('persists the active environment and resolves scopes through it', async () => {
     const userData = root!;
     const dir = join(tempDir('project'), 'Env Project');
     const globals = new GlobalProperties(userData);
     await globals.set('token', 'from-globals');
-    const service = new ProjectService(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
+    const service = new ProjectHost(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
 
     await service.create({ dir, name: 'Env Project' });
     await service.mutate({ kind: 'set-project-property', name: 'stage', value: 'proj' });
@@ -376,7 +376,7 @@ describe('ProjectService: environments and property scopes', () => {
     await service.save({ reason: 'test' });
     await service.close();
 
-    const reopened = new ProjectService(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
+    const reopened = new ProjectHost(new EngineService(), new RecentProjects(userData), {}, undefined, globals);
     const snapshot = await reopened.openProject(dir);
     expect(snapshot.activeEnvironmentId).toBe(environmentId);
     expect(snapshot.environments[0]).toMatchObject({
@@ -391,7 +391,7 @@ describe('ProjectService: environments and property scopes', () => {
 
   it('falls back to global and system scopes with no project open', () => {
     const globals = new GlobalProperties(root!);
-    const service = new ProjectService(new EngineService(), new RecentProjects(root!), {}, undefined, globals);
+    const service = new ProjectHost(new EngineService(), new RecentProjects(root!), {}, undefined, globals);
 
     const scopes = service.scopesFor();
 
@@ -438,7 +438,7 @@ describe('ProjectService: environments and property scopes', () => {
     /** A project with one imported interface, and the id of its first `Request 1`. */
     async function withRequest(preferences?: Pick<PreferencesService, 'get'>) {
       const dir = join(tempDir('project'), 'Send Options Project');
-      const service = new ProjectService(
+      const service = new ProjectHost(
         new EngineService(),
         new RecentProjects(root!),
         {},
@@ -535,7 +535,7 @@ describe('ProjectService: environments and property scopes', () => {
   });
 });
 
-describe('ProjectService: WSDL generation preferences reach every generation path', () => {
+describe('ProjectHost: WSDL generation preferences reach every generation path', () => {
   /** The `intA` element's inner text of a generated Calculator "Add" envelope, whatever its prefix. */
   function intAValue(envelopeXml: string): string | undefined {
     return /<[\w:]*intA>([^<]*)<\/[\w:]*intA>/.exec(envelopeXml)?.[1];
@@ -543,7 +543,7 @@ describe('ProjectService: WSDL generation preferences reach every generation pat
 
   it('fills a freshly imported "Request 1" with sample values when the preference asks for it', async () => {
     const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
-    const service = new ProjectService(
+    const service = new ProjectHost(
       new EngineService(),
       new RecentProjects(root!),
       {},
@@ -569,7 +569,7 @@ describe('ProjectService: WSDL generation preferences reach every generation pat
 
   it('honours the same preference on add-request, not just on import', async () => {
     const preferences = { get: () => mergePreferences({ wsdl: { sampleValues: true } }) };
-    const service = new ProjectService(
+    const service = new ProjectHost(
       new EngineService(),
       new RecentProjects(root!),
       {},
@@ -635,14 +635,14 @@ async function requestFileWithPathAttachment(dir: string): Promise<string> {
   throw new Error('no request file carries a path attachment');
 }
 
-describe('ProjectService attachments', () => {
+describe('ProjectHost attachments', () => {
   /**
    * A project with one imported interface and its `Request 1`, plus the folder it lives in and
    * the session's picked-path memory — the stand-in for `attachments.pickFiles` having run, so
    * a test that attaches a file from outside the project has to say so explicitly with `pick`.
    */
   async function withProject(name: string): Promise<{
-    service: ProjectService;
+    service: ProjectHost;
     dir: string;
     requestId: string;
     picks: DialogPicks;
@@ -1162,7 +1162,7 @@ describe('ProjectService attachments', () => {
   });
 });
 
-describe('ProjectService.authFor', () => {
+describe('ProjectHost.authFor', () => {
   it("uses the interface's default endpoint when the request has no endpointId of its own", async () => {
     const picks = new DialogPicks();
     const service = newService(root!, undefined, picks);

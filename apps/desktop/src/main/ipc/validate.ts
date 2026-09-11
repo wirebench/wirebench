@@ -2,11 +2,11 @@ import { bindingContextFor, ProjectError, validateMessage } from '@wirebench/eng
 import type { QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectHost } from '../project-host.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectService` surface `validate.message` needs; a stub stands in for it in tests. */
-export type ValidateChannelProject = Pick<ProjectService, 'validationTargetFor'>;
+/** The `ProjectHost` surface `validate.message` needs; a stub stands in for it in tests. */
+export type ValidateChannelProject = Pick<ProjectHost, 'validationTargetFor'>;
 
 /** Parses a Clark-notation QName string (`{namespaceUri}localName`) back into a `QName`. */
 function parseClarkQName(clark: string): QName {
