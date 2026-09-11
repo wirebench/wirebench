@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
@@ -33,10 +33,14 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  * that is the only set produced here. Font rasterisation and scrollbar metrics differ per OS, so
  * a Linux or Windows job could only ever compare against snapshots it generated itself — which
  * proves nothing and fails the moment a runner image changes. The two screenshot tests therefore
- * `test.skip` off darwin, and CI (`.github/workflows/ci.yml`) runs its e2e matrix on all three
- * knowing the pixel comparison happens on macOS only. Dynamic regions (the app version, clock
- * times, durations, response sizes and `urn:uuid` message ids) are masked so a snapshot never
- * depends on when it was taken.
+ * `test.skip` off darwin. They also skip when `CI` is set: `resizeWindow` asks for 1280x800, and
+ * a hosted macOS runner's virtual display clamps the window to 1280x677, so a baseline captured
+ * at the documented size can never match there. The pixel comparison is a developer-machine
+ * check (`pnpm test:e2e` locally, and `docs/success-criteria.md` SC12 records it as such);
+ * everything else in this spec still runs on all three CI platforms.
+ *
+ * Dynamic regions (the app version, clock times, durations, response sizes and `urn:uuid`
+ * message ids) are masked so a snapshot never depends on when it was taken.
  */
 
 /** Every rule this spec turns off, with the reason; see the file comment. */
@@ -121,7 +125,7 @@ test.describe('accessibility and theming', () => {
       server = undefined;
     }
     if (projectRoot.length > 0) {
-      rmSync(projectRoot, { recursive: true, force: true });
+      removeDirSync(projectRoot);
       projectRoot = '';
     }
   });
@@ -162,8 +166,13 @@ test.describe('accessibility and theming', () => {
       launched = await launchApp({ userDataDir, keepUserDataDir: true });
       await expect(launched.window.getByTestId('status-bar-theme')).toHaveAttribute('data-theme-preference', 'light');
       await expect(launched.window.locator('html')).toHaveAttribute('data-theme', 'light');
+      // The profile belongs to a *running* app until this closes it, and Windows refuses to
+      // remove a directory anything still holds a handle inside — so close here rather than
+      // leaving it to `afterEach`, which runs after this `finally`.
+      await launched.close();
+      launched = undefined;
     } finally {
-      rmSync(userDataDir, { recursive: true, force: true });
+      removeDirSync(userDataDir);
     }
   });
 
@@ -207,6 +216,10 @@ test.describe('accessibility and theming', () => {
 
     test(`the shell looks right in ${theme}`, async () => {
       test.skip(process.platform !== 'darwin', 'snapshots are macOS-only');
+      test.skip(
+        !!process.env['CI'],
+        'snapshot baselines are captured on developer machines; CI displays clamp the window size',
+      );
       launched = await launchApp();
       const { window } = launched;
       await resizeWindow(launched);
