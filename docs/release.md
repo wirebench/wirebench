@@ -79,8 +79,8 @@ Two consequences worth knowing:
 3. Tag and push:
 
    ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 ### Before the *first* release
@@ -99,7 +99,7 @@ them permanent:
 done for the first release; check the date still matches the day you tag.
 
 The workflow runs `pnpm check`, packages on all three runners, uploads the artifacts and
-creates a **draft** release (a tag containing `-`, such as `v0.1.0-rc.1`, is marked as a
+creates a **draft** release (a tag containing `-`, such as `v1.0.0-rc.1`, is marked as a
 pre-release). Review the draft, install one artifact per OS, then publish it by hand.
 
 ## Required secrets

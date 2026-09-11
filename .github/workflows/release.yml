@@ -1,6 +1,6 @@
 name: Release
 
-# Tag-driven: `git tag v0.1.0 && git push --tags` builds the three OS artifact sets and
+# Tag-driven: `git tag v1.0.0 && git push --tags` builds the three OS artifact sets and
 # collects them into a *draft* GitHub Release. Nothing is published automatically — a human
 # reviews the draft, checks the artifacts, and presses publish.
 on:
