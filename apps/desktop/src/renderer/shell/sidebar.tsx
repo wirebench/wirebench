@@ -2,6 +2,7 @@ import { EnvironmentsSection } from '../features/environments/environments-secti
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { PreferencesSectionList } from '../features/preferences/section-list.js';
+import { SearchView } from '../features/search/search-view.js';
 import { WssSection } from '../features/wss/wss-section.js';
 import type { SidebarView } from '../state/ui-state.js';
 import { useUiStore } from '../state/ui.js';
@@ -59,6 +60,8 @@ export function Sidebar() {
           <ExplorerView />
           <EnvironmentsSection />
         </>
+      ) : view === 'search' ? (
+        <SearchView />
       ) : view === 'history' ? (
         <HistoryView />
       ) : view === 'wss' ? (

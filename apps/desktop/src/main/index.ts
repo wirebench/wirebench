@@ -30,6 +30,7 @@ import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
+import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { createMainWindow } from './windows.js';
 import type { IpcEvent } from '../shared/ipc.js';
@@ -179,6 +180,7 @@ void app.whenReady().then(() => {
       },
     },
   });
+  registerSearchChannels(engineService, projectService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({
