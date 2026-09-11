@@ -4,6 +4,11 @@
  * The description-level counterpart lives in `../index.ts`. This array is the single source of
  * truth for `runMessageAssertions` and for the message table `scripts/wsi-docs.ts` generates;
  * adding an assertion means adding a module here and nothing else.
+ *
+ * R1007, R1011 and R1003 overlap by design: R1007 constrains *what* may be a child of
+ * `soap:Envelope`, R1011 constrains *where* (nothing may follow `soap:Body`), and R1003 folds
+ * both into the profile's cardinality/order rule for `soap:Body`/`soap:Header`. A single
+ * malformed envelope can therefore fail all three; that is expected, not a bug.
  */
 
 import type { WsiMessageAssertion } from '../../types.js';

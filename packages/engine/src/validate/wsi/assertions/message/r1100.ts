@@ -1,23 +1,9 @@
-import type { Element, Node } from '@xmldom/xmldom';
 import type { WsiFinding, WsiMessageAssertion } from '../../types.js';
 import { NOT_APPLICABLE } from '../../types.js';
-import { envelopes, faultOf, messageFinding } from './helpers.js';
+import { elementChildren, envelopes, faultOf, messageFinding } from './helpers.js';
 
 /** The only children SOAP 1.1 defines for `soap:Fault`. */
 const FAULT_CHILDREN = ['faultcode', 'faultstring', 'faultactor', 'detail'];
-
-/** The element children of `fault`, in document order. */
-function childrenOf(fault: Element): readonly Element[] {
-  const out: Element[] = [];
-  let child: Node | null = fault.firstChild;
-  while (child !== null) {
-    if (child.nodeType === 1) {
-      out.push(child as Element);
-    }
-    child = child.nextSibling;
-  }
-  return out;
-}
 
 /**
  * BP 1.1 R1100: a SOAP 1.1 `soap:Fault` has no element children other than `faultcode`,
@@ -45,7 +31,7 @@ export const R1100: WsiMessageAssertion = {
         continue;
       }
       faults += 1;
-      for (const child of childrenOf(fault)) {
+      for (const child of elementChildren(fault)) {
         if (!FAULT_CHILDREN.includes(child.localName ?? child.nodeName)) {
           findings.push(messageFinding(view, child, `soap:Fault has the unexpected child "${child.nodeName}"`));
         }

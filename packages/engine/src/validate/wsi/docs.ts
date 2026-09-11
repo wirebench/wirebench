@@ -54,6 +54,12 @@ export const WSI_PLANNED_ASSERTIONS: readonly PlannedAssertion[] = Object.freeze
     notes: 'Id and requirement text not verified against the published profile.',
   },
   {
+    id: 'R1104',
+    level: 'REQUIRED',
+    title: 'A faultcode value is one of the four standard codes, or a QName outside the SOAP namespace',
+    notes: 'Message-level; id and requirement text not verified against the published profile.',
+  },
+  {
     id: 'R2301',
     level: 'REQUIRED',
     title: 'The order of body children matches the order of the wsdl:parts',

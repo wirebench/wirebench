@@ -46,14 +46,10 @@ export function envelopeElements(view: WsiMessageView): readonly Element[] {
   return envelope === undefined ? [] : [envelope, ...descendants(envelope)];
 }
 
-/** The element children of `soap:Envelope`, in document order (whatever their namespace). */
-export function envelopeChildren(view: WsiMessageView): readonly Element[] {
-  const envelope = view.envelope;
-  if (envelope === undefined) {
-    return [];
-  }
+/** The element children of `parent`, in document order (whatever their namespace). */
+export function elementChildren(parent: Element): readonly Element[] {
   const out: Element[] = [];
-  let child: Node | null = envelope.firstChild;
+  let child: Node | null = parent.firstChild;
   while (child !== null) {
     if (child.nodeType === 1) {
       out.push(child as Element);
@@ -61,6 +57,12 @@ export function envelopeChildren(view: WsiMessageView): readonly Element[] {
     child = child.nextSibling;
   }
   return out;
+}
+
+/** The element children of `soap:Envelope`, in document order (whatever their namespace). */
+export function envelopeChildren(view: WsiMessageView): readonly Element[] {
+  const envelope = view.envelope;
+  return envelope === undefined ? [] : elementChildren(envelope);
 }
 
 /** The `soap:Body` of a half, when it has exactly the one the profile requires. */
@@ -88,18 +90,7 @@ export function faultOf(view: WsiMessageView): Element | undefined {
 /** The element children of `soap:Body`, in document order. */
 export function bodyChildren(view: WsiMessageView): readonly Element[] {
   const body = bodyOf(view);
-  if (body === undefined) {
-    return [];
-  }
-  const out: Element[] = [];
-  let child: Node | null = body.firstChild;
-  while (child !== null) {
-    if (child.nodeType === 1) {
-      out.push(child as Element);
-    }
-    child = child.nextSibling;
-  }
-  return out;
+  return body === undefined ? [] : elementChildren(body);
 }
 
 /** Every attribute of `element`, as a plain list (xmldom's `attributes` is a live NamedNodeMap). */
@@ -179,18 +170,7 @@ export function unqualifiedChild(parent: Element, localName: string): Element | 
 /** Every `soap:Header` block (its element children), in document order. */
 export function headerBlocks(view: WsiMessageView): readonly Element[] {
   const header = headerOf(view);
-  if (header === undefined) {
-    return [];
-  }
-  const out: Element[] = [];
-  let child: Node | null = header.firstChild;
-  while (child !== null) {
-    if (child.nodeType === 1) {
-      out.push(child as Element);
-    }
-    child = child.nextSibling;
-  }
-  return out;
+  return header === undefined ? [] : elementChildren(header);
 }
 
 /** The `soap:Body` children of a half, skipping the `soap:Fault` (which has its own rules). */

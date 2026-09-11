@@ -102,6 +102,7 @@ against the published profile.
 | R2202 | RECOMMENDED | A description prefers the wrapped document-literal convention | Planned | Planned. |
 | R2207 | REQUIRED | A wsdl:message part uses either the element or the type attribute, not both | Planned | Id and requirement text not verified against the published profile. |
 | R2208 | REQUIRED | An rpc-literal operation’s parameterOrder names only parts of its messages | Planned | Id and requirement text not verified against the published profile. |
+| R1104 | REQUIRED | A faultcode value is one of the four standard codes, or a QName outside the SOAP namespace | Planned | Message-level; id and requirement text not verified against the published profile. |
 | R2301 | REQUIRED | The order of body children matches the order of the wsdl:parts | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |
 | R2302 | REQUIRED | An rpc-literal envelope names its part accessors after the wsdl:parts | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |
 | R2305 | REQUIRED | A document-literal envelope carries the element declared by the bound part | Planned | Message-level; not yet in the message assertion catalogue (see the Messages table). |

@@ -1,20 +1,6 @@
-import type { Element, Node } from '@xmldom/xmldom';
 import type { WsiFinding, WsiMessageAssertion } from '../../types.js';
 import { NOT_APPLICABLE } from '../../types.js';
-import { envelopes, faultOf, messageFinding } from './helpers.js';
-
-/** The element children of `fault`, in document order. */
-function childrenOf(fault: Element): readonly Element[] {
-  const out: Element[] = [];
-  let child: Node | null = fault.firstChild;
-  while (child !== null) {
-    if (child.nodeType === 1) {
-      out.push(child as Element);
-    }
-    child = child.nextSibling;
-  }
-  return out;
-}
+import { elementChildren, envelopes, faultOf, messageFinding } from './helpers.js';
 
 /**
  * BP 1.1 R1101: the children of a SOAP 1.1 `soap:Fault` are unqualified. SOAP 1.1 declares
@@ -41,7 +27,7 @@ export const R1101: WsiMessageAssertion = {
       if (fault === undefined) {
         continue;
       }
-      for (const child of childrenOf(fault)) {
+      for (const child of elementChildren(fault)) {
         children += 1;
         if (child.namespaceURI !== null && child.namespaceURI !== '') {
           findings.push(

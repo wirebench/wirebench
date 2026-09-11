@@ -27,8 +27,9 @@ export const R1005: WsiMessageAssertion = {
       }
       messages += 1;
       // Anything before the document element is prolog; a DOCTYPE can only legally appear there.
-      const prolog =
-        view.envelopeXml.split('<' + (view.document?.documentElement?.nodeName ?? '\u0000'))[0] ?? view.envelopeXml;
+      const rootTag = '<' + (view.document?.documentElement?.nodeName ?? '\u0000');
+      const rootIndex = view.envelopeXml.indexOf(rootTag);
+      const prolog = rootIndex === -1 ? view.envelopeXml : view.envelopeXml.slice(0, rootIndex);
       if (/<!DOCTYPE\b/i.test(prolog)) {
         findings.push(viewFinding(view, `the ${view.direction} carries a Document Type Declaration`));
       }
