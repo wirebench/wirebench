@@ -62,19 +62,39 @@ export function createDispatcher(opts: {
 }): Dispatcher {
   const connect = connectOptions(opts);
   if (opts.proxy !== undefined) {
-    const proxy = opts.proxy;
-    return new ProxyAgent({
-      uri: proxy.url,
-      ...(proxy.auth !== undefined
-        ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
-        : {}),
-      ...(connect !== undefined ? { connect } : {}),
-    });
+    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, {}));
   }
   if (connect !== undefined) {
     return new Agent({ connect });
   }
   return getDefaultAgent();
+}
+
+/**
+ * The `ProxyAgent` options for one proxied request.
+ *
+ * The split between `requestTls` and `proxyTls` is the whole point: undici applies the
+ * agent-level `connect` to the socket it opens *to the proxy*, never to the TLS session inside
+ * the CONNECT tunnel — so passing our TLS settings there would silently drop the user's trust
+ * anchors, client certificate and `minVersion` for every proxied HTTPS request. `requestTls`
+ * is the tunnelled origin handshake (where those belong) and `proxyTls` carries only what
+ * describes the hop to the proxy itself, i.e. the bind address.
+ */
+function proxyAgentOptions(
+  proxy: ProxyOptions,
+  opts: { readonly tls?: TlsOptions; readonly localAddress?: string },
+  shared: Record<string, unknown>,
+): ConstructorParameters<typeof ProxyAgent>[0] {
+  const proxyTls = opts.localAddress !== undefined ? { localAddress: opts.localAddress } : undefined;
+  return {
+    uri: proxy.url,
+    ...(proxy.auth !== undefined
+      ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
+      : {}),
+    ...(opts.tls !== undefined ? { requestTls: tlsConnectOptions(opts.tls) } : {}),
+    ...(proxyTls !== undefined ? { proxyTls } : {}),
+    ...shared,
+  } as ConstructorParameters<typeof ProxyAgent>[0];
 }
 
 /**
@@ -90,22 +110,12 @@ export function createSingleConnectionDispatcher(opts: {
   readonly localAddress?: string;
 }): Dispatcher {
   const connect = connectOptions(opts);
-  const shared = {
-    connections: 1,
-    pipelining: 1,
-    keepAliveTimeout: 30_000,
-    keepAliveMaxTimeout: 60_000,
-    ...(connect !== undefined ? { connect } : {}),
-  };
+  const base = { connections: 1, pipelining: 1, keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000 };
+  const shared = { ...base, ...(connect !== undefined ? { connect } : {}) };
   if (opts.proxy !== undefined) {
-    const proxy = opts.proxy;
-    return new ProxyAgent({
-      uri: proxy.url,
-      ...(proxy.auth !== undefined
-        ? { token: `Basic ${Buffer.from(`${proxy.auth.username}:${proxy.auth.password}`).toString('base64')}` }
-        : {}),
-      ...shared,
-    });
+    // `shared` (connections: 1, keep-alive) still applies: it reaches the per-origin client
+    // inside the tunnel, which is exactly the connection NTLM authenticates.
+    return new ProxyAgent(proxyAgentOptions(opts.proxy, opts, base));
   }
   return new Agent(shared);
 }

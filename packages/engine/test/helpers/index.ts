@@ -10,6 +10,7 @@ export {
   type TestSoapServerTls,
   type RecordedRequest,
 } from './test-soap-server.js';
+export { startTestProxy, type ProxiedRequest, type TestProxy, type TestProxyOptions } from './test-proxy.js';
 export { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 export {
   generateTestCa,

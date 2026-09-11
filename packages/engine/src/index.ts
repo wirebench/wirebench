@@ -224,6 +224,8 @@ export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from 
 export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './http/client.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
+export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
+export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
