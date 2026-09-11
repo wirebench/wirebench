@@ -25,10 +25,8 @@ test.describe('environments', () => {
     }
     imported = undefined;
     deployed = undefined;
-    for (const dir of [userDataDir]) {
-      if (dir !== undefined) {
-        rmSync(dir, { recursive: true, force: true });
-      }
+    if (userDataDir !== undefined) {
+      rmSync(userDataDir, { recursive: true, force: true });
     }
     userDataDir = undefined;
   });

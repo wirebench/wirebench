@@ -168,7 +168,7 @@ test.describe('accessibility and theming', () => {
   });
 
   for (const theme of ['dark', 'light'] as const) {
-    test(`a11y: the workspace picker has no serious violations (${theme})`, async () => {
+    test(`a11y: the picker has no serious violations (${theme})`, async () => {
       launched = await launchApp();
       await setTheme(launched.window, theme);
       await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
@@ -211,16 +211,37 @@ test.describe('accessibility and theming', () => {
         !!process.env['CI'],
         'snapshot baselines are captured on developer machines; CI displays clamp the window size',
       );
+      server = await startTestSoapServer({ fixture: 'calculator' });
       launched = await launchApp();
       const { window } = launched;
       await resizeWindow(launched);
+      await createProjectWithCalculator(window, server);
+      await openFirstRequest(window);
       await setTheme(window, theme);
-      await expect(window.getByTestId('workspace-picker')).toBeVisible();
       // The version string only appears once `app.version` resolves; waiting for it keeps the
       // status bar from being half-rendered in the snapshot.
       await expect(window.locator('[data-testid="status-bar"]')).toContainText('TLS');
 
       await expect(window).toHaveScreenshot(`shell-${theme}.png`, {
+        mask: dynamicRegions(window),
+        maxDiffPixelRatio: 0.002,
+        animations: 'disabled',
+      });
+    });
+
+    test(`the workspace picker looks right in ${theme}`, async () => {
+      test.skip(process.platform !== 'darwin', 'snapshots are macOS-only');
+      test.skip(
+        !!process.env['CI'],
+        'snapshot baselines are captured on developer machines; CI displays clamp the window size',
+      );
+      launched = await launchApp();
+      const { window } = launched;
+      await resizeWindow(launched);
+      await setTheme(window, theme);
+      await expect(window.getByTestId('workspace-picker')).toBeVisible();
+
+      await expect(window).toHaveScreenshot(`picker-${theme}.png`, {
         mask: dynamicRegions(window),
         maxDiffPixelRatio: 0.002,
         animations: 'disabled',

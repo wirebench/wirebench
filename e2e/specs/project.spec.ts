@@ -34,10 +34,8 @@ test.describe('projects on disk', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir]) {
-      if (dir !== undefined) {
-        rmSync(dir, { recursive: true, force: true });
-      }
+    if (userDataDir !== undefined) {
+      rmSync(userDataDir, { recursive: true, force: true });
     }
     userDataDir = undefined;
   });
@@ -63,8 +61,6 @@ test.describe('projects on disk', () => {
 
     // --- second launch: the workspace reopens by itself, never showing the picker -----------
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
-    await expect(launched.window.getByTestId('workspace-picker')).toHaveCount(0);
-    await expect(launched.window.getByTestId('title-bar')).toContainText('Workspace 1');
     await expectReopenedWorkspace(launched.window);
 
     await openFirstRequest(launched.window);

@@ -37,10 +37,8 @@ test.describe('keyboard', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir]) {
-      if (dir.length > 0) {
-        rmSync(dir, { recursive: true, force: true });
-      }
+    if (userDataDir.length > 0) {
+      rmSync(userDataDir, { recursive: true, force: true });
     }
     userDataDir = '';
   });
@@ -49,14 +47,9 @@ test.describe('keyboard', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
 
-    // Tab into the picker's name field — the workspace, the project and everything after it
-    // is keys only, with no native picker anywhere in the flow.
-    const workspaceName = page.getByTestId('workspace-create-name');
-    const focusedName = page.locator('[data-testid="workspace-create-name"]:focus');
-    for (let attempt = 0; attempt < 10 && (await focusedName.count()) === 0; attempt += 1) {
-      await page.keyboard.press('Tab');
-    }
-    await expect(workspaceName).toBeFocused();
+    // The picker's name field is focused on load — the workspace, the project and everything
+    // after it is keys only, with no native picker anywhere in the flow.
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused();
     await page.keyboard.type('Keyboard');
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('title-bar')).toContainText('Keyboard');
