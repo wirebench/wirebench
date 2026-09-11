@@ -9,6 +9,7 @@ import type {
   WorkspaceWire,
 } from '../../../shared/wire-types.js';
 import { queueEndpointOverride, queueEnvironmentPatch } from './environment-queue.js';
+import { resolveEndpointOverride } from '../../state/endpoint-override.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
@@ -35,11 +36,9 @@ export function effectiveEndpointSource(input: {
   readonly workspaceOverride?: string;
   readonly interfaceDefault?: string;
 }): EffectiveEndpointSource {
-  if (input.projectOverride !== undefined) {
-    return 'project';
-  }
-  if (input.workspaceOverride !== undefined) {
-    return 'workspace';
+  const override = resolveEndpointOverride(input);
+  if (override !== undefined) {
+    return override.source;
   }
   return input.interfaceDefault !== undefined ? 'interface' : 'none';
 }

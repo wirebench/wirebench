@@ -388,6 +388,69 @@ describe('selectRequestEndpoint', () => {
     });
     expect(resolve('req-1')).toEqual({ url: 'http://custom.test/soap', source: 'request-custom' });
   });
+
+  it("lets a linked project's own environment beat the workspace environment's override", () => {
+    const workspaceEnvironment = {
+      id: 'env-1',
+      name: 'Dev',
+      slug: 'Dev',
+      order: 0,
+      endpoints: { 'Demo/Calculator': 'http://dev.test/soap' },
+      properties: {},
+    };
+    const projects = [
+      {
+        id: 'proj-1',
+        name: 'Demo',
+        slug: 'Demo',
+        source: 'linked' as const,
+        dir: '/elsewhere/Demo',
+        status: 'ready' as const,
+      },
+    ];
+
+    // The linked project's own environment (matched by slug 'Dev') overrides the interface too:
+    // it wins over the workspace environment's override for the same interface.
+    applyProject({
+      environments: [
+        {
+          id: 'proj-env-1',
+          name: 'Dev',
+          slug: 'Dev',
+          order: 0,
+          endpoints: { Calculator: 'http://linked-dev.test/soap' },
+          properties: {},
+        },
+      ],
+    });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ environments: [workspaceEnvironment], activeEnvironmentId: 'env-1', projects }),
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://linked-dev.test/soap', source: 'environment' });
+
+    // The linked project's environment has no override for this interface: falls through to the
+    // workspace environment's override (the unchanged case).
+    applyProject({
+      environments: [{ id: 'proj-env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} }],
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://dev.test/soap', source: 'workspace-environment' });
+
+    // No environment of the linked project matches the active workspace environment's slug:
+    // falls through the same way.
+    applyProject({
+      environments: [
+        {
+          id: 'proj-env-1',
+          name: 'Prod',
+          slug: 'Prod',
+          order: 0,
+          endpoints: { Calculator: 'http://linked-prod.test/soap' },
+          properties: {},
+        },
+      ],
+    });
+    expect(resolve('req-1')).toEqual({ url: 'http://dev.test/soap', source: 'workspace-environment' });
+  });
 });
 
 describe('useProjectStore: environments and properties', () => {

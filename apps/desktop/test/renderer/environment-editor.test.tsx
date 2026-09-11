@@ -163,4 +163,21 @@ describe('EnvironmentEditor', () => {
     setUp();
     expect(screen.getByText('Project environments (Demo — linked project)')).toBeTruthy();
   });
+
+  it('falls back to a generic caption when the project name is unavailable', () => {
+    const updateEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      projects: { p1: { id: 'p1', name: undefined, environments: [environment] } as unknown as ProjectWire },
+      projectOf: { e1: 'p1' },
+      interfaces: { 'iface-1': iface },
+      order: [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      updateEnvironment,
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EnvironmentEditor environmentId="e1" />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByText('Project environments (this project — linked project)')).toBeTruthy();
+  });
 });

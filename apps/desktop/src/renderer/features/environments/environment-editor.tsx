@@ -187,9 +187,7 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
       aria-label={`Environment ${environment.name}`}
       className="flex h-full min-h-0 flex-col gap-4 overflow-auto p-4"
     >
-      <p className="text-xs text-fg-subtle">
-        Project environments ({projectName ?? 'linked project'} — linked project)
-      </p>
+      <p className="text-xs text-fg-subtle">Project environments ({projectName ?? 'this project'} — linked project)</p>
 
       <label className="flex max-w-md flex-col gap-1">
         <span className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Name</span>

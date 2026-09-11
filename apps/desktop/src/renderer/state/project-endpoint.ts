@@ -5,6 +5,7 @@
 
 import type { EndpointSourceWire, EndpointWire, WorkspaceWire } from '../../shared/wire-types.js';
 import type { ProjectSnapshot } from './project.js';
+import { resolveEndpointOverride } from './endpoint-override.js';
 
 /** What {@link selectRequestEndpoint} answers: the URL, and which rule produced it. */
 export interface ResolvedEndpoint {
@@ -20,8 +21,9 @@ export interface ResolvedEndpoint {
 
 /**
  * The URL a request is actually sent to, and where it came from. Mirrors the engine's
- * `resolveEndpoint` precedence on the wire model: the active environment's override for the
- * interface's slug (an explicit deployment choice) beats everything, then the request's own
+ * `resolveWorkspaceEndpoint` precedence on the wire model: a linked project's own environment
+ * (matched to the active workspace environment by slug) beats everything, then the active
+ * workspace environment's override for `<projectSlug>/<interfaceSlug>`, then the request's own
  * custom URL, then its chosen endpoint, then the interface default, then its first endpoint.
  *
  * Advisory only — `request.preflight` (and the send itself) resolve this in the main process,
@@ -43,14 +45,24 @@ export function selectRequestEndpoint(
   const iface = state.interfaces[request.interfaceId];
 
   // The active environment is the *workspace's*, and its endpoint keys are
-  // `<projectSlug>/<interfaceSlug>`.
+  // `<projectSlug>/<interfaceSlug>`. A linked project's own environment (matched to the active
+  // workspace environment by slug) beats the workspace environment's override — same precedence
+  // as the engine's `resolveWorkspaceEndpoint`.
   if (iface !== undefined && workspace !== null) {
     const active = workspace.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const projectId = state.projectOf[iface.id];
     const projectSlug = workspace.projects.find((project) => project.id === projectId)?.slug;
-    const override = projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
+    const workspaceOverride = projectSlug === undefined ? undefined : active?.endpoints[`${projectSlug}/${iface.slug}`];
+    const linkedEnvironment = (projectId === undefined ? undefined : state.projects[projectId])?.environments.find(
+      (candidate) => candidate.slug === active?.slug,
+    );
+    const projectOverride = linkedEnvironment?.endpoints[iface.slug];
+    const override = resolveEndpointOverride({
+      ...(projectOverride !== undefined ? { projectOverride } : {}),
+      ...(workspaceOverride !== undefined ? { workspaceOverride } : {}),
+    });
     if (override !== undefined) {
-      return { url: override, source: 'workspace-environment' };
+      return { url: override.url, source: override.source === 'project' ? 'environment' : 'workspace-environment' };
     }
   }
 
