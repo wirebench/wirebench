@@ -139,6 +139,93 @@ describe('useWorkspaceStore', () => {
     expect(useProjectStore.getState().projects['p1']).toBeDefined();
   });
 
+  it('pulls every ready project the mirror lacks when a workspace arrives', async () => {
+    // A renderer that subscribes after the hosts came up (a reload, a reopened window) has
+    // missed every `project.changed`; the workspace is its only cue to ask.
+    const snapshot = vi.fn().mockResolvedValue({ ok: true, value: { project: PROJECT } });
+    installWirebenchApi({ project: { snapshot } });
+
+    useWorkspaceStore.getState().applySnapshot(
+      workspaceWire({
+        projects: [
+          {
+            id: 'p1',
+            name: 'Calculator',
+            slug: 'Calculator',
+            source: 'internal',
+            dir: '/w/p/Calculator',
+            status: 'ready',
+          },
+          { id: 'p9', name: 'Gone', slug: 'Gone', source: 'linked', dir: '/elsewhere/Gone', status: 'missing' },
+        ],
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(useProjectStore.getState().projects['p1']).toEqual(PROJECT);
+    });
+    expect(useProjectStore.getState().order.map((entry) => entry.projectId)).toEqual(['p1']);
+    // Only ready projects have a host to answer.
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(snapshot).toHaveBeenCalledWith({ projectId: 'p1' });
+  });
+
+  it('does not pull a project the mirror already has', () => {
+    const snapshot = vi.fn().mockResolvedValue({ ok: true, value: { project: PROJECT } });
+    installWirebenchApi({ project: { snapshot } });
+    useProjectStore.getState().applySnapshot('p1', PROJECT);
+
+    useWorkspaceStore.getState().applySnapshot(
+      workspaceWire({
+        projects: [
+          {
+            id: 'p1',
+            name: 'Calculator',
+            slug: 'Calculator',
+            source: 'internal',
+            dir: '/w/p/Calculator',
+            status: 'ready',
+          },
+        ],
+      }),
+    );
+
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it('drops a pulled snapshot that lands after the workspace closed', async () => {
+    type Reply = { ok: true; value: { project: ProjectWire } };
+    let answer: ((reply: Reply) => void) | undefined;
+    const snapshot = vi.fn(
+      () =>
+        new Promise<Reply>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    installWirebenchApi({ project: { snapshot } });
+    useWorkspaceStore.getState().applySnapshot(
+      workspaceWire({
+        projects: [
+          {
+            id: 'p1',
+            name: 'Calculator',
+            slug: 'Calculator',
+            source: 'internal',
+            dir: '/w/p/Calculator',
+            status: 'ready',
+          },
+        ],
+      }),
+    );
+
+    useWorkspaceStore.getState().applySnapshot(null);
+    answer?.({ ok: true, value: { project: PROJECT } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useProjectStore.getState().projects).toEqual({});
+  });
+
   it('close applies the empty snapshot, resetting the project mirror', async () => {
     useWorkspaceStore.getState().applySnapshot(workspaceWire());
     useProjectStore.getState().applySnapshot('p1', PROJECT);

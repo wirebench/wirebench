@@ -69,6 +69,46 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   readonly mutate: (change: WorkspaceChange) => Promise<{ readonly createdEnvironmentId?: string }>;
 }
 
+/** Projects whose `project.snapshot` pull is in flight, so a burst of workspace updates asks once. */
+const pulling = new Set<string>();
+
+/**
+ * Pulls every ready project the mirror does not hold yet. `project.changed` is the usual way a
+ * project reaches the mirror, but a renderer that subscribed after the hosts came up — a reload,
+ * a window reopened from the dock, the startup race with `openLast()` — has missed those events,
+ * and the workspace arriving is its only cue.
+ *
+ * A reply is applied only if it is still wanted: the workspace is still open with that project
+ * in it, and no `project.changed` has filled the mirror in the meantime (that one is newer).
+ */
+function pullMissingProjects(workspace: WorkspaceWire): void {
+  const mirrored = useProjectStore.getState().projects;
+  for (const project of workspace.projects) {
+    if (project.status !== 'ready' || mirrored[project.id] !== undefined || pulling.has(project.id)) {
+      continue;
+    }
+    const projectId = project.id;
+    pulling.add(projectId);
+    void ipc()
+      .project.snapshot({ projectId })
+      .then((result) => {
+        const current = useWorkspaceStore.getState().workspace;
+        const stillWanted =
+          current !== null &&
+          current.id === workspace.id &&
+          current.projects.some((candidate) => candidate.id === projectId) &&
+          useProjectStore.getState().projects[projectId] === undefined;
+        if (result.ok && result.value.project !== null && stillWanted) {
+          useProjectStore.getState().applySnapshot(projectId, result.value.project);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        pulling.delete(projectId);
+      });
+  }
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   const apply = (workspace: WorkspaceWire | null): void => {
     if (workspace === null) {
@@ -80,6 +120,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       useProjectStore.getState().reset();
     }
     set({ workspace, status: 'idle', error: undefined });
+    if (workspace !== null) {
+      pullMissingProjects(workspace);
+    }
   };
 
   /** Unwraps an `IpcResult`, throwing the error so every action reports failure the same way. */

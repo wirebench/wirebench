@@ -891,8 +891,9 @@ export function useTargetProjectId(): string | undefined {
  * unsubscribe for symmetry with React effects.
  */
 export function subscribeToProject(): () => void {
-  // No initial pull: there is nothing to pull *from* until a workspace is open, and opening
-  // one raises `project.changed` per project as each host comes up.
+  // No pull here: which projects exist is the workspace's to say, so the workspace store pulls
+  // any ready project the mirror lacks whenever a workspace arrives (`pullMissingProjects`),
+  // and opening one raises `project.changed` per project as each host comes up.
   // `defineEvent` types every event's `name` as `string`, so the derived event map cannot
   // narrow a payload by channel; the casts below are the same ones the import dialog uses.
   const offChanged = window.wirebench.on('project.changed', ((payload: ProjectChangedEvent) => {
