@@ -6,6 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ProjectWatcher } from '../src/main/project-watch.js';
 
 const DEBOUNCE_MS = 30;
+/**
+ * `fs.watch` on macOS is backed by an FSEvents stream that goes live a moment after `watch()`
+ * returns; on a loaded CI runner that moment stretches, so a write issued straight after
+ * `start()` can be missed. Each test lets the watcher settle first and waits well under the
+ * test's own timeout, so a slow runner fails the assertion rather than the harness.
+ */
+const SETTLE_MS = 200;
+const SLOW = { timeout: 15_000 };
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
 
 let dir: string | undefined;
 let watcher: ProjectWatcher | undefined;
@@ -39,7 +48,7 @@ class Collector {
 }
 
 describe('ProjectWatcher', () => {
-  it('reports a file written from outside the app', async () => {
+  it('reports a file written from outside the app', SLOW, async () => {
     dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
     const seen = new Collector();
     watcher = new ProjectWatcher({
@@ -48,15 +57,16 @@ describe('ProjectWatcher', () => {
       onChange: seen.push,
     });
     watcher.start();
+    await settle();
 
     await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
 
-    const batch = await seen.next(5_000);
+    const batch = await seen.next(10_000);
     expect(batch).toBeDefined();
     expect(batch).toContain('wirebench.yaml');
   });
 
-  it('ignores writes the app itself announced, then reports later ones', async () => {
+  it('ignores writes the app itself announced, then reports later ones', SLOW, async () => {
     dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
     await mkdir(join(dir, 'interfaces'), { recursive: true });
     const seen = new Collector();
@@ -66,6 +76,7 @@ describe('ProjectWatcher', () => {
       onChange: seen.push,
     });
     watcher.start();
+    await settle();
 
     watcher.expect(['wirebench.yaml']);
     await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
@@ -74,7 +85,7 @@ describe('ProjectWatcher', () => {
 
     await mkdir(join(dir, 'environments'), { recursive: true });
     await writeFile(join(dir, 'environments', 'Local.yaml'), 'name: Local\n', 'utf8');
-    const batch = await seen.next(5_000);
+    const batch = await seen.next(10_000);
     expect(batch).toContain('environments/Local.yaml');
     expect(batch).not.toContain('wirebench.yaml');
   });
