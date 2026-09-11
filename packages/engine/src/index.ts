@@ -473,3 +473,23 @@ export {
   upsertEnvironment,
 } from './project/environments.js';
 export type { EndpointSource } from './project/environments.js';
+export {
+  bindingContextFor,
+  checkSoapStructure,
+  validateAgainstSchemaSet,
+  validateMessage,
+  DEFAULT_VALIDATION_TIMEOUT_MS,
+} from './validate/index.js';
+export type {
+  MessageDirection,
+  SchemaValidationOptions,
+  SchemaValidationTarget,
+  SoapStructureOptions,
+  ValidateMessageInput,
+  ValidateMessageResult,
+  ValidationBinding,
+  ValidationPart,
+  ValidationProblem,
+  ValidationSeverity,
+  ValidationSource,
+} from './validate/index.js';
