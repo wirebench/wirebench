@@ -9,6 +9,7 @@ import {
   removeSelectedAttachment,
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
+import { goToSchemaDefinitionAtCursor } from '../features/request-editor/schema-navigation.js';
 import { validateAndReport } from '../features/request-editor/validate-actions.js';
 import { checkWsiForRequest, lastSendId } from '../features/request-editor/wsi-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
@@ -482,6 +483,17 @@ export function registerShellCommands(openPalette: () => void): void {
       if (handle !== undefined) {
         handle.formatAndCommit();
       }
+    },
+  });
+  registerCommand({
+    id: 'editor.goToSchemaDefinition',
+    label: 'Go to Schema Definition',
+    category: 'Editor',
+    // F12 is bound on the Monaco instance itself (see `request-pane.tsx`); the palette entry
+    // and the pane's context menu run the very same action.
+    when: () => activeRequestId() !== undefined,
+    run: () => {
+      goToSchemaDefinitionAtCursor();
     },
   });
   registerCommand({

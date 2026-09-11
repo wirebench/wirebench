@@ -54,6 +54,9 @@ export const FORMAT_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | m
 /** Monaco's numeric encoding of ⌘G / Ctrl+G: `editor.gotoLine`. */
 export const GOTO_LINE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG;
 
+/** Monaco's numeric encoding of F12: "Go to Schema Definition". */
+export const GOTO_DEFINITION_KEYBINDING = monaco.KeyCode.F12;
+
 /** Editor options shared by the request and response panes; per-pane overrides sit alongside. */
 export const BASE_EDITOR_OPTIONS = {
   automaticLayout: true,

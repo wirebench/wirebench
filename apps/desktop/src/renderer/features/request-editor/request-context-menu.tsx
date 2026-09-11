@@ -15,6 +15,7 @@ import { copyAsCurl, recreateRequest } from './request-actions.js';
 import { openRequestDialog } from './request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from './wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
+import { goToSchemaDefinitionAtCursor } from './schema-navigation.js';
 import { validateAndReport } from './validate-actions.js';
 import { checkWsiForRequest, lastSendId } from './wsi-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -85,6 +86,15 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
             }}
           >
             Check WS-I compliance
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={SEPARATOR_CLASS} />
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              goToSchemaDefinitionAtCursor();
+            }}
+          >
+            Go to Schema Definition
           </ContextMenu.Item>
           <ContextMenu.Separator className={SEPARATOR_CLASS} />
           <ContextMenu.Item

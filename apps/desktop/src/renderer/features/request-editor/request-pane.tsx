@@ -3,7 +3,12 @@ import type { OnMount } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { setActiveRequestEditor } from '../../editor/active-request-editor.js';
 import { setMarkerApi } from '../../editor/markers.js';
-import { FORMAT_KEYBINDING, GOTO_LINE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
+import {
+  FORMAT_KEYBINDING,
+  GOTO_DEFINITION_KEYBINDING,
+  GOTO_LINE_KEYBINDING,
+  SEND_KEYBINDING,
+} from '../../editor/monaco.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
 import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '../../editor/xml-language.js';
@@ -18,6 +23,7 @@ import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip
 import { SslInspector } from './inspectors/ssl-inspector.js';
 import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
+import { goToSchemaDefinition } from './schema-navigation.js';
 import { ViewTabs } from './view-tabs.js';
 import { FormView } from './views/form-view.js';
 import { OutlineView } from './views/outline-view.js';
@@ -197,6 +203,23 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       editor.addCommand(GOTO_LINE_KEYBINDING, () => {
         gotoLine(editor);
       });
+      editor.addCommand(GOTO_DEFINITION_KEYBINDING, () => {
+        void goToSchemaDefinition(editor, interfaceId);
+      });
+      // Mod+click is the second half of go-to-definition; `onMouseDown` is absent from the
+      // lightweight editor double used under jsdom, hence the guard.
+      if (typeof editor.onMouseDown === 'function') {
+        editor.onMouseDown((event) => {
+          const browserEvent = event.event as unknown as { metaKey?: boolean; ctrlKey?: boolean };
+          if (browserEvent.metaKey !== true && browserEvent.ctrlKey !== true) {
+            return;
+          }
+          const position = event.target.position;
+          if (position !== null && position !== undefined) {
+            void goToSchemaDefinition(editor, interfaceId, position);
+          }
+        });
+      }
       editorRef.current = editor;
       setActiveRequestEditor(editor, interfaceId, handle);
       // Markers go through the namespace the mounted editor hands over, so `editor/markers.ts`

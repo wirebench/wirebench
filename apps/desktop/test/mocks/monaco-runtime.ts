@@ -25,4 +25,7 @@ export const FORMAT_KEYBINDING = 2048 | 1024 | 36;
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG`. */
 export const GOTO_LINE_KEYBINDING = 2048 | 37;
 
+/** `monaco.KeyCode.F12`. */
+export const GOTO_DEFINITION_KEYBINDING = 70;
+
 export const BASE_EDITOR_OPTIONS = { tabSize: 3, wordWrap: 'on' } as const;

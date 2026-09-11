@@ -18,6 +18,7 @@ const ITEMS = [
   'Validate request',
   'Validate response',
   'Check WS-I compliance',
+  'Go to Schema Definition',
   'Recreate request (keep values)',
   'Recreate (discard values)',
   'Create empty',

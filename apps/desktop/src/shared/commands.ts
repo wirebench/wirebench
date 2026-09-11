@@ -58,6 +58,7 @@ export type CommandId =
   | 'request.checkWsi'
   | 'editor.formatXml'
   | 'editor.gotoLine'
+  | 'editor.goToSchemaDefinition'
   | 'editor.toggleLineNumbers'
   | 'editor.saveAs'
   | 'editor.loadFrom'
