@@ -21,6 +21,7 @@ export type CommandId =
   | 'project.close'
   | 'explorer.importAnother'
   | 'explorer.removeInterface'
+  | 'explorer.showInterface'
   | 'explorer.copyDefinitionUrl'
   | 'explorer.newRequest'
   | 'explorer.copySoapAction'

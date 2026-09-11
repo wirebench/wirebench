@@ -30,10 +30,12 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'welcome' | 'environment' | 'history' | 'diff' | 'preferences';
+  readonly kind: 'request' | 'welcome' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
+  /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */
+  readonly interfaceId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */
   readonly environmentId?: string;
   /** Set when `kind` is `'history'`: the history entry this read-only tab shows. */

@@ -19,6 +19,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
 
   if (node.kind === 'interface') {
     items.push(
+      <ContextMenu.Item
+        key="show-interface"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.showInterface(node.interfaceId)}
+      >
+        Show Interface Viewer
+      </ContextMenu.Item>,
       <ContextMenu.Item key="import-another" className={ITEM_CLASS} onSelect={() => explorerActions.importAnother()}>
         Import another WSDL…
       </ContextMenu.Item>,

@@ -23,6 +23,11 @@ const DiffView = lazy(async () => {
   return { default: module.DiffView };
 });
 
+const InterfaceEditor = lazy(async () => {
+  const module = await import('../features/interface-editor/interface-editor.js');
+  return { default: module.InterfaceEditor };
+});
+
 const PreferencesEditor = lazy(async () => {
   const module = await import('../features/preferences/preferences-editor.js');
   return { default: module.PreferencesEditor };
@@ -52,6 +57,7 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
   const environments = useProjectStore((state) => state.environments);
+  const interfaces = useProjectStore((state) => state.interfaces);
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const showingWelcome = activeTab === undefined;
@@ -85,7 +91,10 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
             }`}
           >
             <button type="button" onClick={() => activate(tab.id)}>
-              {(tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
+              {(tab.kind === 'interface' && tab.interfaceId !== undefined
+                ? interfaces[tab.interfaceId]?.name
+                : undefined) ??
+                (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
                 (tab.environmentId !== undefined
                   ? environments.find((environment) => environment.id === tab.environmentId)?.name
                   : undefined) ??
@@ -106,6 +115,10 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
       <div className="min-h-0 flex-1 overflow-hidden">
         {showingWelcome ? (
           <WelcomeScreen onImportDefinition={onImportDefinition} />
+        ) : activeTab.kind === 'interface' && activeTab.interfaceId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <InterfaceEditor interfaceId={activeTab.interfaceId} />
+          </Suspense>
         ) : activeTab.environmentId !== undefined ? (
           <EnvironmentEditor environmentId={activeTab.environmentId} />
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (

@@ -188,7 +188,15 @@ export function ExplorerView() {
               openByDefault
               disableEdit={(node) => node.kind !== 'request'}
               aria-label="Explorer"
-              onActivate={(node: NodeApi<ExplorerNode>) => explorerActions.openRequest(node.data.requestId)}
+              onActivate={(node: NodeApi<ExplorerNode>) => {
+                // Double-click opens a request; on an interface row it opens the viewer, the
+                // same thing "Show Interface Viewer" does.
+                if (node.data.kind === 'interface') {
+                  explorerActions.showInterface(node.data.interfaceId);
+                  return;
+                }
+                explorerActions.openRequest(node.data.requestId);
+              }}
               onSelect={(nodes) => {
                 const node = nodes[0]?.data;
                 if (node === undefined) {

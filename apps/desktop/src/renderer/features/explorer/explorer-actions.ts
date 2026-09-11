@@ -5,6 +5,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingRequest } from './explorer-api.js';
 import { useWsiStore } from '../../state/wsi.js';
+import { openInterfaceTab } from '../interface-editor/interface-actions.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -30,6 +31,13 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestRemoveInterface(interfaceId);
+  },
+
+  /** Opens the Interface editor ("Show Interface Viewer") for the selected interface. */
+  showInterface(interfaceId: string | undefined): void {
+    if (interfaceId !== undefined) {
+      openInterfaceTab(interfaceId);
+    }
   },
 
   copyDefinitionUrl(interfaceId: string | undefined): void {

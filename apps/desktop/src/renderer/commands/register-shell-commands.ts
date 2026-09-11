@@ -586,6 +586,15 @@ export function registerShellCommands(openPalette: () => void): void {
     },
   });
   registerCommand({
+    id: 'explorer.showInterface',
+    label: 'Explorer: Show Interface Viewer',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: (ctx) => {
+      explorerActions.showInterface(ctx.selection?.interfaceId);
+    },
+  });
+  registerCommand({
     id: 'explorer.copyDefinitionUrl',
     label: 'Explorer: Copy Definition URL',
     category: 'Explorer',

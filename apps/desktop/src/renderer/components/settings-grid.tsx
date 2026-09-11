@@ -251,14 +251,15 @@ export interface ReadOnlySettingProps {
   readonly label: string;
   readonly value: string;
   readonly hint?: string;
+  readonly testId?: string;
 }
 
 /** A row that only reports a value — an interface's WS-A version, a command's shortcut. */
-export function ReadOnlySetting({ label, value, hint }: ReadOnlySettingProps) {
+export function ReadOnlySetting({ label, value, hint, testId }: ReadOnlySettingProps) {
   const id = useId();
   return (
     <Row label={label} htmlFor={id} {...(hint !== undefined ? { hint } : {})}>
-      <output id={id} className="block truncate py-1 text-sm text-fg-muted">
+      <output id={id} data-testid={testId} className="block truncate py-1 text-sm text-fg-muted">
         {value}
       </output>
     </Row>
