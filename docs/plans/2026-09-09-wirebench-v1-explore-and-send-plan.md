@@ -382,7 +382,7 @@ events (main→renderer, window.wirebench.on): engine.progress · project.change
   - Verify: `pnpm test:e2e -- --grep "theme|a11y"`; `pnpm tsx scripts/contrast-check.ts`
   - Files: apps/desktop/src/renderer/styles/tokens.css, apps/desktop/src/renderer/lib/theme.ts, apps/desktop/src/main/ipc/theme.ts, e2e/specs/a11y.spec.ts, scripts/contrast-check.ts
 
-- [ ] **49. Proxy + TLS options**
+- [x] **49. Proxy + TLS options**
   - `http/proxy.ts` (none / system (resolved in main via `session.resolveProxy(url)`) / manual host:port + auth + excludes), `http/tls.ts` extended (min TLS 1.2/1.3, custom CA bundle, client cert global or per endpoint from a keystore, `trustInvalid` per endpoint → `rejectUnauthorized: false` + persistent red badge on endpoint + status bar); HTTP/2 toggle (undici `allowH2`, off by default; raw view labels the protocol); Preferences HTTP/Proxy/SSL sections; endpoint TLS fields; `test/helpers/test-proxy.ts` (CONNECT proxy).
   - Acceptance: proxied request observed; excludes bypass; self-signed fails by default, passes with trustInvalid or custom CA; client-cert route enforces cert.
   - Verify: `pnpm vitest run packages/engine/test/integration/http/proxy packages/engine/test/integration/http/tls`

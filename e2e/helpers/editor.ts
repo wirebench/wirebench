@@ -65,3 +65,25 @@ export async function setMonacoText(page: Page, testId: string, text: string): P
     )
     .toContain(sentinel);
 }
+
+/**
+ * The full text of every Monaco model on the page, joined. Monaco virtualises its view lines,
+ * so `toContainText` on the editor host only ever sees the lines currently scrolled into view;
+ * assertions on content deeper in a document must read the model instead. Needs the e2e
+ * Monaco handle (`globalThis.__wirebenchMonaco`, exposed when `WIREBENCH_E2E=1`).
+ */
+export async function monacoModelText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const monaco = (
+      globalThis as unknown as {
+        __wirebenchMonaco?: { editor: { getModels(): { getValue(): string }[] } };
+      }
+    ).__wirebenchMonaco;
+    return monaco === undefined
+      ? ''
+      : monaco.editor
+          .getModels()
+          .map((m) => m.getValue())
+          .join('\n');
+  });
+}

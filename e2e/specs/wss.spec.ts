@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { monacoModelText } from '../helpers/editor.js';
 import {
   generateClientCert,
   generateClientPkcs12,
@@ -189,8 +190,8 @@ test.describe('wss', () => {
     await expect(responseEditor).toContainText('ds:Signature', { timeout: 15_000 });
     await expect(responseEditor).toContainText('wsse:BinarySecurityToken');
     // Two references — one for the Body's generated wsu:Id, one for the Timestamp's.
-    await expect(responseEditor).toContainText('<ds:Reference URI="#Id-');
-    await expect(responseEditor).toContainText('<ds:Reference URI="#TS-');
+    await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#Id-');
+    await expect.poll(() => monacoModelText(page)).toContain('<ds:Reference URI="#TS-');
   });
 
   test('encrypts the Body against a keystore certificate, so the plaintext never reaches the wire', async () => {
@@ -253,8 +254,9 @@ test.describe('wss', () => {
     // The echo route hands the envelope back verbatim, so this *is* what went out.
     const responseEditor = page.getByTestId('response-editor');
     await expect(responseEditor).toContainText('xenc:EncryptedKey', { timeout: 15_000 });
-    await expect(responseEditor).toContainText('xenc:EncryptedData');
-    await expect(responseEditor).toContainText('xenc:ReferenceList');
+    // Monaco only renders the visible lines; the rest of the envelope is read from the model.
+    await expect.poll(() => monacoModelText(page)).toContain('xenc:EncryptedData');
+    await expect.poll(() => monacoModelText(page)).toContain('xenc:ReferenceList');
 
     // --- and the plaintext is nowhere on the wire --------------------------------------------
     await page.getByRole('tab', { name: 'Raw' }).first().click();
