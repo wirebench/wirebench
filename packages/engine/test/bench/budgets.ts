@@ -6,12 +6,21 @@
  * runs each scenario three times and asserts the median is under `budget × CI_GATE_FACTOR`).
  *
  * Budgets are wall-clock milliseconds on a developer laptop. The gate deliberately allows
- * 1.5× so a busy CI runner does not turn a green build red, while a real regression — which
- * is normally multiples, not percent — still trips it.
+ * slack (see {@link CI_GATE_FACTOR}) so a busy or slower CI runner does not turn a green build
+ * red, while a real regression — which is normally multiples, not percent — still trips it.
  */
 
-/** How much slack the CI gate allows on top of the budget. */
-export const CI_GATE_FACTOR = 1.5;
+/**
+ * How much slack the gate allows on top of the budget.
+ *
+ * The budgets are wall-clock milliseconds on a developer laptop, and a hosted CI runner is not
+ * one: the GitHub Windows runner measures `xpath-evaluate-1mb` at 320-355 ms against a 200 ms
+ * budget — about 2.5x this machine's 133 ms — purely because the hardware is slower and shared.
+ * Scaling the gate there keeps the budgets stated in laptop terms (the number a developer can
+ * reproduce) while still tripping on a real regression, which is a multiple rather than a few
+ * tens of percent. Locally the tighter 1.5x still applies.
+ */
+export const CI_GATE_FACTOR = process.env['CI'] === undefined ? 1.5 : 3;
 
 /** How many times the CI gate runs each scenario before taking the median. */
 export const GATE_SAMPLES = 3;
