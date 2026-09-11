@@ -82,4 +82,7 @@ Each is deliberately tiny but structurally valid.
   `wsp:PolicyReference URI="#AddressingPolicy"` to a top-level `wsp:Policy` holding
   `wsam:Addressing` (and its operations set an empty `soapAction`, so the default-action
   fallback runs all the way to `<tns>/<portType>/<operation>Request`); `PlainBinding`
-  declares nothing at all, so detection must stay off for it.
+  declares nothing at all, so detection must stay off for it; `WsaOptionalBinding` carries an
+  inline `wsp:Policy` whose `wsam:Addressing` is `wsp:Optional="true"` — the WSDL only offers
+  addressing, so detection reports `usingAddressing: false, optional: true` rather than
+  auto-enabling.

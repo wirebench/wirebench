@@ -1033,6 +1033,19 @@ export class ProjectService {
    * @returns the configuration, the context and the request's WSS property overrides
    * @throws WirebenchError `wss-config-missing` when the project no longer has the configuration
    */
+  /**
+   * True when `requestId` selects an outgoing WS-Security configuration — synchronous and
+   * secret-free, unlike {@link wssFor}, so `request.curl` can decide whether to note "WS-Security
+   * is not included" without resolving a keystore just to check.
+   */
+  hasOutgoingWss(requestId: string): boolean {
+    if (this.open === undefined) {
+      return false;
+    }
+    const outgoingId = findRequest(this.open.project, requestId)?.request.wssOutgoingRef;
+    return outgoingId !== undefined && outgoingId.length > 0;
+  }
+
   wssFor(requestId: string): Promise<SoapSendWss | undefined> {
     if (this.open === undefined) {
       return Promise.resolve(undefined);
@@ -1101,7 +1114,7 @@ export class ProjectService {
       return '';
     }
     const summary = this.open.runtime.get(location.iface.id)?.summary;
-    return summary?.wsa?.defaultActionByOperation[location.operation.name] ?? '';
+    return summary?.wsa?.defaultActionByOperation[`${location.operation.bindingName}|${location.operation.name}`] ?? '';
   }
 
   /**

@@ -42,6 +42,8 @@ function useCodePanelRequestId(): string | undefined {
 interface Generated {
   readonly command: string;
   readonly error: boolean;
+  /** One-line notes about layers this command does not carry (WS-Security, attachments). */
+  readonly notes: readonly string[];
 }
 
 export function CodePanel() {
@@ -106,7 +108,9 @@ export function CodePanel() {
         return;
       }
       setGenerated(
-        result.ok ? { command: result.value.command, error: false } : { command: result.error.message, error: true },
+        result.ok
+          ? { command: result.value.command, error: false, notes: result.value.notes ?? [] }
+          : { command: result.error.message, error: true, notes: [] },
       );
     };
 
@@ -185,6 +189,14 @@ export function CodePanel() {
       {command.includes(REDACTED_MARKER) && (
         <p className="text-xs text-fg-subtle">Secrets are masked unless Show secrets is on.</p>
       )}
+
+      {generated !== undefined &&
+        !generated.error &&
+        generated.notes.map((note) => (
+          <p key={note} data-testid="code-panel-note" className="text-xs text-fg-subtle">
+            {note}
+          </p>
+        ))}
 
       <div className="flex items-center gap-2">
         <Button

@@ -51,6 +51,10 @@ class FakeProject {
   headers: Record<string, string> = {};
   /** How many attachments the saved request carries; drives the cURL "not included" note. */
   attachmentCount = 0;
+  /** When set, `buildLiveSendInput` carries this WS-Addressing config on the send input. */
+  wsa: SoapSendInputWire['wsa'] = undefined;
+  /** Drives the cURL "WS-Security is not included" note. */
+  outgoingWss = false;
   readonly changes: ProjectChange[] = [];
   auth: RequestChannelDeps['project'] extends never ? never : undefined = undefined;
 
@@ -92,6 +96,7 @@ class FakeProject {
       soapVersion: '1.1',
       soapAction: `${TEM}Add`,
       headers: this.headers,
+      ...(this.wsa !== undefined ? { wsa: this.wsa } : {}),
     };
   }
   sendAttachmentsFor(requestId: string): { attachments: unknown[] } | undefined {
@@ -99,6 +104,9 @@ class FakeProject {
       return undefined;
     }
     return { attachments: Array.from({ length: this.attachmentCount }, () => ({})) };
+  }
+  hasOutgoingWss(requestId: string): boolean {
+    return requestId === 'req-1' && this.outgoingWss;
   }
   mutate(change: ProjectChange): Promise<{ project: unknown; createdRequestId?: string }> {
     this.changes.push(change);
@@ -214,6 +222,39 @@ describe('request.recreate / curl / importCurl', () => {
     showSecrets = true;
     const shown = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
     expect(shown.command).toContain('s3cret');
+  });
+
+  it('curl applies the effective WS-Addressing headers to the exported envelope', async () => {
+    project.wsa = {
+      config: {
+        enabled: true,
+        version: '2005/08',
+        mustUnderstand: 'none',
+        addDefaultAction: true,
+        addDefaultTo: true,
+        generateMessageId: true,
+      },
+      defaultAction: 'urn:default-action',
+    };
+
+    const result = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(result.command).toContain('wsa:Action');
+    expect(result.command).toContain('wsa:To');
+    expect(result.command).toContain(project.endpointUrl);
+  });
+
+  it('curl notes when WS-Security is selected and is not included', async () => {
+    project.outgoingWss = true;
+
+    const result = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }),
+    );
+    expect(result.notes).toContain('WS-Security is not included in the cURL command.');
+  });
+
+  it('curl reports no notes when the request has neither WS-Security nor attachments', async () => {
+    const result = unwrap<{ notes?: string[] }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(result.notes).toBeUndefined();
   });
 
   it('curl notes the attachments it could not include, and says nothing when there are none', async () => {

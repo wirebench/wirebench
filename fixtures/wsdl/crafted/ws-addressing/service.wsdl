@@ -122,6 +122,27 @@
     </wsdl:operation>
   </wsdl:binding>
 
+  <!-- Shape 4: an inline `wsp:Policy` whose `wsam:Addressing` is `wsp:Optional="true"` — the
+       WSDL merely offers addressing, so it must not auto-enable (`usingAddressing: false,
+       optional: true`), unlike shape 2's required policy. -->
+  <wsdl:binding name="WsaOptionalBinding" type="tns:WsaPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsp:Policy>
+      <wsp:ExactlyOne>
+        <wsp:All>
+          <wsam:Addressing wsp:Optional="true">
+            <wsp:Policy/>
+          </wsam:Addressing>
+        </wsp:All>
+      </wsp:ExactlyOne>
+    </wsp:Policy>
+    <wsdl:operation name="Ping">
+      <soap:operation soapAction="urn:wb:wsa:Ping" style="document"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+
   <wsdl:service name="WsAddressingService">
     <wsdl:port name="WsaPort" binding="tns:WsaBinding">
       <soap:address location="http://example.invalid/wsa"/>
@@ -130,6 +151,9 @@
       <soap:address location="http://example.invalid/wsa"/>
     </wsdl:port>
     <wsdl:port name="PlainPort" binding="tns:PlainBinding">
+      <soap:address location="http://example.invalid/wsa"/>
+    </wsdl:port>
+    <wsdl:port name="WsaOptionalPort" binding="tns:WsaOptionalBinding">
       <soap:address location="http://example.invalid/wsa"/>
     </wsdl:port>
   </wsdl:service>

@@ -5,7 +5,7 @@ import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
 import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
 import { findPortType } from '../../../src/wsdl/model.js';
 import type { Binding, WsdlDefinition } from '../../../src/wsdl/model.js';
-import { defaultAction, detectWsaDefaults, summarizeWsa } from '../../../src/wsa/policy-detect.js';
+import { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from '../../../src/wsa/policy-detect.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const location = `${repoRoot}fixtures/wsdl/crafted/ws-addressing/service.wsdl`;
@@ -59,6 +59,15 @@ describe('detectWsaDefaults', () => {
   it('stays off for a binding that declares nothing', () => {
     const binding = bindingNamed('PlainBinding');
     expect(detectWsaDefaults(definition, binding, operationNamed(binding, 'Ping')).usingAddressing).toBe(false);
+  });
+
+  it('does not auto-enable for a wsp:Optional="true" assertion, and reports optional: true', () => {
+    const binding = bindingNamed('WsaOptionalBinding');
+    expect(detectWsaDefaults(definition, binding, operationNamed(binding, 'Ping'))).toEqual({
+      usingAddressing: false,
+      version: '2005/08',
+      optional: true,
+    });
   });
 
   it('an operation with wsam:Action alone still counts as using addressing', () => {
@@ -121,11 +130,30 @@ describe('defaultAction', () => {
 });
 
 describe('summarizeWsa', () => {
-  it('enables addressing and maps every operation to its default action', () => {
+  it('enables addressing and maps every operation to its default action, keyed by binding|operation', () => {
     const summary = summarizeWsa(definition);
     expect(summary.enabled).toBe(true);
     expect(summary.version).toBe('2005/08');
-    expect(summary.defaultActionByOperation['Echo']).toBe('urn:wb:wsa:EchoAction');
-    expect(summary.defaultActionByOperation['Ping']).toBe('urn:wb:wsa:Ping');
+    const wsaBinding = bindingNamed('WsaBinding');
+    const plainBinding = bindingNamed('PlainBinding');
+    expect(summary.defaultActionByOperation[wsaActionKey(wsaBinding.name, 'Echo')]).toBe('urn:wb:wsa:EchoAction');
+    expect(summary.defaultActionByOperation[wsaActionKey(wsaBinding.name, 'Ping')]).toBe('urn:wb:wsa:Ping');
+    // A second binding sharing the operation name `Ping` gets its own entry rather than
+    // overwriting `WsaBinding`'s.
+    expect(summary.defaultActionByOperation[wsaActionKey(plainBinding.name, 'Ping')]).toBe('urn:wb:wsa:Ping');
+  });
+
+  it('reports optional: true when no binding requires addressing but one only offers it', () => {
+    const text = readFileSync(location, 'utf-8')
+      .replace('<wsaw:UsingAddressing wsdl:required="true"/>', '')
+      .replace('<wsp:PolicyReference URI="#AddressingPolicy"/>', '')
+      .replace(/ wsam:Action="[^"]*"/g, '');
+    return parseWsdl({ location, text }, { fetchDocument: createDefaultFetchDocument(), resolveImports: false }).then(
+      (onlyOptional) => {
+        const summary = summarizeWsa(onlyOptional);
+        expect(summary.enabled).toBe(false);
+        expect(summary.optional).toBe(true);
+      },
+    );
   });
 });

@@ -23,6 +23,11 @@ export function WsaInspector({ requestId }: WsaInspectorProps) {
   const interfaceWsa = useProjectStore((state) =>
     request === undefined ? undefined : state.interfaces[request.interfaceId]?.wsaConfig,
   );
+  // A WSDL that only *offers* addressing (`wsp:Optional="true"`, no required assertion) does
+  // not auto-enable — see `detectWsaDefaults` — but the user should still be told it is there.
+  const wsdlOffersOptionalAddressing = useProjectStore(
+    (state) => request !== undefined && state.interfaces[request.interfaceId]?.wsa?.optional === true,
+  );
   const updateRequestWsa = useProjectStore((state) => state.updateRequestWsa);
   const [effective, setEffective] = useState<RequestPreflightResponse['wsa'] | undefined>(undefined);
   const own = request?.wsa;
@@ -80,6 +85,12 @@ export function WsaInspector({ requestId }: WsaInspectorProps) {
           {effective.enabled
             ? `Sends Action ${effective.action ?? '—'}, To ${effective.to ?? '—'}, MessageID ${effective.messageId ?? '—'}`
             : 'WS-Addressing is off for this request; no wsa:* headers are sent.'}
+        </p>
+      )}
+
+      {effective?.enabled !== true && wsdlOffersOptionalAddressing && (
+        <p data-testid="wsa-offers-optional" className="text-xs text-fg-subtle">
+          WSDL offers WS-Addressing (optional)
         </p>
       )}
     </div>

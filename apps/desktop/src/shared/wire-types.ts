@@ -89,6 +89,8 @@ export type WsaConfigWire = z.infer<typeof wsaConfigWireSchema>;
 /** What an import found out about WS-Addressing; mirrors the engine's `WsaSummary`. */
 export const wsaSummaryWireSchema = z.object({
   enabled: z.boolean(),
+  /** True when no binding requires addressing but at least one only offers it (`wsp:Optional`). */
+  optional: z.boolean().optional(),
   version: z.enum(['2005/08', '2004/08']),
   defaultActionByOperation: z.record(z.string(), z.string()),
 });
@@ -216,7 +218,11 @@ const soapSendInputWireSchema = z.object({
   /**
    * WS-Addressing for this send, present only when the effective configuration is enabled.
    * Pure data (no secret, no closure), so unlike WS-Security it rides on the send input the
-   * renderer sees and the cURL export quotes.
+   * renderer sees, and `request.curl`'s `effectiveSendInput` bakes its `wsa:*` headers into the
+   * exported envelope the same way a send does (a `messageId: 'auto'` mints a one-off UUID for
+   * the export, which will not match any real send's). The cURL export does *not* include
+   * WS-Security (it needs secrets and a keystore the export never touches) or attachments (they
+   * never travel on this wire shape at all, see `request.curl`'s "not included" note).
    */
   wsa: z.object({ config: wsaConfigWireSchema, defaultAction: z.string() }).optional(),
 });
@@ -261,7 +267,15 @@ export const requestCurlRequestSchema = z.object({
 export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
 
 /** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
-export const requestCurlResponseSchema = z.object({ command: z.string() });
+export const requestCurlResponseSchema = z.object({
+  command: z.string(),
+  /**
+   * One-line notes about what the command does *not* carry — WS-Security (needs secrets and a
+   * keystore the export never touches) and/or attachments (never ride on this wire shape) —
+   * present only for the layers this particular request actually has.
+   */
+  notes: z.array(z.string()).optional(),
+});
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
 /** Request payload for `request.importCurl`: a pasted command, and the operation to hang it off. */

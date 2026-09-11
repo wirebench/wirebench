@@ -9,12 +9,23 @@ import type { WsaConfigWire } from '../../src/shared/wire-types.js';
 
 const updateRequestWsa = vi.fn();
 
-function install(own: WsaConfigWire | undefined, interfaceWsa: WsaConfigWire): void {
+function install(
+  own: WsaConfigWire | undefined,
+  interfaceWsa: WsaConfigWire,
+  options?: { readonly wsaOptional?: boolean; readonly effectiveEnabled?: boolean },
+): void {
   useProjectStore.setState({
     requests: { 'req-1': makeDraft(own !== undefined ? { wsa: own } : {}) },
-    interfaces: { 'if-1': { id: 'if-1', wsaConfig: interfaceWsa } },
+    interfaces: {
+      'if-1': {
+        id: 'if-1',
+        wsaConfig: interfaceWsa,
+        ...(options?.wsaOptional === true ? { wsa: { enabled: false, optional: true, version: '2005/08' } } : {}),
+      },
+    },
     updateRequestWsa,
   } as never);
+  const effectiveEnabled = options?.effectiveEnabled ?? true;
   installWirebenchApi({
     request: {
       preflight: vi.fn().mockResolvedValue({
@@ -23,7 +34,9 @@ function install(own: WsaConfigWire | undefined, interfaceWsa: WsaConfigWire): v
           endpointSource: 'interface-default',
           unresolved: [],
           auth: { source: 'none', type: 'none' },
-          wsa: { enabled: true, action: 'urn:a', to: 'http://e', messageId: 'auto' },
+          wsa: effectiveEnabled
+            ? { enabled: true, action: 'urn:a', to: 'http://e', messageId: 'auto' }
+            : { enabled: false },
         },
       }),
     },
@@ -56,6 +69,25 @@ describe('WsaInspector', () => {
     await waitFor(() => {
       expect(screen.getByTestId('wsa-effective').textContent).toContain('urn:a');
     });
+  });
+
+  it('notes when the WSDL only offers optional WS-Addressing and it is off', async () => {
+    install(undefined, { enabled: false }, { wsaOptional: true, effectiveEnabled: false });
+    render(<WsaInspector requestId="req-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('wsa-offers-optional').textContent).toContain('WSDL offers WS-Addressing (optional)');
+    });
+  });
+
+  it('does not show the optional note once addressing is actually enabled', async () => {
+    install(undefined, { enabled: true, action: 'urn:iface' }, { wsaOptional: true, effectiveEnabled: true });
+    render(<WsaInspector requestId="req-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('wsa-effective').textContent).toContain('urn:a');
+    });
+    expect(screen.queryByTestId('wsa-offers-optional')).toBeNull();
   });
 
   it('unchecking inherit copies the interface configuration onto the request', async () => {

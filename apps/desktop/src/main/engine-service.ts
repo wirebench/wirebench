@@ -6,6 +6,7 @@
  */
 
 import {
+  applyWsaHeaders,
   expandSendInput,
   generateEmptyRequest,
   generateRequest,
@@ -354,9 +355,17 @@ export class EngineService {
 
   /**
    * The input a send would actually put on the wire: the effective Basic-auth header applied
-   * (its `passwordRef` resolved) and every `${#…#name}` reference expanded. Shared by
-   * `request.curl`, which must show the very same command `request.send` would perform —
-   * unresolved references are left as written rather than reported, since nothing is sent.
+   * (its `passwordRef` resolved), every `${#…#name}` reference expanded, and — when the request
+   * has WS-Addressing enabled — its `wsa:*` headers applied to the envelope, exactly as
+   * `sendSoapRequest` does. Shared by `request.curl`, which must show the very same command
+   * `request.send` would perform, modulo two layers it deliberately omits: WS-Security (which
+   * needs secrets and a keystore this method never touches) and attachments (which never ride
+   * on the wire input at all, see `toEngineSendInput`) — a caller quoting the exported command
+   * must say so itself. A `messageId: 'auto'` mints a fresh UUID here, so the exported command
+   * carries a one-off MessageID that will not match the one an actual send produces.
+   *
+   * Unresolved property references are left as written rather than reported, since nothing is
+   * sent.
    */
   async effectiveSendInput(
     input: SoapSendInputWire,
@@ -368,16 +377,35 @@ export class EngineService {
         : undefined;
     const withAuth = withResolvedAuth(input, resolvedAuth);
     if (options.scopes === undefined) {
-      return withAuth;
+      return this.applyWsaForPreview(withAuth);
     }
     const expanded = expandSendInput(toEngineSendInput(withAuth, new AbortController().signal), options.scopes).input;
-    return {
+    return this.applyWsaForPreview({
       ...withAuth,
       endpoint: expanded.endpoint,
       envelopeXml: expanded.envelopeXml,
       ...(expanded.soapAction !== undefined ? { soapAction: expanded.soapAction } : {}),
       ...(expanded.headers !== undefined ? { headers: { ...expanded.headers } } : {}),
-    };
+    });
+  }
+
+  /**
+   * Bakes `input.wsa`'s headers into `input.envelopeXml`, the way `sendSoapRequest` would —
+   * used by {@link effectiveSendInput} so the cURL export's envelope carries the same `wsa:*`
+   * headers an actual send puts on the wire. A no-op when WS-Addressing is absent or disabled.
+   */
+  private applyWsaForPreview(input: SoapSendInputWire): SoapSendInputWire {
+    if (input.wsa === undefined || !input.wsa.config.enabled) {
+      return input;
+    }
+    const envelopeXml = applyWsaHeaders(input.envelopeXml, normalizeWsa(stripUndefined(input.wsa.config)), {
+      endpoint: input.endpoint,
+      ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+      defaultAction: input.wsa.defaultAction,
+      uuid: () => crypto.randomUUID(),
+      envelopeVersion: input.soapVersion,
+    });
+    return { ...input, envelopeXml };
   }
 
   /** True when a definition is loaded in memory for `interfaceId`. */

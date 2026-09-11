@@ -14,7 +14,8 @@ import type { Document, Element } from '@xmldom/xmldom';
 import { NS } from '../xml/namespaces.js';
 import type { Binding, BindingOperation, Operation, PortType, WsdlDefinition } from '../wsdl/model.js';
 import { findPortType } from '../wsdl/model.js';
-import { qnameEquals } from '../wsdl/qname.js';
+import type { QName } from '../wsdl/qname.js';
+import { qnameEquals, qnameToString } from '../wsdl/qname.js';
 import type { WsaVersion } from './model.js';
 
 /** The `wsp:Policy`/`wsp:PolicyReference` namespaces, newest first. */
@@ -28,6 +29,12 @@ export interface WsaDetection {
   readonly version: WsaVersion;
   /** The operation's default `wsa:Action`, when the WSDL declares one. */
   readonly action?: string;
+  /**
+   * True when the only addressing markers found are `wsp:Optional="true"` and there is no
+   * declared `wsa:Action` to force it on anyway — the WSDL merely *offers* addressing, so it
+   * must not auto-enable (`usingAddressing` is `false` in this case).
+   */
+  readonly optional?: boolean;
 }
 
 /** Every descendant element of `root` (excluding `root` itself), in document order. */
@@ -45,17 +52,34 @@ function descendants(root: Element): Element[] {
   return found;
 }
 
-/** True when `element` is one of the addressing assertions; `version` says which flavour. */
-function addressingAssertion(element: Element): WsaVersion | undefined {
+/** One addressing assertion found in a WSDL/policy tree: which flavour, and whether it is `wsp:Optional="true"`. */
+interface Assertion {
+  readonly version: WsaVersion;
+  readonly optional: boolean;
+}
+
+/** True when `value` is the WS-Policy "true" spelling (`true` or `1`) used by `wsp:Optional`. */
+function isPolicyTrue(value: string | null): boolean {
+  return value === 'true' || value === '1';
+}
+
+/** True when `element` carries `wsp:Optional="true"` (either policy-namespace flavour). */
+function isOptionalAssertion(element: Element): boolean {
+  return POLICY_NAMESPACES.some((ns) => isPolicyTrue(element.getAttributeNS(ns, 'Optional')));
+}
+
+/** True when `element` is one of the addressing assertions; describes which flavour and optionality. */
+function addressingAssertion(element: Element): Assertion | undefined {
   const { namespaceURI: ns, localName } = element;
+  const optional = isOptionalAssertion(element);
   if (ns === NS.WSAP_2004 && localName === 'UsingAddressing') {
-    return '2004/08';
+    return { version: '2004/08', optional };
   }
   if (ns === NS.WSAW && localName === 'UsingAddressing') {
-    return '2005/08';
+    return { version: '2005/08', optional };
   }
   if (ns === NS.WSAM && (localName === 'Addressing' || localName === 'AnonymousResponses')) {
-    return '2005/08';
+    return { version: '2005/08', optional };
   }
   return undefined;
 }
@@ -70,8 +94,17 @@ function policyById(doc: Document, id: string): Element | undefined {
     if (!POLICY_NAMESPACES.some((ns) => ns === element.namespaceURI) || element.localName !== 'Policy') {
       continue;
     }
+    const wsuId = element.getAttributeNS(NS.WSU, 'Id');
+    const xmlId = element.getAttributeNS(NS.XML, 'id');
+    const plainId = element.getAttribute('Id');
     const candidate =
-      element.getAttributeNS(NS.WSU, 'Id') ?? element.getAttributeNS(NS.XML, 'id') ?? element.getAttribute('Id');
+      wsuId !== null && wsuId.length > 0
+        ? wsuId
+        : xmlId !== null && xmlId.length > 0
+          ? xmlId
+          : plainId !== null && plainId.length > 0
+            ? plainId
+            : undefined;
     if (candidate === id) {
       return element;
     }
@@ -83,12 +116,12 @@ function policyById(doc: Document, id: string): Element | undefined {
  * The addressing assertions reachable from `owner`: its own extension children, plus every
  * policy it attaches inline or references by `#id`.
  */
-function assertionsUnder(owner: Element): WsaVersion[] {
-  const versions: WsaVersion[] = [];
+function assertionsUnder(owner: Element): Assertion[] {
+  const versions: Assertion[] = [];
   const consider = (element: Element): void => {
-    const version = addressingAssertion(element);
-    if (version !== undefined) {
-      versions.push(version);
+    const assertion = addressingAssertion(element);
+    if (assertion !== undefined) {
+      versions.push(assertion);
     }
   };
   for (let node = owner.firstChild; node !== null; node = node.nextSibling) {
@@ -200,16 +233,23 @@ export function detectWsaDefaults(
     ...(binding.sourceElement !== undefined ? [binding.sourceElement] : []),
     ...portElementsFor(definition, binding),
   ];
-  const versions = owners.flatMap(assertionsUnder);
+  const assertions = owners.flatMap(assertionsUnder);
   const portType = findPortType(definition, binding.type);
   const abstract = portType?.operations.find((candidate) => candidate.name === operation.name);
   const action = declaredAction(abstract);
-  const usingAddressing = versions.length > 0 || action !== undefined;
-  const version: WsaVersion = versions.length > 0 && versions.every((v) => v === '2004/08') ? '2004/08' : '2005/08';
+  const required = assertions.filter((assertion) => !assertion.optional);
+  const usingAddressing = required.length > 0 || action !== undefined;
+  const versionSource = required.length > 0 ? required : assertions;
+  const version: WsaVersion =
+    versionSource.length > 0 && versionSource.every((a) => a.version === '2004/08') ? '2004/08' : '2005/08';
+  // Optional only when the WSDL merely offers addressing (no required assertion, no declared
+  // action) but does say something — an `wsp:Optional="true"` assertion.
+  const optional = !usingAddressing && assertions.some((assertion) => assertion.optional);
   return {
     usingAddressing,
     version,
     ...(action !== undefined ? { action } : {}),
+    ...(optional ? { optional: true } : {}),
   };
 }
 
@@ -217,9 +257,24 @@ export function detectWsaDefaults(
 export interface WsaSummary {
   /** True when any binding of the definition asks for WS-Addressing. */
   readonly enabled: boolean;
+  /**
+   * True when no binding requires addressing but at least one only *offers* it
+   * (`wsp:Optional="true"`) — the inspector shows "WSDL offers WS-Addressing (optional)"
+   * rather than auto-enabling.
+   */
+  readonly optional: boolean;
   readonly version: WsaVersion;
-  /** Operation name to its default `wsa:Action`, for every operation in the definition. */
+  /**
+   * Each binding operation's default `wsa:Action`, keyed by Clark-notation binding QName and
+   * operation name (`{namespace}Binding|Operation`) so two bindings that happen to share an
+   * operation name do not overwrite each other's default action.
+   */
   readonly defaultActionByOperation: Readonly<Record<string, string>>;
+}
+
+/** The `defaultActionByOperation` key for one binding operation: `{ns}Binding|Operation`. */
+export function wsaActionKey(bindingName: QName, operationName: string): string {
+  return `${qnameToString(bindingName)}|${operationName}`;
 }
 
 /**
@@ -230,6 +285,7 @@ export interface WsaSummary {
  */
 export function summarizeWsa(definition: WsdlDefinition): WsaSummary {
   let enabled = false;
+  let optional = false;
   const versions: WsaVersion[] = [];
   const defaultActionByOperation: Record<string, string> = {};
   for (const binding of definition.bindings) {
@@ -239,17 +295,25 @@ export function summarizeWsa(definition: WsdlDefinition): WsaSummary {
       if (detected.usingAddressing) {
         enabled = true;
         versions.push(detected.version);
+      } else if (detected.optional === true) {
+        optional = true;
       }
       const abstract = portType?.operations.find((candidate) => candidate.name === operation.name);
       if (portType !== undefined && abstract !== undefined) {
-        defaultActionByOperation[operation.name] = defaultAction(definition, portType, abstract, {
-          ...(operation.soapAction !== undefined ? { soapAction: operation.soapAction } : {}),
-        });
+        defaultActionByOperation[wsaActionKey(binding.name, operation.name)] = defaultAction(
+          definition,
+          portType,
+          abstract,
+          {
+            ...(operation.soapAction !== undefined ? { soapAction: operation.soapAction } : {}),
+          },
+        );
       }
     }
   }
   return {
     enabled,
+    optional,
     version: versions.length > 0 && versions.every((v) => v === '2004/08') ? '2004/08' : '2005/08',
     defaultActionByOperation,
   };

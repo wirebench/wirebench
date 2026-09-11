@@ -43,7 +43,7 @@ export type RequestChannelProject = Pick<
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor'>>;
+  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss'>>;
 
 /** What `request.*` needs beyond the engine: the property scopes a send expands against. */
 export interface RequestChannelDeps {
@@ -297,8 +297,19 @@ async function curl(
   // with attachments would otherwise be silently exported as one without them. Saying so in a
   // leading comment keeps the command paste-able while making the difference impossible to miss.
   const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
+  // WS-Security is deliberately never applied to this preview (it needs secrets and a keystore
+  // `effectiveSendInput` never touches); a request that selects one would otherwise look, from
+  // the command alone, like it sends unsecured when it does not.
+  const notes: string[] = [];
+  if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
+    notes.push('WS-Security is not included in the cURL command.');
+  }
+  if (count > 0) {
+    notes.push(`${String(count)} attachment(s) are not included in the cURL command.`);
+  }
   return {
     command: count === 0 ? command : `# note: ${String(count)} attachment(s) not included\n${command}`,
+    ...(notes.length > 0 ? { notes } : {}),
   };
 }
 

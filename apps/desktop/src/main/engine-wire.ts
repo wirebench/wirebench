@@ -98,6 +98,7 @@ export function toInterfaceSummary(result: ImportResult, id: string, definitionU
     documentCount: result.bundle.documents.length,
     wsa: {
       enabled: result.wsa.enabled,
+      optional: result.wsa.optional,
       version: result.wsa.version,
       defaultActionByOperation: { ...result.wsa.defaultActionByOperation },
     },
