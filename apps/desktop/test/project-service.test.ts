@@ -332,7 +332,9 @@ describe('ProjectService', () => {
     expect(second.saved).toBe(true);
 
     // One save's write phase closes before the other's opens — never `one enter, two enter`.
-    expect(log.filter((entry) => entry !== 'rm')).toEqual(['one enter', 'one exit', 'two enter', 'two exit']);
+    // A prune logs `rm <file>`, which is not part of that ordering claim, so it is dropped here.
+    const writePhases = log.filter((entry) => !entry.startsWith('rm '));
+    expect(writePhases).toEqual(['one enter', 'one exit', 'two enter', 'two exit']);
 
     // …and the prune of the second save never removed a file the first one wrote.
     expect((await readdir(dir)).sort()).toEqual(filesBefore);

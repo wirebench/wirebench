@@ -1,6 +1,26 @@
 // @ts-check
 import tseslint from 'typescript-eslint';
 
+/** The Monaco entry point every other module must go through; it is the one file allowed a bare import. */
+const MONACO_CORE = 'apps/desktop/src/renderer/editor/monaco-core.ts';
+
+/** Bans a bare `import 'monaco-editor'`. */
+const MONACO_PATH = {
+  name: 'monaco-editor',
+  allowTypeImports: true,
+  message: 'import Monaco through renderer/editor/monaco-core.ts; a bare import re-adds every worker',
+};
+
+/**
+ * Bans every `@wirebench/engine` import bar the browser-safe `/xml` subpath. A regex, not a
+ * `group`: gitignore-style globs cannot express "this package and every subpath of it *except* one".
+ */
+const ENGINE_PATTERN = {
+  regex: '^@wirebench/engine(?!/xml$)(/.*)?$',
+  message:
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml subpath may be imported (ADR-0002)',
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -34,20 +54,9 @@ export default tseslint.config(
     // nothing else would catch it until the renderer bundle had already doubled. Type-only
     // imports are fine: they disappear at build time.
     files: ['apps/desktop/**/*.{ts,tsx,mts,cts}'],
-    ignores: ['apps/desktop/src/renderer/editor/monaco-core.ts'],
+    ignores: [MONACO_CORE],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: 'monaco-editor',
-              allowTypeImports: true,
-              message: 'import Monaco through renderer/editor/monaco-core.ts; a bare import re-adds every worker',
-            },
-          ],
-        },
-      ],
+      '@typescript-eslint/no-restricted-imports': ['error', { paths: [MONACO_PATH] }],
     },
   },
   {
@@ -58,29 +67,19 @@ export default tseslint.config(
     // Monaco rule from the block above is repeated here because a second `no-restricted-imports`
     // entry replaces the first rather than merging with it.
     files: ['apps/desktop/src/renderer/**/*.{ts,tsx,mts,cts}'],
-    ignores: ['apps/desktop/src/renderer/editor/monaco-core.ts'],
+    ignores: [MONACO_CORE],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: 'monaco-editor',
-              allowTypeImports: true,
-              message: 'import Monaco through renderer/editor/monaco-core.ts; a bare import re-adds every worker',
-            },
-          ],
-          patterns: [
-            {
-              // A regex, not a `group`: gitignore-style globs cannot express "this package and
-              // every subpath of it *except* one".
-              regex: '^@wirebench/engine(?!/xml$)(/.*)?$',
-              message:
-                'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml subpath may be imported (ADR-0002)',
-            },
-          ],
-        },
-      ],
+      '@typescript-eslint/no-restricted-imports': ['error', { paths: [MONACO_PATH], patterns: [ENGINE_PATTERN] }],
+    },
+  },
+  {
+    // `monaco-core.ts` is exempt from the Monaco rule alone — it is the file the rest of the
+    // renderer imports Monaco through. It is renderer code like any other, so the engine ban
+    // still applies to it, and it gets its own block because exempting it from the block above
+    // would have exempted it from both rules at once.
+    files: [MONACO_CORE],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [ENGINE_PATTERN] }],
     },
   },
   {

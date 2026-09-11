@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 import { buildApi } from './build-api.js';
 import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
 
@@ -17,7 +17,6 @@ const api = buildApi(
       ipcRenderer.removeListener(eventName, wrapped);
     };
   },
-  (file) => webUtils.getPathForFile(file),
   {
     e2e: process.env['WIREBENCH_E2E'] === '1',
     // Handed down by `main/windows.ts` via `webPreferences.additionalArguments`: `nativeTheme`

@@ -42,10 +42,6 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     name: Name,
     listener: (payload: WirebenchEventMap[Name]) => void,
   ): () => void;
-  /** Pure preload helper: resolves a dropped/picked `File`'s absolute path. Not an IPC call. */
-  files: {
-    pathFor(file: File): string;
-  };
   /**
    * Environment values baked in at preload time, not IPC calls, because the renderer has no
    * `process.env` and an IPC round trip lands after the first paint.
@@ -93,14 +89,12 @@ function buildChannelApi(tree: ChannelTree, invoke: Invoke): Record<string, unkn
 export function buildApi(
   invoke: Invoke,
   on: On,
-  pathFor: (file: File) => string,
   env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark' },
 ): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);
   return {
     ...channelApi,
     on: (name, listener) => on(name as string, listener as (payload: unknown) => void),
-    files: { pathFor },
     env,
   } as WirebenchApi;
 }

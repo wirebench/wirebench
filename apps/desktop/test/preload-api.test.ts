@@ -6,7 +6,7 @@ describe('buildApi', () => {
     const invoke = vi
       .fn()
       .mockResolvedValue({ ok: true, value: { version: '0.1.0', electron: '44.0.0', node: '24.0.0' } });
-    const api = buildApi(invoke, vi.fn(), vi.fn());
+    const api = buildApi(invoke, vi.fn());
 
     await api.app.version(undefined);
 
@@ -14,7 +14,7 @@ describe('buildApi', () => {
   });
 
   it('exposes only the channel/event surface, never ipcRenderer itself', () => {
-    const api = buildApi(vi.fn(), vi.fn(), vi.fn());
+    const api = buildApi(vi.fn(), vi.fn());
 
     expect(Object.keys(api).sort()).toEqual([
       'app',
@@ -23,7 +23,6 @@ describe('buildApi', () => {
       'dialogs',
       'env',
       'exchanges',
-      'files',
       'fs',
       'globals',
       'history',
@@ -47,15 +46,15 @@ describe('buildApi', () => {
   });
 
   it('defaults env to a non-e2e dark build, and carries whatever the caller passes', () => {
-    expect(buildApi(vi.fn(), vi.fn(), vi.fn()).env).toEqual({ e2e: false, osTheme: 'dark' });
-    expect(buildApi(vi.fn(), vi.fn(), vi.fn(), { e2e: true, osTheme: 'light' }).env).toEqual({
+    expect(buildApi(vi.fn(), vi.fn()).env).toEqual({ e2e: false, osTheme: 'dark' });
+    expect(buildApi(vi.fn(), vi.fn(), { e2e: true, osTheme: 'light' }).env).toEqual({
       e2e: true,
       osTheme: 'light',
     });
   });
 
   it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {
-    const api = buildApi(vi.fn(), vi.fn(), vi.fn());
+    const api = buildApi(vi.fn(), vi.fn());
 
     expect(Object.keys(api.secrets).sort()).toEqual([
       'delete',
@@ -69,19 +68,10 @@ describe('buildApi', () => {
     expect('get' in api.secrets).toBe(false);
   });
 
-  it('exposes files.pathFor as the injected pure helper, not an ipcRenderer call', () => {
-    const pathFor = vi.fn().mockReturnValue('/tmp/service.wsdl');
-    const api = buildApi(vi.fn(), vi.fn(), pathFor);
-
-    const file = { name: 'service.wsdl' } as File;
-    expect(api.files.pathFor(file)).toBe('/tmp/service.wsdl');
-    expect(pathFor).toHaveBeenCalledWith(file);
-  });
-
   it('registers event listeners via the injected on() and returns its unsubscribe', () => {
     const unsubscribe = vi.fn();
     const on = vi.fn().mockReturnValue(unsubscribe);
-    const api = buildApi(vi.fn(), on, vi.fn());
+    const api = buildApi(vi.fn(), on);
     const listener = vi.fn();
 
     const result = api.on('app.ready', listener);

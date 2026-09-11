@@ -124,7 +124,6 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       checkExchange: fail('wsi.checkExchange'),
       exportHtml: fail('wsi.exportHtml'),
     },
-    files: { pathFor: vi.fn().mockReturnValue('') },
     on: vi.fn().mockReturnValue(() => undefined),
   };
 

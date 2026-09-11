@@ -44,7 +44,7 @@ import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
  * sign what is actually sent), while MTOM and then SwA package the finished envelope after the
  * WS-Addressing and WS-Security rewrites. A `multipart/related` response is unwrapped into its
  * envelope plus `response.attachments`. See `soap/mime/send-pipeline.ts`.
-
+ *
  * The full request order is: property expansion → inline files → WS-Addressing → WS-Security →
  * MTOM → SwA → gzip.
  *
