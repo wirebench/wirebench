@@ -62,9 +62,17 @@ export type MarkerApi = Pick<typeof Monaco, 'editor'>;
  */
 let markerApi: MarkerApi | undefined;
 
-/** Registers the Monaco namespace marker calls go through. Call from the editor's `onMount`. */
+/**
+ * Registers the Monaco namespace marker calls go through. Call from the editor's `onMount`.
+ *
+ * Also parks the namespace on `globalThis.__wirebenchMonaco`, the only way an e2e spec can read
+ * back the markers a validation run produced (`monaco.editor.getModelMarkers`). It is a handle
+ * to a bundle the renderer has already loaded — no privileged API, nothing the page could not
+ * reach on its own — and it is deliberately named so nothing mistakes it for app state.
+ */
 export function setMarkerApi(api: MarkerApi | undefined): void {
   markerApi = api;
+  (globalThis as unknown as { __wirebenchMonaco?: MarkerApi | undefined }).__wirebenchMonaco = api;
 }
 
 /**
