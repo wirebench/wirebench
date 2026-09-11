@@ -44,5 +44,7 @@ describe('test-certs serial numbers', () => {
 
     // Serials are unique across calls (deterministic counter, not colliding random draws).
     expect(serials.size).toBe(certs.length);
-  }, 30_000);
+    // 200 RSA-2048 keygens: comfortably inside 30s on a laptop, but the coverage job runs the
+    // same work under v8 instrumentation on a shared runner, where it needs several times that.
+  }, 180_000);
 });

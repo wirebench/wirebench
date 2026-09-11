@@ -9,7 +9,10 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url));
 
 describe('engine lint guard', () => {
-  it('rejects importing electron from within packages/engine/src', async () => {
+  // Booting ESLint with the type-checked config and linting a file through the TS project
+  // service is seconds of work on a laptop and far more under the coverage job's v8
+  // instrumentation, so this needs much more than vitest's 5s default.
+  it('rejects importing electron from within packages/engine/src', { timeout: 180_000 }, async () => {
     const eslint = new ESLint({ cwd: repoRoot });
 
     let tempFile: string | undefined;
