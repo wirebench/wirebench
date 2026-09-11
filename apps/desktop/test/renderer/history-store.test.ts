@@ -44,6 +44,34 @@ describe('useHistoryStore', () => {
     expect(useHistoryStore.getState().total).toBe(2);
   });
 
+  it('never lets a stale history.list reply overwrite a newer one', async () => {
+    // Opening a workspace raises `workspace.changed` and one `project.changed` per project,
+    // each a reload; the replies can land in any order.
+    type Reply = { ok: true; value: { entries: HistoryEntryWire[]; total: number } };
+    const resolvers: ((reply: Reply) => void)[] = [];
+    installWirebenchApi({
+      history: {
+        list: vi.fn(
+          () =>
+            new Promise<Reply>((resolve) => {
+              resolvers.push(resolve);
+            }),
+        ),
+      },
+    });
+
+    const first = useHistoryStore.getState().load();
+    const second = useHistoryStore.getState().load();
+    resolvers[1]?.({ ok: true, value: { entries: [makeEntry({ id: 'new' })], total: 1 } });
+    await second;
+    resolvers[0]?.({ ok: true, value: { entries: [], total: 0 } });
+    await first;
+
+    expect(useHistoryStore.getState().entries.map((entry) => entry.id)).toEqual(['new']);
+    expect(useHistoryStore.getState().total).toBe(1);
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it('search sets the query immediately and reloads after the debounce', async () => {
     vi.useFakeTimers();
     const list = vi.fn().mockResolvedValue({ ok: true, value: { entries: [], total: 0 } });

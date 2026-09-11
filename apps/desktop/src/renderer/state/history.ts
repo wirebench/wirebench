@@ -47,6 +47,13 @@ function matchesQuery(entry: HistoryEntryWire, query: string): boolean {
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * Bumped by every `load`: a `history.list` reply is applied only while its own
+ * number is still the latest, so overlapping reloads — a workspace opening raises one per
+ * project — can never land a stale page over a newer one.
+ */
+let loadSequence = 0;
+
 export const useHistoryStore = create<HistoryStore>((set, get) => ({
   entries: [],
   total: 0,
@@ -54,9 +61,13 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
   loading: false,
 
   load: async () => {
+    const sequence = ++loadSequence;
     set({ loading: true });
     const { query } = get();
     const result = await ipc().history.list({ ...(query.length > 0 ? { query } : {}) });
+    if (sequence !== loadSequence) {
+      return;
+    }
     if (result.ok) {
       set({ entries: result.value.entries, total: result.value.total, loading: false });
     } else {

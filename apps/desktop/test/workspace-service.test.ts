@@ -146,6 +146,42 @@ describe('WorkspaceService lifecycle', () => {
     expect(history.openProjectIds()).toEqual([]);
   }, 60_000);
 
+  it("opens a project's history before announcing the project", async () => {
+    // The renderer's history view reloads on `project.changed`; a list answered before the
+    // project's history file is attached would come back without it.
+    const bootstrap = newService();
+    const created = await bootstrap.create('Ordering');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const countries = await seedProject(dir, 'countries', 'Countries');
+    await registerProjects(dir, [countries]);
+
+    const history = new HistoryService(root);
+    const seen: { projectId: string; historyOpen: boolean }[] = [];
+    const service = newService({
+      history,
+      hooks: {
+        onProjectChanged: (projectId, project) => {
+          if (project !== null) {
+            seen.push({ projectId, historyOpen: history.openProjectIds().includes(projectId) });
+          }
+        },
+      },
+    });
+    await service.open(created.id);
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((event) => event.projectId === countries.id && event.historyOpen)).toBe(true);
+
+    // A new project follows the same order.
+    seen.length = 0;
+    const { projectId } = await service.addProject('Payments');
+    expect(seen.some((event) => event.projectId === projectId)).toBe(true);
+    expect(seen.every((event) => event.historyOpen)).toBe(true);
+
+    await service.close();
+  }, 60_000);
+
   it('lists a corrupt workspace as unreadable rather than dropping it', async () => {
     const service = newService();
     const created = await service.create('Healthy');

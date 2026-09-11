@@ -424,6 +424,11 @@ export class WorkspaceService implements ProjectRouter {
       entry.message = `The project folder is gone: ${entry.dir}`;
       return;
     }
+    // `project.changed` is what the renderer's history view reloads on, so it is not forwarded
+    // until the project's history file is attached: the host's own first change (raised from
+    // inside `openProject`) is held and replayed — latest snapshot only — once it is.
+    let announced = false;
+    let held: { project: ProjectWire | null } | undefined;
     const host = new ProjectHost(
       this.deps.engine,
       // Retired in a later task; until then a host still wants one, backed by the app's own
@@ -438,6 +443,10 @@ export class WorkspaceService implements ProjectRouter {
           // hosts' own snapshots on *every* change — an import, a rename or a removal all add
           // or drop entity ids, and a stale table would route a request to the wrong project.
           this.reindex();
+          if (!announced) {
+            held = { project };
+            return;
+          }
           this.deps.hooks?.onProjectChanged?.(entry.projectId, project);
         },
         onChangedOnDisk: (paths) => {
@@ -471,8 +480,14 @@ export class WorkspaceService implements ProjectRouter {
       entry.status = 'ready';
       entry.message = undefined;
       this.reindex();
-      // History has to be open before anything can record a send against this project.
+      // History has to be open before anything can record a send against this project — and
+      // before the project is announced (see `announced` above).
       await this.deps.history.open(project.id);
+      announced = true;
+      if (held !== undefined) {
+        this.deps.hooks?.onProjectChanged?.(entry.projectId, held.project);
+        held = undefined;
+      }
     } catch (error) {
       entry.status = 'error';
       entry.message = errorMessage(error);
