@@ -23,6 +23,7 @@ export function registerRequestCommands(): void {
     category: 'Request',
     shortcut: 'Mod+Enter',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
@@ -37,6 +38,7 @@ export function registerRequestCommands(): void {
     shortcut: 'Escape',
     // Escape must stay available to dialogs, menus, and the palette, so this command exists
     // only while the active request is actually in flight.
+    whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
       return requestId !== undefined && useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
@@ -55,6 +57,7 @@ export function registerRequestCommands(): void {
     category: 'Request',
     shortcut: 'Mod+Shift+V',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const requestId = activeRequestId();
       if (requestId === undefined) {
@@ -70,6 +73,7 @@ export function registerRequestCommands(): void {
     id: 'response.validate',
     label: 'Validate Response',
     category: 'Request',
+    whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
       return (
@@ -94,6 +98,7 @@ export function registerRequestCommands(): void {
     label: 'Check WS-I compliance',
     category: 'Request',
     // The message assertions judge bytes on the wire, so there has to be an exchange to judge.
+    whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
       return requestId !== undefined && lastSendId(requestId) !== undefined;
@@ -114,6 +119,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Recreate (keep values)',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'keep-values')),
   });
   registerCommand({
@@ -121,6 +127,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Recreate (discard values)',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'discard-values')),
   });
   registerCommand({
@@ -128,6 +135,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Create Empty Envelope',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'empty')),
   });
   registerCommand({
@@ -135,6 +143,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Clone…',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
       openRequestDialog('clone', requestId);
     }),
@@ -144,6 +153,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Copy as cURL',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'posix')),
   });
   registerCommand({
@@ -151,6 +161,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Copy as cURL (PowerShell)',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'powershell')),
   });
   registerCommand({
@@ -158,6 +169,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Import cURL…',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
       openRequestDialog('import-curl', requestId);
     }),
@@ -169,12 +181,14 @@ export function registerRequestCommands(): void {
     label: 'Request: Add Attachment…',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void addAttachmentsThroughPicker(requestId)),
   });
   registerCommand({
     id: 'request.removeAttachment',
     label: 'Request: Remove Attachment',
     category: 'Request',
+    whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
       return requestId !== undefined && useEditorsStore.getState().selectedAttachmentFor(requestId) !== undefined;
@@ -189,6 +203,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Add WSS Username Token…',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
       openRequestDialog('wss-username-token', requestId);
     }),
@@ -198,6 +213,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Add WS-Timestamp…',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
       openRequestDialog('wss-timestamp', requestId);
     }),
@@ -207,6 +223,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Outgoing WSS → Apply to Editor',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void applyOutgoingWssToEditor(requestId)),
   });
   registerCommand({
@@ -214,6 +231,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Outgoing WSS → Remove',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void removeOutgoingWssFromEditor(requestId)),
   });
 
@@ -225,6 +243,7 @@ export function registerRequestCommands(): void {
     label: 'Request: WS-A Headers → Add to Editor',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void addWsaHeadersToEditor(requestId)),
   });
   registerCommand({
@@ -232,6 +251,7 @@ export function registerRequestCommands(): void {
     label: 'Request: WS-A Headers → Remove',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void removeWsaHeadersFromEditor(requestId)),
   });
 
@@ -240,6 +260,7 @@ export function registerRequestCommands(): void {
     label: 'Request: Show Code',
     category: 'Request',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       ui().showDetails('code');
     },

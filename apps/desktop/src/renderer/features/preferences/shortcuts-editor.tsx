@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CommandContext } from '../../lib/commands.js';
-import { chordFromEvent, formatKeybinding } from '../../lib/keybindings.js';
+import { chordFromEvent, chordRecordingError, formatKeybinding } from '../../lib/keybindings.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { KeymapRow } from './keymap.js';
 import { keymapRows, resetValueFor } from './keymap.js';
@@ -34,11 +34,21 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
   const update = usePreferencesStore((state) => state.update);
   const reset = usePreferencesStore((state) => state.reset);
   const [recording, setRecording] = useState<string | undefined>(undefined);
+  // The refusal message for the row the user just tried to bind something unsafe to. Shown
+  // next to that row rather than as a toast: the explanation belongs where the mistake is.
+  const [refused, setRefused] = useState<{ id: string; message: string } | undefined>(undefined);
 
   const rows = keymapRows(overrides);
 
   const bind = (id: string, chord: string): void => {
+    // Unbinding ('') is always safe; recording a chord is not — see `chordRecordingError`.
+    const error = chord === '' ? undefined : chordRecordingError(chord);
+    if (error !== undefined) {
+      setRefused({ id, message: error });
+      return;
+    }
     setRecording(undefined);
+    setRefused(undefined);
     void update({ shortcuts: { [id]: chord } });
   };
 
@@ -86,9 +96,14 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
             <tr key={row.id} data-testid="shortcut-row" data-command={row.id} className="border-b border-hairline/50">
               <td className={`${CELL} truncate text-fg-default`} title={row.label}>
                 {row.label}
-                {row.conflictsWith.length > 0 && (
+                {row.conflictNote !== undefined && (
                   <span data-testid="shortcut-conflict" className="ml-2 text-xs text-status-danger">
-                    Also bound to {row.conflictsWith.join(', ')}
+                    {row.conflictNote}
+                  </span>
+                )}
+                {refused?.id === row.id && (
+                  <span data-testid="shortcut-refused" role="alert" className="ml-2 text-xs text-status-danger">
+                    {refused.message}
                   </span>
                 )}
               </td>
@@ -118,6 +133,7 @@ export function ShortcutsEditor({ context }: ShortcutsEditorProps) {
                     event.stopPropagation();
                     if (event.key === 'Escape') {
                       setRecording(undefined);
+                      setRefused(undefined);
                       return;
                     }
                     if (event.key === 'Backspace' || event.key === 'Delete') {

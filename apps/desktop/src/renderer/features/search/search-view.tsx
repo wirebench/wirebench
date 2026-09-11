@@ -44,7 +44,7 @@ export function SearchView() {
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [scopes, setScopes] = useState<SearchScopesWire>(DEFAULT_SCOPES);
   const [matches, setMatches] = useState<readonly SearchMatchWire[]>([]);
-  const [truncated, setTruncated] = useState(false);
+  const [truncated, setTruncated] = useState<'limit' | 'timeout' | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [searched, setSearched] = useState(false);
   const project = useProjectStore((state) => state.project);
@@ -57,7 +57,7 @@ export function SearchView() {
     const trimmed = query.trim();
     if (trimmed.length === 0) {
       setMatches([]);
-      setTruncated(false);
+      setTruncated(undefined);
       setError(undefined);
       setSearched(false);
       return;
@@ -70,11 +70,11 @@ export function SearchView() {
           setSearched(true);
           if (result.ok) {
             setMatches(result.value.matches);
-            setTruncated(result.value.truncated);
+            setTruncated(result.value.truncated ? (result.value.reason ?? 'limit') : undefined);
             setError(undefined);
           } else {
             setMatches([]);
-            setTruncated(false);
+            setTruncated(undefined);
             setError(result.error.message);
           }
         });
@@ -190,7 +190,13 @@ export function SearchView() {
             </ul>
           </section>
         ))}
-        {truncated && <p className="px-3 py-2 text-xs text-fg-faint">More results were found than are shown here.</p>}
+        {truncated !== undefined && (
+          <p className="px-3 py-2 text-xs text-fg-faint">
+            {truncated === 'timeout'
+              ? 'Search stopped early — this pattern is too slow to finish. Try a simpler one.'
+              : 'More results were found than are shown here.'}
+          </p>
+        )}
       </div>
     </div>
   );

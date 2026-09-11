@@ -88,6 +88,43 @@ export type CommandCategory =
   'General' | 'View' | 'Project' | 'Definition' | 'Explorer' | 'Environment' | 'Request' | 'Secrets' | 'Editor';
 
 /**
+ * The named conditions a command's `when` gate can stand for, and how each reads in a sentence.
+ *
+ * A `when` predicate is an opaque closure, so nothing can compare two of them; this table is
+ * the declared identity of the condition behind one. Scopes are dotted paths and a dot means
+ * "contained in": `editor.request` is a narrower condition than `editor`, so whenever the
+ * narrower one holds the wider one does too. {@link whenScopesOverlap} is what the Shortcuts
+ * editor uses to decide whether two commands on the same chord can ever both be live —
+ * conflicts between conditions that can never hold at once are not conflicts.
+ */
+export const COMMAND_WHEN_SCOPES = {
+  editor: 'an editor tab is open',
+  'editor.request': 'a request tab is active',
+  project: 'a project is open',
+  'project.environments': 'the project has environments',
+  'selection.interface': 'an interface is selected',
+  'selection.operation': 'an operation is selected',
+  'selection.request': 'a request is selected',
+  'selection.endpoint': 'an endpoint is selected',
+  'wsi.report': 'a WS-I report has been run',
+} as const;
+
+/** The key half of {@link COMMAND_WHEN_SCOPES}. */
+export type CommandWhenScope = keyof typeof COMMAND_WHEN_SCOPES;
+
+/**
+ * True when two `when` conditions can hold at the same moment: when either command is
+ * ungated (`undefined`), when they declare the same scope, or when one scope is nested inside
+ * the other (`editor.request` inside `editor`).
+ */
+export function whenScopesOverlap(a: CommandWhenScope | undefined, b: CommandWhenScope | undefined): boolean {
+  if (a === undefined || b === undefined || a === b) {
+    return true;
+  }
+  return a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+}
+
+/**
  * The declarative half of a command: everything needed to render it in a palette or a menu,
  * without knowing how it runs. `shortcut` is a keybinding string such as `Mod+Shift+E`.
  * `when` gates availability against a context the renderer supplies; a command with no
@@ -105,4 +142,9 @@ export interface CommandDefinition<Ctx = unknown> {
    */
   readonly extraShortcuts?: readonly string[];
   readonly when?: (context: Ctx) => boolean;
+  /**
+   * The declared identity of `when`, so two gated commands can be compared without calling
+   * their closures. Required wherever `when` is set (the registry audit enforces it).
+   */
+  readonly whenScope?: CommandWhenScope;
 }

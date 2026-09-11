@@ -2260,9 +2260,14 @@ export const searchMatchSchema = z.object({
 });
 export type SearchMatchWire = z.infer<typeof searchMatchSchema>;
 
-/** Response for `search.query`. `truncated` is true when `limit` cut the results short. */
+/**
+ * Response for `search.query`. `truncated` is true when the scan stopped early, and `reason`
+ * says why: `limit` when the match cap was hit, `timeout` when the time budget ran out (a
+ * pathological user regex is bounded, never left to run).
+ */
 export const searchQueryResponseSchema = z.object({
   matches: z.array(searchMatchSchema),
   truncated: z.boolean(),
+  reason: z.enum(['limit', 'timeout']).optional(),
 });
 export type SearchQueryResponse = z.infer<typeof searchQueryResponseSchema>;

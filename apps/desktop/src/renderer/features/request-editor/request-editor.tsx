@@ -103,14 +103,15 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
       data-testid="request-editor"
       className="flex h-full min-h-0 flex-col"
       onKeyDown={(event) => {
-        // `request.cancel`'s Escape binding is declined inside text fields (see
-        // `shouldIgnoreEvent`), and Monaco's input surface is one — so this handler covers
-        // exactly that gap: a send in flight, with focus inside the editor. Anywhere else the
-        // window-level binding still owns Escape, so neither can fire twice.
+        // `request.cancel` is on the window dispatcher's editable-field allow-list, so Escape
+        // already reaches it from inside the editor; this handler is what makes that work when
+        // the dispatcher is not installed (the pane rendered on its own). It stops propagation
+        // so the two can never both fire for one keystroke.
         if (event.key !== 'Escape' || !sending || !isTextInput(event.target)) {
           return;
         }
         event.preventDefault();
+        event.stopPropagation();
         onCancel();
       }}
     >

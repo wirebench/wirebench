@@ -102,6 +102,37 @@ describe('ShortcutsEditor', () => {
     });
   });
 
+  it('refuses a bare key and says why, without persisting anything', () => {
+    const update = vi.fn();
+    installWirebenchApi({ preferences: { update } });
+    render(<ShortcutsEditor context={context} />);
+
+    const row = within(rowFor('request.send'));
+    const chord = row.getByLabelText('Shortcut for Send Request');
+    fireEvent.click(chord);
+    fireEvent.keyDown(chord, { key: 'k' });
+
+    expect(row.getByTestId('shortcut-refused').textContent).toContain('bare key');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('accepts a chord carrying Alt', async () => {
+    const update = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { preferences: withShortcuts({ 'request.send': 'Alt+K' }) } });
+    installWirebenchApi({ preferences: { update } });
+    render(<ShortcutsEditor context={context} />);
+
+    const chord = within(rowFor('request.send')).getByLabelText('Shortcut for Send Request');
+    fireEvent.click(chord);
+    fireEvent.keyDown(chord, { key: 'k', altKey: true });
+
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { shortcuts: { 'request.send': 'Alt+K' } } });
+    });
+    expect(screen.queryAllByTestId('shortcut-refused')).toEqual([]);
+  });
+
   it('warns when two commands share a chord', () => {
     usePreferencesStore.setState({ preferences: withShortcuts({ 'request.validate': 'Mod+Enter' }), loaded: true });
     render(<ShortcutsEditor context={context} />);

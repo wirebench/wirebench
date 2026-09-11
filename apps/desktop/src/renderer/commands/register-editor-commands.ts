@@ -26,6 +26,7 @@ export function registerEditorCommands(): void {
     // somewhere else in the shell. Exactly as `request.send`/`SEND_KEYBINDING` already pair up.
     shortcut: 'Mod+Shift+F',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const handle = getActiveRequestPaneHandle();
       if (handle !== undefined) {
@@ -40,6 +41,7 @@ export function registerEditorCommands(): void {
     // F12 is bound on the Monaco instance itself (see `request-pane.tsx`); the palette entry
     // and the pane's context menu run the very same action.
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       goToSchemaDefinitionAtCursor();
     },
@@ -50,6 +52,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     // Same reasoning as `editor.formatXml` above: Mod+G is bound on the Monaco instance itself.
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const editor = getActiveRequestEditor();
       if (editor !== undefined) {
@@ -62,6 +65,7 @@ export function registerEditorCommands(): void {
     label: 'Toggle Line Numbers',
     category: 'Editor',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       void usePreferencesStore.getState().update({ editor: { lineNumbers: !ui().editorLineNumbers } });
     },
@@ -71,6 +75,7 @@ export function registerEditorCommands(): void {
     label: 'Save Request As…',
     category: 'Editor',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const editor = getActiveRequestEditor();
       const text = editor?.getModel()?.getValue();
@@ -84,6 +89,7 @@ export function registerEditorCommands(): void {
     label: 'Load Request From…',
     category: 'Editor',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const requestId = activeRequestId();
       const editor = getActiveRequestEditor();
@@ -104,6 +110,7 @@ export function registerEditorCommands(): void {
     label: 'Toggle Editor Layout: Side by Side / Stacked',
     category: 'Editor',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
@@ -117,6 +124,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     shortcut: 'Mod+Backslash',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
@@ -133,6 +141,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     shortcut: 'Mod+W',
     when: () => useEditorsStore.getState().activeId !== undefined,
+    whenScope: 'editor',
     run: () => {
       const { activeId, close } = useEditorsStore.getState();
       if (activeId !== undefined) {
@@ -148,6 +157,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     shortcut: 'Alt+Right',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       moveToAdjacentValue('next');
     },
@@ -158,6 +168,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     shortcut: 'Alt+Left',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       moveToAdjacentValue('previous');
     },
@@ -169,6 +180,7 @@ export function registerEditorCommands(): void {
     category: 'Editor',
     shortcut: 'Shift+Tab',
     when: () => activeRequestId() !== undefined,
+    whenScope: 'editor.request',
     run: () => {
       focusOtherPane();
     },

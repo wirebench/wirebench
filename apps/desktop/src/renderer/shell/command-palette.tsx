@@ -99,24 +99,27 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
                     heading={category}
                     className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-fg-faint [&_[cmdk-group-heading]]:uppercase"
                   >
-                    {commands.map((command) => (
-                      <Command.Item
-                        key={command.id}
-                        value={`${command.category} ${command.label}`}
-                        onSelect={() => {
-                          onOpenChange(false);
-                          void runCommand(command.id, context);
-                        }}
-                        className="flex cursor-default items-center justify-between rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
-                      >
-                        <span>{command.label}</span>
-                        {effectiveShortcut(command) !== undefined && (
-                          <span className="font-mono text-xs text-fg-subtle">
-                            {formatKeybinding(effectiveShortcut(command) as string, context.platform)}
-                          </span>
-                        )}
-                      </Command.Item>
-                    ))}
+                    {commands.map((command) => {
+                      const shortcut = effectiveShortcut(command);
+                      return (
+                        <Command.Item
+                          key={command.id}
+                          value={`${command.category} ${command.label}`}
+                          onSelect={() => {
+                            onOpenChange(false);
+                            void runCommand(command.id, context);
+                          }}
+                          className="flex cursor-default items-center justify-between rounded-md px-2 py-1.5 text-md text-fg-muted data-[selected=true]:bg-surface-selected data-[selected=true]:text-fg-default"
+                        >
+                          <span>{command.label}</span>
+                          {shortcut !== undefined && (
+                            <span className="font-mono text-xs text-fg-subtle">
+                              {formatKeybinding(shortcut, context.platform)}
+                            </span>
+                          )}
+                        </Command.Item>
+                      );
+                    })}
                   </Command.Group>
                 ))}
             </Command.List>

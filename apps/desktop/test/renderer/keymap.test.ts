@@ -86,6 +86,41 @@ describe('keymapRows', () => {
     expect(keymapRows({}).filter((row) => row.conflictsWith.length > 0)).toEqual([]);
   });
 
+  it('names the winner and its condition in the conflict note', () => {
+    const rows = keymapRows({ 'request.validate': 'Mod+Enter' });
+
+    // Both are gated on `editor.request`, so they really do compete; the dispatcher walks
+    // (category, label) order, where "Send Request" precedes "Validate Request".
+    expect(rowFor(rows, 'request.validate')?.conflictNote).toBe(
+      'Also bound to Send Request (Send Request wins while a request tab is active)',
+    );
+  });
+
+  it('does not call a shared chord a conflict when the two can never both be live', () => {
+    // `explorer.newRequest` needs an operation selected; `request.send` needs a request tab
+    // active. Their `when` scopes do not overlap, so sharing ⌘⏎ is not a clash.
+    const rows = keymapRows({ 'explorer.newRequest': 'Mod+Enter' });
+
+    expect(rowFor(rows, 'explorer.newRequest')?.conflictsWith).toEqual([]);
+    expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual([]);
+    expect(rowFor(rows, 'request.send')?.conflictNote).toBeUndefined();
+  });
+
+  it('treats an ungated command as overlapping everything', () => {
+    const rows = keymapRows({ 'view.toggleSidebar': 'Mod+Enter' });
+
+    expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual(['Send Request']);
+    expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
+  });
+
+  it('treats a narrower scope as overlapping the wider one it sits inside', () => {
+    // `editor.closeTab` is gated on `editor`; `request.send` on `editor.request`, which is a
+    // narrower condition inside it — whenever a request tab is active, a tab is open.
+    const rows = keymapRows({ 'editor.closeTab': 'Mod+Enter' });
+
+    expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual(['Send Request']);
+  });
+
   it('ignores an unparseable override rather than throwing', () => {
     expect(() => keymapRows({ 'request.send': 'Mod+' })).not.toThrow();
   });

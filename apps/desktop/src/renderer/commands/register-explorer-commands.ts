@@ -11,6 +11,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Import Another WSDL…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: () => {
       explorerActions.importAnother();
     },
@@ -20,6 +21,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Remove Interface',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.removeInterface(ctx.selection?.interfaceId);
     },
@@ -29,6 +31,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Show Interface Viewer',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.showInterface(ctx.selection?.interfaceId);
     },
@@ -38,6 +41,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Update Definition…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.updateDefinition(ctx.selection?.interfaceId);
     },
@@ -47,6 +51,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Export Definition…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.exportDefinition(ctx.selection?.interfaceId);
     },
@@ -56,6 +61,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Generate Documentation…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.generateDocs(ctx.selection?.interfaceId);
     },
@@ -65,6 +71,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Copy Definition URL',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.copyDefinitionUrl(ctx.selection?.interfaceId);
     },
@@ -74,6 +81,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: New Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'operation',
+    whenScope: 'selection.operation',
     run: (ctx) => {
       explorerActions.newRequest(ctx.selection?.interfaceId, ctx.selection?.bindingName, ctx.selection?.operationName);
     },
@@ -83,6 +91,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Copy SOAPAction',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'operation',
+    whenScope: 'selection.operation',
     run: (ctx) => {
       explorerActions.copySoapAction(ctx.selection?.soapAction);
     },
@@ -92,6 +101,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Open Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
+    whenScope: 'selection.request',
     run: (ctx) => {
       explorerActions.openRequest(ctx.selection?.requestId);
     },
@@ -101,6 +111,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Clone Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
+    whenScope: 'selection.request',
     run: (ctx) => {
       explorerActions.cloneRequest(ctx.selection?.requestId);
     },
@@ -110,6 +121,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Rename Request…',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
+    whenScope: 'selection.request',
     run: (ctx) => {
       explorerActions.renameRequest(ctx.selection?.requestId);
     },
@@ -119,6 +131,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Delete Request',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
+    whenScope: 'selection.request',
     run: (ctx) => {
       explorerActions.deleteRequest(ctx.selection?.requestId);
     },
@@ -128,6 +141,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Recreate Request (keep values)',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'request',
+    whenScope: 'selection.request',
     run: (ctx) => {
       explorerActions.recreateRequest(ctx.selection?.requestId);
     },
@@ -137,6 +151,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Check WSDL WS-I compliance',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'interface',
+    whenScope: 'selection.interface',
     run: (ctx) => {
       explorerActions.checkWsiWsdl(ctx.selection?.interfaceId);
     },
@@ -146,6 +161,7 @@ export function registerExplorerCommands(): void {
     label: 'Explorer: Copy Endpoint Address',
     category: 'Explorer',
     when: (ctx) => ctx.selection?.kind === 'endpoint',
+    whenScope: 'selection.endpoint',
     run: (ctx) => {
       explorerActions.copyEndpointAddress(ctx.selection?.address);
     },

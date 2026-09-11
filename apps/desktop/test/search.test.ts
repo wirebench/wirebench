@@ -106,3 +106,67 @@ describe('searchDocuments', () => {
     expect(matches[0]?.snippet.length).toBeLessThanOrEqual(201);
   });
 });
+
+describe('searchDocuments bounds', () => {
+  it('returns quickly for a catastrophic pattern instead of backtracking', () => {
+    // `(a+)+$` over a long non-matching run is the textbook exponential case.
+    const text = `${'a'.repeat(40)}b`;
+    const started = Date.now();
+
+    expect(() =>
+      searchDocuments([{ kind: 'request-body', text }], query({ query: '(a+)+$', regex: true })),
+    ).toThrowError(/Nested quantifiers/);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('rejects the other nested-quantifier spellings', () => {
+    for (const pattern of ['(a*)*', '(a+)*', '(\\d+)+']) {
+      expect(() => compileQuery({ query: pattern, regex: true, caseSensitive: false })).toThrowError(
+        /Nested quantifiers/,
+      );
+    }
+  });
+
+  it('rejects a pattern longer than the cap', () => {
+    expect(() => compileQuery({ query: 'a'.repeat(201), regex: true, caseSensitive: false })).toThrowError(/too long/);
+  });
+
+  it('leaves a long literal query alone — the cap is on patterns', () => {
+    expect(() => compileQuery({ query: 'a'.repeat(201), regex: false, caseSensitive: false })).not.toThrow();
+  });
+
+  it('stops on the time budget and says why', () => {
+    // A clock that jumps past the 200 ms budget on its second reading.
+    const readings = [0, 0, 1_000];
+    let index = 0;
+    const clock = () => readings[Math.min(index++, readings.length - 1)] ?? 0;
+    const text = Array.from({ length: 500 }, () => '<Add/>').join('\n');
+
+    const result = searchDocuments([{ kind: 'request-body', text }], query(), clock);
+
+    expect(result.truncated).toBe(true);
+    expect(result.reason).toBe('timeout');
+  });
+
+  it('says the limit was what cut the results short', () => {
+    const text = Array.from({ length: 10 }, () => '<Add/>').join('\n');
+
+    const result = searchDocuments([{ kind: 'request-body', text }], query({ limit: 3 }));
+
+    expect(result).toMatchObject({ truncated: true, reason: 'limit' });
+    expect(result.matches).toHaveLength(3);
+  });
+
+  it('numbers lines correctly across many matches in one document', () => {
+    const text = Array.from({ length: 200 }, (_, i) => `<Add n="${String(i)}"/>`).join('\n');
+
+    const result = searchDocuments([{ kind: 'request-body', text }], query({ limit: 1000 }));
+
+    expect(result.matches).toHaveLength(200);
+    expect(result.matches[0]?.line).toBe(1);
+    expect(result.matches[0]?.column).toBe(2);
+    expect(result.matches[199]?.line).toBe(200);
+    expect(result.matches[199]?.column).toBe(2);
+    expect(result.matches[199]?.snippet).toBe('<Add n="199"/>');
+  });
+});

@@ -40,6 +40,7 @@ export function registerProjectCommands(): void {
     category: 'Project',
     shortcut: 'Mod+S',
     when: () => useProjectStore.getState().project !== null,
+    whenScope: 'project',
     run: () => {
       void projectActions.save();
     },
@@ -49,6 +50,7 @@ export function registerProjectCommands(): void {
     label: 'Close Project',
     category: 'Project',
     when: () => useProjectStore.getState().project !== null,
+    whenScope: 'project',
     run: () => {
       void projectActions.close();
     },
@@ -59,6 +61,7 @@ export function registerProjectCommands(): void {
     label: 'Switch Environment…',
     category: 'Environment',
     when: () => useProjectStore.getState().project !== null,
+    whenScope: 'project',
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
     // The palette can also pass an environment name or id to switch straight to it.
     run: (_context, arg) => {
@@ -79,6 +82,7 @@ export function registerProjectCommands(): void {
     category: 'Environment',
     shortcut: 'Mod+Alt+E',
     when: () => useProjectStore.getState().environments.length > 0,
+    whenScope: 'project.environments',
     run: () => {
       void cycleEnvironment(1);
     },

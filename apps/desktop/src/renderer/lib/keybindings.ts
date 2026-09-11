@@ -221,11 +221,12 @@ function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
-  // Monaco's edit host is a text field by construction, but the editor is where ⇧Tab, ⎋ and
-  // ⌥←/→ are *meant* to work — and Monaco consumes every keystroke it has its own binding for
-  // before this listener ever sees it, so nothing here can steal one from it.
+  // Monaco's edit host is a text field by construction, and it is treated as one here: a
+  // user-recorded bare chord (`K`, `2`) must never eat a keystroke the user meant to type.
+  // The handful of bindings the editor is *supposed* to answer to travel through
+  // EDITOR_DISPATCH_ALLOWLIST instead, which is an id list rather than a target test.
   if (typeof target.closest === 'function' && target.closest('.monaco-editor') !== null) {
-    return false;
+    return true;
   }
   const tag = target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
@@ -236,11 +237,62 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * True when a keystroke inside a text field should be left to that field. Mod-based bindings
- * (⌘K, ⌘B…) still fire while typing — they are app-level and never produce characters.
+ * The only commands allowed to fire from inside a text field (Monaco included) on a chord that
+ * carries no Mod. They are the editor's own navigation and the in-flight escape hatch: each is
+ * useless anywhere else, and each is one the design's §5 table puts on a bare or Alt chord.
+ * Everything else must carry Mod to reach past a focused field, so no rebind — however
+ * careless — can swallow typed characters.
  */
-export function shouldIgnoreEvent(event: KeyboardEvent, binding: Keybinding): boolean {
-  return !binding.mod && isEditable(event.target);
+const EDITOR_DISPATCH_ALLOWLIST: ReadonlySet<CommandId> = new Set<CommandId>([
+  'request.cancel',
+  'editor.focusOtherPane',
+  'editor.nextValue',
+  'editor.previousValue',
+]);
+
+/**
+ * True when a keystroke inside a text field should be left to that field. Mod-based bindings
+ * (⌘K, ⌘B…) still fire while typing — they are app-level and never produce characters — and so
+ * do the four {@link EDITOR_DISPATCH_ALLOWLIST} commands. Anything else typed into a field
+ * belongs to the field.
+ *
+ * @param id - The command the binding would run; omit to apply the Mod rule alone.
+ */
+export function shouldIgnoreEvent(event: KeyboardEvent, binding: Keybinding, id?: CommandId): boolean {
+  if (binding.mod) {
+    return false;
+  }
+  if (!isEditable(event.target)) {
+    return false;
+  }
+  return id === undefined || !EDITOR_DISPATCH_ALLOWLIST.has(id);
+}
+
+/** Function keys are never characters, so they are safe to bind bare. */
+const FUNCTION_KEY = /^f([1-9]|1[0-2])$/;
+
+/**
+ * Why `chord` may not be recorded as a shortcut, or `undefined` when it may.
+ *
+ * A chord with no Mod/Ctrl and no Alt is a character the user can type. Binding one would make
+ * that character unusable wherever the command is live — worst of all in the XML editor, where
+ * "k" would stop being a letter. The exceptions are the keystrokes that are never characters
+ * anywhere: ⎋, F1–F12, and ⇧⇥ (the design's own request↔response focus chord).
+ */
+export function chordRecordingError(chord: string): string | undefined {
+  let parsed: Keybinding;
+  try {
+    parsed = parseKeybinding(chord);
+  } catch {
+    return 'That key cannot be used as a shortcut.';
+  }
+  if (parsed.mod || parsed.alt) {
+    return undefined;
+  }
+  if (parsed.key === 'escape' || FUNCTION_KEY.test(parsed.key) || (parsed.key === 'tab' && parsed.shift)) {
+    return undefined;
+  }
+  return 'Add ⌘/Ctrl or Alt — a bare key would stop working as text in the editor.';
 }
 
 let overrides: Readonly<Record<string, string>> = {};
@@ -304,7 +356,7 @@ export function useKeybindings(context: CommandContext): void {
       for (const definition of listCommands(context)) {
         for (const chord of chordsFor(definition)) {
           const binding = parseKeybinding(chord);
-          if (!matchesEvent(binding, event, context.platform) || shouldIgnoreEvent(event, binding)) {
+          if (!matchesEvent(binding, event, context.platform) || shouldIgnoreEvent(event, binding, definition.id)) {
             continue;
           }
           event.preventDefault();

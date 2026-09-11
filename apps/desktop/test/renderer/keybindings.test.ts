@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatKeybinding, matchesEvent, parseKeybinding } from '../../src/renderer/lib/keybindings.js';
+import {
+  chordRecordingError,
+  formatKeybinding,
+  matchesEvent,
+  parseKeybinding,
+} from '../../src/renderer/lib/keybindings.js';
 
 describe('parseKeybinding', () => {
   it('parses a bare key', () => {
@@ -76,5 +81,34 @@ describe('matchesEvent', () => {
 
   it('does not match a different key', () => {
     expect(matchesEvent(parseKeybinding('Mod+B'), fakeEvent({ key: 'j', metaKey: true }), 'mac')).toBe(false);
+  });
+});
+
+describe('chordRecordingError', () => {
+  it('refuses a bare character key, which would stop being typeable', () => {
+    expect(chordRecordingError('K')).toContain('bare key');
+    expect(chordRecordingError('2')).toContain('bare key');
+    expect(chordRecordingError('Shift+K')).toContain('bare key');
+  });
+
+  it('accepts anything carrying Mod or Alt', () => {
+    expect(chordRecordingError('Mod+K')).toBeUndefined();
+    expect(chordRecordingError('Alt+Left')).toBeUndefined();
+    expect(chordRecordingError('Mod+Shift+Enter')).toBeUndefined();
+  });
+
+  it('accepts the keystrokes that are never characters', () => {
+    expect(chordRecordingError('Escape')).toBeUndefined();
+    expect(chordRecordingError('F2')).toBeUndefined();
+    expect(chordRecordingError('F12')).toBeUndefined();
+    expect(chordRecordingError('Shift+Tab')).toBeUndefined();
+  });
+
+  it('refuses a bare Tab, which is focus navigation', () => {
+    expect(chordRecordingError('Tab')).toContain('bare key');
+  });
+
+  it('refuses a chord that does not parse', () => {
+    expect(chordRecordingError('Mod+')).toBeDefined();
   });
 });
