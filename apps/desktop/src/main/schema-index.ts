@@ -43,6 +43,14 @@ function byName(a: SchemaComponentWire, b: SchemaComponentWire): number {
   return a.name.localeCompare(b.name);
 }
 
+/** One schema type that actually has a name — an anonymous (inline) type is not browsable. */
+type NamedType<T> = T & { readonly name: QName };
+
+/** Narrows away the anonymous types, so their `name` needs no cast downstream. */
+function isNamedType<T extends { readonly name?: QName | undefined }>(type: T): type is NamedType<T> {
+  return type.name !== undefined;
+}
+
 /** The named components of `map` whose key sits in `namespaceUri`, sorted by local name. */
 function namedIn(
   map: ReadonlyMap<string, { readonly source: { readonly location: string; readonly line?: number } }>,
@@ -68,19 +76,20 @@ export function schemaIndexOf(schemaSet: SchemaSet): SchemaNamespaceWire[] {
     .sort((a, b) => a.localeCompare(b))
     .map((uri) => {
       const types = schemaSet.typesInNamespace(uri);
+      const named = types.filter(isNamedType);
       return {
         uri,
         elements: schemaSet
           .elementsInNamespace(uri)
           .map((decl) => component(decl.name.localName, decl.source, decl.type))
           .sort(byName),
-        complexTypes: types
-          .filter((type) => type.kind === 'complexType' && type.name !== undefined)
-          .map((type) => component((type.name as QName).localName, type.source))
+        complexTypes: named
+          .filter((type) => type.kind === 'complexType')
+          .map((type) => component(type.name.localName, type.source))
           .sort(byName),
-        simpleTypes: types
-          .filter((type) => type.kind === 'simpleType' && type.name !== undefined)
-          .map((type) => component((type.name as QName).localName, type.source))
+        simpleTypes: named
+          .filter((type) => type.kind === 'simpleType')
+          .map((type) => component(type.name.localName, type.source))
           .sort(byName),
         groups: namedIn(schemaSet.groups, uri),
         attributeGroups: namedIn(schemaSet.attributeGroups, uri),

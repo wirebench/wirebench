@@ -1,8 +1,9 @@
 /**
  * The Interface editor's WSDL Content tab: every document of the resolved import graph on the
- * left, its text in a read-only Monaco on the right. Texts come from main's cached bundle
- * (`definition.documents`) — the renderer never fetches a WSDL itself. Monaco's own find widget
- * is the "search within", so there is no second search UI here.
+ * left, its text in a read-only Monaco on the right. The list (`definition.documents`) carries
+ * no text; the selected document's source is fetched on its own (`definition.documentText`) and
+ * cached per location, so a big import graph never crosses the bridge in one payload. Monaco's
+ * own find widget is the "search within", so there is no second search UI here.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,7 +12,7 @@ import type * as Monaco from 'monaco-editor';
 import { Button } from '../../components/button.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
 import { formatBytes } from '../../lib/format-size.js';
-import { useInterfaceEditorStore } from './interface-editor-state.js';
+import { NO_DOCUMENTS, useInterfaceEditorStore } from './interface-editor-state.js';
 
 export interface WsdlContentTabProps {
   readonly interfaceId: string;
@@ -28,9 +29,23 @@ export function documentLabel(location: string): string {
 export function WsdlContentTab({ interfaceId }: WsdlContentTabProps) {
   const data = useInterfaceEditorStore((state) => state.data[interfaceId]);
   const target = useInterfaceEditorStore((state) => state.sourceTargets[interfaceId]);
+  const clearSourceTarget = useInterfaceEditorStore((state) => state.clearSourceTarget);
+  const loadText = useInterfaceEditorStore((state) => state.loadText);
   const [index, setIndex] = useState(0);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
-  const documents = data?.documents?.documents ?? [];
+  const documents = data?.documents?.documents ?? NO_DOCUMENTS;
+  const current = documents[Math.min(index, Math.max(0, documents.length - 1))];
+  const location = current?.location;
+  const text = useInterfaceEditorStore((state) =>
+    location === undefined ? undefined : state.data[interfaceId]?.texts?.[location],
+  );
+
+  // Only the document actually on screen is fetched, and only once per location.
+  useEffect(() => {
+    if (location !== undefined) {
+      void loadText(interfaceId, location);
+    }
+  }, [loadText, interfaceId, location]);
 
   // A "Go to source" from the Schema tab names a document and a line: select that document,
   // then reveal the line once the editor holding it is mounted.
@@ -53,9 +68,18 @@ export function WsdlContentTab({ interfaceId }: WsdlContentTabProps) {
     editor.setPosition({ lineNumber: line, column: 1 });
   }, []);
 
+  // Revealing is a one-shot: once the line is on screen the target is dropped, so stepping
+  // Prev/Next away and back does not jump the caret to a line the user has since left.
   useEffect(() => {
-    reveal(target?.line);
-  }, [reveal, target, index]);
+    if (target === undefined || text === undefined) {
+      return;
+    }
+    if (location !== target.location) {
+      return;
+    }
+    reveal(target.line);
+    clearSourceTarget(interfaceId);
+  }, [reveal, target, text, location, clearSourceTarget, interfaceId]);
 
   const handleMount = useCallback<OnMount>(
     (editor) => {
@@ -75,8 +99,6 @@ export function WsdlContentTab({ interfaceId }: WsdlContentTabProps) {
       </p>
     );
   }
-
-  const current = documents[Math.min(index, documents.length - 1)];
 
   return (
     <div data-testid="wsdl-content" className="flex h-full min-h-0">
@@ -127,7 +149,13 @@ export function WsdlContentTab({ interfaceId }: WsdlContentTabProps) {
           {current?.location ?? ''}
         </p>
         <div className="min-h-0 flex-1">
-          <XmlEditor ariaLabel="Definition document XML" value={current?.text ?? ''} readOnly onMount={handleMount} />
+          <XmlEditor
+            ariaLabel="Definition document XML"
+            value={text ?? ''}
+            readOnly
+            onMount={handleMount}
+            key={location ?? ''}
+          />
         </div>
       </div>
     </div>

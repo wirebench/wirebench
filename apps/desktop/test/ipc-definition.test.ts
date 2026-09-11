@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerDefinitionChannels } from '../src/main/ipc/definition.js';
+import { MAX_ENVELOPE_XML_CHARS } from '../src/shared/wire-types.js';
 import type {
   DefinitionDeclarationAtResponse,
   DefinitionDocumentsResponse,
+  DefinitionDocumentTextResponse,
   DefinitionSchemaIndexResponse,
 } from '../src/shared/wire-types.js';
 
@@ -63,15 +65,68 @@ describe('definition.* viewer IPC', () => {
     interfaceId = summary.id;
   });
 
-  it('definition.documents returns the cached bundle with its texts', async () => {
+  it('definition.documents lists the cached bundle without any document text', async () => {
     const value = await ok<DefinitionDocumentsResponse>('definition.documents', { interfaceId });
 
     expect(value.documents.length).toBeGreaterThan(0);
     expect(value.documents[0]?.location).toBe('inline://calculator.wsdl');
     expect(value.documents[0]?.kind).toBe('wsdl');
-    expect(value.documents[0]?.text).toContain('<');
     expect(value.documents[0]?.size).toBeGreaterThan(0);
+    // The text is a separate, per-document call — listing a big import graph stays bounded.
+    expect(value.documents[0]).not.toHaveProperty('text');
     expect(value.loadedAt).toBeGreaterThan(0);
+  });
+
+  it('definition.documentText returns one document of the bundle', async () => {
+    const value = await ok<DefinitionDocumentTextResponse>('definition.documentText', {
+      interfaceId,
+      location: 'inline://calculator.wsdl',
+    });
+
+    expect(value.text).toContain('<');
+    expect(value.text).toContain('Calculator');
+  });
+
+  it('definition.documentText rejects a location that is not in the bundle', async () => {
+    const result = (await invoke('definition.documentText', {
+      interfaceId,
+      location: '/etc/passwd',
+    })) as { ok: false; error: { code: string } };
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('unknown-document');
+  });
+
+  it('definition.declarationAt rejects an envelope over the 2 MiB cap', async () => {
+    const result = (await invoke('definition.declarationAt', {
+      interfaceId,
+      envelopeXml: 'x'.repeat(MAX_ENVELOPE_XML_CHARS + 1),
+      offset: 0,
+    })) as { ok: false; error: { code: string } };
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('ipc-invalid-request');
+  });
+
+  it('definition.declarationAt rejects a negative or non-integer offset', async () => {
+    for (const offset of [-1, 1.5]) {
+      const result = (await invoke('definition.declarationAt', { interfaceId, envelopeXml: ENVELOPE, offset })) as {
+        ok: false;
+        error: { code: string };
+      };
+      expect(result.ok, `offset ${String(offset)}`).toBe(false);
+    }
+  });
+
+  it('definition.declarationAt rejects an offset past the end of the envelope', async () => {
+    const result = (await invoke('definition.declarationAt', {
+      interfaceId,
+      envelopeXml: ENVELOPE,
+      offset: ENVELOPE.length + 1,
+    })) as { ok: false; error: { code: string } };
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe('invalid-offset');
   });
 
   it('definition.documents reports an unknown interface as an error', async () => {

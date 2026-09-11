@@ -7,6 +7,8 @@ import {
   definitionDeclarationAtRequestSchema,
   definitionDeclarationAtResponseSchema,
   definitionDocumentsResponseSchema,
+  definitionDocumentTextRequestSchema,
+  definitionDocumentTextResponseSchema,
   definitionImportRequestSchema,
   definitionInterfaceRequestSchema,
   definitionSchemaIndexResponseSchema,
@@ -186,6 +188,11 @@ export const channels = {
       'definition.documents',
       definitionInterfaceRequestSchema,
       definitionDocumentsResponseSchema,
+    ),
+    documentText: defineChannel(
+      'definition.documentText',
+      definitionDocumentTextRequestSchema,
+      definitionDocumentTextResponseSchema,
     ),
     schemaIndex: defineChannel(
       'definition.schemaIndex',

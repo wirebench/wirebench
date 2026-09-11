@@ -142,6 +142,12 @@ export const interfaceSummarySchema = z.object({
   operations: z.array(operationSummaryWireSchema),
   problems: z.array(importProblemSchema),
   documentCount: z.number(),
+  /**
+   * Epoch milliseconds at which main loaded this definition into memory. Absent for a summary
+   * built by a stub or for an interface whose definition has not been hydrated yet; when it
+   * changes, every cached projection of the definition in the renderer is stale.
+   */
+  loadedAt: z.number().optional(),
   /** What the WSDL says about WS-Addressing; absent in a summary built by a stub. */
   wsa: wsaSummaryWireSchema.optional(),
 });
@@ -157,13 +163,16 @@ export const definitionCloseResponseSchema = z.object({ closed: z.boolean() });
 /** Request payload for `definition.documents`, `definition.schemaIndex`. */
 export const definitionInterfaceRequestSchema = z.object({ interfaceId: z.string() });
 
-/** One document of an imported definition's bundle, with its full text (read from main's cache, never refetched). */
+/**
+ * One document of an imported definition's bundle — its identity and size only. The text is a
+ * separate, per-document call (`definition.documentText`) so listing a large import graph never
+ * puts every byte of it on the wire at once.
+ */
 export const definitionDocumentWireSchema = z.object({
   location: z.string(),
   kind: z.enum(['wsdl', 'xsd']),
   /** Byte length of the document as fetched. */
   size: z.number(),
-  text: z.string(),
   /** The document's `targetNamespace`, when it declares one. */
   namespace: z.string().optional(),
 });
@@ -176,6 +185,23 @@ export const definitionDocumentsResponseSchema = z.object({
   loadedAt: z.number(),
 });
 export type DefinitionDocumentsResponse = z.infer<typeof definitionDocumentsResponseSchema>;
+
+/** The largest document text `definition.documentText` will serialise (8 MiB). */
+export const MAX_DOCUMENT_TEXT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Request payload for `definition.documentText`. `location` is never a path the renderer made
+ * up: main matches it against the bundle's own document locations and rejects anything else.
+ */
+export const definitionDocumentTextRequestSchema = z.object({
+  interfaceId: z.string(),
+  location: z.string().max(4096),
+});
+export type DefinitionDocumentTextRequest = z.infer<typeof definitionDocumentTextRequestSchema>;
+
+/** Response payload for `definition.documentText`: one document's source, from main's cache. */
+export const definitionDocumentTextResponseSchema = z.object({ text: z.string() });
+export type DefinitionDocumentTextResponse = z.infer<typeof definitionDocumentTextResponseSchema>;
 
 /** Which kind of schema component a Schema-browser row (or a declaration lookup) points at. */
 export const schemaComponentKindSchema = z.enum(['element', 'complexType', 'simpleType', 'group', 'attributeGroup']);
@@ -207,14 +233,14 @@ export type SchemaNamespaceWire = z.infer<typeof schemaNamespaceWireSchema>;
 export const definitionSchemaIndexResponseSchema = z.object({ namespaces: z.array(schemaNamespaceWireSchema) });
 export type DefinitionSchemaIndexResponse = z.infer<typeof definitionSchemaIndexResponseSchema>;
 
+/** The largest envelope `definition.declarationAt` will scan (2 MiB). */
+export const MAX_ENVELOPE_XML_CHARS = 2 * 1024 * 1024;
+
 /** Request payload for `definition.declarationAt`: a caret offset into one request envelope. */
 export const definitionDeclarationAtRequestSchema = z.object({
   interfaceId: z.string(),
-  /** Clark-notation binding QName; carried for symmetry with the other editor channels. */
-  bindingName: z.string().optional(),
-  operationName: z.string().optional(),
-  envelopeXml: z.string(),
-  offset: z.number(),
+  envelopeXml: z.string().max(MAX_ENVELOPE_XML_CHARS),
+  offset: z.number().int().nonnegative(),
 });
 export type DefinitionDeclarationAtRequest = z.infer<typeof definitionDeclarationAtRequestSchema>;
 

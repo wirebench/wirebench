@@ -287,8 +287,9 @@ export class EngineService {
       }
     }
     const definitionUrl = result.bundle.root.location;
-    this.definitions.set(id, { result, definitionUrl, loadedAt: Date.now() });
-    const summary = toInterfaceSummary(result, id, definitionUrl);
+    const loadedAt = Date.now();
+    this.definitions.set(id, { result, definitionUrl, loadedAt });
+    const summary = { ...toInterfaceSummary(result, id, definitionUrl), loadedAt };
     hooks.onProgress?.({
       kind: 'import',
       interfaceId: id,
@@ -343,8 +344,9 @@ export class EngineService {
       }
     }
     const definitionUrl = result.bundle.root.location;
-    this.definitions.set(input.interfaceId, { result, definitionUrl, loadedAt: Date.now() });
-    const summary = toInterfaceSummary(result, input.interfaceId, definitionUrl);
+    const loadedAt = Date.now();
+    this.definitions.set(input.interfaceId, { result, definitionUrl, loadedAt });
+    const summary = { ...toInterfaceSummary(result, input.interfaceId, definitionUrl), loadedAt };
     hooks.onProgress?.({
       kind: 'import',
       interfaceId: input.interfaceId,
@@ -443,21 +445,22 @@ export class EngineService {
 
   /** When `interfaceId`'s definition was last loaded into memory (epoch ms). Throws `unknown-interface` if absent. */
   loadedAtFor(interfaceId: string): number {
-    const stored = this.definitions.get(interfaceId);
-    if (stored === undefined) {
-      this.lookup(interfaceId);
-    }
-    return stored?.loadedAt ?? 0;
+    return this.lookupStored(interfaceId).loadedAt;
   }
 
   private lookup(interfaceId: string): ImportResult {
+    return this.lookupStored(interfaceId).result;
+  }
+
+  /** The whole cache entry for `interfaceId`, or `unknown-interface` when nothing is loaded. */
+  private lookupStored(interfaceId: string): StoredDefinition {
     const stored = this.definitions.get(interfaceId);
     if (stored === undefined) {
       throw new WirebenchError('unknown-interface', `No imported interface with id "${interfaceId}"`, {
         details: { interfaceId },
       });
     }
-    return stored.result;
+    return stored;
   }
 
   /** Builds a sample (or, with `empty: true`, blank) SOAP request for one operation. */

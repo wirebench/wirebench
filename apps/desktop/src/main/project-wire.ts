@@ -121,6 +121,7 @@ export function toInterfaceWire(iface: Interface, runtime: InterfaceRuntime | un
     operations: mergeOperations(iface, summary),
     problems: summary?.problems ?? [],
     documentCount: summary?.documentCount ?? 0,
+    ...(summary?.loadedAt !== undefined ? { loadedAt: summary.loadedAt } : {}),
     wsa: summary?.wsa ?? { enabled: false, version: '2005/08', defaultActionByOperation: {} },
     wsaConfig: { ...iface.wsa },
     endpoints: iface.endpoints.map(toEndpointWire),

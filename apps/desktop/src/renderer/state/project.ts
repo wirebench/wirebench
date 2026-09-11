@@ -28,6 +28,7 @@ import type {
   RequestPropertiesPatchWire,
   RequestWire,
 } from '../../shared/wire-types.js';
+import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { ipc } from './ipc-client.js';
@@ -450,6 +451,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeInterface: async (interfaceId) => {
       await mutate({ kind: 'remove-interface', interfaceId });
+      // The Interface editor caches this definition's documents, texts and schema index; none
+      // of it outlives the interface itself.
+      useInterfaceEditorStore.getState().forget(interfaceId);
     },
 
     updateRequest: (requestId, patch) => {

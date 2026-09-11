@@ -22,6 +22,9 @@ const FORMAT_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyMod.Shift | 
 
 type Handler = () => void;
 
+/** Lines the read-only viewers asked to reveal, newest last; reset it in a test's `beforeEach`. */
+export const revealedLines: number[] = [];
+
 export interface MockEditorProps {
   readonly value?: string;
   readonly onChange?: (value: string | undefined) => void;
@@ -54,6 +57,9 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       },
       getPosition: () => null,
       setPosition: () => undefined,
+      revealLineInCenter: (line: number) => {
+        revealedLines.push(line);
+      },
     };
     mountRef.current?.(mockEditor, fakeMonaco);
   }, []);

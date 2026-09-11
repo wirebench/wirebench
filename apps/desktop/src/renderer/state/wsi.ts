@@ -3,14 +3,26 @@ import type { WsiReportWire } from '../../shared/wire-types.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
+import { useProjectStore } from './project.js';
 import { useUiStore } from './ui.js';
 
 /** What the WS-I Report tab is doing right now. */
 export type WsiStatus = 'idle' | 'running' | 'ready' | 'error';
 
+/** What the report in the store was run against — who "owns" the tab right now. */
+export interface WsiSubject {
+  readonly kind: 'wsdl' | 'exchange';
+  /** Human label for the interface or exchange, for "Report for <label>". */
+  readonly label: string;
+  /** Set for a description check, so a viewer can tell its own report from another's. */
+  readonly interfaceId?: string;
+}
+
 /** The console's WS-I Report tab holds exactly one report — the last one that was run. */
 export interface WsiStore {
   readonly status: WsiStatus;
+  /** What the current run (or the last one) analysed; `undefined` before anything has run. */
+  readonly subject?: WsiSubject | undefined;
   /** The last report, kept while a new run is in flight so the tab does not flash empty. */
   readonly report?: WsiReportWire | undefined;
   /** Set when the last run failed; the tab shows it instead of a table. */
@@ -63,8 +75,16 @@ export const useWsiStore = create<WsiStore>((set, get) => {
     showToast(summarize(result.value));
   };
 
-  const begin = (): void => {
-    set({ status: 'running', error: undefined, showAll: usePreferencesStore.getState().preferences.wsi.verbose });
+  const begin = (subject: WsiSubject): void => {
+    set({
+      status: 'running',
+      error: undefined,
+      subject,
+      // The report on screen belongs to the previous subject; keeping it would label another
+      // run's findings with this one's name.
+      report: undefined,
+      showAll: usePreferencesStore.getState().preferences.wsi.verbose,
+    });
     useUiStore.getState().showConsoleTab('ws-i-report');
   };
 
@@ -75,11 +95,15 @@ export const useWsiStore = create<WsiStore>((set, get) => {
       set({ showAll });
     },
     checkWsdl: async (interfaceId) => {
-      begin();
+      begin({
+        kind: 'wsdl',
+        label: useProjectStore.getState().interfaces[interfaceId]?.name ?? interfaceId,
+        interfaceId,
+      });
       finish(await ipc().wsi.checkWsdl({ interfaceId }));
     },
     checkExchange: async (sendId) => {
-      begin();
+      begin({ kind: 'exchange', label: 'the last send' });
       finish(await ipc().wsi.checkExchange({ sendId }));
     },
     exportHtml: async () => {
@@ -99,7 +123,7 @@ export const useWsiStore = create<WsiStore>((set, get) => {
       showToast(result.value.cancelled ? 'Export cancelled.' : `Report written to ${result.value.path ?? ''}`);
     },
     clear: () => {
-      set({ status: 'idle', report: undefined, error: undefined });
+      set({ status: 'idle', report: undefined, error: undefined, subject: undefined });
     },
   };
 });
