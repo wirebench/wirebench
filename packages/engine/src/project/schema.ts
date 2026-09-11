@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
+import { DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
 
 const nonEmpty = z.string().min(1);
 const propertyMapSchema = z.record(z.string(), z.string());
@@ -189,24 +190,29 @@ const wssPartSchema = z.looseObject({
   encode: z.enum(['Content', 'Element']),
 });
 
-/** A signature entry: the signing key, how its certificate is referenced, and what it covers. */
+/**
+ * A signature entry: the signing key, how its certificate is referenced, and what it covers.
+ *
+ * Every field but `kind` defaults, so a bare `{kind:'signature'}` — a Task 37-era file, or one
+ * a foreign tool wrote with only the fields it cared about — loads as a complete, if useless,
+ * signature entry rather than being rejected outright; the editor is expected to fill in a real
+ * `keystoreRef` before the entry can actually be applied.
+ */
 const wssSignatureEntrySchema = z.looseObject({
   kind: z.literal('signature'),
-  keystoreRef: z.string(),
+  keystoreRef: z.string().default(''),
   alias: z.string().optional(),
   keyPasswordRef: z.string().optional(),
-  keyIdentifierType: z.enum([
-    'BinarySecurityToken',
-    'IssuerSerial',
-    'SubjectKeyIdentifier',
-    'X509KeyIdentifier',
-    'Thumbprint',
-  ]),
-  signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
-  digestAlgorithm: z.enum(['sha256', 'sha1']),
-  canonicalization: z.literal('exc-c14n'),
-  useSingleCertificate: z.boolean(),
-  parts: z.array(wssPartSchema),
+  keyIdentifierType: z
+    .enum(['BinarySecurityToken', 'IssuerSerial', 'SubjectKeyIdentifier', 'X509KeyIdentifier', 'Thumbprint'])
+    .default('BinarySecurityToken'),
+  signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']).default('rsa-sha256'),
+  digestAlgorithm: z.enum(['sha256', 'sha1']).default('sha256'),
+  canonicalization: z.literal('exc-c14n').default('exc-c14n'),
+  useSingleCertificate: z.boolean().default(true),
+  parts: z
+    .array(wssPartSchema)
+    .default(DEFAULT_WSS_SIGNATURE_PARTS as { name: string; namespace: string; encode: 'Content' | 'Element' }[]),
 });
 
 /** An encryption entry. Task 39 defines its fields; loose for the same reason. */

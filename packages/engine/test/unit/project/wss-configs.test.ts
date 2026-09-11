@@ -44,6 +44,33 @@ describe('toWssOutgoingConfig', () => {
     expect(() => toWssOutgoingConfig({ id: 'x', name: 'x', document: { name: 'x' } })).toThrow(ProjectError);
   });
 
+  it('loads a bare signature entry, defaulting every field but kind', () => {
+    const config = toWssOutgoingConfig({
+      id: 'w3',
+      name: 'Bare signature',
+      document: { id: 'w3', name: 'Bare signature', entries: [{ kind: 'signature' }] },
+    });
+    expect(config.entries).toEqual([
+      {
+        kind: 'signature',
+        keystoreRef: '',
+        keyIdentifierType: 'BinarySecurityToken',
+        signatureAlgorithm: 'rsa-sha256',
+        digestAlgorithm: 'sha256',
+        canonicalization: 'exc-c14n',
+        useSingleCertificate: true,
+        parts: [
+          { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+          {
+            name: 'Timestamp',
+            namespace: 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd',
+            encode: 'Content',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('rejects a plaintext password on a username token', () => {
     expect(() =>
       toWssOutgoingConfig({

@@ -14,10 +14,19 @@
  *     <case>.xml
  *
  * `--id-attr:<attr>` tells xmlsec1 which attribute carries the id for a given element (it does
- * not know the WS-Security schema), `--pubkey-cert-pem` supplies the key to verify against —
- * so the document's own `KeyInfo` is never trusted — and `--enabled-key-data raw-x509-cert`
- * stops xmlsec1 from trying to resolve the `SecurityTokenReference` itself. Finally one signed
- * envelope is tampered with and expected to FAIL.
+ * not know the WS-Security schema). `--pubkey-cert-pem` and `--enabled-key-data raw-x509-cert`
+ * go together and both matter: `--pubkey-cert-pem` hands xmlsec1 the certificate to verify
+ * against directly (so the document's own `KeyInfo`/`SecurityTokenReference` is never trusted,
+ * mirroring what {@link verifySignature} does), and `--enabled-key-data raw-x509-cert` is what
+ * makes xmlsec1 actually *use* that supplied certificate for every key identifier form this
+ * script exercises — including the four (`IssuerSerial`, `SubjectKeyIdentifier`,
+ * `X509KeyIdentifier`, `Thumbprint`) that never embed the certificate itself, so without this
+ * flag xmlsec1 would have nothing to resolve the `SecurityTokenReference` against and every one
+ * of those cases would fail closed rather than actually being checked. If a CI case starts
+ * failing here, drop `--enabled-key-data raw-x509-cert` first (not `--pubkey-cert-pem`, which
+ * is load-bearing for every case) to see whether it's this flag's key-resolution behavior at
+ * fault versus a real signature/canonicalization regression. Finally one signed envelope is
+ * tampered with and expected to FAIL.
  *
  * Run with `pnpm test:wss-xmlsec` (which builds the engine first). Without `xmlsec1` on
  * `PATH` the check prints a note and exits 0, unless `WIREBENCH_REQUIRE_XMLSEC=1` is set.
@@ -38,11 +47,31 @@ import { generateSigningCert, generateTestCa } from '../packages/engine/test/hel
 
 const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
 const SOAP11_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
+const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
 
 const ENVELOPE =
   `<soapenv:Envelope xmlns:soapenv="${SOAP11_NS}">` +
   '<soapenv:Body><tns:Echo xmlns:tns="urn:wirebench"><tns:Text>hello</tns:Text></tns:Echo></soapenv:Body>' +
   '</soapenv:Envelope>';
+
+/** A SOAP 1.2 envelope, to prove the check (and the signature it verifies) is not 1.1-only. */
+const SOAP12_ENVELOPE =
+  `<soapenv:Envelope xmlns:soapenv="${SOAP12_NS}">` +
+  '<soapenv:Body><tns:Echo xmlns:tns="urn:wirebench"><tns:Text>hello</tns:Text></tns:Echo></soapenv:Body>' +
+  '</soapenv:Envelope>';
+
+/**
+ * An envelope whose Body carries a QName only inside an attribute *value* (`xsi:type="tns:Foo"`,
+ * with `tns` declared on the Envelope rather than on `Echo` itself) — exclusive c14n's
+ * "visible utilization" rule never inspects attribute values, so this is exactly the case
+ * Finding 1 fixed: without an `InclusiveNamespaces PrefixList` carrying `tns`, xmlsec1
+ * (canonicalizing the reference independently, the way a real receiver would) cannot resolve
+ * the QName and the signature fails to verify even though nothing was tampered with.
+ */
+const QNAME_ENVELOPE =
+  `<soapenv:Envelope xmlns:soapenv="${SOAP11_NS}" xmlns:tns="urn:wirebench">` +
+  '<soapenv:Body><tns:Echo xsi:type="tns:Foo" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+  '<tns:Text>hello</tns:Text></tns:Echo></soapenv:Body></soapenv:Envelope>';
 
 const KEY_IDENTIFIERS: readonly WssKeyIdentifierType[] = [
   'BinarySecurityToken',
@@ -71,6 +100,10 @@ export function xmlsecVerifyArgs(file: string, certPath: string): string[] {
     `${WSU_NS}:Timestamp`,
     '--id-attr:Id',
     `${SOAP11_NS}:Body`,
+    // Both envelope namespaces' Body id-attr are always declared: harmless for a SOAP 1.1 case,
+    // needed for the SOAP 1.2 one below.
+    '--id-attr:Id',
+    `${SOAP12_NS}:Body`,
     '--pubkey-cert-pem',
     certPath,
     '--enabled-key-data',
@@ -151,6 +184,65 @@ async function main(): Promise<void> {
           failures += 1;
           console.error(`FAIL ${name}\n${result.stderr ?? ''}`);
         }
+      }
+    }
+
+    // One SOAP 1.2 case: the signature code is envelope-version-agnostic, and this catches a
+    // regression that hardcodes the 1.1 namespace somewhere along the way.
+    {
+      const name = 'soap12-BinarySecurityToken-rsa-sha256';
+      const entry: WssSignatureEntry = {
+        kind: 'signature',
+        keystoreRef: 'ks',
+        keyIdentifierType: 'BinarySecurityToken',
+        canonicalization: 'exc-c14n',
+        useSingleCertificate: true,
+        parts: [
+          { name: 'Body', namespace: SOAP11_NS, encode: 'Content' },
+          { name: 'Timestamp', namespace: WSU_NS, encode: 'Content' },
+        ],
+        signatureAlgorithm: 'rsa-sha256',
+        digestAlgorithm: 'sha256',
+      };
+      const file = join(dir, `${name}.xml`);
+      const xml = await applyOutgoingWss(SOAP12_ENVELOPE, configFor(entry), ctx);
+      await writeFile(file, xml, 'utf8');
+      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath), { encoding: 'utf8' });
+      if (result.status === 0) {
+        console.log(`ok   ${name}`);
+      } else {
+        failures += 1;
+        console.error(`FAIL ${name}\n${result.stderr ?? ''}`);
+      }
+    }
+
+    // One case whose Body carries a QName only in an attribute value (Finding 1): proves the
+    // InclusiveNamespaces PrefixList this build emits actually lets an independent
+    // implementation resolve it, not just this build's own self-consistent canonical form.
+    {
+      const name = 'qname-content-BinarySecurityToken-rsa-sha256';
+      const entry: WssSignatureEntry = {
+        kind: 'signature',
+        keystoreRef: 'ks',
+        keyIdentifierType: 'BinarySecurityToken',
+        canonicalization: 'exc-c14n',
+        useSingleCertificate: true,
+        parts: [
+          { name: 'Body', namespace: SOAP11_NS, encode: 'Content' },
+          { name: 'Timestamp', namespace: WSU_NS, encode: 'Content' },
+        ],
+        signatureAlgorithm: 'rsa-sha256',
+        digestAlgorithm: 'sha256',
+      };
+      const file = join(dir, `${name}.xml`);
+      const xml = await applyOutgoingWss(QNAME_ENVELOPE, configFor(entry), ctx);
+      await writeFile(file, xml, 'utf8');
+      const result = spawnSync('xmlsec1', xmlsecVerifyArgs(file, certPath), { encoding: 'utf8' });
+      if (result.status === 0) {
+        console.log(`ok   ${name}`);
+      } else {
+        failures += 1;
+        console.error(`FAIL ${name}\n${result.stderr ?? ''}`);
       }
     }
 
