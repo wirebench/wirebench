@@ -47,7 +47,6 @@ export function effectiveEndpointSource(input: {
 /** One row of the grid: an interface, and how to address it in an environment's endpoint map. */
 interface GridRow {
   readonly iface: InterfaceWire;
-  readonly projectId: string;
   readonly projectName: string;
   /** `<projectSlug>/<interfaceSlug>` — the key a workspace environment stores the override under. */
   readonly key: string;
@@ -80,7 +79,6 @@ function gridRows(
       }
       rows.push({
         iface,
-        projectId: project.id,
         projectName: mirrored?.name ?? project.name,
         key: `${project.slug}/${iface.slug}`,
         projectEnvironments: mirrored?.environments ?? [],
