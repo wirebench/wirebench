@@ -12,7 +12,7 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  *
  * Two things live here:
  *
- * 1. An axe-core scan of Welcome, the request editor (with a real response) and the interface
+ * 1. An axe-core scan of the workspace picker, the request editor (with a real response) and the interface
  *    viewer, in *both* themes. It fails on `serious` and `critical` violations.
  * 2. Pixel snapshots of the shell in both themes at 1280x800.
  *
@@ -109,11 +109,6 @@ async function resizeWindow(launched: LaunchedApp): Promise<void> {
 test.describe('accessibility and theming', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectRoot = '';
-
-  test.beforeEach(() => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'wirebench-e2e-a11y-'));
-  });
 
   test.afterEach(async () => {
     if (launched) {
@@ -123,10 +118,6 @@ test.describe('accessibility and theming', () => {
     if (server) {
       await server.close();
       server = undefined;
-    }
-    if (projectRoot.length > 0) {
-      removeDirSync(projectRoot);
-      projectRoot = '';
     }
   });
 
@@ -177,16 +168,16 @@ test.describe('accessibility and theming', () => {
   });
 
   for (const theme of ['dark', 'light'] as const) {
-    test(`a11y: Welcome has no serious violations (${theme})`, async () => {
+    test(`a11y: the workspace picker has no serious violations (${theme})`, async () => {
       launched = await launchApp();
       await setTheme(launched.window, theme);
-      await expect(launched.window.getByTestId('welcome-new-project')).toBeVisible();
-      await expectNoSeriousViolations(launched.window, `Welcome (${theme})`);
+      await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
+      await expectNoSeriousViolations(launched.window, `workspace picker (${theme})`);
     });
 
     test(`a11y: the request editor with a response has no serious violations (${theme})`, async () => {
       server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
-      launched = await launchApp({ folderDialogPath: join(projectRoot, 'A11y') });
+      launched = await launchApp();
       const { window } = launched;
 
       await createProjectWithCalculator(window, server);
@@ -200,7 +191,7 @@ test.describe('accessibility and theming', () => {
 
     test(`a11y: the interface viewer has no serious violations (${theme})`, async () => {
       server = await startTestSoapServer({ fixture: 'calculator' });
-      launched = await launchApp({ folderDialogPath: join(projectRoot, 'A11yIface') });
+      launched = await launchApp();
       const { window } = launched;
 
       await createProjectWithCalculator(window, server);
@@ -224,7 +215,7 @@ test.describe('accessibility and theming', () => {
       const { window } = launched;
       await resizeWindow(launched);
       await setTheme(window, theme);
-      await expect(window.getByTestId('welcome-new-project')).toBeVisible();
+      await expect(window.getByTestId('workspace-picker')).toBeVisible();
       // The version string only appears once `app.version` resolves; waiting for it keeps the
       // status bar from being half-rendered in the snapshot.
       await expect(window.locator('[data-testid="status-bar"]')).toContainText('TLS');

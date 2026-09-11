@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, openFirstRequest, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 'pass';
@@ -27,7 +27,6 @@ test.describe('auth', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -38,21 +37,20 @@ test.describe('auth', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) removeDirSync(dir);
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
   test('Basic auth passes a 401 challenge, fails with a wrong password, and skips the challenge when preemptive', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Auth Project');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server, { expectProjectName: 'Auth Project' });
+    const projectDir = workspaceProjectDir(userDataDir);
     await openFirstRequest(page);
 
     // The /auth/basic route demands `user:pass` and challenges anything else with a 401.
@@ -87,7 +85,7 @@ test.describe('auth', () => {
     await expect
       .poll(
         () => {
-          const match = listFiles(projectDir!)
+          const match = listFiles(projectDir)
             .map((file) => readFileSync(file, 'utf8').match(passwordRefPattern))
             .find((found) => found !== null);
           return match?.[1];
@@ -151,9 +149,8 @@ test.describe('auth', () => {
   test('NTLM authenticates through the three-leg handshake and fails with a wrong password', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'NTLM Project');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server, { expectProjectName: 'NTLM Project' });
     await openFirstRequest(page);

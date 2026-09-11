@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import {
+  createProjectWithCalculator,
+  expectReopenedWorkspace,
+  openFirstRequest,
+  workspaceProjectDir,
+} from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /** Absolute path of the single `.request.yaml` under an operation folder, whatever it is named. */
@@ -19,7 +24,6 @@ test.describe('projects on disk', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -30,28 +34,26 @@ test.describe('projects on disk', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
-  test('new project, import, relaunch, and the request comes back from disk', async () => {
+  test('relaunch reopens the last workspace and its project, and the request comes back from disk', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Calculator Project');
 
-    // --- first launch: create a project and import into it -------------------
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
-    await expect(launched.window.getByTestId('welcome-screen')).toBeVisible();
-    await expect(launched.window.getByText('No projects yet.')).toBeVisible();
+    // --- first launch: a fresh profile shows the picker; create a workspace, a project, import
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
+    await expect(launched.window.getByText('No workspaces yet.')).toBeVisible();
 
     // The import writes one `Request 1` per operation, straight to disk.
     await createProjectWithCalculator(launched.window, server, { expectProjectName: 'Calculator Project' });
-    await expect(launched.window.getByTestId('title-bar')).toContainText('Calculator Project');
+    await expect(launched.window.getByTestId('title-bar')).toContainText('Workspace 1');
     await expect(
       launched.window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add' }).first(),
     ).toBeVisible();
@@ -59,13 +61,11 @@ test.describe('projects on disk', () => {
     await launched.close();
     launched = undefined;
 
-    // --- second launch: the project is in Recent, and reopens from disk ------
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
-    const recent = launched.window.getByTestId('recent-project').first();
-    await expect(recent).toBeVisible();
-    await expect(recent).toContainText('Calculator Project');
-
-    await recent.click();
+    // --- second launch: the workspace reopens by itself, never showing the picker -----------
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    await expect(launched.window.getByTestId('workspace-picker')).toHaveCount(0);
+    await expect(launched.window.getByTestId('title-bar')).toContainText('Workspace 1');
+    await expectReopenedWorkspace(launched.window);
 
     await openFirstRequest(launched.window);
     // The envelope is the one saved on disk, not one regenerated from the network.
@@ -75,11 +75,11 @@ test.describe('projects on disk', () => {
   test('an external edit raises the reload banner, and reloading picks it up', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Watched');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
-    await createProjectWithCalculator(launched.window, server);
-    await expect(launched.window.getByTestId('title-bar')).toContainText('Watched');
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    await createProjectWithCalculator(launched.window, server, { expectProjectName: 'Watched' });
+    // The project lives inside the workspace: `<userData>/workspaces/<id>/projects/<slug>`.
+    const projectDir = workspaceProjectDir(userDataDir);
 
     // Writes the app just made are suppressed for `SELF_WRITE_TTL_MS` (2s) so an autosave
     // never prompts the user to reload their own work; wait that out before editing by hand.

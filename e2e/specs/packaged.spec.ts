@@ -58,12 +58,10 @@ test.describe('packaged app', () => {
   let launched: LaunchedPackagedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir = '';
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Packaged');
   });
 
   test.afterEach(async () => {
@@ -75,13 +73,12 @@ test.describe('packaged app', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir.length > 0) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = '';
-    projectDir = '';
   });
 
   test('ships the fuse wire it was built with', async () => {
@@ -95,15 +92,15 @@ test.describe('packaged app', () => {
     }
   });
 
-  test('launches to the Welcome screen', async () => {
-    launched = await launchPackagedApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+  test('launches to the workspace picker', async () => {
+    launched = await launchPackagedApp({ userDataDir, keepUserDataDir: true });
 
-    await expect(launched.window.getByTestId('welcome-new-project')).toBeVisible({ timeout: 60_000 });
+    await expect(launched.window.getByTestId('workspace-picker')).toBeVisible({ timeout: 60_000 });
     await expect(launched.window.getByTestId('status-bar')).toBeVisible();
   });
 
   test('runs XPath (worker) and schema validation (xmllint-wasm) from inside the asar', async () => {
-    launched = await launchPackagedApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchPackagedApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
 
     // XPath runs on a `worker_threads` worker spawned from a file the asar has to be able to

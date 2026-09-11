@@ -3,14 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 test.describe('history', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -21,22 +20,20 @@ test.describe('history', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
   test('records every send, survives a relaunch, re-sends, and diffs two entries', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'History Project');
 
     // --- first launch: create + import, then send Request 1 twice ------------
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     await createProjectWithCalculator(launched.window, server, { expectProjectName: 'History Project' });
     await openFirstRequest(launched.window);
 
@@ -54,12 +51,9 @@ test.describe('history', () => {
     await launched.close();
     launched = undefined;
 
-    // --- second launch: reopen the project, history survived the relaunch ----
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
-    const recent = launched.window.getByTestId('recent-project').first();
-    await expect(recent).toBeVisible();
-    await recent.click();
-    await expect(launched.window.getByTestId('title-bar')).toContainText('History Project');
+    // --- second launch: the workspace reopens itself, history survived the relaunch ----
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    await expectReopenedWorkspace(launched.window);
 
     // The sidebar's view/visibility is persisted across relaunches, so it may already be
     // showing History from before — only click the activity-bar button if it isn't, since a

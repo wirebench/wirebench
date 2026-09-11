@@ -1,14 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { createProject, createWorkspace } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 test.describe('walking skeleton: import -> open request -> send -> response', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectRoot: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -17,31 +14,25 @@ test.describe('walking skeleton: import -> open request -> send -> response', ()
     if (server) {
       await server.close();
     }
-    if (projectRoot !== undefined) {
-      rmSync(projectRoot, { recursive: true, force: true });
-      projectRoot = undefined;
-    }
   });
 
   test('imports a WSDL, sends Add, and shows the response', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
-    projectRoot = mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-'));
-    // Interfaces are saved into a project folder, so the skeleton starts by creating one.
-    launched = await launchApp({ folderDialogPath: join(projectRoot, 'Skeleton') });
+    // Interfaces are saved into a project of a workspace, so the skeleton starts by creating both.
+    launched = await launchApp();
     const { window, app } = launched;
 
     const isMac = await app.evaluate(() => process.platform === 'darwin');
 
-    await window.getByTestId('welcome-new-project').click();
-    await window.getByTestId('new-project-create').click();
-    await expect(window.getByTestId('title-bar')).toContainText('Skeleton');
+    await createWorkspace(window, 'Skeleton');
+    await createProject(window, 'Skeleton Project');
 
-    // Prefer the shortcut; fall back to the Welcome tab's button if it didn't open the dialog
+    // Prefer the shortcut; fall back to the explorer's button if it didn't open the dialog
     // (keeps the spec resilient to focus-target quirks across platforms/CI).
     await window.keyboard.press(isMac ? 'Meta+i' : 'Control+i');
     const urlInput = window.locator('[data-testid="import-url-input"]');
     if (!(await urlInput.isVisible().catch(() => false))) {
-      await window.getByText('Import WSDL', { exact: false }).first().click();
+      await window.getByRole('button', { name: 'Import WSDL…' }).click();
     }
     await expect(urlInput).toBeVisible();
 

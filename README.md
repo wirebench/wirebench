@@ -49,7 +49,7 @@ That is the whole loop. From here: **Query** evaluates XPath 3.1 and XQuery 3.1 
 carries auth, WS-Security, WS-Addressing and attachments, `Mod+K` opens the command palette, and the Environments
 section switches endpoints without touching a request.
 
-![The Welcome screen](docs/images/welcome.png)
+![The workspace picker](docs/images/workspace-picker.png)
 
 ## Keyboard shortcuts
 

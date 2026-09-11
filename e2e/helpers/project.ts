@@ -1,36 +1,86 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type Page } from '@playwright/test';
 import type { TestSoapServer } from './test-server.js';
 
 export interface CreateProjectOptions {
-  /** Asserted against the pre-filled name field, which defaults to the chosen folder's name. */
+  /** The project to create before importing; defaults to `Calculator Project`. */
   readonly expectProjectName?: string;
 }
 
 /**
- * Drives the Welcome screen through "New project" and then "Import WSDL" against `server`,
- * returning once the imported `Request 1` is visible in the explorer. The project folder is
- * whatever `launchApp({ folderDialogPath })` pinned the folder picker to.
+ * Creates a workspace from the picker (the name field, then Enter) and waits for the IDE.
+ * Expects the picker to be showing, i.e. a fresh profile or no workspace open.
  */
-export async function createProjectWithCalculator(
-  page: Page,
-  server: TestSoapServer,
-  options: CreateProjectOptions = {},
-): Promise<void> {
-  await page.getByTestId('welcome-new-project').click();
-  const nameField = page.getByTestId('new-project-name');
-  await expect(nameField).toBeVisible();
-  if (options.expectProjectName !== undefined) {
-    await expect(nameField).toHaveValue(options.expectProjectName);
-  }
-  await page.getByTestId('new-project-create').click();
+export async function createWorkspace(page: Page, name = 'Workspace 1'): Promise<void> {
+  const field = page.getByTestId('workspace-create-name');
+  await expect(field).toBeVisible({ timeout: 20_000 });
+  await field.fill(name);
+  await page.getByTestId('workspace-create').click();
+  await expect(page.getByTestId('activity-bar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('title-bar')).toContainText(name);
+}
 
-  await page.getByTestId('welcome-import').click();
+/**
+ * Creates a project by name through the explorer toolbar's New Project button and waits for
+ * its explorer row. The new project is left selected, so the next Import WSDL lands in it.
+ */
+export async function createProject(page: Page, name: string): Promise<void> {
+  await page.getByTestId('explorer-new-project').click();
+  await expect(page.getByTestId('new-project-dialog')).toBeVisible();
+  await page.getByTestId('new-project-name').fill(name);
+  await page.getByTestId('new-project-create').click();
+  await expect(page.getByTestId('new-project-dialog')).toBeHidden();
+  await expect(page.getByTestId('explorer-project-row').filter({ hasText: name })).toBeVisible({ timeout: 20_000 });
+}
+
+/** Imports `server`'s WSDL through the explorer toolbar into the selected project. */
+export async function importCalculator(page: Page, server: TestSoapServer): Promise<void> {
+  await page.getByRole('button', { name: 'Import WSDL…' }).click();
   await page.getByTestId('import-url-input').fill(server.wsdlUrl);
   await page.getByTestId('import-submit').click();
 
   await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first()).toBeVisible({
     timeout: 20_000,
   });
+}
+
+/**
+ * A workspace holding one project (`Calculator Project` unless `expectProjectName` says
+ * otherwise) with `server`'s WSDL imported, returning once `Request 1` is in the explorer.
+ */
+export async function createProjectWithCalculator(
+  page: Page,
+  server: TestSoapServer,
+  options: CreateProjectOptions = {},
+): Promise<void> {
+  await createWorkspace(page);
+  await createProject(page, options.expectProjectName ?? 'Calculator Project');
+  await importCalculator(page, server);
+}
+
+/**
+ * The folder of a project inside the profile's workspaces:
+ * `<userDataDir>/workspaces/<id>/projects/<slug>`. With no `slug`, the profile must hold
+ * exactly one project (every spec that looks at files creates just one).
+ */
+export function workspaceProjectDir(userDataDir: string, slug?: string): string {
+  const root = join(userDataDir, 'workspaces');
+  const found: string[] = [];
+  for (const workspace of existsSync(root) ? readdirSync(root) : []) {
+    const projects = join(root, workspace, 'projects');
+    for (const project of existsSync(projects) ? readdirSync(projects) : []) {
+      if (slug === undefined || project === slug) {
+        found.push(join(projects, project));
+      }
+    }
+  }
+  if (found.length !== 1) {
+    throw new Error(
+      `expected one project folder under ${root}${slug === undefined ? '' : ` named ${slug}`}, found ${String(found.length)}`,
+    );
+  }
+  return found[0] as string;
 }
 
 /**
@@ -72,4 +122,15 @@ export async function openFirstRequest(page: Page): Promise<void> {
   await row.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * After a relaunch on the same profile: the last workspace reopens by itself, IDE and all.
+ * There is nothing to click — that is the behaviour under test. The sidebar is wherever the
+ * previous session left it, so this asserts the shell and the title bar, not the explorer.
+ */
+export async function expectReopenedWorkspace(page: Page, workspaceName = 'Workspace 1'): Promise<void> {
+  await expect(page.getByTestId('activity-bar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('workspace-picker')).toHaveCount(0);
+  await expect(page.getByTestId('title-bar')).toContainText(workspaceName, { timeout: 20_000 });
 }

@@ -1,10 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -102,11 +101,6 @@ test.describe('README screenshots', () => {
 
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectRoot = '';
-
-  test.beforeEach(() => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'wirebench-e2e-shots-'));
-  });
 
   test.afterEach(async () => {
     if (launched) {
@@ -117,32 +111,27 @@ test.describe('README screenshots', () => {
       await server.close();
       server = undefined;
     }
-    if (projectRoot.length > 0) {
-      rmSync(projectRoot, { recursive: true, force: true });
-      projectRoot = '';
-    }
   });
 
-  test('welcome screen', async () => {
+  test('workspace picker', async () => {
     launched = await launchApp();
     await resizeWindow(launched);
     await setTheme(launched.window, 'dark');
-    await expect(launched.window.getByTestId('welcome-new-project')).toBeVisible();
-    await capture(launched.window, 'welcome');
+    await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
+    await capture(launched.window, 'workspace-picker');
   });
 
   test('import, request editor and response', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
-    launched = await launchApp({ folderDialogPath: join(projectRoot, 'Calculator') });
+    launched = await launchApp();
     const { window } = launched;
     await resizeWindow(launched);
     await setTheme(window, 'dark');
 
     // The import dialog, filled in but not yet submitted — the first thing a new user does.
-    await window.getByTestId('welcome-new-project').click();
-    await expect(window.getByTestId('new-project-name')).toBeVisible();
-    await window.getByTestId('new-project-create').click();
-    await window.getByTestId('welcome-import').click();
+    await createWorkspace(window);
+    await createProject(window, 'Calculator Project');
+    await window.getByRole('button', { name: 'Import WSDL…' }).click();
     await window.getByTestId('import-url-input').fill(server.wsdlUrl);
     await capture(window, 'import-wsdl');
 
@@ -166,7 +155,7 @@ test.describe('README screenshots', () => {
     // inline its steps so the import dialog can be shot mid-flow. This asserts the inlined
     // version and the shared helper still describe the same app.
     server = await startTestSoapServer({ fixture: 'calculator' });
-    launched = await launchApp({ folderDialogPath: join(projectRoot, 'CalculatorCheck') });
+    launched = await launchApp();
     await createProjectWithCalculator(launched.window, server);
   });
 });

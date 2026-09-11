@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { createProjectWithCalculator } from '../helpers/project.js';
+import { createProjectWithCalculator, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -76,13 +76,11 @@ test.describe('Update Definition, Export and Documentation', () => {
   let launched: LaunchedApp | undefined;
   let v1: TestSoapServer | undefined;
   let v2: TestSoapServer | undefined;
-  let projectDir = '';
   let docsPath = '';
 
   test.beforeEach(async () => {
     v1 = await startTestSoapServer({ fixture: 'versioned/v1' });
     v2 = await startTestSoapServer({ fixture: 'versioned/v2' });
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Versioned');
     docsPath = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-docs-')), 'definition.html');
   });
 
@@ -95,22 +93,19 @@ test.describe('Update Definition, Export and Documentation', () => {
     await v2?.close();
     v1 = undefined;
     v2 = undefined;
-    for (const dir of [projectDir, docsPath]) {
-      if (dir.length > 0) {
-        rmSync(join(dir, '..'), { recursive: true, force: true });
-      }
+    if (docsPath.length > 0) {
+      rmSync(join(docsPath, '..'), { recursive: true, force: true });
     }
-    projectDir = '';
     docsPath = '';
   });
 
   test('updates v1 to v2: new request, kept edit, orphaned row and a backup', async () => {
     launched = await launchApp({
-      folderDialogPath: projectDir,
       extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: docsPath },
     });
     const page = launched.window;
     await createProjectWithCalculator(page, v1!);
+    const projectDir = workspaceProjectDir(launched.userDataDir);
     await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'VersionedService' })).toHaveCount(1, {
       timeout: 20_000,
     });
@@ -155,8 +150,10 @@ test.describe('Update Definition, Export and Documentation', () => {
   });
 
   test('generates HTML documentation and exports the definition folder', async () => {
+    // Export Definition picks a folder; the docs' temp folder doubles as its (pinned) answer.
+    const exportDir = join(docsPath, '..');
     launched = await launchApp({
-      folderDialogPath: projectDir,
+      folderDialogPath: exportDir,
       extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: docsPath },
     });
     const page = launched.window;
@@ -172,12 +169,12 @@ test.describe('Update Definition, Export and Documentation', () => {
     expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
     expect(html).toContain('VersionedService');
 
-    // The folder picker is pinned to the project folder, which is where the export lands.
+    // The folder picker is pinned to the export folder, which is where the export lands.
     await interfaceMenu(page, 'Export Definition…');
     await expect
-      .poll(() => readdirSync(projectDir).filter((name) => name.endsWith('.wsdl')).length, { timeout: 20_000 })
+      .poll(() => readdirSync(exportDir).filter((name) => name.endsWith('.wsdl')).length, { timeout: 20_000 })
       .toBeGreaterThan(0);
-    const exported = readdirSync(projectDir).find((name) => name.endsWith('.wsdl')) ?? '';
-    expect(readFileSync(join(projectDir, exported), 'utf8')).toContain('VersionedService');
+    const exported = readdirSync(exportDir).find((name) => name.endsWith('.wsdl')) ?? '';
+    expect(readFileSync(join(exportDir, exported), 'utf8')).toContain('VersionedService');
   });
 });

@@ -110,7 +110,7 @@ test.describe('performance budgets', () => {
     const projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Perf');
     tempDirs.push(userDataDir, projectDir);
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
