@@ -715,6 +715,17 @@ export class ProjectHost {
     });
   }
 
+  /**
+   * The open project's engine model, or `undefined` when no project is open.
+   *
+   * `snapshot()` answers the *renderer's* question and is lossy by design; exporting a project
+   * has to write the model itself, unsaved edits included, so `WorkspaceService.exportProject`
+   * reads it here rather than round-tripping the folder through disk.
+   */
+  model(): Project | undefined {
+    return this.open?.project;
+  }
+
   private require(): OpenProject {
     if (this.open === undefined) {
       throw new ProjectError('no-project', 'No project is open');

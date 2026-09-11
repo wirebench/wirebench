@@ -70,20 +70,63 @@ export async function pickFile(
   return path;
 }
 
-/** Runs the folder picker, honouring the e2e override. */
+/**
+ * Runs the folder picker, honouring the e2e override.
+ *
+ * `picks` is optional only because the original callers (Export Definition, Generate
+ * Documentation) pick a folder they are about to write *inside the open project*, where
+ * containment alone already answers for the path. A caller that picks a folder **outside** any
+ * project — linking or importing a project folder — has no such evidence and must pass `picks`,
+ * so the folder is recorded as a read pick exactly as `pickFile` records a file.
+ */
 export async function pickFolder(
   sender: WebContents,
   options: { readonly title?: string } = {},
+  picks?: RecordsReadPicks,
 ): Promise<string | undefined> {
+  // The override is recorded exactly as a real pick is, so e2e exercises the containment path
+  // a user drives rather than a bypass of it.
   const override = folderOverride();
   if (override !== undefined) {
+    picks?.rememberRead(override);
     return override;
   }
   const result = await dialog.showOpenDialog(windowOf(sender) as BrowserWindow, {
     properties: ['openDirectory'],
     ...(options.title !== undefined ? { title: options.title } : {}),
   });
-  return result.canceled ? undefined : result.filePaths[0];
+  const path = result.canceled ? undefined : result.filePaths[0];
+  if (path !== undefined) {
+    picks?.rememberRead(path);
+  }
+  return path;
+}
+
+/**
+ * The write-side folder picker: the same dialog as {@link pickFolder}, recording the chosen
+ * folder as a *write* pick. Exporting a project is a "write my project here" choice, and the
+ * read/write split in {@link RecordsWritePicks} exists precisely so picking a folder to read
+ * from never silently also grants it as a legal write target.
+ */
+export async function pickFolderToWrite(
+  sender: WebContents,
+  picks: RecordsWritePicks,
+  options: { readonly title?: string } = {},
+): Promise<string | undefined> {
+  const override = folderOverride();
+  if (override !== undefined) {
+    picks.rememberWrite(override);
+    return override;
+  }
+  const result = await dialog.showOpenDialog(windowOf(sender) as BrowserWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    ...(options.title !== undefined ? { title: options.title } : {}),
+  });
+  const path = result.canceled ? undefined : result.filePaths[0];
+  if (path !== undefined) {
+    picks.rememberWrite(path);
+  }
+  return path;
 }
 
 /** Runs the Save-as picker, recording the chosen path as a write pick and honouring the override. */
