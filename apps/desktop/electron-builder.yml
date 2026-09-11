@@ -1,0 +1,102 @@
+# Packaging for Wirebench. Run through `pnpm package` (or `package:mac` / `:win` / `:linux`),
+# which builds every workspace package first — electron-builder only copies what is already in
+# `out/` and in the production `node_modules`, it never compiles anything itself.
+#
+# Two things here are load-bearing and easy to break:
+#   * `asarUnpack` — `xmllint-wasm` reads `xmllint.wasm` off the disk relative to `__dirname`
+#     and spawns a worker from it, so it has to live as real files next to the asar.
+#   * `afterPack` — flips the Electron fuses (see `scripts/fuses.ts`). It runs before signing,
+#     which is required: flipping a fuse rewrites the binary and invalidates any signature.
+appId: io.wirebench.desktop
+productName: Wirebench
+copyright: Copyright © 2026 Wirebench contributors
+
+directories:
+  # Icons and entitlements live beside the app, not in a top-level `build/` directory.
+  buildResources: resources
+  output: release
+
+# `electron-vite` has already bundled main and preload; everything else the app needs at
+# runtime is a plain dependency, and electron-builder resolves the pnpm symlinks (including
+# the `@wirebench/engine` workspace link) while collecting them.
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+  - '!**/{.eslintrc,.editorconfig,.prettierrc,tsconfig*.json,*.md}'
+  - '!**/node_modules/**/{test,__tests__,docs,example,examples}/**'
+  # The engine is a workspace package: its checkout carries sources, tests and a coverage
+  # report that the built `dist/` does not need and that nothing at runtime resolves.
+  - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
+
+# Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing.
+afterPack: ../../scripts/fuses.ts
+
+asar: true
+asarUnpack:
+  - '**/node_modules/xmllint-wasm/**'
+
+# pnpm's store is already exactly what should ship, and Wirebench has no native modules to
+# rebuild — running npm against a symlinked tree only risks flattening it.
+npmRebuild: false
+
+# Update metadata (`latest*.yml`) is generated for GitHub Releases; nothing is ever published
+# from a developer machine — `--publish never` is baked into the package scripts.
+publish:
+  provider: github
+  owner: wirebench
+  repo: wirebench
+  releaseType: draft
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  icon: resources/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Wirebench talks to whatever endpoint the user points it at and reads WSDLs off the disk;
+  # it asks for nothing else.
+  extendInfo:
+    NSHumanReadableCopyright: Copyright © 2026 Wirebench contributors
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  icon: resources/icon.png
+
+nsis:
+  # Per-user by default: no elevation prompt, and an installer that cannot touch the machine.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+    - target: rpm
+      arch: [x64]
+  icon: resources/icon.png
+  category: Development
+  synopsis: SOAP/WSDL workbench
+  description: >-
+    Wirebench is a desktop workbench for SOAP and WSDL: import a definition, generate and edit
+    envelopes, send them, and inspect what came back.
+  maintainer: Wirebench contributors <noreply@wirebench.io>
+  desktop:
+    entry:
+      StartupWMClass: Wirebench
