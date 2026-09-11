@@ -56,11 +56,31 @@ function envelopeOf(document: Document | undefined): { element: Element; soapNs:
   return match === undefined ? undefined : { element: root, soapNs: match[0] };
 }
 
-/** Lower-cases every header name, so an assertion can index by the name it expects. */
+/**
+ * The only headers a message assertion may quote. Anything else — most importantly
+ * `Authorization`, but equally any custom or WSS credential header a description never declares
+ * — never reaches a {@link WsiMessageView}, so it cannot end up in a finding message or an
+ * exported HTML report.
+ */
+const HEADER_ALLOWLIST: ReadonlySet<string> = new Set([
+  'content-type',
+  'soapaction',
+  'content-length',
+  'transfer-encoding',
+  'content-encoding',
+  'accept',
+  'host',
+  'connection',
+]);
+
+/** Lower-cases every header name and drops everything outside {@link HEADER_ALLOWLIST}. */
 function lowerCased(headers: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
-    out[name.toLowerCase()] = value;
+    const lower = name.toLowerCase();
+    if (HEADER_ALLOWLIST.has(lower)) {
+      out[lower] = value;
+    }
   }
   return out;
 }
@@ -156,6 +176,7 @@ function resultFor(assertion: WsiMessageAssertion, context: WsiMessageContext): 
     section: assertion.section,
     result,
     findings,
+    ...(assertion.unverifiedId === true ? { unverifiedId: true } : {}),
   };
 }
 

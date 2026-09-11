@@ -127,40 +127,50 @@ export function WsiReport() {
           {showAll ? 'This report has no assertions.' : 'No failures or warnings.'}
         </p>
       ) : (
-        <table className="min-h-0 w-full overflow-auto text-sm" aria-label="WS-I assertions">
-          <thead>
-            <tr className="text-left text-xs text-fg-subtle">
-              <th className="py-1 pr-2 font-normal">Id</th>
-              <th className="py-1 pr-2 font-normal">Result</th>
-              <th className="py-1 pr-2 font-normal">Assertion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((assertion) => (
-              <tr key={assertion.id} data-testid="wsi-row" data-result={assertion.result} className="align-top">
-                <td className="py-1 pr-2 font-mono text-xs">{assertion.id}</td>
-                <td className={`py-1 pr-2 text-xs ${RESULT[assertion.result].className}`}>
-                  {RESULT[assertion.result].label}
-                </td>
-                <td className="py-1">
-                  <span className="text-fg-default">{assertion.title}</span>
-                  {assertion.findings.length > 0 && (
-                    <ul className="mt-0.5 list-disc pl-4 text-xs text-fg-subtle">
-                      {assertion.findings.map((finding, index) => (
-                        <li key={`${assertion.id}:${String(index)}`} data-testid="wsi-finding">
-                          {finding.message}
-                          {locationLabel(finding) !== undefined && (
-                            <span className="ml-1 font-mono">({locationLabel(finding)})</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </td>
+        <div className="min-h-0 overflow-auto">
+          <table className="w-full text-sm" aria-label="WS-I assertions">
+            <thead>
+              <tr className="text-left text-xs text-fg-subtle">
+                <th className="py-1 pr-2 font-normal">Id</th>
+                <th className="py-1 pr-2 font-normal">Result</th>
+                <th className="py-1 pr-2 font-normal">Assertion</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((assertion) => (
+                <tr key={assertion.id} data-testid="wsi-row" data-result={assertion.result} className="align-top">
+                  <td className="py-1 pr-2 font-mono text-xs">
+                    {assertion.id}
+                    {assertion.unverifiedId === true && <sup data-testid="wsi-unverified-id">*</sup>}
+                  </td>
+                  <td className={`py-1 pr-2 text-xs ${RESULT[assertion.result].className}`}>
+                    {RESULT[assertion.result].label}
+                  </td>
+                  <td className="py-1">
+                    <span className="text-fg-default">{assertion.title}</span>
+                    {assertion.findings.length > 0 && (
+                      <ul className="mt-0.5 list-disc pl-4 text-xs text-fg-subtle">
+                        {assertion.findings.map((finding, index) => (
+                          <li key={`${assertion.id}:${String(index)}`} data-testid="wsi-finding">
+                            {finding.message}
+                            {locationLabel(finding) !== undefined && (
+                              <span className="ml-1 font-mono">({locationLabel(finding)})</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {rows.some((assertion) => assertion.unverifiedId === true) && (
+        <p className="shrink-0 text-xs text-fg-subtle" data-testid="wsi-unverified-footnote">
+          * requirement number not verified against the published Basic Profile 1.1; quote the title.
+        </p>
       )}
     </div>
   );

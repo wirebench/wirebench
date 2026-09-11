@@ -101,6 +101,8 @@ export interface WsiAssertionReport {
   readonly section: string;
   readonly result: WsiAssertionResult;
   readonly findings: readonly WsiFinding[];
+  /** Carried from {@link WsiAssertion.unverifiedId}/{@link WsiMessageAssertion.unverifiedId}. */
+  readonly unverifiedId?: boolean;
 }
 
 /** How many assertions ended in each result. Always counts every assertion that ran. */
@@ -152,7 +154,14 @@ export interface WsiMessageBinding {
  */
 export interface WsiMessageView {
   readonly direction: WsiMessageDirection;
-  /** Header names lower-cased, as both `HttpExchange` halves already store them. */
+  /**
+   * Header names lower-cased, as both `HttpExchange` halves already store them, and redacted down
+   * to the allow-list the message assertions actually need (`content-type`, `soapaction`,
+   * `content-length`, `transfer-encoding`, `content-encoding`, `accept`, `host`, `connection`) —
+   * see `HEADER_ALLOWLIST` in `run-message.ts`. Never quote a header value or element text outside
+   * this allow-list: an `Authorization` header or a WSS credential must never reach a finding
+   * message or an exported report.
+   */
   readonly headers: Readonly<Record<string, string>>;
   /** The envelope text, when one is available. */
   readonly envelopeXml?: string;

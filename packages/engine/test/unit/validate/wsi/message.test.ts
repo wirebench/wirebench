@@ -186,9 +186,9 @@ describe('WS-I BP 1.1 message assertions', () => {
     expect(offenders(report(exchangeWith({ responseXml: '<a><b></a>' })))).toContain('R1001');
   });
 
-  it('R1003 reports a declared encoding the profile does not allow', () => {
+  it('R1012 reports a declared encoding the profile does not allow', () => {
     const latin = REQUEST_XML.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"');
-    expect(offenders(report(exchangeWith(), DOC_LITERAL, latin))).toContain('R1003');
+    expect(offenders(report(exchangeWith(), DOC_LITERAL, latin))).toContain('R1012');
   });
 
   it('R1005 reports a Document Type Declaration', () => {
@@ -210,9 +210,9 @@ describe('WS-I BP 1.1 message assertions', () => {
     expect(offenders(result)).toContain('R1011');
   });
 
-  it('R1012 reports a second soap:Body and a header that follows it', () => {
+  it('R1003 reports a second soap:Body and a header that follows it', () => {
     const twoBodies = REQUEST_XML.replace('</soapenv:Envelope>', '  <soapenv:Body/>\n</soapenv:Envelope>');
-    expect(offenders(report(exchangeWith(), DOC_LITERAL, twoBodies))).toContain('R1012');
+    expect(offenders(report(exchangeWith(), DOC_LITERAL, twoBodies))).toContain('R1003');
 
     const headerLast = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:wb:wsi">
@@ -220,7 +220,7 @@ describe('WS-I BP 1.1 message assertions', () => {
   <soapenv:Header/>
 </soapenv:Envelope>`;
     const row = report(exchangeWith(), DOC_LITERAL, headerLast).assertions.find(
-      (assertion) => assertion.id === 'R1012',
+      (assertion) => assertion.id === 'R1003',
     );
     expect(row?.result).toBe('failed');
     expect(row?.findings.map((finding) => finding.message).join('\n')).toContain('must precede');
@@ -313,10 +313,10 @@ describe('WS-I BP 1.1 message assertions', () => {
     expect(none.assertions.find((assertion) => assertion.id === 'R1109')?.result).toBe('notApplicable');
   });
 
-  it('R1124 warns about a non-fault response on an unexpected status', () => {
+  it('R1124 fails a non-fault response on an unexpected status', () => {
     const result = report(exchangeWith({ status: 418 }));
     const row = result.assertions.find((assertion) => assertion.id === 'R1124');
-    expect(row?.result).toBe('warning');
+    expect(row?.result).toBe('failed');
     expect(row?.findings[0]?.message).toContain('418');
   });
 
@@ -360,6 +360,25 @@ describe('WS-I BP 1.1 message assertions', () => {
     expect(report(exchangeWith(), DOC_LITERAL, rpc).assertions.find((a) => a.id === 'R2211')?.result).toBe(
       'notApplicable',
     );
+  });
+
+  it('redacts headers to the allow-list the assertions need, dropping Authorization', () => {
+    const secret = 'Bearer super-secret-token';
+    const context = wsiMessageContext(
+      exchangeWith({ requestHeaders: { Authorization: secret }, responseHeaders: { Authorization: secret } }),
+      { binding: DOC_LITERAL, direction: 'request', requestEnvelopeXml: REQUEST_XML },
+    );
+    expect(context.request.headers['authorization']).toBeUndefined();
+    expect(context.response?.headers['authorization']).toBeUndefined();
+    expect(context.request.headers['content-type']).toBeDefined();
+
+    // The secret must never leak into a finding message, whatever assertion fails.
+    const result = report(
+      exchangeWith({ requestHeaders: { Authorization: secret, SOAPAction: 'unquoted' } }),
+      DOC_LITERAL,
+    );
+    const allMessages = result.assertions.flatMap((assertion) => assertion.findings.map((f) => f.message));
+    expect(allMessages.some((message) => message.includes(secret))).toBe(false);
   });
 
   it('falls back to the raw request frame when no request envelope is supplied', () => {

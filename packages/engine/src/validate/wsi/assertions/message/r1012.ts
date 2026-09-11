@@ -1,55 +1,45 @@
 import type { WsiFinding, WsiMessageAssertion } from '../../types.js';
 import { NOT_APPLICABLE } from '../../types.js';
-import { bodyCount, envelopeChildren, envelopes, headerCount, messageFinding, viewFinding } from './helpers.js';
+import { viewFinding } from './helpers.js';
+
+/** The encodings the profile allows a message to be serialized in. */
+const ALLOWED = ['utf-8', 'utf-16'];
 
 /**
- * BP 1.1 R1012: an envelope carries exactly one `soap:Body`, at most one `soap:Header`, and the
- * header — when there is one — comes first. Anything else is not the structure SOAP 1.1 section 4
- * defines, so a receiver's dispatch is undefined.
+ * BP 1.1 R1012: a message is serialized as UTF-8 or UTF-16. Only a message that states its
+ * encoding in an XML declaration can be judged here; one that states none is, by the XML rules,
+ * already UTF-8 or UTF-16 and so conforms.
+ *
+ * This is the best-attributed id Wirebench could give the requirement: it and R1003 (the
+ * envelope-structure rule) were previously swapped.
  *
  * The id is a paraphrase of the requirement Wirebench implements; it could not be confirmed
  * against the published profile, so the catalogue marks it unverified.
  */
 export const R1012: WsiMessageAssertion = {
   id: 'R1012',
-  title: 'An envelope carries one soap:Body, at most one soap:Header, header first',
+  title: 'A message that declares an encoding declares UTF-8 or UTF-16',
   level: 'REQUIRED',
   section: '3.1 XML Representation of SOAP Messages',
   unverifiedId: true,
   check(context) {
     const findings: WsiFinding[] = [];
-    const views = envelopes(context);
-    for (const view of views) {
-      const bodies = bodyCount(view);
-      const headers = headerCount(view);
-      if (bodies !== 1) {
+    let declarations = 0;
+    for (const view of context.messages) {
+      const declared = /^\s*<\?xml[^?]*encoding\s*=\s*["']([^"']+)["']/i.exec(view.envelopeXml ?? '')?.[1];
+      if (declared === undefined) {
+        continue;
+      }
+      declarations += 1;
+      if (!ALLOWED.includes(declared.toLowerCase())) {
         findings.push(
           viewFinding(
             view,
-            `the ${view.direction} envelope carries ${bodies} soap:Body elements; exactly one is required`,
+            `the ${view.direction} declares encoding "${declared}"; the profile allows UTF-8 and UTF-16`,
           ),
         );
-      }
-      if (headers > 1) {
-        findings.push(
-          viewFinding(
-            view,
-            `the ${view.direction} envelope carries ${headers} soap:Header elements; at most one is allowed`,
-          ),
-        );
-      }
-      const children = envelopeChildren(view);
-      const bodyIndex = children.findIndex((child) => child.namespaceURI === view.soapNs && child.localName === 'Body');
-      const headerIndex = children.findIndex(
-        (child) => child.namespaceURI === view.soapNs && child.localName === 'Header',
-      );
-      if (headerIndex > -1 && bodyIndex > -1 && headerIndex > bodyIndex) {
-        const header = children[headerIndex];
-        if (header !== undefined) {
-          findings.push(messageFinding(view, header, 'soap:Header follows soap:Body; it must precede it'));
-        }
       }
     }
-    return views.length === 0 ? NOT_APPLICABLE : findings;
+    return declarations === 0 ? NOT_APPLICABLE : findings;
   },
 };

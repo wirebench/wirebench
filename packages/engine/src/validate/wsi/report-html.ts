@@ -66,11 +66,13 @@ const STYLE = `
   .r-passed { color: #161; }
   .r-notApplicable { color: #777; }
   .empty { color: #555; font-style: italic; }
+  .footnote { color: #777; font-size: 0.85em; margin: 0.75rem 0 0; }
   @media (prefers-color-scheme: dark) {
     body { background: #16181c; color: #e6e6e6; }
     .target, .findings li, .empty { color: #b9b9b9; }
     th, td { border-color: #333; }
     .summary li { border-color: #444; }
+    .footnote { color: #999; }
     .r-failed { color: #ff8b8b; } .r-warning { color: #f0b429; } .r-passed { color: #7fd08a; }
   }
 `;
@@ -95,9 +97,10 @@ function findingHtml(assertion: WsiAssertionReport): string {
 
 /** One assertion rendered as a table row. */
 function rowHtml(assertion: WsiAssertionReport): string {
+  const marker = assertion.unverifiedId === true ? '<sup>*</sup>' : '';
   return [
     '<tr>',
-    `<td class="id">${escapeHtml(assertion.id)}</td>`,
+    `<td class="id">${escapeHtml(assertion.id)}${marker}</td>`,
     `<td class="level">${escapeHtml(assertion.level)}</td>`,
     `<td class="result r-${assertion.result}">${RESULT_LABEL[assertion.result]}</td>`,
     `<td>${escapeHtml(assertion.title)}${findingHtml(assertion)}</td>`,
@@ -126,6 +129,7 @@ export function renderWsiReportHtml(report: WsiReport, options: RenderWsiReportH
     ['Not applicable', report.summary.notApplicable],
   ] as const;
 
+  const hasUnverifiedId = rows.some((assertion) => assertion.unverifiedId === true);
   const body =
     rows.length === 0
       ? '<p class="empty">No assertions to show.</p>'
@@ -136,6 +140,9 @@ export function renderWsiReportHtml(report: WsiReport, options: RenderWsiReportH
           ...rows.map(rowHtml),
           '</tbody>',
           '</table>',
+          hasUnverifiedId
+            ? '<p class="footnote">* requirement number not verified against the published Basic Profile 1.1; quote the title.</p>'
+            : '',
         ].join('\n');
 
   return [

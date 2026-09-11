@@ -166,6 +166,9 @@ describe('wsi.* IPC', () => {
     expect(failed).toEqual(expect.arrayContaining(['R1109', 'R1141']));
     const soapAction = result.value.assertions.find((assertion) => assertion.id === 'R1109');
     expect(soapAction?.findings[0]?.location?.document).toBe('request');
+    // R1109's id could not be confirmed against the published profile; the wire mapping must
+    // carry that flag through so the renderer and the HTML export can mark it.
+    expect(soapAction?.unverifiedId).toBe(true);
   });
 
   it('fails cleanly for an evicted send and for an ad-hoc one', async () => {
@@ -189,6 +192,33 @@ describe('wsi.* IPC', () => {
     const result = (await invoke('wsi.checkExchange', { sendId: 'send-4' })) as Result<WsiReportWire>;
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('unknown-operation');
+  });
+
+  it('never carries an Authorization header value into a finding or the HTML export', async () => {
+    const secret = 'Bearer super-secret-token';
+    cache.put('send-5', {} as never, [], {
+      exchange: exchange({ Authorization: secret, SOAPAction: 'unquoted' }),
+      requestId: 'req-1',
+      requestEnvelopeXml: REQUEST_XML,
+    });
+    const dir = await mkdtemp(join(tmpdir(), 'wirebench-wsi-'));
+    saveTo = join(dir, 'report.html');
+    register();
+    const result = (await invoke('wsi.checkExchange', { sendId: 'send-5' })) as Result<WsiReportWire>;
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const allMessages = result.value.assertions.flatMap((a) => a.findings.map((f) => f.message));
+    expect(allMessages.some((message) => message.includes(secret))).toBe(false);
+
+    const exported = (await invoke('wsi.exportHtml', {
+      report: result.value,
+      suggestedName: 'x.html',
+      verbose: true,
+    })) as Result<{ path?: string; cancelled: boolean }>;
+    expect(exported.ok).toBe(true);
+    if (!exported.ok || exported.value.path === undefined) return;
+    const html = await readFile(exported.value.path, 'utf-8');
+    expect(html).not.toContain(secret);
   });
 
   it('writes the HTML export to the picked path and records the pick', async () => {

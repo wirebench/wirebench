@@ -32,6 +32,7 @@ const REPORT: WsiReportWire = {
       section: '3.4 Use of SOAP in HTTP',
       result: 'warning',
       findings: [{ message: 'the HTTP status is 418', location: { document: 'response' } }],
+      unverifiedId: true,
     },
     {
       id: 'R1141',
@@ -85,6 +86,26 @@ describe('WS-I Report tab', () => {
     ]);
     expect(screen.getAllByTestId('wsi-finding')[0]?.textContent).toContain('(request:1)');
     expect(screen.getAllByTestId('wsi-finding')[1]?.textContent).toContain('(response)');
+  });
+
+  it('marks an unverified id with an asterisk and shows the footnote', () => {
+    useWsiStore.setState({ status: 'ready', report: REPORT, showAll: false });
+    render(<WsiReport />);
+    // R1124 carries unverifiedId; R1109 does not.
+    expect(screen.getAllByTestId('wsi-unverified-id')).toHaveLength(1);
+    expect(screen.getByTestId('wsi-unverified-footnote').textContent).toContain(
+      'requirement number not verified against the published Basic Profile 1.1',
+    );
+  });
+
+  it('omits the footnote when no visible row is unverified', () => {
+    useWsiStore.setState({
+      status: 'ready',
+      report: { ...REPORT, assertions: [REPORT.assertions[0]!] },
+      showAll: false,
+    });
+    render(<WsiReport />);
+    expect(screen.queryByTestId('wsi-unverified-footnote')).toBeNull();
   });
 
   it('the "failed only" chip toggles the passing rows in', () => {

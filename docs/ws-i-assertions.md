@@ -70,12 +70,12 @@ against the published profile.
 | Id | Level | Title | Status | Section |
 | --- | --- | --- | --- | --- |
 | R1001 | REQUIRED | Each message is a soap:Envelope of the SOAP version the binding declares | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
-| R1003 | REQUIRED | A message that declares an encoding declares UTF-8 or UTF-16 | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1003 | REQUIRED | An envelope carries one soap:Body, at most one soap:Header, header first | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1005 | REQUIRED | A message contains no Document Type Declaration | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1006 | REQUIRED | A message contains no processing instructions | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1007 | REQUIRED | soap:Envelope has no element children other than soap:Header and soap:Body | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1011 | REQUIRED | No element child of soap:Envelope follows soap:Body | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
-| R1012 | REQUIRED | An envelope carries one soap:Body, at most one soap:Header, header first | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
+| R1012 | REQUIRED | A message that declares an encoding declares UTF-8 or UTF-16 | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1013 | REQUIRED | soap:mustUnderstand carries a value the SOAP version admits | Implemented (id unverified) | 3.2 SOAP Processing Model |
 | R1014 | REQUIRED | The children of soap:Body are namespace-qualified | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
 | R1015 | REQUIRED | A literal message carries no soap:encodingStyle attribute | Implemented (id unverified) | 3.1 XML Representation of SOAP Messages |
@@ -86,7 +86,7 @@ against the published profile.
 | R1103 | REQUIRED | A response carrying a soap:Fault uses HTTP status 500 | Implemented (id unverified) | 3.5 SOAP Faults |
 | R1107 | REQUIRED | A fault detail carries no soap:encodingStyle | Implemented (id unverified) | 3.5 SOAP Faults |
 | R1109 | REQUIRED | The SOAPAction request header is a quoted string | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
-| R1124 | RECOMMENDED | A non-fault response carries HTTP status 200 or 202 | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
+| R1124 | REQUIRED | A non-fault response carries HTTP status 200 or 202 | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
 | R1132 | REQUIRED | The HTTP request uses the POST method | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
 | R1140 | REQUIRED | Content-Type states the media type the SOAP version defines | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |
 | R1141 | REQUIRED | Content-Type states a charset parameter | Implemented (id unverified) | 3.4 Use of SOAP in HTTP |

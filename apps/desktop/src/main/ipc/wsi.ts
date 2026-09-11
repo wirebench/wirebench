@@ -60,6 +60,7 @@ function toWire(report: WsiReport, label: string, scope: 'wsdl' | 'message'): Ws
         message: finding.message,
         ...(finding.location !== undefined ? { location: { ...finding.location } } : {}),
       })),
+      ...(assertion.unverifiedId === true ? { unverifiedId: true } : {}),
     })),
     label,
     scope,
@@ -95,6 +96,7 @@ function fromWire(report: WsiReportWire): WsiReport {
             }
           : {}),
       })),
+      ...(assertion.unverifiedId === true ? { unverifiedId: true } : {}),
     })),
   };
 }

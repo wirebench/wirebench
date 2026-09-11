@@ -65,6 +65,7 @@ function resultFor(assertion: WsiAssertion, context: WsiWsdlContext): WsiAsserti
     section: assertion.section,
     result,
     findings,
+    ...(assertion.unverifiedId === true ? { unverifiedId: true } : {}),
   };
 }
 

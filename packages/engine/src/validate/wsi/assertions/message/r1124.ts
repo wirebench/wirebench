@@ -6,9 +6,9 @@ import { faultOf, viewFinding } from './helpers.js';
 const SUCCESS = [200, 202];
 
 /**
- * BP 1.1 R1124: a response that is not a fault carries `200 OK` (or `202 Accepted` for a
- * one-way message). A non-fault response on any other status leaves a client guessing whether the
- * envelope it just read is authoritative — hence a `SHOULD` rather than a `MUST`.
+ * BP 1.1 R1124: an envelope that is not a fault is returned with the HTTP status 200 ("OK") or,
+ * for a one-way message, 202 ("Accepted"). This is one of section 3.4's HTTP-status rules, which
+ * the profile makes `REQUIRED`.
  *
  * The id is a paraphrase of the requirement Wirebench implements; it could not be confirmed
  * against the published profile, so the catalogue marks it unverified.
@@ -16,7 +16,7 @@ const SUCCESS = [200, 202];
 export const R1124: WsiMessageAssertion = {
   id: 'R1124',
   title: 'A non-fault response carries HTTP status 200 or 202',
-  level: 'RECOMMENDED',
+  level: 'REQUIRED',
   section: '3.4 Use of SOAP in HTTP',
   unverifiedId: true,
   check(context) {

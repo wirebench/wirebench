@@ -35,6 +35,7 @@ const REPORT: WsiReport = {
       section: '3.4 Use of SOAP in HTTP',
       result: 'warning',
       findings: [{ message: 'the HTTP status is 418', location: { document: 'response' } }],
+      unverifiedId: true,
     },
     {
       id: 'R1141',
@@ -94,6 +95,22 @@ describe('renderWsiReportHtml', () => {
     expect(quiet).not.toContain('R1141');
     expect(quiet).not.toContain('R2211');
     expect(renderWsiReportHtml(REPORT, { ...OPTIONS, verbose: true })).toContain('R2211');
+  });
+
+  it('marks an unverified id with an asterisk and adds the footnote', () => {
+    const html = renderWsiReportHtml(REPORT, { ...OPTIONS, verbose: true });
+    expect(html).toContain('R1124<sup>*</sup>');
+    expect(html).toContain('requirement number not verified against the published Basic Profile 1.1');
+    // R1015 carries no unverifiedId, so it is not marked.
+    expect(html).not.toContain('R1015<sup>*</sup>');
+  });
+
+  it('omits the footnote when nothing on the page is unverified', () => {
+    const html = renderWsiReportHtml(
+      { ...REPORT, assertions: REPORT.assertions.filter((assertion) => assertion.id !== 'R1124') },
+      { ...OPTIONS, verbose: true },
+    );
+    expect(html).not.toContain('requirement number not verified');
   });
 
   it('renders a placeholder when there is nothing to show', () => {

@@ -1792,6 +1792,8 @@ export const wsiAssertionReportWireSchema = z.object({
   section: z.string(),
   result: z.enum(['passed', 'failed', 'warning', 'notApplicable']),
   findings: z.array(wsiFindingWireSchema),
+  /** Set when the requirement's number could not be confirmed against the published profile. */
+  unverifiedId: z.boolean().optional(),
 });
 
 /** A finished WS-I report; mirrors the engine's `WsiReport` exactly. */
