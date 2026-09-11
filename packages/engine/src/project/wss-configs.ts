@@ -8,6 +8,7 @@
 import { ProjectError } from '../errors.js';
 import { wssEntrySchema, wssIncomingFileSchema, wssOutgoingFileSchema } from './schema.js';
 import type { WssRef } from './model.js';
+import { DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS } from '../wss/model.js';
 import type { WssEntry, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 
 /**
@@ -101,7 +102,13 @@ export function toWssIncomingConfig(ref: WssRef): WssIncomingConfig {
     id: document.id,
     name: document.name,
     ...(document.decryptKeystoreRef !== undefined ? { decryptKeystoreRef: document.decryptKeystoreRef } : {}),
+    ...(document.decryptAlias !== undefined ? { decryptAlias: document.decryptAlias } : {}),
+    ...(document.decryptKeyPasswordRef !== undefined ? { decryptKeyPasswordRef: document.decryptKeyPasswordRef } : {}),
     ...(document.signatureKeystoreRef !== undefined ? { signatureKeystoreRef: document.signatureKeystoreRef } : {}),
+    requireSignature: document.requireSignature ?? false,
+    requireTimestamp: document.requireTimestamp ?? false,
+    timestampSkewSeconds: document.timestampSkewSeconds ?? DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
+    verifyChain: document.verifyChain ?? true,
   };
 }
 
@@ -116,8 +123,14 @@ export function toWssIncomingRef(config: WssIncomingConfig, existing?: WssRef): 
   const document: Record<string, unknown> = { ...existing?.document };
   document['id'] = config.id;
   document['name'] = config.name;
+  document['requireSignature'] = config.requireSignature;
+  document['requireTimestamp'] = config.requireTimestamp;
+  document['timestampSkewSeconds'] = config.timestampSkewSeconds;
+  document['verifyChain'] = config.verifyChain;
   for (const [key, value] of [
     ['decryptKeystoreRef', config.decryptKeystoreRef],
+    ['decryptAlias', config.decryptAlias],
+    ['decryptKeyPasswordRef', config.decryptKeyPasswordRef],
     ['signatureKeystoreRef', config.signatureKeystoreRef],
   ] as const) {
     if (value === undefined) {

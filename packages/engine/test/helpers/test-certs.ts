@@ -190,3 +190,29 @@ export function generateClientPkcs12(
   );
   return Uint8Array.from(Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary'));
 }
+
+let cachedUntrustedCert: TestCertificate | undefined;
+
+/**
+ * A self-signed certificate issued by *nobody* — its own, throwaway authority. Exactly what an
+ * "untrusted signer" test needs: the signature it makes verifies perfectly, and no truststore
+ * built from {@link generateTestCa} can ever accept it. Memoised per test process.
+ *
+ * @returns the untrusted signer's PEM certificate and private key
+ */
+export function generateUntrustedCert(): TestCertificate {
+  if (cachedUntrustedCert !== undefined) return cachedUntrustedCert;
+  const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
+  const cert = newCertificate(keys.publicKey, 'wirebench-rogue');
+  cert.setIssuer(attributes('wirebench-rogue'));
+  cert.setExtensions([
+    { name: 'basicConstraints', cA: false, critical: true },
+    { name: 'keyUsage', digitalSignature: true, critical: true },
+  ]);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  cachedUntrustedCert = {
+    certPem: forge.pki.certificateToPem(cert),
+    keyPem: forge.pki.privateKeyToPem(keys.privateKey),
+  };
+  return cachedUntrustedCert;
+}

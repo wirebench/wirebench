@@ -10,12 +10,14 @@ export {
   type TestSoapServerTls,
   type RecordedRequest,
 } from './test-soap-server.js';
+export { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 export {
   generateTestCa,
   generateServerCert,
   generateClientCert,
   generateClientPkcs12,
   generateSigningCert,
+  generateUntrustedCert,
   type TestCertificate,
 } from './test-certs.js';
 export {

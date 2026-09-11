@@ -6,6 +6,7 @@ import { createSecureContext, type SecureContext, type TLSSocket } from 'node:tl
 import { buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { readPublicFixture } from './fixtures.js';
 import { createNtlmAuthenticator } from './ntlm-server.js';
+import { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 
 /**
  * The 1x1 PNG the `/mime-fixture` route sends as its single XOP part, so a test can assert
@@ -139,6 +140,8 @@ export async function startTestSoapServer(options?: {
   readonly respondToCalculatorAdd?: boolean;
   /** Serve over HTTPS with these credentials instead of plain HTTP. */
   readonly tls?: TestSoapServerTls;
+  /** Key material for the `/wss/*` routes, which sign and encrypt their responses. */
+  readonly wss?: TestWssOptions;
 }): Promise<TestSoapServer> {
   const requests: RecordedRequest[] = [];
   const sockets = new Set<Socket>();
@@ -206,6 +209,24 @@ export async function startTestSoapServer(options?: {
       const wsdl = readPublicFixture(fixtureName).replace(/location="[^"]*"/g, `location="${baseUrl}/soap"`);
       res.writeHead(200, { 'content-type': 'text/xml' });
       res.end(wsdl);
+      return;
+    }
+
+    // The `/wss/*` family: an ordinary SOAP response, secured with the server's own keys, so a
+    // client's *incoming* configuration has something real to decrypt and verify.
+    const wssMatch = /^\/wss\/(sign|encrypt|sign-encrypt|tampered|untrusted)$/.exec(url.pathname);
+    if (method === 'POST' && wssMatch !== null) {
+      const wssOptions = options?.wss;
+      if (wssOptions === undefined) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        res.end('this server was started without wss key material');
+        return;
+      }
+      const requestText = body.toString('utf-8');
+      const envelope = buildCalculatorAddResponse(requestText) ?? requestText;
+      const secured = await secureResponse(envelope, wssMatch[1] as TestWssMode, wssOptions);
+      res.writeHead(200, { 'content-type': 'text/xml; charset=UTF-8' });
+      res.end(secured);
       return;
     }
 

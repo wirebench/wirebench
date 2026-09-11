@@ -111,14 +111,48 @@ describe('toWssOutgoingRef', () => {
 
 describe('incoming configurations', () => {
   it('round-trips', () => {
-    const incoming = { id: 'i1', name: 'In', decryptKeystoreRef: 'k1' } as const;
+    const incoming = {
+      id: 'i1',
+      name: 'In',
+      decryptKeystoreRef: 'k1',
+      decryptAlias: 'client',
+      requireSignature: true,
+      requireTimestamp: false,
+      timestampSkewSeconds: 60,
+      verifyChain: false,
+    } as const;
     const stored = toWssIncomingRef(incoming);
     expect(toWssIncomingConfig(stored)).toEqual(incoming);
-    const cleared = toWssIncomingRef({ id: 'i1', name: 'In' }, stored);
+    const cleared = toWssIncomingRef(
+      {
+        id: 'i1',
+        name: 'In',
+        requireSignature: false,
+        requireTimestamp: false,
+        timestampSkewSeconds: 300,
+        verifyChain: true,
+      },
+      stored,
+    );
     expect(cleared.document['decryptKeystoreRef']).toBeUndefined();
+    expect(cleared.document['decryptAlias']).toBeUndefined();
   });
 
   it('rejects a document that is not an incoming configuration', () => {
     expect(() => toWssIncomingConfig({ id: 'x', name: 'x', document: {} })).toThrow(ProjectError);
+  });
+
+  it('defaults every field an older document omitted', () => {
+    const config = toWssIncomingConfig({
+      id: 'i1',
+      name: 'In',
+      document: { id: 'i1', name: 'In', signatureKeystoreRef: 'trust' },
+    });
+    expect(config).toMatchObject({
+      requireSignature: false,
+      requireTimestamp: false,
+      timestampSkewSeconds: 300,
+      verifyChain: true,
+    });
   });
 });

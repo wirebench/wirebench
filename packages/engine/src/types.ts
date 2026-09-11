@@ -15,7 +15,8 @@ import type { SoapFault } from './soap/fault.js';
 import type { UnresolvedRef } from './project/properties.js';
 import type { Attachment } from './project/model.js';
 import type { AttachmentResolver, ResponseAttachment } from './soap/mime/types.js';
-import type { WssContext, WssOutgoingConfig } from './wss/model.js';
+import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from './wss/model.js';
+import type { WssResult } from './wss/incoming/index.js';
 import type { WssRequestProperties } from './wss/apply.js';
 
 /** Where a WSDL definition comes from. */
@@ -176,6 +177,8 @@ export interface SoapSendInput {
 /** The WS-Security half of a send: the configuration, its capabilities, and the overrides. */
 export interface SoapSendWss {
   readonly outgoing?: WssOutgoingConfig;
+  /** Applied to the response: decryption, signature verification and timestamp freshness. */
+  readonly incoming?: WssIncomingConfig;
   readonly ctx: WssContext;
   readonly requestProperties?: WssRequestProperties;
 }
@@ -216,7 +219,11 @@ export interface SendAttachmentOptions {
 export interface SoapExchange {
   readonly http: HttpExchange;
   readonly response?: {
-    /** Decoded body as text. */
+    /**
+     * Decoded body as text. When incoming WS-Security decrypted the response, this is the
+     * *restored* envelope: the raw bytes on `http` stay exactly as they arrived, so the Raw
+     * view shows ciphertext while the XML view shows plaintext.
+     */
     readonly envelopeXml: string;
     readonly version?: SoapEnvelopeVersion;
     readonly fault?: SoapFault;
@@ -242,6 +249,8 @@ export interface SoapExchange {
   /** What WS-Security did, when the send was given {@link SoapSendInput.wss}. */
   readonly wss?: {
     /** The entry kinds applied to the outgoing envelope, in the order they were applied. */
-    readonly applied: readonly string[];
+    readonly applied?: readonly string[];
+    /** What incoming processing made of the response, when the send was given a configuration. */
+    readonly incoming?: WssResult;
   };
 }

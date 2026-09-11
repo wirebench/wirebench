@@ -266,12 +266,22 @@ export const wssOutgoingFileSchema = z.looseObject({
   entries: z.array(wssStoredEntrySchema).optional(),
 });
 
-/** `wss/incoming/<name>.yaml`. */
+/**
+ * `wss/incoming/<name>.yaml`. Tolerant in the same way the outgoing entries are: every field
+ * but `id`/`name` defaults, so a document written by an older build (which had only the two
+ * keystore refs) loads as a complete configuration rather than being rejected.
+ */
 export const wssIncomingFileSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
   decryptKeystoreRef: z.string().optional(),
+  decryptAlias: z.string().optional(),
+  decryptKeyPasswordRef: z.string().optional(),
   signatureKeystoreRef: z.string().optional(),
+  requireSignature: z.boolean().optional(),
+  requireTimestamp: z.boolean().optional(),
+  timestampSkewSeconds: z.number().int().nonnegative().optional(),
+  verifyChain: z.boolean().optional(),
 });
 
 /**

@@ -369,6 +369,7 @@ export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.
 export {
   createWssContext,
   DEFAULT_WSS_ENCRYPTION_PARTS,
+  DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS,
   DEFAULT_WSS_SIGNATURE_PARTS,
   WSS_ENTRY_KINDS,
 } from './wss/model.js';
@@ -395,6 +396,17 @@ export { buildUsernameToken, passwordDigest } from './wss/outgoing/username-toke
 export type { BuildUsernameTokenInput } from './wss/outgoing/username-token.js';
 export { signEnvelope, verifySignature } from './wss/outgoing/signature.js';
 export type { ResolvedSigningKey, VerifySignatureOptions, VerifySignatureResult } from './wss/outgoing/signature.js';
+export { processIncomingWss } from './wss/incoming/index.js';
+export type { ProcessIncomingWssOptions, WssAction, WssActionKind, WssResult } from './wss/incoming/index.js';
+export { decryptIncoming } from './wss/incoming/decrypt.js';
+export type { DecryptIncomingResult, ResolvedDecryptionKey } from './wss/incoming/decrypt.js';
+export { verifyIncoming } from './wss/incoming/verify.js';
+export type {
+  IncomingSignatureResult,
+  IncomingTimestampResult,
+  VerifyIncomingOptions,
+  VerifyIncomingResult,
+} from './wss/incoming/verify.js';
 export { decryptEnvelope, encryptEnvelope } from './wss/outgoing/encryption.js';
 export type {
   DecryptEnvelopeOptions,

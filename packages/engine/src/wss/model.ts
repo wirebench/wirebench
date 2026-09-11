@@ -136,15 +136,33 @@ export interface WssOutgoingConfig {
   readonly entries: readonly WssEntry[];
 }
 
-/** One `wss/incoming/<id>.yaml` document. Tasks 39/40 give it teeth. */
+/**
+ * One `wss/incoming/<id>.yaml` document: how a *response* is decrypted and how its signatures
+ * and timestamp are judged.
+ */
 export interface WssIncomingConfig {
   readonly id: string;
   readonly name: string;
   /** Keystore holding the private key incoming `xenc:EncryptedKey` blocks are opened with. */
   readonly decryptKeystoreRef?: string;
-  /** Keystore holding the certificates incoming signatures are verified against. */
+  /** Alias inside that keystore; the keystore's first (or default) alias when omitted. */
+  readonly decryptAlias?: string;
+  /** Secret reference for that private key's passphrase, when its PEM is encrypted. */
+  readonly decryptKeyPasswordRef?: string;
+  /** Truststore: a keystore whose aliases are the certificates (or CAs) incoming signatures are trusted from. */
   readonly signatureKeystoreRef?: string;
+  /** Report a failed `signature` action when the response carries no `ds:Signature` at all. */
+  readonly requireSignature: boolean;
+  /** Report a failed `timestamp` action when the response carries no `wsu:Timestamp`. */
+  readonly requireTimestamp: boolean;
+  /** Clock skew tolerated on `wsu:Created`/`wsu:Expires`, in seconds. */
+  readonly timestampSkewSeconds: number;
+  /** Accept a signer that chains to a truststore certificate, not only one stored verbatim. */
+  readonly verifyChain: boolean;
 }
+
+/** The defaults a new incoming configuration starts from. */
+export const DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS = 300;
 
 /**
  * Everything a WS-Security operation needs from the outside world. All five members are

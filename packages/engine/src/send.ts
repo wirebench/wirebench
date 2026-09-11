@@ -18,6 +18,8 @@ import { packageRequestBody, readResponseBody, type SoapProblem } from './soap/m
 import { parseSoapResponse } from './soap/response-parser.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import { applyOutgoingWss } from './wss/apply.js';
+import { processIncomingWss } from './wss/incoming/index.js';
+import type { WssResult } from './wss/incoming/index.js';
 import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
 
 /**
@@ -171,12 +173,23 @@ export async function sendSoapRequest(
   const authSummary: AuthSummary | undefined =
     auth !== undefined ? { scheme: auth.type, challenged, attempts } : undefined;
 
-  const { envelopeXml, attachments } = readResponseBody(
+  const { envelopeXml: receivedXml, attachments } = readResponseBody(
     http.body,
     headerValue(http.headers, 'content-type'),
     effectiveInput.attachmentOptions,
     problems,
   );
+
+  // Incoming WS-Security runs on the envelope the response pipeline produced — after MTOM
+  // expansion — so a signature over an expanded Body is judged over what the user sees.
+  let wssIncoming: WssResult | undefined;
+  let envelopeXml = receivedXml;
+  if (wss?.incoming !== undefined) {
+    wssIncoming = await processIncomingWss(receivedXml, wss.incoming, wss.ctx);
+    if (wssIncoming.decryptedXml !== undefined) {
+      envelopeXml = wssIncoming.decryptedXml;
+    }
+  }
 
   let response: SoapExchange['response'];
   try {
@@ -207,6 +220,13 @@ export async function sendSoapRequest(
     ...(authSummary !== undefined ? { auth: authSummary } : {}),
     problems,
     ...(unresolved !== undefined ? { unresolved } : {}),
-    ...(wssApplied !== undefined ? { wss: { applied: wssApplied } } : {}),
+    ...(wssApplied !== undefined || wssIncoming !== undefined
+      ? {
+          wss: {
+            ...(wssApplied !== undefined ? { applied: wssApplied } : {}),
+            ...(wssIncoming !== undefined ? { incoming: wssIncoming } : {}),
+          },
+        }
+      : {}),
   };
 }
