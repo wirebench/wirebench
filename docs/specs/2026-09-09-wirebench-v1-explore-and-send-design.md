@@ -440,7 +440,7 @@ Rules: TDD for engine code (failing test first, then implementation); every bug 
 **Always**
 - Run `pnpm check` before every commit; keep CI green on all three OSes.
 - Write the failing test before engine code; keep golden fixtures deterministic (fixed UUIDs/timestamps via injected clocks).
-- Keep `packages/engine` free of Electron/DOM/renderer imports (enforced by eslint `no-restricted-imports` + a dependency-cruiser check).
+- Keep `packages/engine` free of Electron/DOM/renderer imports, and the renderer free of engine imports apart from the browser-safe `@wirebench/engine/xml` subpath (ESLint `no-restricted-imports`; a dependency-cruiser check is roadmap). See ADR-0002.
 - Validate every IPC payload and every project file with zod; treat project files as untrusted input.
 - Route all network/file/secret access through main; secrets only via `safeStorage` and `secretRef`.
 - Redact `Authorization`, WSS passwords, and decrypted keys from the HTTP log and history unless the user enables "show secrets" for the session.
@@ -554,3 +554,5 @@ Rejected (taken on npm or GitHub): sendbox, wirehub, reqbench, apibench, wirelab
 | 2026-09-09 | JS/TS scripting instead of Groovy (v2) | §2 |
 | 2026-09-09 | Name: Wirebench — protocol-neutral, REST client planned; `@wirebench/*`, `io.wirebench.desktop` | §1, §14, §16a |
 | 2026-09-09 | Spec approved (rev 1) with §16 defaults: Apache-2.0, unsigned CI builds, engine in main process, PKCS#12+PEM, NTLM in v1, TS 7, English-only, history cap 1000, opt-in updates | §16 |
+| 2026-09-11 | §12 amended: the renderer may import the browser-safe `@wirebench/engine/xml` subpath and nothing else of the engine; enforced by ESLint `no-restricted-imports`, dependency-cruiser deferred to roadmap | §12, ADR-0002 |
+| 2026-09-11 | Nested WSDL/XSD references are confined to the root document's world (a file root to its own folder, a remote root to http(s), never `file:`), with depth/document caps | §4, ADR-0005, `docs/security.md` |

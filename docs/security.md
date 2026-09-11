@@ -78,6 +78,31 @@ Names the user types become path segments only through `slugify`, which cannot p
 traversal segment, strips characters illegal on any supported OS, and refuses Windows device
 names. Full reasoning: [ADR-0005](adr/0005-renderer-path-safety.md).
 
+## A WSDL is not a file-read primitive
+
+Importing a definition means fetching whatever it references, transitively, so the references
+themselves are untrusted input. Two rules bound what an import can touch.
+
+The path the import starts from is proven like any other: `definition.import { kind: 'file' }`
+runs the same containment/dialog-pick check above and refuses anything else
+(`import-path-refused`). A file dropped on the import dialog is not a dialog pick, so the
+renderer reads the dropped bytes itself and imports them as text — at the cost that the
+dropped document's own relative imports no longer resolve, which the import reports along with
+"use Browse…".
+
+Nested `wsdl:import`/`xs:import`/`xs:include` references are confined to the root document's
+world: a definition imported from a file may reference only files inside that file's folder
+(compared as real paths, so a symlink cannot walk out); a definition fetched over `http(s)`
+may reference any `http(s)` host but never `file:`; a pasted or dropped one may never reach
+the disk at all. A refused reference becomes an `import-ref-refused` problem and the import
+completes with what did resolve. The graph is capped at 32 levels and 500 documents
+(`import-limit`). Implementation: `packages/engine/src/wsdl/ref-policy.ts`.
+
+What this deliberately does *not* prevent: a remote WSDL naming an internal `http://` host.
+Fetching what the document points at is the whole of what "import this WSDL" means, and the
+user chose that URL; the reachable surface is a GET with no credentials attached unless the
+user configured Basic auth for the import.
+
 ## TLS
 
 Certificate verification is on by default, everywhere. Turning it off is per endpoint
@@ -85,6 +110,11 @@ Certificate verification is on by default, everywhere. Turning it off is per end
 debugging shortcut cannot quietly become the way a project always runs. Custom trust anchors
 and client certificates are configured per endpoint too, and both are reflected in the SSL Info
 inspector and in exported cURL commands (as a note, never with the credential).
+
+PKCS#12 keystores are matched to their private key by RSA modulus only: an EC or Ed25519 key
+in a `.p12` loads its certificate but is never paired with it, so the alias reports no private
+key and signing with it fails — rather than silently pairing a certificate with the wrong key.
+Signing and TLS client authentication with non-RSA keystores are not supported yet.
 
 ## The packaged binary
 

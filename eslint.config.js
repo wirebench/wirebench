@@ -51,6 +51,39 @@ export default tseslint.config(
     },
   },
   {
+    // ADR-0002 put the engine in the main process: the renderer talks to it over IPC, never by
+    // importing it. The one exception is the browser-safe `@wirebench/engine/xml` subpath (the
+    // Monaco XML language service needs the same parser main uses), so the ban is expressed as
+    // "the engine, except that subpath" rather than as a convention nobody can enforce. The
+    // Monaco rule from the block above is repeated here because a second `no-restricted-imports`
+    // entry replaces the first rather than merging with it.
+    files: ['apps/desktop/src/renderer/**/*.{ts,tsx,mts,cts}'],
+    ignores: ['apps/desktop/src/renderer/editor/monaco-core.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'monaco-editor',
+              allowTypeImports: true,
+              message: 'import Monaco through renderer/editor/monaco-core.ts; a bare import re-adds every worker',
+            },
+          ],
+          patterns: [
+            {
+              // A regex, not a `group`: gitignore-style globs cannot express "this package and
+              // every subpath of it *except* one".
+              regex: '^@wirebench/engine(?!/xml$)(/.*)?$',
+              message:
+                'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml subpath may be imported (ADR-0002)',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/engine/**/*.{ts,tsx,mts,cts}'],
     rules: {
       'no-restricted-imports': [

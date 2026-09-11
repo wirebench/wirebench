@@ -9,6 +9,14 @@
  * document's shape bumps `formatVersion` instead of relying on strictness
  * here. `formatVersion` itself stays a `z.literal` so an out-of-range value is
  * still caught explicitly (see `migrate.ts`).
+ *
+ * The policy that follows from that, stated once so nobody has to rediscover
+ * it: **any additive field bumps `formatVersion`.** Since an unknown key is
+ * dropped on load and never written back, a field added inside the current
+ * version does not merely go unread by older builds — it is deleted from the
+ * project the first time an older build saves. "Additive is safe" is true of
+ * formats that round-trip unknown keys; this one deliberately does not. See
+ * ADR-0003.
  */
 
 import { z } from 'zod';

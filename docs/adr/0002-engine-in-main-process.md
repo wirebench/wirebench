@@ -1,6 +1,6 @@
 # ADR-0002: The engine runs in the main process, behind an `EngineService` interface
 
-- Status: accepted
+- Status: accepted; superseded in part (2026-09-11)
 - Date: 2026-09-09
 - Context: spec §4 (architecture), §16 open question 6, §17 (decision log)
 
@@ -22,6 +22,13 @@ becomes a feature.
 The engine runs **in the main process in v1**, reached only through an `EngineService`
 interface that the IPC handlers call. No renderer code imports the engine; no engine code
 knows that Electron exists.
+
+**Superseded in part (2026-09-11).** "No renderer code imports the engine" now has exactly one
+exception: the browser-safe `@wirebench/engine/xml` subpath, which the Monaco XML language
+service imports so the editor tokenises and reports positions with the same parser main uses.
+That subpath is pure, DOM-free XML code with no Node, Electron or file-system reach; nothing
+else in the engine may be imported from the renderer, and ESLint enforces the line
+(`no-restricted-imports` in `eslint.config.js`, keyed to this ADR).
 
 The interface is the point: every entry point is `async` and takes an `AbortSignal`, and no
 caller depends on the engine being in-process. Moving it into a `utilityProcess` later is an
@@ -48,6 +55,8 @@ implementation change behind that interface, not a redesign of the app.
   (`evaluateWithTimeout`).
 - An engine crash takes the app with it. Accepted for v1: the engine is pure computation over
   data the user supplied, and it throws typed `WirebenchError`s rather than aborting.
+- The `@wirebench/engine/xml` exception has to stay browser-safe: adding a Node import to that
+  subpath would break the renderer bundle, so it is treated as public, sandboxed API.
 - The `EngineService` boundary must not leak. Any API that only works because both sides share
   a heap — passing a callback, handing out a mutable object — would quietly make the
   utility-process move impossible; the interface is stated in terms of data and signals only.

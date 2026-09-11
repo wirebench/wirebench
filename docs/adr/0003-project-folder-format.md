@@ -56,5 +56,10 @@ keyed by project id, so a project directory is safe to commit and share.
   rules in ADR-0005 — an interface called `../../etc` must never escape the project root.
 - Stable key order and deterministic serialization are part of the format, not a nicety: any
   non-determinism shows up as a spurious diff in someone's pull request.
-- `formatVersion` is a commitment. Adding fields is free; changing or removing them costs a
-  migration.
+- `formatVersion` is a commitment, and stricter than "adding fields is free". The loader
+  validates every file with `exact<T>()` (`packages/engine/src/project/load.ts`): a key the
+  schema does not know is dropped on load and therefore **lost on the next save**. That is
+  deliberate — it is what keeps an unknown key from surviving as an unreviewable ghost in
+  someone's project — but it means *any* additive field bumps `formatVersion` and ships a
+  migration, exactly as a changed or removed one does. A field added inside the current
+  version would silently delete itself from every project written by an older build.
