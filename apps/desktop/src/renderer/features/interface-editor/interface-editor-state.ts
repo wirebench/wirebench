@@ -16,11 +16,17 @@ import { ipc } from '../../state/ipc-client.js';
 /** Which tab of the Interface editor is showing. */
 export type InterfaceTabId = 'overview' | 'endpoints' | 'wsdl' | 'schema' | 'wsi';
 
-/** One selected row of the Schema tree. */
+/**
+ * One selected schema component. `document`/`line` are carried for a component that is not in
+ * the index at all — a *local* element declaration, which go-to-definition can land on but the
+ * tree (global components only) never lists.
+ */
 export interface SchemaSelection {
   readonly namespace: string;
   readonly kind: SchemaComponentKind;
   readonly name: string;
+  readonly document?: string;
+  readonly line?: number;
 }
 
 /** A document position the WSDL Content tab should scroll to. */

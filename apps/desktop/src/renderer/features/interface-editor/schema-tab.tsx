@@ -75,7 +75,17 @@ export function SchemaTab({ interfaceId }: SchemaTabProps) {
   const selectedRef = useRef<HTMLButtonElement | null>(null);
 
   const namespaces = useMemo(() => data?.namespaces ?? [], [data]);
-  const component = findComponent(namespaces, selection);
+  // A local element declaration is not a global component, so it is never in the tree; the
+  // selection then carries its own source position and the detail panel renders from that.
+  const component =
+    findComponent(namespaces, selection) ??
+    (selection?.document !== undefined
+      ? {
+          name: selection.name,
+          document: selection.document,
+          ...(selection.line !== undefined ? { line: selection.line } : {}),
+        }
+      : undefined);
 
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: 'nearest' });

@@ -46,6 +46,8 @@ describe('goToSchemaDefinition', () => {
       namespace: TEM,
       kind: 'element',
       name: 'intA',
+      document: 'calc.wsdl',
+      line: 5,
     });
   });
 

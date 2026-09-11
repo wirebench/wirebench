@@ -153,6 +153,8 @@ describe('InterfaceEditor', () => {
       namespace: TEM,
       kind: 'element',
       name: 'intA',
+      document: 'https://example.test/calc.wsdl',
+      line: 5,
     });
 
     render(<InterfaceEditor interfaceId="if-1" />);

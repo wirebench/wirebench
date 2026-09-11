@@ -60,5 +60,7 @@ export async function showSchemaDeclaration(query: DeclarationQuery): Promise<vo
     namespace: declaration.namespace,
     kind: declaration.kind,
     name: declaration.name,
+    document: declaration.document,
+    ...(declaration.line !== undefined ? { line: declaration.line } : {}),
   });
 }
