@@ -187,4 +187,75 @@ test.describe('wss', () => {
     await expect(responseEditor).toContainText('<ds:Reference URI="#Id-');
     await expect(responseEditor).toContainText('<ds:Reference URI="#TS-');
   });
+
+  test('encrypts the Body against a keystore certificate, so the plaintext never reaches the wire', async () => {
+    const ca = generateTestCa();
+    const client = generateClientCert(ca);
+    certsDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-certs-'));
+    const keystorePath = join(certsDir, 'recipient.p12');
+    writeFileSync(keystorePath, generateClientPkcs12(ca, client, { password: PASSWORD }));
+
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Encrypt Project');
+    launched = await launchApp({
+      userDataDir,
+      folderDialogPath: projectDir,
+      keepUserDataDir: true,
+      extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
+    });
+    const page = launched.window;
+    await createProjectWithCalculator(page, server, { expectProjectName: 'WSS Encrypt Project' });
+    await openFirstRequest(page);
+
+    // --- add the recipient keystore ---------------------------------------------------------
+    await page.getByRole('button', { name: 'WS-Security' }).click();
+    await expect(page.getByTestId('wss-section')).toBeVisible();
+    await page.getByLabel('Add keystore').click();
+    await page.getByTestId('keystore-browse').click();
+    const addDialog = page.getByTestId('keystore-add-dialog');
+    await addDialog.getByRole('button', { name: 'Set…' }).click();
+    await addDialog.getByPlaceholder('Enter password').fill(PASSWORD);
+    await addDialog.getByRole('button', { name: 'Save' }).click();
+    await page.getByTestId('keystore-add-submit').click();
+    await expect(page.getByTestId('keystore-status')).toHaveText('Loaded', { timeout: 15_000 });
+
+    // --- a configuration with a single Encryption entry --------------------------------------
+    await page.getByTestId('wss-outgoing-add').click();
+    const row = page.getByTestId('wss-outgoing-row');
+    await expect(row).toHaveCount(1);
+    await row.getByRole('button', { expanded: false }).click();
+    const editor = page.getByTestId('wss-outgoing-editor');
+    await expect(editor).toBeVisible();
+
+    await editor.getByLabel('Add entry').selectOption('encryption');
+    await expect(page.getByTestId('wss-encryption-fields')).toBeVisible();
+    await editor.getByLabel('Encryption keystore').selectOption({ label: 'recipient' });
+    await expect(editor.getByLabel('Encryption alias')).toBeVisible();
+    await editor.getByLabel('Embed key').check();
+
+    // --- select it on Request 1 and send ----------------------------------------------------
+    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
+    await page.getByTestId('request-wss-outgoing').selectOption({ label: 'Outgoing WSS' });
+
+    // The generated Calculator envelope carries `intA`/`intB` in the Body; encrypting the Body's
+    // content must leave no trace of either on the wire.
+    await expect(page.getByTestId('request-editor')).toContainText('intA', { timeout: 20_000 });
+    await page.getByTestId('request-endpoint').fill(`${server.url}/soap`);
+    await page.getByTestId('request-send').click();
+    await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 30_000 });
+
+    // The echo route hands the envelope back verbatim, so this *is* what went out.
+    const responseEditor = page.getByTestId('response-editor');
+    await expect(responseEditor).toContainText('xenc:EncryptedKey', { timeout: 15_000 });
+    await expect(responseEditor).toContainText('xenc:EncryptedData');
+    await expect(responseEditor).toContainText('xenc:ReferenceList');
+
+    // --- and the plaintext is nowhere on the wire --------------------------------------------
+    await page.getByRole('tab', { name: 'Raw' }).first().click();
+    const requestRaw = page.getByLabel('Request raw bytes');
+    await expect(requestRaw).toBeVisible({ timeout: 10_000 });
+    await expect(requestRaw).toContainText('xenc:EncryptedData');
+    await expect(requestRaw).not.toContainText('intA');
+  });
 });
