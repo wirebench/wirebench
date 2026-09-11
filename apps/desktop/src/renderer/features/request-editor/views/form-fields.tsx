@@ -144,7 +144,7 @@ export function NodeBadges({ node }: { readonly node: FormNodeWire }) {
   return (
     <span className="flex shrink-0 items-center gap-1 text-xs">
       {node.required ? (
-        <span className="text-warning" title="Required">
+        <span className="text-status-warning" title="Required">
           *
         </span>
       ) : (

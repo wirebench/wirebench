@@ -241,7 +241,7 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
               <AlertDialog.Action asChild>
                 <button
                   type="button"
-                  className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
+                  className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
                   onClick={() => {
                     if (pendingRemoveId !== undefined) remove();
                   }}

@@ -486,7 +486,7 @@ export function OutlineView({ xml, interfaceId, describeSource, readOnly, onEdit
   return (
     <div className="flex h-full min-h-0 flex-col">
       {problems.length > 0 && (
-        <p className="shrink-0 border-b border-hairline px-2 py-1 text-xs text-warning" role="status">
+        <p className="shrink-0 border-b border-hairline px-2 py-1 text-xs text-status-warning" role="status">
           {problems.length} problem(s) parsing this document — showing a best-effort tree.
         </p>
       )}

@@ -54,9 +54,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         style={style}
         data-testid="explorer-tree-row"
         data-tree-id={node.id}
-        role="treeitem"
-        aria-selected={node.isSelected}
-        tabIndex={-1}
+        // No `role`/`aria-selected`/`tabIndex` here: react-arborist's own row wrapper is the
+        // `treeitem` (with `aria-level`, `aria-selected` and `aria-expanded`), and repeating
+        // them on this child would nest a second treeitem inside the real one.
         // A single click only selects (feeds the details panel / palette `when` gates); opening
         // a request tab needs a double-click or Enter. react-arborist's default row wrapper
         // calls `node.handleClick` (which both selects AND activates) on any click that bubbles
@@ -103,13 +103,13 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           <span
             data-testid="explorer-orphaned-badge"
             title="This operation is no longer in the definition"
-            className="shrink-0 rounded-full bg-warning px-1.5 text-xs text-fg-onAccent"
+            className="shrink-0 rounded-full bg-status-warning px-1.5 text-xs text-fg-on-accent"
           >
             orphaned
           </span>
         )}
         {node.data.problemCount !== undefined && node.data.problemCount > 0 && (
-          <span className="shrink-0 rounded-full bg-danger px-1.5 text-xs text-fg-onAccent">
+          <span className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
             {node.data.problemCount}
           </span>
         )}
@@ -268,7 +268,7 @@ export function ExplorerView() {
               <AlertDialog.Action asChild>
                 <button
                   type="button"
-                  className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
+                  className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
                   onClick={() => {
                     if (confirmRemoveInterfaceId !== undefined) {
                       void removeInterface(confirmRemoveInterfaceId);
@@ -305,7 +305,7 @@ export function ExplorerView() {
               <AlertDialog.Action asChild>
                 <button
                   type="button"
-                  className="rounded bg-danger px-3 py-1.5 text-sm text-fg-onAccent"
+                  className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
                   onClick={() => {
                     if (confirmDeleteRequestId !== undefined) {
                       void removeRequest(confirmDeleteRequestId);

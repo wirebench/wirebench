@@ -5,6 +5,7 @@ import { revealProblem } from '../request-editor/validate-actions.js';
 import type { Problem, ProblemSeverity } from '../../state/problems.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
+import { useGridNavigation } from '../../lib/grid-navigation.js';
 
 const SOURCE_CLASS = 'shrink-0 rounded-sm border border-hairline px-1 font-mono text-xs text-fg-subtle';
 
@@ -41,6 +42,8 @@ export function ProblemsView() {
   const items = useProblemsStore((state) => state.items);
   const requests = useProjectStore((state) => state.requests);
   const [filter, setFilter] = useState<Filter>('all');
+  const visibleCount = (filter === 'all' ? items : items.filter((item) => item.severity === filter)).length;
+  const { gridProps, rowProps } = useGridNavigation(visibleCount);
 
   const errors = items.filter((item) => item.severity === 'error').length;
   const visible = filter === 'all' ? items : items.filter((item) => item.severity === filter);
@@ -72,7 +75,15 @@ export function ProblemsView() {
         ))}
       </div>
 
-      <ul aria-label="Problems" className="flex min-h-0 flex-col gap-1 overflow-auto text-sm">
+      {/* A grid rather than a plain list: every row is a record with the same columns, and
+          Up/Down moving between rows is what a keyboard user expects of a Problems panel. */}
+      <ul
+        role="grid"
+        aria-label="Problems"
+        aria-rowcount={visibleCount}
+        className="flex min-h-0 flex-col gap-1 overflow-auto text-sm"
+        {...gridProps}
+      >
         {visible.map((item, index) => {
           const { source, severity, requestId, problem } = item;
           const Icon = severity === 'warning' ? AlertTriangle : XCircle;
@@ -98,28 +109,32 @@ export function ProblemsView() {
 
           if (requestId !== undefined) {
             return (
-              <li key={key(item, index)}>
-                <button
-                  type="button"
-                  data-testid="problem-row"
-                  onClick={() => {
-                    if (source === 'validation') {
-                      revealProblem(requestId, item.direction ?? 'request', problem.line, problem.column);
-                      return;
-                    }
-                    explorerActions.openRequest(requestId);
-                  }}
-                  className="flex w-full items-start gap-2 rounded px-1 text-left hover:bg-surface-raised"
-                >
-                  {body}
-                </button>
+              <li key={key(item, index)} role="row" aria-rowindex={index + 1} {...rowProps(index)}>
+                <div role="gridcell">
+                  <button
+                    type="button"
+                    data-testid="problem-row"
+                    onClick={() => {
+                      if (source === 'validation') {
+                        revealProblem(requestId, item.direction ?? 'request', problem.line, problem.column);
+                        return;
+                      }
+                      explorerActions.openRequest(requestId);
+                    }}
+                    className="flex w-full items-start gap-2 rounded px-1 text-left hover:bg-surface-raised"
+                  >
+                    {body}
+                  </button>
+                </div>
               </li>
             );
           }
 
           return (
-            <li key={key(item, index)} data-testid="problem-row" className="flex items-start gap-2 px-1">
-              {body}
+            <li key={key(item, index)} role="row" aria-rowindex={index + 1} {...rowProps(index)}>
+              <div role="gridcell" data-testid="problem-row" className="flex items-start gap-2 px-1">
+                {body}
+              </div>
             </li>
           );
         })}

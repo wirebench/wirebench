@@ -215,7 +215,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
                   placeholder="http://example.test/service.wsdl"
                   className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                 />
-                {urlError !== undefined && <p className="text-sm text-danger">{urlError}</p>}
+                {urlError !== undefined && <p className="text-sm text-status-danger">{urlError}</p>}
 
                 <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
                   <input type="checkbox" checked={useAuth} onChange={(e) => setUseAuth(e.target.checked)} />
@@ -299,7 +299,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           )}
 
           {progress !== undefined && <p className="mt-3 text-sm text-fg-subtle">{progress}</p>}
-          {importError !== undefined && <p className="mt-3 text-sm text-danger">{importError}</p>}
+          {importError !== undefined && <p className="mt-3 text-sm text-status-danger">{importError}</p>}
 
           {problems.length > 0 && (
             <div className="mt-3 rounded border border-hairline-strong p-2">

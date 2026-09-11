@@ -33,6 +33,8 @@
   --wb-border-default: #2a2724;
   --wb-border-strong: #3b3733;
   --wb-border-focus: var(--wb-accent-default);
+  --wb-focus-ring-width: 2px;
+  --wb-focus-ring-offset: -1px;
 
   /* The one accent. */
   --wb-accent-default: #d97757;
@@ -132,16 +134,32 @@ body {
   overflow: hidden;
 }
 
+/*
+ * The focus ring. Deliberately unlayered: Tailwind's utilities live in `@layer utilities`, and
+ * an unlayered rule outranks every layered one, so a component that sets `outline-none` for its
+ * own hover/active styling still shows a keyboard focus ring. Nothing may opt out of this.
+ */
 :focus-visible {
-  outline: 2px solid var(--wb-accent-default);
-  outline-offset: -1px;
+  outline: var(--wb-focus-ring-width) solid var(--wb-border-focus);
+  outline-offset: var(--wb-focus-ring-offset);
 }
 
+/*
+ * Reduced motion. Durations go to a hair rather than zero so transition/animation *end* events
+ * still fire (Radix's exit animations wait on them, and 0s would leave popovers mounted).
+ */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -14,6 +14,8 @@ import { ChevronDown, ChevronRight, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
+import type { GridRowProps } from '../../lib/grid-navigation.js';
+import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { KeystoreAddDialog } from './keystore-add-dialog.js';
@@ -41,6 +43,8 @@ function formatExpiry(iso: string): string {
 
 interface RowProps {
   readonly keystore: KeystoreWire;
+  /** Roving-tabindex props from {@link useGridNavigation}; the list is one tab stop. */
+  readonly rowProps: GridRowProps;
   readonly status: KeystoresInspectResponse | undefined;
   readonly onRemove: () => void;
   readonly onSetDefaultAlias: (alias: string) => void;
@@ -48,13 +52,13 @@ interface RowProps {
   readonly onPasswordChange: (ref: string | undefined) => void;
 }
 
-function KeystoreRow({ keystore, status, onRemove, onSetDefaultAlias, onPasswordChange }: RowProps) {
+function KeystoreRow({ keystore, rowProps, status, onRemove, onSetDefaultAlias, onPasswordChange }: RowProps) {
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   const chip = status === undefined ? { label: 'Checking…', tone: 'text-fg-subtle' } : STATUS[status.status];
 
   return (
-    <li data-testid="keystore-row" className="rounded px-1 py-0.5">
+    <li data-testid="keystore-row" className="rounded px-1 py-0.5" {...rowProps}>
       <div className="flex items-center gap-1">
         <button
           type="button"
@@ -151,6 +155,7 @@ export function KeystoresView() {
   // Bumped when a password is *replaced under the same ref*: the registry then looks identical,
   // yet what the file opens with has changed, so the signature alone cannot ask for a re-read.
   const [reinspect, setReinspect] = useState(0);
+  const { gridProps, rowProps } = useGridNavigation(keystores.length);
 
   // Keyed on the registry's identity *and* its password refs: replacing a password must
   // re-inspect, and nothing else should.
@@ -202,15 +207,18 @@ export function KeystoresView() {
         </IconButton>
       </div>
 
-      <ul aria-label="Keystores" className="flex flex-col gap-0.5 px-1 pb-2">
+      {/* Up/Down move between rows; the list itself is a single tab stop, so reaching the
+          next section does not mean tabbing through every keystore. */}
+      <ul aria-label="Keystores" className="flex flex-col gap-0.5 px-1 pb-2" {...gridProps}>
         {keystores.length === 0 && (
           <li className="px-2 py-1 text-sm text-fg-subtle">
             {hasProject ? 'No keystores yet.' : 'Open a project to add keystores.'}
           </li>
         )}
-        {keystores.map((keystore) => (
+        {keystores.map((keystore, index) => (
           <KeystoreRow
             key={keystore.id}
+            rowProps={rowProps(index)}
             keystore={keystore}
             status={statuses[keystore.id]}
             onRemove={() => {

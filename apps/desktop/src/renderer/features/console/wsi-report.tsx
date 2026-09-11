@@ -12,8 +12,8 @@ import { useWsiStore } from '../../state/wsi.js';
 
 /** How each result is labelled and coloured. */
 const RESULT: Readonly<Record<WsiAssertionReportWire['result'], { label: string; className: string }>> = {
-  failed: { label: 'Failed', className: 'text-danger' },
-  warning: { label: 'Warning', className: 'text-warning' },
+  failed: { label: 'Failed', className: 'text-status-danger' },
+  warning: { label: 'Warning', className: 'text-status-warning' },
   passed: { label: 'Passed', className: 'text-fg-subtle' },
   notApplicable: { label: 'N/A', className: 'text-fg-subtle' },
 };
@@ -66,7 +66,7 @@ export function WsiReport() {
 
   if (status === 'error') {
     return (
-      <p className="text-sm text-danger" data-testid="wsi-error">
+      <p className="text-sm text-status-danger" data-testid="wsi-error">
         {error ?? 'The WS-I check failed.'}
       </p>
     );

@@ -3,6 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatClockTime } from '../../lib/format-size.js';
+import type { GridRowProps } from '../../lib/grid-navigation.js';
+import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
@@ -38,6 +40,10 @@ const TONE_CLASS: Record<Tone, string> = {
 
 interface RowProps {
   readonly entry: HistoryEntryWire;
+  /** 1-based position in the full (unvirtualised) list, for `aria-rowindex`. */
+  readonly rowIndex: number;
+  /** Roving-tabindex props from {@link useGridNavigation}. */
+  readonly rowProps: GridRowProps;
   readonly compareArmed: boolean;
   readonly onOpen: () => void;
   readonly onResend: () => void;
@@ -45,39 +51,55 @@ interface RowProps {
   readonly onCompareWithCurrent: () => void;
 }
 
-function Row({ entry, compareArmed, onOpen, onResend, onCompare, onCompareWithCurrent }: RowProps) {
+function Row({ entry, rowIndex, rowProps, compareArmed, onOpen, onResend, onCompare, onCompareWithCurrent }: RowProps) {
   return (
     <div
+      role="row"
+      aria-rowindex={rowIndex}
       data-testid="history-row"
+      {...rowProps}
       className={`flex h-full items-center gap-2 border-b border-hairline px-2 text-xs ${
         compareArmed ? 'bg-surface-selected' : ''
       }`}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left hover:underline"
-        aria-label={`Open ${entry.requestName}`}
-      >
-        <span className="w-16 shrink-0 font-mono text-fg-subtle">{formatClockTime(entry.at)}</span>
-        <span className="min-w-0 flex-1 truncate">
-          <span className="text-fg-default">{entry.requestName}</span>
-          {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
-        </span>
-        <span className="w-40 shrink-0 truncate text-fg-subtle" title={entry.endpoint}>
-          {hostOf(entry.endpoint)}
-        </span>
-        <span className={`w-10 shrink-0 font-mono ${TONE_CLASS[toneOf(entry)]}`}>{entry.status ?? 'err'}</span>
-        <span className="w-16 shrink-0 text-fg-subtle">{entry.durationMs} ms</span>
-      </button>
-      <div className="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" onClick={onResend} title="Re-send">
+      <div role="gridcell" className="flex min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex w-full min-w-0 items-center gap-2 text-left hover:underline"
+          aria-label={`Open ${entry.requestName}`}
+        >
+          <span className="w-16 shrink-0 font-mono text-fg-subtle">{formatClockTime(entry.at)}</span>
+          <span className="min-w-0 flex-1 truncate">
+            <span className="text-fg-default">{entry.requestName}</span>
+            {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
+          </span>
+          <span className="w-40 shrink-0 truncate text-fg-subtle" title={entry.endpoint}>
+            {hostOf(entry.endpoint)}
+          </span>
+          <span className={`w-10 shrink-0 font-mono ${TONE_CLASS[toneOf(entry)]}`}>{entry.status ?? 'err'}</span>
+          <span className="w-16 shrink-0 text-fg-subtle">{entry.durationMs} ms</span>
+        </button>
+      </div>
+      <div role="gridcell" className="flex shrink-0 items-center gap-1">
+        <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
           ↻
         </Button>
-        <Button variant="ghost" onClick={onCompare} title="Compare…" aria-pressed={compareArmed}>
+        <Button
+          variant="ghost"
+          onClick={onCompare}
+          title="Compare…"
+          aria-label={`Compare ${entry.requestName}…`}
+          aria-pressed={compareArmed}
+        >
           ⇄
         </Button>
-        <Button variant="ghost" onClick={onCompareWithCurrent} title="Compare with current">
+        <Button
+          variant="ghost"
+          onClick={onCompareWithCurrent}
+          title="Compare with current"
+          aria-label={`Compare ${entry.requestName} with current`}
+        >
           ⇄*
         </Button>
       </div>
@@ -100,6 +122,7 @@ export function HistoryView() {
   const [compareFirst, setCompareFirst] = useState<string | undefined>(undefined);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { gridProps, rowProps } = useGridNavigation(entries.length);
 
   const virtualised = entries.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
@@ -210,18 +233,31 @@ export function HistoryView() {
           {query.length > 0 ? 'No history entries match your search.' : 'Sent requests appear here.'}
         </p>
       ) : (
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+        <div
+          ref={scrollRef}
+          role="grid"
+          aria-label="History"
+          aria-rowcount={entries.length}
+          className="min-h-0 flex-1 overflow-auto"
+          {...gridProps}
+        >
           {virtualised ? (
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            <div role="presentation" style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
               {virtualizer.getVirtualItems().map((item) => {
                 const entry = entries[item.index];
                 return entry === undefined ? null : (
                   <div
                     key={entry.id}
+                    // The virtualiser's positioning wrapper is a layout box only: without this
+                    // it would sit between `role="grid"` and `role="row"` and break the
+                    // required-parent relationship.
+                    role="presentation"
                     style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
                   >
                     <Row
                       entry={entry}
+                      rowIndex={item.index + 1}
+                      rowProps={rowProps(item.index)}
                       compareArmed={compareFirst === entry.id}
                       onOpen={() => openEntry(entry)}
                       onResend={() => resend(entry)}
@@ -233,10 +269,12 @@ export function HistoryView() {
               })}
             </div>
           ) : (
-            entries.map((entry) => (
-              <div key={entry.id} style={{ height: ROW_HEIGHT }}>
+            entries.map((entry, index) => (
+              <div key={entry.id} role="presentation" style={{ height: ROW_HEIGHT }}>
                 <Row
                   entry={entry}
+                  rowIndex={index + 1}
+                  rowProps={rowProps(index)}
                   compareArmed={compareFirst === entry.id}
                   onOpen={() => openEntry(entry)}
                   onResend={() => resend(entry)}

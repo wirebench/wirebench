@@ -303,7 +303,7 @@ export function FormView({
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
       {problems.length > 0 && (
-        <p className="shrink-0 border-b border-hairline px-2 py-1 text-xs text-warning" role="status">
+        <p className="shrink-0 border-b border-hairline px-2 py-1 text-xs text-status-warning" role="status">
           {problems[0]}
         </p>
       )}

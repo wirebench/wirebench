@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useProblemsStore } from '../../../state/problems.js';
 import { useProjectStore } from '../../../state/project.js';
 import type { HeaderEntryWire } from '../../../../shared/wire-types.js';
+import type { GridRowProps } from '../../../lib/grid-navigation.js';
+import { useGridNavigation } from '../../../lib/grid-navigation.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 /**
@@ -28,6 +30,8 @@ export interface HeadersInspectorProps {
 
 interface RowProps {
   readonly index: number;
+  /** Roving-tabindex props from {@link useGridNavigation}; spread onto the `<tr>`. */
+  readonly rowProps: GridRowProps;
   readonly header: HeaderEntryWire;
   readonly first: boolean;
   readonly last: boolean;
@@ -41,7 +45,7 @@ interface RowProps {
  * One header row. Edits stay local until Enter or blur — a keystroke is never a project
  * mutation — and Escape puts the field back to what the model holds.
  */
-function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, onMove }: RowProps) {
+function HeaderRow({ index, rowProps, header, first, last, problems, onCommit, onRemove, onMove }: RowProps) {
   const [name, setName] = useState(header.name);
   const [value, setValue] = useState(header.value);
   useEffect(() => {
@@ -69,8 +73,8 @@ function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, o
   };
 
   return (
-    <tr data-testid="header-row">
-      <td className="py-0.5 pr-2 align-top">
+    <tr data-testid="header-row" aria-rowindex={position + 1} {...rowProps}>
+      <td role="gridcell" className="py-0.5 pr-2 align-top">
         <input
           aria-label={`Name of header ${position}`}
           className={INPUT_CLASS}
@@ -88,7 +92,7 @@ function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, o
         />
         {overrides && <p className="mt-0.5 text-xs text-fg-faint">overrides the default</p>}
       </td>
-      <td className="py-0.5 pr-2 align-top">
+      <td role="gridcell" className="py-0.5 pr-2 align-top">
         <input
           aria-label={`Value of header ${position}`}
           className={INPUT_CLASS}
@@ -110,7 +114,7 @@ function HeaderRow({ index, header, first, last, problems, onCommit, onRemove, o
           </p>
         ))}
       </td>
-      <td className="w-24 py-0.5 align-top whitespace-nowrap">
+      <td role="gridcell" className="w-24 py-0.5 align-top whitespace-nowrap">
         <InspectorIconButton
           label={`Move header ${position} (${header.name}) up`}
           disabled={first}
@@ -164,6 +168,7 @@ export function HeadersInspector({ requestId }: HeadersInspectorProps) {
   );
   const [newName, setNewName] = useState('');
   const [newValue, setNewValue] = useState('');
+  const { gridProps, rowProps } = useGridNavigation(headers?.length ?? 0);
 
   if (headers === undefined) {
     return <p className="p-3 text-sm text-fg-subtle">This request no longer exists.</p>;
@@ -203,12 +208,24 @@ export function HeadersInspector({ requestId }: HeadersInspectorProps) {
       {headers.length === 0 ? (
         <p className="text-sm text-fg-subtle">No custom headers. Anything added here is sent with every request.</p>
       ) : (
-        <table aria-label="Request headers" className="w-full table-fixed border-collapse text-sm">
+        <table
+          role="grid"
+          aria-label="Request headers"
+          aria-rowcount={headers.length + 1}
+          className="w-full table-fixed border-collapse text-sm"
+          {...gridProps}
+        >
           <thead>
-            <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-              <th className="pb-1 font-medium">Name</th>
-              <th className="pb-1 font-medium">Value</th>
-              <th className="w-24" />
+            <tr aria-rowindex={1} className="text-left text-xs tracking-wider text-fg-subtle uppercase">
+              <th role="columnheader" scope="col" className="pb-1 font-medium">
+                Name
+              </th>
+              <th role="columnheader" scope="col" className="pb-1 font-medium">
+                Value
+              </th>
+              <th role="columnheader" scope="col" className="w-24">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -218,6 +235,7 @@ export function HeadersInspector({ requestId }: HeadersInspectorProps) {
               <HeaderRow
                 key={index}
                 index={index}
+                rowProps={rowProps(index)}
                 header={header}
                 first={index === 0}
                 last={index === headers.length - 1}
