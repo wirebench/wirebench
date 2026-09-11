@@ -1,7 +1,7 @@
 import { Editor } from '@monaco-editor/react';
 import type { OnMount } from '@monaco-editor/react';
 import { useMemo } from 'react';
-import { resolveTheme } from '../lib/theme.js';
+import { useResolvedTheme } from '../lib/theme.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useUiStore } from '../state/ui.js';
 import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
@@ -41,7 +41,7 @@ export function XmlEditor({
   contextMenu = true,
 }: XmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
-  const theme = monacoThemeName(resolveTheme(preference));
+  const theme = monacoThemeName(useResolvedTheme(preference));
   const editorPreferences = usePreferencesStore((state) => state.preferences.editor);
 
   const options = useMemo(

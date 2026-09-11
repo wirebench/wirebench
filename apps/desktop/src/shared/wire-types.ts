@@ -2216,6 +2216,18 @@ export const appRegisterMenuResponseSchema = z.object({ items: z.number() });
 export const commandInvokeEventSchema = z.object({ id: z.string().max(120) });
 export type CommandInvokeEvent = z.infer<typeof commandInvokeEventSchema>;
 
+/**
+ * The OS-level colour scheme, as Electron's `nativeTheme` reports it. This is what the `system`
+ * theme preference resolves against — `prefers-color-scheme` inside a sandboxed renderer does
+ * not follow a user's per-app macOS appearance override, but `nativeTheme` does.
+ */
+export const themeOsSchema = z.object({ os: z.enum(['dark', 'light']) });
+export type ThemeOsWire = z.infer<typeof themeOsSchema>;
+
+/** Response for `theme.get`, and the payload of the `theme.changed` event. */
+export const themeGetResponseSchema = themeOsSchema;
+export const themeChangedEventSchema = themeOsSchema;
+
 /** Which corpora `search.query` looks in; at least one must be on or there is nothing to search. */
 export const searchScopesSchema = z.object({
   requestBodies: z.boolean(),

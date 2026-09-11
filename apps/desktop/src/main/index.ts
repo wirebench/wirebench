@@ -32,6 +32,7 @@ import { registerProjectChannels } from './ipc/project.js';
 import { registerRequestChannels } from './ipc/request.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
 import type { IpcEvent } from '../shared/ipc.js';
 import type { z } from 'zod';
@@ -154,6 +155,9 @@ void app.whenReady().then(() => {
   });
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
+  });
+  registerThemeChannels((payload) => {
+    broadcast(events.theme.changed, payload);
   });
   registerDialogsChannels(dialogPicks);
   registerFsChannels();

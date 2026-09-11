@@ -1,6 +1,6 @@
 import { DiffEditor } from '@monaco-editor/react';
 import { useMemo } from 'react';
-import { resolveTheme } from '../lib/theme.js';
+import { useResolvedTheme } from '../lib/theme.js';
 import { useUiStore } from '../state/ui.js';
 import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
 
@@ -20,7 +20,7 @@ export interface DiffXmlEditorProps {
  */
 export function DiffXmlEditor({ original, modified, renderSideBySide, ignoreTrimWhitespace }: DiffXmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
-  const theme = monacoThemeName(resolveTheme(preference));
+  const theme = monacoThemeName(useResolvedTheme(preference));
 
   const options = useMemo(
     () => ({

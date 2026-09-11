@@ -1,4 +1,7 @@
+import { Moon, Sun, SunMoon } from 'lucide-react';
 import { EnvSwitcher } from '../features/environments/env-switcher.js';
+import { cycleTheme } from '../lib/theme-actions.js';
+import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { formatBytes } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
@@ -6,6 +9,39 @@ import { useExchangesStore } from '../state/exchanges.js';
 import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
+
+/** The indicator's glyph per preference; `system` gets the split icon whichever way it resolved. */
+const THEME_ICON = { dark: Moon, light: Sun, system: SunMoon } as const;
+
+/**
+ * The status bar's theme indicator: names the current preference and, for `system`, what it
+ * currently resolves to. Clicking it runs the same `view.toggleTheme` cycle the palette does,
+ * so there is exactly one code path for changing the theme.
+ */
+function ThemeIndicator() {
+  const preference = useUiStore((state) => state.theme);
+  const resolved = useResolvedTheme(preference);
+  const Icon = THEME_ICON[preference];
+  const label = preference === 'system' ? `System (${THEME_LABEL[resolved]})` : THEME_LABEL[preference];
+
+  return (
+    <button
+      type="button"
+      data-testid="status-bar-theme"
+      data-theme-preference={preference}
+      data-theme-resolved={resolved}
+      title="Cycle theme: dark, light, system"
+      aria-label={`Theme: ${label}. Cycle theme`}
+      className="flex items-center gap-1 rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
+      onClick={() => {
+        cycleTheme();
+      }}
+    >
+      <Icon size={12} aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
 
 /** `2026-09-10T08:30:00Z` as `HH:MM:SS` in the user's locale. */
 function formatClock(iso: string): string {
@@ -61,6 +97,10 @@ export function StatusBar() {
           ·
         </span>
         <span>TLS —</span>
+        <span aria-hidden="true" className="text-fg-faint">
+          ·
+        </span>
+        <ThemeIndicator />
         {version !== undefined && (
           <>
             <span aria-hidden="true" className="text-fg-faint">

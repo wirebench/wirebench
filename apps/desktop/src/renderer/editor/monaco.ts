@@ -72,6 +72,9 @@ export const FOCUS_OTHER_PANE_KEYBINDING = monaco.KeyMod.Shift | monaco.KeyCode.
 /** Editor options shared by the request and response panes; per-pane overrides sit alongside. */
 export const BASE_EDITOR_OPTIONS = {
   automaticLayout: true,
+  // `auto` lets Monaco switch itself into its screen-reader-friendly DOM when it detects an
+  // assistive technology, instead of always rendering the fast-but-opaque canvas-ish view.
+  accessibilitySupport: 'auto',
   fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
   fontSize: 12,
   minimap: { enabled: false },

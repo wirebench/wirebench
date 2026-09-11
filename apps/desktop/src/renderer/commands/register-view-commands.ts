@@ -1,9 +1,9 @@
 import type { CommandId } from '@shared/commands.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { registerCommand } from '../lib/commands.js';
+import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
 import { useEditorsStore } from '../state/editors.js';
-import { usePreferencesStore } from '../state/preferences.js';
 import { activeRequestId, hasActiveRequest, ui } from './command-helpers.js';
 
 /** The request pane's four views, as `view.request*` commands. */
@@ -136,12 +136,10 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
   });
   registerCommand({
     id: 'view.toggleTheme',
-    label: 'Toggle Light/Dark Theme',
+    label: 'Cycle Theme (Dark, Light, System)',
     category: 'View',
     run: () => {
-      // The persisted truth is `preferences.ui.theme`; the ui store mirrors it for rendering.
-      const next = ui().theme === 'light' ? 'dark' : 'light';
-      void usePreferencesStore.getState().update({ ui: { theme: next } });
+      cycleTheme();
     },
   });
 

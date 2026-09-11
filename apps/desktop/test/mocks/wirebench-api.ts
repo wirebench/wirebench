@@ -52,6 +52,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       curl: fail('request.curl'),
       importCurl: fail('request.importCurl'),
     },
+    theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },
     globals: { get: fail('globals.get'), set: fail('globals.set'), remove: fail('globals.remove') },
     project: {
       create: fail('project.create'),

@@ -23,6 +23,8 @@ import {
   appRegisterMenuRequestSchema,
   appRegisterMenuResponseSchema,
   commandInvokeEventSchema,
+  themeChangedEventSchema,
+  themeGetResponseSchema,
   searchQueryRequestSchema,
   searchQueryResponseSchema,
   dialogsOpenFileRequestSchema,
@@ -275,6 +277,10 @@ export const channels = {
     set: defineChannel('globals.set', globalsSetRequestSchema, globalsPropertiesResponseSchema),
     remove: defineChannel('globals.remove', globalsRemoveRequestSchema, globalsPropertiesResponseSchema),
   },
+  theme: {
+    /** The OS colour scheme right now; the renderer asks once at startup, then listens. */
+    get: defineChannel('theme.get', z.undefined(), themeGetResponseSchema),
+  },
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
     openFolder: defineChannel('dialogs.openFolder', dialogsOpenFolderRequestSchema, dialogsOpenFolderResponseSchema),
@@ -414,6 +420,10 @@ export const events = {
   },
   preferences: {
     changed: defineEvent('preferences.changed', preferencesResponseSchema),
+  },
+  theme: {
+    /** The OS flipped between light and dark; `system` re-resolves on it. */
+    changed: defineEvent('theme.changed', themeChangedEventSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),

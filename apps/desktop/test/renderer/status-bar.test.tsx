@@ -10,7 +10,11 @@ describe('StatusBar', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'wirebench', {
       configurable: true,
-      value: { app: { version: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }) } },
+      value: {
+        app: { version: vi.fn().mockResolvedValue({ ok: false, error: { code: 'x', message: 'x' } }) },
+        theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },
+        on: () => () => undefined,
+      },
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
     useProblemsStore.setState({ items: [] });
@@ -111,5 +115,24 @@ describe('StatusBar', () => {
     render(<StatusBar />);
 
     expect(screen.getByTestId('status-bar-problems').className).toContain('text-status-danger');
+  });
+
+  it('shows the theme indicator and cycles on click', () => {
+    useUiStore.setState({ theme: 'light' });
+    render(<StatusBar />);
+
+    const indicator = screen.getByTestId('status-bar-theme');
+    expect(indicator.dataset['themePreference']).toBe('light');
+    expect(indicator.textContent).toContain('Light');
+    expect(indicator.getAttribute('aria-label')).toBe('Theme: Light. Cycle theme');
+  });
+
+  it('names what `system` currently resolves to', () => {
+    useUiStore.setState({ theme: 'system' });
+    render(<StatusBar />);
+
+    const indicator = screen.getByTestId('status-bar-theme');
+    expect(indicator.dataset['themePreference']).toBe('system');
+    expect(indicator.textContent).toContain('System (Dark)');
   });
 });
