@@ -7,7 +7,7 @@
  * merged object (see `send-options.ts`).
  *
  * Some sections are persisted and shown before they are wired to behaviour: `proxy` and `ssl`
- * become effective with the connection settings task, `shortcuts` with the rebinding task.
+ * become effective with the connection settings task.
  * They are modelled now so a preferences file written today survives those tasks unchanged.
  */
 
@@ -122,8 +122,9 @@ export interface Preferences {
   readonly editor: EditorPreferences;
   readonly ui: UiPreferences;
   /**
-   * Keybinding overrides, keyed by command id. Empty by default; rebinding arrives with the
-   * shortcuts task, which is why this is persisted but never read yet.
+   * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
+   * unbound it. Empty by default — a command with no entry uses its registered chord. Written
+   * by the Shortcuts editor and read by the renderer's keybinding dispatcher.
    */
   readonly shortcuts: Readonly<Record<string, string>>;
 }

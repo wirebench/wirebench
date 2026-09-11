@@ -117,6 +117,51 @@ export function formatKeybinding(binding: string | Keybinding, platform: Platfor
   return isMac ? parts.join('') : parts.join('+');
 }
 
+const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta', 'capslock', 'dead']);
+
+/** The chord-string spelling of a `KeyboardEvent.key`, inverting {@link NAMED_KEYS}. */
+const CHORD_KEY_NAMES: Readonly<Record<string, string>> = {
+  arrowleft: 'Left',
+  arrowright: 'Right',
+  arrowup: 'Up',
+  arrowdown: 'Down',
+  ' ': 'Space',
+  ',': 'Comma',
+  '.': 'Period',
+  '/': 'Slash',
+  '\\': 'Backslash',
+  enter: 'Enter',
+  escape: 'Escape',
+  tab: 'Tab',
+  backspace: 'Backspace',
+};
+
+/**
+ * The chord a keystroke stands for, in the registry's own notation — what the Shortcuts
+ * editor's "record a chord" field writes.
+ *
+ * @returns `undefined` while only modifiers are held, since that is not a chord yet.
+ */
+export function chordFromEvent(event: KeyboardEvent, platform: Platform): string | undefined {
+  const key = event.key.toLowerCase();
+  if (MODIFIER_KEYS.has(key)) {
+    return undefined;
+  }
+  const mod = platform === 'mac' ? event.metaKey : event.ctrlKey;
+  const parts: string[] = [];
+  if (mod) {
+    parts.push('Mod');
+  }
+  if (event.shiftKey) {
+    parts.push('Shift');
+  }
+  if (event.altKey) {
+    parts.push('Alt');
+  }
+  parts.push(CHORD_KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key));
+  return parts.join('+');
+}
+
 const ACCELERATOR_KEYS: Readonly<Record<string, string>> = {
   enter: 'Return',
   escape: 'Escape',

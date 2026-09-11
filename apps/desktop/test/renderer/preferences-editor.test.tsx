@@ -104,9 +104,10 @@ describe('PreferencesEditor', () => {
     expect(trustAll.disabled).toBe(true);
   });
 
-  it('lists commands and their shortcuts read-only', () => {
+  it('shows the rebindable shortcuts table', () => {
     render(<PreferencesEditor initialSection="shortcuts" />);
-    expect(screen.getByText(/Rebinding arrives/)).toBeTruthy();
+    expect(screen.getByTestId('shortcuts-table')).toBeTruthy();
     expect(screen.getByText('Show All Commands')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Shortcut for Send Request' })).toBeTruthy();
   });
 });
