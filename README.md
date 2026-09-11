@@ -146,6 +146,27 @@ repository. It is what the opt-in update feed is derived from.
   [implementation plan](docs/plans/2026-09-09-wirebench-v1-explore-and-send-plan.md)
 - [Changelog](CHANGELOG.md)
 
+## Roadmap
+
+1.0 does explore-and-send. What comes next, in the order it is worth building; the
+[full roadmap](docs/roadmap.md) has the reasoning, sizes, and the detail per theme.
+
+1. **Signed and notarised releases** — managed Macs and Windows fleets block unsigned apps.
+2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference.
+3. **Workspaces** — several projects side by side, one environment switch, git-linked project folders as the first
+   team story. Specced and planned.
+4. **Legacy project import** — the one-file XML format older SOAP workbenches use.
+5. **CLI runner** — `wirebench run` with assertions and JUnit output, for CI.
+6. **Kerberos/SPNEGO** — Windows-integrated authentication.
+7. **REST client** — collections beside SOAP interfaces, OpenAPI import, OAuth2.
+8. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
+9. **MCP server** — the engine driven by coding agents.
+10. **Teams and sign-in** — git-native first, then a self-hosted server with SSO. The app stays fully usable without
+    an account.
+11. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
+
+Deferred: load testing, WSDL coverage and refactoring, code generation, a TCP monitor.
+
 ## License
 
 [Apache-2.0](LICENSE). Wirebench is a clean-room implementation built from public specifications and published,
