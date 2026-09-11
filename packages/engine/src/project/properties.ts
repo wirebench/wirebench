@@ -427,6 +427,24 @@ export function expandSendInput(
         : attachment.source,
   }));
 
+  // The explicit WS-Addressing fields are user-typed strings just like the endpoint or a
+  // header value, and may carry the same `${#Env#…}`/`${#Global#…}` references — so they go
+  // through the same scopes rather than reaching the wire verbatim.
+  const wsa =
+    input.wsa !== undefined
+      ? {
+          ...input.wsa,
+          config: {
+            ...input.wsa.config,
+            ...(input.wsa.config.to !== undefined ? { to: run(input.wsa.config.to) } : {}),
+            ...(input.wsa.config.action !== undefined ? { action: run(input.wsa.config.action) } : {}),
+            ...(input.wsa.config.replyTo !== undefined ? { replyTo: run(input.wsa.config.replyTo) } : {}),
+            ...(input.wsa.config.from !== undefined ? { from: run(input.wsa.config.from) } : {}),
+            ...(input.wsa.config.faultTo !== undefined ? { faultTo: run(input.wsa.config.faultTo) } : {}),
+          },
+        }
+      : undefined;
+
   return {
     input: {
       ...input,
@@ -435,6 +453,7 @@ export function expandSendInput(
       ...(soapAction !== undefined ? { soapAction } : {}),
       ...(headers !== undefined ? { headers } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
+      ...(wsa !== undefined ? { wsa } : {}),
     },
     unresolved,
   };

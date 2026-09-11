@@ -34,9 +34,21 @@ export async function createProjectWithCalculator(
 }
 
 /**
+ * Every crafted fixture's `wsdl:service` name — what the explorer shows for it after import
+ * (`toInterfaceSummary` falls back to `definition.services[0].name.localName`), keyed by the
+ * fixture id a spec passes to `startTestSoapServer({ fixture })`.
+ */
+const FIXTURE_INTERFACE_NAMES: Readonly<Record<string, string>> = {
+  'ws-addressing': 'WsAddressingService',
+};
+
+/**
  * The same flow as {@link createProjectWithCalculator}, for a server started with a different
  * `fixture`. The fixture is chosen when the server starts (`startTestSoapServer({ fixture })`),
- * so `name` only names it for the reader — what is imported is whatever `server.wsdlUrl` serves.
+ * so this can't *select* the fixture by `name` — what is imported is whatever `server.wsdlUrl`
+ * serves. What it can (and must) do is check that the server actually served the fixture the
+ * spec asked for, by asserting the explorer shows that fixture's interface name once the import
+ * settles, instead of silently accepting whatever came back.
  */
 export async function createProjectWithFixture(
   page: Page,
@@ -44,8 +56,13 @@ export async function createProjectWithFixture(
   name: string,
   options: CreateProjectOptions = {},
 ): Promise<void> {
-  void name;
   await createProjectWithCalculator(page, server, options);
+  const interfaceName = FIXTURE_INTERFACE_NAMES[name];
+  if (interfaceName !== undefined) {
+    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: interfaceName }).first()).toBeVisible({
+      timeout: 20_000,
+    });
+  }
 }
 
 /** Opens the first `Request 1` in the explorer through its context menu (react-arborist owns double-click). */

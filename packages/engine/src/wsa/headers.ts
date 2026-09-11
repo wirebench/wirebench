@@ -46,6 +46,13 @@ export interface WsaHeaderContext {
   /** Mints the MessageID's UUID; injected so golden tests are deterministic. */
   readonly uuid: () => string;
   readonly envelopeVersion: SoapEnvelopeVersion;
+  /**
+   * The prefix the target envelope binds its SOAP namespace to, used for the `mustUnderstand`
+   * attribute so it matches the envelope being addressed (`soap:mustUnderstand` for an envelope
+   * that uses `soap:`, not always `soapenv:`). Defaults to `soapenv`, the common case, when a
+   * caller builds headers without a real envelope in hand (e.g. a preview).
+   */
+  readonly envelopePrefix?: string;
 }
 
 /** The `soap:mustUnderstand` attribute value meaning `true` for `version`. */
@@ -121,6 +128,8 @@ export function buildWsaHeaders(config: WsaConfig, ctx: WsaHeaderContext): reado
     return [];
   }
   const envelopeNs = envelopeNamespace(ctx.envelopeVersion);
+  const envelopePrefix =
+    ctx.envelopePrefix !== undefined && ctx.envelopePrefix.length > 0 ? ctx.envelopePrefix : 'soapenv';
   const headers: Element[] = [];
 
   const create = (localName: string): Element => {
@@ -128,7 +137,7 @@ export function buildWsaHeaders(config: WsaConfig, ctx: WsaHeaderContext): reado
     if (config.mustUnderstand !== 'none') {
       element.setAttributeNS(
         envelopeNs,
-        `soapenv:mustUnderstand`,
+        `${envelopePrefix}:mustUnderstand`,
         mustUnderstandLiteral(ctx.envelopeVersion, config.mustUnderstand),
       );
     }
@@ -256,7 +265,7 @@ export function applyWsaHeaders(envelopeXml: string, config: WsaConfig, ctx: Wsa
   const { doc, root, version } = parseEnvelope(envelopeXml);
   const header = ensureHeader(doc, root, version);
   removeExisting(header);
-  const built = buildWsaHeaders(config, { ...ctx, envelopeVersion: version });
+  const built = buildWsaHeaders(config, { ...ctx, envelopeVersion: version, envelopePrefix: envelopePrefix(root) });
   const first = header.firstChild;
   for (const element of built) {
     header.insertBefore(doc.importNode(element, true), first);

@@ -225,6 +225,37 @@ describe('expandSendInput', () => {
     expect(result.unresolved).toHaveLength(1);
   });
 
+  it('expands the explicit WS-Addressing fields through the same scopes as the endpoint', () => {
+    const input: SoapSendInput = {
+      endpoint: 'https://example.test/soap',
+      envelopeXml: '<a/>',
+      soapVersion: '1.1',
+      wsa: {
+        config: {
+          enabled: true,
+          version: '2005/08',
+          mustUnderstand: 'none',
+          addDefaultAction: true,
+          addDefaultTo: true,
+          generateMessageId: true,
+          to: 'https://${#Env#host}/soap',
+          action: 'urn:${#Project#name}',
+          replyTo: 'https://${#Env#host}/reply',
+          from: 'https://${#Env#host}/from',
+          faultTo: 'https://${#Env#host}/fault',
+        },
+        defaultAction: 'urn:default',
+      },
+    };
+    const result = expandSendInput(input, scopes);
+    expect(result.input.wsa?.config.to).toBe('https://example.test/soap');
+    expect(result.input.wsa?.config.action).toBe('urn:proj-name');
+    expect(result.input.wsa?.config.replyTo).toBe('https://example.test/reply');
+    expect(result.input.wsa?.config.from).toBe('https://example.test/from');
+    expect(result.input.wsa?.config.faultTo).toBe('https://example.test/fault');
+    expect(result.unresolved).toEqual([]);
+  });
+
   it('collapses headers whose names expand to the same string, last-write-wins', () => {
     const input: SoapSendInput = {
       endpoint: 'https://example.test/soap',

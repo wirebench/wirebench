@@ -178,6 +178,18 @@ describe('applyWsaHeaders', () => {
   it('rejects a document that is not a SOAP envelope', () => {
     expect(() => applyWsaHeaders('<root/>', config(), CTX)).toThrow(WsaError);
   });
+
+  it('emits mustUnderstand under the envelope’s own SOAP prefix, not always soapenv', () => {
+    const soapPrefixed =
+      '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body/></soap:Envelope>';
+    const applied = applyWsaHeaders(soapPrefixed, config({ mustUnderstand: 'true' }), CTX);
+    expect(applied).toContain('soap:mustUnderstand="1"');
+    expect(applied).not.toContain('soapenv:mustUnderstand');
+    // `soap:` must actually resolve to the SOAP envelope namespace where the attribute sits —
+    // inherited from the root's own binding, since nothing here rebinds the prefix.
+    expect(applied).toMatch(/<soap:Envelope xmlns:soap="http:\/\/schemas\.xmlsoap\.org\/soap\/envelope\/">/);
+    expect(applied.indexOf('xmlns:soap=')).toBeLessThan(applied.indexOf('soap:mustUnderstand'));
+  });
 });
 
 describe('stripWsaHeaders', () => {
