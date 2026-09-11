@@ -14,6 +14,7 @@
  * the later signing step starts from a clean binary.
  */
 
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { FuseV1Options, FuseVersion, flipFuses } from '@electron/fuses';
 
@@ -77,6 +78,20 @@ export function isUniversalTempDir(appOutDir: string): boolean {
 }
 
 /**
+ * Re-applies an ad-hoc signature to a macOS bundle whose binary was just re-written.
+ *
+ * `EnableEmbeddedAsarIntegrityValidation` makes the runtime check the asar against the hash in
+ * `Info.plist`, and on macOS it only trusts that plist through the bundle's code signature —
+ * so an app whose signature was invalidated by the fuse flip does not start at all (it hangs
+ * before the first window, with nothing on stderr). electron-builder signs properly later when
+ * a Developer ID is configured, `--force` replacing this; without one, this ad-hoc signature is
+ * what makes the unsigned local build runnable at all.
+ */
+function adHocSign(appBundle: string): void {
+  execFileSync('codesign', ['--force', '--deep', '--sign', '-', appBundle], { stdio: 'inherit' });
+}
+
+/**
  * Flips {@link WIREBENCH_FUSES} on the binary electron-builder just packed. A per-architecture
  * temp directory of a universal build is skipped; see {@link isUniversalTempDir}.
  *
@@ -99,5 +114,8 @@ export default async function afterPack(context: FusesPackContext): Promise<void
     resetAdHocDarwinSignature: context.electronPlatformName === 'darwin',
     ...WIREBENCH_FUSES,
   });
+  if (context.electronPlatformName === 'darwin') {
+    adHocSign(join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`));
+  }
   process.stdout.write(`[fuses] flipped ${Object.keys(WIREBENCH_FUSES).length} fuses on ${binary}\n`);
 }

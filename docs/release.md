@@ -57,6 +57,19 @@ shipped executable:
 
 The packaged e2e reads the fuses back off the built binary and compares them with that table.
 
+Two consequences worth knowing:
+
+- **The macOS bundle must be signed.** Flipping a fuse invalidates the signature, and
+  `EnableEmbeddedAsarIntegrityValidation` only trusts `Info.plist` through one — an unsigned
+  fused bundle does not start at all, silently. The hook therefore re-applies an *ad-hoc*
+  signature (`codesign --sign -`) right after flipping; a real Developer ID signature replaces
+  it later in the build when one is configured.
+- **Playwright cannot drive the packaged app the usual way.** `_electron.launch` talks to the
+  main process over Node's inspector, which `EnableNodeCliInspectArguments` and `RunAsNode`
+  disable. `e2e/specs/packaged.spec.ts` attaches to the renderer over Chromium's remote
+  debugging port instead (`launchPackagedApp`), so it drives the artifact a user would install
+  rather than a specially relaxed build.
+
 ## Cutting a release
 
 1. Bump `version` in `apps/desktop/package.json` (that is the version the artifacts carry).

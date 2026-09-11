@@ -11,9 +11,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, dialog } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// `electron-updater` is CommonJS: under this package's ESM output a named import of
+// `autoUpdater` throws at load ("Named export not found"), so the default export is
+// destructured instead. The main bundle externalises it, so this is what actually runs.
+import electronUpdater from 'electron-updater';
 import { githubFeedFrom, UpdateController } from './updater.js';
 import type { UpdateStatus } from './updater.js';
+
+const { autoUpdater } = electronUpdater;
 
 /**
  * The `repository.url` of the running app, from the `package.json` next to its code — the same
