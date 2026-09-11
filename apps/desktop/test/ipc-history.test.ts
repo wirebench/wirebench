@@ -54,20 +54,26 @@ function noLiveRequests() {
 /** A fake `HistoryService` — only the surface `ipc/history.ts` calls. */
 function fakeHistory(entries: HistoryEntryWire[]) {
   return {
-    list: vi.fn((query?: { query?: string }) => {
+    list: vi.fn((query?: { query?: string; projectId?: string }) => {
+      const scoped = query?.projectId !== undefined ? entries.filter((e) => e.projectId === query.projectId) : entries;
       const filtered =
         query?.query !== undefined
-          ? entries.filter((e) => e.requestName.toLowerCase().includes(query.query!.toLowerCase()))
-          : entries;
+          ? scoped.filter((e) => e.requestName.toLowerCase().includes(query.query!.toLowerCase()))
+          : scoped;
       return { entries: filtered, total: filtered.length };
     }),
     get: vi.fn((id: string) => entries.find((e) => e.id === id)),
     recordSend: vi.fn(() => Promise.resolve(undefined)),
-    clear: vi.fn(() => {
-      const n = entries.length;
-      entries.length = 0;
+    clear: vi.fn((projectId?: string) => {
+      const kept = projectId !== undefined ? entries.filter((e) => e.projectId !== projectId) : [];
+      const n = entries.length - kept.length;
+      entries.splice(0, entries.length, ...kept);
       return Promise.resolve(n);
     }),
+    openProjectIds: vi.fn((): readonly string[] => ['proj-1']),
+    open: vi.fn(() => Promise.resolve()),
+    close: vi.fn(),
+    closeAll: vi.fn(),
   };
 }
 

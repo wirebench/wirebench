@@ -1,7 +1,8 @@
 /**
- * Owns the open project's persistent request history: a jsonl file under Electron's `userData`
- * (never inside the project folder — the brief for Task 24 is explicit that history must
- * survive even when the project folder is deleted or never saved), always redacted at write.
+ * Owns each open project's persistent request history: one jsonl file per project under
+ * Electron's `userData` (never inside the project folder — the brief for Task 24 is explicit
+ * that history must survive even when the project folder is deleted or never saved), always
+ * redacted at write.
  *
  * Wraps `@wirebench/engine`'s `openHistory`/`HistoryFile`; the only desktop-specific piece is
  * where the file lives (`historyFilePath`) and how one send becomes a `HistoryEntry`
@@ -112,10 +113,14 @@ export function buildHistoryEntry(projectId: string, record: RecordSendInput): H
   };
 }
 
-/** Owns the currently open project's history file, opening/closing it as the project changes. */
+/**
+ * Owns one history file per open project, keyed by project id. Opening a second project does not
+ * evict the first: every `list`/`get`/`clear` spans the open files unless a `projectId` narrows
+ * it, and `recordSend` routes one entry to its own project's file.
+ */
 export class HistoryService {
-  private current: HistoryFile | undefined;
-  private currentProjectId: string | undefined;
+  /** Open history files, in the order their projects were opened. */
+  private readonly files = new Map<string, HistoryFile>();
 
   constructor(
     private readonly userDataDir: string,
@@ -126,54 +131,100 @@ export class HistoryService {
     private readonly cap?: () => number,
   ) {}
 
-  /** Opens (or reuses, if already open for this project) the history file for `projectId`. */
+  /** Opens (or reuses, if already open) the history file for `projectId`. */
   async open(projectId: string): Promise<void> {
-    if (this.currentProjectId === projectId && this.current !== undefined) {
+    if (this.files.has(projectId)) {
       return;
     }
     const cap = this.cap?.();
-    this.current = await openHistory(historyFilePath(this.userDataDir, projectId), {
+    const file = await openHistory(historyFilePath(this.userDataDir, projectId), {
       ...(cap !== undefined ? { cap } : {}),
     });
-    this.currentProjectId = projectId;
+    // Re-check: a concurrent `open` for the same project may have won the race while we awaited.
+    if (!this.files.has(projectId)) {
+      this.files.set(projectId, file);
+    }
   }
 
-  /** Detaches from whatever project's history is open. Safe to call when none is. */
-  close(): void {
-    this.current = undefined;
-    this.currentProjectId = undefined;
+  /** Detaches from one project's history. Safe to call when it is not open. */
+  close(projectId: string): void {
+    this.files.delete(projectId);
   }
 
-  /** The id of the project whose history is currently open, if any. */
-  get projectId(): string | undefined {
-    return this.currentProjectId;
+  /** Detaches from every open history file. */
+  closeAll(): void {
+    this.files.clear();
   }
 
-  /** Builds and appends one entry for a completed/failed send, or `undefined` if no project is open. */
+  /** The ids of the projects whose history is currently open, in open order. */
+  openProjectIds(): readonly string[] {
+    return [...this.files.keys()];
+  }
+
+  /** The open files a query addresses: one project's, or all of them. */
+  private filesFor(projectId: string | undefined): readonly HistoryFile[] {
+    if (projectId === undefined) {
+      return [...this.files.values()];
+    }
+    const file = this.files.get(projectId);
+    return file !== undefined ? [file] : [];
+  }
+
+  /**
+   * Builds and appends one entry for a completed/failed send, or `undefined` when that project's
+   * history file is not open.
+   */
   async recordSend(projectId: string, record: RecordSendInput): Promise<HistoryEntryWire | undefined> {
-    if (this.current === undefined || this.currentProjectId !== projectId) {
+    const file = this.files.get(projectId);
+    if (file === undefined) {
       return undefined;
     }
     const entry = buildHistoryEntry(projectId, record);
-    await this.current.append(entry);
+    await file.append(entry);
     return toHistoryEntryWire(entry);
   }
 
-  list(query?: HistoryListQuery): { entries: HistoryEntryWire[]; total: number } {
-    if (this.current === undefined) {
-      return { entries: [], total: 0 };
+  /**
+   * Newest-first entries across every open history file (or just `projectId`'s). Entries sharing
+   * a timestamp keep their insertion order — the sort is stable over each file's own newest-first
+   * list. `total` is the number of matching entries before `limit` (and ignoring `before`), which
+   * is what the renderer shows as the result count.
+   */
+  list(query?: HistoryListQuery & { readonly projectId?: string }): { entries: HistoryEntryWire[]; total: number } {
+    const files = this.filesFor(query?.projectId);
+    const page: HistoryListQuery = {
+      ...(query?.query !== undefined ? { query: query.query } : {}),
+      ...(query?.before !== undefined ? { before: query.before } : {}),
+    };
+    const merged: HistoryEntry[] = [];
+    let total = 0;
+    for (const file of files) {
+      merged.push(...file.list(page));
+      total += query?.query !== undefined ? file.list({ query: query.query }).length : file.count();
     }
-    const entries = this.current.list(query).map(toHistoryEntryWire);
-    const total = query?.query !== undefined ? this.current.list({ query: query.query }).length : this.current.count();
-    return { entries, total };
+    // Stable, so entries with the same `at` keep each file's newest-first insertion order.
+    merged.sort((left, right) => (left.at === right.at ? 0 : left.at < right.at ? 1 : -1));
+    const limited = query?.limit !== undefined ? merged.slice(0, query.limit) : merged;
+    return { entries: limited.map(toHistoryEntryWire), total };
   }
 
+  /** The entry with this id, from whichever open file holds it. */
   get(id: string): HistoryEntryWire | undefined {
-    const entry = this.current?.get(id);
-    return entry !== undefined ? toHistoryEntryWire(entry) : undefined;
+    for (const file of this.files.values()) {
+      const entry = file.get(id);
+      if (entry !== undefined) {
+        return toHistoryEntryWire(entry);
+      }
+    }
+    return undefined;
   }
 
-  async clear(): Promise<number> {
-    return (await this.current?.clear()) ?? 0;
+  /** Empties one project's history, or every open project's. Returns the entries cleared. */
+  async clear(projectId?: string): Promise<number> {
+    let cleared = 0;
+    for (const file of this.filesFor(projectId)) {
+      cleared += await file.clear();
+    }
+    return cleared;
   }
 }

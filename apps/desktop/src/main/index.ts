@@ -87,7 +87,7 @@ const preferencesService = new PreferencesService(app.getPath('userData'));
 /** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
 const dialogPicks = new DialogPicks();
 
-/** The open project's persistent history — a jsonl file under `userData`, opened/closed as projects change. */
+/** Persistent request history — one jsonl file per open project under `userData`. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
 
 const projectHost = new ProjectHost(
@@ -102,10 +102,14 @@ const projectHost = new ProjectHost(
         broadcast(events.project.changed, { project });
         applyWindowTitle(project);
       };
+      const openIds = historyService.openProjectIds();
       if (project === null) {
-        historyService.close();
+        historyService.closeAll();
         announce();
-      } else if (historyService.projectId !== project.id) {
+      } else if (!openIds.includes(project.id)) {
+        for (const id of openIds) {
+          historyService.close(id);
+        }
         void historyService.open(project.id).then(announce);
       } else {
         announce();
