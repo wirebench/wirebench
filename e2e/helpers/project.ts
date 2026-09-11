@@ -33,6 +33,21 @@ export async function createProjectWithCalculator(
   });
 }
 
+/**
+ * The same flow as {@link createProjectWithCalculator}, for a server started with a different
+ * `fixture`. The fixture is chosen when the server starts (`startTestSoapServer({ fixture })`),
+ * so `name` only names it for the reader — what is imported is whatever `server.wsdlUrl` serves.
+ */
+export async function createProjectWithFixture(
+  page: Page,
+  server: TestSoapServer,
+  name: string,
+  options: CreateProjectOptions = {},
+): Promise<void> {
+  void name;
+  await createProjectWithCalculator(page, server, options);
+}
+
 /** Opens the first `Request 1` in the explorer through its context menu (react-arborist owns double-click). */
 export async function openFirstRequest(page: Page): Promise<void> {
   const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
