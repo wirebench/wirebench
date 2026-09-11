@@ -37,6 +37,16 @@ export interface ProjectRouter {
   save(projectId: string, ...args: Parameters<ProjectHost['save']>): ReturnType<ProjectHost['save']>;
   /** Resolves the proxy for `url` against one project's effective preferences. */
   proxyFor(projectId: string, ...args: Parameters<ProjectHost['proxyFor']>): ReturnType<ProjectHost['proxyFor']>;
+  /**
+   * Imports a definition into the addressed project. `project.addInterface` carries a target of
+   * `{ projectId }` (or `{ newProjectName }`, which a later task resolves to a project first).
+   */
+  addInterface(
+    projectId: string,
+    ...args: Parameters<ProjectHost['addInterface']>
+  ): ReturnType<ProjectHost['addInterface']>;
+  /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */
+  reload(projectId: string): ReturnType<ProjectHost['reload']>;
 
   // — routed by request id ————————————————————————————————————————————————————————————————
 

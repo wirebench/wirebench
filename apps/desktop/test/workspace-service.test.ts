@@ -182,6 +182,89 @@ describe('WorkspaceService lifecycle', () => {
     await service.close();
   }, 60_000);
 
+  it('opens the workspace when a linked ref carries a relative path instead of aborting the open', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Bad link');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const present = await seedProject(dir, 'present', 'Present');
+    await registerProjects(dir, [
+      present,
+      { id: 'linked-project', slug: 'linked', source: 'linked', path: join(root, 'elsewhere') },
+    ]);
+    // Rewritten on disk: a relative linked path cannot be produced through `saveWorkspace`, and
+    // the loader drops such a ref as a `project-ref-invalid` problem rather than handing it over
+    // — which is exactly what has to happen, without the open itself failing.
+    const manifest = await readFile(workspaceManifestFile(dir), 'utf8');
+    await writeFile(
+      workspaceManifestFile(dir),
+      manifest.replace(join(root, 'elsewhere'), 'relative/elsewhere'),
+      'utf8',
+    );
+
+    const service = newService();
+    const workspace = await service.open(created.id);
+
+    // A corrupt reference costs the user that project, never the whole workspace.
+    expect(workspace.projects.map((project) => project.status)).toEqual(['ready']);
+    expect(service.hosts()).toHaveLength(1);
+
+    await service.close();
+  }, 60_000);
+
+  it('marks a linked project whose folder is gone as missing rather than failing the open', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Missing link');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const present = await seedProject(dir, 'present', 'Present');
+    await registerProjects(dir, [
+      present,
+      { id: 'linked-project', slug: 'linked', source: 'linked', path: join(root, 'not-a-folder') },
+    ]);
+
+    const service = newService();
+    const workspace = await service.open(created.id);
+
+    expect(workspace.projects.map((project) => project.status)).toEqual(['ready', 'missing']);
+    expect(workspace.projects[1]).toMatchObject({ source: 'linked', dir: join(root, 'not-a-folder') });
+    expect(service.hosts()).toHaveLength(1);
+
+    await service.close();
+  }, 60_000);
+
+  it('closes everything again when open throws after the workspace is already current', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Half open');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'present', 'Present');
+    await registerProjects(dir, [project]);
+
+    const history = new HistoryService(root);
+    const service = newService({
+      history,
+      // Throws only on the open, so `close()`'s own `onChanged(null)` still runs.
+      hooks: {
+        onChanged: (workspace) => {
+          if (workspace !== null) {
+            throw new Error('hook exploded');
+          }
+        },
+      },
+    });
+
+    await expect(service.open(created.id)).rejects.toThrow(/hook exploded/);
+
+    // No half-open state: no snapshot, no hosts, no history files left attached.
+    expect(service.snapshot()).toBeNull();
+    expect(service.hosts()).toEqual([]);
+    expect(history.openProjectIds()).toEqual([]);
+  }, 60_000);
+
   it('openLast returns null and keeps the reason when the workspace will not open', async () => {
     const service = newService();
     const created = await service.create('Doomed');
@@ -227,6 +310,19 @@ describe('WorkspaceService manifest operations', () => {
     await expect(service.rename('..', 'x')).rejects.toThrow(/Not a workspace id/);
     await expect(service.delete('a/b')).rejects.toThrow(/Not a workspace id/);
   });
+
+  it('refuses to delete without a trash implementation, keeping the workspace open', async () => {
+    const service = newService();
+    const created = await service.create('Still mine');
+
+    await expect(service.delete(created.id)).rejects.toThrow(/trash implementation/);
+
+    // The refusal comes before the close, so the user is not dropped at the picker.
+    expect(service.snapshot()?.id).toBe(created.id);
+    expect((await service.list()).map((row) => row.id)).toEqual([created.id]);
+
+    await service.close();
+  }, 60_000);
 
   it('deletes through the injected trash and drops the workspace from the list', async () => {
     const trashed: string[] = [];
@@ -285,7 +381,39 @@ describe('WorkspaceService routing', () => {
     expect(service.projectSnapshot(plain.id)?.requests).toEqual([]);
 
     expect(() => service.hostOfEntity('01J8NOTHINGATALL')).toThrow(/No open project holds the entity/);
+    expect(() => service.reload('01J8NOTAPROJECT')).toThrow(/No open project with id/);
     expect(() => service.hostFor('01J8NOTAPROJECT')).toThrow(/No open project with id/);
+
+    await service.close();
+  }, 60_000);
+});
+
+describe('WorkspaceService routing of addInterface and reload', () => {
+  it('routes addInterface and reload to the project named in the call', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Per-project channels');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const plain = await seedProject(dir, 'plain', 'Plain');
+    const target = await seedProject(dir, 'target', 'Target');
+    await registerProjects(dir, [plain, target]);
+
+    const service = newService();
+    await service.open(created.id);
+
+    const { interfaceId } = await service.addInterface(target.id, { source: { kind: 'url', url: server!.wsdlUrl } });
+
+    // The import landed on `target` and nowhere else.
+    expect(service.projectSnapshot(target.id)?.interfaces.map((iface) => iface.id)).toEqual([interfaceId]);
+    expect(service.projectSnapshot(plain.id)?.interfaces).toEqual([]);
+
+    // `reload` takes what is on disk for that one project, discarding its unsaved rename.
+    await service.mutate(target.id, { kind: 'rename-project', name: 'Renamed but not saved' });
+    expect(service.projectSnapshot(target.id)?.name).toBe('Renamed but not saved');
+    const reloaded = await service.reload(target.id);
+    expect(reloaded?.name).toBe('Target');
+    expect(service.projectSnapshot(plain.id)?.name).toBe('Plain');
 
     await service.close();
   }, 60_000);

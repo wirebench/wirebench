@@ -271,22 +271,46 @@ export class WorkspaceService implements ProjectRouter {
     this.current = open;
     this.failure = undefined;
 
-    for (const ref of workspace.projects) {
-      const entry: OpenProjectEntry = {
-        ref,
-        dir: ref.source === 'internal' ? workspaceProjectDir(dir, ref.slug) : requireAbsolute(ref.path, ref.slug),
-        host: undefined,
-        projectId: ref.id,
-        status: 'loading',
-        message: undefined,
-      };
-      open.entries.push(entry);
-      await this.openEntry(entry);
-    }
+    // Past this point the service holds hosts, history files and a `current` — so anything that
+    // still throws has to put it back at the picker rather than leave it half-open.
+    try {
+      for (const ref of workspace.projects) {
+        let projectDir: string;
+        try {
+          projectDir =
+            ref.source === 'internal' ? workspaceProjectDir(dir, ref.slug) : requireAbsolute(ref.path, ref.slug);
+        } catch (error) {
+          // A corrupt reference (a linked ref with no absolute path) is a broken *project*, not a
+          // broken workspace: it becomes an `error` row like any other one that will not open.
+          open.entries.push({
+            ref,
+            dir: ref.path ?? '',
+            host: undefined,
+            projectId: ref.id,
+            status: 'error',
+            message: errorMessage(error),
+          });
+          continue;
+        }
+        const entry: OpenProjectEntry = {
+          ref,
+          dir: projectDir,
+          host: undefined,
+          projectId: ref.id,
+          status: 'loading',
+          message: undefined,
+        };
+        open.entries.push(entry);
+        await this.openEntry(entry);
+      }
 
-    await this.state.remember(id, this.now().toISOString());
-    this.deps.hooks?.onChanged?.(this.snapshot());
-    return this.requireSnapshot();
+      await this.state.remember(id, this.now().toISOString());
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return this.requireSnapshot();
+    } catch (error) {
+      await this.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   /** Brings up one project's host, recording the outcome on `entry` rather than throwing. */
@@ -411,14 +435,16 @@ export class WorkspaceService implements ProjectRouter {
    */
   async delete(id: string): Promise<WorkspaceSummaryWire[]> {
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-    if (this.current?.workspace.id === id) {
-      await this.close();
-    }
+    // Resolved *before* the close: a service with no trash must refuse outright rather than drop
+    // the user at the picker and then throw with the folder still on disk.
     const trash = this.deps.trash;
     if (trash === undefined) {
       throw new WirebenchError('trash-unavailable', 'Deleting a workspace needs a trash implementation.', {
         details: { workspaceId: id },
       });
+    }
+    if (this.current?.workspace.id === id) {
+      await this.close();
     }
     await trash(dir);
     await this.state.forget(id);
@@ -584,6 +610,18 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   proxyFor(...[projectId, url]: Parameters<ProjectRouter['proxyFor']>): ReturnType<ProjectRouter['proxyFor']> {
     return this.hostFor(projectId).proxyFor(url);
+  }
+
+  /** @inheritdoc */
+  addInterface(
+    ...[projectId, input]: Parameters<ProjectRouter['addInterface']>
+  ): ReturnType<ProjectRouter['addInterface']> {
+    return this.hostFor(projectId).addInterface(input);
+  }
+
+  /** @inheritdoc */
+  reload(...[projectId]: Parameters<ProjectRouter['reload']>): ReturnType<ProjectRouter['reload']> {
+    return this.hostFor(projectId).reload();
   }
 
   /** @inheritdoc */
