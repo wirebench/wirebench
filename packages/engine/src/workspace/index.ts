@@ -39,3 +39,5 @@ export { saveWorkspace } from './save.js';
 export type { SaveWorkspaceOptions } from './save.js';
 
 export { migrateWorkspace } from './migrate.js';
+
+export { reidentifyProject } from './reidentify.js';

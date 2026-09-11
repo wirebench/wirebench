@@ -501,6 +501,7 @@ export {
   loadWorkspace,
   migrateWorkspace,
   parseWorkspaceFile,
+  reidentifyProject,
   saveWorkspace,
   workspaceDir,
   workspaceEnvironmentFile,
