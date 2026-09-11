@@ -12,7 +12,7 @@
 import { createPrivateKey } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { SignedXml } from 'xml-crypto';
-import type { Document, Element } from '@xmldom/xmldom';
+import type { Document, Element, Node } from '@xmldom/xmldom';
 import { WssError } from '../../errors.js';
 import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
@@ -25,6 +25,96 @@ import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
 const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+
+/** The namespace `xmlns:*` declarations themselves live in. */
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
+/**
+ * Matches a `prefix:localName`-shaped token, the way a QName looks when it appears as an
+ * attribute value or as element text (`xsi:type="tns:Foo"`, a WSDL/XSD `ref` value, and so on).
+ */
+const QNAME_TOKEN = /\b([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*/g;
+
+/** The prefixes `element` declares on itself via `xmlns:*` attributes. */
+function ownDeclaredPrefixes(element: Element): Set<string> {
+  const declared = new Set<string>();
+  const attributes = element.attributes;
+  for (let i = 0; i < attributes.length; i += 1) {
+    const attribute = attributes.item(i);
+    if (
+      attribute !== null &&
+      attribute.namespaceURI === XMLNS_NS &&
+      attribute.prefix === 'xmlns' &&
+      attribute.localName !== null
+    ) {
+      declared.add(attribute.localName);
+    }
+  }
+  return declared;
+}
+
+/** Every `prefix:local` token found in attribute values or text content under `element`. */
+function qnamePrefixesIn(element: Element): Set<string> {
+  const found = new Set<string>();
+  const scan = (text: string): void => {
+    QNAME_TOKEN.lastIndex = 0;
+    let match = QNAME_TOKEN.exec(text);
+    while (match !== null) {
+      const prefix = match[1];
+      if (prefix !== undefined) {
+        found.add(prefix);
+      }
+      match = QNAME_TOKEN.exec(text);
+    }
+  };
+  const walk = (node: Node): void => {
+    if (node.nodeType === 1) {
+      const el = node as Element;
+      const attributes = el.attributes;
+      for (let i = 0; i < attributes.length; i += 1) {
+        const attribute = attributes.item(i);
+        if (attribute !== null && attribute.namespaceURI !== XMLNS_NS) {
+          scan(attribute.value);
+        }
+      }
+      for (let child = el.firstChild; child !== null; child = child.nextSibling) {
+        walk(child);
+      }
+    } else if (node.nodeType === 3) {
+      scan(node.nodeValue ?? '');
+    }
+  };
+  walk(element);
+  return found;
+}
+
+/**
+ * The `InclusiveNamespaces PrefixList` a reference to `element` needs: the SOAP envelope
+ * prefix (exclusive c14n drops it whenever the part does not itself use it, but a receiver
+ * canonicalizing just this fragment still needs it in scope) plus every prefix `element`'s
+ * subtree references only through attribute-value or text QName content — a use exclusive
+ * c14n's "visible utilization" rule does not see, since it only looks at element/attribute
+ * *names*, never their values.
+ *
+ * A prefix `element` already declares on itself is left out: exclusive c14n renders that
+ * declaration regardless, so listing it again would be redundant, not wrong.
+ *
+ * @param element the referenced part
+ * @param envelopePrefix the SOAP envelope's own prefix, or `null` when it uses no prefix
+ */
+function inclusiveNamespacePrefixList(element: Element, envelopePrefix: string | null): string[] {
+  const declared = ownDeclaredPrefixes(element);
+  const prefixes = new Set<string>();
+  if (envelopePrefix !== null && envelopePrefix !== '') {
+    prefixes.add(envelopePrefix);
+  }
+  for (const prefix of qnamePrefixesIn(element)) {
+    if (!declared.has(prefix) && element.lookupNamespaceURI(prefix) !== null) {
+      prefixes.add(prefix);
+    }
+  }
+  return [...prefixes].sort();
+}
 
 /** `SignatureMethod` URIs, by the entry's `signatureAlgorithm`. */
 const SIGNATURE_ALGORITHM_URIS = {
@@ -127,7 +217,7 @@ export async function signEnvelope(
     throw new WssError('wss-not-an-envelope', 'The envelope has no wsse:Security header to sign into.');
   }
 
-  const referenceIds: string[] = [];
+  const references: { readonly id: string; readonly element: Element }[] = [];
   for (const part of entry.parts) {
     const element = resolvePart(root, part, envelopeNs);
     if (element === undefined) {
@@ -138,10 +228,15 @@ export async function signEnvelope(
     let id = existingWsuId(element);
     if (id === undefined) {
       id = `Id-${ctx.uuid()}`;
-      element.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:wsu', NS.WSU);
+      // Only declare `xmlns:wsu` here when no ancestor already binds the prefix to the WS-Utility
+      // namespace (the `wsse:Security` block does, for every part it added itself) — redeclaring
+      // it lower down is harmless to a parser but noise `verifySignature`/`xmlsec1` never asked for.
+      if (element.lookupNamespaceURI('wsu') !== NS.WSU) {
+        element.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:wsu', NS.WSU);
+      }
       element.setAttributeNS(NS.WSU, 'wsu:Id', id);
     }
-    referenceIds.push(id);
+    references.push({ id, element });
   }
 
   const keyIdentifier = buildKeyIdentifier(entry.keyIdentifierType, {
@@ -158,28 +253,41 @@ export async function signEnvelope(
   }
 
   const passphrase = entry.keyPasswordRef === undefined ? undefined : await ctx.secrets(entry.keyPasswordRef);
+  // The envelope's own prefix, needed on the SignedInfo canonicalization itself and on every
+  // reference transform: exclusive c14n only renders a namespace declaration a part visibly
+  // uses on an element/attribute *name*, so a receiver that canonicalizes a reference on its
+  // own (rather than trusting this build's canonical form) needs it spelled out.
+  const envPrefix = root.prefix;
   const signer = new SignedXml({
     idMode: 'wssecurity',
     privateKey: privateKeyOf(resolved.alias, passphrase),
     publicCert: resolved.alias.certPem,
     canonicalizationAlgorithm: EXC_C14N,
+    inclusiveNamespacesPrefixList: envPrefix !== null && envPrefix !== '' ? [envPrefix] : [],
     signatureAlgorithm: SIGNATURE_ALGORITHM_URIS[entry.signatureAlgorithm],
     getKeyInfoContent: () => keyIdentifier.keyInfoXml,
   });
-  for (const id of referenceIds) {
+  for (const { id, element } of references) {
     signer.addReference({
       // By id rather than by element name: the id is unique, so this selects exactly the one
       // element even when the envelope carries two parts with the same local name.
       xpath: `//*[@*[local-name(.)='Id']='${id}']`,
       transforms: [EXC_C14N],
       digestAlgorithm: DIGEST_ALGORITHM_URIS[entry.digestAlgorithm],
+      inclusiveNamespacesPrefixList: inclusiveNamespacePrefixList(element, envPrefix),
     });
   }
+  // The index and the XPath must count the same node set — direct `wsse:Security` children of
+  // the header — so a `wsse:Security` nested elsewhere (inside the Body, say) never shifts
+  // which block xml-crypto appends the signature into. `securityIndex` throws when no direct
+  // child matches, so `index` is never used to build an XPath that resolves to nothing.
   const index = securityIndex(header, version, resolved.actor);
   signer.computeSignature(serializeXml(doc), {
     prefix: 'ds',
     location: {
-      reference: `(//*[local-name(.)='Security' and namespace-uri(.)='${NS.WSSE}'])[${index}]`,
+      reference:
+        `/*[local-name()='Envelope']/*[local-name()='Header']` +
+        `/*[local-name()='Security' and namespace-uri()='${NS.WSSE}'][${index}]`,
       action: 'append',
     },
   });

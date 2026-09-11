@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import forge from 'node-forge';
 import { WssError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
-import { renderDn } from './keystore/certificate.js';
+import { renderDnRfc2253 } from './keystore/certificate.js';
 import type { WssKeyIdentifierType } from './model.js';
 
 /** `ValueType`/`EncodingType` URIs from the WS-Security X.509 token profile. */
@@ -114,7 +114,7 @@ export function subjectKeyIdentifierBase64(certPem: string): string {
 /** The certificate's issuer as an RFC 2253 distinguished name (most specific attribute first). */
 export function issuerDnRfc2253(certPem: string): string {
   const cert = forge.pki.certificateFromPem(certPem);
-  return renderDn([...cert.issuer.attributes].reverse());
+  return renderDnRfc2253(cert.issuer.attributes);
 }
 
 /** The certificate's serial number in decimal, as `ds:X509SerialNumber` requires. */

@@ -6,6 +6,7 @@
  */
 
 import type { Document, Element } from '@xmldom/xmldom';
+import { WssError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
 import { envelopeNamespace } from '../soap/envelope.js';
 import type { SoapEnvelopeVersion } from '../soap/envelope.js';
@@ -49,9 +50,23 @@ export function securityActor(security: Element, version: SoapEnvelopeVersion): 
   return value === null || value === '' ? undefined : value;
 }
 
-/** The index (1-based, as XPath counts) of the `wsse:Security` block addressed to `actor`. */
+/**
+ * The index (1-based, as XPath counts) of the `wsse:Security` block addressed to `actor`,
+ * among `header`'s direct `wsse:Security` children — the same node set the XPath
+ * `signEnvelope` hands `xml-crypto` selects, so the two never disagree about which block is
+ * "the" one to sign into.
+ *
+ * @throws WssError `wss-security-missing` when no direct child is addressed to `actor`
+ */
 export function securityIndex(header: Element, version: SoapEnvelopeVersion, actor?: string): number {
-  return securityHeaders(header).findIndex((element) => securityActor(element, version) === actor) + 1;
+  const index = securityHeaders(header).findIndex((element) => securityActor(element, version) === actor);
+  if (index === -1) {
+    throw new WssError(
+      'wss-security-missing',
+      'The envelope has no wsse:Security header addressed to the expected actor/role.',
+    );
+  }
+  return index + 1;
 }
 
 /** The first descendant-or-self of `root` in `namespace` with local name `localName`. */

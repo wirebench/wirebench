@@ -14,6 +14,49 @@ export function renderDn(attributes: readonly forge.pki.CertificateField[]): str
     .join(', ');
 }
 
+/** Characters RFC 2253/4514 requires escaping wherever they appear in an attribute value. */
+const RFC2253_ESCAPED_CHARS = new Set([',', '+', '"', '\\', '<', '>', ';', '=']);
+
+/**
+ * Escapes one RFC 2253/4514 attribute value: the always-escaped characters above, a leading
+ * `#` or space, a trailing space, and control characters as `\` followed by two hex digits.
+ */
+function escapeRfc2253Value(value: string): string {
+  let out = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value.charAt(index);
+    const code = value.charCodeAt(index);
+    if (RFC2253_ESCAPED_CHARS.has(char)) {
+      out += `\\${char}`;
+    } else if (code < 0x20 || code === 0x7f) {
+      out += `\\${code.toString(16).padStart(2, '0')}`;
+    } else if ((index === 0 && (char === '#' || char === ' ')) || (index === value.length - 1 && char === ' ')) {
+      out += `\\${char}`;
+    } else {
+      out += char;
+    }
+  }
+  return out;
+}
+
+/**
+ * Renders a forge distinguished name in RFC 2253/4514 form: most specific attribute first (the
+ * reverse of the certificate's own, least-specific-first order), `,`-separated with no space,
+ * and every value escaped per {@link escapeRfc2253Value}.
+ *
+ * Used only where the DN feeds into a signature (`X509IssuerName` and friends) — the UI keeps
+ * using {@link renderDn}, which is easier to read and never needs to round-trip.
+ */
+export function renderDnRfc2253(attributes: readonly forge.pki.CertificateField[]): string {
+  return [...attributes]
+    .reverse()
+    .map((attribute) => {
+      const name = attribute.shortName ?? attribute.name ?? attribute.type ?? '?';
+      return `${name}=${escapeRfc2253Value(String(attribute.value))}`;
+    })
+    .join(',');
+}
+
 /** SHA-256 of the DER encoding, as upper-case hex in colon-separated pairs (OpenSSL's rendering). */
 export function fingerprintSha256(cert: forge.pki.Certificate): string {
   const der = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();

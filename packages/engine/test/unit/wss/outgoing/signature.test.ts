@@ -220,6 +220,55 @@ describe('signEnvelope', () => {
     const withoutKey: Keystore = { type: 'pem', aliases: [rest as unknown as KeystoreAlias] };
     await expect(signed(signatureEntry(), withoutKey)).rejects.toMatchObject({ code: 'wss-signing-key-missing' });
   });
+
+  it('carries an InclusiveNamespaces PrefixList for a QName used only in attribute content', async () => {
+    // `tns` is declared on the Envelope, not on `Echo` itself, and is only "used" through the
+    // value of `xsi:type` — exclusive c14n's visible-utilization rule never looks at attribute
+    // *values*, so a receiver canonicalizing this reference in isolation cannot resolve `tns`
+    // unless the PrefixList says to keep it in scope.
+    const envelope =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:test">' +
+      '<soapenv:Body><tns:Echo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="tns:Foo">' +
+      '<tns:Text>hello</tns:Text></tns:Echo></soapenv:Body></soapenv:Envelope>';
+    const signedXml = await applyOutgoingWss(
+      envelope,
+      config([TIMESTAMP_ENTRY, signatureEntry({ parts: [BODY_PART, TIMESTAMP_PART] })]),
+      ctxFor(keystoreOf(signer)),
+    );
+    const result = verifySignature(signedXml, { certPem: signer.certPem });
+    expect(result.error).toBeUndefined();
+    expect(result.ok).toBe(true);
+    const bodyTransform = /<ds:Reference URI="#Id-[^"]+">.*?PrefixList="([^"]*)"/s.exec(signedXml);
+    expect(bodyTransform?.[1]?.split(' ')).toEqual(expect.arrayContaining(['soapenv', 'tns']));
+  });
+
+  it('does not redeclare xmlns:wsu on the Timestamp, which already inherits it from wsse:Security', async () => {
+    const xml = await signed(signatureEntry());
+    const timestampTag = /<wsu:Timestamp\b[^>]*>/.exec(xml)?.[0];
+    expect(timestampTag).toBeDefined();
+    expect(timestampTag).not.toContain('xmlns:wsu');
+  });
+
+  it('signs into the wsse:Security addressed to the actor, ignoring a same-named block nested in the Body', async () => {
+    const nested =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      '<soapenv:Body><tns:Echo xmlns:tns="urn:test">' +
+      `<wsse:Security xmlns:wsse="${NS.WSSE}"><tns:Nope/></wsse:Security>` +
+      '<tns:Text>hello</tns:Text></tns:Echo></soapenv:Body></soapenv:Envelope>';
+    const xml = await applyOutgoingWss(
+      nested,
+      config([TIMESTAMP_ENTRY, signatureEntry({ parts: [BODY_PART, TIMESTAMP_PART] })]),
+      ctxFor(keystoreOf(signer)),
+    );
+    const result = verifySignature(xml, { certPem: signer.certPem });
+    expect(result.error).toBeUndefined();
+    expect(result.ok).toBe(true);
+    // The signature landed in the header's own Security block, not the decoy inside the Body.
+    const headerSecurity = /<soapenv:Header>.*?<\/soapenv:Header>/s.exec(xml)?.[0];
+    expect(headerSecurity).toContain('<ds:Signature');
+    const bodySecurity = /<wsse:Security[^>]*><tns:Nope\/><\/wsse:Security>/.exec(xml)?.[0];
+    expect(bodySecurity).not.toContain('ds:Signature');
+  });
 });
 
 describe('verifySignature', () => {
