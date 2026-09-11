@@ -1,0 +1,438 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateDocs — golden output > renders the calculator definition as HTML 1`] = `
+"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculator</title>
+<style>
+:root { color-scheme: light dark; }
+body { font: 15px/1.55 -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0 auto; max-width: 60rem; padding: 2rem 1.5rem; }
+h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+h2 { border-bottom: 1px solid currentColor; margin-top: 2.5rem; padding-bottom: 0.2rem; }
+h3, h4 { margin-top: 1.75rem; }
+dl { display: grid; gap: 0.15rem 1rem; grid-template-columns: max-content 1fr; margin: 0.5rem 0; }
+dt { font-weight: 600; }
+dd { margin: 0; overflow-wrap: anywhere; }
+table { border-collapse: collapse; display: block; margin: 0.75rem 0; overflow-x: auto; width: 100%; }
+th, td { border: 1px solid rgba(128,128,128,0.45); padding: 0.3rem 0.55rem; text-align: left; vertical-align: top; }
+th { background: rgba(128,128,128,0.14); }
+pre { background: rgba(128,128,128,0.12); border-radius: 4px; overflow-x: auto; padding: 0.6rem 0.8rem; }
+code { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+nav ol { padding-left: 1.2rem; }
+footer { color: rgba(128,128,128,1); font-size: 0.85rem; margin-top: 3rem; }
+</style>
+</head>
+<body>
+<h1>Calculator</h1>
+<nav><ol><li><a href="#overview">Overview</a></li><li><a href="#services-and-ports">Services and ports</a></li><li><a href="#bindings">Bindings</a></li><li><a href="#operations">Operations</a></li><li><a href="#messages">Messages</a></li><li><a href="#schema-components">Schema components</a></li></ol></nav>
+<h2 id="overview">Overview</h2>
+<dl><dt>Title</dt><dd>Calculator</dd><dt>Definition</dt><dd>http://example.invalid/calculator.wsdl</dd><dt>Target namespace</dt><dd>http://tempuri.org/</dd><dt>Documents</dt><dd>1</dd><dt>Operations</dt><dd>8</dd><dt>Schema namespaces</dt><dd>http://tempuri.org/</dd></dl>
+<table><thead><tr><th>Document</th><th>Kind</th><th>Namespace</th></tr></thead><tbody><tr><td>http://example.invalid/calculator.wsdl</td><td>wsdl</td><td>http://tempuri.org/</td></tr></tbody></table>
+<h2 id="services-and-ports">Services and ports</h2>
+<table><thead><tr><th>Service</th><th>Port</th><th>Binding</th><th>SOAP</th><th>Address</th></tr></thead><tbody><tr><td>Calculator</td><td>CalculatorSoap</td><td>{http://tempuri.org/}CalculatorSoap</td><td>1.1</td><td>http://www.dneonline.com/calculator.asmx</td></tr><tr><td>Calculator</td><td>CalculatorSoap12</td><td>{http://tempuri.org/}CalculatorSoap12</td><td>1.2</td><td>http://www.dneonline.com/calculator.asmx</td></tr></tbody></table>
+<h2 id="bindings">Bindings</h2>
+<table><thead><tr><th>Binding</th><th>Port type</th><th>SOAP</th><th>Style</th><th>Transport</th><th>Operations</th></tr></thead><tbody><tr><td>{http://tempuri.org/}CalculatorSoap</td><td>{http://tempuri.org/}CalculatorSoap</td><td>1.1</td><td>document</td><td>http://schemas.xmlsoap.org/soap/http</td><td>Add, Subtract, Multiply, Divide</td></tr><tr><td>{http://tempuri.org/}CalculatorSoap12</td><td>{http://tempuri.org/}CalculatorSoap</td><td>1.2</td><td>document</td><td>http://schemas.xmlsoap.org/soap/http</td><td>Add, Subtract, Multiply, Divide</td></tr></tbody></table>
+<h2 id="operations">Operations</h2>
+<h3 id="calculatorsoap-add">CalculatorSoap.Add</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Add</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.1</dd></dl>
+<p>Adds two integers. This is a test WebService. ©DNE Online</p>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}AddSoapIn (parameters: element {http://tempuri.org/}Add)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}AddSoapOut (parameters: element {http://tempuri.org/}AddResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap-subtract">CalculatorSoap.Subtract</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Subtract</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.1</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}SubtractSoapIn (parameters: element {http://tempuri.org/}Subtract)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}SubtractSoapOut (parameters: element {http://tempuri.org/}SubtractResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap-multiply">CalculatorSoap.Multiply</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Multiply</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.1</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}MultiplySoapIn (parameters: element {http://tempuri.org/}Multiply)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}MultiplySoapOut (parameters: element {http://tempuri.org/}MultiplyResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap-divide">CalculatorSoap.Divide</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Divide</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.1</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}DivideSoapIn (parameters: element {http://tempuri.org/}Divide)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}DivideSoapOut (parameters: element {http://tempuri.org/}DivideResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap12-add">CalculatorSoap12.Add</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Add</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.2</dd></dl>
+<p>Adds two integers. This is a test WebService. ©DNE Online</p>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}AddSoapIn (parameters: element {http://tempuri.org/}Add)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}AddSoapOut (parameters: element {http://tempuri.org/}AddResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap12-subtract">CalculatorSoap12.Subtract</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Subtract</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.2</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}SubtractSoapIn (parameters: element {http://tempuri.org/}Subtract)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}SubtractSoapOut (parameters: element {http://tempuri.org/}SubtractResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap12-multiply">CalculatorSoap12.Multiply</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Multiply</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.2</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}MultiplySoapIn (parameters: element {http://tempuri.org/}Multiply)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}MultiplySoapOut (parameters: element {http://tempuri.org/}MultiplyResponse)</td></tr></tbody></table>
+<h3 id="calculatorsoap12-divide">CalculatorSoap12.Divide</h3>
+<dl><dt>SOAPAction</dt><dd>http://tempuri.org/Divide</dd><dt>Style</dt><dd>document</dd><dt>Use</dt><dd>literal</dd><dt>SOAP version</dt><dd>1.2</dd></dl>
+<table><thead><tr><th>Message</th><th>Details</th></tr></thead><tbody><tr><td>Input</td><td>{http://tempuri.org/}DivideSoapIn (parameters: element {http://tempuri.org/}Divide)</td></tr><tr><td>Output</td><td>{http://tempuri.org/}DivideSoapOut (parameters: element {http://tempuri.org/}DivideResponse)</td></tr></tbody></table>
+<h2 id="messages">Messages</h2>
+<table><thead><tr><th>Message</th><th>Part</th><th>Binds to</th></tr></thead><tbody><tr><td>{http://tempuri.org/}AddSoapIn</td><td>parameters</td><td>element {http://tempuri.org/}Add</td></tr><tr><td>{http://tempuri.org/}AddSoapOut</td><td>parameters</td><td>element {http://tempuri.org/}AddResponse</td></tr><tr><td>{http://tempuri.org/}SubtractSoapIn</td><td>parameters</td><td>element {http://tempuri.org/}Subtract</td></tr><tr><td>{http://tempuri.org/}SubtractSoapOut</td><td>parameters</td><td>element {http://tempuri.org/}SubtractResponse</td></tr><tr><td>{http://tempuri.org/}MultiplySoapIn</td><td>parameters</td><td>element {http://tempuri.org/}Multiply</td></tr><tr><td>{http://tempuri.org/}MultiplySoapOut</td><td>parameters</td><td>element {http://tempuri.org/}MultiplyResponse</td></tr><tr><td>{http://tempuri.org/}DivideSoapIn</td><td>parameters</td><td>element {http://tempuri.org/}Divide</td></tr><tr><td>{http://tempuri.org/}DivideSoapOut</td><td>parameters</td><td>element {http://tempuri.org/}DivideResponse</td></tr></tbody></table>
+<h2 id="schema-components">Schema components</h2>
+<h3 id="namespace-http-tempuri-org">Namespace http://tempuri.org/</h3>
+<h4 id="element-add">element Add</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:5</dd></dl>
+<pre><code>&lt;s:element name=&quot;Add&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intA&quot; type=&quot;s:int&quot; /&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intB&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-addresponse">element AddResponse</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:13</dd></dl>
+<pre><code>&lt;s:element name=&quot;AddResponse&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;AddResult&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-divide">element Divide</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:50</dd></dl>
+<pre><code>&lt;s:element name=&quot;Divide&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intA&quot; type=&quot;s:int&quot; /&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intB&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-divideresponse">element DivideResponse</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:58</dd></dl>
+<pre><code>&lt;s:element name=&quot;DivideResponse&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;DivideResult&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-multiply">element Multiply</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:35</dd></dl>
+<pre><code>&lt;s:element name=&quot;Multiply&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intA&quot; type=&quot;s:int&quot; /&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intB&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-multiplyresponse">element MultiplyResponse</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:43</dd></dl>
+<pre><code>&lt;s:element name=&quot;MultiplyResponse&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;MultiplyResult&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-subtract">element Subtract</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:20</dd></dl>
+<pre><code>&lt;s:element name=&quot;Subtract&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intA&quot; type=&quot;s:int&quot; /&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;intB&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<h4 id="element-subtractresponse">element SubtractResponse</h4>
+<dl><dt>Type</dt><dd>—</dd><dt>Declared in</dt><dd>http://example.invalid/calculator.wsdl:28</dd></dl>
+<pre><code>&lt;s:element name=&quot;SubtractResponse&quot;&gt;
+  &lt;s:complexType&gt;
+    &lt;s:sequence&gt;
+      &lt;s:element minOccurs=&quot;1&quot; maxOccurs=&quot;1&quot; name=&quot;SubtractResult&quot; type=&quot;s:int&quot; /&gt;
+    &lt;/s:sequence&gt;
+  &lt;/s:complexType&gt;
+&lt;/s:element&gt;</code></pre>
+<footer>Generated by Wirebench.</footer>
+</body>
+</html>
+"
+`;
+
+exports[`generateDocs — golden output > renders the calculator definition as Markdown 1`] = `
+"# Calculator
+
+## Contents
+
+- [Overview](#overview)
+- [Services and ports](#services-and-ports)
+- [Bindings](#bindings)
+- [Operations](#operations)
+- [Messages](#messages)
+- [Schema components](#schema-components)
+
+## Overview
+
+- **Title:** Calculator
+- **Definition:** http://example.invalid/calculator.wsdl
+- **Target namespace:** http://tempuri.org/
+- **Documents:** 1
+- **Operations:** 8
+- **Schema namespaces:** http://tempuri.org/
+
+| Document | Kind | Namespace |
+| --- | --- | --- |
+| http://example.invalid/calculator.wsdl | wsdl | http://tempuri.org/ |
+
+## Services and ports
+
+| Service | Port | Binding | SOAP | Address |
+| --- | --- | --- | --- | --- |
+| Calculator | CalculatorSoap | {http://tempuri.org/}CalculatorSoap | 1.1 | http://www.dneonline.com/calculator.asmx |
+| Calculator | CalculatorSoap12 | {http://tempuri.org/}CalculatorSoap12 | 1.2 | http://www.dneonline.com/calculator.asmx |
+
+## Bindings
+
+| Binding | Port type | SOAP | Style | Transport | Operations |
+| --- | --- | --- | --- | --- | --- |
+| {http://tempuri.org/}CalculatorSoap | {http://tempuri.org/}CalculatorSoap | 1.1 | document | http://schemas.xmlsoap.org/soap/http | Add, Subtract, Multiply, Divide |
+| {http://tempuri.org/}CalculatorSoap12 | {http://tempuri.org/}CalculatorSoap | 1.2 | document | http://schemas.xmlsoap.org/soap/http | Add, Subtract, Multiply, Divide |
+
+## Operations
+
+### CalculatorSoap.Add
+
+- **SOAPAction:** http://tempuri.org/Add
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.1
+
+Adds two integers. This is a test WebService. ©DNE Online
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}AddSoapIn (parameters: element {http://tempuri.org/}Add) |
+| Output | {http://tempuri.org/}AddSoapOut (parameters: element {http://tempuri.org/}AddResponse) |
+
+### CalculatorSoap.Subtract
+
+- **SOAPAction:** http://tempuri.org/Subtract
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.1
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}SubtractSoapIn (parameters: element {http://tempuri.org/}Subtract) |
+| Output | {http://tempuri.org/}SubtractSoapOut (parameters: element {http://tempuri.org/}SubtractResponse) |
+
+### CalculatorSoap.Multiply
+
+- **SOAPAction:** http://tempuri.org/Multiply
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.1
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}MultiplySoapIn (parameters: element {http://tempuri.org/}Multiply) |
+| Output | {http://tempuri.org/}MultiplySoapOut (parameters: element {http://tempuri.org/}MultiplyResponse) |
+
+### CalculatorSoap.Divide
+
+- **SOAPAction:** http://tempuri.org/Divide
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.1
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}DivideSoapIn (parameters: element {http://tempuri.org/}Divide) |
+| Output | {http://tempuri.org/}DivideSoapOut (parameters: element {http://tempuri.org/}DivideResponse) |
+
+### CalculatorSoap12.Add
+
+- **SOAPAction:** http://tempuri.org/Add
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.2
+
+Adds two integers. This is a test WebService. ©DNE Online
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}AddSoapIn (parameters: element {http://tempuri.org/}Add) |
+| Output | {http://tempuri.org/}AddSoapOut (parameters: element {http://tempuri.org/}AddResponse) |
+
+### CalculatorSoap12.Subtract
+
+- **SOAPAction:** http://tempuri.org/Subtract
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.2
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}SubtractSoapIn (parameters: element {http://tempuri.org/}Subtract) |
+| Output | {http://tempuri.org/}SubtractSoapOut (parameters: element {http://tempuri.org/}SubtractResponse) |
+
+### CalculatorSoap12.Multiply
+
+- **SOAPAction:** http://tempuri.org/Multiply
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.2
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}MultiplySoapIn (parameters: element {http://tempuri.org/}Multiply) |
+| Output | {http://tempuri.org/}MultiplySoapOut (parameters: element {http://tempuri.org/}MultiplyResponse) |
+
+### CalculatorSoap12.Divide
+
+- **SOAPAction:** http://tempuri.org/Divide
+- **Style:** document
+- **Use:** literal
+- **SOAP version:** 1.2
+
+| Message | Details |
+| --- | --- |
+| Input | {http://tempuri.org/}DivideSoapIn (parameters: element {http://tempuri.org/}Divide) |
+| Output | {http://tempuri.org/}DivideSoapOut (parameters: element {http://tempuri.org/}DivideResponse) |
+
+## Messages
+
+| Message | Part | Binds to |
+| --- | --- | --- |
+| {http://tempuri.org/}AddSoapIn | parameters | element {http://tempuri.org/}Add |
+| {http://tempuri.org/}AddSoapOut | parameters | element {http://tempuri.org/}AddResponse |
+| {http://tempuri.org/}SubtractSoapIn | parameters | element {http://tempuri.org/}Subtract |
+| {http://tempuri.org/}SubtractSoapOut | parameters | element {http://tempuri.org/}SubtractResponse |
+| {http://tempuri.org/}MultiplySoapIn | parameters | element {http://tempuri.org/}Multiply |
+| {http://tempuri.org/}MultiplySoapOut | parameters | element {http://tempuri.org/}MultiplyResponse |
+| {http://tempuri.org/}DivideSoapIn | parameters | element {http://tempuri.org/}Divide |
+| {http://tempuri.org/}DivideSoapOut | parameters | element {http://tempuri.org/}DivideResponse |
+
+## Schema components
+
+### Namespace http://tempuri.org/
+
+#### element Add
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:5
+
+\`\`\`xml
+<s:element name="Add">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="intA" type="s:int" />
+      <s:element minOccurs="1" maxOccurs="1" name="intB" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element AddResponse
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:13
+
+\`\`\`xml
+<s:element name="AddResponse">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="AddResult" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element Divide
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:50
+
+\`\`\`xml
+<s:element name="Divide">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="intA" type="s:int" />
+      <s:element minOccurs="1" maxOccurs="1" name="intB" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element DivideResponse
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:58
+
+\`\`\`xml
+<s:element name="DivideResponse">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="DivideResult" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element Multiply
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:35
+
+\`\`\`xml
+<s:element name="Multiply">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="intA" type="s:int" />
+      <s:element minOccurs="1" maxOccurs="1" name="intB" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element MultiplyResponse
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:43
+
+\`\`\`xml
+<s:element name="MultiplyResponse">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="MultiplyResult" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element Subtract
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:20
+
+\`\`\`xml
+<s:element name="Subtract">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="intA" type="s:int" />
+      <s:element minOccurs="1" maxOccurs="1" name="intB" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+#### element SubtractResponse
+
+- **Type:** —
+- **Declared in:** http://example.invalid/calculator.wsdl:28
+
+\`\`\`xml
+<s:element name="SubtractResponse">
+  <s:complexType>
+    <s:sequence>
+      <s:element minOccurs="1" maxOccurs="1" name="SubtractResult" type="s:int" />
+    </s:sequence>
+  </s:complexType>
+</s:element>
+\`\`\`
+
+---
+
+Generated by Wirebench.
+
+"
+`;

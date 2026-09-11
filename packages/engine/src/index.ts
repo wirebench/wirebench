@@ -70,6 +70,8 @@ export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } 
 export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
 export { exportDefinition } from './wsdl/export-definition.js';
 export type { ExportDefinitionOptions, ExportedFile, ExportResult } from './wsdl/export-definition.js';
+export { generateDocs } from './wsdl/docs-generator.js';
+export type { GenerateDocsOptions } from './wsdl/docs-generator.js';
 export { applyUpdate, planUpdate } from './wsdl/update-definition.js';
 export type {
   ApplyUpdateOptions,

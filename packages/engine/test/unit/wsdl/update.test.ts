@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -314,5 +315,83 @@ describe('saveProject backups', () => {
     const legacy = loaded.project.interfaces[0]?.operations.find((op) => op.name === 'Legacy');
     expect(legacy?.requests[0]?.orphaned).toBe(true);
     await writeFile(join(dir, 'README.txt'), 'foreign file');
+  });
+});
+
+describe('planUpdate — change reasons', () => {
+  const v1Text = readFileSync(join(craftedRoot, 'versioned', 'v1', 'service.wsdl'), 'utf-8');
+
+  /** Imports v1 with `replacements` applied to its source, at a fixed location. */
+  async function variant(...replacements: readonly (readonly [string, string])[]): Promise<ImportResult> {
+    let text = v1Text;
+    for (const [from, to] of replacements) {
+      expect(text).toContain(from);
+      text = text.replace(from, to);
+    }
+    return importDefinition({ kind: 'text', text, location: 'http://example.invalid/variant.wsdl' });
+  }
+
+  /** The reason reported for `Echo`, or `undefined` when the plan does not consider it changed. */
+  function echoReason(plan: ReturnType<typeof planUpdate>): string | undefined {
+    return plan.changedOperations.find((changed) => changed.ref.operationName === 'Echo')?.reason;
+  }
+
+  it('reports a changed SOAPAction', async () => {
+    const plan = planUpdate(v1, await variant(['soapAction="urn:wb:versioned:Echo"', 'soapAction="urn:other:Echo"']));
+    expect(echoReason(plan)).toBe('soap-action');
+  });
+
+  it('reports a changed operation style', async () => {
+    const plan = planUpdate(
+      v1,
+      await variant([
+        '<soap:operation soapAction="urn:wb:versioned:Echo" style="document"/>',
+        '<soap:operation soapAction="urn:wb:versioned:Echo" style="rpc"/>',
+      ]),
+    );
+    expect(echoReason(plan)).toBe('style');
+  });
+
+  it('reports a changed SOAP binding version', async () => {
+    const plan = planUpdate(
+      v1,
+      // Rebinding the `soap` prefix turns the whole binding into SOAP 1.2 while every
+      // `soapAction`, style and body stays exactly as it was.
+      await variant([
+        'xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"',
+        'xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"',
+      ]),
+    );
+    expect(echoReason(plan)).toBe('binding');
+  });
+
+  it('reports a changed output message when the input is untouched', async () => {
+    const plan = planUpdate(
+      v1,
+      await variant([
+        '<xsd:element name="EchoResponse">\n        <xsd:complexType>\n          <xsd:sequence>\n            <xsd:element name="text" type="xsd:string"/>',
+        '<xsd:element name="EchoResponse">\n        <xsd:complexType>\n          <xsd:sequence>\n            <xsd:element name="text" type="xsd:string"/>\n            <xsd:element name="echoedAt" type="xsd:dateTime"/>',
+      ]),
+    );
+    expect(echoReason(plan)).toBe('output-schema');
+  });
+
+  it('reports a changed output message bound by type rather than element', async () => {
+    const plan = planUpdate(
+      v1,
+      await variant([
+        '<wsdl:message name="EchoReply"><wsdl:part name="body" element="tns:EchoResponse"/></wsdl:message>',
+        '<wsdl:message name="EchoReply"><wsdl:part name="body" type="xsd:string"/></wsdl:message>',
+      ]),
+    );
+    expect(echoReason(plan)).toBe('output-schema');
+  });
+
+  it('reports a changed output message that no longer resolves at all', async () => {
+    const plan = planUpdate(
+      v1,
+      await variant(['<wsdl:output message="tns:EchoReply"/>', '<wsdl:output message="tns:NoSuchMessage"/>']),
+    );
+    expect(echoReason(plan)).toBe('output-schema');
   });
 });
