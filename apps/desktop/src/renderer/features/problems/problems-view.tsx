@@ -42,11 +42,12 @@ export function ProblemsView() {
   const items = useProblemsStore((state) => state.items);
   const requests = useProjectStore((state) => state.requests);
   const [filter, setFilter] = useState<Filter>('all');
-  const visibleCount = (filter === 'all' ? items : items.filter((item) => item.severity === filter)).length;
-  const { gridProps, rowProps } = useGridNavigation(visibleCount);
+  // Filtered once: the row count the grid navigates and the rows it renders must be the same
+  // list, and re-filtering for each would let them drift.
+  const visible = filter === 'all' ? items : items.filter((item) => item.severity === filter);
+  const { gridProps, rowProps } = useGridNavigation(visible.length);
 
   const errors = items.filter((item) => item.severity === 'error').length;
-  const visible = filter === 'all' ? items : items.filter((item) => item.severity === filter);
 
   if (items.length === 0) {
     return <p className="text-sm text-fg-subtle">No problems found.</p>;
@@ -80,7 +81,7 @@ export function ProblemsView() {
       <ul
         role="grid"
         aria-label="Problems"
-        aria-rowcount={visibleCount}
+        aria-rowcount={visible.length}
         className="flex min-h-0 flex-col gap-1 overflow-auto text-sm"
         {...gridProps}
       >

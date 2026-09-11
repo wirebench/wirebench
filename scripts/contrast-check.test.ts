@@ -23,6 +23,14 @@ describe('contrast maths', () => {
     expect(resolveToken('--wb-b', declarations)).toBe('#123456');
   });
 
+  it('parses a block that contains nested braces', () => {
+    // A theme block may hold an at-rule (a nested `@media`), so the parser has to count braces
+    // rather than stop at the first `}`.
+    const css = ':root { --wb-a: #123456; @media (any-hover) { --wb-a: #654321; } --wb-b: #abcdef; }';
+    const declarations = parseBlock(css, ':root');
+    expect(declarations.get('--wb-b')).toBe('#abcdef');
+  });
+
   it('rejects a token nothing defines', () => {
     const declarations = parseBlock(':root { --wb-a: #123456; }', ':root');
     expect(() => resolveToken('--wb-missing', declarations)).toThrow(/does not define/);

@@ -39,6 +39,19 @@ describe('HistoryView', () => {
     vi.useRealTimers();
   });
 
+  it('declares its two columns on the grid and on every cell', () => {
+    useHistoryStore.setState({ entries: [makeEntry()] });
+    render(<HistoryView />);
+
+    const grid = screen.getByRole('grid', { name: 'History' });
+    expect(grid.getAttribute('aria-colcount')).toBe('2');
+    expect(grid.getAttribute('aria-rowcount')).toBe('1');
+    const cells = screen.getAllByRole('gridcell');
+    expect(cells.map((cell) => cell.getAttribute('aria-colindex'))).toEqual(['1', '2']);
+    // No selection model: rows are opened, re-sent or compared, never selected.
+    expect(screen.getAllByRole('row').some((row) => row.hasAttribute('aria-selected'))).toBe(false);
+  });
+
   it('invites a first send when there is no history', () => {
     render(<HistoryView />);
     expect(screen.getByText(/Sent requests appear here/)).toBeDefined();

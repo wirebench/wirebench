@@ -62,7 +62,7 @@ function Row({ entry, rowIndex, rowProps, compareArmed, onOpen, onResend, onComp
         compareArmed ? 'bg-surface-selected' : ''
       }`}
     >
-      <div role="gridcell" className="flex min-w-0 flex-1">
+      <div role="gridcell" aria-colindex={1} className="flex min-w-0 flex-1">
         <button
           type="button"
           onClick={onOpen}
@@ -81,7 +81,7 @@ function Row({ entry, rowIndex, rowProps, compareArmed, onOpen, onResend, onComp
           <span className="w-16 shrink-0 text-fg-subtle">{entry.durationMs} ms</span>
         </button>
       </div>
-      <div role="gridcell" className="flex shrink-0 items-center gap-1">
+      <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
         <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
           ↻
         </Button>
@@ -238,6 +238,10 @@ export function HistoryView() {
           role="grid"
           aria-label="History"
           aria-rowcount={entries.length}
+          // Two columns: the entry itself and its actions. There is no selection model here —
+          // a row is opened, re-sent or compared, never "selected" — so no row carries
+          // `aria-selected`, and the roving tab stop is focus only.
+          aria-colcount={2}
           className="min-h-0 flex-1 overflow-auto"
           {...gridProps}
         >

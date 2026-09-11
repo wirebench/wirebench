@@ -113,8 +113,26 @@ export function parseBlock(css: string, selector: string): Declarations {
     throw new Error(`tokens.css has no ${selector} block`);
   }
   const open = css.indexOf('{', start);
-  const close = css.indexOf('}', open);
-  if (open === -1 || close === -1) {
+  if (open === -1) {
+    throw new Error(`${selector} block in tokens.css is not closed`);
+  }
+  // Brace counting, not "the first `}`": a theme block may one day hold a nested at-rule, and
+  // stopping at the inner closing brace would silently drop every declaration after it.
+  let depth = 0;
+  let close = -1;
+  for (let index = open; index < css.length; index += 1) {
+    const character = css[index];
+    if (character === '{') {
+      depth += 1;
+    } else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        close = index;
+        break;
+      }
+    }
+  }
+  if (close === -1) {
     throw new Error(`${selector} block in tokens.css is not closed`);
   }
   const declarations = new Map<string, string>();
