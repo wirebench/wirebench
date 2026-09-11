@@ -111,3 +111,12 @@ linux:
   desktop:
     entry:
       StartupWMClass: Wirebench
+
+# Both package formats take their name and file name from the npm package name by default —
+# `@wirebench/desktop`, whose slash becomes a directory the packager never creates.
+deb:
+  packageName: wirebench
+  artifactName: wirebench_${version}_${arch}.${ext}
+rpm:
+  packageName: wirebench
+  artifactName: wirebench-${version}.${arch}.${ext}
