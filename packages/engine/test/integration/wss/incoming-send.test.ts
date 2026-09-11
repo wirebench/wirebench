@@ -190,6 +190,24 @@ describe('incoming WS-Security over a real response', () => {
     expect(exchange.response?.envelopeXml).toContain('xenc:EncryptedData');
   });
 
+  it('still resolves the send when the keystore resolver rejects', async () => {
+    const ctx = createWssContext({ keystores: () => Promise.reject(new Error('the registry is locked')) });
+    const exchange = await send('/wss/sign-encrypt', config(), ctx);
+    // The send itself succeeded: the response, ciphertext and all, is there to look at.
+    expect(exchange.http.status).toBe(200);
+    const actions = exchange.wss?.incoming?.actions ?? [];
+    expect(actions[0]).toMatchObject({ kind: 'decrypt', ok: false });
+    expect(actions.every((action) => !action.ok)).toBe(true);
+    expect(exchange.wss?.incoming?.errors.length).toBeGreaterThan(0);
+  });
+
+  it('reports the covered parts and whether the Body is signed', async () => {
+    const exchange = await send('/wss/sign', config({ decryptKeystoreRef: undefined }));
+    const signature = exchange.wss?.incoming?.actions.find((action) => action.kind === 'signature');
+    expect(signature?.coversBody).toBe(true);
+    expect(signature?.references).toContain('Body');
+  });
+
   it('reports a missing truststore rather than silently trusting nothing', async () => {
     const ctx = createWssContext({ keystores: () => Promise.resolve(undefined) });
     const exchange = await send('/wss/sign', config({ decryptKeystoreRef: undefined }), ctx);

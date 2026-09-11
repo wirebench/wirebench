@@ -11,12 +11,14 @@ import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/w
 import { verifyIncoming } from '../../../../src/wss/incoming/verify.js';
 import { decryptIncoming } from '../../../../src/wss/incoming/decrypt.js';
 import type { Keystore } from '../../../../src/wss/keystore/model.js';
-import type { WssKeyIdentifierType, WssOutgoingConfig } from '../../../../src/wss/model.js';
+import type { WssKeyIdentifierType, WssOutgoingConfig, WssPart } from '../../../../src/wss/model.js';
 import { generateSigningCert, generateTestCa, generateUntrustedCert } from '../../../helpers/test-certs.js';
 
 const ENVELOPE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
   '<soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>';
+
+const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
 
 const ca = generateTestCa();
 const signer = generateSigningCert(ca);
@@ -29,7 +31,11 @@ const signerStore = keystoreOf(signer.certPem, signer.keyPem);
 const truststore = keystoreOf(signer.certPem);
 
 /** Signs {@link ENVELOPE} with a Timestamp, referencing the certificate the given way. */
-async function sign(keyIdentifierType: WssKeyIdentifierType, identity = signer): Promise<string> {
+async function sign(
+  keyIdentifierType: WssKeyIdentifierType,
+  identity = signer,
+  parts: readonly WssPart[] = DEFAULT_WSS_SIGNATURE_PARTS,
+): Promise<string> {
   const config: WssOutgoingConfig = {
     id: 'o',
     name: 'O',
@@ -44,7 +50,7 @@ async function sign(keyIdentifierType: WssKeyIdentifierType, identity = signer):
         digestAlgorithm: 'sha256',
         canonicalization: 'exc-c14n',
         useSingleCertificate: true,
-        parts: DEFAULT_WSS_SIGNATURE_PARTS.map((part) => ({ ...part })),
+        parts: parts.map((part) => ({ ...part })),
       },
     ],
   };
@@ -144,6 +150,63 @@ describe('verifyIncoming', () => {
     expect(result.signatures[1]?.trusted).toBe(false);
   });
 
+  it('is not shifted by a decoy ds:Signature planted in the Body', async () => {
+    const rogue = await sign('BinarySecurityToken', generateUntrustedCert());
+    const decoy = /<ds:Signature[\s\S]*?<\/ds:Signature>/.exec(rogue)?.[0] ?? '';
+    expect(decoy).not.toBe('');
+    const xml = (await sign('BinarySecurityToken')).replace('<Ping/>', `<Ping/>${decoy}`);
+    const result = verifyIncoming(xml, { ...options, truststore });
+    expect(result.signatures).toHaveLength(2);
+    // The genuine, Security-header signature still verifies over the Body it really covers …
+    expect(result.signatures[0]).toMatchObject({ ok: true, trusted: true, coversBody: true });
+    // … and the planted one is a visible failure rather than silently ignored.
+    expect(result.signatures[1]).toMatchObject({ ok: false, trusted: false });
+  });
+
+  it('fails a signature whose reference id is duplicated', async () => {
+    const xml = await sign('BinarySecurityToken');
+    const bodyId = /<\w+:Body[^>]*\bwsu:Id="([^"]+)"/.exec(xml)?.[1] ?? '';
+    expect(bodyId).not.toBe('');
+    const planted = xml.replace(
+      '<Ping/>',
+      `<Ping/><Decoy xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"` +
+        ` wsu:Id="${bodyId}"/>`,
+    );
+    const result = verifyIncoming(planted, { ...options, truststore });
+    expect(result.signatures[0]?.ok).toBe(false);
+    expect(result.signatures[0]?.error).toContain('duplicate-id');
+  });
+
+  it('reports a signature that does not cover the Body', async () => {
+    const xml = await sign('BinarySecurityToken', signer, [
+      { name: 'Timestamp', namespace: WSU_NS, encode: 'Content' },
+    ]);
+    const result = verifyIncoming(xml, { ...options, truststore });
+    expect(result.signatures[0]).toMatchObject({ ok: true, trusted: true, coversBody: false });
+    expect(result.signatures[0]?.referenceNames).toEqual(['Timestamp']);
+  });
+
+  it('matches an IssuerSerial whose X509IssuerName is rendered differently', async () => {
+    const xml = await sign('IssuerSerial');
+    // Same attributes, reversed and spaced: an RFC 2253 parse has to see through the rendering.
+    const respaced = xml.replace(
+      /<ds:X509IssuerName>([^<]*)<\/ds:X509IssuerName>/,
+      (_match, dn: string) => `<ds:X509IssuerName>${dn.split(',').reverse().join(', ')}</ds:X509IssuerName>`,
+    );
+    expect(respaced).not.toEqual(xml);
+    expect(verifyIncoming(respaced, { ...options, truststore }).signatures[0]).toMatchObject({
+      ok: true,
+      trusted: true,
+    });
+  });
+
+  it('does not trust a pinned certificate outside its validity window', async () => {
+    const xml = await sign('BinarySecurityToken');
+    const later = () => new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const result = verifyIncoming(xml, { ...options, truststore, clock: later });
+    expect(result.signatures[0]).toMatchObject({ ok: true, trusted: false });
+  });
+
   it('ignores a truststore entry that is not a certificate', async () => {
     const xml = await sign('BinarySecurityToken');
     const broken: Keystore = {
@@ -158,6 +221,17 @@ describe('decryptIncoming', () => {
   it('leaves a message that carries no XML-Encryption alone', () => {
     expect(decryptIncoming(ENVELOPE, { keystore: signerStore, alias: signerStore.aliases[0]! })).toEqual({
       xml: ENVELOPE,
+      decrypted: [],
+    });
+  });
+
+  it('leaves a message that only mentions XML-Encryption in its text alone', () => {
+    const xml = ENVELOPE.replace(
+      '<Ping/>',
+      '<Ping>http://www.w3.org/2001/04/xmlenc# EncryptedKey EncryptedData</Ping>',
+    );
+    expect(decryptIncoming(xml, { keystore: signerStore, alias: signerStore.aliases[0]! })).toEqual({
+      xml,
       decrypted: [],
     });
   });

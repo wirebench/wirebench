@@ -55,6 +55,14 @@ function ActionRow({ action }: { readonly action: WssActionWire }) {
             )}
           </div>
         )}
+        {action.references !== undefined && action.references.length > 0 && (
+          <div data-testid="wss-covered" className="mt-0.5 flex items-center gap-1">
+            <span>Signed: {action.references.join(', ')}</span>
+            {/* Trust says *who* signed; this says *what* was signed. A signature that leaves the
+                Body uncovered protects nothing the response actually said. */}
+            {action.coversBody === false && <Chip ok={false}>Body not signed</Chip>}
+          </div>
+        )}
         {action.created !== undefined && (
           <div className="mt-0.5 font-mono">
             {action.created}

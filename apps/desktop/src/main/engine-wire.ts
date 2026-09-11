@@ -280,6 +280,8 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
                       ...(action.trusted !== undefined ? { trusted: action.trusted } : {}),
                       ...(action.created !== undefined ? { created: action.created } : {}),
                       ...(action.expires !== undefined ? { expires: action.expires } : {}),
+                      ...(action.references !== undefined ? { references: [...action.references] } : {}),
+                      ...(action.coversBody !== undefined ? { coversBody: action.coversBody } : {}),
                     })),
                     errors: [...exchange.wss.incoming.errors],
                   },

@@ -442,6 +442,9 @@ export const wssActionWireSchema = z.object({
   trusted: z.boolean().optional(),
   created: z.string().optional(),
   expires: z.string().optional(),
+  /** Names of the parts a signature covered (`Body`, `Timestamp`, …); signature actions only. */
+  references: z.array(z.string()).optional(),
+  coversBody: z.boolean().optional(),
 });
 export type WssActionWire = z.infer<typeof wssActionWireSchema>;
 

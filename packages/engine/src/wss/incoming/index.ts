@@ -12,6 +12,7 @@ import { isWirebenchError } from '../../errors.js';
 import { selectAlias } from '../keystore/index.js';
 import { decryptIncoming } from './decrypt.js';
 import { verifyIncoming } from './verify.js';
+import type { Keystore } from '../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
 
 /** Which of the three incoming steps an action reports on. */
@@ -31,6 +32,10 @@ export interface WssAction {
   readonly created?: string;
   /** `wsu:Expires`; only on a `timestamp` action that had one. */
   readonly expires?: string;
+  /** The covered parts' element names (the reference id when unresolvable); `signature` only. */
+  readonly references?: readonly string[];
+  /** Whether a valid reference covers the envelope's `Body`; `signature` only. */
+  readonly coversBody?: boolean;
 }
 
 /** What {@link processIncomingWss} made of a response. */
@@ -67,7 +72,14 @@ async function runDecrypt(
   if (ref === undefined || ref === '') {
     return { xml };
   }
-  const keystore = await ctx.keystores(ref);
+  let keystore: Keystore | undefined;
+  try {
+    keystore = await ctx.keystores(ref);
+  } catch (error) {
+    // A resolver that rejects (a locked registry, a revoked secret) must not fail the send: the
+    // response already arrived, and the user is entitled to see it plus why it was not opened.
+    return { xml, action: { kind: 'decrypt', ok: false, detail: messageOf(error) } };
+  }
   if (keystore === undefined) {
     return {
       xml,
@@ -138,27 +150,48 @@ export async function processIncomingWss(
     }
   }
 
-  const truststore =
-    config.signatureKeystoreRef === undefined || config.signatureKeystoreRef === ''
-      ? undefined
-      : await ctx.keystores(config.signatureKeystoreRef);
-  if (config.signatureKeystoreRef !== undefined && config.signatureKeystoreRef !== '' && truststore === undefined) {
-    errors.push('The signature truststore is not available.');
+  const wantsTruststore = config.signatureKeystoreRef !== undefined && config.signatureKeystoreRef !== '';
+  let truststore: Keystore | undefined;
+  let truststoreError: string | undefined;
+  if (wantsTruststore) {
+    try {
+      truststore = await ctx.keystores(config.signatureKeystoreRef ?? '');
+    } catch (error) {
+      truststoreError = `The signature truststore could not be resolved: ${messageOf(error)}`;
+    }
+    if (truststore === undefined) {
+      // Fail closed: without the truststore nothing can be trusted, and the reason is reported
+      // on the signature actions below rather than left to be read as "signer unknown".
+      truststoreError ??= 'The signature truststore is not available.';
+      errors.push(truststoreError);
+    }
   }
 
-  const verified = verifyIncoming(decrypt.xml, {
-    ...(truststore !== undefined ? { truststore } : {}),
-    clock,
-    skewSeconds: config.timestampSkewSeconds,
-    verifyChain: config.verifyChain,
-  });
+  let verified;
+  try {
+    verified = verifyIncoming(decrypt.xml, {
+      ...(truststore !== undefined ? { truststore } : {}),
+      clock,
+      skewSeconds: config.timestampSkewSeconds,
+      verifyChain: config.verifyChain,
+    });
+  } catch (error) {
+    // `verifyIncoming` is written not to throw; if it ever does, that is a failed verification
+    // report, never a failed send.
+    const detail = `Verification could not be completed: ${messageOf(error)}`;
+    actions.push({ kind: 'signature', ok: false, detail, trusted: false });
+    errors.push(detail);
+    return { actions, ...(decrypt.decryptedXml !== undefined ? { decryptedXml: decrypt.decryptedXml } : {}), errors };
+  }
 
   for (const signature of verified.signatures) {
     const ok = signature.ok && signature.trusted;
+    const covered = signature.referenceNames.length === 0 ? 'nothing' : signature.referenceNames.join(', ');
+    const untrusted = truststoreError !== undefined ? `${truststoreError}` : 'but the signer is not trusted.';
     const detail = signature.ok
       ? signature.trusted
-        ? `Signature valid over ${String(signature.references.length)} reference(s); signer trusted.`
-        : `Signature valid over ${String(signature.references.length)} reference(s), but the signer is not trusted.`
+        ? `Signature valid over ${covered}; signer trusted.`
+        : `Signature valid over ${covered}, ${untrusted}`
       : (signature.error ?? 'The signature did not verify.');
     actions.push({
       kind: 'signature',
@@ -166,13 +199,21 @@ export async function processIncomingWss(
       detail,
       ...(signature.signerSubject !== undefined ? { signerSubject: signature.signerSubject } : {}),
       trusted: signature.trusted,
+      references: [...signature.referenceNames],
+      coversBody: signature.coversBody,
     });
     if (!ok) {
       errors.push(detail);
     }
   }
-  if (verified.signatures.length === 0 && config.requireSignature) {
-    const detail = 'This response carries no signature, and one is required.';
+  // "A signature is required" means a *valid, trusted* signature over the **Body**: a signature
+  // covering only the Timestamp leaves the payload as unprotected as no signature at all.
+  const bodySigned = verified.signatures.some((signature) => signature.ok && signature.trusted && signature.coversBody);
+  if (config.requireSignature && !bodySigned) {
+    const detail =
+      verified.signatures.length === 0
+        ? 'This response carries no signature, and one is required.'
+        : 'No valid, trusted signature covers the Body, and one is required.';
     actions.push({ kind: 'signature', ok: false, detail });
     errors.push(detail);
   }
