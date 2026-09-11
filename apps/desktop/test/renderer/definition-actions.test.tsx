@@ -60,6 +60,7 @@ describe('definition actions', () => {
     stubApi();
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface({ loadedAt: LOADED_AT, definitionUrl: 'https://example.test/v1.wsdl' }) },
+      projectOf: { 'if-1': 'p1' },
     });
     useInterfaceEditorStore.setState({ tabs: {}, data: {}, selections: {}, sourceTargets: {}, dialogs: {} });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
@@ -214,7 +215,7 @@ describe('UpdateDefinitionDialog', () => {
     await waitFor(() => {
       expect(showToast).toHaveBeenCalledWith('Definition updated — 1 created, 1 recreated, 1 orphaned');
     });
-    expect(useProjectStore.getState().project?.id).toBe('p1');
+    expect(useProjectStore.getState().projects['p1']?.id).toBe('p1');
   });
 
   it('refuses to plan with no source at all', async () => {

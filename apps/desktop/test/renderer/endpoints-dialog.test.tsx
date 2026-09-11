@@ -32,7 +32,7 @@ function stubMutate(): ReturnType<typeof vi.fn> {
 
 describe('EndpointsDialog', () => {
   beforeEach(() => {
-    useProjectStore.setState({ interfaces: { 'if-1': makeInterface() } });
+    useProjectStore.setState({ interfaces: { 'if-1': makeInterface() }, projectOf: { 'if-1': 'p1' } });
   });
 
   afterEach(() => {
@@ -62,6 +62,7 @@ describe('EndpointsDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
       change: { kind: 'add-endpoint', interfaceId: 'if-1', name: 'Staging', url: 'https://staging.test/calc.asmx' },
     });
   });
@@ -77,6 +78,7 @@ describe('EndpointsDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
       change: {
         kind: 'update-endpoint',
         interfaceId: 'if-1',
@@ -95,6 +97,7 @@ describe('EndpointsDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Confirm delete/ }));
     expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
       change: { kind: 'remove-endpoint', interfaceId: 'if-1', endpointId: 'ep-2' },
     });
   });
@@ -106,6 +109,7 @@ describe('EndpointsDialog', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Set default' })[1] as HTMLElement);
 
     expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
       change: { kind: 'set-default-endpoint', interfaceId: 'if-1', endpointId: 'ep-2' },
     });
   });

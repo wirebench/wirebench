@@ -137,6 +137,6 @@ describe('resetValueFor', () => {
   });
 
   it('unbinds a command that ships without one', () => {
-    expect(resetValueFor(rowFor(keymapRows({ 'project.close': 'Mod+Y' }), 'project.close')!)).toBe('');
+    expect(resetValueFor(rowFor(keymapRows({ 'app.checkForUpdates': 'Mod+Y' }), 'app.checkForUpdates')!)).toBe('');
   });
 });

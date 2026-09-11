@@ -113,7 +113,7 @@ async function register(
       buildLiveSendInput: () => {
         throw new Error('not stubbed');
       },
-      mutate: () => {
+      projectMutate: () => {
         throw new Error('not stubbed');
       },
       sendInputFor: () => undefined,

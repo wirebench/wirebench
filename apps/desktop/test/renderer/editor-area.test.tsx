@@ -5,13 +5,12 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 function setUp() {
-  // Selecting the Welcome tab mounts the Welcome screen, which asks for the recent projects.
   installWirebenchApi();
   useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
   const store = useEditorsStore.getState();
   store.open({ id: 'a', kind: 'request', title: 'A', requestId: 'a' });
   store.open({ id: 'b', kind: 'request', title: 'B', requestId: 'b' });
-  render(<EditorArea onImportDefinition={() => undefined} />);
+  render(<EditorArea />);
 }
 
 describe('EditorArea tabs', () => {

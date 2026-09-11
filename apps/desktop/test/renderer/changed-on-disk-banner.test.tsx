@@ -27,7 +27,8 @@ function project(dirty: boolean): ProjectWire {
 
 describe('ChangedOnDiskBanner', () => {
   beforeEach(() => {
-    useProjectStore.setState({ project: project(false), interfaces: {}, requests: {}, order: [], changedOnDisk: [] });
+    useProjectStore.getState().reset();
+    useProjectStore.getState().applySnapshot('p', project(false));
     installWirebenchApi();
   });
   afterEach(cleanup);
@@ -40,7 +41,7 @@ describe('ChangedOnDiskBanner', () => {
   it('reloads straight away when there is nothing unsaved', async () => {
     const reload = vi.fn().mockResolvedValue({ ok: true, value: { project: project(false) } });
     installWirebenchApi({ project: { reload } });
-    useProjectStore.getState().noteChangedOnDisk(['wirebench.yaml']);
+    useProjectStore.getState().noteChangedOnDisk('p', ['wirebench.yaml']);
     render(<ChangedOnDiskBanner />);
 
     await userEvent.click(screen.getByTestId('changed-on-disk-reload'));
@@ -50,8 +51,8 @@ describe('ChangedOnDiskBanner', () => {
   it('asks first when reloading would discard unsaved edits', async () => {
     const reload = vi.fn().mockResolvedValue({ ok: true, value: { project: project(false) } });
     installWirebenchApi({ project: { reload } });
-    useProjectStore.setState({ project: project(true) });
-    useProjectStore.getState().noteChangedOnDisk(['wirebench.yaml']);
+    useProjectStore.getState().applySnapshot('p', project(true));
+    useProjectStore.getState().noteChangedOnDisk('p', ['wirebench.yaml']);
     render(<ChangedOnDiskBanner />);
 
     await userEvent.click(screen.getByTestId('changed-on-disk-reload'));
@@ -65,7 +66,7 @@ describe('ChangedOnDiskBanner', () => {
   it('Ignore dismisses the banner without reloading', async () => {
     const reload = vi.fn();
     installWirebenchApi({ project: { reload } });
-    useProjectStore.getState().noteChangedOnDisk(['wirebench.yaml']);
+    useProjectStore.getState().noteChangedOnDisk('p', ['wirebench.yaml']);
     render(<ChangedOnDiskBanner />);
 
     await userEvent.click(screen.getByTestId('changed-on-disk-ignore'));

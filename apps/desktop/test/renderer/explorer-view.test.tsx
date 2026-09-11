@@ -78,7 +78,7 @@ describe('ExplorerView', () => {
   it('renders the tree and opens an editor tab on double-click of a request', () => {
     useProjectStore.setState({
       interfaces: { [summary.id]: summary },
-      order: [summary.id],
+      order: [{ projectId: 'p1', interfaceIds: [summary.id] }],
       requests: {
         'req-1': {
           properties: REQUEST_PROPERTIES,
@@ -121,7 +121,7 @@ describe('ExplorerView', () => {
   it('opens the interface viewer on double-click only, never on a single click', () => {
     useProjectStore.setState({
       interfaces: { [summary.id]: summary },
-      order: [summary.id],
+      order: [{ projectId: 'p1', interfaceIds: [summary.id] }],
       requests: {},
     });
 

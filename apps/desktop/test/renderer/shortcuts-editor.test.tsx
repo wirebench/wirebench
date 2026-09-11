@@ -52,7 +52,9 @@ describe('ShortcutsEditor', () => {
   it('says so when a command has no binding', () => {
     render(<ShortcutsEditor context={context} />);
 
-    expect(within(rowFor('project.close')).getByLabelText('Shortcut for Close Project').textContent).toBe('Unassigned');
+    expect(within(rowFor('app.checkForUpdates')).getByLabelText('Shortcut for Check for Updates…').textContent).toBe(
+      'Unassigned',
+    );
   });
 
   it('records the next keystroke as the new binding and persists it', async () => {

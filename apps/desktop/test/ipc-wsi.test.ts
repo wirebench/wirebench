@@ -91,11 +91,12 @@ describe('wsi.* IPC', () => {
     });
   });
 
-  /** A `ProjectHost` stub answering with one saved request on one imported interface. */
+  /** A router stub answering with one saved request on one imported interface of project `p1`. */
   const project = (target: unknown = SAVED_TARGET): WsiChannelProject =>
     ({
       validationTargetFor: () => target,
-      snapshot: () => ({ interfaces: [{ id: 'iface-1', name: 'Calculator' }] }),
+      projectId: () => 'p1',
+      projectSnapshot: () => ({ interfaces: [{ id: 'iface-1', name: 'Calculator' }] }),
     }) as unknown as WsiChannelProject;
 
   function register(projectStub: WsiChannelProject = project()): void {
@@ -132,7 +133,7 @@ describe('wsi.* IPC', () => {
   });
 
   it('falls back to the interface id when no project is open', async () => {
-    register({ validationTargetFor: () => undefined, snapshot: () => null });
+    register({ validationTargetFor: () => undefined, projectSnapshot: () => null, projectId: () => undefined });
     const result = (await invoke('wsi.checkWsdl', { interfaceId: 'iface-1' })) as Result<WsiReportWire>;
     expect(result.ok && result.value.label).toBe('iface-1');
   });
@@ -188,7 +189,8 @@ describe('wsi.* IPC', () => {
     cache.put('send-4', {} as never, [], { exchange: exchange(), requestId: 'req-1' });
     register({
       validationTargetFor: () => ({ ...SAVED_TARGET, operationName: 'Nope' }),
-      snapshot: () => null,
+      projectSnapshot: () => null,
+      projectId: () => undefined,
     });
     const result = (await invoke('wsi.checkExchange', { sendId: 'send-4' })) as Result<WsiReportWire>;
     expect(result.ok).toBe(false);

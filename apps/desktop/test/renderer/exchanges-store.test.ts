@@ -58,8 +58,6 @@ describe('useExchangesStore', () => {
       interfaces: {},
       requests: { r1: draft },
       order: [],
-      environments: [],
-      activeEnvironmentId: undefined,
     });
     useProblemsStore.setState({ items: [] });
     usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
@@ -200,8 +198,6 @@ describe('useExchangesStore', () => {
       interfaces: {},
       requests: { r1: draftWithoutEndpoint },
       order: [],
-      environments: [],
-      activeEnvironmentId: undefined,
     });
     const sendFn = vi.fn();
     stubIpc({ request: { generate: vi.fn(), send: sendFn, cancel: vi.fn() } });

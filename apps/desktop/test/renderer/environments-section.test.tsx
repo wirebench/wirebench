@@ -3,37 +3,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentsSection } from '../../src/renderer/features/environments/environments-section.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
-import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { EnvironmentWire, ProjectWire } from '../../src/shared/wire-types.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-types.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 
-const dev: EnvironmentWire = { id: 'e1', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: {} };
-const uat: EnvironmentWire = { id: 'e2', name: 'uat', slug: 'uat', order: 1, endpoints: {}, properties: {} };
+const dev: WorkspaceEnvironmentWire = { id: 'e1', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: {} };
+const uat: WorkspaceEnvironmentWire = { id: 'e2', name: 'uat', slug: 'uat', order: 1, endpoints: {}, properties: {} };
 
-const project = {
-  id: 'p1',
-  name: 'Demo',
-  dir: '/tmp/demo',
-  dirty: false,
-  interfaces: [],
-  requests: [],
-  properties: {},
-  environments: [dev, uat],
-  problems: [],
-} as unknown as ProjectWire;
-
-function setUp(overrides: Partial<ReturnType<typeof useProjectStore.getState>> = {}) {
+function setUp() {
   const actions = {
-    addEnvironment: vi.fn().mockResolvedValue('e3'),
-    updateEnvironment: vi.fn().mockResolvedValue(undefined),
-    removeEnvironment: vi.fn().mockResolvedValue(undefined),
+    mutate: vi.fn().mockResolvedValue({}),
     setActiveEnvironment: vi.fn().mockResolvedValue(undefined),
   };
-  useProjectStore.setState({
-    project,
-    environments: [dev, uat],
-    activeEnvironmentId: 'e1',
+  useWorkspaceStore.setState({
+    workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e1' }),
     ...actions,
-    ...overrides,
   });
   render(
     <TooltipPrimitive.Provider>
@@ -50,7 +34,7 @@ describe('EnvironmentsSection', () => {
 
   afterEach(() => {
     cleanup();
-    useProjectStore.setState({ project: null, environments: [], activeEnvironmentId: undefined });
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('lists the environments and marks the active one', () => {
@@ -61,13 +45,13 @@ describe('EnvironmentsSection', () => {
   });
 
   it('adds an environment through the inline name prompt', async () => {
-    const { addEnvironment } = setUp();
+    const { mutate } = setUp();
     fireEvent.click(screen.getByRole('button', { name: 'Add environment' }));
     const input = screen.getByLabelText('New environment name');
     fireEvent.change(input, { target: { value: 'prod' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
-      expect(addEnvironment).toHaveBeenCalledWith('prod');
+      expect(mutate).toHaveBeenCalledWith({ kind: 'add-workspace-environment', name: 'prod' });
     });
   });
 
@@ -89,14 +73,14 @@ describe('EnvironmentsSection', () => {
   });
 
   it('deletes only after the confirmation is accepted', async () => {
-    const { removeEnvironment } = setUp();
+    const { mutate } = setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[1]!);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
-    expect(removeEnvironment).not.toHaveBeenCalled();
+    expect(mutate).not.toHaveBeenCalled();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() => {
-      expect(removeEnvironment).toHaveBeenCalledWith('e2');
+      expect(mutate).toHaveBeenCalledWith({ kind: 'remove-workspace-environment', environmentId: 'e2' });
     });
   });
 });

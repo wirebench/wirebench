@@ -8,10 +8,17 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 import { App } from '../../src/renderer/app.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 
-function stubWirebench(): void {
+/** The IDE only renders with a workspace open; `null` shows the picker instead. */
+function stubWirebench(workspace: WorkspaceWire | null = workspaceWire()): void {
   installWirebenchApi({
+    workspace: {
+      snapshot: vi.fn().mockResolvedValue({ ok: true, value: { workspace } }),
+    },
     app: {
       version: vi.fn().mockResolvedValue({
         ok: true,
@@ -20,7 +27,6 @@ function stubWirebench(): void {
     },
     project: {
       snapshot: vi.fn().mockResolvedValue({ ok: true, value: { project: null } }),
-      recent: vi.fn().mockResolvedValue({ ok: true, value: { recent: [] } }),
     },
   });
 }
@@ -57,6 +63,9 @@ describe('AppShell', () => {
     localStorage.clear();
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
     useUiStore.getState().persistTo(undefined);
+    // Seeded as well as stubbed, so the very first render is already the IDE rather than a
+    // picker that flips over once the snapshot lands.
+    useWorkspaceStore.setState({ workspace: workspaceWire() });
   });
 
   afterEach(() => {
@@ -79,13 +88,25 @@ describe('AppShell', () => {
     }
   });
 
-  it('offers the three ways into the app on the Welcome tab', () => {
+  it('shows the empty editor placeholder when no tab is open', () => {
     render(<App />);
 
     expect(screen.getByRole('tab', { name: 'Welcome' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Import WSDL' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open project…' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'New project…' })).toBeTruthy();
+    expect(screen.getByTestId('editor-empty')).toBeTruthy();
+  });
+
+  it('shows the workspace picker, under the title bar, when no workspace is open', async () => {
+    stubWirebench(null);
+    useWorkspaceStore.setState({ workspace: null });
+    render(<App />);
+
+    expect(await screen.findByTestId('workspace-picker')).toBeTruthy();
+    expect(screen.getByTestId('title-bar')).toBeTruthy();
+    expect(screen.getByTestId('workspace-create-name')).toBeTruthy();
+    expect(screen.getByTestId('workspace-create')).toBeTruthy();
+    // None of the IDE chrome is there to act on a workspace that does not exist.
+    expect(screen.queryByTestId('editor-area')).toBeNull();
+    expect(screen.queryByTestId('sidebar')).toBeNull();
   });
 
   it('hides the sidebar on Mod+B and shows it again', async () => {

@@ -25,7 +25,12 @@ function setUp(configs: readonly WssOutgoingWire[] = [config]) {
     updateWssOutgoing: vi.fn().mockResolvedValue(undefined),
     removeWssOutgoing: vi.fn().mockResolvedValue(undefined),
   };
-  useProjectStore.setState({ project, keystores: [], wssOutgoing: configs, ...actions });
+  useProjectStore.setState({
+    projects: { p1: project },
+    keystores: [],
+    wssOutgoing: configs.map((entry) => ({ ...entry, projectId: 'p1' })),
+    ...actions,
+  });
   render(
     <TooltipPrimitive.Provider>
       <OutgoingConfigEditor />
@@ -40,7 +45,7 @@ function expand(): void {
 
 afterEach(() => {
   cleanup();
-  useProjectStore.setState({ project: null, keystores: [], wssOutgoing: [], wssIncoming: [] });
+  useProjectStore.getState().reset();
 });
 
 describe('OutgoingConfigEditor', () => {
@@ -49,7 +54,7 @@ describe('OutgoingConfigEditor', () => {
     expect(screen.getAllByTestId('wss-outgoing-row')).toHaveLength(1);
     expect(screen.getByText('2 entries')).toBeTruthy();
     fireEvent.click(screen.getByTestId('wss-outgoing-add'));
-    expect(addWssOutgoing).toHaveBeenCalled();
+    expect(addWssOutgoing).toHaveBeenCalledWith('p1');
   });
 
   it('says so when there is nothing yet', () => {

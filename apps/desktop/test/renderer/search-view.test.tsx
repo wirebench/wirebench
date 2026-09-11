@@ -42,7 +42,7 @@ function stubQuery(matches: readonly SearchMatchWire[], truncated = false) {
 }
 
 const openProject = (): void => {
-  useProjectStore.setState({ project: { id: 'p1', name: 'Demo' } as ProjectWire });
+  useProjectStore.setState({ projects: { p1: { id: 'p1', name: 'Demo' } as ProjectWire } });
 };
 
 describe('SearchView', () => {
@@ -185,7 +185,7 @@ describe('SearchView', () => {
   });
 
   it('invites the user to open a project when none is', () => {
-    useProjectStore.setState({ project: null });
+    useProjectStore.getState().reset();
     installWirebenchApi({ search: { query: stubQuery([]) } });
     render(<SearchView />);
 

@@ -82,10 +82,9 @@ describe('definition.import — a file path must be proven, not merely named', (
     await writeFile(insidePath, wsdl, 'utf-8');
 
     picks = new DialogPicks();
-    const project = {
-      snapshot: () => ({ dir: projectDir }),
-    } as unknown as DefinitionChannelProject;
-    registerDefinitionChannels(new EngineService(), { project, picks });
+    const project = {} as unknown as DefinitionChannelProject;
+    // Every open project's folder counts as "inside the project"; this workspace has one.
+    registerDefinitionChannels(new EngineService(), { project, picks, projectDirs: () => [projectDir] });
   });
 
   afterEach(async () => {

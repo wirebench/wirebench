@@ -8,6 +8,13 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { WorkspaceEnvironmentWire, WorkspaceWire } from '../../src/shared/wire-types.js';
+
+/** The smallest open workspace carrying exactly these environments. */
+function workspace(environments: readonly WorkspaceEnvironmentWire[]): WorkspaceWire {
+  return { id: 'w', name: 'Workspace 1', dir: '/tmp/w', properties: {}, environments: [...environments], projects: [] };
+}
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import {
   getCommand,
@@ -74,7 +81,7 @@ describe('command registry', () => {
   });
 
   it('throws unknown-command for an unregistered id', async () => {
-    await expect(runCommand('project.new', context)).rejects.toThrow(/unknown-command/);
+    await expect(runCommand('project.save', context)).rejects.toThrow(/unknown-command/);
   });
 
   it('returns false without running when `when` denies the command', async () => {
@@ -95,7 +102,7 @@ describe('command registry', () => {
     registerCommand({ id: 'view.toggleConsole', label: 'Toggle Console', category: 'View', run: vi.fn() });
     registerCommand({ id: 'view.toggleDetails', label: 'Toggle Details', category: 'View', run: vi.fn() });
     registerCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'General', run: vi.fn() });
-    registerCommand({ id: 'project.new', label: 'New Project', category: 'Project', run: vi.fn(), when: () => false });
+    registerCommand({ id: 'project.save', label: 'Save All', category: 'Project', run: vi.fn(), when: () => false });
 
     expect(listCommands(context).map((command) => command.id)).toEqual([
       'palette.open',
@@ -128,20 +135,19 @@ describe('environment commands', () => {
   });
 
   afterEach(() => {
-    useProjectStore.setState({ project: null, environments: [], activeEnvironmentId: undefined });
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('opens the switcher dropdown with no argument', async () => {
-    useProjectStore.setState({ project: {} as never, environments: [], activeEnvironmentId: undefined });
+    useWorkspaceStore.setState({ workspace: workspace([]) });
     await runCommand('env.switch', context);
     expect(useUiStore.getState().envSwitcherOpen).toBe(true);
   });
 
   it('switches straight to a named environment when the palette passes one', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({
-      project: {} as never,
-      environments: [{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }],
+    useWorkspaceStore.setState({
+      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
       setActiveEnvironment,
     });
     await runCommand('env.switch', context, 'uat');
@@ -151,11 +157,11 @@ describe('environment commands', () => {
 
   it('cycles to the next environment, and is unavailable without any', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({ environments: [], activeEnvironmentId: undefined, setActiveEnvironment });
+    useWorkspaceStore.setState({ workspace: workspace([]), setActiveEnvironment });
     expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
 
-    useProjectStore.setState({
-      environments: [{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }],
+    useWorkspaceStore.setState({
+      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
     });
     await runCommand('env.next', context);
     expect(setActiveEnvironment).toHaveBeenCalledWith('e1');

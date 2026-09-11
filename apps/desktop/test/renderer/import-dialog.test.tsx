@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ImportDialog } from '../../src/renderer/features/explorer/import-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
@@ -56,8 +57,9 @@ function stubWirebench(overrides: Parameters<typeof installWirebenchApi>[0] = {}
 
 describe('ImportDialog', () => {
   beforeEach(() => {
-    // An import needs somewhere to land, so every test starts with a project already open.
-    useProjectStore.getState().applySnapshot({ ...project, interfaces: [], requests: [] });
+    // One project open; with none selected in the explorer an import creates its own.
+    useProjectStore.getState().reset();
+    useProjectStore.getState().applySnapshot(project.id, { ...project, interfaces: [], requests: [] });
   });
 
   afterEach(() => {
@@ -76,7 +78,9 @@ describe('ImportDialog', () => {
   });
 
   it('submits a URL source with a generated token', async () => {
-    const importFn = vi.fn().mockResolvedValue({ ok: true, value: { project, interfaceId: 'iface-1' } });
+    const importFn = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { projectId: project.id, project, interfaceId: 'iface-1' } });
     const { emit } = stubWirebench({ project: { addInterface: importFn } });
 
     render(<ImportDialog open onOpenChange={vi.fn()} />);
@@ -85,12 +89,31 @@ describe('ImportDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(importFn).toHaveBeenCalled());
-    const call = importFn.mock.calls[0]?.[0] as { source: unknown; token: unknown };
+    const call = importFn.mock.calls[0]?.[0] as { target: unknown; source: unknown; token: unknown };
     expect(call.source).toEqual({ kind: 'url', url: 'http://example.test/service.wsdl' });
     expect(typeof call.token).toBe('string');
+    // Nothing is selected in the explorer, so the import makes a project of its own, named
+    // after the source — it does not stop to ask for one.
+    expect(call.target).toEqual({ newProjectName: 'service' });
 
     // A progress event for a different, or matching, token updates the progress line.
     emit('engine.progress', { kind: 'import', token: call.token, phase: 'fetch', message: 'Fetching…' });
+  });
+
+  it('imports into the project selected in the explorer', async () => {
+    const importFn = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { projectId: project.id, project, interfaceId: 'iface-1' } });
+    stubWirebench({ project: { addInterface: importFn } });
+    useUiStore.setState({ selection: { kind: 'project', id: project.id } });
+
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(importFn).toHaveBeenCalled());
+    expect((importFn.mock.calls[0]?.[0] as { target: unknown }).target).toEqual({ projectId: project.id });
+    useUiStore.setState({ selection: undefined });
   });
 
   it('renders an IPC error inline', async () => {

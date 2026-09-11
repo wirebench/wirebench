@@ -28,7 +28,12 @@ function setUp(configs: readonly WssIncomingWire[] = [config]) {
     updateWssIncoming: vi.fn().mockResolvedValue(undefined),
     removeWssIncoming: vi.fn().mockResolvedValue(undefined),
   };
-  useProjectStore.setState({ project, keystores: [keystore], wssIncoming: configs, ...actions });
+  useProjectStore.setState({
+    projects: { p1: project },
+    keystores: [{ ...keystore, projectId: 'p1' }],
+    wssIncoming: configs.map((entry) => ({ ...entry, projectId: 'p1' })),
+    ...actions,
+  });
   render(
     <TooltipPrimitive.Provider>
       <IncomingConfigEditor />
@@ -39,7 +44,7 @@ function setUp(configs: readonly WssIncomingWire[] = [config]) {
 
 afterEach(() => {
   cleanup();
-  useProjectStore.setState({ project: null, keystores: [], wssOutgoing: [], wssIncoming: [] });
+  useProjectStore.getState().reset();
 });
 
 describe('IncomingConfigEditor', () => {
@@ -47,7 +52,7 @@ describe('IncomingConfigEditor', () => {
     const { addWssIncoming } = setUp();
     expect(screen.getAllByTestId('wss-incoming-row')).toHaveLength(1);
     fireEvent.click(screen.getByTestId('wss-incoming-add'));
-    expect(addWssIncoming).toHaveBeenCalled();
+    expect(addWssIncoming).toHaveBeenCalledWith('p1');
   });
 
   it('says so when there is nothing yet', () => {

@@ -36,6 +36,7 @@ describe('buildApi', () => {
       'ssl',
       'theme',
       'validate',
+      'workspace',
       'wsa',
       'wsi',
       'wss',

@@ -83,7 +83,7 @@ describe('HistoryService', () => {
 
     const result = await sendAndRecordHistory(
       engine,
-      { project: { ...noopProject, projectId: () => 'proj-2' }, history },
+      { project: noopProject, history },
       {
         sendId: 'send-1',
         input: {
@@ -93,6 +93,8 @@ describe('HistoryService', () => {
           headers: { Authorization: 'Basic dG9wc2VjcmV0OnBhc3M=' },
         },
       },
+      // No saved request behind this send: it is keyed to the project the caller names.
+      { requestName: 'Ad-hoc request', interfaceName: '', operationName: '', projectId: 'proj-2' },
     );
     expect(result.http.status).toBe(200);
 
@@ -118,7 +120,7 @@ describe('HistoryService', () => {
     await expect(
       sendAndRecordHistory(
         engine,
-        { project: { ...noopProject, projectId: () => 'proj-3' }, history },
+        { project: noopProject, history },
         {
           sendId: 'send-err',
           input: {
@@ -128,6 +130,7 @@ describe('HistoryService', () => {
             timeoutMs: 200,
           },
         },
+        { requestName: 'Ad-hoc request', interfaceName: '', operationName: '', projectId: 'proj-3' },
       ),
     ).rejects.toThrow();
 
@@ -136,6 +139,24 @@ describe('HistoryService', () => {
     expect(entries[0]?.ok).toBe(false);
     expect(entries[0]?.error).toBeDefined();
     expect(entries[0]?.status).toBeUndefined();
+  });
+
+  it('keys a send to the project owning its request, and records nothing for one no project owns', async () => {
+    const engine = new EngineService();
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-a');
+    await history.open('proj-b');
+    const owners: Record<string, string> = { 'req-b': 'proj-b' };
+    const project = { ...noopProject, projectId: (entityId: string) => owners[entityId] };
+    const input = { endpoint: `${server.url}/soap`, envelopeXml: '<Envelope/>', soapVersion: '1.1' as const };
+
+    await sendAndRecordHistory(engine, { project, history }, { sendId: 's-owned', requestId: 'req-b', input });
+    // No request, no named project: nothing owns it, so nothing records it.
+    await sendAndRecordHistory(engine, { project, history }, { sendId: 's-adhoc', input });
+
+    expect(history.list({ projectId: 'proj-b' }).total).toBe(1);
+    expect(history.list({ projectId: 'proj-a' }).total).toBe(0);
+    expect(history.list().total).toBe(1);
   });
 
   it('list search filters and clear empties the file', async () => {

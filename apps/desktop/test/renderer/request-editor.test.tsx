@@ -38,7 +38,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft() },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
     // The pane's selected view lives in the editors store now, so it outlives a `cleanup()`.
@@ -147,7 +148,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 
@@ -173,7 +175,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
 
     // Set up the editors store with an active request tab so the command's `when` condition passes.
@@ -217,7 +220,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 
@@ -250,7 +254,8 @@ describe('RequestEditor', () => {
       requests: {
         'req-1': makeDraft({ envelopeXml: '<soap:Envelope><soap:Body><Add>1</Add></soap:Body></soap:Envelope>' }),
       },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 

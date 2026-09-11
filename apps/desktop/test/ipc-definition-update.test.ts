@@ -103,7 +103,8 @@ function stubProject(overrides: Partial<DefinitionChannelProject> = {}): Definit
       calls.push({ kind: 'docs', interfaceId, format });
       return format === 'html' ? '<!DOCTYPE html><p>doc</p>' : '# doc';
     },
-    snapshot: () => SNAPSHOT,
+    projectSnapshot: () => SNAPSHOT,
+    projectId: () => 'p1',
     ...overrides,
   };
 }

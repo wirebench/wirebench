@@ -68,7 +68,7 @@ describe('DetailsPanel', () => {
     // the next; reset the persisted half of the ui state alongside the selection.
     useUiStore.setState({ ...structuredClone(DEFAULT_UI_STATE), selection: undefined });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
-    useProjectStore.setState({ project: null, requests: {}, interfaces: {} });
+    useProjectStore.getState().reset();
     useGlobalsStore.setState({ properties: {} });
   });
 
@@ -83,8 +83,8 @@ describe('DetailsPanel', () => {
 
   it('edits the project properties when the Project row is selected', async () => {
     const setProjectProperty = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({ project, setProjectProperty });
-    useUiStore.setState({ selection: { kind: 'project', id: 'project' } });
+    useProjectStore.setState({ projects: { p1: project }, setProjectProperty });
+    useUiStore.setState({ selection: { kind: 'project', id: 'p1' } });
     renderPanel();
 
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('example.test');
@@ -93,7 +93,7 @@ describe('DetailsPanel', () => {
     fireEvent.change(screen.getByLabelText('New property value'), { target: { value: '8080' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add property' }));
     await waitFor(() => {
-      expect(setProjectProperty).toHaveBeenCalledWith('port', '8080');
+      expect(setProjectProperty).toHaveBeenCalledWith('p1', 'port', '8080');
     });
   });
 

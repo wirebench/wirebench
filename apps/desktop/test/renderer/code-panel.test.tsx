@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { CodePanel } from '../../src/renderer/features/details/code-panel.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -136,7 +137,17 @@ describe('CodePanel', () => {
       expect(curl).toHaveBeenCalledTimes(1);
     });
 
-    useProjectStore.setState({ activeEnvironmentId: 'env-1' });
+    useWorkspaceStore.setState({
+      workspace: {
+        id: 'w',
+        name: 'Workspace 1',
+        dir: '/tmp/w',
+        properties: {},
+        environments: [{ id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        activeEnvironmentId: 'env-1',
+        projects: [],
+      },
+    });
 
     await waitFor(
       () => {
