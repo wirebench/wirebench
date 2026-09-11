@@ -4,23 +4,34 @@
  * channel routes through, and `workspace-state.json`.
  *
  * Path authority (ADR-0005, extended by the workspaces spec §6): the only roots this class
- * ever touches are `<userData>/workspaces/<workspaceId>` and the absolute folder a *linked*
- * project reference names — and a linked path only ever enters the manifest from a native
- * dialog pick made in main. Nothing here accepts a path from the renderer, and deletion is
- * trash-only through the injected {@link WorkspaceServiceDeps.trash} (which is why there is no
- * `electron` import in this file, and no `rm` of anything under `userData`).
+ * ever touches are `<userData>/workspaces/<workspaceId>`, the absolute folder a *linked*
+ * project reference names, and a folder the user just chose in a native dialog — and a linked
+ * or exported path only ever enters the manifest (or a write) from that dialog pick, made in
+ * main and recorded in `DialogPicks`. Nothing here accepts a path from the renderer, and
+ * deletion is trash-only through the injected {@link WorkspaceServiceDeps.trash} (never an
+ * `rm` of anything under `userData`, and never anything at all under a linked root).
  *
- * Project operations (`addProject`, `removeProject`, `linkProject`, …), workspace environments
- * and `mutate` are deliberately absent — they land in later tasks rather than as stubs here.
+ * The one `electron` dependency is `./native-dialogs.js` — the folder picker itself, which is
+ * the whole point of these methods taking a `WebContents`. Workspace environments and
+ * `mutate` are deliberately absent; they land in a later task rather than as stubs here.
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { cp, mkdir, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import {
+  attachmentsDir,
+  createProject,
   createWorkspace,
+  definitionCacheDir,
+  INTERFACES_DIR,
+  loadProject,
   loadWorkspace,
+  ProjectError,
+  reidentifyProject,
+  saveProject,
   saveWorkspace,
+  uniqueSlug,
   WirebenchError,
   WorkspaceError,
   WORKSPACE_PROJECTS_DIR,
@@ -29,8 +40,10 @@ import {
   workspaceManifestFile,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { FsLike, Workspace, WorkspaceProjectRef } from '@wirebench/engine';
-import type { ReadPicks } from './dialog-picks.js';
+import type { FsLike, Project, Workspace, WorkspaceProjectRef } from '@wirebench/engine';
+import type { WebContents } from 'electron';
+import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
+import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
@@ -82,8 +95,12 @@ export interface WorkspaceServiceDeps {
   readonly secrets?: Pick<SecretStore, 'get'>;
   /** The user's preferences, folded into every send input. */
   readonly preferences?: Pick<PreferencesService, 'get'>;
-  /** The session's native-dialog picks; the only evidence a path outside a project is readable. */
-  readonly picks?: ReadPicks;
+  /**
+   * The session's native-dialog picks; the only evidence a path outside a project is readable.
+   * The hosts consume the read-check half; the link/import/export/locate pickers *record* into
+   * it, which is why the full `DialogPicks` shape is wanted here and not just {@link ReadPicks}.
+   */
+  readonly picks?: ReadPicks & RecordsReadPicks & RecordsWritePicks;
   /** Answers Chromium's PAC-style proxy string for a URL; omitted in tests. */
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** One history file per open project. */
@@ -102,9 +119,10 @@ export interface WorkspaceServiceDeps {
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
 interface OpenProjectEntry {
-  readonly ref: WorkspaceProjectRef;
+  /** Mutable because `locateProject` re-points a linked reference at a new folder in place. */
+  ref: WorkspaceProjectRef;
   /** Absolute: `projects/<slug>` inside the workspace, or the linked folder's own path. */
-  readonly dir: string;
+  dir: string;
   host: ProjectHost | undefined;
   /** The id the project's own `wirebench.yaml` carries once open; `ref.id` until then. */
   projectId: string;
@@ -153,6 +171,67 @@ function requireAbsolute(path: string | undefined, slug: string): string {
     });
   }
   return path;
+}
+
+/** Copies a directory tree verbatim when it is there, and does nothing when it is not. */
+async function copyTreeIfPresent(source: string, target: string): Promise<void> {
+  if (!existsSync(source)) {
+    return;
+  }
+  await cp(source, target, { recursive: true });
+}
+
+/**
+ * Copies the parts of a project folder that `projectFiles` does not describe: the attachment
+ * blobs and every interface's `definition/` cache.
+ *
+ * `saveProject` writes the *model* — the YAML the project is defined by. The bytes the user
+ * attached and the WSDL/XSD documents the definition cache holds are not in that model, so a
+ * copy made with `saveProject` alone would open with every interface un-hydrated and every
+ * attachment gone. They are copied byte-for-byte rather than re-fetched: an export must not
+ * depend on the original service still being reachable.
+ */
+async function copyProjectPayload(source: string, target: string): Promise<void> {
+  await copyTreeIfPresent(attachmentsDir(source), attachmentsDir(target));
+  let interfaces: string[];
+  try {
+    interfaces = (await readdir(join(source, INTERFACES_DIR), { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return;
+  }
+  for (const slug of interfaces) {
+    await copyTreeIfPresent(definitionCacheDir(source, slug), definitionCacheDir(target, slug));
+  }
+}
+
+/** Whether `dir` holds nothing (a folder that does not exist counts as empty). */
+async function isEmptyDir(dir: string): Promise<boolean> {
+  try {
+    return (await readdir(dir)).length === 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Loads the project stored in `dir`, turning "there is no project here" into the workspace-level
+ * code the picker shows. Any other {@link ProjectError} (a malformed file, a too-new format) is
+ * left alone: the user picked a real project folder, and the reason it will not load is the
+ * project's, not the workspace's.
+ *
+ * @throws WorkspaceError `project-folder-missing` when the folder holds no `wirebench.yaml`.
+ */
+async function loadPickedProject(dir: string): Promise<Project> {
+  try {
+    return (await loadProject(dir)).project;
+  } catch (error) {
+    if (error instanceof ProjectError && error.code === 'project-not-found') {
+      throw new WorkspaceError('project-folder-missing', `No project in ${dir}`, { details: { dir } });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -449,6 +528,264 @@ export class WorkspaceService implements ProjectRouter {
     await trash(dir);
     await this.state.forget(id);
     return await this.list();
+  }
+
+  // ——— projects ———————————————————————————————————————————————————————————————————————————
+  //
+  // Not one of these takes a path. `addProject` and `removeProject` are named by id alone;
+  // link, import, export and locate run the native folder picker in main and record what came
+  // back. A renderer that could name a folder here would be a way out of every containment rule
+  // the app has, which is why the `WebContents` — and nothing else — crosses the boundary.
+
+  /**
+   * Creates an empty project inside the workspace at `projects/<uniqueSlug(name)>` and opens it.
+   *
+   * Two projects may share a display name; only the slug (and the ULID) has to be unique.
+   */
+  async addProject(name: string): Promise<{ workspace: WorkspaceWire; projectId: string }> {
+    const open = this.requireOpen();
+    const slug = uniqueSlug(name, this.takenSlugs());
+    const project = createProject(name);
+    const dir = workspaceProjectDir(open.dir, slug);
+    await mkdir(dir, { recursive: true });
+    await saveProject(project, dir, this.fsOption());
+    await this.adoptProject(open, { id: project.id, slug, source: 'internal' }, dir);
+    return { workspace: this.requireSnapshot(), projectId: project.id };
+  }
+
+  /**
+   * Drops a project from the workspace: its host is closed, its history file detached and its
+   * reference removed from the manifest.
+   *
+   * `deleteFiles` only ever applies to an **internal** project, and only ever moves the folder
+   * to the trash. A linked project's folder is the user's own, outside the workspace: removing
+   * the link never touches a byte of it, whatever `deleteFiles` says. The trash call comes
+   * *after* the manifest is saved, so a trash that fails cannot leave the manifest pointing at
+   * a folder the workspace no longer believes in.
+   *
+   * @throws WorkspaceError `project-not-in-workspace` when no reference has that id.
+   */
+  async removeProject(projectId: string, options: { deleteFiles: boolean }): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    const index = open.entries.findIndex((candidate) => candidate.projectId === projectId);
+    if (index === -1) {
+      throw new WorkspaceError('project-not-in-workspace', `No project with id "${projectId}" in this workspace.`, {
+        details: { projectId },
+      });
+    }
+    const entry = open.entries[index] as OpenProjectEntry;
+    const trashFolder = options.deleteFiles && entry.ref.source === 'internal';
+    const trash = this.deps.trash;
+    // Resolved before anything is closed: refusing outright beats removing the project and then
+    // failing to put its folder anywhere.
+    if (trashFolder && trash === undefined) {
+      throw new WirebenchError('trash-unavailable', 'Deleting a project folder needs a trash implementation.', {
+        details: { projectId },
+      });
+    }
+    await entry.host?.close().catch(() => undefined);
+    this.deps.history.close(entry.projectId);
+    open.entries.splice(index, 1);
+    this.reindex();
+    await this.saveManifest(open);
+    if (trashFolder && trash !== undefined) {
+      await trash(entry.dir);
+    }
+    this.deps.hooks?.onChanged?.(this.snapshot());
+    return this.requireSnapshot();
+  }
+
+  /**
+   * Adds an existing project folder to the workspace *in place* — the files stay where they are
+   * and the manifest records their absolute path.
+   *
+   * The folder is realpath'd before anything else, so the containment root a linked project's
+   * host enforces is the real directory rather than a symlink that could be re-pointed later.
+   * A project whose id is already open is refused rather than opened twice: two hosts over one
+   * id would make the entity index ambiguous, and the renderer's answer to the refusal is
+   * "import a copy" (which re-identifies).
+   *
+   * @returns the workspace, or `null` when the user cancelled the dialog.
+   * @throws WorkspaceError `project-folder-missing` when the folder holds no project,
+   * `project-already-in-workspace` (with `details.projectId`) when it is already here.
+   */
+  async linkProject(sender: WebContents): Promise<WorkspaceWire | null> {
+    const open = this.requireOpen();
+    const picked = await pickFolder(sender, { title: 'Link project folder' }, this.requirePicks());
+    if (picked === undefined) {
+      return null;
+    }
+    const dir = await realpath(picked);
+    const project = await loadPickedProject(dir);
+    if (open.entries.some((entry) => entry.ref.id === project.id || entry.projectId === project.id)) {
+      throw new WorkspaceError('project-already-in-workspace', `"${project.name}" is already in this workspace.`, {
+        details: { projectId: project.id },
+      });
+    }
+    await this.adoptProject(
+      open,
+      { id: project.id, slug: uniqueSlug(project.name, this.takenSlugs()), source: 'linked', path: dir },
+      dir,
+    );
+    return this.requireSnapshot();
+  }
+
+  /**
+   * Copies an existing project folder *into* the workspace under fresh ids.
+   *
+   * Re-identification is what lets the copy coexist with its source — including when the source
+   * is itself linked into the same workspace — because entity ids have to stay globally unique
+   * inside one open workspace. `secretRef`s are deliberately left alone: they name the user's
+   * keychain entries, not the project's.
+   *
+   * @returns the workspace, or `null` when the user cancelled the dialog.
+   */
+  async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+    const open = this.requireOpen();
+    const picked = await pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
+    if (picked === undefined) {
+      return null;
+    }
+    const source = await realpath(picked);
+    const copy = reidentifyProject(await loadPickedProject(source));
+    const slug = uniqueSlug(copy.name, this.takenSlugs());
+    const dir = workspaceProjectDir(open.dir, slug);
+    await mkdir(dir, { recursive: true });
+    await saveProject(copy, dir, this.fsOption());
+    await copyProjectPayload(source, dir);
+    await this.adoptProject(open, { id: copy.id, slug, source: 'internal' }, dir);
+    return this.requireSnapshot();
+  }
+
+  /**
+   * Writes a copy of one open project into a folder the user picks, ids kept.
+   *
+   * The target must be empty: export writes a whole project folder, and quietly merging one
+   * into a directory that already holds files is how a user loses the files that were there.
+   * The model written is the host's current one, unsaved edits included.
+   *
+   * @returns the folder written to, or `null` when the user cancelled the dialog.
+   * @throws WorkspaceError `export-target-not-empty` when the chosen folder holds anything.
+   */
+  async exportProject(projectId: string, sender: WebContents): Promise<{ dir: string } | null> {
+    const entry = this.requireEntry(projectId);
+    const model = entry.host?.model();
+    if (model === undefined) {
+      throw new WirebenchError('unknown-project', `Project "${projectId}" is not open.`, { details: { projectId } });
+    }
+    const picked = await pickFolderToWrite(sender, this.requirePicks(), { title: 'Export project to folder' });
+    if (picked === undefined) {
+      return null;
+    }
+    const dir = await realpath(picked);
+    if (!(await isEmptyDir(dir))) {
+      throw new WorkspaceError('export-target-not-empty', `"${dir}" is not empty.`, { details: { dir } });
+    }
+    await saveProject(model, dir, this.fsOption());
+    await copyProjectPayload(entry.dir, dir);
+    return { dir };
+  }
+
+  /**
+   * Re-points a linked project whose folder has moved at the folder the user picks.
+   *
+   * The picked folder has to hold the *same* project: locating is "this project moved", not
+   * "use this other project instead", and silently swapping one project for another would
+   * strand every history entry and every saved request that names the old ids.
+   *
+   * @returns the workspace, or `null` when the user cancelled the dialog.
+   * @throws WorkspaceError `project-folder-mismatch` when the folder holds a different project.
+   */
+  async locateProject(projectId: string, sender: WebContents): Promise<WorkspaceWire | null> {
+    const open = this.requireOpen();
+    const entry = this.requireEntry(projectId);
+    if (entry.ref.source !== 'linked' || entry.status !== 'missing') {
+      throw new WirebenchError(
+        'project-not-relocatable',
+        'Only a linked project whose folder is gone can be located.',
+        {
+          details: { projectId, source: entry.ref.source, status: entry.status },
+        },
+      );
+    }
+    const picked = await pickFolder(sender, { title: 'Locate project folder' }, this.requirePicks());
+    if (picked === undefined) {
+      return null;
+    }
+    const dir = await realpath(picked);
+    const project = await loadPickedProject(dir);
+    if (project.id !== entry.ref.id) {
+      throw new WorkspaceError('project-folder-mismatch', `"${dir}" holds a different project.`, {
+        details: { projectId: entry.ref.id, foundProjectId: project.id, dir },
+      });
+    }
+    entry.ref = { ...entry.ref, path: dir };
+    entry.dir = dir;
+    entry.status = 'loading';
+    entry.message = undefined;
+    await this.openEntry(entry);
+    await this.saveManifest(open);
+    this.deps.hooks?.onChanged?.(this.snapshot());
+    return this.requireSnapshot();
+  }
+
+  /** Appends one reference, brings its host up, writes the manifest and raises `onChanged`. */
+  private async adoptProject(open: OpenWorkspace, ref: WorkspaceProjectRef, dir: string): Promise<void> {
+    const entry: OpenProjectEntry = {
+      ref,
+      dir,
+      host: undefined,
+      projectId: ref.id,
+      status: 'loading',
+      message: undefined,
+    };
+    open.entries.push(entry);
+    await this.openEntry(entry);
+    await this.saveManifest(open);
+    this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /** Rewrites the manifest's project list from the entries, which are the source of truth. */
+  private async saveManifest(open: OpenWorkspace): Promise<void> {
+    open.workspace = { ...open.workspace, projects: open.entries.map((entry) => entry.ref) };
+    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+  }
+
+  /** Every slug already used in the open workspace — what `uniqueSlug` is asked to avoid. */
+  private takenSlugs(): ReadonlySet<string> {
+    return new Set((this.current?.entries ?? []).map((entry) => entry.ref.slug));
+  }
+
+  private requireOpen(): OpenWorkspace {
+    if (this.current === undefined) {
+      throw new WorkspaceError('workspace-not-found', 'No workspace is open.');
+    }
+    return this.current;
+  }
+
+  /**
+   * The entry for `projectId`, open or not — `missing` and `error` projects can still be
+   * removed and located, which is exactly when the user needs to.
+   *
+   * @throws WorkspaceError `project-not-in-workspace`.
+   */
+  private requireEntry(projectId: string): OpenProjectEntry {
+    const entry = this.requireOpen().entries.find((candidate) => candidate.projectId === projectId);
+    if (entry === undefined) {
+      throw new WorkspaceError('project-not-in-workspace', `No project with id "${projectId}" in this workspace.`, {
+        details: { projectId },
+      });
+    }
+    return entry;
+  }
+
+  /** The pick recorder every dialog-driven operation writes its choice into. */
+  private requirePicks(): ReadPicks & RecordsReadPicks & RecordsWritePicks {
+    const picks = this.deps.picks;
+    if (picks === undefined) {
+      throw new WirebenchError('picks-unavailable', 'A native folder pick needs the session dialog picks.');
+    }
+    return picks;
   }
 
   // ——— snapshot ———————————————————————————————————————————————————————————————————————————
