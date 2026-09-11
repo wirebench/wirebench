@@ -74,6 +74,7 @@ function toEndpointWire(endpoint: Endpoint): EndpointWire {
     url: endpoint.url,
     ...(endpoint.auth !== undefined ? { auth: endpoint.auth } : {}),
     authMode: endpoint.authMode,
+    ...(endpoint.trustInvalid === true ? { trustInvalid: true } : {}),
   };
 }
 

@@ -91,3 +91,39 @@ describe('resetPreferences', () => {
     expect(resetPreferences(mergePreferences({ editor: { tabSize: 8 } }))).toEqual(DEFAULT_PREFERENCES);
   });
 });
+
+describe('network preference defaults', () => {
+  it('starts with no proxy, no extra anchors, a TLS 1.2 floor and HTTP/2 off', () => {
+    expect(DEFAULT_PREFERENCES.proxy).toEqual({ mode: 'none', excludes: [] });
+    expect(DEFAULT_PREFERENCES.ssl).toEqual({ minVersion: 'TLSv1.2', trustAll: false });
+    expect(DEFAULT_PREFERENCES.http.allowH2).toBe(false);
+  });
+
+  it('keeps the manual proxy fields, including the passwordRef, across a merge', () => {
+    const merged = mergePreferences({
+      proxy: {
+        mode: 'manual',
+        host: 'proxy.corp.test',
+        port: 8080,
+        username: 'u',
+        passwordRef: 'ref-1',
+        excludes: ['*.internal'],
+      },
+    });
+    expect(merged.proxy).toEqual({
+      mode: 'manual',
+      host: 'proxy.corp.test',
+      port: 8080,
+      username: 'u',
+      passwordRef: 'ref-1',
+      excludes: ['*.internal'],
+    });
+  });
+
+  it('keeps the CA bundle path and the global keystore ref', () => {
+    const merged = mergePreferences({ ssl: { caBundlePath: '/etc/corp/ca.pem', clientKeystoreRef: 'ks-1' } });
+    expect(merged.ssl.caBundlePath).toBe('/etc/corp/ca.pem');
+    expect(merged.ssl.clientKeystoreRef).toBe('ks-1');
+    expect(merged.ssl.trustAll).toBe(false);
+  });
+});

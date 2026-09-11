@@ -20,6 +20,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     chunkingThreshold: 0,
     socketTimeoutMs: 60_000,
     maxConnections: 100,
+    allowH2: false,
   },
   proxy: { mode: 'none', excludes: [] },
   ssl: { minVersion: 'TLSv1.2', trustAll: false },

@@ -85,7 +85,8 @@ function transformEnvelope(xml: string, properties: RequestProperties, indentWid
 /**
  * Builds the send input for one request.
  *
- * Timeout precedence is request > project > preference. Headers are the request's own, plus a
+ * Timeout precedence is request > project > preference. The TLS floor (`ssl.minVersion`) and
+ * the HTTP/2 offer come from preferences alone. Headers are the request's own, plus a
  * `User-Agent` from preferences when the request does not set one, plus `Accept-Encoding` when
  * response compression is enabled and `Connection: close` when connection reuse is disabled.
  * Request-body gzip is requested via `compressBody`; the transport does the compressing so the
@@ -160,6 +161,11 @@ export function toSendInput(args: ToSendInputArgs): SoapSendInput {
       ? { localAddress: properties.bindAddress }
       : {}),
     ...(preferences.http.requestCompression === 'gzip' ? { compressBody: 'gzip' as const } : {}),
+    ...(preferences.http.allowH2 ? { allowH2: true } : {}),
+    // The minimum protocol version is a floor the user sets once; everything else in `tls`
+    // (trust anchors, the client identity, a per-endpoint trust decision) is resolved in the
+    // desktop's main process, which reads files and secrets, and merged onto this.
+    tls: { minVersion: preferences.ssl.minVersion },
     ...(properties.entitizeProperties ? { entitize: true } : {}),
     ...(attachmentOptions !== undefined ? { attachments: args.attachments ?? [], attachmentOptions } : {}),
   };

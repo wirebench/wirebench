@@ -3,7 +3,11 @@ import { Group, Panel, Separator } from 'react-resizable-panels';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
-import { selectRequestEndpointSource, selectRequestEndpointUrl } from '../../state/project-endpoint.js';
+import {
+  selectRequestEndpointSource,
+  selectRequestEndpointUrl,
+  selectRequestTrustsInvalid,
+} from '../../state/project-endpoint.js';
 import { useProjectStore } from '../../state/project.js';
 import { CloneRequestDialog } from './clone-request-dialog.js';
 import { ImportCurlDialog } from './import-curl-dialog.js';
@@ -49,6 +53,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const setEndpoint = useProjectStore((state) => state.setEndpoint);
   const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, requestId));
   const endpointSource = useProjectStore((state) => selectRequestEndpointSource(state, requestId));
+  const trustInvalid = useProjectStore((state) => selectRequestTrustsInvalid(state, requestId));
   const exchange = useExchangesStore((state) => state.byRequest[requestId]);
   const send = useExchangesStore((state) => state.send);
   const cancel = useExchangesStore((state) => state.cancel);
@@ -120,6 +125,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
         summary={summary}
         endpoint={endpoint}
         endpointSource={endpointSource}
+        trustInvalid={trustInvalid}
         sending={sending}
         onSend={onSend}
         onCancel={onCancel}

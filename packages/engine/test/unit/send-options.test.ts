@@ -261,3 +261,23 @@ describe('toSendInput content-type charset', () => {
     expect(input.headers?.['Content-Type']).toBe('text/xml;charset=custom');
   });
 });
+
+describe('toSendInput: TLS and HTTP/2 preferences', () => {
+  it('carries the preferred minimum TLS version as the send’s TLS floor', () => {
+    expect(build().tls).toEqual({ minVersion: 'TLSv1.2' });
+    expect(build({ preferences: mergePreferences({ ssl: { minVersion: 'TLSv1.3' } }) }).tls).toEqual({
+      minVersion: 'TLSv1.3',
+    });
+  });
+
+  it('never asks for trustAll, whatever the preferences file claims', () => {
+    const preferences = mergePreferences({ ssl: { trustAll: true } });
+    expect(preferences.ssl.trustAll).toBe(false);
+    expect(build({ preferences }).tls?.rejectUnauthorized).toBeUndefined();
+  });
+
+  it('leaves HTTP/2 unoffered by default and offers it when the preference is on', () => {
+    expect(build().allowH2).toBeUndefined();
+    expect(build({ preferences: mergePreferences({ http: { allowH2: true } }) }).allowH2).toBe(true);
+  });
+});

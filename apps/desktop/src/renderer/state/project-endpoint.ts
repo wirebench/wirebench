@@ -3,13 +3,19 @@
  * Split out of `project.ts` so the store file stays about state and actions.
  */
 
-import type { EndpointSourceWire } from '../../shared/wire-types.js';
+import type { EndpointSourceWire, EndpointWire } from '../../shared/wire-types.js';
 import type { ProjectSnapshot } from './project.js';
 
 /** What {@link selectRequestEndpoint} answers: the URL, and which rule produced it. */
 export interface ResolvedEndpoint {
   readonly url?: string;
   readonly source: EndpointSourceWire;
+  /**
+   * True when the endpoint object behind the URL has `trustInvalid`. An environment override
+   * and a request's custom URL name no endpoint, so they never carry it — which is correct:
+   * the flag belongs to the endpoint, not to the address that happens to be in the field.
+   */
+  readonly trustInvalid?: boolean;
 }
 
 /**
@@ -42,15 +48,34 @@ export function selectRequestEndpoint(state: ProjectSnapshot, requestId: string)
   if (iface === undefined) {
     return { source: 'none' };
   }
-  const byId = (id: string | undefined): string | undefined =>
-    id === undefined ? undefined : iface.endpoints.find((endpoint) => endpoint.id === id)?.url;
+  const byId = (id: string | undefined): EndpointWire | undefined =>
+    id === undefined ? undefined : iface.endpoints.find((endpoint) => endpoint.id === id);
 
   const chosen = byId(request.endpointId);
   if (chosen !== undefined) {
-    return { url: chosen, source: 'request-endpoint' };
+    return {
+      url: chosen.url,
+      source: 'request-endpoint',
+      ...(chosen.trustInvalid === true ? { trustInvalid: true } : {}),
+    };
   }
-  const fallback = byId(iface.defaultEndpointId) ?? iface.endpoints[0]?.url;
-  return fallback === undefined ? { source: 'none' } : { url: fallback, source: 'interface-default' };
+  const fallback = byId(iface.defaultEndpointId) ?? iface.endpoints[0];
+  return fallback === undefined
+    ? { source: 'none' }
+    : {
+        url: fallback.url,
+        source: 'interface-default',
+        ...(fallback.trustInvalid === true ? { trustInvalid: true } : {}),
+      };
+}
+
+/**
+ * Whether the endpoint this request resolves to has certificate verification turned off.
+ * A primitive, so it is safe inside a `useProjectStore(...)` selector; it drives the red badge
+ * in the request toolbar and the status bar.
+ */
+export function selectRequestTrustsInvalid(state: ProjectSnapshot, requestId: string): boolean {
+  return selectRequestEndpoint(state, requestId).trustInvalid === true;
 }
 
 /**

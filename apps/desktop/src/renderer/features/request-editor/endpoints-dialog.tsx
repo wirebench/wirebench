@@ -9,6 +9,7 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, X } from 'lucide-react';
 import { AuthFields } from '../../components/auth-fields.js';
+import { TRUST_INVALID_HINT, TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
@@ -116,6 +117,21 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
                         <option value="complement">Complement</option>
                       </select>
                     </label>
+                    <label className="flex items-center gap-2">
+                      <span className="w-28 shrink-0 text-xs text-fg-subtle">Trust invalid</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Trust invalid certificates"
+                        data-testid="endpoint-trust-invalid"
+                        checked={endpoint.trustInvalid === true}
+                        onChange={(event) => {
+                          void updateEndpoint(interfaceId, endpoint.id, {
+                            trustInvalid: event.target.checked,
+                          }).catch((error: unknown) => report(error, 'Could not update the endpoint'));
+                        }}
+                      />
+                      <span className="text-xs text-status-danger">{TRUST_INVALID_HINT}</span>
+                    </label>
                     <AuthFields
                       scope="Endpoint"
                       auth={endpoint.auth}
@@ -133,6 +149,7 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
                     </span>
                     <span className="w-40 shrink-0 truncate text-sm text-fg-default">{endpoint.name}</span>
                     <span className="min-w-0 flex-1 truncate font-mono text-sm text-fg-muted">{endpoint.url}</span>
+                    {endpoint.trustInvalid === true && <TrustInvalidBadge />}
                     <Button
                       onClick={() => {
                         void setDefaultEndpoint(interfaceId, endpoint.id).catch((error: unknown) =>

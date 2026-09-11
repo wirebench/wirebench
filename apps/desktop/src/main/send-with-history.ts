@@ -17,7 +17,9 @@ export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 
   // without it simply carries no attachments, which is what an ad-hoc send should do anyway.
   // `wssFor` is optional for the same reason, and async besides: it resolves a password out of
   // the secret store, which is why it cannot live on the synchronous send input.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'wssFor'>>;
+  // `proxyFor` is optional for the same reason, and async besides: resolving the proxy password
+  // means a round trip to the OS keychain.
+  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
 
 /** Dependencies for {@link sendAndRecordHistory}. */
 export interface SendWithHistoryDeps {
@@ -60,6 +62,9 @@ export async function sendAndRecordHistory(
   const attachments =
     request.requestId !== undefined ? deps.project.sendAttachmentsFor?.(request.requestId) : undefined;
   const wss = request.requestId !== undefined ? await deps.project.wssFor?.(request.requestId) : undefined;
+  // Resolved per send rather than per session: the exclude list is evaluated against *this*
+  // URL, and a system proxy can change under the app while it is running.
+  const proxy = await deps.project.proxyFor?.(request.input.endpoint);
   const startedAt = Date.now();
   try {
     const result = await service.send(request, {
@@ -68,6 +73,7 @@ export async function sendAndRecordHistory(
       ...(auth !== undefined ? { auth } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
       ...(wss !== undefined ? { wss } : {}),
+      ...(proxy !== undefined ? { proxy } : {}),
     });
     await record(service, deps, request, fallback, { durationMs: Date.now() - startedAt });
     return result;

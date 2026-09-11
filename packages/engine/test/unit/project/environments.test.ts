@@ -54,31 +54,31 @@ describe('resolveEndpoint precedence', () => {
     const { project, iface } = fixtureProject();
     const withEnv = { ...project, environments: [env] };
     const result = resolveEndpoint(withEnv, 'env-1', iface, { endpointUrl: 'https://custom.test/soap' });
-    expect(result).toEqual({ url: 'https://qa.test/soap', source: 'environment' });
+    expect(result).toMatchObject({ url: 'https://qa.test/soap', source: 'environment' });
   });
 
   it('falls through to request-custom when no env or env has no override for the interface', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, undefined, iface, { endpointUrl: 'https://custom.test/soap' });
-    expect(result).toEqual({ url: 'https://custom.test/soap', source: 'request-custom' });
+    expect(result).toMatchObject({ url: 'https://custom.test/soap', source: 'request-custom' });
   });
 
   it('unknown env id falls through as if there were no environment', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, 'does-not-exist', iface, { endpointUrl: 'https://custom.test/soap' });
-    expect(result).toEqual({ url: 'https://custom.test/soap', source: 'request-custom' });
+    expect(result).toMatchObject({ url: 'https://custom.test/soap', source: 'request-custom' });
   });
 
   it('falls through to the request endpointId -> interface endpoint url', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, undefined, iface, { endpointId: 'ep-alt' });
-    expect(result).toEqual({ url: 'https://alt.test/soap', source: 'request-endpoint' });
+    expect(result).toMatchObject({ url: 'https://alt.test/soap', source: 'request-endpoint' });
   });
 
   it('falls through to the interface default endpoint', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, undefined, iface, {});
-    expect(result).toEqual({ url: 'https://default.test/soap', source: 'interface-default' });
+    expect(result).toMatchObject({ url: 'https://default.test/soap', source: 'interface-default' });
   });
 
   it('falls through to the first interface endpoint when there is no default', () => {
@@ -86,7 +86,7 @@ describe('resolveEndpoint precedence', () => {
     const noDefaultIface: typeof iface = { ...iface };
     Reflect.deleteProperty(noDefaultIface, 'defaultEndpointId');
     const result = resolveEndpoint(project, undefined, noDefaultIface, {});
-    expect(result).toEqual({ url: 'https://default.test/soap', source: 'interface-default' });
+    expect(result).toMatchObject({ url: 'https://default.test/soap', source: 'interface-default' });
   });
 
   it('resolves to none when the interface has no endpoints at all', () => {
@@ -100,7 +100,7 @@ describe('resolveEndpoint precedence', () => {
   it('an unresolvable request endpointId falls through to the interface default', () => {
     const { project, iface } = fixtureProject();
     const result = resolveEndpoint(project, undefined, iface, { endpointId: 'not-real' });
-    expect(result).toEqual({ url: 'https://default.test/soap', source: 'interface-default' });
+    expect(result).toMatchObject({ url: 'https://default.test/soap', source: 'interface-default' });
   });
 });
 

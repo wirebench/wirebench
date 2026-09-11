@@ -60,6 +60,13 @@ export function HttpSection({ preferences, update }: SectionProps) {
           min={1}
           onCommit={(maxConnections) => update({ http: { maxConnections: maxConnections ?? 100 } })}
         />
+        <BooleanSetting
+          label="Offer HTTP/2"
+          value={http.allowH2}
+          testId="http-allow-h2"
+          onChange={(allowH2) => update({ http: { allowH2 } })}
+          hint="Advertises h2 in the TLS handshake. Off by default; most SOAP stacks speak HTTP/1.1 only."
+        />
         <NumberSetting
           label="Chunking threshold (bytes)"
           value={http.chunkingThreshold}

@@ -165,6 +165,7 @@ export async function sendSoapRequest(
     ...(effectiveInput.signal !== undefined ? { signal: effectiveInput.signal } : {}),
     ...(effectiveInput.tls !== undefined ? { tls: effectiveInput.tls } : {}),
     ...(effectiveInput.proxy !== undefined ? { proxy: effectiveInput.proxy } : {}),
+    ...(effectiveInput.allowH2 !== undefined ? { allowH2: effectiveInput.allowH2 } : {}),
   };
 
   const now = options?.now ?? Date.now;

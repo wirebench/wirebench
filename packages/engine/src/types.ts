@@ -163,6 +163,8 @@ export interface SoapSendInput {
   readonly entitize?: boolean;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
+  /** Offer HTTP/2 in the TLS ALPN handshake. Off by default; see `HttpRequest.allowH2`. */
+  readonly allowH2?: boolean;
   readonly signal?: AbortSignal;
   /** Resolved credentials; see {@link SendAuth}. A caller-supplied `Authorization` header wins. */
   readonly auth?: SendAuth;

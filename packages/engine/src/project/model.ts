@@ -46,6 +46,13 @@ export interface Endpoint {
   readonly auth?: EndpointAuth;
   /** `override` replaces request credentials, `complement` only fills in blanks. */
   readonly authMode: 'override' | 'complement';
+  /**
+   * Send to this endpoint even when its certificate does not verify (`rejectUnauthorized:
+   * false`). Per endpoint only — there is no global equivalent — and the UI badges every
+   * endpoint that has it in red, permanently, so a debugging shortcut cannot quietly become
+   * the way the project always runs.
+   */
+  readonly trustInvalid?: boolean;
 }
 
 /**

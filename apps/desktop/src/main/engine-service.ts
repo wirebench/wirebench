@@ -36,6 +36,7 @@ import type {
   ExchangeSummary,
   ImportSourceWire,
   InterfaceSummary,
+  ProxyOptionsWire,
   RequestGenerateRequest,
   RequestGenerateResponse,
   RequestSendRequest,
@@ -175,6 +176,7 @@ function toEngineSendInput(
   attachments?: SendAttachmentInput,
   auth?: SendAuth,
   wss?: SoapSendWss,
+  proxy?: ProxyOptionsWire,
 ): SoapSendInput {
   return {
     endpoint: input.endpoint,
@@ -191,6 +193,10 @@ function toEngineSendInput(
     ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
     ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
     ...(input.tls !== undefined ? { tls: toEngineTls(input.tls) } : {}),
+    ...(input.allowH2 !== undefined ? { allowH2: input.allowH2 } : {}),
+    ...(proxy !== undefined
+      ? { proxy: { url: proxy.url, ...(proxy.auth !== undefined ? { auth: proxy.auth } : {}) } }
+      : {}),
     // WS-Addressing carries no secret and no closure, so — unlike WS-Security — it rides on the
     // wire input the renderer built and only needs its optionals normalised here.
     ...(input.wsa !== undefined
@@ -520,6 +526,13 @@ export class EngineService {
       attachments?: SendAttachmentInput;
       /** The request's outgoing WS-Security configuration and its context; absent when it selects none. */
       wss?: SoapSendWss;
+      /**
+       * The proxy this send must go through, already resolved (and its password already
+       * decrypted) by `ProjectService.proxyFor`. Deliberately an option rather than a field of
+       * `SoapSendInputWire`: a renderer must be able neither to name a proxy nor to see the
+       * credentials for one.
+       */
+      proxy?: ProxyOptionsWire;
     } = {},
   ): Promise<ExchangeSummary> {
     const controller = new AbortController();
@@ -538,6 +551,7 @@ export class EngineService {
           options.attachments,
           toEngineAuth(resolvedAuth),
           options.wss,
+          options.proxy,
         ),
         {
           ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),

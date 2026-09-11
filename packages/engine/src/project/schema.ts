@@ -45,6 +45,7 @@ const endpointSchema = z.looseObject({
   url: z.string(),
   auth: endpointAuthSchema.optional(),
   authMode: z.enum(['override', 'complement']),
+  trustInvalid: z.boolean().optional(),
 });
 
 /**

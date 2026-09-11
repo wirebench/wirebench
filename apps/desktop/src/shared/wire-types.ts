@@ -378,6 +378,18 @@ export const tlsOptionsSchema = z.object({
 
 export type TlsOptionsWire = z.infer<typeof tlsOptionsSchema>;
 
+/**
+ * The resolved proxy one send goes through. Main-only: it is built in `ProjectService.proxyFor`
+ * from the preferences plus the OS keychain and handed straight to the engine, and is NOT part
+ * of `soapSendInputWireSchema` — a renderer must never be able to name a proxy, nor see the
+ * password that reaching one needs.
+ */
+export const proxyOptionsSchema = z.object({
+  url: z.string(),
+  auth: z.object({ username: z.string(), password: z.string() }).optional(),
+});
+export type ProxyOptionsWire = z.infer<typeof proxyOptionsSchema>;
+
 const soapSendInputWireSchema = z.object({
   endpoint: z.string(),
   envelopeXml: z.string(),
@@ -396,6 +408,8 @@ const soapSendInputWireSchema = z.object({
   /** XML-escape substituted property values inside the envelope. */
   entitize: z.boolean().optional(),
   tls: tlsOptionsSchema.optional(),
+  /** Offer HTTP/2 in the ALPN handshake (the HTTP preference). Off unless explicitly set. */
+  allowH2: z.boolean().optional(),
   /**
    * WS-Addressing for this send, present only when the effective configuration is enabled.
    * Pure data (no secret, no closure), so unlike WS-Security it rides on the send input the
@@ -805,6 +819,8 @@ export const endpointWireSchema = z.object({
   auth: endpointAuthSchema.optional(),
   /** `override` replaces request credentials, `complement` only fills in blanks. */
   authMode: z.enum(['override', 'complement']),
+  /** Send even when this endpoint's certificate does not verify. Badged in red wherever it shows. */
+  trustInvalid: z.boolean().optional(),
 });
 export type EndpointWire = z.infer<typeof endpointWireSchema>;
 
@@ -1252,6 +1268,7 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
       name: z.string().optional(),
       url: z.string().optional(),
       authMode: z.enum(['override', 'complement']).optional(),
+      trustInvalid: z.boolean().optional(),
     }),
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
@@ -2061,6 +2078,7 @@ export const preferencesWireSchema = z.object({
     chunkingThreshold: z.number(),
     socketTimeoutMs: z.number(),
     maxConnections: z.number(),
+    allowH2: z.boolean(),
   }),
   proxy: z.object({
     mode: z.enum(['none', 'system', 'manual']),

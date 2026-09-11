@@ -140,7 +140,13 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly updateEndpoint: (
     interfaceId: string,
     endpointId: string,
-    patch: { readonly name?: string; readonly url?: string; readonly authMode?: 'override' | 'complement' },
+    patch: {
+      readonly name?: string;
+      readonly url?: string;
+      readonly authMode?: 'override' | 'complement';
+      /** Send to this endpoint even when its certificate does not verify. */
+      readonly trustInvalid?: boolean;
+    },
   ) => Promise<void>;
   /** Sets (or, with `null`, clears so it inherits) one request's own credentials. */
   readonly updateRequestAuth: (requestId: string, auth: EndpointAuthWire | null) => void;

@@ -31,9 +31,14 @@ export interface HttpPreferences {
   readonly socketTimeoutMs: number;
   /** Maximum simultaneous connections per host. Reserved. */
   readonly maxConnections: number;
+  /**
+   * Offer HTTP/2 in the TLS ALPN handshake. Off by default: HTTP/2 changes what the raw view
+   * can faithfully reconstruct, and most SOAP stacks speak HTTP/1.1 only.
+   */
+  readonly allowH2: boolean;
 }
 
-/** Proxy preferences. Persisted and editable now; applied by the connection-settings task. */
+/** Proxy preferences, consulted for every send by `resolveProxyFor`. */
 export interface ProxyPreferences {
   readonly mode: 'none' | 'system' | 'manual';
   readonly host?: string;
@@ -45,14 +50,17 @@ export interface ProxyPreferences {
   readonly excludes: readonly string[];
 }
 
-/** TLS preferences. Persisted and editable now; applied by the connection-settings task. */
+/** TLS preferences, folded into every send's `TlsOptions`. */
 export interface SslPreferences {
   readonly minVersion: 'TLSv1.2' | 'TLSv1.3';
+  /** Absolute path to a PEM bundle of extra trust anchors; read in main, never by the engine. */
   readonly caBundlePath?: string;
+  /** Id of a `wss/keystores.yaml` entry used as the client identity when a request selects none. */
   readonly clientKeystoreRef?: string;
   /**
    * Always `false`: trusting every certificate globally is not an option Wirebench offers.
-   * Per-endpoint opt-in arrives with the connection-settings task.
+   * The only escape hatch is an endpoint's `trustInvalid`, which is badged in red wherever
+   * that endpoint appears.
    */
   readonly trustAll: false;
 }
@@ -140,6 +148,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     chunkingThreshold: 0,
     socketTimeoutMs: 60_000,
     maxConnections: 100,
+    allowH2: false,
   }),
   proxy: Object.freeze({ mode: 'none', excludes: Object.freeze([]) }),
   ssl: Object.freeze({ minVersion: 'TLSv1.2', trustAll: false }),
@@ -188,6 +197,7 @@ export const preferencesSchema = z.object({
       chunkingThreshold: z.number().optional(),
       socketTimeoutMs: z.number().optional(),
       maxConnections: z.number().optional(),
+      allowH2: z.boolean().optional(),
     })
     .optional(),
   proxy: z

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Code2, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/wire-types.js';
@@ -20,6 +21,8 @@ export interface RequestToolbarProps {
   readonly endpoint: string | undefined;
   /** Which rule chose {@link RequestToolbarProps.endpoint}; `environment` locks the field. */
   readonly endpointSource?: EndpointSourceWire;
+  /** True when that endpoint has certificate verification turned off; shows the red badge. */
+  readonly trustInvalid?: boolean;
   readonly sending: boolean;
   readonly onSend: () => void;
   readonly onCancel: () => void;
@@ -41,6 +44,7 @@ export function RequestToolbar({
   summary,
   endpoint,
   endpointSource,
+  trustInvalid = false,
   sending,
   onSend,
   onCancel,
@@ -103,6 +107,8 @@ export function RequestToolbar({
           onEditEndpoints={() => setEndpointsOpen(true)}
         />
       )}
+
+      {trustInvalid && <TrustInvalidBadge testId="toolbar-trust-invalid" />}
 
       <button
         type="button"

@@ -5,7 +5,10 @@ import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { formatBytes } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
+import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
+import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
+import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
 import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
@@ -58,6 +61,13 @@ export function StatusBar() {
   const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
   const lastSavedAt = useProjectStore((state) => state.lastSavedAt);
+  // The endpoint the *active* request would be sent to — not the last one sent — so the warning
+  // is about what the next Send will do.
+  const activeRequestId = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.requestId);
+  const trustInvalid = useProjectStore((state) =>
+    activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, activeRequestId),
+  );
+  const tlsLabel = last?.http.tls?.protocol ?? `TLS —`;
   const saveLabel =
     saveStatus === 'saving' ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;
 
@@ -96,7 +106,15 @@ export function StatusBar() {
         <span aria-hidden="true" className="text-fg-faint">
           ·
         </span>
-        <span>TLS —</span>
+        <span data-testid="status-bar-tls">{tlsLabel}</span>
+        {trustInvalid && (
+          <>
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+            <TrustInvalidBadge testId="status-bar-trust-invalid" />
+          </>
+        )}
         <span aria-hidden="true" className="text-fg-faint">
           ·
         </span>

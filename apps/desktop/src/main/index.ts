@@ -1,5 +1,5 @@
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow, dialog, protocol, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, protocol, safeStorage, session } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { DialogPicks } from './dialog-picks.js';
@@ -124,7 +124,20 @@ const projectService = new ProjectService(
   secretStore,
   preferencesService,
   dialogPicks,
+  // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
+  // file or OS setting — rather than a second, subtly different guess of our own.
+  async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
 );
+
+// A CA bundle the user picked in an earlier session is remembered as a read pick at startup.
+// The path comes from main's own `userData/preferences.yaml` — written only after a native
+// dialog — so it is the same evidence a fresh pick would be, and without this every restart
+// would silently stop trusting a bundle that lives outside the project folder. See
+// `ProjectService.trustAnchors`, which still runs the full `allowsReadPath` check.
+const storedCaBundle = preferencesService.get().ssl.caBundlePath;
+if (storedCaBundle !== undefined && storedCaBundle.length > 0) {
+  dialogPicks.rememberRead(storedCaBundle);
+}
 
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');

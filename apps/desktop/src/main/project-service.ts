@@ -55,6 +55,7 @@ import type {
   OperationDef,
   Project,
   ProjectFiles,
+  ProxyConfig,
   PropertyScopes,
   SendAttachmentOptions,
 } from '@wirebench/engine';
@@ -68,6 +69,9 @@ import {
   loadKeystore,
   removeOutgoingWss,
   toKeystoreDef,
+  isExcluded,
+  resolveProxyFor,
+  splitPemBundle,
   toTlsClientIdentity,
   toWssIncomingConfig,
   toWssOutgoingConfig,
@@ -99,6 +103,7 @@ import type {
   ProjectWire,
   RecentProject,
   SoapSendInputWire,
+  ProxyOptionsWire,
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
@@ -280,6 +285,13 @@ export class ProjectService {
      * the project folder; omitted in tests, which then get containment and nothing else.
      */
     private readonly picks?: ReadPicks,
+    /**
+     * Answers Chromium's PAC-style proxy string for a URL — the app passes a wrapper around
+     * `session.resolveProxy`, so "System proxy" means exactly what the rest of Electron's
+     * network stack means by it. Omitted in tests (and then `mode: 'system'` goes direct),
+     * which is also what keeps this class free of any `electron` import.
+     */
+    private readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>,
   ) {}
 
   /**
@@ -368,6 +380,11 @@ export class ProjectService {
       ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
       ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
       ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
+      // Only the preference-level TLS floor reaches the renderer here; trust anchors, the
+      // client identity and a per-endpoint trust decision are resolved in main (`tlsFor`) and
+      // merged on at send time, so no key material or trust decision rides this wire shape.
+      ...(input.tls?.minVersion !== undefined ? { tls: { minVersion: input.tls.minVersion } } : {}),
+      ...(input.allowH2 !== undefined ? { allowH2: input.allowH2 } : {}),
       ...(wsa !== undefined ? { wsa } : {}),
     };
   }
@@ -998,34 +1015,147 @@ export class ProjectService {
   }
 
   /**
-   * The TLS options a send of `requestId` must use, or `undefined` when the request selects no
-   * keystore. Kept apart from {@link sendInputFor} — which is synchronous, and whose result is
-   * also what the cURL export quotes — because resolving an identity means reading a file and
-   * decrypting a secret, and because the material must never appear in an exported command.
+   * The TLS options a send of `requestId` must use, or `undefined` when nothing in the
+   * project or the preferences has anything to say about TLS.
+   *
+   * Three independent things are folded in here, all of which need main's file system or its
+   * secret store and so cannot live in the synchronous {@link sendInputFor} whose result also
+   * feeds the cURL export: the client identity (the request's keystore, else the global one
+   * from preferences — request wins), the extra trust anchors from the preferred CA bundle,
+   * and the resolved endpoint's `trustInvalid` opt-out.
    *
    * A selected-but-unloadable keystore throws rather than silently sending without a client
    * certificate: a mutual-TLS request that quietly degrades is the worst possible outcome.
+   * A CA bundle that will not load is *not* fatal — it only ever adds anchors, so a bad path
+   * leaves verification exactly as strict as it was.
    */
   async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
     }
     const location = findRequest(this.open.project, requestId);
-    const keystoreId = location?.request.properties.sslKeystoreRef;
-    if (keystoreId === undefined || keystoreId.length === 0) {
+    const identity = await this.clientIdentityFor(location?.request.properties.sslKeystoreRef);
+    const ca = await this.trustAnchors();
+    const trustInvalid =
+      location !== undefined &&
+      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
+        .endpoint?.trustInvalid === true;
+    if (identity === undefined && ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return {
+      ...(identity !== undefined ? identity : {}),
+      ...(ca !== undefined ? { ca: [...ca] } : {}),
+      // Only ever `false`, and only from an endpoint the user explicitly flagged: there is no
+      // global "trust everything", and `ssl.trustAll` is pinned false at the preference level.
+      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
+    };
+  }
+
+  /**
+   * The `cert`/`key` the handshake presents: the request's own keystore when it selects one,
+   * otherwise the global `ssl.clientKeystoreRef` from preferences. The request wins, so a
+   * request configured for a particular mutual-TLS service is not quietly overridden by a
+   * default meant for everything else.
+   */
+  private async clientIdentityFor(requestKeystoreId: string | undefined): Promise<TlsOptionsWire | undefined> {
+    const globalRef = this.prefs()?.ssl.clientKeystoreRef;
+    const keystoreId =
+      requestKeystoreId !== undefined && requestKeystoreId.length > 0
+        ? requestKeystoreId
+        : globalRef !== undefined && globalRef.length > 0
+          ? globalRef
+          : undefined;
+    if (keystoreId === undefined) {
       return undefined;
     }
     const def = this.keystoreDef(keystoreId);
     if (def === undefined) {
-      throw new WirebenchError('keystore-missing', `This request selects a keystore the project no longer has.`, {
-        details: { keystoreId },
-      });
+      throw new WirebenchError(
+        'keystore-missing',
+        keystoreId === globalRef
+          ? 'The keystore selected in Preferences is not in this project.'
+          : 'This request selects a keystore the project no longer has.',
+        { details: { keystoreId } },
+      );
     }
     const keystore = await this.loadKeystoreFor(def);
     const identity = toTlsClientIdentity(keystore, def.defaultAlias);
     // `cert`/`key` only: a keystore says who *we* are. It never contributes `ca`, because Node
     // reads `ca` as a replacement trust store — see `toTlsClientIdentity`.
     return { cert: identity.cert, key: identity.key };
+  }
+
+  /**
+   * The extra trust anchors from the preferred CA bundle, split into one PEM per certificate,
+   * or `undefined` when no bundle is configured or it cannot be read.
+   *
+   * The path goes through the same read check every other user-named file does
+   * ({@link allowsReadPath}): inside the project folder, or picked through a native dialog this
+   * session. A bundle that fails either test, or fails to parse, adds nothing — which leaves
+   * verification stricter, never looser, so failing quietly here is safe in the one direction
+   * that matters.
+   */
+  private async trustAnchors(): Promise<readonly string[] | undefined> {
+    const path = this.prefs()?.ssl.caBundlePath;
+    const open = this.open;
+    if (path === undefined || path.length === 0 || open === undefined) {
+      return undefined;
+    }
+    const resolved = resolvePath(open.dir, path);
+    if (!(await allowsReadPath([open.dir], this.picks, resolved))) {
+      return undefined;
+    }
+    try {
+      const anchors = splitPemBundle(await readFile(resolved, 'utf-8'));
+      return anchors.length > 0 ? anchors : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The proxy a send to `url` must go through, or `undefined` for a direct connection.
+   *
+   * The stored `passwordRef` is resolved here — in main, against the OS keychain — and only
+   * the resolved {@link ProxyOptionsWire} ever reaches the transport; the reference itself
+   * never becomes a password on any wire the renderer can see. `resolveSystem` is injected by
+   * the app (a wrapper around `session.resolveProxy`) so this class stays Electron-free.
+   */
+  async proxyFor(url: string): Promise<ProxyOptionsWire | undefined> {
+    const proxy = this.prefs()?.proxy;
+    if (proxy === undefined || proxy.mode === 'none') {
+      return undefined;
+    }
+    if (proxy.mode === 'system') {
+      // The PAC lookup is skipped for an excluded host: `session.resolveProxy` can be slow
+      // (it may run a PAC script), and a host the user has already said to reach directly has
+      // nothing to gain from asking.
+      let hostname: string;
+      try {
+        hostname = new URL(url).hostname;
+      } catch {
+        return undefined;
+      }
+      if (isExcluded(hostname, proxy.excludes)) {
+        return undefined;
+      }
+      const pac = await this.resolveSystemProxy?.(url);
+      return resolveProxyFor(url, { mode: 'system', excludes: proxy.excludes }, { resolveSystem: () => pac });
+    }
+    const config: ProxyConfig = {
+      mode: 'manual',
+      host: proxy.host ?? '',
+      port: proxy.port ?? 0,
+      excludes: proxy.excludes,
+      ...(proxy.username !== undefined ? { username: proxy.username } : {}),
+      ...(proxy.passwordRef !== undefined ? { passwordRef: proxy.passwordRef } : {}),
+    };
+    const password =
+      proxy.passwordRef !== undefined && proxy.passwordRef.length > 0
+        ? await this.getSecret(proxy.passwordRef)
+        : undefined;
+    return resolveProxyFor(url, config, { ...(password !== undefined ? { password } : {}) });
   }
 
   /** The incoming WS-Security configuration with this id, or `undefined` when there is none. */

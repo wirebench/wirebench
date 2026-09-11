@@ -92,9 +92,16 @@ describe('PreferencesEditor', () => {
     });
   });
 
-  it('says that Proxy and SSL are not wired up yet', () => {
+  it('says the proxy applies to every send, and how excludes behave', () => {
     render(<PreferencesEditor initialSection="proxy" />);
-    expect(screen.getByText(/Task 49/)).toBeTruthy();
+    expect(screen.getByText(/Applied to every send/)).toBeTruthy();
+    expect(screen.getByLabelText('Excludes')).toBeTruthy();
+  });
+
+  it('points the user at the per-endpoint opt-in instead of a global trust-all', () => {
+    render(<PreferencesEditor initialSection="ssl" />);
+    expect(screen.getByTitle(/Trust invalid certificates/)).toBeTruthy();
+    expect(screen.getByLabelText('CA bundle')).toBeTruthy();
   });
 
   it('never lets trust-all be turned on', () => {

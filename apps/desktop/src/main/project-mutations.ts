@@ -636,16 +636,21 @@ export async function applyChange(
     case 'update-endpoint': {
       const iface = requireInterface(project, change.interfaceId);
       requireEndpoint(iface, change.endpointId);
-      const endpoints = iface.endpoints.map((endpoint) =>
-        endpoint.id === change.endpointId
-          ? {
-              ...endpoint,
-              name: change.patch.name ?? endpoint.name,
-              url: change.patch.url ?? endpoint.url,
-              authMode: change.patch.authMode ?? endpoint.authMode,
-            }
-          : endpoint,
-      );
+      const endpoints = iface.endpoints.map((endpoint): Endpoint => {
+        if (endpoint.id !== change.endpointId) return endpoint;
+        // `trustInvalid` is rebuilt rather than spread: turning it off must remove the key, not
+        // persist an explicit `false`, so a project file only ever names endpoints that have it.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+        const { trustInvalid: _dropped, ...rest } = endpoint;
+        const trusts = change.patch.trustInvalid ?? endpoint.trustInvalid;
+        return {
+          ...rest,
+          name: change.patch.name ?? endpoint.name,
+          url: change.patch.url ?? endpoint.url,
+          authMode: change.patch.authMode ?? endpoint.authMode,
+          ...(trusts === true ? { trustInvalid: true } : {}),
+        };
+      });
       return { project: replaceInterface(project, { ...iface, endpoints }) };
     }
 
@@ -700,6 +705,7 @@ export async function applyChange(
               name: endpoint.name,
               url: endpoint.url,
               authMode: endpoint.authMode,
+              ...(endpoint.trustInvalid === true ? { trustInvalid: true } : {}),
               ...(change.auth !== null ? { auth: toEngineAuth(change.auth) } : {}),
             }
           : endpoint,

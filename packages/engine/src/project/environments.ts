@@ -27,13 +27,18 @@ export type EndpointSource = 'environment' | 'request-custom' | 'request-endpoin
 /**
  * Resolves the URL a request should actually be sent to, given an optional
  * active environment. See the module doc for the precedence order.
+ *
+ * `endpoint` is the `Endpoint` object the URL came from, when one exists — the environment
+ * override and a request's custom URL name no endpoint, so they carry none. Callers that need
+ * the endpoint's own settings (its `trustInvalid` flag, say) read it from here rather than
+ * re-deriving the precedence.
  */
 export function resolveEndpoint(
   project: Project,
   envId: string | undefined,
   iface: Interface,
   request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
-): { url: string | undefined; source: EndpointSource } {
+): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
   const environment = findEnvironment(project, envId);
   if (environment !== undefined) {
     const override = environment.endpoints[iface.slug];
@@ -49,20 +54,20 @@ export function resolveEndpoint(
   if (request.endpointId !== undefined) {
     const endpoint = iface.endpoints.find((candidate) => candidate.id === request.endpointId);
     if (endpoint !== undefined) {
-      return { url: endpoint.url, source: 'request-endpoint' };
+      return { url: endpoint.url, source: 'request-endpoint', endpoint };
     }
   }
 
   if (iface.defaultEndpointId !== undefined) {
     const endpoint = iface.endpoints.find((candidate) => candidate.id === iface.defaultEndpointId);
     if (endpoint !== undefined) {
-      return { url: endpoint.url, source: 'interface-default' };
+      return { url: endpoint.url, source: 'interface-default', endpoint };
     }
   }
 
   const first = iface.endpoints[0];
   if (first !== undefined) {
-    return { url: first.url, source: 'interface-default' };
+    return { url: first.url, source: 'interface-default', endpoint: first };
   }
 
   return { url: undefined, source: 'none' };
