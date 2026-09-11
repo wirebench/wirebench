@@ -43,6 +43,8 @@ function formatExpiry(iso: string): string {
 
 interface RowProps {
   readonly keystore: KeystoreWire;
+  /** 1-based position in the grid, for `aria-rowindex`. */
+  readonly rowIndex: number;
   /** Roving-tabindex props from {@link useGridNavigation}; the list is one tab stop. */
   readonly rowProps: GridRowProps;
   readonly status: KeystoresInspectResponse | undefined;
@@ -52,90 +54,102 @@ interface RowProps {
   readonly onPasswordChange: (ref: string | undefined) => void;
 }
 
-function KeystoreRow({ keystore, rowProps, status, onRemove, onSetDefaultAlias, onPasswordChange }: RowProps) {
+function KeystoreRow({
+  keystore,
+  rowIndex,
+  rowProps,
+  status,
+  onRemove,
+  onSetDefaultAlias,
+  onPasswordChange,
+}: RowProps) {
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   const chip = status === undefined ? { label: 'Checking…', tone: 'text-fg-subtle' } : STATUS[status.status];
 
   return (
-    <li data-testid="keystore-row" className="rounded px-1 py-0.5" {...rowProps}>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen(!open);
-          }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised"
-        >
-          <Chevron size={12} aria-hidden="true" className="shrink-0" />
-          <span className="min-w-0 truncate">{keystore.name}</span>
-          <span className="shrink-0 rounded bg-surface-raised px-1 text-xs text-fg-subtle uppercase">
-            {keystore.type === 'pkcs12' ? 'p12' : 'pem'}
-          </span>
-          <span data-testid="keystore-status" className={`shrink-0 text-xs ${chip.tone}`} title={status?.message}>
-            {chip.label}
-          </span>
-        </button>
-        <IconButton label={`Remove ${keystore.name}`} onClick={onRemove}>
-          <Trash2 size={13} aria-hidden="true" />
-        </IconButton>
-      </div>
-
-      {open && (
-        <div className="px-5 pb-2 text-xs text-fg-subtle">
-          <p className="truncate" title={keystore.path}>
-            {shortPath(keystore.path)}
-          </p>
-          {keystore.defaultAlias !== undefined && <p>Default alias: {keystore.defaultAlias}</p>}
-          {/* A password typed wrongly at Add time is fixable in place: without this the only
-              cure for a "Wrong password" row is remove-and-re-add. */}
-          <div data-testid="keystore-password" className="mt-1">
-            <SecretField
-              label={`Password for ${keystore.name}`}
-              value={keystore.passwordSecretRef}
-              onChange={onPasswordChange}
-            />
-          </div>
-          <ul aria-label={`Aliases of ${keystore.name}`} className="mt-1 flex flex-col gap-1">
-            {(status?.aliases ?? []).map((alias: KeystoreAliasWire) => (
-              <li
-                key={alias.fingerprintSha256 + alias.alias}
-                data-testid="keystore-alias-row"
-                className="rounded border border-hairline p-1"
-              >
-                <div className="flex items-center gap-1">
-                  {alias.hasPrivateKey && (
-                    <KeyRound size={11} aria-label="Has a private key" className="shrink-0 text-fg-muted" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-fg-default">{alias.alias}</span>
-                  {keystore.defaultAlias === alias.alias ? (
-                    <span className="shrink-0 text-fg-faint">default</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded px-1 text-accent hover:bg-surface-raised"
-                      onClick={() => {
-                        onSetDefaultAlias(alias.alias);
-                      }}
-                    >
-                      Set as default
-                    </button>
-                  )}
-                </div>
-                <p className="truncate" title={alias.subject}>
-                  {alias.subject}
-                </p>
-                <p>Expires {formatExpiry(alias.notAfter)}</p>
-                <p className="font-mono break-all">{alias.fingerprintSha256}</p>
-              </li>
-            ))}
-            {status !== undefined && status.aliases.length === 0 && (
-              <li className="text-fg-faint">{status.message ?? 'No aliases.'}</li>
-            )}
-          </ul>
+    // One `gridcell` holding the whole entry: the row's disclosure and its expanded body are
+    // one unit, not columns, and a `row` may not hold anything but cells.
+    <li data-testid="keystore-row" role="row" aria-rowindex={rowIndex} className="rounded px-1 py-0.5" {...rowProps}>
+      <div role="gridcell">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(!open);
+            }}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-1 text-left text-sm text-fg-default hover:bg-surface-raised"
+          >
+            <Chevron size={12} aria-hidden="true" className="shrink-0" />
+            <span className="min-w-0 truncate">{keystore.name}</span>
+            <span className="shrink-0 rounded bg-surface-raised px-1 text-xs text-fg-subtle uppercase">
+              {keystore.type === 'pkcs12' ? 'p12' : 'pem'}
+            </span>
+            <span data-testid="keystore-status" className={`shrink-0 text-xs ${chip.tone}`} title={status?.message}>
+              {chip.label}
+            </span>
+          </button>
+          <IconButton label={`Remove ${keystore.name}`} onClick={onRemove}>
+            <Trash2 size={13} aria-hidden="true" />
+          </IconButton>
         </div>
-      )}
+
+        {open && (
+          <div className="px-5 pb-2 text-xs text-fg-subtle">
+            <p className="truncate" title={keystore.path}>
+              {shortPath(keystore.path)}
+            </p>
+            {keystore.defaultAlias !== undefined && <p>Default alias: {keystore.defaultAlias}</p>}
+            {/* A password typed wrongly at Add time is fixable in place: without this the only
+              cure for a "Wrong password" row is remove-and-re-add. */}
+            <div data-testid="keystore-password" className="mt-1">
+              <SecretField
+                label={`Password for ${keystore.name}`}
+                value={keystore.passwordSecretRef}
+                onChange={onPasswordChange}
+              />
+            </div>
+            <ul aria-label={`Aliases of ${keystore.name}`} className="mt-1 flex flex-col gap-1">
+              {(status?.aliases ?? []).map((alias: KeystoreAliasWire) => (
+                <li
+                  key={alias.fingerprintSha256 + alias.alias}
+                  data-testid="keystore-alias-row"
+                  className="rounded border border-hairline p-1"
+                >
+                  <div className="flex items-center gap-1">
+                    {alias.hasPrivateKey && (
+                      <KeyRound size={11} aria-label="Has a private key" className="shrink-0 text-fg-muted" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-fg-default">{alias.alias}</span>
+                    {keystore.defaultAlias === alias.alias ? (
+                      <span className="shrink-0 text-fg-faint">default</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded px-1 text-accent hover:bg-surface-raised"
+                        onClick={() => {
+                          onSetDefaultAlias(alias.alias);
+                        }}
+                      >
+                        Set as default
+                      </button>
+                    )}
+                  </div>
+                  <p className="truncate" title={alias.subject}>
+                    {alias.subject}
+                  </p>
+                  <p>Expires {formatExpiry(alias.notAfter)}</p>
+                  <p className="font-mono break-all">{alias.fingerprintSha256}</p>
+                </li>
+              ))}
+              {status !== undefined && status.aliases.length === 0 && (
+                <li className="text-fg-faint">{status.message ?? 'No aliases.'}</li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
     </li>
   );
 }
@@ -207,17 +221,26 @@ export function KeystoresView() {
         </IconButton>
       </div>
 
-      {/* Up/Down move between rows; the list itself is a single tab stop, so reaching the
-          next section does not mean tabbing through every keystore. */}
-      <ul aria-label="Keystores" className="flex flex-col gap-0.5 px-1 pb-2" {...gridProps}>
-        {keystores.length === 0 && (
-          <li className="px-2 py-1 text-sm text-fg-subtle">
-            {hasProject ? 'No keystores yet.' : 'Open a project to add keystores.'}
-          </li>
-        )}
+      {/* A grid, not a list: every row is the same record (name, type, load status) with the
+          same controls, and Up/Down move between rows while the list stays a single tab stop,
+          so reaching the next section does not mean tabbing through every keystore. The empty
+          state sits outside it — a grid may hold nothing but rows. */}
+      {keystores.length === 0 && (
+        <p className="px-2 py-1 text-sm text-fg-subtle">
+          {hasProject ? 'No keystores yet.' : 'Open a project to add keystores.'}
+        </p>
+      )}
+      <ul
+        role="grid"
+        aria-label="Keystores"
+        aria-rowcount={keystores.length}
+        className="flex flex-col gap-0.5 px-1 pb-2"
+        {...gridProps}
+      >
         {keystores.map((keystore, index) => (
           <KeystoreRow
             key={keystore.id}
+            rowIndex={index + 1}
             rowProps={rowProps(index)}
             keystore={keystore}
             status={statuses[keystore.id]}

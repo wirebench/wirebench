@@ -41,9 +41,12 @@ interface Pair {
 /**
  * Every foreground/surface combination the shell renders, by the component that renders it.
  *
- * `--wb-fg-faint` is deliberately absent from the text list: it only ever paints the inert `·`
- * separators in the status bar and the "no aliases" placeholder, which are decorative, and
- * holding a deliberately-recessive token to 4.5:1 would flatten the whole foreground scale.
+ * `--wb-fg-faint` is in the text list. It does paint inert `·` separators, but it also paints
+ * real copy people are meant to read — the palette's group headings and shortcut hints, the
+ * "overrides the default" hint under a header, recent-project timestamps, search line numbers,
+ * the "None"/"No entries yet" placeholders — so it answers for 4.5:1 like any other text token.
+ * The consequence is that it now sits very close to `--wb-fg-subtle`: a foreground quieter than
+ * AA allows is not a scale step, it is unreadable text.
  */
 const PAIRS: readonly Pair[] = [
   // Body text on every surface it lands on.
@@ -67,6 +70,11 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-fg-subtle', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar, problem counts' },
   { fg: '--wb-fg-subtle', bg: '--wb-bg-raised', kind: 'text', where: 'column headers, tab labels' },
   { fg: '--wb-fg-subtle', bg: '--wb-bg-overlay', kind: 'text', where: 'palette category labels' },
+
+  // The quietest text token of all: hints, placeholders, palette group headings.
+  { fg: '--wb-fg-faint', bg: '--wb-bg-base', kind: 'text', where: 'welcome timestamps, editor hints' },
+  { fg: '--wb-fg-faint', bg: '--wb-bg-sunken', kind: 'text', where: 'title bar, status bar separators' },
+  { fg: '--wb-fg-faint', bg: '--wb-bg-raised', kind: 'text', where: 'inspector hints, form badges' },
 
   // Accent-on-surface and text on the accent itself.
   { fg: '--wb-accent-default', bg: '--wb-bg-base', kind: 'text', where: 'links, "Set as default"' },

@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useGridNavigation } from '../../src/renderer/lib/grid-navigation.js';
 
 /** A minimal grid built on the hook, standing in for the real Problems/History/Keystores lists. */
-function Grid({ rows }: { rows: number }) {
-  const { gridProps, rowProps } = useGridNavigation(rows);
+function Grid({ rows, onActiveRowChange }: { rows: number; onActiveRowChange?: (index: number) => void }) {
+  const { gridProps, rowProps } = useGridNavigation(rows, onActiveRowChange === undefined ? {} : { onActiveRowChange });
   return (
     <div role="grid" aria-label="Test" data-testid="grid" {...gridProps}>
       {Array.from({ length: rows }, (_, index) => (
@@ -58,6 +58,28 @@ describe('useGridNavigation', () => {
     render(<Grid rows={3} />);
     fireEvent.keyDown(screen.getByText('row 0'), { key: 'ArrowDown' });
     expect(tabIndexes(3)).toEqual([0, -1, -1]);
+  });
+
+  it('takes a keystroke aimed at the grid itself, not only at a row', () => {
+    // A grid whose own container holds the focus (the attachments table does) must still move.
+    render(<Grid rows={3} />);
+    fireEvent.keyDown(screen.getByTestId('grid'), { key: 'ArrowDown' });
+    expect(tabIndexes(3)).toEqual([-1, 0, -1]);
+  });
+
+  it('reports every move to onActiveRowChange, so selection can follow focus', () => {
+    const moves: number[] = [];
+    render(
+      <Grid
+        rows={3}
+        onActiveRowChange={(index) => {
+          moves.push(index);
+        }}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId('row-0'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByTestId('row-1'), { key: 'End' });
+    expect(moves).toEqual([1, 2]);
   });
 
   it('clamps the active row when rows disappear', () => {

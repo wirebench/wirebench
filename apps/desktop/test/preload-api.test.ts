@@ -45,9 +45,12 @@ describe('buildApi', () => {
     expect('ipcRenderer' in api).toBe(false);
   });
 
-  it('defaults env.e2e to false, and carries whatever the caller passes', () => {
-    expect(buildApi(vi.fn(), vi.fn(), vi.fn()).env).toEqual({ e2e: false });
-    expect(buildApi(vi.fn(), vi.fn(), vi.fn(), { e2e: true }).env).toEqual({ e2e: true });
+  it('defaults env to a non-e2e dark build, and carries whatever the caller passes', () => {
+    expect(buildApi(vi.fn(), vi.fn(), vi.fn()).env).toEqual({ e2e: false, osTheme: 'dark' });
+    expect(buildApi(vi.fn(), vi.fn(), vi.fn(), { e2e: true, osTheme: 'light' }).env).toEqual({
+      e2e: true,
+      osTheme: 'light',
+    });
   });
 
   it('exposes secrets.set/replace/exists/delete/list but never secrets.get', () => {

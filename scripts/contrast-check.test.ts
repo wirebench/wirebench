@@ -37,4 +37,13 @@ describe('the committed tokens', () => {
     // Both themes, so every pair is checked twice.
     expect(results.filter((result) => result.theme === 'light')).toHaveLength(results.length / 2);
   });
+
+  it('gates --wb-fg-faint as text on every surface it paints text on', async () => {
+    const results = checkTokens(await readFile(tokens, 'utf-8'));
+    const faint = results.filter((result) => result.pair.fg === '--wb-fg-faint');
+    expect(faint.map((result) => result.pair.bg).sort()).toEqual(
+      ['--wb-bg-base', '--wb-bg-raised', '--wb-bg-sunken', '--wb-bg-base', '--wb-bg-raised', '--wb-bg-sunken'].sort(),
+    );
+    expect(faint.every((result) => result.pair.kind === 'text' && result.minimum === 4.5)).toBe(true);
+  });
 });

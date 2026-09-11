@@ -4,6 +4,7 @@ import { cycleTheme } from '../../src/renderer/lib/theme-actions.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import {
+  applyInitialTheme,
   getOsTheme,
   nextThemePreference,
   resolveTheme,
@@ -26,6 +27,9 @@ function stubBridge(os: 'dark' | 'light') {
   Object.defineProperty(window, 'wirebench', {
     configurable: true,
     value: {
+      // Baked in at preload time from main's `nativeTheme`, so the very first paint knows the
+      // OS scheme without waiting for an IPC round trip.
+      env: { e2e: false, osTheme: os },
       theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os } }) },
       on: (name: string, listener: (payload: unknown) => void) => {
         if (name === 'theme.changed') themeListeners.push(listener);
@@ -133,6 +137,37 @@ describe('useTheme', () => {
       await Promise.resolve();
     });
     expect(document.documentElement.dataset['theme']).toBe('dark');
+  });
+});
+
+describe('applyInitialTheme', () => {
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(window, 'wirebench');
+    localStorage.clear();
+    setOsTheme('dark');
+  });
+
+  it('paints a light OS under the system preference before the first render', () => {
+    stubBridge('light');
+    expect(applyInitialTheme('system')).toBe('light');
+    expect(document.documentElement.dataset['theme']).toBe('light');
+    expect(getOsTheme()).toBe('light');
+  });
+
+  it('reads the stored preference when none is passed', () => {
+    stubBridge('light');
+    localStorage.setItem('wirebench.ui', JSON.stringify({ version: 2, state: { theme: 'dark' } }));
+    expect(applyInitialTheme()).toBe('dark');
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+  });
+
+  it('does not flash dark: the first render under system already carries the light theme', () => {
+    stubBridge('light');
+    applyInitialTheme('system');
+    render(<ThemeHost preference="system" />);
+    // No promise flush: if the OS scheme only arrived via `theme.get`, this would read `dark`.
+    expect(document.documentElement.dataset['theme']).toBe('light');
   });
 });
 

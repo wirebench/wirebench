@@ -10,6 +10,11 @@ z.config({ jitless: true });
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app.js';
+import { applyInitialTheme } from './lib/theme.js';
+
+// Before the first paint, not in an effect: `system` on a light OS would otherwise render one
+// dark frame while `theme.get` is in flight. The preload bakes the OS scheme in at load time.
+applyInitialTheme();
 
 const container = document.getElementById('root');
 if (container === null) {

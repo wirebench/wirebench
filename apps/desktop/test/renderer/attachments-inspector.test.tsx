@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AttachmentsInspector } from '../../src/renderer/features/request-editor/inspectors/attachments-inspector.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -222,6 +222,18 @@ describe('AttachmentsTable keyboard model', () => {
 
     fireEvent.keyDown(grid, { key: 'ArrowUp' });
     expect(screen.getByText('logo.png').closest('tr')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('exposes rows and cells, with a roving tab stop that follows the selection', () => {
+    render(<AttachmentsInspector requestId="req-1" />);
+    const grid = screen.getByTestId('attachments-table');
+    const rows = screen.getAllByTestId('attachment-row');
+    expect(rows.every((row) => row.getAttribute('role') === 'row')).toBe(true);
+    expect(within(rows[0] as HTMLElement).getAllByRole('gridcell').length).toBe(8);
+    expect(rows.map((row) => row.tabIndex)).toEqual([0, -1]);
+
+    fireEvent.keyDown(grid, { key: 'ArrowDown' });
+    expect(screen.getAllByTestId('attachment-row').map((row) => row.tabIndex)).toEqual([-1, 0]);
   });
 
   it('detaches the selected row on Delete', async () => {

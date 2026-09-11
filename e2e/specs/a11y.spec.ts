@@ -28,12 +28,15 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  *
  * ## Screenshots
  *
- * Snapshots are per-platform (Playwright appends the platform to the file name) and are
- * committed for macOS only, because they are the only ones produced here. Font rasterisation
- * and scrollbar metrics differ per OS, so CI must compare snapshots only on the same OS that
- * produced them: a Linux or Windows job either regenerates its own set on first run or skips
- * the screenshot test. Dynamic regions (the app version, clock times, durations, response sizes
- * and `urn:uuid` message ids) are masked so a snapshot never depends on when it was taken.
+ * Snapshots live under `specs/__screenshots__/{project}-{platform}/` (see
+ * `snapshotPathTemplate` in `playwright.config.ts`) and only the macOS set is committed, because
+ * that is the only set produced here. Font rasterisation and scrollbar metrics differ per OS, so
+ * a Linux or Windows job could only ever compare against snapshots it generated itself — which
+ * proves nothing and fails the moment a runner image changes. The two screenshot tests therefore
+ * `test.skip` off darwin, and CI (`.github/workflows/ci.yml`) runs its e2e matrix on all three
+ * knowing the pixel comparison happens on macOS only. Dynamic regions (the app version, clock
+ * times, durations, response sizes and `urn:uuid` message ids) are masked so a snapshot never
+ * depends on when it was taken.
  */
 
 /** Every rule this spec turns off, with the reason; see the file comment. */
@@ -203,6 +206,7 @@ test.describe('accessibility and theming', () => {
     });
 
     test(`the shell looks right in ${theme}`, async () => {
+      test.skip(process.platform !== 'darwin', 'snapshots are macOS-only');
       launched = await launchApp();
       const { window } = launched;
       await resizeWindow(launched);

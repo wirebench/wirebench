@@ -16,6 +16,16 @@ export interface GridNavigation {
   readonly activeRow: number;
   readonly gridProps: GridProps;
   readonly rowProps: (index: number) => GridRowProps;
+  /** Moves the tab stop without a keystroke — e.g. after a row was clicked. */
+  readonly setActiveRow: (index: number) => void;
+}
+
+export interface GridNavigationOptions {
+  /**
+   * Called with the new row index every time a keystroke moves the tab stop. A grid that also
+   * carries a selection (the attachments table) uses this to make selection follow focus.
+   */
+  readonly onActiveRowChange?: (index: number) => void;
 }
 
 /**
@@ -30,8 +40,11 @@ export interface GridNavigation {
  *
  * @param rowCount - How many rows the grid renders; the active row is clamped to it.
  */
-export function useGridNavigation(rowCount: number): GridNavigation {
+export function useGridNavigation(rowCount: number, options: GridNavigationOptions = {}): GridNavigation {
   const [activeRow, setActiveRow] = useState(0);
+  // Held in a ref so a caller may pass an inline closure without re-creating the key handler.
+  const onActiveRowChange = useRef(options.onActiveRowChange);
+  onActiveRowChange.current = options.onActiveRowChange;
   const containerRef = useRef<HTMLElement | null>(null);
   const pendingFocus = useRef(false);
 
@@ -74,14 +87,16 @@ export function useGridNavigation(rowCount: number): GridNavigation {
         return;
       }
       // A text field owns Home/End (and a `<select>` owns the arrows) for its own value; only
-      // a keystroke aimed at the row itself moves the grid's focus.
+      // a keystroke aimed at a row — or at the grid container itself, which is where the focus
+      // sits before any row has taken it — moves the grid's focus.
       const target = event.target as HTMLElement;
-      if (target.getAttribute('data-grid-row') === null) {
+      if (target !== event.currentTarget && target.getAttribute('data-grid-row') === null) {
         return;
       }
       event.preventDefault();
       pendingFocus.current = true;
       setActiveRow(next);
+      onActiveRowChange.current?.(next);
     },
     [clamped, rowCount],
   );
@@ -91,5 +106,5 @@ export function useGridNavigation(rowCount: number): GridNavigation {
     [clamped],
   );
 
-  return { activeRow: clamped, gridProps: { onKeyDown }, rowProps };
+  return { activeRow: clamped, gridProps: { onKeyDown }, rowProps, setActiveRow };
 }

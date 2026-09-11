@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { ThemeOsWire } from '../../shared/wire-types.js';
-import type { ThemePreference } from '../state/ui-state.js';
+import { readUi, type ThemePreference } from '../state/ui-state.js';
 
 /** The two concrete schemes a preference can resolve to. */
 export type ResolvedTheme = 'dark' | 'light';
@@ -24,6 +24,10 @@ export const THEME_LABEL: Readonly<Record<ThemePreference, string>> = {
 /**
  * The OS colour scheme as main last reported it. Kept in a module-level store rather than a
  * React context because non-React code (the Monaco theme lookup) reads it synchronously.
+ *
+ * The seed is `dark` only until {@link osThemeFromEnv} is consulted; every entry point that can
+ * paint (the pre-render {@link applyInitialTheme} and {@link startOsThemeBridge}) does that
+ * first, so `system` never resolves to a guess.
  */
 let osTheme: ResolvedTheme = 'dark';
 const listeners = new Set<() => void>();
@@ -51,6 +55,34 @@ export function getOsTheme(): ResolvedTheme {
   return osTheme;
 }
 
+/**
+ * The OS scheme the preload baked in at load time from main's `nativeTheme`, if there is a
+ * preload at all. Synchronous by construction — `theme.get` is an IPC round trip, and anything
+ * awaited would land after the first paint, which is exactly the flash this avoids.
+ */
+export function osThemeFromEnv(): ResolvedTheme | undefined {
+  return globalThis.window?.wirebench?.env?.osTheme;
+}
+
+/**
+ * Applies the theme to `<html data-theme>` before React mounts, from the two things that are
+ * knowable synchronously: the preference mirrored in `localStorage` and the OS scheme the
+ * preload baked in. Called from `main.tsx` ahead of `createRoot`, so a `system` preference on a
+ * light OS never paints a dark frame first.
+ *
+ * @param preference - Defaults to the persisted UI mirror.
+ * @returns the concrete theme that was applied.
+ */
+export function applyInitialTheme(preference: ThemePreference = readUi().theme): ResolvedTheme {
+  const fromEnv = osThemeFromEnv();
+  if (fromEnv !== undefined) {
+    setOsTheme(fromEnv);
+  }
+  const resolved = resolveTheme(preference);
+  document.documentElement.dataset['theme'] = resolved;
+  return resolved;
+}
+
 /** Resolves `system` against the OS scheme; a concrete preference is returned as-is. */
 export function resolveTheme(preference: ThemePreference): ResolvedTheme {
   return preference === 'system' ? osTheme : preference;
@@ -68,6 +100,10 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
  */
 export function startOsThemeBridge(): () => void {
   const api = globalThis.window?.wirebench as typeof window.wirebench | undefined;
+  const fromEnv = osThemeFromEnv();
+  if (fromEnv !== undefined) {
+    setOsTheme(fromEnv);
+  }
   if (api?.theme?.get !== undefined) {
     let live = true;
     void api.theme.get(undefined).then((result) => {

@@ -26,7 +26,9 @@
   --wb-fg-default: #ece9e3;
   --wb-fg-muted: #a49d93;
   --wb-fg-subtle: #8d8780;
-  --wb-fg-faint: #4c4741;
+  /* Faint still paints real copy (hints, placeholders, palette headings), so it clears AA;
+     see scripts/contrast-check.ts. It is a hair below subtle, not a decorative grey. */
+  --wb-fg-faint: #8a847d;
   --wb-fg-on-accent: #1a1210;
 
   /* Hairlines. */
@@ -94,7 +96,7 @@
   --wb-fg-default: #22201d;
   --wb-fg-muted: #5c564e;
   --wb-fg-subtle: #6d675f;
-  --wb-fg-faint: #b3ada4;
+  --wb-fg-faint: #706a62;
   --wb-fg-on-accent: #ffffff;
 
   --wb-border-default: #e0dcd5;

@@ -39,6 +39,15 @@ export interface EditorAreaProps {
 
 const WELCOME_ID = 'welcome';
 
+/** The `id` of a tab's button, and of the panel it controls — paired via ARIA both ways. */
+function tabId(id: string): string {
+  return `editor-tab-${id}`;
+}
+
+function panelId(id: string): string {
+  return `editor-panel-${id}`;
+}
+
 const PREFERENCES_SECTIONS = ['http', 'proxy', 'ssl', 'wsdl', 'wsi', 'editor', 'ui', 'shortcuts'] as const;
 
 /** Narrows the tab's free-form section string to a real section id. */
@@ -54,6 +63,7 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
   const tabs = useEditorsStore((state) => state.tabs);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
+  const showWelcome = useEditorsStore((state) => state.showWelcome);
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
   const environments = useProjectStore((state) => state.environments);
@@ -61,6 +71,41 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const showingWelcome = activeTab === undefined;
+  const selectedId = showingWelcome ? WELCOME_ID : (activeId ?? WELCOME_ID);
+
+  // APG tabs: one tab stop for the whole list, Left/Right/Home/End move within it, and focus
+  // carries the selection with it (automatic activation) — the panels are already mounted
+  // lazily, so following focus costs nothing a click would not.
+  const order = [WELCOME_ID, ...tabs.map((tab) => tab.id)];
+  const select = (id: string): void => {
+    if (id === WELCOME_ID) {
+      showWelcome();
+      return;
+    }
+    activate(id);
+  };
+  const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const current = order.indexOf(selectedId);
+    const next =
+      event.key === 'ArrowRight'
+        ? (current + 1) % order.length
+        : event.key === 'ArrowLeft'
+          ? (current - 1 + order.length) % order.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? order.length - 1
+              : undefined;
+    const target = next === undefined ? undefined : order[next];
+    if (target === undefined) {
+      return;
+    }
+    event.preventDefault();
+    select(target);
+    // The tab buttons never unmount, so the new one can take focus in the same tick; its
+    // `tabindex` flips to 0 on the render this `activate` schedules.
+    document.getElementById(tabId(target))?.focus();
+  };
 
   return (
     <section data-testid="editor-area" aria-label="Editors" className="flex h-full min-h-0 flex-col bg-surface-base">
@@ -69,12 +114,18 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         role="tablist"
         aria-label="Open editors"
         className="flex h-row shrink-0 overflow-x-auto border-b border-hairline"
+        onKeyDown={onTabsKeyDown}
       >
         <button
           type="button"
           role="tab"
+          id={tabId(WELCOME_ID)}
+          aria-controls={panelId(WELCOME_ID)}
           aria-selected={showingWelcome}
-          onClick={() => activate(WELCOME_ID)}
+          tabIndex={showingWelcome ? 0 : -1}
+          onClick={() => {
+            showWelcome();
+          }}
           className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
             showingWelcome ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
           }`}
@@ -100,7 +151,10 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
               key={tab.id}
               type="button"
               role="tab"
+              id={tabId(tab.id)}
+              aria-controls={panelId(tab.id)}
               aria-selected={tab.id === activeId}
+              tabIndex={tab.id === activeId ? 0 : -1}
               aria-keyshortcuts="Delete"
               onClick={() => activate(tab.id)}
               onKeyDown={(event) => {
@@ -131,7 +185,12 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div
+        role="tabpanel"
+        id={panelId(selectedId)}
+        aria-labelledby={tabId(selectedId)}
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {showingWelcome ? (
           <WelcomeScreen onImportDefinition={onImportDefinition} />
         ) : activeTab.kind === 'interface' && activeTab.interfaceId !== undefined ? (

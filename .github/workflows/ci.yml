@@ -53,6 +53,9 @@ jobs:
         run: brew install libxmlsec1
       - run: WIREBENCH_REQUIRE_XMLSEC=1 pnpm test:wss-xmlsec
 
+  # The e2e matrix runs on all three OSes, but the theme *screenshot* comparison happens on
+  # macOS only: only the macOS snapshots are committed (see e2e/specs/a11y.spec.ts), and those
+  # two tests skip themselves elsewhere. Everything else in the suite runs everywhere.
   e2e:
     needs: check
     strategy:

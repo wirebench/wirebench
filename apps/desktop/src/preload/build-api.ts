@@ -47,14 +47,21 @@ export type WirebenchApi = ApiFromChannels<typeof channels> & {
     pathFor(file: File): string;
   };
   /**
-   * Environment flags baked in at preload time, not IPC calls: `e2e` mirrors main's
-   * `WIREBENCH_E2E` env var, so the renderer can tell a Playwright-driven build apart from a
-   * real user's without reading `process.env` itself (a sandboxed renderer has none). Used to
-   * gate the `__wirebenchMonaco` handle e2e specs need (see `editor/markers.ts`) — nothing
-   * beyond `import.meta.env.DEV` should ever need to check this.
+   * Environment values baked in at preload time, not IPC calls, because the renderer has no
+   * `process.env` and an IPC round trip lands after the first paint.
+   *
+   * `e2e` mirrors main's `WIREBENCH_E2E` env var, so the renderer can tell a Playwright-driven
+   * build apart from a real user's. Used to gate the `__wirebenchMonaco` handle e2e specs need
+   * (see `editor/markers.ts`) — nothing beyond `import.meta.env.DEV` should ever need it.
+   *
+   * `osTheme` is `nativeTheme.shouldUseDarkColors` as main computed it when the window was
+   * created (`main/windows.ts` passes it through `additionalArguments`). It seeds the `system`
+   * theme preference before the first paint; `theme.get`/`theme.changed` keep it current
+   * afterwards. The renderer never computes it itself.
    */
   env: {
     readonly e2e: boolean;
+    readonly osTheme: 'dark' | 'light';
   };
 };
 
@@ -87,7 +94,7 @@ export function buildApi(
   invoke: Invoke,
   on: On,
   pathFor: (file: File) => string,
-  env: { readonly e2e: boolean } = { e2e: false },
+  env: WirebenchApi['env'] = { e2e: false, osTheme: 'dark' },
 ): WirebenchApi {
   const channelApi = buildChannelApi(channels, invoke);
   return {

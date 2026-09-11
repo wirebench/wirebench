@@ -86,6 +86,12 @@ export interface EditorsStore {
   readonly openOrReplace: (tab: EditorTab) => void;
   readonly close: (id: string) => void;
   readonly activate: (id: string) => void;
+  /**
+   * Leaves every tab unselected, which is what shows the Welcome screen. The editor area's
+   * Welcome tab selects with this: Welcome is not an entry in `tabs`, so `activate` — which
+   * only ever moves to a tab that exists — cannot reach it.
+   */
+  readonly showWelcome: () => void;
   /** The Form view type for `requestId`, defaulting to `'full'` when never set. */
   readonly formViewTypeFor: (requestId: string) => FormViewType;
   readonly setFormViewType: (requestId: string, viewType: FormViewType) => void;
@@ -173,6 +179,10 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
     if (get().tabs.some((t) => t.id === id)) {
       set({ activeId: id });
     }
+  },
+
+  showWelcome: () => {
+    set({ activeId: undefined });
   },
 
   formViewTypeFor: (requestId) => get().formViewTypes[requestId] ?? DEFAULT_FORM_VIEW_TYPE,

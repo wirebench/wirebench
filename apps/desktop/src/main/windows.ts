@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { is } from '@electron-toolkit/utils';
-import { BrowserWindow, session, shell } from 'electron';
+import { BrowserWindow, nativeTheme, session, shell } from 'electron';
 import { events } from '../shared/ipc.js';
+import { OS_THEME_ARGUMENT } from '../shared/os-theme-argument.js';
 import { emitEvent } from './ipc/events.js';
 import {
   APP_SCHEME,
@@ -60,6 +61,10 @@ export function createMainWindow(): BrowserWindow {
     webPreferences: {
       ...MAIN_WINDOW_WEB_PREFERENCES,
       preload: PRELOAD_PATH,
+      // The OS colour scheme, baked into the preload's argv so the renderer can resolve a
+      // `system` theme preference before its first paint instead of after a `theme.get` round
+      // trip. `theme.changed` keeps it current from here on.
+      additionalArguments: [`${OS_THEME_ARGUMENT}${nativeTheme.shouldUseDarkColors ? 'dark' : 'light'}`],
     },
   });
 

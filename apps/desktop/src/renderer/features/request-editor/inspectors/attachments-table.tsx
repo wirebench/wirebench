@@ -7,6 +7,7 @@ import type {
   MimePartWire,
 } from '../../../../shared/wire-types.js';
 import { formatBytes } from '../../../lib/format-size.js';
+import { useGridNavigation } from '../../../lib/grid-navigation.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 /** Media types offered as a datalist on the Content type cell; the field stays free text. */
@@ -118,13 +119,14 @@ export function AttachmentsTable({
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
   const listId = 'attachment-content-types';
 
-  const move = (delta: -1 | 1): void => {
-    if (attachments.length === 0) return;
-    const current = attachments.findIndex((attachment) => attachment.id === selectedId);
-    const next = current === -1 ? 0 : Math.min(attachments.length - 1, Math.max(0, current + delta));
-    const target = attachments[next];
-    if (target !== undefined) onSelect(target.id);
-  };
+  // The shared APG grid model owns Up/Down/Home/End and the single roving tab stop; selection
+  // follows focus, because this grid's selection *is* what the Delete/F2 commands act on.
+  const { rowProps, gridProps, setActiveRow } = useGridNavigation(attachments.length, {
+    onActiveRowChange: (index) => {
+      const target = attachments[index];
+      if (target !== undefined) onSelect(target.id);
+    },
+  });
 
   return (
     <>
@@ -137,20 +139,18 @@ export function AttachmentsTable({
         role="grid"
         data-testid="attachments-table"
         aria-label="Request attachments"
-        tabIndex={0}
+        aria-rowcount={attachments.length}
+        // Before any row has taken focus the grid itself is the tab stop; once it has, the
+        // roving `tabindex` on the rows is the single stop and this one is skipped.
+        tabIndex={attachments.length === 0 ? 0 : -1}
         className="w-full border-collapse text-sm"
         onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            move(1);
-          } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            move(-1);
-          } else if (event.key === 'Delete' || event.key === 'Backspace') {
-            // Only when the grid itself has focus: a Part/Type `<select>` doesn't stop
-            // propagation, so without this a Delete meant for that control's own value would
-            // bubble up and detach the row it lives in.
-            if (event.target !== event.currentTarget) return;
+          if (event.key === 'Delete' || event.key === 'Backspace') {
+            // Only from the grid or a row: a Part/Type `<select>` doesn't stop propagation, so
+            // without this a Delete meant for that control's own value would bubble up and
+            // detach the row it lives in.
+            const target = event.target as HTMLElement;
+            if (target !== event.currentTarget && target.getAttribute('data-grid-row') === null) return;
             if (selectedId !== undefined && renamingId === undefined) {
               event.preventDefault();
               onRemoveSelected();
@@ -159,35 +159,57 @@ export function AttachmentsTable({
             event.preventDefault();
             setRenamingId(selectedId);
           }
+          gridProps.onKeyDown(event);
         }}
       >
         <thead>
-          <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-            <th className="pb-1 font-medium">Name</th>
-            <th className="pb-1 font-medium">Content type</th>
-            <th className="pb-1 font-medium">Size</th>
-            <th className="pb-1 font-medium">Part</th>
-            <th className="pb-1 font-medium">Type</th>
-            <th className="pb-1 font-medium">Content ID</th>
-            <th className="pb-1 font-medium">Cached</th>
-            <th className="w-8" />
+          <tr role="row" className="text-left text-xs tracking-wider text-fg-subtle uppercase">
+            <th role="columnheader" className="pb-1 font-medium">
+              Name
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Content type
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Size
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Part
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Type
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Content ID
+            </th>
+            <th role="columnheader" className="pb-1 font-medium">
+              Cached
+            </th>
+            <th role="columnheader" className="w-8">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {attachments.map((attachment) => {
+          {attachments.map((attachment, index) => {
             const selected = attachment.id === selectedId;
             const outside = outsideProjectIds.has(attachment.id);
             return (
               <tr
                 key={attachment.id}
                 data-testid="attachment-row"
+                role="row"
+                aria-rowindex={index + 1}
                 aria-selected={selected}
                 className={selected ? 'bg-accent-muted' : undefined}
                 onClick={() => {
                   onSelect(attachment.id);
+                  // Keep the tab stop where the pointer just put the selection.
+                  setActiveRow(index);
                 }}
+                {...rowProps(index)}
               >
-                <td className="py-0.5 pr-2 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle">
                   <div className="flex items-center gap-1">
                     {outside && (
                       <span title={OUTSIDE_PROJECT_TITLE} className="shrink-0 text-status-warning">
@@ -219,7 +241,7 @@ export function AttachmentsTable({
                     )}
                   </div>
                 </td>
-                <td className="py-0.5 pr-2 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle">
                   <EditableCell
                     label={`Content type of ${attachment.name}`}
                     value={attachment.contentType}
@@ -230,12 +252,13 @@ export function AttachmentsTable({
                   />
                 </td>
                 <td
+                  role="gridcell"
                   className="py-0.5 pr-2 align-middle text-xs whitespace-nowrap text-fg-muted"
                   title={`${String(attachment.size)} bytes`}
                 >
                   {formatBytes(attachment.size)}
                 </td>
-                <td className="py-0.5 pr-2 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle">
                   {mimeParts.length === 0 ? (
                     <span className="text-xs text-fg-faint">—</span>
                   ) : (
@@ -259,7 +282,7 @@ export function AttachmentsTable({
                     </select>
                   )}
                 </td>
-                <td className="py-0.5 pr-2 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle">
                   <select
                     aria-label={`Type of ${attachment.name}`}
                     className={SELECT_CLASS}
@@ -275,7 +298,7 @@ export function AttachmentsTable({
                     ))}
                   </select>
                 </td>
-                <td className="py-0.5 pr-2 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle">
                   <EditableCell
                     label={`Content ID of ${attachment.name}`}
                     value={attachment.contentId}
@@ -284,8 +307,10 @@ export function AttachmentsTable({
                     }}
                   />
                 </td>
-                <td className="py-0.5 pr-2 align-middle text-xs text-fg-muted">{attachment.cached ? '✓' : '–'}</td>
-                <td className="py-0.5 align-middle">
+                <td role="gridcell" className="py-0.5 pr-2 align-middle text-xs text-fg-muted">
+                  {attachment.cached ? '✓' : '–'}
+                </td>
+                <td role="gridcell" className="py-0.5 align-middle">
                   <InspectorIconButton
                     label="Open attachment"
                     onClick={() => {

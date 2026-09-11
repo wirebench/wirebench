@@ -162,6 +162,20 @@ describe('KeystoresView', () => {
     expect(inspect).toHaveBeenCalledTimes(2);
   });
 
+  it('exposes the list as a grid of rows and cells, one tab stop, arrow-navigable', async () => {
+    setUp({ keystores: [corp, { ...corp, id: 'k2', name: 'partner' }] });
+
+    const grid = screen.getByRole('grid', { name: 'Keystores' });
+    expect(grid.getAttribute('aria-rowcount')).toBe('2');
+    const rows = await screen.findAllByRole('row');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.tabIndex)).toEqual([0, -1]);
+    expect(rows.every((row) => within(row).getAllByRole('gridcell').length > 0)).toBe(true);
+
+    fireEvent.keyDown(rows[0] as HTMLElement, { key: 'ArrowDown' });
+    expect(screen.getAllByRole('row').map((row) => row.tabIndex)).toEqual([-1, 0]);
+  });
+
   it('invites the user to open a project when none is open', () => {
     installWirebenchApi({});
     useProjectStore.setState({ project: null, keystores: [] });
