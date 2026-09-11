@@ -205,8 +205,8 @@ export function RequestProperties({ requestId }: RequestPropertiesProps) {
         />
         <ReadOnlySetting
           label="WS-Addressing"
-          value={request.wsa?.enabled === true ? 'Enabled' : 'Disabled'}
-          hint="Editing arrives with WS-Addressing (Task 41)."
+          value={request.wsa === undefined ? 'Inherited' : request.wsa.enabled ? 'Enabled' : 'Disabled'}
+          hint="Edit it in the request pane's WS-A inspector."
         />
       </SettingsGroup>
 

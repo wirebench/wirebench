@@ -47,6 +47,8 @@ export type CommandId =
   | 'request.addWsTimestamp'
   | 'request.applyOutgoingWss'
   | 'request.removeOutgoingWss'
+  | 'request.addWsaHeaders'
+  | 'request.removeWsaHeaders'
   | 'request.addAttachment'
   | 'request.removeAttachment'
   | 'editor.formatXml'

@@ -11,6 +11,7 @@ import type {
   ImportSourceWire,
   InterfaceWire,
   KeystorePatchWire,
+  WsaConfigWire,
   WssIncomingPatchWire,
   WssIncomingWire,
   WssOutgoingPatchWire,
@@ -150,6 +151,10 @@ export interface ProjectStore extends ProjectSnapshot {
   ) => Promise<void>;
   /** Sets (or clears) one interface's fallback credentials. */
   readonly updateInterfaceAuth: (interfaceId: string, auth: EndpointAuthWire | null) => Promise<void>;
+  /** Sets (`null` clears, back to "inherit") one request's own WS-Addressing overrides. */
+  readonly updateRequestWsa: (requestId: string, wsa: WsaConfigWire | null) => void;
+  /** Sets the interface-level WS-Addressing defaults every request of it inherits. */
+  readonly updateInterfaceWsa: (interfaceId: string, wsa: WsaConfigWire) => Promise<void>;
   readonly removeEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   /** Makes one endpoint the interface's default, used by requests that pick none of their own. */
   readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
@@ -550,6 +555,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateInterfaceAuth: async (interfaceId, auth) => {
       await mutate({ kind: 'update-interface-auth', interfaceId, auth });
+    },
+
+    updateRequestWsa: (requestId, wsa) => {
+      // Fire-and-report like `updateRequestAuth`: the inspector must stay responsive, and a
+      // rejected mutation surfaces as a toast rather than an unhandled rejection.
+      void mutate({ kind: 'update-request-wsa', requestId, wsa }).catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Could not update WS-Addressing');
+      });
+    },
+
+    updateInterfaceWsa: async (interfaceId, wsa) => {
+      await mutate({ kind: 'update-interface-wsa', interfaceId, wsa });
     },
 
     removeEndpoint: async (interfaceId, endpointId) => {

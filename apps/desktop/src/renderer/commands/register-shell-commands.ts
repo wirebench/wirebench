@@ -10,6 +10,7 @@ import {
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
+import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { projectActions } from '../features/welcome/project-actions.js';
@@ -374,6 +375,24 @@ export function registerShellCommands(openPalette: () => void): void {
     category: 'Request',
     when: () => activeRequestId() !== undefined,
     run: onActiveRequest((requestId) => void removeOutgoingWssFromEditor(requestId)),
+  });
+
+  // The two WS-Addressing editor actions, the counterpart of the request's saved WS-A
+  // configuration: these bake the headers into the envelope text rather than applying them on
+  // the way to the wire.
+  registerCommand({
+    id: 'request.addWsaHeaders',
+    label: 'Request: WS-A Headers → Add to Editor',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void addWsaHeadersToEditor(requestId)),
+  });
+  registerCommand({
+    id: 'request.removeWsaHeaders',
+    label: 'Request: WS-A Headers → Remove',
+    category: 'Request',
+    when: () => activeRequestId() !== undefined,
+    run: onActiveRequest((requestId) => void removeWsaHeadersFromEditor(requestId)),
   });
 
   registerCommand({

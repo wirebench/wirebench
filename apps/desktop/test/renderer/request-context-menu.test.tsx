@@ -27,6 +27,8 @@ const ITEMS = [
   'Add WS-Timestamp…',
   'Outgoing WSS → Apply to editor',
   'Outgoing WSS → Remove',
+  'WS-A Headers → Add to editor',
+  'WS-A Headers → Remove',
   'Format',
   'Go to line…',
 ];

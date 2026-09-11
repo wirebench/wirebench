@@ -165,9 +165,9 @@ describe('RequestProperties', () => {
     expect(field.textContent).toBe('Enabled');
   });
 
-  it('reports WS-Addressing as Disabled when the request has no wsa config', () => {
+  it('reports WS-Addressing as Inherited when the request has no wsa config', () => {
     render(<RequestProperties requestId="req-1" />);
-    expect(screen.getByLabelText('WS-Addressing').textContent).toBe('Disabled');
+    expect(screen.getByLabelText('WS-Addressing').textContent).toBe('Inherited');
   });
 
   it('clears a numeric property back to "inherit" when the field is emptied', () => {

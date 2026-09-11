@@ -13,6 +13,7 @@ import { useUiStore } from '../../state/ui.js';
 import type { RequestDraft } from '../../state/project.js';
 import { copyAsCurl, recreateRequest } from './request-actions.js';
 import { openRequestDialog } from './request-dialogs.js';
+import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from './wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
 
 const ITEM_CLASS =
@@ -147,6 +148,22 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
             }}
           >
             Outgoing WSS → Remove
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              void addWsaHeadersToEditor(draft.id);
+            }}
+          >
+            WS-A Headers → Add to editor
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            onSelect={() => {
+              void removeWsaHeadersFromEditor(draft.id);
+            }}
+          >
+            WS-A Headers → Remove
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={SEPARATOR_CLASS} />

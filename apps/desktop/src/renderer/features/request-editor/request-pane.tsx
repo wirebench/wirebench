@@ -13,8 +13,9 @@ import { useUiStore } from '../../state/ui.js';
 import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
 import { AuthInspector } from './inspectors/auth-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
-import { InspectorPlaceholder, InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
+import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
 import { ViewTabs } from './view-tabs.js';
 import { FormView } from './views/form-view.js';
@@ -25,7 +26,7 @@ import { applyValueEdit, type TextRange } from './views/xml-model.js';
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
 
-/** The request pane's inspector strip. Auth/WS-A are placeholders until their tasks land. */
+/** The request pane's inspector strip. */
 const REQUEST_INSPECTORS: readonly InspectorItem[] = [
   { id: 'headers', label: 'Headers' },
   { id: 'attachments', label: 'Attachments' },
@@ -296,7 +297,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           ) : inspector === 'auth' ? (
             <AuthInspector requestId={requestId} />
           ) : (
-            <InspectorPlaceholder name="WS-Addressing" task={41} />
+            <WsaInspector requestId={requestId} />
           )
         }
       />
