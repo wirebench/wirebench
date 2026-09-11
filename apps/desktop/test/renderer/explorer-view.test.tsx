@@ -117,4 +117,30 @@ describe('ExplorerView', () => {
     expect(useEditorsStore.getState().tabs).toHaveLength(1);
     expect(useEditorsStore.getState().tabs[0]?.requestId).toBe('req-1');
   });
+
+  it('opens the interface viewer on double-click only, never on a single click', () => {
+    useProjectStore.setState({
+      interfaces: { [summary.id]: summary },
+      order: [summary.id],
+      requests: {},
+    });
+
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+
+    const interfaceRow = screen.getByText('Calculator');
+
+    // react-arborist's own row wrapper activates on any click that reaches it, so the row
+    // handler stops propagation; a single click must only select.
+    fireEvent.click(interfaceRow);
+    expect(useEditorsStore.getState().tabs).toHaveLength(0);
+
+    fireEvent.doubleClick(interfaceRow);
+
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
+    expect(useEditorsStore.getState().tabs[0]?.id).toBe('interface:iface-1');
+  });
 });

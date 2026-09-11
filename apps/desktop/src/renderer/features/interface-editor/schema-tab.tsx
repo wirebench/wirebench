@@ -1,51 +1,22 @@
 /**
- * The Interface editor's Schema tab: every namespace of the definition's schema set on the left
- * (elements, complex/simple types, groups, attribute groups), and the selected component's
- * declaration on the right — its source XML, sliced out of the document text the WSDL Content
- * tab already holds, with a "Go to source" that hands the position to that tab.
+ * The Interface editor's Schema tab: every namespace of the definition's schema set in the tree
+ * on the left (see {@link SchemaTree}), and the selected component's declaration on the right —
+ * its source XML, sliced out of that one document's text, which is fetched on demand
+ * (`definition.documentText`) rather than shipped with the document list.
  *
  * Go-to-definition from the request editor lands here: `showSchemaDeclaration` selects the
- * component, and this panel scrolls it into view.
+ * component, and the tree scrolls it into view.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect } from 'react';
 import { Button } from '../../components/button.js';
-import type { SchemaComponentKind, SchemaComponentWire, SchemaNamespaceWire } from '../../../shared/wire-types.js';
+import type { SchemaComponentWire, SchemaNamespaceWire } from '../../../shared/wire-types.js';
 import { useInterfaceEditorStore, type SchemaSelection } from './interface-editor-state.js';
+import { componentsOf, SchemaTree } from './schema-tree.js';
 import { sourceSnippet } from './source-snippet.js';
 
 export interface SchemaTabProps {
   readonly interfaceId: string;
-}
-
-/** The five component groups a namespace is shown as, in display order. */
-const GROUPS: readonly { readonly kind: SchemaComponentKind; readonly label: string }[] = [
-  { kind: 'element', label: 'Elements' },
-  { kind: 'complexType', label: 'Complex types' },
-  { kind: 'simpleType', label: 'Simple types' },
-  { kind: 'group', label: 'Groups' },
-  { kind: 'attributeGroup', label: 'Attribute groups' },
-];
-
-/** The components of `namespace` for one kind. */
-export function componentsOf(
-  namespace: SchemaNamespaceWire,
-  kind: SchemaComponentKind,
-): readonly SchemaComponentWire[] {
-  switch (kind) {
-    case 'element':
-      return namespace.elements;
-    case 'complexType':
-      return namespace.complexTypes;
-    case 'simpleType':
-      return namespace.simpleTypes;
-    case 'group':
-      return namespace.groups;
-    case 'attributeGroup':
-      return namespace.attributeGroups;
-    default:
-      return [];
-  }
 }
 
 /** Finds the selected component in the index, or `undefined` when the selection is stale. */
@@ -63,18 +34,16 @@ export function findComponent(
   ).find((component) => component.name === selection.name);
 }
 
-function rowId(namespace: string, kind: SchemaComponentKind, name: string): string {
-  return `${namespace}|${kind}|${name}`;
-}
+const NO_NAMESPACES: readonly SchemaNamespaceWire[] = [];
 
 export function SchemaTab({ interfaceId }: SchemaTabProps) {
   const data = useInterfaceEditorStore((state) => state.data[interfaceId]);
   const selection = useInterfaceEditorStore((state) => state.selections[interfaceId]);
   const selectComponent = useInterfaceEditorStore((state) => state.selectComponent);
   const revealSource = useInterfaceEditorStore((state) => state.revealSource);
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  const loadText = useInterfaceEditorStore((state) => state.loadText);
 
-  const namespaces = useMemo(() => data?.namespaces ?? [], [data]);
+  const namespaces = data?.namespaces ?? NO_NAMESPACES;
   // A local element declaration is not a global component, so it is never in the tree; the
   // selection then carries its own source position and the detail panel renders from that.
   const component =
@@ -86,10 +55,17 @@ export function SchemaTab({ interfaceId }: SchemaTabProps) {
           ...(selection.line !== undefined ? { line: selection.line } : {}),
         }
       : undefined);
+  const location = component?.document;
+  const documentText = useInterfaceEditorStore((state) =>
+    location === undefined ? undefined : state.data[interfaceId]?.texts?.[location],
+  );
 
+  // Only the one document the snippet is cut from is fetched.
   useEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [selection]);
+    if (location !== undefined) {
+      void loadText(interfaceId, location);
+    }
+  }, [loadText, interfaceId, location]);
 
   if (data === undefined || data.status === 'loading') {
     return <p className="p-4 text-md text-fg-muted">Loading schema…</p>;
@@ -102,59 +78,15 @@ export function SchemaTab({ interfaceId }: SchemaTabProps) {
     );
   }
 
-  const documentText =
-    data.documents?.documents.find((document) => document.location === component?.document)?.text ?? '';
-
   return (
     <div data-testid="interface-schema" className="flex h-full min-h-0">
-      <div data-testid="schema-tree" className="w-80 shrink-0 overflow-auto border-r border-hairline p-1">
-        {namespaces.map((namespace) => (
-          <section key={namespace.uri} data-testid="schema-namespace" data-uri={namespace.uri} className="mb-2">
-            <h3 className="truncate px-1 py-0.5 font-mono text-xs text-fg-subtle" title={namespace.uri}>
-              {namespace.uri === '' ? '(no namespace)' : namespace.uri}
-            </h3>
-            {GROUPS.map(({ kind, label }) => {
-              const components = componentsOf(namespace, kind);
-              if (components.length === 0) {
-                return null;
-              }
-              return (
-                <div key={kind} className="mb-1">
-                  <p className="px-2 text-xs tracking-wider text-fg-faint uppercase">{label}</p>
-                  <ul aria-label={`${label} in ${namespace.uri}`}>
-                    {components.map((entry) => {
-                      const selected =
-                        selection !== undefined &&
-                        rowId(selection.namespace, selection.kind, selection.name) ===
-                          rowId(namespace.uri, kind, entry.name);
-                      return (
-                        <li key={entry.name}>
-                          <button
-                            type="button"
-                            ref={selected ? selectedRef : undefined}
-                            data-testid="schema-component"
-                            data-kind={kind}
-                            data-name={entry.name}
-                            aria-pressed={selected}
-                            onClick={() =>
-                              selectComponent(interfaceId, { namespace: namespace.uri, kind, name: entry.name })
-                            }
-                            className={`w-full truncate px-3 py-0.5 text-left text-sm ${
-                              selected ? 'bg-accent-muted text-fg-default' : 'text-fg-muted hover:bg-surface-raised'
-                            }`}
-                          >
-                            {entry.name}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
-          </section>
-        ))}
-      </div>
+      <SchemaTree
+        namespaces={namespaces}
+        selection={selection}
+        onSelect={(next) => {
+          selectComponent(interfaceId, next);
+        }}
+      />
 
       <div data-testid="schema-detail" className="flex min-w-0 flex-1 flex-col p-3">
         {component === undefined || selection === undefined ? (
@@ -190,7 +122,7 @@ export function SchemaTab({ interfaceId }: SchemaTabProps) {
               data-testid="schema-detail-snippet"
               className="min-h-0 flex-1 overflow-auto rounded-md border border-hairline bg-surface-raised p-2 font-mono text-xs text-fg-default"
             >
-              {sourceSnippet(documentText, component.line)}
+              {documentText === undefined ? 'Loading source…' : sourceSnippet(documentText, component.line)}
             </pre>
           </>
         )}

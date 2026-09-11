@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,19 +14,13 @@ const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 /**
- * How many bound operations a WSDL declares — one summary per `wsdl:binding` operation, which
- * is exactly what the Overview counts. Read from the fixture so the assertion cannot drift if
- * the fixture changes.
+ * How many operation rows the explorer shows for the imported interfaces — the same operations
+ * the Overview counts, read from the app itself rather than by re-parsing the WSDL.
  */
-function boundOperationCount(wsdlPath: string): number {
-  const text = readFileSync(wsdlPath, 'utf-8');
-  // Only a `wsdl:binding` carries `type=`; the nested `soap:binding` is self-closing and must
-  // not start a block of its own.
-  const bindings = text.match(/<(?:\w+:)?binding\b[^>]*\btype="[\s\S]*?<\/(?:\w+:)?binding>/g) ?? [];
-  return bindings.reduce(
-    (total, binding) => total + (binding.match(/<(?:\w+:)?operation\b[^>]*\bname="/g) ?? []).length,
-    0,
-  );
+async function explorerOperationCount(page: Page): Promise<number> {
+  const rows = page.locator('[data-testid="explorer-tree-row"][data-tree-id^="op:"]');
+  await expect.poll(async () => await rows.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+  return await rows.count();
 }
 
 /** Opens the Interface editor from the explorer's interface row context menu. */
@@ -68,10 +62,11 @@ test.describe('Interface editor', () => {
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
 
+    const expectedOperations = await explorerOperationCount(page);
     await showInterfaceViewer(page, 'Calculator');
 
-    // Overview: the operation count is the fixture's own, and the served WSDL is one document.
-    const expectedOperations = boundOperationCount(join(repoRoot, 'fixtures/wsdl/public/calculator/service.wsdl'));
+    // Overview: the operation count matches the explorer's own rows for this interface, and the
+    // served WSDL is one document.
     await expect(page.getByTestId('interface-operation-count')).toHaveText(String(expectedOperations));
     await expect(page.getByTestId('interface-document-count')).toHaveText('1');
 
@@ -80,10 +75,15 @@ test.describe('Interface editor', () => {
     await expect(page.getByTestId('wsdl-document-item')).toHaveCount(1);
     await expect(monacoEditor(page, 'Definition document XML')).toBeVisible({ timeout: 20_000 });
 
-    // Schema: the tempuri namespace lists the Add element.
+    // Schema: the tempuri namespace lists the Add element. The row is scoped to that namespace
+    // and to the element group — another namespace may well declare an `Add` of its own.
     await page.getByRole('tab', { name: 'Schema' }).click();
     await expect(page.locator('[data-testid="schema-namespace"][data-uri="http://tempuri.org/"]')).toBeVisible();
-    await page.locator('[data-testid="schema-component"][data-name="Add"]').first().click();
+    await page
+      .locator(
+        '[data-testid="schema-component"][data-namespace="http://tempuri.org/"][data-kind="element"][data-name="Add"]',
+      )
+      .click();
     await expect(page.getByTestId('schema-detail-name')).toHaveText('Add');
 
     // Go to definition: Mod+click on the intA line of the request envelope selects its
@@ -100,9 +100,13 @@ test.describe('Interface editor', () => {
     await expect(page.getByTestId('schema-detail-name')).toHaveText('intA');
     await expect(page.getByTestId('schema-detail-snippet')).toContainText('name="intA"');
 
-    // "Go to source" hands the declaration's document and line to the WSDL Content tab.
+    // "Go to source" hands the declaration's document and line to the WSDL Content tab, which
+    // reveals it on landing — the declaration's own line is on screen without any scrolling.
     await page.getByTestId('schema-goto-source').click();
     await expect(page.getByTestId('wsdl-document-location')).toContainText('service');
+    await expect(
+      monacoEditor(page, 'Definition document XML').locator('.view-line').filter({ hasText: 'name="intA"' }).first(),
+    ).toBeVisible({ timeout: 20_000 });
   });
 
   test('lists every document of a nested import graph', async () => {

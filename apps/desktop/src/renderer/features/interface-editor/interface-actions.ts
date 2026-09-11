@@ -29,8 +29,6 @@ export interface DeclarationQuery {
   readonly interfaceId: string;
   readonly envelopeXml: string;
   readonly offset: number;
-  readonly bindingName?: string;
-  readonly operationName?: string;
 }
 
 /**
@@ -43,8 +41,6 @@ export async function showSchemaDeclaration(query: DeclarationQuery): Promise<vo
     interfaceId: query.interfaceId,
     envelopeXml: query.envelopeXml,
     offset: query.offset,
-    ...(query.bindingName !== undefined ? { bindingName: query.bindingName } : {}),
-    ...(query.operationName !== undefined ? { operationName: query.operationName } : {}),
   });
   if (!result.ok) {
     showToast(result.error.message);
@@ -56,11 +52,19 @@ export async function showSchemaDeclaration(query: DeclarationQuery): Promise<vo
   }
   const declaration = result.value;
   openInterfaceTab(query.interfaceId);
-  useInterfaceEditorStore.getState().selectComponent(query.interfaceId, {
+  const store = useInterfaceEditorStore.getState();
+  store.selectComponent(query.interfaceId, {
     namespace: declaration.namespace,
     kind: declaration.kind,
     name: declaration.name,
     document: declaration.document,
     ...(declaration.line !== undefined ? { line: declaration.line } : {}),
   });
+  // The source position is recorded (but not focused) on landing, so WSDL Content is already
+  // on the declaration's line if the user switches to it — with or without "Go to source".
+  store.revealSource(
+    query.interfaceId,
+    { location: declaration.document, ...(declaration.line !== undefined ? { line: declaration.line } : {}) },
+    { focus: false },
+  );
 }
