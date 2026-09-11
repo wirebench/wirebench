@@ -1,5 +1,5 @@
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow, protocol, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, protocol, safeStorage } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
 import { DialogPicks } from './dialog-picks.js';
@@ -24,6 +24,7 @@ import { registerFsChannels } from './ipc/fs.js';
 import { registerXmlChannels } from './ipc/xml.js';
 import { registerXpathChannels } from './ipc/xpath.js';
 import { registerValidateChannels } from './ipc/validate.js';
+import { registerWsiChannels } from './ipc/wsi.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
@@ -158,6 +159,26 @@ void app.whenReady().then(() => {
   registerXmlChannels(engineService);
   registerXpathChannels();
   registerValidateChannels(engineService, projectService);
+  registerWsiChannels(engineService, {
+    project: projectService,
+    picks: dialogPicks,
+    dialog: {
+      // Mirrors `dialogs.saveFile`, including its e2e override: a Playwright run cannot drive a
+      // native Save-as panel, so the same env var short-circuits both.
+      showSave: async (options) => {
+        const override = process.env['WIREBENCH_E2E_DIALOG_SAVE'];
+        if (override !== undefined) {
+          return override;
+        }
+        const result = await dialog.showSaveDialog({
+          title: options.title,
+          defaultPath: options.defaultPath,
+          filters: [{ name: 'HTML', extensions: ['html'] }],
+        });
+        return result.canceled ? undefined : result.filePath;
+      },
+    },
+  });
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerAttachmentChannels({

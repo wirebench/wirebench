@@ -36,6 +36,13 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
       >
         Copy definition URL
       </ContextMenu.Item>,
+      <ContextMenu.Item
+        key="check-wsi"
+        className={ITEM_CLASS}
+        onSelect={() => explorerActions.checkWsiWsdl(node.interfaceId)}
+      >
+        Check WSDL WS-I compliance
+      </ContextMenu.Item>,
     );
   }
 

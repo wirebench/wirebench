@@ -17,6 +17,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 const ITEMS = [
   'Validate request',
   'Validate response',
+  'Check WS-I compliance',
   'Recreate request (keep values)',
   'Recreate (discard values)',
   'Create empty',

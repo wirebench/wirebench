@@ -103,6 +103,11 @@ import {
   xpathNamespacesResponseSchema,
   validateMessageRequestSchema,
   validateMessageResponseSchema,
+  wsiCheckExchangeRequestSchema,
+  wsiCheckWsdlRequestSchema,
+  wsiExportHtmlRequestSchema,
+  wsiExportHtmlResponseSchema,
+  wsiReportWireSchema,
 } from './wire-types.js';
 
 /**
@@ -297,6 +302,13 @@ export const channels = {
   },
   validate: {
     message: defineChannel('validate.message', validateMessageRequestSchema, validateMessageResponseSchema),
+  },
+  // The WS-I catalogue, both runners and the HTML renderer live in the engine, which is a
+  // main-process dependency; the renderer only ever sees a finished report.
+  wsi: {
+    checkWsdl: defineChannel('wsi.checkWsdl', wsiCheckWsdlRequestSchema, wsiReportWireSchema),
+    checkExchange: defineChannel('wsi.checkExchange', wsiCheckExchangeRequestSchema, wsiReportWireSchema),
+    exportHtml: defineChannel('wsi.exportHtml', wsiExportHtmlRequestSchema, wsiExportHtmlResponseSchema),
   },
 } as const;
 

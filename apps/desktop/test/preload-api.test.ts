@@ -35,6 +35,7 @@ describe('buildApi', () => {
       'secrets',
       'validate',
       'wsa',
+      'wsi',
       'wss',
       'xml',
       'xpath',

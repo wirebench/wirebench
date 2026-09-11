@@ -16,6 +16,7 @@ import { openRequestDialog } from './request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from './wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
 import { validateAndReport } from './validate-actions.js';
+import { checkWsiForRequest, lastSendId } from './wsi-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useProjectStore } from '../../state/project.js';
 
@@ -75,6 +76,15 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
             }}
           >
             Validate response
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={ITEM_CLASS}
+            disabled={lastSendId(draft.id) === undefined}
+            onSelect={() => {
+              void checkWsiForRequest(draft.id);
+            }}
+          >
+            Check WS-I compliance
           </ContextMenu.Item>
           <ContextMenu.Separator className={SEPARATOR_CLASS} />
           <ContextMenu.Item

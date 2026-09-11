@@ -1764,6 +1764,82 @@ export const validateMessageResponseSchema = z.object({
 export type ValidateMessageResponseWire = z.infer<typeof validateMessageResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// WS-I Basic Profile 1.1 (Tasks 43/44): conformance reports over a description
+// or over one exchange. The catalogue, the runners and the HTML renderer all
+// live in the engine, so main answers with a finished report.
+// ---------------------------------------------------------------------------
+
+/** Where in a document (or in which half of an exchange) a WS-I finding was raised. */
+export const wsiLocationWireSchema = z.object({
+  /** A document location for a description report; `request`/`response` for a message report. */
+  document: z.string(),
+  line: z.number().optional(),
+  column: z.number().optional(),
+  xpath: z.string().optional(),
+});
+
+/** One concrete violation of a WS-I assertion; mirrors the engine's `WsiFinding`. */
+export const wsiFindingWireSchema = z.object({
+  message: z.string(),
+  location: wsiLocationWireSchema.optional(),
+});
+
+/** One assertion's row in a report; mirrors the engine's `WsiAssertionReport`. */
+export const wsiAssertionReportWireSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  level: z.enum(['REQUIRED', 'RECOMMENDED', 'PERMITTED']),
+  section: z.string(),
+  result: z.enum(['passed', 'failed', 'warning', 'notApplicable']),
+  findings: z.array(wsiFindingWireSchema),
+});
+
+/** A finished WS-I report; mirrors the engine's `WsiReport` exactly. */
+export const wsiReportWireSchema = z.object({
+  target: z.string(),
+  profile: z.literal('BP1.1'),
+  summary: z.object({
+    passed: z.number(),
+    failed: z.number(),
+    warning: z.number(),
+    notApplicable: z.number(),
+  }),
+  assertions: z.array(wsiAssertionReportWireSchema),
+  /** What the report is about, for the panel heading and the exported file's name. */
+  label: z.string(),
+  /** Which runner produced it, so the panel can say so without guessing from `target`. */
+  scope: z.enum(['wsdl', 'message']),
+});
+export type WsiReportWire = z.infer<typeof wsiReportWireSchema>;
+export type WsiAssertionReportWire = z.infer<typeof wsiAssertionReportWireSchema>;
+export type WsiFindingWire = z.infer<typeof wsiFindingWireSchema>;
+
+/** Request payload for `wsi.checkWsdl`: the imported interface to analyse. */
+export const wsiCheckWsdlRequestSchema = z.object({ interfaceId: z.string() });
+
+/** Request payload for `wsi.checkExchange`: one cached send, by the id the renderer already holds. */
+export const wsiCheckExchangeRequestSchema = z.object({ sendId: z.string() });
+
+/**
+ * Request payload for `wsi.exportHtml`. The renderer sends the report back rather than an id:
+ * the report it is looking at is the one the user means to export, even if the cache behind it
+ * has since been evicted.
+ */
+export const wsiExportHtmlRequestSchema = z.object({
+  report: wsiReportWireSchema,
+  suggestedName: z.string(),
+  /** Include the passing rows (the `wsi.verbose` preference, as the panel currently shows it). */
+  verbose: z.boolean().optional(),
+});
+
+/** Response for `wsi.exportHtml`: the path written, or nothing when the user cancelled. */
+export const wsiExportHtmlResponseSchema = z.object({
+  path: z.string().optional(),
+  cancelled: z.boolean(),
+});
+export type WsiExportHtmlResponse = z.infer<typeof wsiExportHtmlResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Preferences (Task 30): user-scoped settings, persisted in `userData`.
 // ---------------------------------------------------------------------------
 

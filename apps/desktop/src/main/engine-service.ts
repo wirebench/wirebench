@@ -505,7 +505,11 @@ export class EngineService {
       // response attachments' BYTES are kept alongside it, never on the wire — `attachments.*`
       // reads them back from here by `sendId` + index.
       const full = toExchangeSummary(exchange, request.sendId, { show: true });
-      this.exchanges.put(request.sendId, full, exchange.response?.attachments);
+      this.exchanges.put(request.sendId, full, exchange.response?.attachments, {
+        exchange,
+        ...(request.requestId !== undefined ? { requestId: request.requestId } : {}),
+        requestEnvelopeXml: request.input.envelopeXml,
+      });
       return redactExchangeSummary(full, { show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);

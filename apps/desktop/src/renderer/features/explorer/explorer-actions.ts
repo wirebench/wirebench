@@ -4,6 +4,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingRequest } from './explorer-api.js';
+import { useWsiStore } from '../../state/wsi.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -106,6 +107,13 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestDeleteRequest(requestId);
+  },
+
+  /** Runs the WS-I description catalogue over one interface and reveals the console tab. */
+  checkWsiWsdl(interfaceId: string | undefined): void {
+    if (interfaceId !== undefined) {
+      void useWsiStore.getState().checkWsdl(interfaceId);
+    }
   },
 
   copyEndpointAddress(address: string | undefined): void {

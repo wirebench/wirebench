@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { IconButton } from '../components/icon-button.js';
 import { Tabs } from '../components/tabs.js';
 import { HttpLog } from '../features/console/http-log.js';
+import { WsiReport } from '../features/console/wsi-report.js';
 import { ProblemsView } from '../features/problems/problems-view.js';
 import { useProblemsStore } from '../state/problems.js';
 import type { ConsoleTab } from '../state/ui-state.js';
@@ -21,7 +22,7 @@ const EMPTY_COPY: Readonly<Record<ConsoleTab, string>> = {
   errors: 'Errors from imports, sends, and validation are collected here.',
 };
 
-/** The bottom console: four tabs. HTTP Log and Problems are live; the rest are empty states. */
+/** The bottom console: four tabs. Only Errors is still an empty state. */
 export function ConsolePanel() {
   const activeTab = useUiStore((state) => state.console.activeTab);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
@@ -44,7 +45,15 @@ export function ConsolePanel() {
         </IconButton>
       </div>
       <div role="tabpanel" className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-fg-subtle">
-        {activeTab === 'problems' ? <ProblemsView /> : activeTab === 'http-log' ? <HttpLog /> : EMPTY_COPY[activeTab]}
+        {activeTab === 'problems' ? (
+          <ProblemsView />
+        ) : activeTab === 'http-log' ? (
+          <HttpLog />
+        ) : activeTab === 'ws-i-report' ? (
+          <WsiReport />
+        ) : (
+          EMPTY_COPY[activeTab]
+        )}
       </div>
     </section>
   );

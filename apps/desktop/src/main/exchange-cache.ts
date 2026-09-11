@@ -9,7 +9,7 @@
  * own HTTP-log cap so a log entry the user can still see is still resolvable here.
  */
 
-import type { ResponseAttachment } from '@wirebench/engine';
+import type { ResponseAttachment, SoapExchange } from '@wirebench/engine';
 import type { ExchangeSummary } from '../shared/wire-types.js';
 
 /** How many exchanges are retained; mirrors the renderer HTTP log's own cap. */
@@ -24,6 +24,21 @@ interface CachedExchange {
    * asks `attachments.saveResponse`/`openResponse` to move the bytes by `sendId` + index.
    */
   readonly attachments: readonly ResponseAttachment[];
+  /** The engine exchange behind the summary, when the send went through `EngineService.send`. */
+  readonly engine?: CachedEngineExchange;
+}
+
+/**
+ * The engine's own view of one send, kept so a later analysis (`wsi.checkExchange`) can work on
+ * the wire bytes rather than on the wire *shape*: the `ExchangeSummary` is a projection built for
+ * the renderer, and re-deriving an envelope from it would mean re-splitting an HTTP frame.
+ */
+export interface CachedEngineExchange {
+  readonly exchange: SoapExchange;
+  /** The saved request the send came from; absent for an ad-hoc or raw send. */
+  readonly requestId?: string;
+  /** The request envelope as sent — `SoapExchange` keeps the request only as raw bytes. */
+  readonly requestEnvelopeXml?: string;
 }
 
 /** Keeps the last {@link EXCHANGE_CACHE_CAP} unredacted exchange summaries. */
@@ -36,9 +51,14 @@ export class ExchangeCache {
   }
 
   /** Stores (or replaces) the unredacted summary for `sendId`, evicting the oldest over cap. */
-  put(sendId: string, summary: ExchangeSummary, attachments: readonly ResponseAttachment[] = []): void {
+  put(
+    sendId: string,
+    summary: ExchangeSummary,
+    attachments: readonly ResponseAttachment[] = [],
+    engine?: CachedEngineExchange,
+  ): void {
     this.entries.delete(sendId);
-    this.entries.set(sendId, { summary, attachments });
+    this.entries.set(sendId, { summary, attachments, ...(engine !== undefined ? { engine } : {}) });
     while (this.entries.size > this.cap) {
       const oldest = this.entries.keys().next();
       if (oldest.done === true) {
@@ -51,6 +71,11 @@ export class ExchangeCache {
   /** The unredacted summary for `sendId`, or `undefined` once it has been evicted. */
   get(sendId: string): ExchangeSummary | undefined {
     return this.entries.get(sendId)?.summary;
+  }
+
+  /** The engine exchange for `sendId`, or `undefined` once it has been evicted (or never stored). */
+  getExchange(sendId: string): CachedEngineExchange | undefined {
+    return this.entries.get(sendId)?.engine;
   }
 
   /** One response attachment's bytes and metadata, or `undefined` when the send or index is unknown. */

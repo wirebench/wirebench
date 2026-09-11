@@ -10,6 +10,7 @@ import {
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
 import { validateAndReport } from '../features/request-editor/validate-actions.js';
+import { checkWsiForRequest, lastSendId } from '../features/request-editor/wsi-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
@@ -298,6 +299,23 @@ export function registerShellCommands(openPalette: () => void): void {
         return;
       }
       void validateAndReport(requestId, 'response', envelopeXml);
+    },
+  });
+
+  registerCommand({
+    id: 'request.checkWsi',
+    label: 'Check WS-I compliance',
+    category: 'Request',
+    // The message assertions judge bytes on the wire, so there has to be an exchange to judge.
+    when: () => {
+      const requestId = activeRequestId();
+      return requestId !== undefined && lastSendId(requestId) !== undefined;
+    },
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        void checkWsiForRequest(requestId);
+      }
     },
   });
 
@@ -637,6 +655,15 @@ export function registerShellCommands(openPalette: () => void): void {
     when: (ctx) => ctx.selection?.kind === 'request',
     run: (ctx) => {
       explorerActions.recreateRequest(ctx.selection?.requestId);
+    },
+  });
+  registerCommand({
+    id: 'explorer.checkWsiWsdl',
+    label: 'Explorer: Check WSDL WS-I compliance',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'interface',
+    run: (ctx) => {
+      explorerActions.checkWsiWsdl(ctx.selection?.interfaceId);
     },
   });
   registerCommand({
