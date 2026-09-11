@@ -1,10 +1,10 @@
 /**
  * The app's user-visible performance budgets.
  *
- * Three things are measured here, all of them things a user feels rather than things a
+ * Four things are measured here, all of them things a user feels rather than things a
  * micro-benchmark would catch: how long the window takes to become usable, whether scrolling a
- * large response stays at 60 fps, and whether the derived views over that same response appear
- * promptly.
+ * large response stays at 60 fps, whether the derived views over that same response appear
+ * promptly, and how long the Problems panel takes to show what validating it found.
  *
  * Budgets are per-platform (`BUDGETS` below): a Linux CI runner under xvfb has no GPU and
  * starts an Electron window appreciably slower than a developer's machine, so holding it to a
@@ -24,12 +24,23 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
 
 /** Per-platform budgets in milliseconds. */
 interface PlatformBudgets {
-  /** `firstWindow()` resolving to the activity bar being on screen. */
+  /**
+   * Launching the app: measured from before `_electron.launch`, so it covers spawning the
+   * Electron process, the main process's own start-up and the first window painting its shell —
+   * everything between the user's double-click and a usable window.
+   */
   readonly startupMs: number;
-  /** Median frame time during a scripted scroll of a 1 MB response — 20 ms is 50 fps. */
+  /**
+   * Median gap between animation frames during a scripted scroll of a 1 MB response. This is the
+   * time the renderer spends doing rAF work, not a vsync-locked frame budget: an idle display
+   * paces callbacks at ~16.7 ms, so the number is only meaningful as an upper bound — 20 ms says
+   * Monaco's re-render of the newly revealed lines is not dominating the frame.
+   */
   readonly frameMs: number;
   /** Switching to the Outline or Query view over that same 1 MB document. */
   readonly viewMs: number;
+  /** Validating that 1 MB response and having the Problems panel on screen with its rows. */
+  readonly problemsMs: number;
 }
 
 /**
@@ -38,8 +49,8 @@ interface PlatformBudgets {
  */
 const BUDGETS: PlatformBudgets =
   process.platform === 'linux'
-    ? { startupMs: 4000, frameMs: 40, viewMs: 2000 }
-    : { startupMs: 2000, frameMs: 20, viewMs: 1000 };
+    ? { startupMs: 4000, frameMs: 40, viewMs: 2000, problemsMs: 2000 }
+    : { startupMs: 2000, frameMs: 20, viewMs: 1000, problemsMs: 1000 };
 
 /** Skipped only by `WIREBENCH_SKIP_PERF=1`, the documented escape hatch for slow machines. */
 const SKIP_PERF = process.env['WIREBENCH_SKIP_PERF'] === '1';
@@ -77,7 +88,8 @@ test.describe('performance budgets', () => {
 
   test(`the window is usable within ${BUDGETS.startupMs} ms`, async () => {
     // Three launches, median taken: the very first one also pays for the OS warming the app
-    // bundle's pages, which is not what this budget is about.
+    // bundle's pages, which is not what this budget is about. The clock starts before
+    // `launchApp`, so the Electron process spawn is inside the budget.
     const samples: number[] = [];
     for (let i = 0; i < 3; i += 1) {
       const started = Date.now();
@@ -183,5 +195,20 @@ test.describe('performance budgets', () => {
     const queryMs = Date.now() - queryStarted;
     console.info(`[perf] query view over 1 MB: ${queryMs} ms (budget ${BUDGETS.viewMs} ms)`);
     expect(queryMs).toBeLessThan(BUDGETS.viewMs);
+
+    // Validating that same 1 MB response: the budget covers the whole round trip a user waits
+    // through — the schema validation in the main process, and the Problems panel opening with
+    // its rows rendered. The `/big-soap` envelope is not what the Calculator schema describes,
+    // so validation has real findings to list rather than an empty panel.
+    const problemsStarted = Date.now();
+    await page.getByTestId('request-pane-surface').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Validate response' }).click();
+    // The panel does not open itself; showing it is part of what the user waits through.
+    await page.getByTestId('status-bar-problems').click();
+    await expect(page.getByRole('grid', { name: 'Problems' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('problem-row').first()).toBeVisible({ timeout: 30_000 });
+    const problemsMs = Date.now() - problemsStarted;
+    console.info(`[perf] problems over 1 MB: ${problemsMs} ms (budget ${BUDGETS.problemsMs} ms)`);
+    expect(problemsMs).toBeLessThan(BUDGETS.problemsMs);
   });
 });

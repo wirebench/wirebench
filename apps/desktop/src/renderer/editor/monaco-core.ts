@@ -9,7 +9,7 @@
  * So this module reproduces `editor.main`'s editor-feature imports verbatim (find, folding,
  * suggest, hover, multi-cursor, the diff editor, the standalone quick-access widgets…) while
  * leaving out the language-service registrations and the ~80 basic-language definitions, and
- * then registers only the languages Wirebench uses: XML and the built-in plaintext.
+ * then registers only the languages Wirebench uses: XML, plus Monaco's built-in plaintext fallback.
  *
  * Keep the block below in sync with `editor.main.js` when `monaco-editor` is upgraded — a new
  * editor feature added there has to be added here too or it silently disappears from the app.
@@ -108,4 +108,3 @@ import 'monaco-editor/editor/common/standaloneStrings.js';
 import 'monaco-editor/languages/definitions/xml/register.js';
 
 export { monaco };
-export default monaco;

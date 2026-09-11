@@ -10,16 +10,6 @@
  * is normally multiples, not percent — still trips it.
  */
 
-/** A single measurable engine scenario. */
-export interface PerfScenario {
-  /** Stable id, also the test/bench name. */
-  readonly name: string;
-  /** Budget in milliseconds; the CI gate asserts `median < budget * CI_GATE_FACTOR`. */
-  readonly budgetMs: number;
-  /** One measured iteration. Setup that should not be timed belongs in `setup`. */
-  readonly run: () => Promise<void> | void;
-}
-
 /** How much slack the CI gate allows on top of the budget. */
 export const CI_GATE_FACTOR = 1.5;
 
@@ -38,7 +28,7 @@ export const BUDGETS_MS = {
   'countryinfo-import-generate': 300,
   /** Import the generated ~5 MB `crafted/large-schema` fixture and generate a sample request. */
   'large-schema-import-generate': 3000,
-  /** `sendSoapRequest` overhead on top of the same exchange done with a bare `fetch`. */
+  /** `sendSoapRequest` wall-clock time minus the test server's own handling time (`x-server-ms`). */
   'send-overhead': 20,
   /** Build an MTOM `multipart/related` package around a 10 MB attachment. */
   'mtom-package-10mb': 500,

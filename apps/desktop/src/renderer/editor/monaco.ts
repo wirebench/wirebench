@@ -1,7 +1,8 @@
 import { loader } from '@monaco-editor/react';
 // Not `monaco-editor` itself: that entry registers every bundled language and the TS/CSS/HTML/
 // JSON language services, whose four web workers dominated the renderer's build output. See
-// `monaco-core.ts` for the trimmed set (editor features + XML/JSON/plaintext only).
+// `monaco-core.ts` for the trimmed set: the editor features, plus XML and the built-in plaintext
+// fallback — no JSON, which in monaco-editor 0.56 exists only as a worker-backed language service.
 import { monaco } from './monaco-core.js';
 // Vite emits this as its own chunk and hands back a `Worker` subclass, so the worker is loaded
 // from the app's own origin (`default-src 'self'`) instead of the CDN `loader` Monaco defaults

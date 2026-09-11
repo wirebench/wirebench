@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run --root ../.. --project engine-unit --project engine-integration --project engine-perf",
+    "test": "vitest run --root ../.. --project engine-unit --project engine-integration",
+    "test:perf": "vitest run --root ../.. --project engine-perf",
     "typecheck": "tsc -b"
   },
   "dependencies": {
