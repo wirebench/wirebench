@@ -76,7 +76,7 @@ export const BASE_EDITOR_OPTIONS = {
   // assistive technology, instead of always rendering the fast-but-opaque canvas-ish view.
   accessibilitySupport: 'auto',
   fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
-  fontSize: 12,
+  fontSize: 13,
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   tabSize: 3,

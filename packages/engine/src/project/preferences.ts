@@ -164,7 +164,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   wsi: Object.freeze({ verbose: false, profile: 'BP1.1' }),
   editor: Object.freeze({
-    fontSize: 12,
+    fontSize: 13,
     tabSize: 3,
     lineNumbers: true,
     wordWrap: false,

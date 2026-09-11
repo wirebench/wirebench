@@ -66,10 +66,10 @@
 
   --wb-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', sans-serif;
   --wb-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-  --wb-font-size-xs: 11px;
-  --wb-font-size-sm: 12px;
-  --wb-font-size-md: 13px;
-  --wb-font-size-lg: 15px;
+  --wb-font-size-xs: 12px;
+  --wb-font-size-sm: 13px;
+  --wb-font-size-md: 14px;
+  --wb-font-size-lg: 16px;
   --wb-line-height-tight: 1.3;
   --wb-line-height-normal: 1.5;
 

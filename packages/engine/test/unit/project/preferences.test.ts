@@ -10,7 +10,7 @@ describe('DEFAULT_PREFERENCES', () => {
   it('carries the documented defaults', () => {
     expect(DEFAULT_PREFERENCES.http.userAgent).toBe('Wirebench/0.1');
     expect(DEFAULT_PREFERENCES.http.socketTimeoutMs).toBe(60_000);
-    expect(DEFAULT_PREFERENCES.editor.fontSize).toBe(12);
+    expect(DEFAULT_PREFERENCES.editor.fontSize).toBe(13);
     expect(DEFAULT_PREFERENCES.editor.tabSize).toBe(3);
     expect(DEFAULT_PREFERENCES.ui.historyCap).toBe(1000);
     expect(DEFAULT_PREFERENCES.ssl.trustAll).toBe(false);

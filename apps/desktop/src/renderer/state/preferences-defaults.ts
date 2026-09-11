@@ -36,7 +36,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   },
   wsi: { verbose: false, profile: 'BP1.1' },
   editor: {
-    fontSize: 12,
+    fontSize: 13,
     tabSize: 3,
     lineNumbers: true,
     wordWrap: false,
