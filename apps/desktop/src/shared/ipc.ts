@@ -140,6 +140,7 @@ import {
   workspaceExportProjectResponseSchema,
   workspaceIdRequestSchema,
   workspaceImportSuggestionRequestSchema,
+  workspaceImportSuggestionResponseSchema,
   workspaceListResponseSchema,
   workspaceMutateRequestSchema,
   workspaceMutateResponseSchema,
@@ -320,7 +321,7 @@ export const channels = {
     importSuggestion: defineChannel(
       'workspace.importSuggestion',
       workspaceImportSuggestionRequestSchema,
-      workspaceResponseSchema,
+      workspaceImportSuggestionResponseSchema,
     ),
     // Shows a workspace's folder in the OS file manager — the way out for an unreadable row.
     reveal: defineChannel('workspace.reveal', workspaceIdRequestSchema, workspaceRevealResponseSchema),

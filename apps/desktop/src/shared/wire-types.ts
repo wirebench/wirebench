@@ -2571,6 +2571,14 @@ export const workspaceRenameRequestSchema = z.object({ workspaceId: z.string(), 
 export const workspaceResponseSchema = z.object({ workspace: workspaceWireSchema });
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
 
+/**
+ * Response for `workspace.importSuggestion`: the workspace, plus the folder that was actually
+ * imported — so the renderer can confirm it matches the row that was clicked, not just trust
+ * that the index still points at the same folder.
+ */
+export const workspaceImportSuggestionResponseSchema = z.object({ workspace: workspaceWireSchema, dir: z.string() });
+export type WorkspaceImportSuggestionResponse = z.infer<typeof workspaceImportSuggestionResponseSchema>;
+
 /** Response for every channel that may leave no workspace open (`close`) or be cancelled. */
 export const workspaceSnapshotResponseSchema = z.object({ workspace: workspaceWireSchema.nullable() });
 export type WorkspaceSnapshotResponse = z.infer<typeof workspaceSnapshotResponseSchema>;

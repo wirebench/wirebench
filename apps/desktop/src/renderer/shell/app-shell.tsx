@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PanelSize } from 'react-resizable-panels';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { Loader2 } from 'lucide-react';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
@@ -135,7 +136,13 @@ export function AppShell() {
         {workspace === null && !workspaceReady ? (
           // Main answers the first snapshot only once its launch-time reopen settled; until
           // then neither the picker nor the IDE is known to be right, so neither is shown.
-          <div data-testid="workspace-loading" role="status" aria-live="polite" className="min-h-0 flex-1">
+          <div
+            data-testid="workspace-loading"
+            role="status"
+            aria-live="polite"
+            className="flex min-h-0 flex-1 items-center justify-center"
+          >
+            <Loader2 size={24} aria-hidden="true" className="animate-spin text-fg-muted" />
             <span className="sr-only">Opening the last workspace…</span>
           </div>
         ) : workspace === null ? (

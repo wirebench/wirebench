@@ -86,7 +86,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
         details: { index: request.index },
       });
     }
-    return { workspace: await service.importKnownProjectFolder(folder) };
+    return { workspace: await service.importKnownProjectFolder(folder), dir: folder };
   });
 
   registerHandler(channels.workspace.reveal, async (request) => {

@@ -184,7 +184,7 @@ describe('workspace.* channels', () => {
     suggestions.mockResolvedValue(['/old/projects/calc', '/old/projects/billing']);
     await expect(invoke('workspace.importSuggestion', { index: 1 })).resolves.toEqual({
       ok: true,
-      value: { workspace: WORKSPACE },
+      value: { workspace: WORKSPACE, dir: '/old/projects/billing' },
     });
     expect(service.importKnownProjectFolder).toHaveBeenCalledWith('/old/projects/billing');
 

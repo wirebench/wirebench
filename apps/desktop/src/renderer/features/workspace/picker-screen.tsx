@@ -68,6 +68,7 @@ export function WorkspacePicker() {
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <input
             data-testid="workspace-create-name"
+            autoFocus
             aria-label="New workspace name"
             placeholder="Workspace name"
             value={name}
