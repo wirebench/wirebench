@@ -1,1 +1,4 @@
+# Every text file is checked out with LF on every OS: prettier enforces endOfLine "lf" and the
+# Windows CI runner defaults to core.autocrlf=true, which would otherwise turn a clean tree red.
+* text=auto eol=lf
 fixtures/** -text
