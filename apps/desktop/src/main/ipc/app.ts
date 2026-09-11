@@ -1,4 +1,4 @@
-import { app, Menu } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
 import type { MenuApi } from '../menu.js';
@@ -33,10 +33,14 @@ export function registerAppChannels(
       {
         isMac: process.platform === 'darwin',
         isDev: !app.isPackaged,
-        // Back to the window that registered the menu: it holds the registry that knows
-        // whether the command's `when` gate allows it here and now.
+        // To the focused window, falling back to the one that registered the menu. The menu
+        // is shared by every window, so the window that happened to register it last is not
+        // necessarily the one the user is looking at — and a menu click must act on what they
+        // are looking at. That window's registry then decides whether `when` allows it.
         dispatch: (id) => {
-          emitEvent(sender, events.command.invoke, { id });
+          const focused = BrowserWindow.getFocusedWindow();
+          const target = focused === null || focused.isDestroyed() ? sender : focused.webContents;
+          emitEvent(target, events.command.invoke, { id });
         },
       },
       menuApi,

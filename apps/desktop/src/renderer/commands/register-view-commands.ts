@@ -1,7 +1,26 @@
+import type { CommandId } from '@shared/commands.js';
 import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { registerCommand } from '../lib/commands.js';
+import type { RequestViewType, ResponseViewType } from '../state/editors.js';
+import { useEditorsStore } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
-import { ui } from './command-helpers.js';
+import { activeRequestId, hasActiveRequest, ui } from './command-helpers.js';
+
+/** The request pane's four views, as `view.request*` commands. */
+const REQUEST_VIEWS: readonly (readonly [id: CommandId, label: string, view: RequestViewType])[] = [
+  ['view.requestXml', 'Request: XML View', 'xml'],
+  ['view.requestForm', 'Request: Form View', 'form'],
+  ['view.requestOutline', 'Request: Outline View', 'outline'],
+  ['view.requestRaw', 'Request: Raw View', 'raw'],
+];
+
+/** The response pane's four selectable views (the Fault tab is revealed, never chosen). */
+const RESPONSE_VIEWS: readonly (readonly [id: CommandId, label: string, view: ResponseViewType])[] = [
+  ['view.responseXml', 'Response: XML View', 'xml'],
+  ['view.responseOutline', 'Response: Outline View', 'outline'],
+  ['view.responseRaw', 'Response: Raw View', 'raw'],
+  ['view.responseQuery', 'Response: Query View', 'query'],
+];
 
 /**
  * Registers the General and View commands: the palette, the panel toggles, the activity-bar
@@ -125,4 +144,37 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
       void usePreferencesStore.getState().update({ ui: { theme: next } });
     },
   });
+
+  // The pane view switchers. They ship without chords — the design's §5 table spends every
+  // free one — but they are commands so the palette, the menu and a user rebind can reach them.
+  for (const [id, label, view] of REQUEST_VIEWS) {
+    registerCommand({
+      id,
+      label,
+      category: 'View',
+      when: hasActiveRequest,
+      whenScope: 'editor.request',
+      run: () => {
+        const requestId = activeRequestId();
+        if (requestId !== undefined) {
+          useEditorsStore.getState().setRequestView(requestId, view);
+        }
+      },
+    });
+  }
+  for (const [id, label, view] of RESPONSE_VIEWS) {
+    registerCommand({
+      id,
+      label,
+      category: 'View',
+      when: hasActiveRequest,
+      whenScope: 'editor.request',
+      run: () => {
+        const requestId = activeRequestId();
+        if (requestId !== undefined) {
+          useEditorsStore.getState().setResponseView(requestId, view);
+        }
+      },
+    });
+  }
 }

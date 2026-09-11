@@ -78,6 +78,18 @@ export const COMMAND_IDS = [
   'editor.nextValue',
   'editor.previousValue',
   'editor.focusOtherPane',
+  'view.requestXml',
+  'view.requestForm',
+  'view.requestOutline',
+  'view.requestRaw',
+  'view.responseXml',
+  'view.responseOutline',
+  'view.responseRaw',
+  'view.responseQuery',
+  'history.resend',
+  'history.compare',
+  'history.clear',
+  'request.exportWsiReport',
 ] as const;
 
 /** Every addressable action. Derived from {@link COMMAND_IDS} so the two can never drift. */
@@ -85,7 +97,16 @@ export type CommandId = (typeof COMMAND_IDS)[number];
 
 /** Palette grouping for a command; also the heading shown in the command palette. */
 export type CommandCategory =
-  'General' | 'View' | 'Project' | 'Definition' | 'Explorer' | 'Environment' | 'Request' | 'Secrets' | 'Editor';
+  | 'General'
+  | 'View'
+  | 'Project'
+  | 'Definition'
+  | 'Explorer'
+  | 'Environment'
+  | 'Request'
+  | 'Secrets'
+  | 'Editor'
+  | 'History';
 
 /**
  * The named conditions a command's `when` gate can stand for, and how each reads in a sentence.
@@ -107,6 +128,8 @@ export const COMMAND_WHEN_SCOPES = {
   'selection.request': 'a request is selected',
   'selection.endpoint': 'an endpoint is selected',
   'wsi.report': 'a WS-I report has been run',
+  'history.entries': 'the history has entries',
+  'history.pair': 'the history has two or more entries',
 } as const;
 
 /** The key half of {@link COMMAND_WHEN_SCOPES}. */

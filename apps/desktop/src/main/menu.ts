@@ -43,7 +43,7 @@ const MENUS: readonly { readonly label: string; readonly categories: readonly st
   { label: 'Edit', categories: ['Editor'] },
   { label: 'View', categories: ['View'] },
   { label: 'Request', categories: ['Request'] },
-  { label: 'Tools', categories: ['Explorer', 'Environment', 'Secrets', 'General'] },
+  { label: 'Tools', categories: ['Explorer', 'Environment', 'Secrets', 'History', 'General'] },
 ];
 
 const FALLBACK_MENU = 'Tools';

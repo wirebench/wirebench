@@ -8,6 +8,13 @@ export type FormViewType = 'full' | 'required' | 'non-empty';
 
 const DEFAULT_FORM_VIEW_TYPE: FormViewType = 'full';
 
+/** Which request tab is showing. Owned here rather than in the pane's own `useState` so the
+ * `view.request*` commands can switch it from the palette, the menu or a shortcut, and so it
+ * survives a remount. Editor state, never saved to the project file. */
+export type RequestViewType = 'xml' | 'form' | 'outline' | 'raw';
+
+const DEFAULT_REQUEST_VIEW_TYPE: RequestViewType = 'xml';
+
 /** Which response tab is showing. Owned here for the same reason as {@link FormViewType}: it
  * must survive a remount, but it is editor state, never saved to the project file. */
 export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
@@ -57,6 +64,8 @@ export interface EditorsStore {
   readonly activeId: string | undefined;
   /** Form view type per request draft id. Editor state, not project data — never saved to disk. */
   readonly formViewTypes: Readonly<Record<string, FormViewType>>;
+  /** Selected request tab per request draft id. Editor state, not project data. */
+  readonly requestViewTypes: Readonly<Record<string, RequestViewType>>;
   /** Selected response tab per request draft id. Editor state, not project data. */
   readonly responseViewTypes: Readonly<Record<string, ResponseViewType>>;
   /** Whether the user has explicitly picked a response tab for this request — once true, an
@@ -80,6 +89,11 @@ export interface EditorsStore {
   /** The Form view type for `requestId`, defaulting to `'full'` when never set. */
   readonly formViewTypeFor: (requestId: string) => FormViewType;
   readonly setFormViewType: (requestId: string, viewType: FormViewType) => void;
+
+  /** The selected request tab for `requestId`, defaulting to `'xml'` when never set. */
+  readonly requestViewFor: (requestId: string) => RequestViewType;
+  /** Selects a request tab (XML · Form · Outline · Raw). */
+  readonly setRequestView: (requestId: string, viewType: RequestViewType) => void;
 
   /** The selected response tab for `requestId`, defaulting to `'xml'` when never set. */
   readonly responseViewFor: (requestId: string) => ResponseViewType;
@@ -110,6 +124,7 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
   tabs: [],
   activeId: undefined,
   formViewTypes: {},
+  requestViewTypes: {},
   responseViewTypes: {},
   responseViewPinned: {},
   editorLayouts: {},
@@ -164,6 +179,12 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
 
   setFormViewType: (requestId, viewType) => {
     set({ formViewTypes: { ...get().formViewTypes, [requestId]: viewType } });
+  },
+
+  requestViewFor: (requestId) => get().requestViewTypes[requestId] ?? DEFAULT_REQUEST_VIEW_TYPE,
+
+  setRequestView: (requestId, viewType) => {
+    set({ requestViewTypes: { ...get().requestViewTypes, [requestId]: viewType } });
   },
 
   responseViewFor: (requestId) => get().responseViewTypes[requestId] ?? DEFAULT_RESPONSE_VIEW_TYPE,

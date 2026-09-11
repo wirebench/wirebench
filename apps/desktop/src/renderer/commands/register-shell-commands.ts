@@ -1,6 +1,7 @@
 import { resetCommands } from '../lib/commands.js';
 import { registerEditorCommands } from './register-editor-commands.js';
 import { registerExplorerCommands } from './register-explorer-commands.js';
+import { registerHistoryCommands } from './register-history-commands.js';
 import { registerProjectCommands } from './register-project-commands.js';
 import { registerRequestCommands } from './register-request-commands.js';
 import { registerViewCommands } from './register-view-commands.js';
@@ -21,4 +22,5 @@ export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-o
   registerRequestCommands();
   registerEditorCommands();
   registerExplorerCommands();
+  registerHistoryCommands();
 }

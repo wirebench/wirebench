@@ -18,6 +18,7 @@ import { XmlEditor } from '../../editor/xml-editor.js';
 import { ipcCompletionSource } from '../../editor/xml-completion-source.js';
 import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '../../editor/xml-language.js';
 import { useEditorsStore } from '../../state/editors.js';
+import type { RequestViewType } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
@@ -103,7 +104,10 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const exchange = useExchangesStore((state) => state.byRequest[requestId]?.exchange);
   const rawRequestBase64 = exchange?.http.rawRequestBase64;
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
-  const [view, setView] = useState<(typeof VIEWS)[number]['id']>('xml');
+  // The selected view lives in the editors store, not local state, so the `view.request*`
+  // commands (palette, menu, shortcut) can switch it and so it survives a pane remount.
+  const view = useEditorsStore((state) => state.requestViewFor(requestId));
+  const setView = useEditorsStore((state) => state.setRequestView);
   // The Form view type is editor state, not project data — it never reaches the saved request
   // file — but it is keyed by `requestId` in the editors store (not local component state) so
   // it survives this pane remounting (a tab switch, or the pane unmounting while its tab stays
@@ -279,7 +283,12 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   return (
     <div data-testid="request-pane-surface" className="flex h-full min-h-0 flex-col border-r border-hairline">
       <div className="flex shrink-0 items-center justify-between border-b border-hairline">
-        <ViewTabs label="Request views" items={VIEWS} active={view} onSelect={(id) => setView(id as typeof view)} />
+        <ViewTabs
+          label="Request views"
+          items={VIEWS}
+          active={view}
+          onSelect={(id) => setView(requestId, id as RequestViewType)}
+        />
         <div className="flex items-center gap-1">
           <span className="px-2 text-xs text-fg-faint">Request</span>
           <OverflowMenu currentText={local} onLoaded={commitNow} />

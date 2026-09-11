@@ -41,6 +41,8 @@ describe('RequestEditor', () => {
       order: ['if-1'],
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
+    // The pane's selected view lives in the editors store now, so it outlives a `cleanup()`.
+    useEditorsStore.setState({ requestViewTypes: {}, responseViewTypes: {}, responseViewPinned: {} });
     useRequestDialogsStore.getState().close();
   });
 

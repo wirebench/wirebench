@@ -202,6 +202,58 @@ describe('editor layout commands', () => {
   });
 });
 
+describe('pane view commands', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    resetCommands();
+    registerShellCommands(vi.fn());
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' }],
+      activeId: 'request:req-1',
+      requestViewTypes: {},
+      responseViewTypes: {},
+      responseViewPinned: {},
+    });
+  });
+
+  afterEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined, requestViewTypes: {}, responseViewTypes: {} });
+  });
+
+  it('switches the request pane view', async () => {
+    await runCommand('view.requestForm', context);
+    expect(useEditorsStore.getState().requestViewFor('req-1')).toBe('form');
+
+    await runCommand('view.requestOutline', context);
+    expect(useEditorsStore.getState().requestViewFor('req-1')).toBe('outline');
+
+    await runCommand('view.requestRaw', context);
+    expect(useEditorsStore.getState().requestViewFor('req-1')).toBe('raw');
+
+    await runCommand('view.requestXml', context);
+    expect(useEditorsStore.getState().requestViewFor('req-1')).toBe('xml');
+  });
+
+  it('switches the response pane view', async () => {
+    await runCommand('view.responseQuery', context);
+    expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('query');
+
+    await runCommand('view.responseRaw', context);
+    expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('raw');
+
+    await runCommand('view.responseOutline', context);
+    expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('outline');
+  });
+
+  it('offers none of them without a request tab', () => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    const ids = listCommands(context).map((command) => command.id);
+
+    expect(ids).not.toContain('view.requestForm');
+    expect(ids).not.toContain('view.responseQuery');
+  });
+});
+
 describe('request action commands', () => {
   beforeEach(() => {
     installWirebenchApi();
