@@ -263,6 +263,12 @@ export class ProjectService {
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
+  /**
+   * Serialises {@link save}: every save chains off this promise, so a manual save and the
+   * before-quit save can never have their write+prune phases interleave. Never rejects — a
+   * failed save resolves it so the next one still runs (the caller sees the rejection).
+   */
+  private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly engine: EngineService,
@@ -811,14 +817,37 @@ export class ProjectService {
     this.open = undefined;
   }
 
-  /** Writes the project to disk. Also invoked by the autosave timer and on `before-quit`. */
-  async save(
-    options: { reason: string; backups?: readonly string[] } = { reason: 'manual' },
-  ): Promise<ProjectSaveResult> {
+  /**
+   * Writes the project to disk. Also invoked by the autosave timer and on `before-quit`.
+   *
+   * Saves are serialised through {@link saveQueue}: a manual save and the before-quit save can
+   * otherwise overlap, and `saveProject` prunes the files its own snapshot no longer mentions —
+   * two interleaved runs would have the later prune delete a file the earlier write had just
+   * put there. Queued saves are not coalesced: each one still writes the model as it stands
+   * when its turn comes, which is what a `close`/`quit` save has to do.
+   */
+  save(options: { reason: string; backups?: readonly string[] } = { reason: 'manual' }): Promise<ProjectSaveResult> {
+    // The timer is cancelled up front, not inside the queued work: whatever is queued already
+    // writes whatever the model holds by then, so a pending autosave has nothing left to do.
     if (this.autosave !== undefined) {
       clearTimeout(this.autosave);
       this.autosave = undefined;
     }
+    const next = this.saveQueue.then(
+      () => this.saveNow(options),
+      () => this.saveNow(options),
+    );
+    // The chain itself must never stay rejected, or one failed save would poison every later
+    // one; the caller's own `await` still sees the rejection.
+    this.saveQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  /** One save, run with the queue held; see {@link save}. */
+  private async saveNow(options: { reason: string; backups?: readonly string[] }): Promise<ProjectSaveResult> {
     const open = this.open;
     if (open === undefined) {
       return { saved: false, written: 0, removed: 0 };

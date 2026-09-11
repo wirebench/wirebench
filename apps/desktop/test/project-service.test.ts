@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadProject, mergePreferences, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
@@ -287,6 +287,55 @@ describe('ProjectService', () => {
 
     const onDiskAfterSecondSave = await loadProject(dir);
     expect(onDiskAfterSecondSave.project.name).toBe('Second');
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  it('serialises two overlapping saves instead of interleaving their write and prune phases', async () => {
+    const userData = root!;
+    const dir = join(tempDir('project'), 'Mutex Project');
+    // Each save stamps its `reason` into the project file it writes, so the log below can say
+    // which save is inside its write phase; the delay makes an unserialised pair interleave.
+    const log: string[] = [];
+    function saveOf(data: Buffer | string): string | undefined {
+      const text = String(data);
+      if (text.includes('wirebench (one)')) return 'one';
+      if (text.includes('wirebench (two)')) return 'two';
+      return undefined;
+    }
+    const fs: FsLike = {
+      ...nodeFs,
+      async writeFile(path, data) {
+        const which = saveOf(data);
+        if (which !== undefined) log.push(`${which} enter`);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await nodeFs.writeFile(path, data);
+        if (which !== undefined) log.push(`${which} exit`);
+      },
+      async rm(path, options) {
+        log.push(`rm ${basename(path)}`);
+        await nodeFs.rm(path, options);
+      },
+    };
+    const service = newService(userData, fs);
+
+    await service.create({ dir, name: 'Mutex Project' });
+    await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.save({ reason: 'seed' });
+    const filesBefore = (await readdir(dir)).sort();
+    log.length = 0;
+
+    const [first, second] = await Promise.all([service.save({ reason: 'one' }), service.save({ reason: 'two' })]);
+
+    expect(first.saved).toBe(true);
+    expect(second.saved).toBe(true);
+
+    // One save's write phase closes before the other's opens — never `one enter, two enter`.
+    expect(log.filter((entry) => entry !== 'rm')).toEqual(['one enter', 'one exit', 'two enter', 'two exit']);
+
+    // …and the prune of the second save never removed a file the first one wrote.
+    expect((await readdir(dir)).sort()).toEqual(filesBefore);
 
     await service.close();
     rmSync(dir, { recursive: true, force: true });

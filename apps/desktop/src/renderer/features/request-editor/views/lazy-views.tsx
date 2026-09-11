@@ -139,7 +139,7 @@ export function splitView<P extends object>(load: () => Promise<ComponentType<P>
       // Throwing a promise is the same Suspense contract React's own `lazy` uses: the nearest
       // boundary shows its fallback and retries once the promise settles. It is the one place a
       // non-Error throw is correct, so the rule is turned off for this statement alone.
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- Suspense's contract is to throw the pending promise itself
       throw start();
     }
     const Loaded = loaded;

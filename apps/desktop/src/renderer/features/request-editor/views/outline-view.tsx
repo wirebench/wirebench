@@ -233,11 +233,6 @@ function cacheFor(interfaceId: string): Map<string, DescribeResult | null> {
   return entry;
 }
 
-/** Clears every cached `describeMany` result for `interfaceId` — call when its schema set changes underneath it. */
-export function invalidateDescribeCache(interfaceId: string): void {
-  describeCache.delete(interfaceId);
-}
-
 /**
  * SoapUI-parity Outline: an element/attribute tree with Name, Value (inline-editable) and Type
  * columns. Never adds or removes nodes — every edit calls `onEdit` with the exact range to
