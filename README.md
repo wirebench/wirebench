@@ -54,9 +54,10 @@ then press **Send**. The response arrives beside the request with its status, du
 the HTTP Log at the bottom shows the timing breakdown, and the run is in History for re-sending or diffing later.
 
 That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
-evaluates XPath 3.1 and XQuery 3.1 over the response; the details panel carries auth, WS-Security, WS-Addressing and
-attachments; `Mod+K` opens the command palette; and the Environments section is workspace-wide — one set of
-environments and endpoint overrides shared by every project, switched without touching a request.
+evaluates XPath 3.1 and XQuery 3.1 over the response; the request editor's _Details_ inspector carries auth,
+WS-Security, WS-Addressing and attachments; `Mod+K` opens the command palette; and **Environments**, reached from the
+activity bar, is workspace-wide — one set of environments and endpoint overrides shared by every project, switched
+without touching a request, with a per-variable checkbox to disable a value without deleting it.
 
 ## Keyboard shortcuts
 
@@ -68,7 +69,7 @@ Every action in Wirebench is a command with an id, and every shortcut is that co
 | Show All Commands       | `Mod+K`       |
 | Toggle Sidebar          | `Mod+B`       |
 | Toggle Console          | `Mod+J`       |
-| Toggle Details Panel    | `Mod+Alt+B`   |
+| Toggle Code Panel       | `Mod+Alt+B`   |
 | Show Explorer           | `Mod+Shift+E` |
 | Show Search             | `Mod+Shift+S` |
 | Show History            | `Mod+Shift+Y` |
@@ -78,6 +79,11 @@ Every action in Wirebench is a command with an id, and every shortcut is that co
 | Save All                | `Mod+S`       |
 | Next Environment        | `Mod+Alt+E`   |
 | Toggle Light/Dark Theme | —             |
+
+`Toggle Code Panel` (`view.toggleCode`) opens and closes the right-rail slide-over that shows the current request as
+`curl`; the old Details-panel toggle it replaces is gone (there is no right panel any more — see
+[Architecture overview](docs/architecture/overview.md)). `Show Environments` (`view.showEnvironments`) opens the
+Environments view in the sidebar; it has no default shortcut of its own, only the command-palette entry.
 
 Workspace management (create, switch, manage, link/import/export a project) is reachable from the command palette and
 the workspace switcher; it has no default keyboard shortcuts of its own.

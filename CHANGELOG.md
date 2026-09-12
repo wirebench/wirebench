@@ -19,11 +19,42 @@ All notable changes to this project are documented here. The format follows
   touched. Tabs, the explorer, and History span every project in the open workspace, and the
   last-open workspace (with its tab set) reopens on launch.
 
+- **Environments view.** Environments moved out of the right panel into their own left-menu view
+  (activity bar → *Environments*, `view.showEnvironments`), listing Globals, the workspace and
+  every environment; opening one shows a variables table and an endpoint-overrides table, Postman
+  style, instead of a grid.
+- **Per-variable enabled checkbox.** Every property scope — project, environment, workspace,
+  workspace environment, and globals — can now disable one variable without deleting it; an
+  unticked variable's value stays on disk but is skipped during resolution, falling through to
+  the next scope down.
+- **Project tab.** Selecting a project row opens it as a normal pinned tab instead of a side
+  panel, showing the project's own settings and properties.
+- **Code slide-over.** A right icon rail replaces the old right panel; its one icon today opens a
+  slide-over showing the active request as `curl` (`view.toggleCode`, `Mod+Alt+B`, the shortcut
+  freed by the removed Details-panel toggle), closed by Escape or the rail icon again.
+- **Collapsible, resizable panels.** The sidebar, console and Code slide-over can each be
+  collapsed and resized by dragging their handle, by a titlebar button, or by double-clicking the
+  handle to snap collapsed or restored; sizes and collapsed state persist across a relaunch.
+
+### Changed
+
+- **Project and workspace format, `formatVersion: 2`.** The per-variable enabled flag above is an
+  additive format change: `properties` stays a plain `name -> value` map, and a sibling
+  `disabled:` list of names sits beside it, sorted, deduplicated, and omitted entirely when
+  empty. A version-1 file (no `disabled` key) still opens and migrates as "all enabled". **A
+  1.0.0 build cannot open a project or workspace saved by this version** — it refuses
+  `formatVersion: 2` with its existing "created by a newer version of Wirebench" error.
+- **Global properties file, `version: 2`.** The same `disabled:` list, for the global scope's
+  properties file in app data.
+
 ### Removed
 
 - **Opening or creating a project by picking a folder.** The Welcome-screen "Open Project…" and
   folder-picker "New Project" flows are gone; a project is now created by name inside a
   workspace, and a folder dialog only appears for linking, importing or exporting a project.
+- **The right panel.** Its contents moved: auth, WS-Security, WS-Addressing and attachments are
+  now the request editor's *Details* inspector; the Code view moved to the right-rail slide-over
+  above. `view.toggleDetails` is gone.
 
 ## [1.0.0] - 2026-09-11
 

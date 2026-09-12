@@ -95,6 +95,21 @@ carry no project context now carries `projectId` — `project.changed { projectI
 status }` — so the renderer's stores (`state/workspace.ts`, `state/project.ts`) can keep several
 projects' worth of state keyed by id and merge tabs, history and environments across them.
 
+**The shell layout.** There is no right panel. The activity bar (far left) picks the sidebar's
+view — Explorer, Search, History, Settings and **Environments** — and a fixed-width right rail
+takes its place, today holding one icon (**Code**) that opens a slide-over showing the active
+request as `curl`; Escape or the rail icon again closes it. What the removed panel showed lives
+elsewhere: auth, WS-Security, WS-Addressing and attachments moved into the request editor's own
+*Details* inspector, and a project row opens as a *project* tab instead of a side panel. Sidebar,
+console and the slide-over are all collapsible and resizable — by dragging the handle, a
+titlebar button, or double-clicking the handle to snap collapsed/restored — and their sizes and
+collapsed state persist across a relaunch in `ui-state` (`apps/desktop/src/renderer/state/
+ui-state.ts`), together with the slide-over's own POSIX/PowerShell shell preference for the Code
+view (`slideOver.codeShell`). The Environments view itself (`apps/desktop/src/renderer/features/
+environments/`) lists Globals, the workspace and every environment; opening one shows its
+variables and endpoint overrides, each variable with an *enabled* checkbox — see "The `disabled`
+list" below.
+
 **Engine.** `packages/engine`, `@wirebench/engine`. Zero Electron, DOM or React imports —
 enforced by lint, not convention. Every I/O entry point takes an `AbortSignal`, every export
 carries JSDoc, every error is a `WirebenchError` subclass with a stable `code`, and every model
@@ -122,6 +137,24 @@ planned `wirebench run` CLI unchanged.
 6. The renderer renders what it was given. Cancel is the same path in reverse: one IPC call
    aborts the signal the engine is already holding.
 
+## The `disabled` list
+
+Every property scope — a project's own, an environment's, a workspace's, a workspace
+environment's, and the global file — can disable one variable without deleting it: its value
+stays in the `properties` map, but resolution skips it, so the request falls through to the next
+scope down as if the value were absent. On disk this is a sibling `disabled:` list of names next
+to the `properties` map (which itself stays a plain `name -> value` map), sorted, deduplicated,
+and omitted entirely when it would be empty; a file with no `disabled` key migrates as "all
+enabled". `enabledProperties` (`packages/engine/src/project/properties.ts`) is the one place the
+filter is applied. This is an additive format change: project and workspace manifests moved to
+`formatVersion: 2` and the global properties file to `version: 2` (ADR-0003, ADR-0006). A
+version-1 file still loads (a missing list defaults to empty); a version-3-or-later file is
+refused with the same clear error a too-new file has always produced — except the global
+properties loader (`apps/desktop/src/main/global-properties.ts`), which does not check its
+`version` field at all yet (tracked in `docs/roadmap.md`'s "Known limitations carried from 1.0").
+A 1.0.0 build cannot open a file this build has saved: it refuses `formatVersion: 2` with its
+existing "created by a newer version of Wirebench" error.
+
 ## Where things live
 
 | Concern | Where |
@@ -138,6 +171,10 @@ planned `wirebench run` CLI unchanged.
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
+| Environments view (sidebar list + editor page) | `apps/desktop/src/renderer/features/environments/` |
+| Right rail, Code slide-over, resizable/collapsible panel handles | `apps/desktop/src/renderer/shell/{right-rail,code-panel,panel-handle}.tsx` |
+| Request details inspector, project tab | `apps/desktop/src/renderer/features/request-editor/inspectors/details-inspector.tsx`, `apps/desktop/src/renderer/features/project/project-tab.tsx` |
+| Global properties file (`disabled` list, `version: 2`) | `apps/desktop/src/main/global-properties.ts` |
 
 ## Further reading
 

@@ -84,3 +84,14 @@ workspaces/<id>/
 - **Multi-window and workspace sync/sharing stay out of scope** (recorded on the roadmap): one
   window holds one open workspace at a time, and nothing propagates a workspace's environments
   or projects to another machine.
+
+**Update (2026-09-12, per-variable enabled flag): `formatVersion: 2`.** `workspace.yaml` and each
+workspace environment file gained the same `disabled:` sibling list ADR-0003 describes for the
+project format, for the same reason and with the same shape — a variable switched off without
+being deleted, sorted and deduplicated, omitted when empty, absent-means-all-enabled on
+migration. `WORKSPACE_FORMAT_VERSION` moved to `2`; a version-1 workspace still opens, and a
+version-3-or-later one is refused with the existing "created by a newer version of Wirebench"
+error, the same as a project. The global properties file (`apps/desktop/src/main/
+global-properties.ts`, outside the engine's own format versioning) gained the identical list and
+moved to `version: 2`, but its loader does not yet validate that field on read — see the roadmap's
+"Known limitations carried from 1.0".
