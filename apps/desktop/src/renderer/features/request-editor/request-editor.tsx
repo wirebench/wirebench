@@ -50,7 +50,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const [pane, setPane] = useState<(typeof PANE_TABS)[number]['id']>('request');
   const draft = useProjectStore((state) => state.requests[requestId]);
   const summary = useProjectStore((state) => (draft === undefined ? undefined : state.interfaces[draft.interfaceId]));
-  const updateRequest = useProjectStore((state) => state.updateRequest);
+  const editRequest = useProjectStore((state) => state.editRequest);
   const setEndpoint = useProjectStore((state) => state.setEndpoint);
   // The active environment lives on the workspace, so an environment switch has to rerender
   // the endpoint as well as a project change.
@@ -82,12 +82,12 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   }, [cancel, requestId]);
   const onEnvelopeChange = useCallback(
     (envelopeXml: string) => {
-      updateRequest(requestId, { envelopeXml });
+      editRequest(requestId, { envelopeXml });
       // Last run's findings described text that no longer exists; keeping the markers around
       // would point at lines the user has already fixed (or moved).
       clearValidation(requestId, 'request');
     },
-    [updateRequest, requestId],
+    [editRequest, requestId],
   );
   const onValidate = useCallback(() => {
     requestPaneRef.current?.flush();

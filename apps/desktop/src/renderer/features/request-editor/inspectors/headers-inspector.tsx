@@ -155,7 +155,7 @@ function problemsForHeader(messages: readonly string[], name: string): string[] 
  */
 export function HeadersInspector({ requestId }: HeadersInspectorProps) {
   const headers = useProjectStore((state) => state.requests[requestId]?.headers);
-  const updateRequest = useProjectStore((state) => state.updateRequest);
+  const editRequest = useProjectStore((state) => state.editRequest);
   // Select the raw list and narrow it here: a selector that built a new array on every call
   // would give zustand a fresh snapshot each render and loop forever.
   const problemItems = useProblemsStore((state) => state.items);
@@ -175,7 +175,7 @@ export function HeadersInspector({ requestId }: HeadersInspectorProps) {
   }
 
   const commit = (next: readonly HeaderEntryWire[]): void => {
-    updateRequest(requestId, { headers: [...next] });
+    editRequest(requestId, { headers: [...next] });
   };
 
   const replaceAt = (index: number, header: HeaderEntryWire): void => {

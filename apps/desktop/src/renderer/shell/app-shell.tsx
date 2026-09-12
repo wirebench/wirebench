@@ -13,6 +13,7 @@ import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
+import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
@@ -208,7 +209,12 @@ export function AppShell() {
   const workspace = useWorkspaceStore((state) => state.workspace);
   const workspaceReady = useWorkspaceStore((state) => state.ready);
   // The title bar's dot means "something is unsaved": any open project will do.
-  const dirty = useProjectStore((state) => Object.values(state.projects).some((project) => project.dirty));
+  const projectDirty = useProjectStore((state) => Object.values(state.projects).some((project) => project.dirty));
+  // Staged edits count too. A tab can be closed while its edit is still unsaved — the draft
+  // outlives the tab, so without this the only indicator of it would have disappeared with the
+  // tab that showed the dot.
+  const staged = useDraftsStore((state) => Object.keys(state.requests).length > 0);
+  const dirty = projectDirty || staged;
 
   useEffect(() => {
     hydrateUi();

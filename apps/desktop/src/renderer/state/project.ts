@@ -28,6 +28,7 @@ import type {
   RequestPropertiesPatchWire,
   RequestWire,
 } from '../../shared/wire-types.js';
+import { useDraftsStore } from './drafts.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
@@ -111,7 +112,20 @@ export interface ProjectStore extends ProjectSnapshot {
     token?: string,
   ) => Promise<InterfaceWire>;
   readonly removeInterface: (interfaceId: string) => Promise<void>;
+  /**
+   * Writes a request edit straight through to main, which autosaves it. For edits made outside
+   * an editor tab — renaming from the explorer tree, naming a request as it is created — where
+   * there is no tab to carry an unsaved mark or to press `Mod+S` in.
+   */
   readonly updateRequest: (requestId: string, patch: RequestPatchWire) => void;
+  /**
+   * Stages an edit made *in an editor tab*: applied to the mirror at once, so the editor and
+   * the send path see it immediately, but not written until {@link saveRequest}. This is what
+   * makes a tab's unsaved mark meaningful.
+   */
+  readonly editRequest: (requestId: string, patch: RequestPatchWire) => void;
+  /** Writes one request's staged edits and saves its project. A no-op when it is clean. */
+  readonly saveRequest: (requestId: string) => Promise<void>;
   /**
    * Merges a patch into one request's §6.3 properties. Applied optimistically (so a checkbox
    * does not lag the click) and then confirmed by main's snapshot. A `null` clears an optional
@@ -305,6 +319,34 @@ type Indexes = Pick<
  * projects, so removing one project means removing exactly its entries — and recomputing is
  * both shorter and impossible to get subtly wrong.
  */
+/** One request's staged-but-unsaved patch, or `undefined` when the request is clean. */
+function draftPatchOf(requestId: string): RequestPatchWire | undefined {
+  return useDraftsStore.getState().peekRequest(requestId);
+}
+
+/**
+ * Lays the edits main has not confirmed yet over the request it just sent us.
+ *
+ * A snapshot from main reflects only what has been *written*, so replacing the mirror with it
+ * wholesale would throw away two kinds of edit: one still in flight (`pending`) and one the
+ * user has deliberately not saved yet (`draft`). Both are re-applied on every snapshot, drafts
+ * last, because a staged edit is the most recent thing the user typed.
+ */
+export function layerEdits(
+  request: RequestDraft,
+  pendingPatch: RequestPatchWire | undefined,
+  draftPatch: RequestPatchWire | undefined,
+): RequestDraft {
+  let merged = request;
+  if (pendingPatch !== undefined) {
+    merged = withPatch(merged, pendingPatch);
+  }
+  if (draftPatch !== undefined) {
+    merged = withPatch(merged, draftPatch);
+  }
+  return merged;
+}
+
 function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const interfaces: Record<string, InterfaceWire> = {};
   const requests: Record<string, RequestDraft> = {};
@@ -321,8 +363,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       projectOf[iface.id] = project.id;
     }
     for (const request of project.requests) {
-      const patch = pending.get(request.id);
-      requests[request.id] = patch === undefined ? request : withPatch(request, patch);
+      requests[request.id] = layerEdits(request, pending.get(request.id), draftPatchOf(request.id));
       projectOf[request.id] = project.id;
     }
     for (const environment of project.environments) {
@@ -616,6 +657,44 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         });
     },
 
+    editRequest: (requestId, patch) => {
+      // Optimistic exactly as `updateRequest` is, and for the same reason: the mirror is what
+      // the editor, the code panel and the send path read, so the edit has to land there at
+      // once. The only difference is that nothing is written — the patch waits in the drafts
+      // store until the user saves.
+      update((draft) => {
+        const request = draft.requests[requestId];
+        if (request !== undefined) {
+          draft.requests[requestId] = withPatch(request, patch);
+        }
+      });
+      useDraftsStore.getState().stageRequest(requestId, patch);
+    },
+
+    saveRequest: async (requestId) => {
+      const staged = useDraftsStore.getState().peekRequest(requestId);
+      if (staged === undefined) {
+        return;
+      }
+      const projectId = ownerOf(requestId);
+      // Replayed as one ordinary mutation, so main's model is whole again before it writes:
+      // `saveProject` reconciles the entire project against that model, and handing it a model
+      // that is missing this edit would write the file back without it.
+      const result = await ipc().project.mutate({
+        projectId,
+        change: { kind: 'update-request', requestId, patch: staged },
+      });
+      if (!result.ok) {
+        // The draft survives a failed save: nothing reached disk, so the edit is still unsaved
+        // and the tab must keep saying so.
+        showToast(asError(result.error).message);
+        return;
+      }
+      apply(projectId, result.value.project);
+      useDraftsStore.getState().clearRequestIfUnchanged(requestId, staged);
+      await saveOne(projectId);
+    },
+
     applyEnvelope: (requestId, envelopeXml) => {
       update((draft) => {
         const request = draft.requests[requestId];
@@ -697,6 +776,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     removeRequest: async (requestId) => {
       await mutateEntity(requestId, { kind: 'remove-request', requestId });
       pending.delete(requestId);
+      // A deleted request cannot be saved, so its staged edit goes with it; leaving the draft
+      // behind would keep the workspace looking unsaved forever with nothing to save.
+      useDraftsStore.getState().discardRequest(requestId);
       useEditorsStore.getState().close(`request:${requestId}`);
       useExchangesStore.getState().clearRequest(requestId);
     },

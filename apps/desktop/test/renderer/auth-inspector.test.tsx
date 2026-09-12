@@ -191,23 +191,23 @@ describe('AuthInspector WS-Security selectors', () => {
   });
 
   it('selects an outgoing configuration and clears it again', async () => {
-    const updateRequest = vi.fn();
+    const editRequest = vi.fn();
     install(undefined, { source: 'none', type: 'none' });
     useProjectStore.setState({
       requests: { 'req-1': makeDraft({}) },
       wssOutgoing: [{ id: 'w1', name: 'Gateway', mustUnderstand: false, entries: [] }],
-      updateRequest,
+      editRequest,
     } as never);
     render(<AuthInspector requestId="req-1" />);
 
     await userEvent.selectOptions(screen.getByLabelText('Outgoing WSS'), 'w1');
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { wssOutgoingRef: 'w1' });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { wssOutgoingRef: 'w1' });
 
     useProjectStore.setState({
       requests: { 'req-1': makeDraft({ wssOutgoingRef: 'w1' }) },
     } as never);
     await userEvent.selectOptions(screen.getByLabelText('Outgoing WSS'), '');
-    expect(updateRequest).toHaveBeenLastCalledWith('req-1', { wssOutgoingRef: null });
+    expect(editRequest).toHaveBeenLastCalledWith('req-1', { wssOutgoingRef: null });
   });
 
   it('keeps a ref the project no longer has selectable', () => {

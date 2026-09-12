@@ -30,7 +30,7 @@ export async function addWsaHeadersToEditor(requestId: string): Promise<void> {
     showToast(result.error.message);
     return;
   }
-  useProjectStore.getState().updateRequest(requestId, { envelopeXml: result.value.envelopeXml });
+  useProjectStore.getState().editRequest(requestId, { envelopeXml: result.value.envelopeXml });
   showToast('Added WS-A headers');
 }
 
@@ -45,6 +45,6 @@ export async function removeWsaHeadersFromEditor(requestId: string): Promise<voi
     showToast(result.error.message);
     return;
   }
-  useProjectStore.getState().updateRequest(requestId, { envelopeXml: result.value.envelopeXml });
+  useProjectStore.getState().editRequest(requestId, { envelopeXml: result.value.envelopeXml });
   showToast('Removed WS-A headers');
 }

@@ -62,7 +62,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
   // the endpoint as well as a project change.
   const workspace = useWorkspaceStore((state) => state.workspace);
   const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, workspace, requestId));
-  const updateRequest = useProjectStore((state) => state.updateRequest);
+  const editRequest = useProjectStore((state) => state.editRequest);
   const updateRequestProperties = useProjectStore((state) => state.updateRequestProperties);
   const keystores = useProjectStore((state) => state.keystores);
 
@@ -93,7 +93,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
           value={request.name}
           onCommit={(name) => {
             if (name.trim().length > 0) {
-              updateRequest(requestId, { name: name.trim() });
+              editRequest(requestId, { name: name.trim() });
             }
           }}
         />
@@ -101,7 +101,7 @@ export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
           label="Description"
           value={request.description ?? ''}
           onCommit={(description) => {
-            updateRequest(requestId, { description: description.length > 0 ? description : null });
+            editRequest(requestId, { description: description.length > 0 ? description : null });
           }}
         />
         <TextSetting label="Endpoint URL" value={endpoint ?? ''} readOnly monospace onCommit={() => undefined} />

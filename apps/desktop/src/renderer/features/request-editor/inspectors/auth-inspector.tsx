@@ -268,7 +268,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
   const incomingRef = useProjectStore((state) => state.requests[requestId]?.wssIncomingRef);
   const configs = useProjectStore((state) => state.wssOutgoing);
   const incomingConfigs = useProjectStore((state) => state.wssIncoming);
-  const updateRequest = useProjectStore((state) => state.updateRequest);
+  const editRequest = useProjectStore((state) => state.editRequest);
 
   return (
     <div className="mt-1 flex flex-col gap-2 border-t border-hairline pt-2">
@@ -280,7 +280,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           className={INPUT_CLASS}
           value={outgoingRef ?? ''}
           onChange={(event) => {
-            updateRequest(requestId, { wssOutgoingRef: event.target.value === '' ? null : event.target.value });
+            editRequest(requestId, { wssOutgoingRef: event.target.value === '' ? null : event.target.value });
           }}
         >
           <option value="">—</option>
@@ -304,7 +304,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           className={INPUT_CLASS}
           value={incomingRef ?? ''}
           onChange={(event) => {
-            updateRequest(requestId, { wssIncomingRef: event.target.value === '' ? null : event.target.value });
+            editRequest(requestId, { wssIncomingRef: event.target.value === '' ? null : event.target.value });
           }}
         >
           <option value="">—</option>

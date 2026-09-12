@@ -6,7 +6,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
-import { ui } from './command-helpers.js';
+import { activeRequestId, ui } from './command-helpers.js';
 
 /** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
@@ -28,11 +28,27 @@ export function registerProjectCommands(): void {
       ui().openImportDialog();
     },
   });
+  // `Mod+S` saves the tab in front of you; saving every project moved up to `Shift+Mod+S`.
+  registerCommand({
+    id: 'item.save',
+    label: 'Save',
+    category: 'Project',
+    shortcut: 'Mod+S',
+    when: () => activeRequestId() !== undefined,
+    whenScope: 'project',
+    run: () => {
+      const requestId = activeRequestId();
+      if (requestId !== undefined) {
+        void useProjectStore.getState().saveRequest(requestId);
+      }
+    },
+  });
+
   registerCommand({
     id: 'project.save',
     label: 'Save All',
     category: 'Project',
-    shortcut: 'Mod+S',
+    shortcut: 'Mod+Alt+S',
     when: () => Object.keys(useProjectStore.getState().projects).length > 0,
     whenScope: 'project',
     run: () => {

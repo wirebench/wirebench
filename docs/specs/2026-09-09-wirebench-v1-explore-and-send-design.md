@@ -177,7 +177,7 @@ Principles.
 - **History** view: every sent request (time, endpoint, operation, status, duration); open, re-send, compare (diff) with current.
 - **Status bar**: active environment, TLS state of last call, last status/duration/size, cursor position.
 - **Theme**: dark default (near-black surfaces, warm accent, subtle borders), light theme, follows OS; monospace for XML, system UI font; respects reduced motion; every control keyboard reachable with visible focus.
-- **Shortcuts (default)**: ⌘⏎ send · Esc cancel · ⌘K palette · ⌘P quick-open operation/request · ⌘⇧F format XML · ⌘⇧V validate · ⌘S save project · ⌘W close tab · ⌘B toggle sidebar · ⌘J toggle console · ⌘\ toggle split · ⌥←/→ next/prev element value · ⇧Tab request↔response focus.
+- **Shortcuts (default)**: ⌘⏎ send · Esc cancel · ⌘K palette · ⌘P quick-open operation/request · ⌘⇧F format XML · ⌘⇧V validate · ⌘S save the active tab · ⌥⌘S save every project · ⌘W close tab · ⌘B toggle sidebar · ⌘J toggle console · ⌘\ toggle split · ⌥←/→ next/prev element value · ⇧Tab request↔response focus.
 
 ---
 
