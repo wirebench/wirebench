@@ -59,10 +59,25 @@ function dynamicRegions(page: Page): Locator[] {
     page.locator('[data-testid="status-bar"] .font-mono'),
     page.locator('[data-testid="http-log-row"]'),
     page.locator('[data-testid="history-row"]'),
-    // The banner names how many files the watcher has coalesced, and that count depends on
-    // how the run's writes happened to batch — the layout is asserted, the number is not.
-    page.locator('[data-testid^="changed-on-disk-banner"]'),
   ];
+}
+
+/**
+ * Waits past the folder watcher's self-write window and dismisses any "changed on disk"
+ * banner that came up because of it, then asserts none remain.
+ *
+ * Importing the fixture writes the project folder, and whether the watcher attributes those
+ * writes to the app itself (and so suppresses the banner) or not is a matter of timing. Masking
+ * the banner only paints over its content — the banner still occupies vertical space and shifts
+ * everything below it, so a shell screenshot must instead ensure no banner is showing at all.
+ */
+async function dismissChangedOnDiskBanners(page: Page): Promise<void> {
+  await page.waitForTimeout(2_500);
+  const ignoreButtons = page.locator('[data-testid^="changed-on-disk-ignore"]');
+  while ((await ignoreButtons.count()) > 0) {
+    await ignoreButtons.first().click();
+  }
+  await expect(page.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
 }
 
 /**
@@ -224,6 +239,7 @@ test.describe('accessibility and theming', () => {
       // The version string only appears once `app.version` resolves; waiting for it keeps the
       // status bar from being half-rendered in the snapshot.
       await expect(window.locator('[data-testid="status-bar"]')).toContainText('TLS');
+      await dismissChangedOnDiskBanners(window);
 
       await expect(window).toHaveScreenshot(`shell-${theme}.png`, {
         mask: dynamicRegions(window),
