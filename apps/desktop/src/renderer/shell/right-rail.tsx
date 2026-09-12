@@ -23,7 +23,9 @@ export function RightRail({ platform }: { readonly platform: Platform }) {
         shortcut={shortcutFor('view.toggleCode', platform)}
         active={open}
         data-testid="rail-code"
+        aria-pressed={undefined}
         aria-expanded={open}
+        aria-controls="slide-over"
         onClick={() => {
           toggleCode();
         }}

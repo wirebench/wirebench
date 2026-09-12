@@ -2,6 +2,7 @@ import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type {
+  CodeShell,
   ConsoleTab,
   EditorLayoutSnapshot,
   PersistedWorkspaceUi,
@@ -77,6 +78,8 @@ export interface UiStore extends UiSnapshot {
   readonly setConsoleSize: (size: number) => void;
   /** Remembers the Code slide-over's width, dragged from its left-edge handle. */
   readonly setSlideOverWidth: (width: number) => void;
+  /** Remembers the Code panel's POSIX/PowerShell choice. */
+  readonly setCodeShell: (shell: CodeShell) => void;
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
   readonly toggleEditorLineNumbers: () => void;
@@ -203,6 +206,10 @@ export const useUiStore = create<UiStore>((set, get) => {
     setSlideOverWidth: (width) =>
       update((draft) => {
         draft.slideOver.width = width;
+      }),
+    setCodeShell: (shell) =>
+      update((draft) => {
+        draft.slideOver.codeShell = shell;
       }),
 
     toggleTheme: () =>

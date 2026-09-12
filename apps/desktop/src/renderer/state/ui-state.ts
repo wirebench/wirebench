@@ -32,6 +32,9 @@ export interface PersistedWorkspaceUi {
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
 export type ThemePreference = 'dark' | 'light' | 'system';
 
+/** Which shell the Code slide-over quotes its `curl` command for. */
+export type CodeShell = 'posix' | 'powershell';
+
 /** The serialisable half of the UI store — layout and theme, no actions. */
 export interface UiSnapshot {
   readonly sidebar: {
@@ -49,7 +52,12 @@ export interface UiSnapshot {
     readonly lastSize: number;
   };
   /** The right-hand slide-over hosting the Code panel; opened from the right rail. */
-  readonly slideOver: { readonly open: boolean; readonly width: number };
+  readonly slideOver: {
+    readonly open: boolean;
+    readonly width: number;
+    /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
+    readonly codeShell: CodeShell;
+  };
   readonly theme: ThemePreference;
   /** Whether request/response Monaco editors show line numbers. */
   readonly editorLineNumbers: boolean;
@@ -71,8 +79,10 @@ export const UI_STORAGE_KEY = 'wirebench.ui';
  * the Code slide-over: `readUi` still accepts a version-3 blob (its `sidebar`/`console`/`theme`/
  * `editorLineNumbers`/`editorLayout`/`workspaces` fields are structurally the same as v4's), it
  * simply never reads the old `details` key, so a v3 blob loses only that slice and keeps every
- * other preference. Adding a field to a section handled by a merge function does not need a
- * further bump.
+ * other preference — except `details.codeShell`, the Code panel's POSIX/PowerShell choice, which
+ * `readUi` carries forward into `slideOver.codeShell` since the Code panel now lives in the
+ * slide-over (see {@link mergeSlideOver}). Adding a field to a section handled by a merge
+ * function does not need a further bump.
  */
 export const UI_STORAGE_VERSION = 4;
 
@@ -83,7 +93,7 @@ const PRIOR_UI_STORAGE_VERSION = 3;
 export const DEFAULT_UI_STATE: UiSnapshot = {
   sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
   console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
-  slideOver: { open: false, width: 420 },
+  slideOver: { open: false, width: 420, codeShell: 'posix' },
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -122,6 +132,24 @@ function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
         ? orientation
         : DEFAULT_UI_STATE.editorLayout.orientation,
     mode: mode === 'split' || mode === 'tabs' ? mode : DEFAULT_UI_STATE.editorLayout.mode,
+  };
+}
+
+/**
+ * Reads the persisted slide-over slice. `codeShell` is validated as an enum rather than by
+ * `mergeSection`'s `typeof` check (any string would pass that), and falls back to
+ * `legacyCodeShell` — the v3 blob's `details.codeShell`, when there is one — before the default,
+ * so a version-3 payload's shell preference survives the v3 → v4 migration.
+ */
+function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['slideOver'] {
+  const record = asRecord(stored);
+  const open = record?.['open'];
+  const width = record?.['width'];
+  const codeShell = record?.['codeShell'] ?? legacyCodeShell;
+  return {
+    open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
+    width: typeof width === 'number' ? width : DEFAULT_UI_STATE.slideOver.width,
+    codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,
   };
 }
 
@@ -196,10 +224,14 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
     const stored = asRecord(payload?.['state']) ?? {};
     const theme = stored['theme'];
     const editorLineNumbers = stored['editorLineNumbers'];
+    // Only a version-3 blob carries the legacy `details.codeShell`; a v4 blob's `slideOver`
+    // already has its own `codeShell` (or doesn't, and gets the default).
+    const legacyCodeShell =
+      version === PRIOR_UI_STORAGE_VERSION ? asRecord(stored['details'])?.['codeShell'] : undefined;
     return {
       sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
       console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
-      slideOver: mergeSection(DEFAULT_UI_STATE.slideOver, stored['slideOver']),
+      slideOver: mergeSlideOver(stored['slideOver'], legacyCodeShell),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,

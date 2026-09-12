@@ -67,6 +67,7 @@ export function SlideOver({ label, width, onWidthChange, onClose, children }: Sl
 
   return (
     <aside
+      id="slide-over"
       data-testid="slide-over"
       aria-label={label}
       style={{ width: `${String(width)}px`, right: 'var(--wb-right-rail-width)' }}

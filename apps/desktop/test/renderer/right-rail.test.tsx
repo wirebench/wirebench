@@ -35,14 +35,22 @@ describe('RightRail', () => {
     renderRail();
 
     expect(useUiStore.getState().slideOver.open).toBe(false);
-    expect(screen.getByTestId('rail-code').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('rail-code').getAttribute('aria-expanded')).toBe('false');
 
     await user.click(screen.getByTestId('rail-code'));
     expect(useUiStore.getState().slideOver.open).toBe(true);
-    expect(screen.getByTestId('rail-code').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('rail-code').getAttribute('aria-expanded')).toBe('true');
 
     await user.click(screen.getByTestId('rail-code'));
     expect(useUiStore.getState().slideOver.open).toBe(false);
-    expect(screen.getByTestId('rail-code').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('rail-code').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('points `aria-controls` at the slide-over and carries no redundant `aria-pressed`', () => {
+    renderRail();
+
+    const rail = screen.getByTestId('rail-code');
+    expect(rail.getAttribute('aria-controls')).toBe('slide-over');
+    expect(rail.hasAttribute('aria-pressed')).toBe(false);
   });
 });

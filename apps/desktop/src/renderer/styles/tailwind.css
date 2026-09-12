@@ -50,7 +50,6 @@
   --spacing-status-bar: var(--wb-status-bar-height);
   --spacing-activity-bar: var(--wb-activity-bar-width);
   --spacing-right-rail: var(--wb-right-rail-width);
-  --spacing-slide-over: var(--wb-slide-over-width);
 }
 
 @layer components {

@@ -75,7 +75,8 @@ describe('ui persistence', () => {
     expect(result).toEqual({
       sidebar: { visible: false, view: 'history', size: 31, lastSize: DEFAULT_UI_STATE.sidebar.lastSize },
       console: { visible: false, activeTab: 'problems', size: 42, lastSize: DEFAULT_UI_STATE.console.lastSize },
-      slideOver: DEFAULT_UI_STATE.slideOver,
+      // Carried forward from the removed `details` slice; see ui-state-v4.test.tsx.
+      slideOver: { ...DEFAULT_UI_STATE.slideOver, codeShell: 'powershell' },
       theme: 'light',
       editorLineNumbers: false,
       editorLayout: { orientation: 'stacked', mode: 'tabs' },

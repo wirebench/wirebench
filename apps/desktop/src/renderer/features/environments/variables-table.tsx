@@ -5,7 +5,7 @@ import type { PropertyMapWire } from '../../../shared/wire-types.js';
 
 /**
  * What one variables table edits: the map, which names are disabled, and how to save each kind
- * of edit. Callback-shaped like `PropertyTable`, plus the Enabled column and its own testids —
+ * of edit. Callback-shaped per edit kind, plus the Enabled column and its own testids —
  * one component for Globals, Workspace, and every environment (workspace or project); Task 7
  * binds the same component to a project's own properties by passing a different target.
  */

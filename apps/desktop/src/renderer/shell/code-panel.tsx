@@ -16,15 +16,13 @@ import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { useUiStore } from '../state/ui.js';
+import type { CodeShell } from '../state/ui-state.js';
 
 /** Long enough that a burst of keystrokes is one IPC round trip, short enough to feel live. */
 const DEBOUNCE_MS = 300;
 
 /** Must match `REDACTED_MARKER` in `main/redact.ts` — the renderer may not import from main. */
 const REDACTED_MARKER = '<redacted>';
-
-/** Which shell the panel quotes its `curl` command for — a session-only choice, not persisted. */
-export type CodeShell = 'posix' | 'powershell';
 
 const SHELLS: readonly { readonly value: CodeShell; readonly label: string }[] = [
   { value: 'posix', label: 'POSIX shell' },
@@ -51,9 +49,10 @@ interface Generated {
 
 export function CodePanel() {
   const requestId = useCodePanelRequestId();
-  // The shell choice lives in this component, not in persisted ui-state: the slide-over hosts
-  // only the Code panel now, so there is no longer a tab selection to remember it alongside.
-  const [shell, setShell] = useState<CodeShell>('posix');
+  // Persisted on `slideOver.codeShell`: the slide-over hosts only the Code panel, so its shell
+  // choice is remembered there rather than in a per-tab slot.
+  const shell = useUiStore((state) => state.slideOver.codeShell);
+  const setShell = useUiStore((state) => state.setCodeShell);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const draft = useProjectStore((state) => (requestId === undefined ? undefined : state.requests[requestId]));
   // Main builds the command from `buildLiveSendInput` + `effectiveSendInput`, which resolve the

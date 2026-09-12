@@ -89,8 +89,42 @@ describe('ui-state v4 migration', () => {
         activeId: 'req-1',
       },
     });
-    // The new slice a v3 blob never had gets the default rather than being left undefined.
-    expect(result.slideOver).toEqual(DEFAULT_UI_STATE.slideOver);
+    // The new slice a v3 blob never had gets defaults, except `codeShell`, carried forward
+    // from the removed `details` slice (see the dedicated tests below).
+    expect(result.slideOver).toEqual({ ...DEFAULT_UI_STATE.slideOver, codeShell: 'powershell' });
+  });
+
+  it('carries a v3 blob’s `details.codeShell` forward into `slideOver.codeShell`', () => {
+    const storage = fakeStorage();
+    const payload = v3Payload() as { state: { details: { codeShell: string } } };
+    payload.state.details.codeShell = 'powershell';
+    storage.setItem(UI_STORAGE_KEY, JSON.stringify(payload));
+
+    const result = readUi(storage);
+
+    expect(result.slideOver.codeShell).toBe('powershell');
+  });
+
+  it('falls back to the default `codeShell` for a v3 blob with none stored', () => {
+    const storage = fakeStorage();
+    const payload = v3Payload() as { state: { details: Record<string, unknown> } };
+    delete payload.state.details['codeShell'];
+    storage.setItem(UI_STORAGE_KEY, JSON.stringify(payload));
+
+    const result = readUi(storage);
+
+    expect(result.slideOver.codeShell).toBe(DEFAULT_UI_STATE.slideOver.codeShell);
+  });
+
+  it('falls back to the default `codeShell` for a corrupt stored value', () => {
+    const storage = fakeStorage();
+    const payload = v3Payload() as { state: { details: { codeShell: unknown } } };
+    payload.state.details.codeShell = 42;
+    storage.setItem(UI_STORAGE_KEY, JSON.stringify(payload));
+
+    const result = readUi(storage);
+
+    expect(result.slideOver.codeShell).toBe(DEFAULT_UI_STATE.slideOver.codeShell);
   });
 
   it('rewrites a migrated v3 blob as v4 on the next write', () => {
@@ -108,7 +142,7 @@ describe('ui-state v4 migration', () => {
     const storage = fakeStorage();
     const state = {
       ...DEFAULT_UI_STATE,
-      slideOver: { open: true, width: 520 },
+      slideOver: { open: true, width: 520, codeShell: 'powershell' as const },
       sidebar: { ...DEFAULT_UI_STATE.sidebar, size: 24, lastSize: 24 },
     };
 
