@@ -16,7 +16,6 @@ a file keeps its meaning once it is out of the release page and sitting in a dow
 | macOS | `Wirebench-1.0.0-mac-universal.dmg`, `Wirebench-1.0.0-mac-x64.dmg`, `Wirebench-1.0.0-mac-arm64.dmg` |
 | macOS | the same three as `.zip`, which is what the updater downloads |
 | Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
-| Windows | `Wirebench-1.0.0-windows-setup.exe` — both architectures in one installer |
 | Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
 | Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
 | Linux | `wirebench-1.0.0.x86_64.rpm` |
@@ -30,6 +29,10 @@ segment) rather than the shape above. A GitHub release asset name is also its do
 `https://github.com/wirebench/wirebench/releases/download/v1.0.0/<name>` — so renaming an
 artifact after a release breaks any link to it. Auto-update is unaffected: `electron-updater`
 reads the names out of `latest*.yml`.
+
+Windows has no combined installer (`nsis.buildUniversalInstaller: false`): users pick `x64` or
+`arm64`, and `electron-updater` downloads the installer whose name contains the running
+architecture, so both names must keep their `${arch}` segment.
 
 `universal` is the download to point people at: it runs on both Macs. The `x64` (Intel) and
 `arm64` (Apple silicon) builds are there for anyone who knows which Mac they have and would
