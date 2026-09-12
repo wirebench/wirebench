@@ -211,6 +211,33 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
     expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('This environment · shadows Workspace');
   });
 
+  it('names the scope an enabled own value really shadows, skipping a definer that has it off', () => {
+    // Workspace defines `host` but has it off, so removing this row would fall through to
+    // Globals, not to Workspace — naming Workspace would promise a fallback that does not exist.
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: { host: 'here.test' },
+        inherited: [
+          scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
+          scope({ label: 'Globals', properties: { host: 'global.test' } }),
+        ],
+      }),
+    );
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('This environment · shadows Globals');
+  });
+
+  it('says an enabled own value shadows nothing when every scope defining the name has it off', () => {
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: { host: 'here.test' },
+        inherited: [scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] })],
+      }),
+    );
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('This environment');
+  });
+
   it('skips past an inherited scope that defines the name but disables it, per the precedence rule', () => {
     // The ordering trap: Workspace defines `host` but disables it, so it does not win — Globals
     // does. The engine drops a disabled name from its scope before the merge, so `global.test`
