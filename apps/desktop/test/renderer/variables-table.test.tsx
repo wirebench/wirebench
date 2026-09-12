@@ -213,25 +213,59 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
 
   it('skips past an inherited scope that defines the name but disables it, per the precedence rule', () => {
     // The ordering trap: Workspace defines `host` but disables it, so it does not win — Globals
-    // does, and that's who should be named both as the shadow target and the fallback target.
+    // does. The engine drops a disabled name from its scope before the merge, so `global.test`
+    // is what actually goes on the wire, and the row has to say so.
     renderTable(
       baseTarget({
         scopeLabel: 'This environment',
         properties: {},
-        disabled: ['host'],
         inherited: [
           scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
           scope({ label: 'Globals', properties: { host: 'global.test' } }),
         ],
       }),
     );
-    // `host` is not in this scope's own properties, so it renders as an Inherited row, owned by
-    // the nearest scope that defines it at all — Workspace — even though Workspace disables it.
-    expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('ws.test');
-    expect(screen.getByLabelText<HTMLInputElement>('Enable host').checked).toBe(false);
+    // `host` is not in this scope's own properties, so it renders as an Inherited row — resolved
+    // from Globals, because Workspace's copy is switched off and resolution continues past it.
+    expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('global.test');
+    expect(screen.getByLabelText<HTMLInputElement>('Enable host').checked).toBe(true);
     // `.at(-1)` would now be the add row's origin cell (empty, per stage 2) — the inherited row
     // is the only one shown, at index 0.
-    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Workspace');
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Globals · Workspace has it off');
+  });
+
+  it('offers to override the value that actually resolves, not the disabled one above it', () => {
+    // The override baseline is the resolving value: re-typing what the app already sends must
+    // not be mistaken for an edit and written back as a redundant override.
+    const onSet = vi.fn();
+    renderTable(
+      baseTarget({
+        properties: {},
+        onSet,
+        inherited: [
+          scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
+          scope({ label: 'Globals', properties: { host: 'global.test' } }),
+        ],
+      }),
+    );
+    const value = screen.getByLabelText('Value of host');
+    fireEvent.change(value, { target: { value: 'global.test' } });
+    fireEvent.blur(value);
+    expect(onSet).not.toHaveBeenCalled();
+  });
+
+  it('shows an inherited row every scope disables as off, with nothing resolving', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [
+          scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
+          scope({ label: 'Globals', properties: { host: 'global.test' }, disabled: ['host'] }),
+        ],
+      }),
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Enable host').checked).toBe(false);
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — no value resolves');
   });
 
   it('says a disabled own value falls through to the scope that would win', () => {

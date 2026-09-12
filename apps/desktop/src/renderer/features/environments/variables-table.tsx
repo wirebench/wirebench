@@ -78,6 +78,34 @@ function resolvingScope(name: string, chain: readonly InheritedScope[]): Inherit
   return chain.find((scope) => defines(scope, name) && !scope.disabled.includes(name));
 }
 
+/**
+ * What an inherited-only row resolves to: the scope that wins, the scope whose value is shown
+ * (the winner, or — when every definer disables the name — the nearest definer, so the row still
+ * has something to show and something to override), and the `Resolves from` caption.
+ *
+ * The caption names the *winner*, because the column is a claim about what goes on the wire. A
+ * nearer scope that defines the name but has it switched off is mentioned only to explain why
+ * resolution skipped past it.
+ */
+function inheritedOrigin(
+  name: string,
+  chain: readonly InheritedScope[],
+): { readonly owner: InheritedScope; readonly enabled: boolean; readonly origin: string } | undefined {
+  const definer = nearestDefining(name, chain);
+  if (definer === undefined) {
+    return undefined;
+  }
+  const winner = resolvingScope(name, chain);
+  if (winner === undefined) {
+    return { owner: definer, enabled: false, origin: 'Off — no value resolves' };
+  }
+  return {
+    owner: winner,
+    enabled: true,
+    origin: winner === definer ? winner.label : `${winner.label} · ${definer.label} has it off`,
+  };
+}
+
 /** The `Resolves from` text for a row defined in this scope's own `properties`. */
 function ownOrigin(params: {
   readonly scopeLabel: string;
@@ -250,8 +278,10 @@ interface InheritedRowProps {
   readonly name: string;
   readonly value: string;
   readonly enabled: boolean;
-  /** The scope that owns this value — named in the Enabled checkbox's title and the origin cell. */
+  /** The scope this row's value comes from — named in the Enabled checkbox's and value's titles. */
   readonly ownerLabel: string;
+  /** The `Resolves from` column's text — see {@link inheritedOrigin}. */
+  readonly origin: string;
   /**
    * Commits a typed value, promoting this name into an override of `ownerLabel`'s value in this
    * scope's own properties. Committing (Enter or blur, matching every other row) is the only way
@@ -266,7 +296,7 @@ interface InheritedRowProps {
  * until an override exists — but the value is editable: committing a value here promotes the row
  * to an override, written into this scope's own properties via `onCommitValue`.
  */
-function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue }: InheritedRowProps) {
+function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onCommitValue }: InheritedRowProps) {
   const [draftValue, setDraftValue] = useState(value);
 
   useEffect(() => {
@@ -322,7 +352,7 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue 
         />
       </td>
       <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
-        {ownerLabel}
+        {origin}
       </td>
       <td className="px-2 py-1" />
     </tr>
@@ -546,19 +576,21 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               </tr>
             )}
             {inheritedOnlyNames.map((name) => {
-              const owner = nearestDefining(name, inherited);
+              const resolved = inheritedOrigin(name, inherited);
               // `inheritedOnlyNames` was built from these same scopes, so a definer always exists.
-              if (owner === undefined) {
+              if (resolved === undefined) {
                 return null;
               }
+              const { owner, enabled, origin } = resolved;
               const ownerValue = owner.properties[name] ?? '';
               return (
                 <InheritedVariableRow
                   key={name}
                   name={name}
                   value={ownerValue}
-                  enabled={!owner.disabled.includes(name)}
+                  enabled={enabled}
                   ownerLabel={owner.label}
+                  origin={origin}
                   onCommitValue={(next) => {
                     if (next !== ownerValue) {
                       onSet(name, next);
