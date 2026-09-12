@@ -55,7 +55,10 @@ function useRevealWhenOpen(open: boolean): React.RefObject<HTMLLIElement | null>
 /** A stable empty list, so the view does not rerender while no workspace is open. */
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
 
-/** The Globals and Workspace rows: fixed scopes that only ever offer "Open". */
+/**
+ * The Globals and Workspace rows: fixed scopes, opened by a click. No context menu — *Open* was
+ * the only thing it ever offered, and the row itself now does that.
+ */
 function ScopeRow({
   kind,
   label,
@@ -71,37 +74,26 @@ function ScopeRow({
 }) {
   const ref = useRevealWhenOpen(open);
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
-        <li
-          ref={ref}
-          data-testid="environment-row"
-          data-kind={kind}
-          data-active="false"
-          data-open={open}
-          aria-current={open ? 'page' : undefined}
-          role="row"
-          tabIndex={0}
-          className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
-          onClick={onOpen}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              onOpen();
-            }
-          }}
-        >
-          <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-subtle" />
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-        </li>
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
-          <ContextMenu.Item className={ITEM_CLASS} onSelect={onOpen}>
-            Open
-          </ContextMenu.Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+    <li
+      ref={ref}
+      data-testid="environment-row"
+      data-kind={kind}
+      data-active="false"
+      data-open={open}
+      aria-current={open ? 'page' : undefined}
+      role="row"
+      tabIndex={0}
+      className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          onOpen();
+        }
+      }}
+    >
+      <Icon size={13} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </li>
   );
 }
 
@@ -215,20 +207,13 @@ function EnvironmentRow({
             event.preventDefault();
           }}
         >
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              openEnvironmentTab({ kind: 'environment', id: environment.id });
-            }}
-          >
-            Open
-          </ContextMenu.Item>
+          {/* No *Open*: a click on the row already does that. What is left splits in two —
+              which environment resolves on Send, then the entries that copy, rename or destroy
+              this one, kept away from anything reached for by reflex. */}
           <ContextMenu.Item className={ITEM_CLASS} onSelect={setActive}>
             {active ? 'Deactivate' : 'Set active'}
           </ContextMenu.Item>
-          <ContextMenu.Item className={ITEM_CLASS} onSelect={onStartRename}>
-            Rename
-          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-hairline" />
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
@@ -236,6 +221,9 @@ function EnvironmentRow({
             }}
           >
             Duplicate
+          </ContextMenu.Item>
+          <ContextMenu.Item className={ITEM_CLASS} onSelect={onStartRename}>
+            Rename
           </ContextMenu.Item>
           <ContextMenu.Item className={ITEM_CLASS} onSelect={onDelete}>
             Delete

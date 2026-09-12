@@ -132,8 +132,7 @@ test.describe('secrets', () => {
 
     const requestRow = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
     await expect(requestRow).toBeVisible({ timeout: 20_000 });
-    await requestRow.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+    await requestRow.click();
     await expect(page.locator('[data-testid="request-editor"]')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('[data-testid="request-send"]').click();

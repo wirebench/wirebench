@@ -156,8 +156,8 @@ export async function createProjectWithFixture(
 export async function openFirstRequest(page: Page): Promise<void> {
   const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
-  await row.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  // A single click opens it; the context menu no longer carries an *Open* that says so twice.
+  await row.click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
 }
 

@@ -40,8 +40,7 @@ async function envelopeText(page: Page): Promise<string> {
 async function openRequest(page: Page, index: number): Promise<void> {
   const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).nth(index);
   await expect(row).toBeVisible({ timeout: 20_000 });
-  await row.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  await row.click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
 }
 

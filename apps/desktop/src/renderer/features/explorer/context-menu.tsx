@@ -154,8 +154,9 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         void recreateRequest(node.requestId, mode);
       }
     };
+    // No *Open*: a single click on the row already opens it, so the entry only restated what
+    // the row's own default does.
     return groups(
-      [{ key: 'open', label: 'Open', run: () => explorerActions.openRequest(node.requestId) }],
       [
         {
           key: 'recreate',

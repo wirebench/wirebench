@@ -81,7 +81,6 @@ describe('explorerMenuItems', () => {
       'Copy SOAPAction',
     ]);
     expect(explorerMenuItems(node({ kind: 'request', requestId: 'r1' })).map((item) => item.label)).toEqual([
-      'Open',
       'Recreate request (keep values)',
       'Recreate (discard values)',
       'Create empty',
@@ -96,10 +95,14 @@ describe('explorerMenuItems', () => {
     expect(explorerMenuItems(node({ kind: 'operations' }))).toHaveLength(0);
   });
 
-  it('groups a request menu so opening, recreating and naming are each their own block', () => {
+  it('groups a request menu so recreating and naming are each their own block, with no Open', () => {
     expect(
       explorerMenuGroups(node({ kind: 'request', requestId: 'r1' })).map((group) => group.map((i) => i.key)),
-    ).toEqual([['open'], ['recreate', 'recreate-discard', 'recreate-empty'], ['clone', 'rename', 'delete']]);
+    ).toEqual([
+      // No 'open': a single click on the row already opens the request.
+      ['recreate', 'recreate-discard', 'recreate-empty'],
+      ['clone', 'rename', 'delete'],
+    ]);
   });
 
   it('never draws a rule against nothing: an internal project has no environments group', () => {

@@ -71,28 +71,28 @@ describe('EnvironmentsView', () => {
     expect(rows[3]?.dataset['active']).toBe('false');
   });
 
-  it('opens the Globals editor tab from the Open menu item', async () => {
+  it('opens the Globals editor tab from the row itself', () => {
     setUp();
-    fireEvent.contextMenu(screen.getAllByTestId('environment-row')[0]!);
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open' }));
+    fireEvent.click(screen.getAllByTestId('environment-row')[0]!);
     expect(useEditorsStore.getState().tabs).toContainEqual(
       expect.objectContaining({ id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' }),
     );
     expect(useEditorsStore.getState().activeId).toBe('env:globals');
   });
 
-  it('offers only Open on the Globals and Workspace rows', async () => {
+  it('gives the Globals and Workspace rows no menu at all — a click is all they offer', async () => {
     setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[1]!);
-    const menuItems = await screen.findAllByRole('menuitem');
-    expect(menuItems.map((item) => item.textContent)).toEqual(['Open']);
+    // `findAllByRole` would wait for a menu that is never coming, so assert the absence.
+    await Promise.resolve();
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
   });
 
-  it('offers the full action set on an environment row', async () => {
+  it('drops Open from an environment row, since a click already opens it', async () => {
     setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[3]!);
     const menuItems = await screen.findAllByRole('menuitem');
-    expect(menuItems.map((item) => item.textContent)).toEqual(['Open', 'Set active', 'Rename', 'Duplicate', 'Delete']);
+    expect(menuItems.map((item) => item.textContent)).toEqual(['Set active', 'Duplicate', 'Rename', 'Delete']);
   });
 
   it('deactivates the active environment from its context menu', async () => {
