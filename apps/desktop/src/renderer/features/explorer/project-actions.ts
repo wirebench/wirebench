@@ -38,11 +38,11 @@ export const projectRowActions = {
     const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const match = environments.find((candidate) => candidate.slug === active?.slug) ?? environments[0];
     if (match !== undefined) {
-      openEnvironmentTab(match.id);
+      openEnvironmentTab({ kind: 'environment', id: match.id });
       return;
     }
     const created = await store.addEnvironment(projectId, active?.name ?? 'New environment');
-    openEnvironmentTab(created);
+    openEnvironmentTab({ kind: 'environment', id: created });
   },
 
   /** Enters inline rename mode on the project's row. */

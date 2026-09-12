@@ -98,11 +98,11 @@ function EnvironmentRow({
           tabIndex={0}
           className={`${ROW_CLASS} ${active ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'}`}
           onDoubleClick={() => {
-            openEnvironmentTab(environment.id);
+            openEnvironmentTab({ kind: 'environment', id: environment.id });
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !renaming) {
-              openEnvironmentTab(environment.id);
+              openEnvironmentTab({ kind: 'environment', id: environment.id });
             }
           }}
         >
@@ -168,7 +168,7 @@ function EnvironmentRow({
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              openEnvironmentTab(environment.id);
+              openEnvironmentTab({ kind: 'environment', id: environment.id });
             }}
           >
             Open
@@ -206,7 +206,6 @@ export function EnvironmentsView() {
   const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
   const hasWorkspace = useWorkspaceStore((state) => state.workspace !== null);
   const mutate = useWorkspaceStore((state) => state.mutate);
-  const showDetails = useUiStore((state) => state.showDetails);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
 
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
@@ -225,7 +224,7 @@ export function EnvironmentsView() {
             void mutate({ kind: 'add-workspace-environment', name: nextEnvironmentName(environments) }).then(
               (result) => {
                 if (result.createdEnvironmentId !== undefined) {
-                  openEnvironmentTab(result.createdEnvironmentId);
+                  openEnvironmentTab({ kind: 'environment', id: result.createdEnvironmentId });
                 }
               },
             );
@@ -244,7 +243,7 @@ export function EnvironmentsView() {
           label="Globals"
           icon={Globe}
           onOpen={() => {
-            showDetails('globals');
+            openEnvironmentTab({ kind: 'globals' });
           }}
         />
         <ScopeRow
@@ -252,7 +251,7 @@ export function EnvironmentsView() {
           label="Workspace"
           icon={Layers}
           onOpen={() => {
-            showDetails('workspace');
+            openEnvironmentTab({ kind: 'workspace' });
           }}
         />
         <li role="separator" aria-orientation="horizontal" className="my-1 h-px bg-hairline" />

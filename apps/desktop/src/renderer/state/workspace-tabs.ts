@@ -52,6 +52,15 @@ function titleFor(tab: PersistedTab): string | undefined {
     case 'interface':
       return projects.interfaces[tab.id]?.name;
     case 'environment': {
+      // 'globals' and 'workspace' are sentinel ids for the two fixed scopes that are not a real
+      // environment — see `environment-actions.ts`'s `targetId`. Neither is ever a real
+      // environment's id (those are UUIDs), so this check never shadows a real one.
+      if (tab.id === 'globals') {
+        return 'Globals';
+      }
+      if (tab.id === 'workspace') {
+        return 'Workspace';
+      }
       const workspace = useWorkspaceStore.getState().workspace;
       const environment =
         workspace?.environments.find((candidate) => candidate.id === tab.id) ?? selectEnvironment(projects, tab.id);

@@ -102,7 +102,7 @@ export function EnvSwitcher() {
               // list alone does not show its contents.
               const target = activeId ?? environments[0]?.id;
               if (target !== undefined) {
-                openEnvironmentTab(target);
+                openEnvironmentTab({ kind: 'environment', id: target });
               }
             }}
           >

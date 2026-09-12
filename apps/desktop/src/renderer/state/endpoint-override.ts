@@ -6,9 +6,10 @@
  * project opened inside a workspace still owns its own deployment story.
  *
  * `effectiveEndpointSource` below turns the same precedence into a label rather than a URL —
- * `environment-grid.tsx` re-exports it for the grid's source column. `project-endpoint.ts`
- * (`selectRequestEndpoint`) uses `resolveEndpointOverride` directly for the URL a request is
- * actually sent to. Either way there is exactly one precedence implementation in the renderer.
+ * `features/environments/endpoints-table.tsx` uses it for the endpoints table's source column.
+ * `project-endpoint.ts` (`selectRequestEndpoint`) uses `resolveEndpointOverride` directly for
+ * the URL a request is actually sent to. Either way there is exactly one precedence
+ * implementation in the renderer.
  */
 
 /** Which layer an endpoint override came from. */

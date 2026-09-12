@@ -95,7 +95,12 @@ describe('per-workspace UI state', () => {
     const editors = useEditorsStore.getState();
     editors.open({ id: 'request:r1', kind: 'request', title: 'Add', requestId: 'r1' });
     editors.open({ id: interfaceTabId('i1'), kind: 'interface', title: 'Calculator', interfaceId: 'i1' });
-    editors.open({ id: environmentTabId('e1'), kind: 'environment', title: 'Dev', environmentId: 'e1' });
+    editors.open({
+      id: environmentTabId({ kind: 'environment', id: 'e1' }),
+      kind: 'environment',
+      title: 'Dev',
+      environmentId: 'e1',
+    });
     editors.open({ id: 'history:h1', kind: 'history', title: 'Sent', historyId: 'h1' });
     editors.open({ id: 'preferences', kind: 'preferences', title: 'Preferences' });
 
@@ -135,7 +140,11 @@ describe('per-workspace UI state', () => {
     restoreWorkspaceTabs('w1');
 
     const { tabs, activeId } = useEditorsStore.getState();
-    expect(tabs.map((tab) => tab.id)).toEqual(['request:r1', interfaceTabId('i1'), environmentTabId('we1')]);
+    expect(tabs.map((tab) => tab.id)).toEqual([
+      'request:r1',
+      interfaceTabId('i1'),
+      environmentTabId({ kind: 'environment', id: 'we1' }),
+    ]);
     expect(tabs.map((tab) => tab.title)).toEqual(['Add', 'Calculator', 'Dev']);
     expect(activeId).toBe(interfaceTabId('i1'));
     expect(useUiStore.getState().sidebar.view).toBe('wss');

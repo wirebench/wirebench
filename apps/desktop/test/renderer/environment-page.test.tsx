@@ -1,0 +1,196 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
+import { useGlobalsStore } from '../../src/renderer/state/globals.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import type { EnvironmentWire, ProjectWire, WorkspaceEnvironmentWire } from '../../src/shared/wire-types.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
+
+function renderPage(target: Parameters<typeof EnvironmentPage>[0]['target']) {
+  return render(
+    <TooltipPrimitive.Provider>
+      <EnvironmentPage target={target} />
+    </TooltipPrimitive.Provider>,
+  );
+}
+
+afterEach(() => {
+  cleanup();
+  useWorkspaceStore.setState({ workspace: null });
+  useProjectStore.getState().reset();
+  useGlobalsStore.setState({ properties: {}, disabled: [] });
+});
+
+describe('EnvironmentPage — globals', () => {
+  it('shows the fixed Globals name and its properties', () => {
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
+    renderPage({ kind: 'globals' });
+    expect(screen.getByText('Globals')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
+  });
+
+  it('has no editable name and no Active toggle', () => {
+    renderPage({ kind: 'globals' });
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+    expect(screen.queryByTestId('environment-active')).toBeNull();
+  });
+
+  it('saves an edit through globals.set', () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [], set });
+    renderPage({ kind: 'globals' });
+    const value = screen.getByLabelText('Value of token');
+    fireEvent.change(value, { target: { value: 'xyz' } });
+    fireEvent.blur(value);
+    expect(set).toHaveBeenCalledWith('token', 'xyz');
+  });
+});
+
+describe('EnvironmentPage — workspace', () => {
+  it('shows the fixed Workspace name and its properties', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
+    renderPage({ kind: 'workspace' });
+    expect(screen.getByText('Workspace')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('one.test');
+  });
+
+  it('saves an edit through a set-workspace-property mutation', () => {
+    const mutate = vi.fn().mockResolvedValue({});
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ properties: { host: 'one.test' } }),
+      mutate,
+    });
+    renderPage({ kind: 'workspace' });
+    const value = screen.getByLabelText('Value of host');
+    fireEvent.change(value, { target: { value: 'two.test' } });
+    fireEvent.blur(value);
+    expect(mutate).toHaveBeenCalledWith({ kind: 'set-workspace-property', name: 'host', value: 'two.test' });
+  });
+});
+
+describe('EnvironmentPage — a workspace environment', () => {
+  const environment: WorkspaceEnvironmentWire = {
+    id: 'e1',
+    name: 'uat',
+    slug: 'uat',
+    order: 0,
+    endpoints: {},
+    properties: { host: 'one.test' },
+    disabled: [],
+  };
+
+  function setUp(env: WorkspaceEnvironmentWire = environment, activeEnvironmentId?: string) {
+    const mutate = vi.fn((change: { kind: string; environmentId?: string; patch?: object }) => {
+      if (change.kind === 'update-workspace-environment') {
+        const current = useWorkspaceStore.getState().workspace;
+        if (current !== null) {
+          const environments = current.environments.map((candidate) =>
+            candidate.id === change.environmentId ? { ...candidate, ...change.patch } : candidate,
+          );
+          useWorkspaceStore.setState({ workspace: { ...current, environments } });
+        }
+      }
+      return Promise.resolve({});
+    });
+    const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [env],
+        ...(activeEnvironmentId !== undefined ? { activeEnvironmentId } : {}),
+      }),
+      mutate: mutate as unknown as ReturnType<typeof useWorkspaceStore.getState>['mutate'],
+      setActiveEnvironment,
+    });
+    renderPage({ kind: 'environment', id: env.id });
+    return { mutate, setActiveEnvironment };
+  }
+
+  it('shows an editable name and the Active toggle', () => {
+    setUp();
+    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
+    expect(screen.getByTestId('environment-active')).toBeTruthy();
+  });
+
+  it('renames on blur', async () => {
+    const { mutate } = setUp();
+    const name = screen.getByLabelText('Environment name');
+    fireEvent.change(name, { target: { value: 'staging' } });
+    fireEvent.blur(name);
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { name: 'staging' },
+      });
+    });
+  });
+
+  it('activates through the workspace store when toggled on', () => {
+    const { setActiveEnvironment } = setUp(environment, undefined);
+    fireEvent.click(screen.getByTestId('environment-active'));
+    expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
+  });
+
+  it('deactivates through the workspace store when toggled off', () => {
+    const { setActiveEnvironment } = setUp(environment, 'e1');
+    fireEvent.click(screen.getByTestId('environment-active'));
+    expect(setActiveEnvironment).toHaveBeenCalledWith(null);
+  });
+
+  it('toggles a variable disabled and back through the disabled list', async () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByLabelText('Enable host'));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { disabled: ['host'] },
+      });
+    });
+  });
+});
+
+describe("EnvironmentPage — a linked project's own environment", () => {
+  const environment: EnvironmentWire = {
+    id: 'e1',
+    name: 'uat',
+    slug: 'uat',
+    order: 0,
+    endpoints: {},
+    properties: { host: 'one.test' },
+    disabled: ['host'],
+  };
+
+  function setUp() {
+    const updateEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      projects: { p1: { id: 'p1', name: 'Demo', environments: [environment] } as unknown as ProjectWire },
+      projectOf: { e1: 'p1' },
+      updateEnvironment,
+    });
+    renderPage({ kind: 'environment', id: 'e1' });
+    return { updateEnvironment };
+  }
+
+  it('shows an editable name too', () => {
+    setUp();
+    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
+  });
+
+  it("shows the disabled state read-only — there is no mutation for a project environment's disabled list", () => {
+    setUp();
+    const checkbox = screen.getByLabelText<HTMLInputElement>('Enable host');
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(true);
+  });
+
+  it('saves a property edit through the project store', () => {
+    const { updateEnvironment } = setUp();
+    const value = screen.getByLabelText('Value of host');
+    fireEvent.change(value, { target: { value: 'two.test' } });
+    fireEvent.blur(value);
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { properties: { host: 'two.test' } });
+  });
+});

@@ -192,6 +192,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeProjectProperty: (projectId: string, name: string) => Promise<void>;
   /** Toggles one project property's disabled flag without removing it. */
   readonly setProjectPropertyEnabled: (projectId: string, name: string, enabled: boolean) => Promise<void>;
+  /** Switches a project's active environment; `null` deactivates. Mirrors the workspace's own. */
+  readonly setActiveEnvironment: (projectId: string, environmentId: string | null) => Promise<void>;
   /**
    * Attaches a file to a request. Only the path crosses IPC: main stats and reads it, and with
    * `copyToCache` (the default) content-addresses the bytes into the project's `attachments/`
@@ -844,6 +846,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     setProjectPropertyEnabled: async (projectId, name, enabled) => {
       await mutate(projectId, { kind: 'set-project-property-enabled', name, enabled });
+    },
+
+    setActiveEnvironment: async (projectId, environmentId) => {
+      await mutate(projectId, { kind: 'set-active-environment', environmentId });
     },
 
     addAttachment: async (requestId, path, options) => {

@@ -72,11 +72,14 @@ describe('EnvironmentsView', () => {
     expect(rows[3]?.dataset['active']).toBe('false');
   });
 
-  it('opens the Globals details tab from the Open menu item', async () => {
+  it('opens the Globals editor tab from the Open menu item', async () => {
     setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[0]!);
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Open' }));
-    expect(useUiStore.getState().details).toMatchObject({ tab: 'globals', visible: true });
+    expect(useEditorsStore.getState().tabs).toContainEqual(
+      expect.objectContaining({ id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' }),
+    );
+    expect(useEditorsStore.getState().activeId).toBe('env:globals');
   });
 
   it('offers only Open on the Globals and Workspace rows', async () => {
