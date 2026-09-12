@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequestPane } from '../../src/renderer/features/request-editor/request-pane.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
@@ -72,5 +73,43 @@ describe('RequestPane external replacement', () => {
       expect(onEnvelopeChange).toHaveBeenCalledWith(typedAgain);
     });
     expect(screen.getByLabelText('Request envelope XML')).toHaveProperty('value', typedAgain);
+  });
+});
+
+describe('RequestPane save shortcut', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  // The editor area renders one RequestEditor for whichever tab is in front, so switching tabs
+  // re-renders this pane with a new `requestId` rather than mounting a new Monaco editor. The
+  // ⌘S command is bound once, on mount — it must still save the tab now in front.
+  it('saves the request now in front after switching tabs, not the one the editor mounted with', async () => {
+    const saveRequest = vi.fn<(requestId: string) => Promise<void>>(() => Promise.resolve());
+    useProjectStore.setState({ saveRequest });
+    const { rerender } = render(
+      <RequestPane {...PANE_PROPS} envelopeXml="<first/>" onEnvelopeChange={vi.fn()} onSend={vi.fn()} />,
+    );
+
+    rerender(
+      <RequestPane
+        {...PANE_PROPS}
+        requestId="req-2"
+        envelopeXml="<second/>"
+        onEnvelopeChange={vi.fn()}
+        onSend={vi.fn()}
+      />,
+    );
+    const editor = screen.getByLabelText('Request envelope XML');
+    editor.focus();
+    await userEvent.keyboard('{Meta>}s{/Meta}');
+
+    expect(saveRequest).toHaveBeenCalledTimes(1);
+    expect(saveRequest).toHaveBeenCalledWith('req-2');
   });
 });

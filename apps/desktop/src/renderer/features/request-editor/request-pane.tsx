@@ -104,6 +104,13 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sendRef = useRef(onSend);
   sendRef.current = onSend;
+  // Monaco runs `onMount` once per editor, and switching tabs re-renders this pane with another
+  // request rather than mounting a new editor, so the commands bound there read these refs —
+  // never the props they closed over — or ⌘S keeps saving the tab the editor first opened on.
+  const requestIdRef = useRef(requestId);
+  requestIdRef.current = requestId;
+  const interfaceIdRef = useRef(interfaceId);
+  interfaceIdRef.current = interfaceId;
   const lineNumbers = useUiStore((state) => state.editorLineNumbers);
   const exchange = useExchangesStore((state) => state.byRequest[requestId]?.exchange);
   const rawRequestBase64 = exchange?.http.rawRequestBase64;
@@ -224,7 +231,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       // envelope rather than what is on screen.
       editor.addCommand(SAVE_KEYBINDING, () => {
         flush();
-        void useProjectStore.getState().saveRequest(requestId);
+        void useProjectStore.getState().saveRequest(requestIdRef.current);
       });
       editor.addCommand(FORMAT_KEYBINDING, () => {
         formatAndCommit();
@@ -233,7 +240,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         gotoLine(editor);
       });
       editor.addCommand(GOTO_DEFINITION_KEYBINDING, () => {
-        void goToSchemaDefinition(editor, interfaceId);
+        void goToSchemaDefinition(editor, interfaceIdRef.current);
       });
       editor.addCommand(NEXT_VALUE_KEYBINDING, () => {
         moveToAdjacentValue('next');
@@ -254,7 +261,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           }
           const position = event.target.position;
           if (position !== null && position !== undefined) {
-            void goToSchemaDefinition(editor, interfaceId, position);
+            void goToSchemaDefinition(editor, interfaceIdRef.current, position);
           }
         });
       }
@@ -283,7 +290,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         });
       }
     },
-    [flush, formatAndCommit, interfaceId, local, requestId],
+    [flush, formatAndCommit, local],
   );
 
   // The outline writes back through the very same path as typing: apply the edit to the current

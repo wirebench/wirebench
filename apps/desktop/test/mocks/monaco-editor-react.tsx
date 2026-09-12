@@ -5,13 +5,13 @@ import { useEffect, useRef } from 'react';
  *
  * Monaco needs real layout, `matchMedia`, and workers, none of which jsdom provides, so the
  * component tests swap it for this. It keeps the two behaviours the request editor actually
- * depends on: `value`/`onChange` round-tripping, and the ⌘⏎ keybinding registered in `onMount`.
+ * depends on: `value`/`onChange` round-tripping, and the ⌘⏎ / ⌘S keybindings registered in `onMount`.
  */
 
 /** The subset of the Monaco API `@monaco-editor/react` hands to `onMount`, with real values. */
 export const fakeMonaco = {
   KeyMod: { CtrlCmd: 2048, Shift: 1024 },
-  KeyCode: { Enter: 3, KeyF: 33 },
+  KeyCode: { Enter: 3, KeyF: 33, KeyS: 49 },
 };
 
 /** Must match `editor/monaco.ts`'s `SEND_KEYBINDING`. */
@@ -19,6 +19,9 @@ const SEND_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.Enter;
 
 /** Must match `editor/monaco.ts`'s `FORMAT_KEYBINDING`. */
 const FORMAT_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyMod.Shift | fakeMonaco.KeyCode.KeyF;
+
+/** Must match `editor/monaco.ts`'s `SAVE_KEYBINDING`. */
+const SAVE_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.KeyS;
 
 type Handler = () => void;
 
@@ -73,6 +76,12 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       onKeyDown={(event) => {
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
           const handler = commands.current.get(SEND_KEYBINDING);
+          if (handler !== undefined) {
+            event.preventDefault();
+            handler();
+          }
+        } else if (event.key === 's' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+          const handler = commands.current.get(SAVE_KEYBINDING);
           if (handler !== undefined) {
             event.preventDefault();
             handler();
