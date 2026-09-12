@@ -13,7 +13,8 @@ maintenance tooling), `fixtures` (WSDL/XSD test material), `docs`.
 
 ## The gate
 
-`pnpm check` must be green before every commit, and it is what CI runs on macOS, Windows and Linux:
+`pnpm check` must be green before every commit. CI runs it on Linux; macOS and Windows run the
+OS-sensitive part, `pnpm check:tests` (typecheck + tests + perf gates):
 
 ```
 pnpm check        # lint + typecheck + wsi:docs --check + contrast:check + check:doc-paths + test + test:perf

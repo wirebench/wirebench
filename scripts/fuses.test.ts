@@ -16,9 +16,12 @@ describe('electronBinaryPath', () => {
     );
   });
 
-  it('is the lower-cased, dash-joined name on Linux', () => {
+  it('is the packager-reported executable name on Linux, else the lower-cased product name', () => {
     expect(electronBinaryPath('/out/linux-unpacked', 'linux', 'Wirebench')).toBe(
       join('/out/linux-unpacked', 'wirebench'),
+    );
+    expect(electronBinaryPath('/out/linux-unpacked', 'linux', 'Wirebench', '@wirebenchdesktop')).toBe(
+      join('/out/linux-unpacked', '@wirebenchdesktop'),
     );
   });
 });

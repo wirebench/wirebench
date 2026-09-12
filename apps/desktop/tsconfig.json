@@ -3,6 +3,7 @@
   "compilerOptions": {
     "composite": false,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "verbatimModuleSyntax": true,
@@ -13,5 +14,5 @@
       "@shared/*": ["src/shared/*"]
     }
   },
-  "include": ["src/**/*", "test/**/*", "electron.vite.config.ts"]
+  "include": ["src/**/*", "test/**/*", "electron.vite.config.ts", "after-pack.ts"]
 }

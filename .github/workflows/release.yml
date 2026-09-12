@@ -1,6 +1,6 @@
 name: Release
 
-# Tag-driven: `git tag v0.1.0 && git push --tags` builds the three OS artifact sets and
+# Tag-driven: `git tag v1.0.0 && git push --tags` builds the three OS artifact sets and
 # collects them into a *draft* GitHub Release. Nothing is published automatically — a human
 # reviews the draft, checks the artifacts, and presses publish.
 on:
@@ -19,7 +19,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The same gate every push has to pass; a tag is not an excuse to ship something red. It runs
+  # once — the three packaging jobs wait for it rather than each repeating it.
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
   build:
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -46,9 +64,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # The same gate every push has to pass; a tag is not an excuse to ship something red.
-      - run: pnpm check
-
       # rpm packaging needs rpmbuild, which the Ubuntu runner does not ship with.
       - name: Install rpm tooling (Linux)
         if: runner.os == 'Linux'
@@ -71,7 +86,14 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           # Never publish from the build job; the release job below attaches the artifacts.
           GH_TOKEN: ''
-        run: pnpm ${{ matrix.script }}
+        # A secret that is not configured arrives as an empty string, and electron-builder
+        # treats an empty `CSC_LINK` as a certificate path (resolving to the project directory,
+        # "not a file") rather than as absent — so anything empty is unset before packaging.
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          pnpm ${{ matrix.script }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

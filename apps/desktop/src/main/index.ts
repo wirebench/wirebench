@@ -150,6 +150,12 @@ const workspaceService = new WorkspaceService({
   },
 });
 
+// The product name, set before `ready` so the macOS application menu (`role: 'appMenu'`) and
+// the About panel read "Wirebench" in development too. A packaged bundle already carries it as
+// `productName` (CFBundleName); without this, a `pnpm dev` run shows Electron's own name.
+app.setName('Wirebench');
+app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: app.getVersion() });
+
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
   registerAppProtocol();
