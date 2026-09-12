@@ -262,7 +262,7 @@ export function registerRequestCommands(): void {
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
-      ui().showDetails('code');
+      ui().openCode();
     },
   });
 }

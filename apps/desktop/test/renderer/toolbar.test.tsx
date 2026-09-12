@@ -294,12 +294,11 @@ describe('RequestToolbar actions', () => {
     expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
   });
 
-  it('Show code opens the Details panel on its Code tab', async () => {
-    useUiStore.getState().toggleDetails();
+  it('Show code opens the Code slide-over', async () => {
     renderToolbar();
 
     await userEvent.click(screen.getByTestId('request-code'));
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });

@@ -24,13 +24,15 @@ import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
+import { CodePanel } from './code-panel.js';
 import { CommandPalette } from './command-palette.js';
 import type { PaletteMode } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
-import { DetailsPanel } from './details-panel.js';
 import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
+import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
+import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
 
@@ -45,8 +47,9 @@ function asPercentage(setSize: (size: number) => void) {
 }
 
 /**
- * The IDE shell: title bar, activity bar, sidebar, editor area, console, details, status bar.
- * Owns the palette's open state and the one keydown listener; every region below is presentational.
+ * The IDE shell: title bar, activity bar, sidebar, editor area, console, right rail (with its
+ * Code slide-over), status bar. Owns the palette's open state and the one keydown listener;
+ * every region below is presentational.
  */
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -55,14 +58,15 @@ export function AppShell() {
 
   const sidebar = useUiStore((state) => state.sidebar);
   const consoleState = useUiStore((state) => state.console);
-  const details = useUiStore((state) => state.details);
+  const slideOver = useUiStore((state) => state.slideOver);
   const theme = useUiStore((state) => state.theme);
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorLayout = useUiStore((state) => state.editorLayout);
   const selection = useUiStore((state) => state.selection);
   const setSidebarSize = useUiStore((state) => state.setSidebarSize);
   const setConsoleSize = useUiStore((state) => state.setConsoleSize);
-  const setDetailsSize = useUiStore((state) => state.setDetailsSize);
+  const setSlideOverWidth = useUiStore((state) => state.setSlideOverWidth);
+  const closeCode = useUiStore((state) => state.closeCode);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
@@ -111,10 +115,10 @@ export function AppShell() {
   const context: CommandContext = useMemo(
     () => ({
       platform,
-      ui: { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout },
+      ui: { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout },
       selection,
     }),
-    [platform, sidebar, consoleState, details, theme, editorLineNumbers, editorLayout, selection],
+    [platform, sidebar, consoleState, slideOver, theme, editorLineNumbers, editorLayout, selection],
   );
   useKeybindings(context);
 
@@ -168,13 +172,13 @@ export function AppShell() {
             <WorkspacePicker />
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1">
+          <div className="relative flex min-h-0 flex-1">
             <ActivityBar platform={platform} />
 
             <Group
               // Panels are added and removed as regions are toggled; keying the group on which
               // are mounted lets it recompute its constraints instead of reconciling across shapes.
-              key={`${String(sidebar.visible)}-${String(details.visible)}`}
+              key={String(sidebar.visible)}
               orientation="horizontal"
               className="flex min-w-0 flex-1"
             >
@@ -215,22 +219,14 @@ export function AppShell() {
                   )}
                 </Group>
               </Panel>
-
-              {details.visible && (
-                <>
-                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
-                  <Panel
-                    id="details-pane"
-                    defaultSize={`${String(details.size)}%`}
-                    minSize="12%"
-                    maxSize="40%"
-                    onResize={asPercentage(setDetailsSize)}
-                  >
-                    <DetailsPanel />
-                  </Panel>
-                </>
-              )}
             </Group>
+
+            <RightRail platform={platform} />
+            {slideOver.open && (
+              <SlideOver label="Code" width={slideOver.width} onWidthChange={setSlideOverWidth} onClose={closeCode}>
+                <CodePanel />
+              </SlideOver>
+            )}
           </div>
         )}
 

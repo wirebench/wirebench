@@ -14,7 +14,7 @@ export const COMMAND_IDS = [
   'palette.quickOpen',
   'view.toggleSidebar',
   'view.toggleConsole',
-  'view.toggleDetails',
+  'view.toggleCode',
   'view.showExplorer',
   'view.showEnvironments',
   'view.showSearch',

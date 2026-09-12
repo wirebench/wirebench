@@ -121,10 +121,11 @@ describe('projectRowActions', () => {
     expect(locateProject).toHaveBeenCalledWith({ projectId: 'p1' });
   });
 
-  it('shows a project’s settings in the details panel, on the selected project', () => {
+  it('shows a project’s settings by selecting it and opening its tab', () => {
     projectRowActions.settings('p1');
 
     expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'selection' });
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toContain('project:p1');
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 });

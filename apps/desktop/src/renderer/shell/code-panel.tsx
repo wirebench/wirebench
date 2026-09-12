@@ -1,28 +1,30 @@
 /**
- * The Details panel's Code tab: the `curl` command that would send the request the user is
+ * The Code slide-over's body: the `curl` command that would send the request the user is
  * looking at, regenerated as they edit it. Main owns the generation (`request.curl`, the same
  * builder `request.send` uses), so what is shown is what would actually go on the wire — and
  * is redacted by main unless "Show secrets" is on.
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '../../components/button.js';
-import { showToast } from '../../components/toast.js';
-import { ImportCurlDialog } from '../request-editor/import-curl-dialog.js';
-import { useEditorsStore } from '../../state/editors.js';
-import { useGlobalsStore } from '../../state/globals.js';
-import { ipc } from '../../state/ipc-client.js';
-import { useProjectStore } from '../../state/project.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
-import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
-import { useUiStore } from '../../state/ui.js';
-import type { CodeShell } from '../../state/ui-state.js';
+import { Button } from '../components/button.js';
+import { showToast } from '../components/toast.js';
+import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.js';
+import { useEditorsStore } from '../state/editors.js';
+import { useGlobalsStore } from '../state/globals.js';
+import { ipc } from '../state/ipc-client.js';
+import { useProjectStore } from '../state/project.js';
+import { useWorkspaceStore } from '../state/workspace.js';
+import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
+import { useUiStore } from '../state/ui.js';
 
 /** Long enough that a burst of keystrokes is one IPC round trip, short enough to feel live. */
 const DEBOUNCE_MS = 300;
 
 /** Must match `REDACTED_MARKER` in `main/redact.ts` — the renderer may not import from main. */
 const REDACTED_MARKER = '<redacted>';
+
+/** Which shell the panel quotes its `curl` command for — a session-only choice, not persisted. */
+export type CodeShell = 'posix' | 'powershell';
 
 const SHELLS: readonly { readonly value: CodeShell; readonly label: string }[] = [
   { value: 'posix', label: 'POSIX shell' },
@@ -31,7 +33,7 @@ const SHELLS: readonly { readonly value: CodeShell; readonly label: string }[] =
 
 /**
  * Which request the panel describes: an explicit explorer selection wins, otherwise the active
- * request tab — the same rule `SelectionDetails` follows, so both halves of the panel agree.
+ * request tab — the same rule the request pane's own inspectors follow, so both agree.
  */
 function useCodePanelRequestId(): string | undefined {
   const selected = useUiStore((state) => (state.selection?.kind === 'request' ? state.selection.requestId : undefined));
@@ -49,8 +51,9 @@ interface Generated {
 
 export function CodePanel() {
   const requestId = useCodePanelRequestId();
-  const shell = useUiStore((state) => state.details.codeShell);
-  const setShell = useUiStore((state) => state.setDetailsCodeShell);
+  // The shell choice lives in this component, not in persisted ui-state: the slide-over hosts
+  // only the Code panel now, so there is no longer a tab selection to remember it alongside.
+  const [shell, setShell] = useState<CodeShell>('posix');
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const draft = useProjectStore((state) => (requestId === undefined ? undefined : state.requests[requestId]));
   // Main builds the command from `buildLiveSendInput` + `effectiveSendInput`, which resolve the
@@ -139,7 +142,7 @@ export function CodePanel() {
       <div data-testid="code-panel">
         <p className="text-md text-fg-muted">Open a request to see its cURL command</p>
         <p className="mt-1 text-sm text-fg-subtle">
-          The Code tab follows the request you are editing, or the one selected in the Explorer.
+          The Code panel follows the request you are editing, or the one selected in the Explorer.
         </p>
       </div>
     );

@@ -147,12 +147,11 @@ describe('RequestContextMenu', () => {
     expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'clone', requestId: 'req-1' });
   });
 
-  it('Show code opens the Details panel on the Code tab', async () => {
-    useUiStore.getState().toggleDetails();
+  it('Show code opens the Code slide-over', async () => {
     openMenu();
 
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Show code' }));
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });

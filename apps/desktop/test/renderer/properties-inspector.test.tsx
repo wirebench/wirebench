@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { RequestProperties } from '../../src/renderer/features/details/request-properties.js';
+import { PropertiesInspector } from '../../src/renderer/features/request-editor/inspectors/properties-inspector.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
@@ -25,7 +25,7 @@ function seed(overrides: Partial<RequestDraft> = {}): void {
   useProjectStore.setState({ requests: { 'req-1': { ...request, ...overrides } } });
 }
 
-describe('RequestProperties', () => {
+describe('PropertiesInspector', () => {
   beforeEach(() => {
     installWirebenchApi();
     seed();
@@ -36,7 +36,7 @@ describe('RequestProperties', () => {
   });
 
   it('renders every §6.3 group', () => {
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
     for (const label of [
       'Encoding',
       'Timeout (ms)',
@@ -66,7 +66,7 @@ describe('RequestProperties', () => {
   });
 
   it('shows the resolved endpoint read-only', () => {
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
     const field = screen.getByLabelText<HTMLInputElement>('Endpoint URL');
     expect(field.value).toBe('http://example.test/soap');
     expect(field.readOnly).toBe(true);
@@ -75,7 +75,7 @@ describe('RequestProperties', () => {
   it('commits a numeric edit on Enter, not on every keystroke', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const timeout = screen.getByLabelText('Timeout (ms)');
     fireEvent.change(timeout, { target: { value: '100' } });
@@ -88,7 +88,7 @@ describe('RequestProperties', () => {
   it('commits a text edit on blur', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const address = screen.getByLabelText('Bind address');
     fireEvent.change(address, { target: { value: '127.0.0.1' } });
@@ -102,7 +102,7 @@ describe('RequestProperties', () => {
       updateRequestProperties: patch,
       keystores: [{ id: 'k1', name: 'corp', path: '/tmp/corp.p12', type: 'pkcs12', projectId: 'p1' }],
     });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const select = screen.getByLabelText<HTMLSelectElement>('SSL Keystore');
     expect([...select.options].map((option) => option.textContent)).toEqual(['—', 'corp']);
@@ -117,7 +117,7 @@ describe('RequestProperties', () => {
   it('keeps a keystore ref the registry no longer has visible rather than snapping to none', () => {
     useProjectStore.setState({ updateRequestProperties: vi.fn(), keystores: [] });
     seed({ properties: { ...request.properties, sslKeystoreRef: 'ghost' } });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const select = screen.getByLabelText<HTMLSelectElement>('SSL Keystore');
     expect(select.value).toBe('ghost');
@@ -127,7 +127,7 @@ describe('RequestProperties', () => {
   it('offers a closed set of encodings, including ISO-8859-1, and commits immediately', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const encoding = screen.getByLabelText<HTMLSelectElement>('Encoding');
     expect(encoding.value).toBe('UTF-8');
@@ -140,7 +140,7 @@ describe('RequestProperties', () => {
 
   it('still shows an unrecognised encoding from a hand-edited project file', () => {
     seed({ properties: { ...REQUEST_PROPERTIES, encoding: 'Shift_JIS' } });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     expect(screen.getByLabelText<HTMLSelectElement>('Encoding').value).toBe('Shift_JIS');
   });
@@ -149,7 +149,7 @@ describe('RequestProperties', () => {
     const patch = vi.fn();
     seed({ properties: { ...REQUEST_PROPERTIES, sslKeystoreRef: 'client-ks' } });
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const field = screen.getByLabelText('SSL Keystore');
     fireEvent.change(field, { target: { value: '' } });
@@ -159,14 +159,14 @@ describe('RequestProperties', () => {
 
   it('reports WS-Addressing read-only, from request.wsa.enabled', () => {
     seed({ wsa: { enabled: true, version: '2005/08' } });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const field = screen.getByLabelText('WS-Addressing');
     expect(field.textContent).toBe('Enabled');
   });
 
   it('reports WS-Addressing as Inherited when the request has no wsa config', () => {
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
     expect(screen.getByLabelText('WS-Addressing').textContent).toBe('Inherited');
   });
 
@@ -174,7 +174,7 @@ describe('RequestProperties', () => {
     const patch = vi.fn();
     seed({ properties: { ...REQUEST_PROPERTIES, timeoutMs: 500 } });
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const timeout = screen.getByLabelText('Timeout (ms)');
     fireEvent.change(timeout, { target: { value: '' } });
@@ -185,7 +185,7 @@ describe('RequestProperties', () => {
   it('rejects a non-numeric timeout instead of persisting NaN', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const timeout = screen.getByLabelText('Timeout (ms)');
     fireEvent.change(timeout, { target: { value: 'soon' } });
@@ -197,7 +197,7 @@ describe('RequestProperties', () => {
   it('commits a checkbox immediately', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     fireEvent.click(screen.getByLabelText('Pretty print'));
     expect(patch).toHaveBeenCalledWith('req-1', { prettyPrint: true });
@@ -206,7 +206,7 @@ describe('RequestProperties', () => {
   it('stores the attachment flags and explains each one on its label', () => {
     const patch = vi.fn();
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     fireEvent.click(screen.getByLabelText('Enable MTOM'));
     expect(patch).toHaveBeenCalledWith('req-1', { enableMtom: true });
@@ -218,7 +218,7 @@ describe('RequestProperties', () => {
     const patch = vi.fn();
     seed({ properties: { ...REQUEST_PROPERTIES, wssPasswordType: 'digest' } });
     useProjectStore.setState({ updateRequestProperties: patch });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const select = screen.getByLabelText<HTMLSelectElement>('WSS password type');
     expect(select.value).toBe('digest');
@@ -229,7 +229,7 @@ describe('RequestProperties', () => {
   it('renames the request through update-request, ignoring an empty name', () => {
     const updateRequest = vi.fn();
     useProjectStore.setState({ updateRequest });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const name = screen.getByLabelText('Request name');
     fireEvent.change(name, { target: { value: '  ' } });
@@ -245,7 +245,7 @@ describe('RequestProperties', () => {
     const updateRequest = vi.fn();
     seed({ description: 'old' });
     useProjectStore.setState({ updateRequest });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     const field = screen.getByLabelText('Description');
     fireEvent.change(field, { target: { value: '' } });
@@ -258,7 +258,7 @@ describe('RequestProperties', () => {
     useProjectStore.setState({ updateRequestProperties: patch });
     const saveFile = vi.fn().mockResolvedValue({ ok: true, value: { path: '/tmp/out.xml' } });
     installWirebenchApi({ dialogs: { saveFile } });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Browse…' }));
     await vi.waitFor(() => {
@@ -268,7 +268,7 @@ describe('RequestProperties', () => {
 
   it('reports a request that is no longer in the project', () => {
     useProjectStore.setState({ requests: {} });
-    render(<RequestProperties requestId="req-1" />);
+    render(<PropertiesInspector requestId="req-1" />);
     expect(screen.getByText(/no longer in the project/)).toBeTruthy();
   });
 });

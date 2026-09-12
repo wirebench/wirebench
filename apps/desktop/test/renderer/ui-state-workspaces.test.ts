@@ -63,11 +63,14 @@ describe('per-workspace UI state', () => {
     });
   });
 
-  it('drops a payload written by an older version', () => {
+  it('drops a payload written by a version too old to migrate', () => {
     const storage = memoryStorage();
+    // `UI_STORAGE_VERSION - 1` (the prior version, 3) is still accepted — its `sidebar`/
+    // `console`/`workspaces`/etc. shape carries over unchanged, only its `details` slice is
+    // dropped; see `ui-state-v4.test.tsx`. Anything older than that has no migration path.
     storage.setItem(
       UI_STORAGE_KEY,
-      JSON.stringify({ version: UI_STORAGE_VERSION - 1, state: { workspaces: { w1: { tabs: [] } } } }),
+      JSON.stringify({ version: UI_STORAGE_VERSION - 2, state: { workspaces: { w1: { tabs: [] } } } }),
     );
 
     expect(readUi(storage).workspaces).toEqual({});

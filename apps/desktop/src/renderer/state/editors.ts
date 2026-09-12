@@ -22,7 +22,7 @@ export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
 const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
 
 /** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
-export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details';
+export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties';
 
 /** Which pane's strip an inspector selection belongs to — the two are independent. */
 export type InspectorPane = 'request' | 'response';

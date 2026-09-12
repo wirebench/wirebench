@@ -4,15 +4,6 @@ export type SidebarView = 'explorer' | 'environments' | 'search' | 'history' | '
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
 
-/**
- * The Details panel's tabs: the selection inspector, the workspace and global property tables,
- * the Code panel.
- */
-export type DetailsTab = 'selection' | 'workspace' | 'globals' | 'code';
-
-/** Which shell the Code panel quotes its `curl` command for. */
-export type CodeShell = 'posix' | 'powershell';
-
 /** How a request editor arranges its panes; see `features/request-editor/layout.ts`. */
 export interface EditorLayoutSnapshot {
   readonly orientation: 'side-by-side' | 'stacked';
@@ -43,15 +34,22 @@ export type ThemePreference = 'dark' | 'light' | 'system';
 
 /** The serialisable half of the UI store — layout and theme, no actions. */
 export interface UiSnapshot {
-  readonly sidebar: { readonly visible: boolean; readonly view: SidebarView; readonly size: number };
-  readonly console: { readonly visible: boolean; readonly activeTab: ConsoleTab; readonly size: number };
-  readonly details: {
+  readonly sidebar: {
     readonly visible: boolean;
+    readonly view: SidebarView;
     readonly size: number;
-    readonly tab: DetailsTab;
-    /** The Code panel's shell choice, remembered across sessions. */
-    readonly codeShell: CodeShell;
+    /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
+    readonly lastSize: number;
   };
+  readonly console: {
+    readonly visible: boolean;
+    readonly activeTab: ConsoleTab;
+    readonly size: number;
+    /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
+    readonly lastSize: number;
+  };
+  /** The right-hand slide-over hosting the Code panel; opened from the right rail. */
+  readonly slideOver: { readonly open: boolean; readonly width: number };
   readonly theme: ThemePreference;
   /** Whether request/response Monaco editors show line numbers. */
   readonly editorLineNumbers: boolean;
@@ -68,17 +66,24 @@ export interface UiSnapshot {
 export const UI_STORAGE_KEY = 'wirebench.ui';
 
 /**
- * Bumped only when a stored payload can no longer be reconciled with the current shape. Adding a
- * field to a section handled by a merge function (e.g. `details`, whose new `tab`/`codeShell`
- * fall back to their defaults per key in {@link mergeDetails}) does not need a bump.
+ * Bumped only when a stored payload can no longer be reconciled with the current shape. This
+ * went 3 → 4 when the right panel (and its `details` slice) was replaced by the right rail and
+ * the Code slide-over: `readUi` still accepts a version-3 blob (its `sidebar`/`console`/`theme`/
+ * `editorLineNumbers`/`editorLayout`/`workspaces` fields are structurally the same as v4's), it
+ * simply never reads the old `details` key, so a v3 blob loses only that slice and keeps every
+ * other preference. Adding a field to a section handled by a merge function does not need a
+ * further bump.
  */
-export const UI_STORAGE_VERSION = 3;
+export const UI_STORAGE_VERSION = 4;
+
+/** The previous storage version, whose stored shape `readUi` still accepts (see above). */
+const PRIOR_UI_STORAGE_VERSION = 3;
 
 /** The layout a first run gets: everything visible, Explorer selected, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
-  sidebar: { visible: true, view: 'explorer', size: 20 },
-  console: { visible: true, activeTab: 'http-log', size: 25 },
-  details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
+  sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
+  console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+  slideOver: { open: false, width: 420 },
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -104,29 +109,6 @@ function mergeSection<T extends Record<string, unknown>>(defaults: T, stored: un
     }
   }
   return merged as T;
-}
-
-/**
- * Reads the persisted Details section. `tab` and `codeShell` arrived after the first releases,
- * so a payload written without them (or with a value no longer understood) keeps the default
- * rather than being discarded — the panel must never open on a tab that does not exist.
- */
-function mergeDetails(stored: unknown): UiSnapshot['details'] {
-  const merged = mergeSection(
-    { visible: DEFAULT_UI_STATE.details.visible, size: DEFAULT_UI_STATE.details.size },
-    stored,
-  );
-  const record = asRecord(stored);
-  const tab = record?.['tab'];
-  const codeShell = record?.['codeShell'];
-  return {
-    ...merged,
-    tab:
-      tab === 'selection' || tab === 'workspace' || tab === 'globals' || tab === 'code'
-        ? tab
-        : DEFAULT_UI_STATE.details.tab,
-    codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.details.codeShell,
-  };
 }
 
 /** Reads a persisted editor layout, falling back per-field to the default for anything odd. */
@@ -190,8 +172,15 @@ function mergeWorkspaces(stored: unknown): Record<string, PersistedWorkspaceUi> 
 
 /**
  * Reads the persisted layout, merging it over {@link DEFAULT_UI_STATE}. Every failure mode —
- * storage unavailable, absent key, corrupt JSON, a payload from another version — yields the
- * defaults rather than an error: a broken layout preference must never block startup.
+ * storage unavailable, absent key, corrupt JSON, a payload from a version this reader does not
+ * know how to read — yields the defaults rather than an error: a broken layout preference must
+ * never block startup.
+ *
+ * A `version: 4` payload is read directly; a `version: 3` payload is accepted too (see
+ * {@link UI_STORAGE_VERSION}'s doc comment) — only `sidebar`, `console`, `theme`,
+ * `editorLineNumbers`, `editorLayout` and `workspaces` are ever read off `state`, so the v3
+ * blob's `details` key is silently dropped and everything else survives. Any other version
+ * (missing, too old, too new, corrupt) falls back to the defaults wholesale.
  */
 export function readUi(storage: Storage = localStorage): UiSnapshot {
   try {
@@ -200,16 +189,17 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
       return DEFAULT_UI_STATE;
     }
     const payload = asRecord(JSON.parse(raw));
-    if (payload?.['version'] !== UI_STORAGE_VERSION) {
+    const version = payload?.['version'];
+    if (version !== UI_STORAGE_VERSION && version !== PRIOR_UI_STORAGE_VERSION) {
       return DEFAULT_UI_STATE;
     }
-    const stored = asRecord(payload['state']) ?? {};
+    const stored = asRecord(payload?.['state']) ?? {};
     const theme = stored['theme'];
     const editorLineNumbers = stored['editorLineNumbers'];
     return {
       sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
       console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
-      details: mergeDetails(stored['details']),
+      slideOver: mergeSection(DEFAULT_UI_STATE.slideOver, stored['slideOver']),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,

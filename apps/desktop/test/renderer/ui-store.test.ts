@@ -44,32 +44,51 @@ describe('ui persistence', () => {
     expect(readUi(storage)).toEqual(DEFAULT_UI_STATE);
   });
 
-  it('ignores a payload from a different version', () => {
+  it('ignores a payload from a version it does not know how to read', () => {
     const storage = fakeStorage();
     storage.setItem(UI_STORAGE_KEY, JSON.stringify({ version: 999, state: { theme: 'light' } }));
 
     expect(readUi(storage)).toEqual(DEFAULT_UI_STATE);
   });
 
-  it('defaults the Details tab and Code shell for state stored before they existed', () => {
+  it('migrates a version-3 blob, dropping `details` without losing the rest', () => {
     const storage = fakeStorage();
     storage.setItem(
       UI_STORAGE_KEY,
-      JSON.stringify({ version: UI_STORAGE_VERSION, state: { details: { visible: false, size: 33 } } }),
+      JSON.stringify({
+        version: 3,
+        state: {
+          sidebar: { visible: false, view: 'history', size: 31 },
+          console: { visible: false, activeTab: 'problems', size: 42 },
+          details: { visible: true, size: 20, tab: 'code', codeShell: 'powershell' },
+          theme: 'light',
+          editorLineNumbers: false,
+          editorLayout: { orientation: 'stacked', mode: 'tabs' },
+          workspaces: { w1: { tabs: [{ kind: 'request', id: 'req-1' }], activeId: 'req-1' } },
+        },
+      }),
     );
 
-    expect(readUi(storage).details).toEqual({ visible: false, size: 33, tab: 'selection', codeShell: 'posix' });
+    const result = readUi(storage);
+
+    expect(() => readUi(storage)).not.toThrow();
+    expect(result).toEqual({
+      sidebar: { visible: false, view: 'history', size: 31, lastSize: DEFAULT_UI_STATE.sidebar.lastSize },
+      console: { visible: false, activeTab: 'problems', size: 42, lastSize: DEFAULT_UI_STATE.console.lastSize },
+      slideOver: DEFAULT_UI_STATE.slideOver,
+      theme: 'light',
+      editorLineNumbers: false,
+      editorLayout: { orientation: 'stacked', mode: 'tabs' },
+      workspaces: { w1: { tabs: [{ kind: 'request', id: 'req-1' }], activeId: 'req-1' } },
+    });
+    expect(result).not.toHaveProperty('details');
   });
 
-  it('rejects a stored Details tab or shell it does not recognise', () => {
+  it('falls back to defaults for a blob that parses to something other than an object', () => {
     const storage = fakeStorage();
-    storage.setItem(
-      UI_STORAGE_KEY,
-      JSON.stringify({ version: UI_STORAGE_VERSION, state: { details: { tab: 'nope', codeShell: 'fish' } } }),
-    );
+    storage.setItem(UI_STORAGE_KEY, 'null');
 
-    expect(readUi(storage).details.tab).toBe('selection');
-    expect(readUi(storage).details.codeShell).toBe('posix');
+    expect(readUi(storage)).toEqual(DEFAULT_UI_STATE);
   });
 
   it('merges partial stored state over the defaults', () => {
@@ -81,6 +100,16 @@ describe('ui persistence', () => {
 
     expect(readUi(storage).sidebar).toEqual({ ...DEFAULT_UI_STATE.sidebar, visible: false });
     expect(readUi(storage).console).toEqual(DEFAULT_UI_STATE.console);
+  });
+
+  it('rejects a stored slide-over shape it does not recognise, field by field', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({ version: UI_STORAGE_VERSION, state: { slideOver: { open: 'yes', width: 'wide' } } }),
+    );
+
+    expect(readUi(storage).slideOver).toEqual(DEFAULT_UI_STATE.slideOver);
   });
 
   it('survives a storage that throws (private mode, disabled site data)', () => {
@@ -111,15 +140,15 @@ describe('useUiStore', () => {
     expect(useUiStore.getState().sidebar.visible).toBe(false);
   });
 
-  it('toggles the console and the details panel independently', () => {
+  it('toggles the console and the Code slide-over independently', () => {
     useUiStore.getState().toggleConsole();
 
     expect(useUiStore.getState().console.visible).toBe(false);
-    expect(useUiStore.getState().details.visible).toBe(DEFAULT_UI_STATE.details.visible);
+    expect(useUiStore.getState().slideOver.open).toBe(DEFAULT_UI_STATE.slideOver.open);
 
-    useUiStore.getState().toggleDetails();
+    useUiStore.getState().toggleCode();
 
-    expect(useUiStore.getState().details.visible).toBe(false);
+    expect(useUiStore.getState().slideOver.open).toBe(true);
   });
 
   it('shows a sidebar view, revealing the sidebar when hidden', () => {
@@ -148,11 +177,11 @@ describe('useUiStore', () => {
   it('remembers panel sizes', () => {
     useUiStore.getState().setSidebarSize(31);
     useUiStore.getState().setConsoleSize(42);
-    useUiStore.getState().setDetailsSize(17);
+    useUiStore.getState().setSlideOverWidth(500);
 
     expect(useUiStore.getState().sidebar.size).toBe(31);
     expect(useUiStore.getState().console.size).toBe(42);
-    expect(useUiStore.getState().details.size).toBe(17);
+    expect(useUiStore.getState().slideOver.width).toBe(500);
   });
 
   it('selects a console tab and reveals the console', () => {
@@ -162,26 +191,35 @@ describe('useUiStore', () => {
     expect(useUiStore.getState().console).toMatchObject({ visible: true, activeTab: 'problems' });
   });
 
-  it('showDetails selects a tab and reveals the panel', () => {
-    useUiStore.getState().toggleDetails();
-    expect(useUiStore.getState().details.visible).toBe(false);
+  it('openCode reveals the slide-over unconditionally', () => {
+    expect(useUiStore.getState().slideOver.open).toBe(false);
 
-    useUiStore.getState().showDetails('code');
+    useUiStore.getState().openCode();
+    expect(useUiStore.getState().slideOver.open).toBe(true);
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+    // Calling it again while already open is a no-op, not a toggle.
+    useUiStore.getState().openCode();
+    expect(useUiStore.getState().slideOver.open).toBe(true);
   });
 
-  it('setDetailsTab changes the tab without revealing a hidden panel', () => {
-    useUiStore.getState().toggleDetails();
-    useUiStore.getState().setDetailsTab('globals');
+  it('closeCode hides the slide-over unconditionally', () => {
+    useUiStore.getState().openCode();
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: false, tab: 'globals' });
+    useUiStore.getState().closeCode();
+    expect(useUiStore.getState().slideOver.open).toBe(false);
+
+    useUiStore.getState().closeCode();
+    expect(useUiStore.getState().slideOver.open).toBe(false);
   });
 
-  it('remembers the Code panel shell', () => {
-    useUiStore.getState().setDetailsCodeShell('powershell');
+  it('toggleCode flips the slide-over open state', () => {
+    expect(useUiStore.getState().slideOver.open).toBe(false);
 
-    expect(useUiStore.getState().details.codeShell).toBe('powershell');
+    useUiStore.getState().toggleCode();
+    expect(useUiStore.getState().slideOver.open).toBe(true);
+
+    useUiStore.getState().toggleCode();
+    expect(useUiStore.getState().slideOver.open).toBe(false);
   });
 
   it('exposes a snapshot free of action functions', () => {
@@ -189,10 +227,10 @@ describe('useUiStore', () => {
 
     expect(Object.keys(snapshot).sort()).toEqual([
       'console',
-      'details',
       'editorLayout',
       'editorLineNumbers',
       'sidebar',
+      'slideOver',
       'theme',
       'workspaces',
     ]);

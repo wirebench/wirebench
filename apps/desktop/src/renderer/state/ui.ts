@@ -2,9 +2,7 @@ import type { Draft } from 'immer';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import type {
-  CodeShell,
   ConsoleTab,
-  DetailsTab,
   EditorLayoutSnapshot,
   PersistedWorkspaceUi,
   SidebarView,
@@ -13,7 +11,7 @@ import type {
 } from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
-/** A selected node in the explorer tree, read by the details panel (Task 30) and explorer actions. */
+/** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
 export interface Selection {
   readonly kind: string;
   readonly id: string;
@@ -65,20 +63,20 @@ export interface UiStore extends UiSnapshot {
   readonly requestRemoveProject: (projectId: string | undefined) => void;
   readonly toggleSidebar: () => void;
   readonly toggleConsole: () => void;
-  readonly toggleDetails: () => void;
+  /** Flips the Code slide-over open or closed — what the right rail's icon does. */
+  readonly toggleCode: () => void;
+  /** Opens the Code slide-over unconditionally — what "Show code" (toolbar, context menu) does. */
+  readonly openCode: () => void;
+  /** Closes the Code slide-over unconditionally — the close icon and Escape. */
+  readonly closeCode: () => void;
   readonly showSidebarView: (view: SidebarView) => void;
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
   readonly showConsoleTab: (tab: ConsoleTab) => void;
-  /** Switches the Details panel's tab, leaving its visibility alone. */
-  readonly setDetailsTab: (tab: DetailsTab) => void;
-  /** Switches the Details panel's tab and reveals the panel — what "Show code" does. */
-  readonly showDetails: (tab: DetailsTab) => void;
-  /** Remembers which shell the Code panel quotes for. */
-  readonly setDetailsCodeShell: (shell: CodeShell) => void;
   readonly setSidebarSize: (size: number) => void;
   readonly setConsoleSize: (size: number) => void;
-  readonly setDetailsSize: (size: number) => void;
+  /** Remembers the Code slide-over's width, dragged from its left-edge handle. */
+  readonly setSlideOverWidth: (width: number) => void;
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
   readonly toggleEditorLineNumbers: () => void;
@@ -161,9 +159,17 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.console.visible = !draft.console.visible;
       }),
-    toggleDetails: () =>
+    toggleCode: () =>
       update((draft) => {
-        draft.details.visible = !draft.details.visible;
+        draft.slideOver.open = !draft.slideOver.open;
+      }),
+    openCode: () =>
+      update((draft) => {
+        draft.slideOver.open = true;
+      }),
+    closeCode: () =>
+      update((draft) => {
+        draft.slideOver.open = false;
       }),
 
     showSidebarView: (view) =>
@@ -186,20 +192,6 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.console.visible = true;
       }),
 
-    setDetailsTab: (tab) =>
-      update((draft) => {
-        draft.details.tab = tab;
-      }),
-    showDetails: (tab) =>
-      update((draft) => {
-        draft.details.tab = tab;
-        draft.details.visible = true;
-      }),
-    setDetailsCodeShell: (shell) =>
-      update((draft) => {
-        draft.details.codeShell = shell;
-      }),
-
     setSidebarSize: (size) =>
       update((draft) => {
         draft.sidebar.size = size;
@@ -208,9 +200,9 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.console.size = size;
       }),
-    setDetailsSize: (size) =>
+    setSlideOverWidth: (width) =>
       update((draft) => {
-        draft.details.size = size;
+        draft.slideOver.width = width;
       }),
 
     toggleTheme: () =>
@@ -245,8 +237,8 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
 
     snapshot: () => {
-      const { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces } = get();
-      return { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces };
+      const { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces } = get();
+      return { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces };
     },
 
     persistTo: (storage) => {

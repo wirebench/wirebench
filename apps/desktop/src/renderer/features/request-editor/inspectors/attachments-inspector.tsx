@@ -5,7 +5,6 @@ import { ipc } from '../../../state/ipc-client.js';
 import { useEditorsStore } from '../../../state/editors.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { useProjectStore } from '../../../state/project.js';
-import { useUiStore } from '../../../state/ui.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES, MAX_DROPPED_FILES } from '../../../../shared/wire-types.js';
 import type { AttachmentPatchWire, MimePartWire } from '../../../../shared/wire-types.js';
 import { addAttachmentsThroughPicker, removeSelectedAttachment } from '../attachment-actions.js';
@@ -191,7 +190,8 @@ export function AttachmentsInspector({ requestId }: AttachmentsInspectorProps) {
             type="button"
             className="underline hover:text-fg-default"
             onClick={() => {
-              useUiStore.getState().showDetails('selection');
+              useEditorsStore.getState().setInspector(requestId, 'request', 'properties');
+              useEditorsStore.getState().setInspectorCollapsed(requestId, 'request', false);
             }}
           >
             Request properties

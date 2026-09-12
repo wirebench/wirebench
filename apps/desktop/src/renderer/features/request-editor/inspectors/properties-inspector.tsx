@@ -5,14 +5,14 @@ import {
   ReadOnlySetting,
   SettingsGroup,
   TextSetting,
-} from '../../components/settings-grid.js';
-import { ipc } from '../../state/ipc-client.js';
-import { useProjectStore } from '../../state/project.js';
-import { selectRequestEndpointUrl } from '../../state/project-endpoint.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
-import type { RequestPropertiesPatchWire } from '../../../shared/wire-types.js';
+} from '../../../components/settings-grid.js';
+import { ipc } from '../../../state/ipc-client.js';
+import { useProjectStore } from '../../../state/project.js';
+import { selectRequestEndpointUrl } from '../../../state/project-endpoint.js';
+import { useWorkspaceStore } from '../../../state/workspace.js';
+import type { RequestPropertiesPatchWire } from '../../../../shared/wire-types.js';
 
-export interface RequestPropertiesProps {
+export interface PropertiesInspectorProps {
   readonly requestId: string;
 }
 
@@ -49,15 +49,14 @@ const ENCODING_OPTIONS = [
 ];
 
 /**
- * The per-request property grid of the Details panel — the per-request property list, in three
- * groups: the general transport and envelope knobs, the attachment/MTOM flags, and the
- * WS-Security defaults.
+ * The request pane's Properties inspector: the per-request property list, in three groups — the
+ * general transport and envelope knobs, the attachment/MTOM flags, and the WS-Security defaults.
  *
  * An empty numeric field means "inherit": the timeout falls back to the project's default and
  * then to the HTTP preference, and Max Size falls back to unlimited. That is why the numeric
  * rows commit `undefined` rather than `0` when cleared.
  */
-export function RequestProperties({ requestId }: RequestPropertiesProps) {
+export function PropertiesInspector({ requestId }: PropertiesInspectorProps) {
   const request = useProjectStore((state) => state.requests[requestId]);
   // The active environment lives on the workspace, so an environment switch has to rerender
   // the endpoint as well as a project change.

@@ -27,6 +27,7 @@ import { AuthInspector } from './inspectors/auth-inspector.js';
 import { DetailsInspector } from './inspectors/details-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
 import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
+import { PropertiesInspector } from './inspectors/properties-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
 import { WsaInspector } from './inspectors/wsa-inspector.js';
 import { OverflowMenu } from './overflow-menu.js';
@@ -41,6 +42,7 @@ const DEBOUNCE_MS = 120;
 /** The request pane's inspector strip. */
 const REQUEST_INSPECTORS: readonly InspectorItem[] = [
   { id: 'details', label: 'Details' },
+  { id: 'properties', label: 'Properties' },
   { id: 'headers', label: 'Headers' },
   { id: 'attachments', label: 'Attachments' },
   { id: 'auth', label: 'Auth' },
@@ -350,6 +352,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         render={(inspector) =>
           inspector === 'details' ? (
             <DetailsInspector requestId={requestId} />
+          ) : inspector === 'properties' ? (
+            <PropertiesInspector requestId={requestId} />
           ) : inspector === 'headers' ? (
             <HeadersInspector requestId={requestId} />
           ) : inspector === 'ssl' ? (

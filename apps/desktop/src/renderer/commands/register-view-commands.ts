@@ -70,12 +70,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
   registerCommand({
-    id: 'view.toggleDetails',
-    label: 'Toggle Details Panel',
+    id: 'view.toggleCode',
+    label: 'Toggle Code Panel',
     category: 'View',
     shortcut: 'Mod+Alt+B',
     run: () => {
-      ui().toggleDetails();
+      ui().toggleCode();
     },
   });
 

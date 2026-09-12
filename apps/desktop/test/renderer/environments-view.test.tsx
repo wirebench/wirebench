@@ -52,7 +52,6 @@ function setUp(
 describe('EnvironmentsView', () => {
   beforeEach(() => {
     useEditorsStore.setState({ tabs: [], activeId: undefined });
-    useUiStore.setState({ details: { ...useUiStore.getState().details, visible: false, tab: 'selection' } });
   });
 
   afterEach(() => {
@@ -188,7 +187,7 @@ describe('EnvironmentsView', () => {
 
   it('collapses the sidebar from the toolbar chevron', () => {
     setUp();
-    useUiStore.setState({ sidebar: { visible: true, view: 'environments', size: 20 } });
+    useUiStore.setState({ sidebar: { visible: true, view: 'environments', size: 20, lastSize: 20 } });
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(useUiStore.getState().sidebar.visible).toBe(false);
   });

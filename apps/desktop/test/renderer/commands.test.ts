@@ -36,9 +36,9 @@ import {
 const context: CommandContext = {
   platform: 'mac',
   ui: {
-    sidebar: { visible: true, view: 'explorer', size: 20 },
-    console: { visible: true, activeTab: 'http-log', size: 25 },
-    details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
+    sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
+    console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+    slideOver: { open: false, width: 420 },
     theme: 'dark',
     editorLineNumbers: true,
     editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -108,14 +108,14 @@ describe('command registry', () => {
 
   it('lists only commands whose `when` passes, sorted by category then label', () => {
     registerCommand({ id: 'view.toggleConsole', label: 'Toggle Console', category: 'View', run: vi.fn() });
-    registerCommand({ id: 'view.toggleDetails', label: 'Toggle Details', category: 'View', run: vi.fn() });
+    registerCommand({ id: 'view.toggleCode', label: 'Toggle Code', category: 'View', run: vi.fn() });
     registerCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'General', run: vi.fn() });
     registerCommand({ id: 'project.save', label: 'Save All', category: 'Project', run: vi.fn(), when: () => false });
 
     expect(listCommands(context).map((command) => command.id)).toEqual([
       'palette.open',
+      'view.toggleCode',
       'view.toggleConsole',
-      'view.toggleDetails',
     ]);
   });
 
@@ -362,11 +362,11 @@ describe('request action commands', () => {
     expect(removeAttachment).toHaveBeenCalledWith('req-1', 'att-9');
   });
 
-  it('reveals the Details panel on the Code tab', async () => {
-    useUiStore.setState({ details: { ...useUiStore.getState().details, visible: false, tab: 'selection' } });
+  it('opens the Code slide-over', async () => {
+    useUiStore.setState({ slideOver: { ...useUiStore.getState().slideOver, open: false } });
 
     await runCommand('request.showCode', context);
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });
