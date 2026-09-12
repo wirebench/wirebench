@@ -250,3 +250,27 @@ describe('HistoryService', () => {
     }
   });
 });
+
+/**
+ * The second lock on the door finding 1 opened: a project's id is its own `wirebench.yaml`'s,
+ * and a linked project keeps it, so `historyFilePath` must never turn one into a path that
+ * leaves `<userData>/history` — `writeFileAtomic` would happily mkdir and write there.
+ */
+describe('historyFilePath', () => {
+  it('builds `<userData>/history/<id>.jsonl` for a normal id', () => {
+    expect(historyFilePath('/data', '01J8ABCDEF')).toBe(join('/data', 'history', '01J8ABCDEF.jsonl'));
+  });
+
+  it.each([
+    ['a parent traversal', '../../../../tmp/x'],
+    ['a bare dot-dot', '..'],
+    ['a forward slash', 'a/b'],
+    ['a backslash', 'a\\b'],
+    ['a NUL', 'a\u0000b'],
+    ['nothing at all', ''],
+  ])('refuses an id holding %s', (_case, id) => {
+    expect(() => historyFilePath('/data', id)).toThrow(
+      expect.objectContaining({ code: 'workspace-path-invalid' }) as Error,
+    );
+  });
+});

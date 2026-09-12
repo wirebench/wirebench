@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -28,6 +28,8 @@ let folderPick: string | undefined;
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
 vi.mock('electron', () => ({
+  // The e2e dialog overrides are honoured only in an unpackaged run.
+  app: { isPackaged: false },
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
       handlers.set(name, handler);
@@ -74,6 +76,20 @@ async function workspaceWithProject(
   await service.hostFor(projectId).addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
   await service.saveAll('test');
   return { service, workspace: created, projectId };
+}
+
+/**
+ * Rewrites the top-level `id:` of a project folder's `wirebench.yaml`, standing in for a
+ * project folder authored outside this app — the only way a hostile project id can exist,
+ * since nothing in the app ever mints one.
+ */
+async function rewriteProjectId(dir: string, id: string): Promise<void> {
+  const file = join(dir, 'wirebench.yaml');
+  const rewritten = (await readFile(file, 'utf8'))
+    .split('\n')
+    .map((line) => (/^id:/.test(line) ? `id: ${JSON.stringify(id)}` : line))
+    .join('\n');
+  await writeFile(file, rewritten);
 }
 
 /** Every file under `dir`, recursively, as paths relative to it. */
@@ -333,6 +349,73 @@ describe('WorkspaceService.linkProject', () => {
     expect(service.snapshot()?.projects).toEqual([]);
     await service.close();
   }, 60_000);
+
+  /**
+   * A linked project keeps the id its own `wirebench.yaml` declares — only import re-identifies
+   * — and that file may have been authored anywhere ("a colleague sent me a project"). Every
+   * `<userData>/<dir>/<id>` path is built from that id, starting with the project's history
+   * file, so an id that is not a single path segment is refused before anything is opened.
+   */
+  it.each([
+    ['a parent traversal', '../../../../escaped'],
+    ['a path separator', 'nested/id'],
+    ['a backslash', 'nested\\id'],
+    ['a NUL', 'nul\u0000byte'],
+    ['a bare dot-dot', '..'],
+  ])(
+    'refuses a project whose manifest id holds %s',
+    async (_case, hostileId) => {
+      const source = await workspaceWithProject('Calculator');
+      const exportDir = join(root, `exported-${Buffer.from(hostileId).toString('hex')}`);
+      await mkdir(exportDir, { recursive: true });
+      folderPick = exportDir;
+      await source.service.exportProject(source.projectId, SENDER);
+      await source.service.close();
+      await rewriteProjectId(exportDir, hostileId);
+
+      const service = newService();
+      await service.create('Consumer');
+      folderPick = exportDir;
+
+      await expect(service.linkProject(SENDER)).rejects.toMatchObject({ code: 'project-id-invalid' });
+      expect(service.snapshot()?.projects).toEqual([]);
+      await service.close();
+    },
+    60_000,
+  );
+
+  /**
+   * The same id, but corrupted *after* the link was recorded — the manifest still names a
+   * perfectly good id, and the hostile one only appears when the folder is read at open time.
+   * The workspace must still open: a broken project costs the user that project, never the
+   * workspace, and nothing may be written outside the history directory on the way.
+   */
+  it('opens a workspace whose linked project has since taken an unusable id, as an error row', async () => {
+    const source = await workspaceWithProject('Calculator');
+    const exportDir = join(root, 'exported-later-corrupted');
+    await mkdir(exportDir, { recursive: true });
+    folderPick = exportDir;
+    await source.service.exportProject(source.projectId, SENDER);
+    await source.service.close();
+
+    const service = newService();
+    const created = await service.create('Consumer');
+    folderPick = exportDir;
+    await service.linkProject(SENDER);
+    await service.close();
+
+    // `<root>/history/../escaped.jsonl` is `<root>/escaped.jsonl`: outside the history folder,
+    // which is exactly what must not appear.
+    await rewriteProjectId(exportDir, '../escaped');
+    const reopened = newService();
+    const workspace = await reopened.open(created.id);
+
+    expect(existsSync(join(root, 'escaped.jsonl'))).toBe(false);
+    expect(await filesUnder(root)).not.toContain('escaped.jsonl');
+    expect(workspace.projects.map((project) => [project.slug, project.status])).toEqual([['Calculator', 'error']]);
+    expect(workspace.projects[0]?.message ?? '').toContain('not a usable project id');
+    await reopened.close();
+  }, 60_000);
 });
 
 describe('WorkspaceService.importProjectFolder', () => {
@@ -467,6 +550,23 @@ describe('WorkspaceService.exportProject', () => {
       code: 'export-target-not-empty',
     });
     expect(await filesUnder(target)).toEqual(['notes.txt']);
+
+    await service.close();
+  }, 60_000);
+
+  /**
+   * "Cannot be listed" is not "empty". Only a target that does not exist counts as empty; any
+   * other `readdir` failure is raised, because export writes a whole project folder and an
+   * unreadable target is precisely where it could land on top of files it never saw.
+   */
+  it('surfaces a target it cannot list rather than treating it as empty', async () => {
+    const { service, projectId } = await workspaceWithProject('Calculator');
+    const target = join(root, 'a-file-not-a-folder');
+    await writeFile(target, 'not a directory');
+    folderPick = target;
+
+    await expect(service.exportProject(projectId, SENDER)).rejects.toMatchObject({ code: 'ENOTDIR' });
+    expect(await readFile(target, 'utf8')).toBe('not a directory');
 
     await service.close();
   }, 60_000);

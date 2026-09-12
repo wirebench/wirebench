@@ -27,6 +27,7 @@ export {
   workspaceEnvironmentFile,
   workspaceManifestFile,
   workspaceProjectDir,
+  assertPathSegment,
 } from './paths.js';
 
 export { workspaceFiles } from './serialize.js';

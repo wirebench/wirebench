@@ -491,6 +491,7 @@ export type { EndpointSource } from './project/environments.js';
 // Workspace
 export {
   WORKSPACE_FORMAT_VERSION,
+  assertPathSegment,
   WORKSPACES_DIR,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_MANIFEST,

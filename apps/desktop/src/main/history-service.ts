@@ -10,7 +10,7 @@
  */
 
 import { join } from 'node:path';
-import { generateHistoryId, openHistory } from '@wirebench/engine';
+import { assertPathSegment, generateHistoryId, openHistory } from '@wirebench/engine';
 import type { HistoryEntry, HistoryFile, HistoryListQuery } from '@wirebench/engine';
 import { redactHeaderPairs, redactHeaders, redactXml } from './redact.js';
 import type {
@@ -29,8 +29,20 @@ export function toHistoryEntryWire(entry: HistoryEntry): HistoryEntryWire {
   return JSON.parse(JSON.stringify(entry)) as HistoryEntryWire;
 }
 
-/** Where one project's history file lives: `<userData>/history/<projectId>.jsonl`. */
+/**
+ * Where one project's history file lives: `<userData>/history/<projectId>.jsonl`.
+ *
+ * The id is a single path segment and nothing else. A *linked* project keeps the id its own
+ * `wirebench.yaml` declares, and that file may have been authored anywhere ("a colleague sent
+ * me a project"), so an id such as `../../tmp/x` would otherwise make `writeFileAtomic` mkdir
+ * and write outside `userData`. `WorkspaceService` refuses such a project before it ever gets
+ * this far; this is the second lock on the same door, using the engine's own segment rule
+ * rather than a second copy of it.
+ *
+ * @throws WorkspaceError `workspace-path-invalid` when `projectId` is not a safe path segment.
+ */
 export function historyFilePath(userDataDir: string, projectId: string): string {
+  assertPathSegment(projectId);
   return join(userDataDir, 'history', `${projectId}.jsonl`);
 }
 

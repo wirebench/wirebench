@@ -20,6 +20,7 @@ import { cp, mkdir, readdir, readFile, realpath } from 'node:fs/promises';
 import { basename, isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import {
+  assertPathSegment,
   attachmentsDir,
   createProject,
   createWorkspace,
@@ -207,12 +208,43 @@ async function copyProjectPayload(source: string, target: string): Promise<void>
   }
 }
 
-/** Whether `dir` holds nothing (a folder that does not exist counts as empty). */
+/**
+ * Whether `dir` holds nothing (a folder that does not exist counts as empty).
+ *
+ * Only `ENOENT` is "empty". Any other `readdir` failure — a folder the app may not read, an I/O
+ * error — is raised: an export target that cannot be listed is not known to be empty, and
+ * treating it as empty is how export would write a project over files it never saw.
+ */
 async function isEmptyDir(dir: string): Promise<boolean> {
   try {
     return (await readdir(dir)).length === 0;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return true;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Refuses a project id that cannot safely be used as a single path segment.
+ *
+ * A project's id is its own `wirebench.yaml`'s, and a *linked* project keeps that id by design
+ * (only import re-identifies). The folder may have been authored anywhere — "a colleague sent
+ * me a project" is a first-class flow — so an id such as `../../tmp/x` would escape every
+ * `<userData>/<dir>/<id>` path built from it, starting with the project's history file. The
+ * rule is the engine's own {@link assertPathSegment}, re-thrown under a code the workspace
+ * layer owns so the project becomes an `error` row instead of taking the workspace down.
+ *
+ * @throws WorkspaceError `project-id-invalid` when `id` is not a safe path segment.
+ */
+function assertSafeProjectId(id: string): void {
+  try {
+    assertPathSegment(id);
   } catch {
-    return true;
+    throw new WorkspaceError('project-id-invalid', `"${id}" is not a usable project id.`, {
+      details: { projectId: id },
+    });
   }
 }
 
@@ -226,7 +258,9 @@ async function isEmptyDir(dir: string): Promise<boolean> {
  */
 async function loadPickedProject(dir: string): Promise<Project> {
   try {
-    return (await loadProject(dir)).project;
+    const { project } = await loadProject(dir);
+    assertSafeProjectId(project.id);
+    return project;
   } catch (error) {
     if (error instanceof ProjectError && error.code === 'project-not-found') {
       throw new WorkspaceError('project-folder-missing', `No project in ${dir}`, { details: { dir } });
@@ -420,6 +454,15 @@ export class WorkspaceService implements ProjectRouter {
 
   /** Brings up one project's host, recording the outcome on `entry` rather than throwing. */
   private async openEntry(entry: OpenProjectEntry): Promise<void> {
+    try {
+      // The manifest's recorded id, before anything is opened: a workspace linked by an older
+      // build (or a manifest edited by hand) can already hold an unusable one.
+      assertSafeProjectId(entry.ref.id);
+    } catch (error) {
+      entry.status = 'error';
+      entry.message = errorMessage(error);
+      return;
+    }
     if (!existsSync(entry.dir)) {
       entry.status = 'missing';
       entry.message = `The project folder is gone: ${entry.dir}`;
@@ -473,6 +516,9 @@ export class WorkspaceService implements ProjectRouter {
     });
     try {
       const project = await host.openProject(entry.dir);
+      // The id the *folder* declares, which for a linked project is not necessarily the one the
+      // manifest recorded — and which is what every `<userData>` path is built from.
+      assertSafeProjectId(project.id);
       entry.host = host;
       entry.projectId = project.id;
       entry.status = 'ready';
@@ -1061,6 +1107,17 @@ export class WorkspaceService implements ProjectRouter {
         continue;
       }
       const add = (id: string): void => {
+        const owner = this.index.get(id);
+        if (owner !== undefined && owner !== project.id) {
+          // Two open projects claiming one entity id makes this table — the routing table for
+          // every entity-addressed channel — ambiguous, and last-one-wins would silently send
+          // the user's edits to the wrong project. Link refuses a duplicate *project* id, so
+          // reaching here means a deeper id collision; it must not pass unseen.
+          console.warn(
+            `[workspace] entity id "${id}" is claimed by both project "${owner}" and project "${project.id}"; ` +
+              `routing it to "${project.id}"`,
+          );
+        }
         this.index.set(id, project.id);
       };
       add(project.id);
