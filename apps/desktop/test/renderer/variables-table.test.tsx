@@ -177,6 +177,40 @@ describe('VariablesTable', () => {
 
     expect(onSetEnabled).not.toHaveBeenCalled();
   });
+
+  it('refuses to rename a disabled variable when the target declares it unsupported', () => {
+    const onRename = vi.fn();
+    const onSet = vi.fn();
+    const onRemove = vi.fn();
+    renderTable(baseTarget({ disabled: ['host'], onRename, onSet, onRemove, renameDisabledUnsupported: true }));
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(screen.getByRole('alert').textContent).toBe('Re-enable "host" before renaming it.');
+    expect(onRename).not.toHaveBeenCalled();
+    expect(onSet).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed name in the field when a disabled rename is refused', () => {
+    renderTable(baseTarget({ disabled: ['host'], renameDisabledUnsupported: true }));
+    const name = screen.getByLabelText<HTMLInputElement>('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(name.value).toBe('hostname');
+  });
+
+  it('still renames an enabled variable when the target declares disabled renames unsupported', () => {
+    const onRename = vi.fn();
+    renderTable(baseTarget({ disabled: [], onRename, renameDisabledUnsupported: true }));
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(onRename).toHaveBeenCalledWith('host', 'hostname');
+  });
 });
 
 describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {

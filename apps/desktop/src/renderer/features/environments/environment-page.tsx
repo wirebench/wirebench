@@ -338,6 +338,10 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         // is deliberately no mutation for it (see `update-environment`'s patch shape), so
         // `onSetEnabled` stays undefined and the table shows the state without letting it change.
         disabled: environment.disabled,
+        // For the same reason, a rename can't carry a disabled flag to the new name (nothing here
+        // can write `disabled` at all) — so the table refuses renaming a disabled variable rather
+        // than silently re-enabling it.
+        renameDisabledUnsupported: true,
         onSet: (name, value) => {
           if (projectId === undefined) {
             return;

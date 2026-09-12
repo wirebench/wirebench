@@ -60,6 +60,14 @@ export interface VariablesTableTarget {
    * case the Enabled column still shows the current state, just not interactively.
    */
   readonly onSetEnabled?: (name: string, enabled: boolean) => void;
+  /**
+   * True when this scope cannot carry a disabled variable's flag through a rename — a linked
+   * project's own environment publishes `disabled` read-only on the wire, so there is no write
+   * that could move the flag to the new name. Renaming a disabled variable there would silently
+   * re-enable it, so the table refuses the rename instead (same error surface as a duplicate
+   * name) rather than performing it. Renaming an enabled variable is unaffected.
+   */
+  readonly renameDisabledUnsupported?: boolean;
   readonly emptyMessage?: string;
 }
 
@@ -389,6 +397,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     onRemove,
     onRename,
     onSetEnabled,
+    renameDisabledUnsupported = false,
     emptyMessage = 'No variables yet.',
   } = target;
   const [newName, setNewName] = useState('');
@@ -423,6 +432,10 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     }
     if (Object.hasOwn(properties, trimmed)) {
       setError(`A variable named "${trimmed}" already exists.`);
+      return;
+    }
+    if (renameDisabledUnsupported && disabledSet.has(from)) {
+      setError(`Re-enable "${from}" before renaming it.`);
       return;
     }
     setError(undefined);

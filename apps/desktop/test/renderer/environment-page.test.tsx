@@ -417,4 +417,26 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     setUp();
     expect(screen.getByTestId('environment-owning-project').textContent).toBe('this project — linked project');
   });
+
+  it('refuses to rename a disabled variable, explains why, and writes nothing', () => {
+    const { updateEnvironment } = setUp();
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(screen.getByRole('alert').textContent).toBe('Re-enable "host" before renaming it.');
+    expect(updateEnvironment).not.toHaveBeenCalled();
+  });
+
+  it('still renames an enabled variable', () => {
+    const enabledEnvironment: EnvironmentWire = { ...environment, properties: { port: '8080' }, disabled: [] };
+    const { updateEnvironment } = setUp({ environments: [enabledEnvironment] });
+    const name = screen.getByLabelText('Name of port');
+    fireEvent.change(name, { target: { value: 'portnum' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', {
+      properties: { portnum: '8080' },
+    });
+  });
 });
