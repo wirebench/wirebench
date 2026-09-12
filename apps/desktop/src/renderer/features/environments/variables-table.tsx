@@ -38,6 +38,14 @@ export interface VariablesTableTarget {
   readonly inherited?: readonly InheritedScope[];
   /** Sets (or overwrites) one variable. */
   readonly onSet: (name: string, value: string) => void;
+  /**
+   * Sets (or overwrites) several variables at once, as one write. Optional: without it a batch
+   * falls back to one {@link onSet} per pair, which is only safe for a target whose writer merges
+   * per name (Globals, Workspace, a project's properties) or serialises its round trips (a
+   * workspace environment's queue). A target that rebuilds a whole map from a render-time
+   * snapshot MUST provide this, or every pair but the last is silently dropped.
+   */
+  readonly onSetMany?: (entries: readonly { readonly name: string; readonly value: string }[]) => void;
   readonly onRemove: (name: string) => void;
   /**
    * Renames one variable, keeping its value and its enabled state. Optional: without it a
@@ -377,6 +385,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     disabled,
     inherited = [],
     onSet,
+    onSetMany,
     onRemove,
     onRename,
     onSetEnabled,
@@ -472,8 +481,14 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     if (pasteItems === undefined) {
       return;
     }
-    for (const item of pasteItems) {
-      onSet(item.name, item.value);
+    if (onSetMany !== undefined) {
+      onSetMany(pasteItems);
+    } else {
+      // No batch commit: safe only where the writer merges per name or serialises its round
+      // trips — see `onSetMany`'s doc for why the fallback is not universally safe.
+      for (const item of pasteItems) {
+        onSet(item.name, item.value);
+      }
     }
     setPasteItems(undefined);
     setNewName('');

@@ -541,6 +541,24 @@ describe('VariablesTable — the growing row (stage 2)', () => {
     });
   });
 
+  it('commits a paste as a single batch when the target can take one', () => {
+    // A scope whose writes are not serialised would drop all but the last of N `onSet` calls, so
+    // the whole block has to reach it as one write.
+    const onSet = vi.fn();
+    const onSetMany = vi.fn();
+    renderTable(baseTarget({ onSet, onSetMany }));
+    const name = screen.getByLabelText('New variable name');
+    name.focus();
+    fireEvent.paste(name, { clipboardData: { getData: () => 'a=1\nb=2' } });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    expect(onSetMany).toHaveBeenCalledTimes(1);
+    expect(onSetMany).toHaveBeenCalledWith([
+      { name: 'a', value: '1' },
+      { name: 'b', value: '2' },
+    ]);
+    expect(onSet).not.toHaveBeenCalled();
+  });
+
   it('writes nothing when the paste confirmation is cancelled', () => {
     const onSet = vi.fn();
     renderTable(baseTarget({ onSet }));

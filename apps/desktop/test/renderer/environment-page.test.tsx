@@ -267,6 +267,21 @@ describe('EnvironmentPage — a workspace environment', () => {
     });
   });
 
+  it('sends a multi-variable paste as one patch carrying every pair', async () => {
+    const { mutate } = setUp();
+    const name = screen.getByLabelText('New variable name');
+    name.focus();
+    fireEvent.paste(name, { clipboardData: { getData: () => 'a=1\nb=2\nc=3' } });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { properties: { host: 'one.test', a: '1', b: '2', c: '3' } },
+      });
+    });
+  });
+
   it('falls back through Workspace then Globals, nearest first', () => {
     useGlobalsStore.setState({ properties: { token: 'global-token', shared: 'from-globals' }, disabled: [] });
     useWorkspaceStore.setState({
@@ -350,6 +365,22 @@ describe("EnvironmentPage — a linked project's own environment", () => {
       'Inherited · read-only',
     ]);
     expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+  });
+
+  it('keeps every variable of a multi-variable paste, not just the last one', () => {
+    // This scope's writes are not chained through the environment queue, and main REPLACES the
+    // whole properties map — so one `onSet` per pasted variable, all built off the same
+    // render-time snapshot, used to drop everything but the last. The paste has to land as one
+    // write carrying every pair.
+    const { updateEnvironment } = setUp();
+    const name = screen.getByLabelText('New variable name');
+    name.focus();
+    fireEvent.paste(name, { clipboardData: { getData: () => 'a=1\nb=2\nc=3' } });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    expect(updateEnvironment).toHaveBeenCalledTimes(1);
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', {
+      properties: { host: 'one.test', a: '1', b: '2', c: '3' },
+    });
   });
 
   it("puts the owning project's own properties between this environment and the workspace", () => {

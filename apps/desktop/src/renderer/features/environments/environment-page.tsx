@@ -288,6 +288,15 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
             properties: { ...current.properties, [name]: value },
           }));
         },
+        onSetMany: (entries) => {
+          void queueEnvironmentPatch(environmentId, (current) => {
+            const next = { ...current.properties };
+            for (const entry of entries) {
+              next[entry.name] = entry.value;
+            }
+            return { properties: next };
+          });
+        },
         onRemove: (name) => {
           void queueEnvironmentPatch(environmentId, (current) => {
             const next = { ...current.properties };
@@ -336,6 +345,19 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
           void useProjectStore.getState().updateEnvironment(projectId, environmentId, {
             properties: { ...environment.properties, [name]: value },
           });
+        },
+        // `update-environment` replaces the whole properties map and these writes are not
+        // serialised, so a batch has to go out as one patch: N calls would each rebuild the map
+        // from the same render-time snapshot and only the last would survive.
+        onSetMany: (entries) => {
+          if (projectId === undefined) {
+            return;
+          }
+          const next = { ...environment.properties };
+          for (const entry of entries) {
+            next[entry.name] = entry.value;
+          }
+          void useProjectStore.getState().updateEnvironment(projectId, environmentId, { properties: next });
         },
         onRemove: (name) => {
           if (projectId === undefined) {
