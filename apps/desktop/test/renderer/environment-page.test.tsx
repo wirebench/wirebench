@@ -37,6 +37,15 @@ describe('EnvironmentPage — globals', () => {
     expect(screen.queryByTestId('environment-active')).toBeNull();
   });
 
+  it('exposes no editing affordance on the Globals heading', () => {
+    renderPage({ kind: 'globals' });
+    const heading = screen.getByRole('heading', { name: 'Globals' });
+    expect(heading.tagName).toBe('H2');
+    expect(heading.getAttribute('tabindex')).toBeNull();
+    fireEvent.click(heading);
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+  });
+
   it('saves an edit through globals.set', () => {
     const set = vi.fn().mockResolvedValue(undefined);
     useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [], set });
@@ -54,6 +63,16 @@ describe('EnvironmentPage — workspace', () => {
     renderPage({ kind: 'workspace' });
     expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('one.test');
+  });
+
+  it('exposes no editing affordance on the Workspace heading', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
+    renderPage({ kind: 'workspace' });
+    const heading = screen.getByRole('heading', { name: 'Workspace' });
+    expect(heading.tagName).toBe('H2');
+    expect(heading.getAttribute('tabindex')).toBeNull();
+    fireEvent.click(heading);
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
   });
 
   it('inherits from Globals, shown in a read-only Inherited group', () => {
@@ -119,14 +138,16 @@ describe('EnvironmentPage — a workspace environment', () => {
     return { mutate, setActiveEnvironment };
   }
 
-  it('shows an editable name and the Active toggle', () => {
+  it('shows a click-to-edit name and the Active toggle', () => {
     setUp();
-    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
     expect(screen.getByTestId('environment-active')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
   });
 
   it('renames on blur', async () => {
     const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
     const name = screen.getByLabelText('Environment name');
     fireEvent.change(name, { target: { value: 'staging' } });
     fireEvent.blur(name);
@@ -137,6 +158,67 @@ describe('EnvironmentPage — a workspace environment', () => {
         patch: { name: 'staging' },
       });
     });
+  });
+
+  it('renders the name as text, not an input, at rest', () => {
+    setUp();
+    const field = screen.getByTestId('environment-name');
+    expect(field.tagName).not.toBe('INPUT');
+    expect(field.textContent).toBe('uat');
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+  });
+
+  it('reveals an input carrying the current name on click', () => {
+    setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const input = screen.getByLabelText<HTMLInputElement>('Environment name');
+    expect(input.value).toBe('uat');
+  });
+
+  it('commits the new name on Enter', async () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText('Environment name');
+    fireEvent.change(name, { target: { value: 'staging' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { name: 'staging' },
+      });
+    });
+  });
+
+  it('reverts on Escape without committing, and leaves editing', () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText<HTMLInputElement>('Environment name');
+    fireEvent.change(name, { target: { value: 'staging' } });
+    fireEvent.keyDown(name, { key: 'Escape' });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+    expect(screen.getByTestId('environment-name').textContent).toBe('uat');
+  });
+
+  it('reverts an empty or whitespace-only name without committing', () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText('Environment name');
+    fireEvent.change(name, { target: { value: '   ' } });
+    fireEvent.blur(name);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByTestId('environment-name').textContent).toBe('uat');
+  });
+
+  it('starts editing on Enter or F2 from the focused resting element', () => {
+    setUp();
+    const field = screen.getByTestId('environment-name');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(screen.getByLabelText('Environment name')).toBeTruthy();
+    fireEvent.keyDown(screen.getByLabelText('Environment name'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByTestId('environment-name'), { key: 'F2' });
+    expect(screen.getByLabelText('Environment name')).toBeTruthy();
   });
 
   it('activates through the workspace store when toggled on', () => {
@@ -228,6 +310,7 @@ describe("EnvironmentPage — a linked project's own environment", () => {
 
   it('shows an editable name too', () => {
     setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
     expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
   });
 

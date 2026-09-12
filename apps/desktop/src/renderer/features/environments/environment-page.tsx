@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EndpointsTable } from './endpoints-table.js';
 import type { EnvironmentTarget } from './environment-actions.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
@@ -7,8 +7,94 @@ import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 
-const NAME_INPUT_CLASS =
-  'h-row max-w-md min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-lg font-medium text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+// Shared box model between the resting and editing states — same height, padding, border width,
+// font — so nothing shifts by a pixel when the input mounts. Only the border's and background's
+// colour differ between the two, matching the variables/endpoints tables' "chrome on demand".
+const NAME_FIELD_BASE =
+  'h-row max-w-md min-w-0 rounded-md border px-2 text-left text-lg font-medium text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+const NAME_VIEW_CLASS = `${NAME_FIELD_BASE} cursor-text border-transparent bg-transparent hover:bg-surface-raised`;
+const NAME_INPUT_CLASS = `${NAME_FIELD_BASE} border-hairline-strong bg-surface-raised`;
+
+/** A renameable environment's name: a plain heading until clicked (or Enter/F2 while focused),
+ * then an input with the current name selected, so typing replaces it. Enter or blur commits the
+ * trimmed name; Escape reverts and drops back to the resting state. An empty or whitespace-only
+ * name reverts without saving. */
+function EditableName({ name, onCommit }: { readonly name: string; readonly onCommit: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft(name);
+  }, [name]);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function startEditing() {
+    setDraft(name);
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed.length > 0 && trimmed !== name) {
+      onCommit(trimmed);
+    }
+    setDraft(name);
+    setEditing(false);
+  }
+
+  function revert() {
+    setDraft(name);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        autoFocus
+        aria-label="Environment name"
+        data-testid="environment-name"
+        className={NAME_INPUT_CLASS}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            revert();
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="environment-name"
+      className={NAME_VIEW_CLASS}
+      onClick={startEditing}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === 'F2') {
+          event.preventDefault();
+          startEditing();
+        }
+      }}
+    >
+      {name}
+    </button>
+  );
+}
 
 /** The page's header: a name (editable for a real environment, fixed for Globals/Workspace),
  * an Active toggle (environments only), and a one-line reminder of where this scope sits in the
@@ -29,40 +115,11 @@ function PageHeader({
   readonly active?: { readonly value: boolean; readonly onToggle: () => void };
   readonly hint: string;
 }) {
-  const [draft, setDraft] = useState(name);
-  useEffect(() => {
-    setDraft(name);
-  }, [name]);
-
   return (
     <header className="flex flex-col gap-2">
       <div className="flex items-center gap-3">
         {editableName !== undefined ? (
-          <input
-            aria-label="Environment name"
-            data-testid="environment-name"
-            className={NAME_INPUT_CLASS}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-            onBlur={() => {
-              const trimmed = draft.trim();
-              if (trimmed.length > 0 && trimmed !== name) {
-                editableName.onCommit(trimmed);
-              } else {
-                setDraft(name);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.currentTarget.blur();
-              }
-              if (event.key === 'Escape') {
-                setDraft(name);
-              }
-            }}
-          />
+          <EditableName name={name} onCommit={editableName.onCommit} />
         ) : (
           <h2 className="text-lg font-medium text-fg-default">{name}</h2>
         )}
