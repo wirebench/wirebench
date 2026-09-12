@@ -40,6 +40,63 @@ export function packageNameOf(specifier: string): string {
 }
 
 /**
+ * Blanks out `//` and comment blocks, keeping the source's length and line structure so the
+ * import patterns below still match at the right offsets. String and template literals are
+ * tracked so a `//` inside one — a URL, say — is not mistaken for the start of a comment.
+ *
+ * Prose is not code: a comment reading `the "Resolves from" column` once matched the `from '…'`
+ * pattern below and read the sentence after it as a package name, failing this suite for a
+ * wording choice. Comments are stripped before the patterns run so prose can say anything.
+ */
+export function stripComments(source: string): string {
+  let out = '';
+  let index = 0;
+  let quote: string | undefined;
+  while (index < source.length) {
+    const char = source[index]!;
+    const next = source[index + 1];
+    if (quote !== undefined) {
+      out += char;
+      if (char === '\\') {
+        out += source[index + 1] ?? '';
+        index += 2;
+        continue;
+      }
+      if (char === quote) {
+        quote = undefined;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      quote = char;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') {
+        out += ' ';
+        index += 1;
+      }
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      const end = source.indexOf('*/', index + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      for (let cursor = index; cursor < stop; cursor += 1) {
+        out += source[cursor] === '\n' ? '\n' : ' ';
+      }
+      index = stop;
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+/**
  * The three import forms a module can name a package with: `… from '…'` (static, including a
  * multi-line clause and `export … from`), a bare `import '…'` side effect at the start of a
  * line, and a dynamic `import('…')`. The lookbehind on the first keeps a quoted `'from'` in
@@ -54,8 +111,9 @@ const IMPORT_PATTERNS = [
 /** Every bare package name imported by `source`, whatever the import form. */
 export function bareImportsOf(source: string): string[] {
   const names = new Set<string>();
+  const code = stripComments(source);
   for (const pattern of IMPORT_PATTERNS) {
-    for (const match of source.matchAll(pattern)) {
+    for (const match of code.matchAll(pattern)) {
       const specifier = match[1]!;
       if (NOT_A_PACKAGE.some((candidate) => candidate.test(specifier))) {
         continue;
@@ -109,6 +167,22 @@ describe('bareImportsOf', () => {
       "import { d } from '@shared/commands.js';",
     ].join('\n');
     expect(bareImportsOf(source)).toEqual([]);
+  });
+
+  it('ignores a quoted phrase ending in "from" inside a comment', () => {
+    // The exact shape that once failed this suite: prose in a comment, not an import clause.
+    const source = [
+      '// `shadows X` in the "Resolves from" column is a promise the app has to keep.',
+      '/* The "Resolves from" column makes the opposite choice, because it answers',
+      '   a different question. */',
+      "import { real } from 'immer';",
+    ].join('\n');
+    expect(bareImportsOf(source)).toEqual(['immer']);
+  });
+
+  it('does not mistake a comment marker inside a string for a comment', () => {
+    const source = ["const docs = 'https://example.com/x';", "import { real } from 'react';"].join('\n');
+    expect(bareImportsOf(source)).toEqual(['react']);
   });
 
   it('reduces a subpath, a scope and a Vite query to the package name', () => {

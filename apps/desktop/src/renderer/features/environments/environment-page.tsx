@@ -421,6 +421,16 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
       <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Variables</h3>
         <VariablesTable target={target} />
+        {isWorkspaceScoped && (
+          // The engine resolves Env -> Project -> Workspace -> Global. A workspace environment is
+          // shared across every project, so the project layer varies with whichever one is open
+          // and cannot be named in the chain above. Saying so once is honest; hedging every row's
+          // caption would not be.
+          <p data-testid="env-project-layer-note" className="text-xs text-fg-subtle">
+            A project&rsquo;s own properties resolve before the workspace, so the project you have open may define a
+            name ahead of the scopes shown here.
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Endpoints</h3>
