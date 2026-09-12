@@ -1,7 +1,8 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import { useProjectStore } from '../../state/project.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
+import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
 import { openEnvironmentTab } from './environment-actions.js';
 
 const ITEM_CLASS =
@@ -10,6 +11,9 @@ const ITEM_CLASS =
 /** The label the status bar shows for whichever environment is active. */
 export const NO_ENVIRONMENT_LABEL = 'No environment';
 
+/** A stable empty list, so the switcher does not rerender while no workspace is open. */
+const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
+
 /**
  * Cycles the active environment, `No environment` included, and applies the result. Shared by
  * the `env.next` command and the switcher's keyboard affordance.
@@ -17,22 +21,23 @@ export const NO_ENVIRONMENT_LABEL = 'No environment';
  * @param step - `1` for the next environment, `-1` for the previous one.
  */
 export async function cycleEnvironment(step = 1): Promise<void> {
-  const { environments, activeEnvironmentId, setActiveEnvironment } = useProjectStore.getState();
+  const { workspace, setActiveEnvironment } = useWorkspaceStore.getState();
+  const environments = workspace?.environments ?? [];
   if (environments.length === 0) {
     return;
   }
-  // `null` (no environment) sits at index 0, so a project with n environments has n+1 stops.
+  // `null` (no environment) sits at index 0, so n environments give n+1 stops.
   const ids: (string | null)[] = [null, ...environments.map((environment) => environment.id)];
-  const current = ids.indexOf(activeEnvironmentId ?? null);
+  const current = ids.indexOf(workspace?.activeEnvironmentId ?? null);
   const next = ids[(current + step + ids.length) % ids.length] ?? null;
   await setActiveEnvironment(next);
 }
 
 /** The status bar's environment dropdown: which environment is active, and how to change it. */
 export function EnvSwitcher() {
-  const environments = useProjectStore((state) => state.environments);
-  const activeId = useProjectStore((state) => state.activeEnvironmentId);
-  const setActiveEnvironment = useProjectStore((state) => state.setActiveEnvironment);
+  const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
+  const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
   const open = useUiStore((state) => state.envSwitcherOpen);
   const setOpen = useUiStore((state) => state.setEnvSwitcherOpen);
   const showSidebarView = useUiStore((state) => state.showSidebarView);
@@ -92,8 +97,11 @@ export function EnvSwitcher() {
           <DropdownMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              if (activeId !== undefined) {
-                openEnvironmentTab(activeId);
+              // The grid shows every environment at once, so any id opens the same view; the
+              // one it opens on is just which column's properties start out below it.
+              const target = activeId ?? environments[0]?.id;
+              if (target !== undefined) {
+                openEnvironmentTab(target);
                 return;
               }
               showSidebarView('explorer');

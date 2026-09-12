@@ -12,12 +12,10 @@ test.describe('request properties and preferences', () => {
   // Assigned in `beforeEach`; kept non-optional so `launchApp` (under
   // `exactOptionalPropertyTypes`) does not have to be handed `string | undefined`.
   let userDataDir = '';
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Preferences');
   });
 
   test.afterEach(async () => {
@@ -29,17 +27,16 @@ test.describe('request properties and preferences', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir.length > 0) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = '';
-    projectDir = '';
   });
 
   test('a 100 ms request timeout beats a 500 ms endpoint, and is reported as a timeout', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
@@ -66,7 +63,7 @@ test.describe('request properties and preferences', () => {
   });
 
   test('the Editor tab size drives a recreated envelope, and the UI theme drives the shell', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);

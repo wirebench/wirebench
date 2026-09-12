@@ -320,6 +320,7 @@ export function FormView({
         />
       </div>
       <GetDataDialog
+        interfaceId={interfaceId}
         open={getDataFor !== undefined}
         onOpenChange={(next) => {
           if (!next) {

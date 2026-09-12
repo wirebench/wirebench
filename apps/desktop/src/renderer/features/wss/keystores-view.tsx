@@ -17,7 +17,7 @@ import { SecretField } from '../../components/secret-field.js';
 import type { GridRowProps } from '../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { ipc } from '../../state/ipc-client.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { KeystoreAddDialog } from './keystore-add-dialog.js';
 import type { KeystoreAliasWire, KeystoresInspectResponse, KeystoreWire } from '../../../shared/wire-types.js';
 
@@ -160,7 +160,7 @@ function KeystoreRow({
  */
 export function KeystoresView() {
   const keystores = useProjectStore((state) => state.keystores);
-  const hasProject = useProjectStore((state) => state.project !== null);
+  const projectId = useTargetProjectId();
   const removeKeystore = useProjectStore((state) => state.removeKeystore);
   const updateKeystore = useProjectStore((state) => state.updateKeystore);
   const [adding, setAdding] = useState(false);
@@ -212,7 +212,7 @@ export function KeystoresView() {
         <IconButton
           label="Add keystore"
           data-testid="keystore-add"
-          disabled={!hasProject}
+          disabled={projectId === undefined}
           onClick={() => {
             setAdding(true);
           }}
@@ -227,7 +227,7 @@ export function KeystoresView() {
           state sits outside it — a grid may hold nothing but rows. */}
       {keystores.length === 0 && (
         <p className="px-2 py-1 text-sm text-fg-subtle">
-          {hasProject ? 'No keystores yet.' : 'Open a project to add keystores.'}
+          {projectId === undefined ? 'Select a project to add keystores.' : 'No keystores yet.'}
         </p>
       )}
       <ul

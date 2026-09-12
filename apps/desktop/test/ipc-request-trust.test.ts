@@ -113,7 +113,7 @@ async function register(
       buildLiveSendInput: () => {
         throw new Error('not stubbed');
       },
-      mutate: () => {
+      projectMutate: () => {
         throw new Error('not stubbed');
       },
       sendInputFor: () => undefined,
@@ -151,7 +151,7 @@ describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
   it('keeps the anchors main already resolved and adds to them', async () => {
     process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
     const sent: SentTls[] = [];
-    // The anchors a send starts with come from `ProjectService.tlsFor` — the CA-bundle
+    // The anchors a send starts with come from `ProjectHost.tlsFor` — the CA-bundle
     // preference — never from the renderer, which cannot name `ca` at all.
     await register(sent, { tlsFor: () => Promise.resolve({ ca: ['OWN'] }) });
 

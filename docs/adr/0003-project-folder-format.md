@@ -64,3 +64,7 @@ keyed by project id, so a project directory is safe to commit and share.
   someone's project — but it means *any* additive field bumps `formatVersion` and ships a
   migration, exactly as a changed or removed one does. A field added inside the current
   version would silently delete itself from every project written by an older build.
+
+**Update (workspaces, ADR-0006):** projects now normally live inside a workspace folder in app
+data (`<userData>/workspaces/<id>/projects/<slug>/`), unchanged in format; they are exported or
+linked to a folder of the user's choosing when git is wanted.

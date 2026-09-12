@@ -22,7 +22,8 @@ export function findEnvironment(project: Project, envId: string | undefined): En
 }
 
 /** Where {@link resolveEndpoint}'s URL came from. */
-export type EndpointSource = 'environment' | 'request-custom' | 'request-endpoint' | 'interface-default' | 'none';
+export type EndpointSource =
+  'environment' | 'workspace-environment' | 'request-custom' | 'request-endpoint' | 'interface-default' | 'none';
 
 /**
  * Resolves the URL a request should actually be sent to, given an optional

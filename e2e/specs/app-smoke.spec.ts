@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { createWorkspace } from '../helpers/project.js';
 
 test.describe('app smoke', () => {
   let launched: LaunchedApp | undefined;
@@ -10,9 +11,12 @@ test.describe('app smoke', () => {
     }
   });
 
-  test('launches and shows the shell', async () => {
+  test('launches to the picker, and shows the shell once a workspace is open', async () => {
     launched = await launchApp();
     const { window } = launched;
+
+    await expect(window.locator('[data-testid="workspace-picker"]')).toBeVisible();
+    await createWorkspace(window);
 
     await expect(window.locator('[data-testid="title-bar"]')).toBeVisible();
     await expect(window.locator('[data-testid="activity-bar"]')).toBeVisible();

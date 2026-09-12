@@ -51,12 +51,10 @@ test.describe('message validation', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir = '';
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Validation');
   });
 
   test.afterEach(async () => {
@@ -68,17 +66,16 @@ test.describe('message validation', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir.length > 0) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = '';
-    projectDir = '';
   });
 
   test('validating a bad intA reports it, reveals it, and clears once fixed', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);

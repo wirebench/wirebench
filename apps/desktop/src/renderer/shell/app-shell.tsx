@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PanelSize } from 'react-resizable-panels';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+import { Loader2 } from 'lucide-react';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
@@ -10,11 +11,17 @@ import { useKeybindings } from '../lib/keybindings.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
+import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
-import { NewProjectDialog } from '../features/welcome/new-project-dialog.js';
+import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
+import { WorkspacePicker } from '../features/workspace/picker-screen.js';
+import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
+import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
+import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
+import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CommandPalette } from './command-palette.js';
@@ -59,12 +66,30 @@ export function AppShell() {
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
-  const project = useProjectStore((state) => state.project);
+  const workspace = useWorkspaceStore((state) => state.workspace);
+  const workspaceReady = useWorkspaceStore((state) => state.ready);
+  // The title bar's dot means "something is unsaved": any open project will do.
+  const dirty = useProjectStore((state) => Object.values(state.projects).some((project) => project.dirty));
 
   useEffect(() => {
     hydrateUi();
   }, []);
 
+  // The layout is written to `localStorage` on every change, but the open workspace's *tabs*
+  // are recorded only when a workspace is left for another one. Closing the window is the
+  // other way they can go, so record them on the way out too; the write is synchronous, which
+  // is what makes it safe to do this late.
+  useEffect(() => {
+    const remember = (): void => {
+      rememberOpenWorkspaceTabs();
+    };
+    window.addEventListener('pagehide', remember);
+    return () => {
+      window.removeEventListener('pagehide', remember);
+    };
+  }, []);
+
+  useEffect(() => subscribeToWorkspace(), []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToPreferences(), []);
@@ -118,76 +143,96 @@ export function AppShell() {
       <div className="flex h-full flex-col bg-surface-base text-fg-default">
         <TitleBar
           platform={platform}
-          projectName={project?.name ?? 'No project'}
-          dirty={project?.dirty ?? false}
+          workspaceName={workspace?.name ?? null}
+          dirty={dirty}
           onOpenPalette={openPalette}
           onToggleTheme={dispatch('view.toggleTheme')}
         />
 
-        <div className="flex min-h-0 flex-1">
-          <ActivityBar platform={platform} />
-
-          <Group
-            // Panels are added and removed as regions are toggled; keying the group on which
-            // are mounted lets it recompute its constraints instead of reconciling across shapes.
-            key={`${String(sidebar.visible)}-${String(details.visible)}`}
-            orientation="horizontal"
-            className="flex min-w-0 flex-1"
+        {/* The title bar stays above the picker: it carries the window controls on every
+            platform, and losing them with no workspace open would trap the user. */}
+        {workspace === null && !workspaceReady ? (
+          // Main answers the first snapshot only once its launch-time reopen settled; until
+          // then neither the picker nor the IDE is known to be right, so neither is shown.
+          <div
+            data-testid="workspace-loading"
+            role="status"
+            aria-live="polite"
+            className="flex min-h-0 flex-1 items-center justify-center"
           >
-            {sidebar.visible && (
-              <>
-                <Panel
-                  id="sidebar-panel"
-                  defaultSize={`${String(sidebar.size)}%`}
-                  minSize="12%"
-                  maxSize="40%"
-                  onResize={asPercentage(setSidebarSize)}
-                  className="border-r border-hairline"
-                >
-                  <Sidebar />
-                </Panel>
-                <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
-              </>
-            )}
+            <Loader2 size={24} aria-hidden="true" className="animate-spin text-fg-muted" />
+            <span className="sr-only">Opening the last workspace…</span>
+          </div>
+        ) : workspace === null ? (
+          <div className="min-h-0 flex-1">
+            <WorkspacePicker />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <ActivityBar platform={platform} />
 
-            <Panel id="main-panel" minSize="30%">
-              <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
-                <Panel id="editors-panel" minSize="20%">
-                  <EditorArea onImportDefinition={dispatch('definition.import')} />
-                </Panel>
-                {consoleState.visible && (
-                  <>
-                    <Separator aria-label="Resize" className={SEPARATOR_HORIZONTAL} />
-                    <Panel
-                      id="console-panel"
-                      defaultSize={`${String(consoleState.size)}%`}
-                      minSize="10%"
-                      maxSize="70%"
-                      onResize={asPercentage(setConsoleSize)}
-                    >
-                      <ConsolePanel />
-                    </Panel>
-                  </>
-                )}
-              </Group>
-            </Panel>
+            <Group
+              // Panels are added and removed as regions are toggled; keying the group on which
+              // are mounted lets it recompute its constraints instead of reconciling across shapes.
+              key={`${String(sidebar.visible)}-${String(details.visible)}`}
+              orientation="horizontal"
+              className="flex min-w-0 flex-1"
+            >
+              {sidebar.visible && (
+                <>
+                  <Panel
+                    id="sidebar-panel"
+                    defaultSize={`${String(sidebar.size)}%`}
+                    minSize="12%"
+                    maxSize="40%"
+                    onResize={asPercentage(setSidebarSize)}
+                    className="border-r border-hairline"
+                  >
+                    <Sidebar />
+                  </Panel>
+                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
+                </>
+              )}
 
-            {details.visible && (
-              <>
-                <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
-                <Panel
-                  id="details-pane"
-                  defaultSize={`${String(details.size)}%`}
-                  minSize="12%"
-                  maxSize="40%"
-                  onResize={asPercentage(setDetailsSize)}
-                >
-                  <DetailsPanel />
-                </Panel>
-              </>
-            )}
-          </Group>
-        </div>
+              <Panel id="main-panel" minSize="30%">
+                <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
+                  <Panel id="editors-panel" minSize="20%">
+                    <EditorArea />
+                  </Panel>
+                  {consoleState.visible && (
+                    <>
+                      <Separator aria-label="Resize" className={SEPARATOR_HORIZONTAL} />
+                      <Panel
+                        id="console-panel"
+                        defaultSize={`${String(consoleState.size)}%`}
+                        minSize="10%"
+                        maxSize="70%"
+                        onResize={asPercentage(setConsoleSize)}
+                      >
+                        <ConsolePanel />
+                      </Panel>
+                    </>
+                  )}
+                </Group>
+              </Panel>
+
+              {details.visible && (
+                <>
+                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
+                  <Panel
+                    id="details-pane"
+                    defaultSize={`${String(details.size)}%`}
+                    minSize="12%"
+                    maxSize="40%"
+                    onResize={asPercentage(setDetailsSize)}
+                  >
+                    <DetailsPanel />
+                  </Panel>
+                </>
+              )}
+            </Group>
+          </div>
+        )}
 
         <StatusBar />
       </div>
@@ -198,6 +243,9 @@ export function AppShell() {
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
       />
       <NewProjectDialog />
+      <CreateWorkspaceDialog />
+      <WorkspaceManageDialog />
+      <RemoveProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

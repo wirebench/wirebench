@@ -8,6 +8,7 @@ import {
   selectRequestEndpointUrl,
   selectRequestTrustsInvalid,
 } from '../../state/project-endpoint.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { useProjectStore } from '../../state/project.js';
 import { CloneRequestDialog } from './clone-request-dialog.js';
 import { ImportCurlDialog } from './import-curl-dialog.js';
@@ -51,9 +52,12 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const summary = useProjectStore((state) => (draft === undefined ? undefined : state.interfaces[draft.interfaceId]));
   const updateRequest = useProjectStore((state) => state.updateRequest);
   const setEndpoint = useProjectStore((state) => state.setEndpoint);
-  const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, requestId));
-  const endpointSource = useProjectStore((state) => selectRequestEndpointSource(state, requestId));
-  const trustInvalid = useProjectStore((state) => selectRequestTrustsInvalid(state, requestId));
+  // The active environment lives on the workspace, so an environment switch has to rerender
+  // the endpoint as well as a project change.
+  const workspace = useWorkspaceStore((state) => state.workspace);
+  const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, workspace, requestId));
+  const endpointSource = useProjectStore((state) => selectRequestEndpointSource(state, workspace, requestId));
+  const trustInvalid = useProjectStore((state) => selectRequestTrustsInvalid(state, workspace, requestId));
   const exchange = useExchangesStore((state) => state.byRequest[requestId]);
   const send = useExchangesStore((state) => state.send);
   const cancel = useExchangesStore((state) => state.cancel);

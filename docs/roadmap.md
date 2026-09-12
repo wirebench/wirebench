@@ -67,8 +67,19 @@ v1 phase. _Status_: where the item stands today.
 Specced and planned (`docs/plans/2026-09-11-wirebench-workspaces-plan.md`). A workspace groups projects,
 owns environments and a shared property scope, and removes folder picking from the normal flow. Linking a
 project folder that lives in git, and exporting an internal project to a folder, are the bridges to teams
-that need no server. Parked for after it ships: multi-window; syncing shared environments over a network
-(see [Teams and sign-in](#teams-and-sign-in)).
+that need no server. Parked for after it ships:
+
+- **Multi-window.** The workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`
+  §1, assumption 7) deliberately keeps one window holding one open workspace at a time. Several
+  workspaces open at once, each in its own window, is a natural next step but changes how main's
+  singletons (the open `WorkspaceService`, dialog picks) are scoped, so it is left as a
+  follow-up rather than folded into workspaces v1.
+- **Workspace sharing/syncing.** Nothing propagates a workspace's projects or environments to
+  another machine or another person today — a workspace is one user's local app-data folder.
+  Export/link/import are the only way a project crosses machines, one project at a time. Sharing
+  a whole workspace (its environments, its project set) is a deliberately deferred idea, not a
+  gap in what shipped (`docs/adr/0006-workspaces-in-app-data.md`, Consequences); see
+  [Teams and sign-in](#teams-and-sign-in) for the networked version of this.
 
 ### Compatibility and adoption
 

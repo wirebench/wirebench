@@ -1,10 +1,11 @@
 import { lazy, Suspense } from 'react';
 import { EnvironmentEditor } from '../features/environments/environment-editor.js';
+import { EnvironmentGrid } from '../features/environments/environment-grid.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
-import { WelcomeScreen } from '../features/welcome/welcome-screen.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
-import type { PreferencesSectionWire } from '../../shared/wire-types.js';
+import { useWorkspaceStore } from '../state/workspace.js';
+import type { PreferencesSectionWire, ProjectWire, WorkspaceEnvironmentWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
 // thing that pulls it in — is split out and fetched the first time a request tab is opened.
@@ -33,11 +34,32 @@ const PreferencesEditor = lazy(async () => {
   return { default: module.PreferencesEditor };
 });
 
-export interface EditorAreaProps {
-  readonly onImportDefinition: () => void;
+/**
+ * One environment's name, wherever it lives — for a tab label. The workspace's own environments
+ * come first: they are what the grid tab shows, and a rename has to reach the tab.
+ */
+function environmentName(
+  projects: Readonly<Record<string, ProjectWire>>,
+  workspaceEnvironments: readonly WorkspaceEnvironmentWire[],
+  environmentId: string,
+): string | undefined {
+  const workspaceEnvironment = workspaceEnvironments.find((candidate) => candidate.id === environmentId);
+  if (workspaceEnvironment !== undefined) {
+    return workspaceEnvironment.name;
+  }
+  for (const project of Object.values(projects)) {
+    const match = project.environments.find((environment) => environment.id === environmentId);
+    if (match !== undefined) {
+      return match.name;
+    }
+  }
+  return undefined;
 }
 
-const WELCOME_ID = 'welcome';
+/** A stable empty list, so the editor area does not rerender while no workspace is open. */
+const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
+
+const START_ID = 'start';
 
 /** The `id` of a tab's button, and of the panel it controls — paired via ARIA both ways. */
 function tabId(id: string): string {
@@ -56,30 +78,31 @@ function isPreferencesSection(value: string | undefined): value is PreferencesSe
 }
 
 /**
- * The tabbed editor area. A Welcome tab is always present; opening a request from the
+ * The tabbed editor area. A placeholder tab is always present; opening a request from the
  * explorer adds a real tab from `state/editors.ts`; its body is the lazily-loaded request editor.
  */
-export function EditorArea({ onImportDefinition }: EditorAreaProps) {
+export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
-  const showWelcome = useEditorsStore((state) => state.showWelcome);
+  const showStart = useEditorsStore((state) => state.showStart);
   const close = useEditorsStore((state) => state.close);
   const requests = useProjectStore((state) => state.requests);
-  const environments = useProjectStore((state) => state.environments);
+  const projects = useProjectStore((state) => state.projects);
+  const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   const interfaces = useProjectStore((state) => state.interfaces);
 
   const activeTab = tabs.find((t) => t.id === activeId);
-  const showingWelcome = activeTab === undefined;
-  const selectedId = showingWelcome ? WELCOME_ID : (activeId ?? WELCOME_ID);
+  const showingStart = activeTab === undefined;
+  const selectedId = showingStart ? START_ID : (activeId ?? START_ID);
 
   // APG tabs: one tab stop for the whole list, Left/Right/Home/End move within it, and focus
   // carries the selection with it (automatic activation) — the panels are already mounted
   // lazily, so following focus costs nothing a click would not.
-  const order = [WELCOME_ID, ...tabs.map((tab) => tab.id)];
+  const order = [START_ID, ...tabs.map((tab) => tab.id)];
   const select = (id: string): void => {
-    if (id === WELCOME_ID) {
-      showWelcome();
+    if (id === START_ID) {
+      showStart();
       return;
     }
     activate(id);
@@ -119,18 +142,18 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         <button
           type="button"
           role="tab"
-          id={tabId(WELCOME_ID)}
-          aria-controls={panelId(WELCOME_ID)}
-          aria-selected={showingWelcome}
-          tabIndex={showingWelcome ? 0 : -1}
+          id={tabId(START_ID)}
+          aria-controls={panelId(START_ID)}
+          aria-selected={showingStart}
+          tabIndex={showingStart ? 0 : -1}
           onClick={() => {
-            showWelcome();
+            showStart();
           }}
           className={`inline-flex shrink-0 items-center border-r border-hairline px-3 text-sm ${
-            showingWelcome ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
+            showingStart ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
           }`}
         >
-          Welcome
+          Start
         </button>
         {tabs.map((tab) => {
           const label =
@@ -139,7 +162,7 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
               : undefined) ??
             (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
             (tab.environmentId !== undefined
-              ? environments.find((environment) => environment.id === tab.environmentId)?.name
+              ? environmentName(projects, workspaceEnvironments, tab.environmentId)
               : undefined) ??
             tab.title;
           return (
@@ -191,14 +214,25 @@ export function EditorArea({ onImportDefinition }: EditorAreaProps) {
         aria-labelledby={tabId(selectedId)}
         className="min-h-0 flex-1 overflow-hidden"
       >
-        {showingWelcome ? (
-          <WelcomeScreen onImportDefinition={onImportDefinition} />
+        {showingStart ? (
+          <div
+            data-testid="editor-empty"
+            className="flex h-full items-center justify-center px-6 text-sm text-fg-subtle"
+          >
+            Select a request in the Explorer, or import a definition to get started.
+          </div>
         ) : activeTab.kind === 'interface' && activeTab.interfaceId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <InterfaceEditor interfaceId={activeTab.interfaceId} />
           </Suspense>
         ) : activeTab.environmentId !== undefined ? (
-          <EnvironmentEditor environmentId={activeTab.environmentId} />
+          // A workspace environment opens the grid (every environment at once); a linked
+          // project's own environment keeps its single-environment editor.
+          workspaceEnvironments.some((candidate) => candidate.id === activeTab.environmentId) ? (
+            <EnvironmentGrid environmentId={activeTab.environmentId} />
+          ) : (
+            <EnvironmentEditor environmentId={activeTab.environmentId} />
+          )
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <HistoryEntryView historyId={activeTab.historyId} />

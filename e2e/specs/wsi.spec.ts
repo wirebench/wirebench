@@ -9,12 +9,10 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
 test.describe('WS-I Basic Profile reports', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectDir = '';
   let exportDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WsI');
     exportDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-wsi-export-'));
   });
 
@@ -27,19 +25,17 @@ test.describe('WS-I Basic Profile reports', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [projectDir, exportDir]) {
+    for (const dir of [exportDir]) {
       if (dir.length > 0) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
-    projectDir = '';
     exportDir = '';
   });
 
   test('checks a sent exchange, shows the report, and exports it as HTML', async () => {
     const exportPath = join(exportDir, 'report.html');
     launched = await launchApp({
-      folderDialogPath: projectDir,
       // Playwright cannot drive a native Save-as panel; `wsi.exportHtml` honours the same
       // override as `dialogs.saveFile`.
       extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: exportPath },
@@ -90,7 +86,6 @@ test.describe('WS-I Basic Profile reports', () => {
   test('checks the WSDL from the explorer and names the interface', async () => {
     const exportPath = join(exportDir, 'wsdl-report.html');
     launched = await launchApp({
-      folderDialogPath: projectDir,
       extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: exportPath },
     });
     const page = launched.window;

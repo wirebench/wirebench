@@ -3,7 +3,12 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentEditor } from '../../src/renderer/features/environments/environment-editor.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { EnvironmentWire, InterfaceWire } from '../../src/shared/wire-types.js';
+import type { EnvironmentWire, InterfaceWire, ProjectWire } from '../../src/shared/wire-types.js';
+
+/** A project holding only these environments — all the editor reads from one. */
+function projectWith(environments: readonly EnvironmentWire[]): Record<string, ProjectWire> {
+  return { p1: { id: 'p1', name: 'Demo', environments: [...environments] } as unknown as ProjectWire };
+}
 
 const iface = {
   id: 'iface-1',
@@ -24,9 +29,10 @@ const environment: EnvironmentWire = {
 function setUp() {
   const updateEnvironment = vi.fn().mockResolvedValue(undefined);
   useProjectStore.setState({
-    environments: [environment],
+    projects: projectWith([environment]),
+    projectOf: { e1: 'p1' },
     interfaces: { 'iface-1': iface },
-    order: ['iface-1'],
+    order: [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
     updateEnvironment,
   });
   render(
@@ -45,7 +51,7 @@ describe('EnvironmentEditor', () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
-    useProjectStore.setState({ environments: [], interfaces: {}, order: [] });
+    useProjectStore.getState().reset();
   });
 
   it('saves the name once typing has settled', () => {
@@ -56,7 +62,7 @@ describe('EnvironmentEditor', () => {
     act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(updateEnvironment).toHaveBeenCalledWith('e1', { name: 'staging' });
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { name: 'staging' });
   });
 
   it('flushes a pending name edit on unmount instead of losing it', () => {
@@ -66,7 +72,7 @@ describe('EnvironmentEditor', () => {
 
     cleanup();
 
-    expect(updateEnvironment).toHaveBeenCalledWith('e1', { name: 'staging' });
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { name: 'staging' });
   });
 
   it('builds each endpoint commit from the latest store state so two rapid edits both land', () => {
@@ -78,9 +84,10 @@ describe('EnvironmentEditor', () => {
     } as unknown as InterfaceWire;
     const updateEnvironment = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({
-      environments: [environment],
+      projects: projectWith([environment]),
+      projectOf: { e1: 'p1' },
       interfaces: { 'iface-1': iface, 'iface-2': iface2 },
-      order: ['iface-1', 'iface-2'],
+      order: [{ projectId: 'p1', interfaceIds: ['iface-1', 'iface-2'] }],
       updateEnvironment,
     });
     render(
@@ -95,9 +102,11 @@ describe('EnvironmentEditor', () => {
       target: { value: 'http://three.test/soap' },
     });
     fireEvent.blur(screen.getByLabelText('Endpoint override for Calculator'));
-    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', { endpoints: { calculator: 'http://three.test/soap' } });
+    expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', {
+      endpoints: { calculator: 'http://three.test/soap' },
+    });
     useProjectStore.setState({
-      environments: [{ ...environment, endpoints: { calculator: 'http://three.test/soap' } }],
+      projects: projectWith([{ ...environment, endpoints: { calculator: 'http://three.test/soap' } }]),
     });
 
     // Second commit, for a different interface's override, fired before the first round trip
@@ -107,7 +116,7 @@ describe('EnvironmentEditor', () => {
     });
     fireEvent.blur(screen.getByLabelText('Endpoint override for Weather'));
 
-    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', {
+    expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', {
       endpoints: { calculator: 'http://three.test/soap', weather: 'http://four.test/soap' },
     });
   });
@@ -119,13 +128,13 @@ describe('EnvironmentEditor', () => {
     fireEvent.change(input, { target: { value: 'http://three.test/soap' } });
     fireEvent.blur(input);
 
-    expect(updateEnvironment).toHaveBeenCalledWith('e1', { endpoints: { calculator: 'http://three.test/soap' } });
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { endpoints: { calculator: 'http://three.test/soap' } });
   });
 
   it('drops the key when the override is cleared', () => {
     const updateEnvironment = setUp();
     fireEvent.click(screen.getByRole('button', { name: 'Clear override for Calculator' }));
-    expect(updateEnvironment).toHaveBeenCalledWith('e1', { endpoints: {} });
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { endpoints: {} });
   });
 
   it('offers the interface addresses as suggestions', () => {
@@ -139,14 +148,36 @@ describe('EnvironmentEditor', () => {
     fireEvent.change(screen.getByLabelText('New property name'), { target: { value: 'port' } });
     fireEvent.change(screen.getByLabelText('New property value'), { target: { value: '8080' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add property' }));
-    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', { properties: { host: 'two.test', port: '8080' } });
+    expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', { properties: { host: 'two.test', port: '8080' } });
 
     const value = screen.getByLabelText('Value of host');
     fireEvent.change(value, { target: { value: 'edited' } });
     fireEvent.blur(value);
-    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', { properties: { host: 'edited' } });
+    expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', { properties: { host: 'edited' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove host' }));
-    expect(updateEnvironment).toHaveBeenLastCalledWith('e1', { properties: {} });
+    expect(updateEnvironment).toHaveBeenLastCalledWith('p1', 'e1', { properties: {} });
+  });
+
+  it('names the project whose environments it is editing', () => {
+    setUp();
+    expect(screen.getByText('Project environments (Demo — linked project)')).toBeTruthy();
+  });
+
+  it('falls back to a generic caption when the project name is unavailable', () => {
+    const updateEnvironment = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      projects: { p1: { id: 'p1', name: undefined, environments: [environment] } as unknown as ProjectWire },
+      projectOf: { e1: 'p1' },
+      interfaces: { 'iface-1': iface },
+      order: [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      updateEnvironment,
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <EnvironmentEditor environmentId="e1" />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByText('Project environments (this project — linked project)')).toBeTruthy();
   });
 });

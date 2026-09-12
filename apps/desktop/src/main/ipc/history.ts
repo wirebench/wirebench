@@ -10,14 +10,20 @@ import type { HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectRouter } from '../project-router.js';
+import type { PropertyScopes } from '@wirebench/engine';
 import type { HistorySendProject } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
 
 /** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject & Pick<ProjectService, 'buildLiveSendInput'>;
+  readonly project: HistorySendProject & Pick<ProjectRouter, 'buildLiveSendInput'>;
+  /**
+   * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
+   * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
+   */
+  readonly adHocScopes?: () => PropertyScopes;
   readonly showSecrets?: { get(): boolean };
   /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
@@ -53,6 +59,7 @@ export function registerHistoryChannels(
         ...(request.query !== undefined ? { query: request.query } : {}),
         limit: request.limit ?? 200,
         ...(request.before !== undefined ? { before: request.before } : {}),
+        ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
       }),
     ),
   );
@@ -98,6 +105,7 @@ export function registerHistoryChannels(
       service,
       {
         project: deps.project,
+        ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
         ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
         history,
         ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
@@ -107,7 +115,12 @@ export function registerHistoryChannels(
         ...(entry.requestId !== undefined ? { requestId: entry.requestId } : {}),
         input,
       },
-      { requestName: entry.requestName, interfaceName: entry.interfaceName, operationName: entry.operationName },
+      {
+        requestName: entry.requestName,
+        interfaceName: entry.interfaceName,
+        operationName: entry.operationName,
+        projectId: entry.projectId,
+      },
     );
   });
 }

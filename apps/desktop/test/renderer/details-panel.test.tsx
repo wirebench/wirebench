@@ -9,6 +9,8 @@ import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import type { InterfaceWire, ProjectWire } from '../../src/shared/wire-types.js';
 
@@ -68,7 +70,7 @@ describe('DetailsPanel', () => {
     // the next; reset the persisted half of the ui state alongside the selection.
     useUiStore.setState({ ...structuredClone(DEFAULT_UI_STATE), selection: undefined });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
-    useProjectStore.setState({ project: null, requests: {}, interfaces: {} });
+    useProjectStore.getState().reset();
     useGlobalsStore.setState({ properties: {} });
   });
 
@@ -83,8 +85,8 @@ describe('DetailsPanel', () => {
 
   it('edits the project properties when the Project row is selected', async () => {
     const setProjectProperty = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({ project, setProjectProperty });
-    useUiStore.setState({ selection: { kind: 'project', id: 'project' } });
+    useProjectStore.setState({ projects: { p1: project }, setProjectProperty });
+    useUiStore.setState({ selection: { kind: 'project', id: 'p1' } });
     renderPanel();
 
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('example.test');
@@ -93,7 +95,7 @@ describe('DetailsPanel', () => {
     fireEvent.change(screen.getByLabelText('New property value'), { target: { value: '8080' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add property' }));
     await waitFor(() => {
-      expect(setProjectProperty).toHaveBeenCalledWith('port', '8080');
+      expect(setProjectProperty).toHaveBeenCalledWith('p1', 'port', '8080');
     });
   });
 
@@ -111,6 +113,35 @@ describe('DetailsPanel', () => {
     await waitFor(() => {
       expect(set).toHaveBeenCalledWith('token', 'xyz');
     });
+  });
+
+  it('edits the workspace properties from its own tab', async () => {
+    const mutate = vi.fn().mockResolvedValue({});
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { region: 'eu' } }), mutate });
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace properties' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Value of region').value).toBe('eu');
+
+    fireEvent.change(screen.getByLabelText('New property name'), { target: { value: 'tenant' } });
+    fireEvent.change(screen.getByLabelText('New property value'), { target: { value: 'acme' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add property' }));
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ kind: 'set-workspace-property', name: 'tenant', value: 'acme' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove region' }));
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({ kind: 'remove-workspace-property', name: 'region' });
+    });
+    useWorkspaceStore.setState({ workspace: null });
+  });
+
+  it('says so on the Workspace properties tab when no workspace is open', () => {
+    useWorkspaceStore.setState({ workspace: null });
+    renderPanel();
+    fireEvent.click(screen.getByRole('tab', { name: 'Workspace properties' }));
+    expect(screen.getByText('Open a workspace to edit its properties.')).toBeDefined();
   });
 
   it("shows the selected request's property grid", () => {
@@ -178,5 +209,41 @@ describe('DetailsPanel', () => {
     });
     renderPanel();
     expect(screen.getByLabelText<HTMLInputElement>('URL').value).toBe('http://example.test/soap');
+  });
+
+  it('breadcrumbs a request selection with its project, interface and operation', () => {
+    useProjectStore.setState({
+      projects: { p1: project, p2: { ...project, id: 'p2', name: 'Geo' } },
+      interfaces: { 'iface-1': interfaceWire },
+      requests: { 'req-1': requestDraft },
+      projectOf: { 'req-1': 'p2', 'iface-1': 'p2' },
+    });
+    useUiStore.setState({ selection: { kind: 'request', id: 'request:req-1', requestId: 'req-1' } });
+    renderPanel();
+
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Geo › Calculator › Add › Request 1');
+  });
+
+  it('names the project on an interface and an endpoint selection too', () => {
+    useProjectStore.setState({
+      projects: { p1: project },
+      interfaces: { 'iface-1': interfaceWire },
+      projectOf: { 'iface-1': 'p1' },
+    });
+    useUiStore.setState({ selection: { kind: 'interface', id: 'iface-1', interfaceId: 'iface-1' } });
+    renderPanel();
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Demo › Calculator');
+
+    cleanup();
+    useUiStore.setState({
+      selection: {
+        kind: 'endpoint',
+        id: 'endpoint:iface-1:S:P',
+        interfaceId: 'iface-1',
+        address: 'http://example.test/soap',
+      },
+    });
+    renderPanel();
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Demo › Calculator › http://example.test/soap');
   });
 });

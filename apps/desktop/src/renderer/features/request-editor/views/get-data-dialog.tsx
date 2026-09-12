@@ -15,9 +15,10 @@ import { X } from 'lucide-react';
 import { Button } from '../../../components/button.js';
 import { useGlobalsStore } from '../../../state/globals.js';
 import { useProjectStore } from '../../../state/project.js';
+import { useWorkspaceStore } from '../../../state/workspace.js';
 
 /** Where a property comes from, which decides the scope token in its reference. */
-type Scope = 'Project' | 'Env' | 'Global';
+type Scope = 'Env' | 'Project' | 'Workspace' | 'Global';
 
 interface Entry {
   readonly scope: Scope;
@@ -34,34 +35,45 @@ export interface GetDataDialogProps {
   readonly onInsert: (reference: string) => void;
   /** The field the dialog was opened from, named in the title so the user knows where it lands. */
   readonly fieldLabel: string;
+  /** Whose project's properties are in scope; the interface the form's request belongs to. */
+  readonly interfaceId: string;
 }
 
-/** Builds the flat, scope-ordered list of everything the current project can expand. */
-function useEntries(): readonly Entry[] {
-  const projectProperties = useProjectStore((state) => state.project?.properties);
-  const environments = useProjectStore((state) => state.environments);
-  const activeEnvironmentId = useProjectStore((state) => state.activeEnvironmentId);
+/**
+ * The flat, scope-ordered list of everything this request can expand: its own project's
+ * properties, the workspace's active environment, the workspace itself, and the user's globals
+ * — the engine's `Env -> Project -> Workspace -> Global` chain, in that order.
+ */
+function useEntries(interfaceId: string): readonly Entry[] {
+  const projectProperties = useProjectStore((state) => {
+    const projectId = state.projectOf[interfaceId];
+    return projectId === undefined ? undefined : state.projects[projectId]?.properties;
+  });
+  const workspace = useWorkspaceStore((state) => state.workspace);
   const globalProperties = useGlobalsStore((state) => state.properties);
 
   return useMemo(() => {
-    const active = environments.find((environment) => environment.id === activeEnvironmentId);
+    const active = workspace?.environments.find((environment) => environment.id === workspace.activeEnvironmentId);
     const out: Entry[] = [];
+    for (const [name, value] of Object.entries(active?.properties ?? {})) {
+      out.push({ scope: 'Env', name, value, reference: `\${#Env#${name}}` });
+    }
     for (const [name, value] of Object.entries(projectProperties ?? {})) {
       out.push({ scope: 'Project', name, value, reference: `\${#Project#${name}}` });
     }
-    for (const [name, value] of Object.entries(active?.properties ?? {})) {
-      out.push({ scope: 'Env', name, value, reference: `\${#Env#${name}}` });
+    for (const [name, value] of Object.entries(workspace?.properties ?? {})) {
+      out.push({ scope: 'Workspace', name, value, reference: `\${#Workspace#${name}}` });
     }
     for (const [name, value] of Object.entries(globalProperties)) {
       out.push({ scope: 'Global', name, value, reference: `\${#Global#${name}}` });
     }
     return out;
-  }, [projectProperties, environments, activeEnvironmentId, globalProperties]);
+  }, [projectProperties, workspace, globalProperties]);
 }
 
 /** Lists the properties in scope and inserts the chosen one's `${#…}` reference. */
-export function GetDataDialog({ open, onOpenChange, onInsert, fieldLabel }: GetDataDialogProps) {
-  const entries = useEntries();
+export function GetDataDialog({ open, onOpenChange, onInsert, fieldLabel, interfaceId }: GetDataDialogProps) {
+  const entries = useEntries(interfaceId);
   const [filter, setFilter] = useState('');
   const needle = filter.trim().toLowerCase();
   const visible = needle === '' ? entries : entries.filter((entry) => entry.name.toLowerCase().includes(needle));

@@ -14,8 +14,17 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  * without a cast through this shape.
  */
 interface FallbackWirebenchApi {
-  readonly project: {
+  readonly workspace: {
     snapshot(request: undefined): Promise<
+      | {
+          readonly ok: true;
+          readonly value: { readonly workspace: { readonly projects: readonly { readonly id: string }[] } | null };
+        }
+      | { readonly ok: false }
+    >;
+  };
+  readonly project: {
+    snapshot(request: { readonly projectId: string }): Promise<
       | {
           readonly ok: true;
           readonly value: { readonly project: { readonly interfaces: readonly { readonly id: string }[] } | null };
@@ -39,7 +48,6 @@ test.describe('XML editor features', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -50,21 +58,19 @@ test.describe('XML editor features', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
   test('Mod+Shift+F re-indents a mangled request envelope', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Editor');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
@@ -99,9 +105,8 @@ test.describe('XML editor features', () => {
   test('typing "<" inside <tem:Add> offers intA/intB from the schema', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Editor');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
@@ -132,10 +137,15 @@ test.describe('XML editor features', () => {
       // needs a real compositor/focus stack this headless Electron window does not fully
       // provide), so assert the same data through the IPC path the widget itself calls —
       // `xml.completions` — invoked from the renderer exactly as the completion provider
-      // would, using the imported interface's id from the project snapshot.
+      // would, using the imported interface's id from the open workspace's only project.
       const items = await page.evaluate(async (): Promise<string[] | undefined> => {
         const wirebench = (globalThis as unknown as { wirebench: FallbackWirebenchApi }).wirebench;
-        const snapshot = await wirebench.project.snapshot(undefined);
+        const workspace = await wirebench.workspace.snapshot(undefined);
+        const projectId = workspace.ok ? workspace.value.workspace?.projects[0]?.id : undefined;
+        if (projectId === undefined) {
+          return undefined;
+        }
+        const snapshot = await wirebench.project.snapshot({ projectId });
         const interfaceId = snapshot.ok ? snapshot.value.project?.interfaces[0]?.id : undefined;
         if (interfaceId === undefined) {
           return undefined;

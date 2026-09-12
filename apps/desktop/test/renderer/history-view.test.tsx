@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryView } from '../../src/renderer/features/history/history-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 
@@ -29,7 +31,7 @@ function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
 
 describe('HistoryView', () => {
   beforeEach(() => {
-    useHistoryStore.setState({ entries: [], total: 0, query: '', loading: false });
+    useHistoryStore.setState({ entries: [], total: 0, query: '', loading: false, projectId: undefined });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
     installWirebenchApi();
   });
@@ -37,6 +39,7 @@ describe('HistoryView', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('declares its two columns on the grid and on every cell', () => {
@@ -113,5 +116,84 @@ describe('HistoryView', () => {
     expect(tabs[0]?.diff?.leftLabel).toContain('First');
     expect(tabs[0]?.diff?.rightLabel).toContain('Second');
     expect(activeId).toBe('diff');
+  });
+
+  describe('with several projects open', () => {
+    beforeEach(() => {
+      useWorkspaceStore.setState({
+        workspace: workspaceWire({
+          projects: [
+            { id: 'proj-1', name: 'Calc Project', slug: 'calc', source: 'internal', dir: '/x', status: 'ready' },
+            { id: 'proj-2', name: 'Weather Project', slug: 'weather', source: 'internal', dir: '/y', status: 'ready' },
+          ],
+        }),
+      });
+    });
+
+    it('offers "All projects" plus one entry per open project, in workspace order', () => {
+      render(<HistoryView />);
+
+      const select = screen.getByTestId<HTMLSelectElement>('history-project-filter');
+      expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+        'All projects',
+        'Calc Project',
+        'Weather Project',
+      ]);
+    });
+
+    it('shows entries merged newest-first across every open project, each tagged with its project', () => {
+      useHistoryStore.setState({
+        entries: [
+          makeEntry({ id: 'a', projectId: 'proj-2', requestName: 'Forecast', at: '2026-01-01T10:00:02.000Z' }),
+          makeEntry({ id: 'b', projectId: 'proj-1', requestName: 'Add', at: '2026-01-01T10:00:01.000Z' }),
+        ],
+        total: 2,
+      });
+      render(<HistoryView />);
+
+      const rows = screen.getAllByTestId('history-row');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain('Forecast');
+      expect(rows[0]?.textContent).toContain('Weather Project');
+      expect(rows[1]?.textContent).toContain('Add');
+      expect(rows[1]?.textContent).toContain('Calc Project');
+    });
+
+    it('calls history.list with the chosen project id when the filter changes', async () => {
+      const list = vi.fn().mockResolvedValue({ ok: true, value: { entries: [], total: 0 } });
+      installWirebenchApi({ history: { list } });
+      render(<HistoryView />);
+
+      fireEvent.change(screen.getByTestId('history-project-filter'), { target: { value: 'proj-2' } });
+      await waitFor(() => expect(list).toHaveBeenCalledWith({ projectId: 'proj-2' }));
+
+      fireEvent.change(screen.getByTestId('history-project-filter'), { target: { value: '' } });
+      await waitFor(() => expect(list).toHaveBeenLastCalledWith({}));
+    });
+
+    it('re-send and compare keep working across projects', async () => {
+      const resend = vi.fn().mockResolvedValue({ ok: true, value: {} });
+      installWirebenchApi({ history: { resend } });
+      useHistoryStore.setState({
+        entries: [
+          makeEntry({ id: 'a', projectId: 'proj-1', requestName: 'Add' }),
+          makeEntry({ id: 'b', projectId: 'proj-2', requestName: 'Forecast' }),
+        ],
+        total: 2,
+      });
+      render(<HistoryView />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Re-send Add' }));
+      expect(resend).toHaveBeenCalledWith({ id: 'a' });
+
+      const compareButtons = screen.getAllByTitle('Compare…');
+      await userEvent.click(compareButtons[0]!);
+      await userEvent.click(compareButtons[1]!);
+
+      const { tabs } = useEditorsStore.getState();
+      expect(tabs[0]?.kind).toBe('diff');
+      expect(tabs[0]?.diff?.leftLabel).toContain('Add');
+      expect(tabs[0]?.diff?.rightLabel).toContain('Forecast');
+    });
   });
 });

@@ -38,6 +38,8 @@ import {
   resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
+  resolveWorkspaceEndpoint,
+  resolveWorkspaceScopes,
   projectFiles,
   saveProject,
   toSendInput,
@@ -49,6 +51,7 @@ import type {
   AttachmentResolvers,
   AttachmentSource,
   Endpoint,
+  EndpointSource,
   FsLike,
   Preferences,
   Interface,
@@ -57,7 +60,9 @@ import type {
   ProjectFiles,
   ProxyConfig,
   PropertyScopes,
+  RequestDef,
   SendAttachmentOptions,
+  Workspace,
 } from '@wirebench/engine';
 import {
   DEFAULT_WSA_CONFIG,
@@ -101,7 +106,6 @@ import type {
   ProjectSaveResult,
   KeystoresInspectResponse,
   ProjectWire,
-  RecentProject,
   SoapSendInputWire,
   ProxyOptionsWire,
   TlsOptionsWire,
@@ -129,7 +133,6 @@ import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
 import { renameWithRetry } from './rename-dir.js';
-import type { RecentProjects } from './recent-projects.js';
 
 /**
  * What a send needs to carry a request's attachments: the attachments themselves plus the
@@ -145,7 +148,7 @@ export interface SendAttachmentInput {
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 
 /** Events the service raises; the IPC layer forwards them to the renderer. */
-export interface ProjectServiceHooks {
+export interface ProjectHostHooks {
   /** After any mutation, save, open, close or reload. `null` means no project is open. */
   readonly onChanged?: (project: ProjectWire | null) => void;
   /** Files under the project folder changed outside the app. */
@@ -194,7 +197,7 @@ function sanitizeDroppedName(name: string): string {
  * would try them: an absolute path is itself the only candidate; a relative one is tried under
  * `resourceRoot` first (when the project has one), then under the project folder. Kept in sync
  * with that function deliberately, so the path main checks is always the path the engine would
- * actually read — see {@link ProjectService.attachmentResolvers}'s `resolver`.
+ * actually read — see {@link ProjectHost.attachmentResolvers}'s `resolver`.
  */
 function attachmentPathCandidates(projectDir: string, resourceRoot: string | undefined, path: string): string[] {
   if (isAbsolute(path)) {
@@ -257,8 +260,18 @@ async function isEmptyDir(dir: string): Promise<boolean> {
   return (await readdir(dir)).length === 0;
 }
 
+/**
+ * Where a host learns that its project is open *inside* a workspace: the workspace as it stands
+ * right now, and the slug the workspace's manifest addresses this project by (the first half of
+ * an endpoint override's `<projectSlug>/<interfaceSlug>` key).
+ *
+ * A function rather than a value because the workspace is replaced on every edit — a host that
+ * held a snapshot would keep routing to the environment that was active when it opened.
+ */
+export type WorkspaceContext = () => { readonly workspace: Workspace; readonly projectSlug: string } | undefined;
+
 /** Owns the open project: its model, its folder, its autosave timer and its watcher. */
-export class ProjectService {
+export class ProjectHost {
   private open: OpenProject | undefined;
   /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
@@ -270,11 +283,16 @@ export class ProjectService {
    * failed save resolves it so the next one still runs (the caller sees the rejection).
    */
   private saveQueue: Promise<void> = Promise.resolve();
+  /**
+   * Set by `WorkspaceService` for every host it opens; `undefined` for a host that owns a
+   * standalone project. Everything property- and endpoint-related branches on it, and with no
+   * context the host behaves exactly as it did before workspaces existed.
+   */
+  private workspaceContext: WorkspaceContext | undefined;
 
   constructor(
     private readonly engine: EngineService,
-    private readonly recent: RecentProjects,
-    private readonly hooks: ProjectServiceHooks = {},
+    private readonly hooks: ProjectHostHooks = {},
     /** Overrides the filesystem `saveProject` writes through. Test-only (deferred writes). */
     private readonly fs?: FsLike,
     /** The `${#Global#name}` scope. Omitted in tests that never expand properties. */
@@ -300,6 +318,44 @@ export class ProjectService {
      */
     private readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>,
   ) {}
+
+  /**
+   * Tells this host which workspace its project is open inside. Injected after construction
+   * rather than through the constructor because the workspace owns the host, not the other way
+   * round: `WorkspaceService` builds the host, then hands it a closure over the entry it just
+   * created. Pass `undefined` to go back to standalone behaviour.
+   */
+  setWorkspaceContext(context: WorkspaceContext | undefined): void {
+    this.workspaceContext = context;
+  }
+
+  /**
+   * The URL a send of `request` would go to, resolved the way the project is actually open:
+   * through the workspace's active environment when there is a workspace context (spec §3.3 —
+   * a linked project's own environment wins, then the workspace environment's override for
+   * `<projectSlug>/<interfaceSlug>`, then the project's own resolution), and through the
+   * project's own active environment when there is not.
+   *
+   * The single place the choice is made, so the send path, the TLS lookup, the WS-A `To`
+   * header and the preflight badge can never disagree about where a request is going.
+   */
+  private resolveEndpointFor(
+    project: Project,
+    iface: Interface,
+    request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+  ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
+    const context = this.workspaceContext?.();
+    if (context === undefined) {
+      return resolveEndpoint(project, project.activeEnvironmentId, iface, request);
+    }
+    return resolveWorkspaceEndpoint({
+      workspace: context.workspace,
+      project,
+      projectSlug: context.projectSlug,
+      iface,
+      request,
+    });
+  }
 
   /**
    * Whether main may touch `resolved` on behalf of a request attachment.
@@ -350,9 +406,7 @@ export class ProjectService {
       return undefined;
     }
     const { iface, request } = location;
-    const endpoint =
-      overrides?.endpoint ??
-      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, iface, request).url;
+    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request).url;
     if (endpoint === undefined) {
       return undefined;
     }
@@ -565,6 +619,18 @@ export class ProjectService {
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }
+    const context = this.workspaceContext?.();
+    if (context !== undefined) {
+      // Inside a workspace the active environment is the *workspace's*, and the project
+      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`,
+      // which only ever names a project environment, has nothing to select here.
+      return resolveWorkspaceScopes({
+        workspace: context.workspace,
+        project: this.open.project,
+        globals,
+        system: process.env,
+      });
+    }
     return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
   }
 
@@ -581,6 +647,9 @@ export class ProjectService {
       this.scopesFor(activeId),
       activeId,
       this.defaultWsaActionFor(requestId),
+      this.workspaceContext?.() === undefined
+        ? undefined
+        : (iface, request) => this.resolveEndpointFor(open.project, iface, request),
     );
   }
 
@@ -715,6 +784,17 @@ export class ProjectService {
     });
   }
 
+  /**
+   * The open project's engine model, or `undefined` when no project is open.
+   *
+   * `snapshot()` answers the *renderer's* question and is lossy by design; exporting a project
+   * has to write the model itself, unsaved edits included, so `WorkspaceService.exportProject`
+   * reads it here rather than round-tripping the folder through disk.
+   */
+  model(): Project | undefined {
+    return this.open?.project;
+  }
+
   private require(): OpenProject {
     if (this.open === undefined) {
       throw new ProjectError('no-project', 'No project is open');
@@ -735,7 +815,6 @@ export class ProjectService {
     await this.closeInternal();
     this.adopt(createProject(input.name.trim().length > 0 ? input.name : projectNameFromDir(input.dir)), input.dir, []);
     await this.save({ reason: 'create' });
-    await this.recent.remember(input.dir, this.require().project.name);
     this.emitChanged();
     return this.snapshot() as ProjectWire;
   }
@@ -749,7 +828,6 @@ export class ProjectService {
       dir,
       problems.map((problem) => ({ code: problem.code, message: problem.message, file: problem.file })),
     );
-    await this.recent.remember(dir, project.name);
     this.emitChanged();
     this.hydrating = this.hydrateAll();
     return this.snapshot() as ProjectWire;
@@ -1068,8 +1146,7 @@ export class ProjectService {
     const ca = await this.trustAnchors();
     const trustInvalid =
       location !== undefined &&
-      resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
-        .endpoint?.trustInvalid === true;
+      this.resolveEndpointFor(this.open.project, location.iface, location.request).endpoint?.trustInvalid === true;
     if (identity === undefined && ca === undefined && !trustInvalid) {
       return undefined;
     }
@@ -1367,8 +1444,7 @@ export class ProjectService {
     const endpoint =
       this.open === undefined || location === undefined
         ? ''
-        : (resolveEndpoint(this.open.project, this.open.project.activeEnvironmentId, location.iface, location.request)
-            .url ?? '');
+        : (this.resolveEndpointFor(this.open.project, location.iface, location.request).url ?? '');
     return applyWsaHeaders(this.envelopeFor(requestId, envelopeXml), wsa.config, {
       endpoint,
       ...(request?.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
@@ -1524,11 +1600,6 @@ export class ProjectService {
       contentType: input.contentType,
     });
     return { size, source: { kind: 'cache', sha256 } };
-  }
-
-  /** The recent-projects list, most recent first. */
-  recentProjects(): Promise<RecentProject[]> {
-    return this.recent.list();
   }
 
   /**

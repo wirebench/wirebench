@@ -18,6 +18,8 @@ import type {
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
 vi.mock('electron', () => ({
+  // The e2e dialog overrides are honoured only in an unpackaged run.
+  app: { isPackaged: false },
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
       handlers.set(name, handler);
@@ -74,7 +76,7 @@ const SNAPSHOT = {
   wssIncoming: [],
 } as unknown as ProjectWire;
 
-/** A recording stand-in for `ProjectService`, so the channels are tested, not the project. */
+/** A recording stand-in for `ProjectHost`, so the channels are tested, not the project. */
 function stubProject(overrides: Partial<DefinitionChannelProject> = {}): DefinitionChannelProject & {
   calls: unknown[];
 } {
@@ -103,7 +105,8 @@ function stubProject(overrides: Partial<DefinitionChannelProject> = {}): Definit
       calls.push({ kind: 'docs', interfaceId, format });
       return format === 'html' ? '<!DOCTYPE html><p>doc</p>' : '# doc';
     },
-    snapshot: () => SNAPSHOT,
+    projectSnapshot: () => SNAPSHOT,
+    projectId: () => 'p1',
     ...overrides,
   };
 }

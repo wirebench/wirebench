@@ -1,16 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { cycleEnvironment, EnvSwitcher } from '../../src/renderer/features/environments/env-switcher.js';
-import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import type { EnvironmentWire } from '../../src/shared/wire-types.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-types.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 
-const dev: EnvironmentWire = { id: 'e1', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: {} };
-const uat: EnvironmentWire = { id: 'e2', name: 'uat', slug: 'uat', order: 1, endpoints: {}, properties: {} };
+const dev: WorkspaceEnvironmentWire = { id: 'e1', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: {} };
+const uat: WorkspaceEnvironmentWire = { id: 'e2', name: 'uat', slug: 'uat', order: 1, endpoints: {}, properties: {} };
 
 function setUp(activeEnvironmentId: string | undefined) {
   const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-  useProjectStore.setState({ environments: [dev, uat], activeEnvironmentId, setActiveEnvironment });
+  useWorkspaceStore.setState({
+    workspace: workspaceWire({
+      environments: [dev, uat],
+      ...(activeEnvironmentId !== undefined ? { activeEnvironmentId } : {}),
+    }),
+    setActiveEnvironment,
+  });
   useUiStore.setState({ envSwitcherOpen: false });
   return setActiveEnvironment;
 }
@@ -18,8 +26,9 @@ function setUp(activeEnvironmentId: string | undefined) {
 describe('EnvSwitcher', () => {
   afterEach(() => {
     cleanup();
-    useProjectStore.setState({ environments: [], activeEnvironmentId: undefined });
+    useWorkspaceStore.setState({ workspace: null });
     useUiStore.setState({ envSwitcherOpen: false });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 
   it('shows "No environment" when none is active', () => {
@@ -48,6 +57,19 @@ describe('EnvSwitcher', () => {
     });
   });
 
+  it('opens the environments grid from Manage environments, even with none active', async () => {
+    setUp(undefined);
+    render(<EnvSwitcher />);
+    fireEvent.keyDown(screen.getByTestId('env-switcher'), { key: 'Enter' });
+
+    const items = await screen.findAllByRole('menuitem');
+    fireEvent.click(items.at(-1)!);
+
+    await waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['env:e1']);
+    });
+  });
+
   it('opens from the ui store, so `env.switch` can drive it', async () => {
     setUp('e1');
     render(<EnvSwitcher />);
@@ -58,28 +80,28 @@ describe('EnvSwitcher', () => {
 
 describe('cycleEnvironment', () => {
   afterEach(() => {
-    useProjectStore.setState({ environments: [], activeEnvironmentId: undefined });
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('cycles none -> first -> second -> none', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({ environments: [dev, uat], activeEnvironmentId: undefined, setActiveEnvironment });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat] }), setActiveEnvironment });
 
     await cycleEnvironment(1);
     expect(setActiveEnvironment).toHaveBeenLastCalledWith('e1');
 
-    useProjectStore.setState({ activeEnvironmentId: 'e1' });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e1' }) });
     await cycleEnvironment(1);
     expect(setActiveEnvironment).toHaveBeenLastCalledWith('e2');
 
-    useProjectStore.setState({ activeEnvironmentId: 'e2' });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [dev, uat], activeEnvironmentId: 'e2' }) });
     await cycleEnvironment(1);
     expect(setActiveEnvironment).toHaveBeenLastCalledWith(null);
   });
 
-  it('does nothing when the project has no environments', async () => {
+  it('does nothing when the workspace has no environments', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
-    useProjectStore.setState({ environments: [], activeEnvironmentId: undefined, setActiveEnvironment });
+    useWorkspaceStore.setState({ workspace: workspaceWire(), setActiveEnvironment });
     await cycleEnvironment(1);
     expect(setActiveEnvironment).not.toHaveBeenCalled();
   });

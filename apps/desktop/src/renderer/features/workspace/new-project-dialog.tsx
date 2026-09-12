@@ -2,33 +2,39 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { useUiStore } from '../../state/ui.js';
-import { basenameOf, projectActions } from './project-actions.js';
+import { workspaceActions } from './workspace-actions.js';
 
 /**
- * Names the project whose folder the user just picked. Split from the folder picker because
- * the native dialog cannot collect a second field, and the folder's own name is nearly always
- * the right answer — so this is a confirmation with an escape hatch, not a form.
+ * Names a new project of the open workspace. A name is all it asks: the folder is the
+ * workspace's own `projects/<slug>/`, so there is nothing else to choose.
  */
 export function NewProjectDialog() {
-  const dir = useUiStore((state) => state.newProjectDir);
-  const promptNewProject = useUiStore((state) => state.promptNewProject);
+  const open = useUiStore((state) => state.newProjectDialogOpen);
+  const setOpen = useUiStore((state) => state.setNewProjectDialogOpen);
   const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setName(dir === undefined ? '' : basenameOf(dir));
-  }, [dir]);
+    if (open) {
+      setName('');
+    }
+  }, [open]);
 
-  const open = dir !== undefined;
+  const trimmed = name.trim();
+  const submit = async (): Promise<void> => {
+    if (trimmed.length === 0 || busy) {
+      return;
+    }
+    setBusy(true);
+    const projectId = await workspaceActions.addProject(trimmed);
+    setBusy(false);
+    if (projectId !== undefined) {
+      setOpen(false);
+    }
+  };
 
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          promptNewProject(undefined);
-        }
-      }}
-    >
+    <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         <Dialog.Content
@@ -36,7 +42,9 @@ export function NewProjectDialog() {
           className="fixed top-1/2 left-1/2 w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <Dialog.Title className="text-md font-medium text-fg-default">New project</Dialog.Title>
-          <Dialog.Description className="mt-1 truncate font-mono text-xs text-fg-subtle">{dir}</Dialog.Description>
+          <Dialog.Description className="mt-1 text-xs text-fg-subtle">
+            The project is created inside this workspace.
+          </Dialog.Description>
 
           <label className="mt-3 block text-sm text-fg-subtle" htmlFor="new-project-name">
             Project name
@@ -46,10 +54,13 @@ export function NewProjectDialog() {
             data-testid="new-project-name"
             autoFocus
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && dir !== undefined && name.trim().length > 0) {
-                void projectActions.create(dir, name.trim());
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void submit();
               }
             }}
             className="mt-1 w-full rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
@@ -62,11 +73,9 @@ export function NewProjectDialog() {
             <Button
               data-testid="new-project-create"
               variant="primary"
-              disabled={name.trim().length === 0}
+              disabled={trimmed.length === 0 || busy}
               onClick={() => {
-                if (dir !== undefined) {
-                  void projectActions.create(dir, name.trim());
-                }
+                void submit();
               }}
             >
               Create

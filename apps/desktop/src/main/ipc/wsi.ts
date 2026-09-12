@@ -21,12 +21,12 @@ import type { QName, WsiReport } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { WsiReportWire } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectRouter } from '../project-router.js';
 import type { RecordsWritePicks } from '../dialog-picks.js';
 import { registerHandler } from './register.js';
 
-/** The `ProjectService` surface the `wsi.*` channels need; a stub stands in for it in tests. */
-export type WsiChannelProject = Pick<ProjectService, 'validationTargetFor' | 'snapshot'>;
+/** The `ProjectRouter` surface the `wsi.*` channels need; a stub stands in for it in tests. */
+export type WsiChannelProject = Pick<ProjectRouter, 'validationTargetFor' | 'projectSnapshot' | 'projectId'>;
 
 /** How the caller asks for a save location; `dialogs.saveFile`'s own handler is not reusable here. */
 export interface WsiSaveDialog {
@@ -121,7 +121,11 @@ export function registerWsiChannels(service: EngineService, deps: WsiChannelDeps
   registerHandler(channels.wsi.checkWsdl, (request) => {
     const result = service.resultFor(request.interfaceId);
     const report = runWsdlAssertions(wsiWsdlContext(result), { verbose: true });
-    const name = deps.project.snapshot()?.interfaces.find((iface) => iface.id === request.interfaceId)?.name;
+    const projectId = deps.project.projectId(request.interfaceId);
+    const name =
+      projectId === undefined
+        ? undefined
+        : deps.project.projectSnapshot(projectId)?.interfaces.find((iface) => iface.id === request.interfaceId)?.name;
     return Promise.resolve(toWire(report, name ?? request.interfaceId, 'wsdl'));
   });
 

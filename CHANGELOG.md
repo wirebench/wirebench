@@ -6,7 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Workspaces.** Wirebench now groups any number of projects into a workspace stored under
+  Electron's `userData`, with no folder to manage — the launch picker creates or opens one by
+  name. A workspace holds its own environments, shared by every project it contains, with a
+  `${#Workspace#…}` property scope; an interface's effective endpoint is the workspace
+  environment's override, falling back to a linked project's own (name-matched) environment,
+  then the interface's default. *Link existing project folder…* and *Import project folder…*
+  bring an external project in for teams that keep it in git; *Export project…* writes it back
+  out. Removing a project is trash-only and confirmed; a linked project's folder is never
+  touched. Tabs, the explorer, and History span every project in the open workspace, and the
+  last-open workspace (with its tab set) reopens on launch.
+
+### Removed
+
+- **Opening or creating a project by picking a folder.** The Welcome-screen "Open Project…" and
+  folder-picker "New Project" flows are gone; a project is now created by name inside a
+  workspace, and a folder dialog only appears for linking, importing or exporting a project.
 
 ## [1.0.0] - 2026-09-11
 

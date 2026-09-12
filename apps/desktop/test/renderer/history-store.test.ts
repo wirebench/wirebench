@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useHistoryStore } from '../../src/renderer/state/history.js';
+import { subscribeToHistory, useHistoryStore } from '../../src/renderer/state/history.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 
@@ -44,6 +44,34 @@ describe('useHistoryStore', () => {
     expect(useHistoryStore.getState().total).toBe(2);
   });
 
+  it('never lets a stale history.list reply overwrite a newer one', async () => {
+    // Opening a workspace raises `workspace.changed` and one `project.changed` per project,
+    // each a reload; the replies can land in any order.
+    type Reply = { ok: true; value: { entries: HistoryEntryWire[]; total: number } };
+    const resolvers: ((reply: Reply) => void)[] = [];
+    installWirebenchApi({
+      history: {
+        list: vi.fn(
+          () =>
+            new Promise<Reply>((resolve) => {
+              resolvers.push(resolve);
+            }),
+        ),
+      },
+    });
+
+    const first = useHistoryStore.getState().load();
+    const second = useHistoryStore.getState().load();
+    resolvers[1]?.({ ok: true, value: { entries: [makeEntry({ id: 'new' })], total: 1 } });
+    await second;
+    resolvers[0]?.({ ok: true, value: { entries: [], total: 0 } });
+    await first;
+
+    expect(useHistoryStore.getState().entries.map((entry) => entry.id)).toEqual(['new']);
+    expect(useHistoryStore.getState().total).toBe(1);
+    expect(useHistoryStore.getState().loading).toBe(false);
+  });
+
   it('search sets the query immediately and reloads after the debounce', async () => {
     vi.useFakeTimers();
     const list = vi.fn().mockResolvedValue({ ok: true, value: { entries: [], total: 0 } });
@@ -83,5 +111,29 @@ describe('useHistoryStore', () => {
     useHistoryStore.getState().onAppended(makeEntry({ id: 'new', requestName: 'Add' }));
 
     expect(useHistoryStore.getState().entries).toEqual([]);
+  });
+
+  it('reloads when the workspace or one of its projects changes', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const list = vi.fn().mockResolvedValue({ ok: true, value: { entries: [], total: 0 } });
+    installWirebenchApi({
+      history: { list },
+      on: ((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return () => listeners.delete(name);
+      }) as unknown as Window['wirebench']['on'],
+    });
+
+    const off = subscribeToHistory();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+
+    // Opening or closing a workspace changes which history files main merges.
+    listeners.get('workspace.changed')?.({ workspace: null });
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    listeners.get('project.changed')?.({ projectId: 'p1', project: null });
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+
+    off();
+    expect(listeners.size).toBe(0);
   });
 });

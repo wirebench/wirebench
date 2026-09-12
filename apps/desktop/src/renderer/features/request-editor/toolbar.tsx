@@ -79,9 +79,10 @@ export function RequestToolbar({
         </Button>
       )}
 
-      {endpointSource === 'environment' ? (
+      {endpointSource === 'environment' || endpointSource === 'workspace-environment' ? (
         // The active environment overrides this interface's address, so the request's own
-        // endpoint is not what will be used; show what will be, and where it came from.
+        // endpoint is not what will be used; show what will be, and where it came from. A
+        // workspace environment and a project one are the same fact to the user.
         <div className="flex min-w-[16rem] flex-1 items-center gap-2">
           <span
             data-testid="endpoint-env-badge"

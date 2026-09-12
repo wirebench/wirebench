@@ -44,7 +44,11 @@ function setUp(
     updateKeystore: vi.fn().mockResolvedValue(undefined),
     removeKeystore: vi.fn().mockResolvedValue(undefined),
   };
-  useProjectStore.setState({ project, keystores: options.keystores ?? [corp], ...actions });
+  useProjectStore.setState({
+    projects: { p1: project },
+    keystores: (options.keystores ?? [corp]).map((keystore) => ({ ...keystore, projectId: 'p1' })),
+    ...actions,
+  });
   render(
     <TooltipPrimitive.Provider>
       <KeystoresView />
@@ -55,7 +59,7 @@ function setUp(
 
 afterEach(() => {
   cleanup();
-  useProjectStore.setState({ project: null, keystores: [] });
+  useProjectStore.getState().reset();
 });
 
 describe('KeystoresView', () => {
@@ -111,7 +115,7 @@ describe('KeystoresView', () => {
 
     fireEvent.click(screen.getByTestId('keystore-add-submit'));
     await waitFor(() => {
-      expect(addKeystore).toHaveBeenCalledWith({ path: '/picked/corp.p12', name: 'corp' });
+      expect(addKeystore).toHaveBeenCalledWith('p1', { path: '/picked/corp.p12', name: 'corp' });
     });
   });
 
@@ -176,16 +180,16 @@ describe('KeystoresView', () => {
     expect(screen.getAllByRole('row').map((row) => row.tabIndex)).toEqual([-1, 0]);
   });
 
-  it('invites the user to open a project when none is open', () => {
+  it('invites the user to pick a project when none is open', () => {
     installWirebenchApi({});
-    useProjectStore.setState({ project: null, keystores: [] });
+    useProjectStore.getState().reset();
     render(
       <TooltipPrimitive.Provider>
         <KeystoresView />
       </TooltipPrimitive.Provider>,
     );
 
-    expect(screen.getByText('Open a project to add keystores.')).toBeTruthy();
+    expect(screen.getByText('Select a project to add keystores.')).toBeTruthy();
     expect(screen.getByLabelText('Add keystore').hasAttribute('disabled')).toBe(true);
   });
 });

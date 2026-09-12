@@ -17,7 +17,7 @@ import { channels } from '../../shared/ipc.js';
 import { MAX_DROPPED_BASE64_LENGTH } from '../../shared/wire-types.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import type { ExchangeCache } from '../exchange-cache.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectRouter } from '../project-router.js';
 import { registerHandler } from './register.js';
 
 /** Subdirectory of `userData` that {@link registerAttachmentChannels}'s "open" writes into. */
@@ -28,7 +28,7 @@ export interface AttachmentChannelDeps {
   /** Holds the response bytes of recent sends, keyed by `sendId`. */
   readonly exchanges: Pick<ExchangeCache, 'getAttachment'>;
   /** Resolves (and allow-lists) a saved request's attachment to a file on disk, and takes dropped bytes. */
-  readonly project: Pick<ProjectService, 'resolveAttachmentPath' | 'addAttachmentBytes'>;
+  readonly project: Pick<ProjectRouter, 'resolveAttachmentPath' | 'addAttachmentBytes'>;
   /**
    * The session's picked-path memory. `pickFiles` records everything it returns here, which is
    * the *only* evidence `add-attachment` accepts for a file outside the project folder — so
@@ -188,7 +188,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
   registerHandler(channels.attachments.addDropped, async (request) => {
     // Bytes, not paths: a drop leaves main no evidence that the user picked the file, so the
     // renderer sends what the browser sandbox gave it and main decides where it lands (always
-    // the attachment cache). See `ProjectService.addAttachmentBytes`.
+    // the attachment cache). See `ProjectHost.addAttachmentBytes`.
     const attachmentIds: string[] = [];
     for (const file of request.files) {
       // Checked on the base64 string itself, before `Buffer.from` ever decodes it: the request

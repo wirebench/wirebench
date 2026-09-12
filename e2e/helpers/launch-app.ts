@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import {
   chromium,
   _electron as electron,
@@ -43,19 +43,51 @@ export function packagedExecutable(appPath: string): string {
     : appPath;
 }
 
-/** A launched app under test, plus a `close()` that also asserts the console stayed clean. */
 /** Per-launch overrides; everything is optional and defaults to a throwaway profile. */
 export interface LaunchOptions {
-  /** Reuse a profile across launches — what "relaunch and find it in Recent" needs. */
+  /** Reuse a profile across launches — what "relaunch reopens the last workspace" needs. */
   readonly userDataDir?: string;
-  /** Fixed answer for `dialogs.openFolder`, since a native picker cannot be driven. */
+  /**
+   * Fixed answer for every folder picker, since a native picker cannot be driven. Only for
+   * the flows that genuinely pick a folder (link / import / export a project folder):
+   * creating a project no longer involves one.
+   */
   readonly folderDialogPath?: string;
+  /**
+   * Successive answers for the folder pickers, in order (export, then link back, in one
+   * launch); once spent, the pickers fall back to {@link folderDialogPath}.
+   */
+  readonly folderDialogPaths?: readonly string[];
+  /**
+   * Where deleted workspaces and project folders go instead of the OS trash, so a spec can
+   * assert what was "trashed". Never an `rm`: main moves the folder in here.
+   */
+  readonly trashDir?: string;
   /** Skip removing `userDataDir` on close (it is the caller's, not ours, when reused). */
   readonly keepUserDataDir?: boolean;
   /** Extra env vars for the launched process — e.g. `WIREBENCH_E2E_SAVE_PATH`/`WIREBENCH_E2E_OPEN_PATH`. */
   readonly extraEnv?: Readonly<Record<string, string>>;
 }
 
+/** The env vars {@link LaunchOptions} translate into, shared by both launchers. */
+function e2eEnv(options: LaunchOptions): Record<string, string> {
+  return {
+    ...(options.folderDialogPath !== undefined ? { WIREBENCH_E2E_DIALOG_FOLDER: options.folderDialogPath } : {}),
+    ...(options.folderDialogPaths !== undefined
+      ? { WIREBENCH_E2E_DIALOG_FOLDERS: options.folderDialogPaths.join(delimiter) }
+      : {}),
+    ...(options.trashDir !== undefined ? { WIREBENCH_E2E_TRASH_DIR: options.trashDir } : {}),
+    ...options.extraEnv,
+  };
+}
+
+/**
+ * What the renderer shows once it knows whether a workspace is open: the IDE (its activity
+ * bar) or the workspace picker. Neither appears before main's launch-time reopen settles.
+ */
+export const SHELL_READY_SELECTOR = '[data-testid="activity-bar"], [data-testid="workspace-picker"]';
+
+/** A launched app under test, plus a `close()` that also asserts the console stayed clean. */
 export interface LaunchedApp {
   readonly app: ElectronApplication;
   readonly window: Page;
@@ -86,10 +118,9 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
         NODE_ENV: 'production',
         WIREBENCH_E2E: '1',
         WIREBENCH_USER_DATA_DIR: userDataDir,
-        // Playwright cannot drive a native folder picker, so specs that create or open a
-        // project pin what `dialogs.openFolder` returns (see `main/ipc/dialogs.ts`).
-        ...(options.folderDialogPath !== undefined ? { WIREBENCH_E2E_DIALOG_FOLDER: options.folderDialogPath } : {}),
-        ...options.extraEnv,
+        // Playwright cannot drive a native folder picker, so specs that link, import or export
+        // a project folder pin what the pickers return (see `main/native-dialogs.ts`).
+        ...e2eEnv(options),
       },
     });
 
@@ -104,7 +135,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
       }
     });
 
-    await window.waitForSelector('[data-testid="activity-bar"]');
+    await window.waitForSelector(SHELL_READY_SELECTOR);
 
     return {
       app,
@@ -175,8 +206,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
       NODE_ENV: 'production',
       WIREBENCH_E2E: '1',
       WIREBENCH_USER_DATA_DIR: userDataDir,
-      ...(options.folderDialogPath !== undefined ? { WIREBENCH_E2E_DIALOG_FOLDER: options.folderDialogPath } : {}),
-      ...options.extraEnv,
+      ...e2eEnv(options),
     },
     stdio: 'ignore',
   });
@@ -205,7 +235,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<La
         consoleErrors.push(message.text());
       }
     });
-    await window.waitForSelector('[data-testid="activity-bar"]', { timeout: 60_000 });
+    await window.waitForSelector(SHELL_READY_SELECTOR, { timeout: 60_000 });
 
     return {
       window,

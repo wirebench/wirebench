@@ -37,7 +37,7 @@ export function toPreferencesWire(preferences: Preferences): PreferencesWire {
  * `ssl.pickCaBundle` after a native dialog and by nothing else, so it is the same evidence a
  * fresh pick would be. A `preferences.yaml` edited by hand — or a path that reached the file
  * some other way — has no marker and gets no pick, which leaves the bundle untrusted (see
- * `ProjectService.trustAnchors`, which still runs the full `allowsReadPath` check) until the
+ * `ProjectHost.trustAnchors`, which still runs the full `allowsReadPath` check) until the
  * user picks it again. Without this, every restart would silently stop trusting a bundle that
  * lives outside the project folder.
  *

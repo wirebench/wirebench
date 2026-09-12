@@ -14,7 +14,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Plus, Trash2 } from 'luc
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import {
   EncryptionFields,
   SignatureFields,
@@ -323,7 +323,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
 /** The Outgoing section body: one row per configuration, each expanding into its editor. */
 export function OutgoingConfigEditor() {
   const configs = useProjectStore((state) => state.wssOutgoing);
-  const hasProject = useProjectStore((state) => state.project !== null);
+  const projectId = useTargetProjectId();
   const addWssOutgoing = useProjectStore((state) => state.addWssOutgoing);
   const removeWssOutgoing = useProjectStore((state) => state.removeWssOutgoing);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
@@ -336,9 +336,11 @@ export function OutgoingConfigEditor() {
         <IconButton
           label="Add outgoing WS-Security configuration"
           data-testid="wss-outgoing-add"
-          disabled={!hasProject}
+          disabled={projectId === undefined}
           onClick={() => {
-            void addWssOutgoing();
+            if (projectId !== undefined) {
+              void addWssOutgoing(projectId);
+            }
           }}
         >
           <Plus size={14} aria-hidden="true" />
@@ -348,7 +350,7 @@ export function OutgoingConfigEditor() {
       <ul aria-label="Outgoing WS-Security configurations" className="flex flex-col gap-0.5 px-1 pb-2">
         {configs.length === 0 && (
           <li className="px-2 py-1 text-sm text-fg-subtle">
-            {hasProject ? 'No outgoing configurations yet.' : 'Open a project to add one.'}
+            {projectId === undefined ? 'Select a project to add one.' : 'No outgoing configurations yet.'}
           </li>
         )}
         {configs.map((config) => (

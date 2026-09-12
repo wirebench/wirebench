@@ -99,8 +99,8 @@ const noActionSupport = {
   buildLiveSendInput: (): never => {
     throw new Error('buildLiveSendInput is not stubbed in this test');
   },
-  mutate: (): never => {
-    throw new Error('mutate is not stubbed in this test');
+  projectMutate: (): never => {
+    throw new Error('projectMutate is not stubbed in this test');
   },
   // No saved request behind these sends, so the property mapping is a pass-through.
   sendInputFor: (): undefined => undefined,
@@ -126,6 +126,7 @@ describe('plaintext credentials never validate', () => {
 
   it('rejects a project.addInterface whose auth carries a plaintext password', () => {
     const parsed = channels.project.addInterface.request.safeParse({
+      target: { projectId: 'p1' },
       source: { kind: 'url', url: 'http://example.test/x?wsdl' },
       auth: { username: 'alice', passwordRef: 'sec_1', password: 's3cret!' },
     });
@@ -134,6 +135,7 @@ describe('plaintext credentials never validate', () => {
 
   it('accepts the same payload once the plaintext password is gone', () => {
     const parsed = channels.project.addInterface.request.safeParse({
+      target: { projectId: 'p1' },
       source: { kind: 'url', url: 'http://example.test/x?wsdl' },
       auth: { username: 'alice', passwordRef: 'sec_1' },
     });
@@ -168,24 +170,42 @@ describe('registerRequestChannels', () => {
       },
       problems: [],
     });
+    const scopesFor = vi.fn().mockReturnValue(scopes);
+    const adHoc: PropertyScopes = { project: {}, global: { only: 'globals' }, env: {} };
     registerRequestChannels(engine, {
       project: {
-        scopesFor: () => scopes,
+        scopesFor,
         preflight: () => preflight,
         authFor: () => undefined,
         requestMeta: () => undefined,
-        projectId: () => undefined,
+        projectId: () => 'p1',
         ...noActionSupport,
       },
+      adHocScopes: () => adHoc,
     });
 
     const result = await invoke('request.send', {
       sendId: 'send-1',
+      requestId: 'req-1',
       input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
     });
 
     expect(result).toMatchObject({ ok: true });
+    // Resolved for the request's own project: the router picks the host from the request id.
+    expect(scopesFor).toHaveBeenCalledWith('req-1');
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }), { scopes, showSecrets: false });
+
+    // A send with no request behind it belongs to no project, so it expands against the
+    // ad-hoc scopes (globals and the process env) rather than being routed anywhere.
+    await invoke('request.send', {
+      sendId: 'send-2',
+      input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+    });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sendId: 'send-2' }), {
+      scopes: adHoc,
+      showSecrets: false,
+    });
+    expect(scopesFor).toHaveBeenCalledTimes(1);
   });
 
   it('returns secret-missing (not an unhandled rejection) when auth references a deleted ref', async () => {

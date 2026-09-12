@@ -14,8 +14,7 @@ import {
   updateWssIncoming,
   updateWssOutgoing,
 } from '../src/main/project-wss-mutations.js';
-import { ProjectService } from '../src/main/project-service.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
+import { ProjectHost } from '../src/main/project-host.js';
 import type { Project } from '@wirebench/engine';
 
 const dirs: string[] = [];
@@ -31,8 +30,8 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-function newService(secrets?: { get(ref: string): Promise<string | undefined> }): ProjectService {
-  return new ProjectService(new EngineService(), new RecentProjects(tempDir('ud')), {}, undefined, undefined, secrets);
+function newService(secrets?: { get(ref: string): Promise<string | undefined> }): ProjectHost {
+  return new ProjectHost(new EngineService(), {}, undefined, undefined, secrets);
 }
 
 /** A project with one request, so the ref-clearing and send paths have something to point at. */
@@ -128,9 +127,9 @@ describe('outgoing WS-Security mutations', () => {
   });
 });
 
-describe('ProjectService WS-Security', () => {
+describe('ProjectHost WS-Security', () => {
   async function openWithConfig(secretRef = 'secret:pw'): Promise<{
-    service: ProjectService;
+    service: ProjectHost;
     dir: string;
     requestId: string;
     configId: string;
@@ -297,7 +296,7 @@ describe('incoming WS-Security mutations', () => {
   });
 });
 
-describe('ProjectService incoming WS-Security', () => {
+describe('ProjectHost incoming WS-Security', () => {
   it('mirrors the configuration and builds a send input for a request that selects only it', async () => {
     const dir = tempDir('proj');
     const service = newService();

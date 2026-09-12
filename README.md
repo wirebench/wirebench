@@ -22,11 +22,19 @@ pnpm install
 pnpm dev
 ```
 
-**1. Create a project.** On the Welcome screen, choose **New project** and pick a folder. That folder _is_ the
-project — everything Wirebench saves goes there, in reviewable text files.
+**1. Create a workspace.** On first launch you get the workspace picker — type a name and choose **Create
+workspace**. There is no folder to pick: the workspace and everything you put in it live in app data, and you never
+manage that location yourself.
 
-**2. Import a WSDL.** Choose **Import WSDL…** (`Mod+I`) and paste a URL or pick a file. Anything the document imports
-or includes is fetched with it and cached beside the project, byte for byte.
+![The workspace picker](docs/images/workspace-picker.png)
+
+**2. Add a project.** Inside the workspace, choose **New project** and give it a name. A project is still a folder of
+small YAML and XML files under the hood — reviewable, made to live in git — but Wirebench places and owns it inside
+the workspace; _Export project…_ and _Link existing project folder…_ are how a project meets git when you want that.
+
+**3. Import a WSDL.** Choose **Import WSDL…** (`Mod+I`) and paste a URL or pick a file, into the project you just
+created or a new one. Anything the document imports or includes is fetched with it and cached beside the project,
+byte for byte.
 
 ![Importing a WSDL by URL](docs/images/import-wsdl.png)
 
@@ -36,20 +44,19 @@ Try one of these public services if you do not have one to hand:
 - `https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL`
 - `http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL`
 
-**3. Open a request.** The explorer fills with the service's bindings and operations, each with a `Request 1` whose
+**4. Open a request.** The explorer fills with the service's bindings and operations, each with a `Request 1` whose
 envelope was generated from the schema — the right elements, in the right order, in the right namespaces.
 
 ![The generated request, open in the editor](docs/images/request-editor.png)
 
-**4. Fill in the values and send.** Replace the `?` placeholders (or switch to the **Form** tab and type into fields),
+**5. Fill in the values and send.** Replace the `?` placeholders (or switch to the **Form** tab and type into fields),
 then press **Send**. The response arrives beside the request with its status, duration, size, headers and raw bytes;
 the HTTP Log at the bottom shows the timing breakdown, and the run is in History for re-sending or diffing later.
 
-That is the whole loop. From here: **Query** evaluates XPath 3.1 and XQuery 3.1 over the response, the details panel
-carries auth, WS-Security, WS-Addressing and attachments, `Mod+K` opens the command palette, and the Environments
-section switches endpoints without touching a request.
-
-![The Welcome screen](docs/images/welcome.png)
+That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
+evaluates XPath 3.1 and XQuery 3.1 over the response; the details panel carries auth, WS-Security, WS-Addressing and
+attachments; `Mod+K` opens the command palette; and the Environments section is workspace-wide — one set of
+environments and endpoint overrides shared by every project, switched without touching a request.
 
 ## Keyboard shortcuts
 
@@ -67,9 +74,13 @@ Every action in Wirebench is a command with an id, and every shortcut is that co
 | Show History            | `Mod+Shift+Y` |
 | Show Settings           | `Mod+,`       |
 | Import WSDL…            | `Mod+I`       |
-| Open Project…           | `Mod+O`       |
 | New Project             | `Mod+Shift+N` |
+| Save All                | `Mod+S`       |
+| Next Environment        | `Mod+Alt+E`   |
 | Toggle Light/Dark Theme | —             |
+
+Workspace management (create, switch, manage, link/import/export a project) is reachable from the command palette and
+the workspace switcher; it has no default keyboard shortcuts of its own.
 
 `Mod+Shift+F` is deliberately unassigned here: it is reserved for Format XML.
 
@@ -137,13 +148,15 @@ repository. It is what the opt-in update feed is derived from.
 
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
-- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0005
+- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0006
 - [Success criteria and their evidence](docs/success-criteria.md) — every v1 criterion, and what proves it
 - [Release checklist](docs/release.md)
 - [Roadmap](docs/roadmap.md) — what 1.0 left out, in the order it is worth building, and what each item unlocks
 - [WS-I assertions implemented](docs/ws-i-assertions.md)
 - [Design spec](docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md) and
   [implementation plan](docs/plans/2026-09-09-wirebench-v1-explore-and-send-plan.md)
+- [Workspaces design spec](docs/specs/2026-09-11-wirebench-workspaces-design.md) and
+  [implementation plan](docs/plans/2026-09-11-wirebench-workspaces-plan.md)
 - [Changelog](CHANGELOG.md)
 
 ## Roadmap

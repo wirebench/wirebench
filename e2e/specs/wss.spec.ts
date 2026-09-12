@@ -20,7 +20,7 @@ import {
   generateTestCa,
 } from '@wirebench/engine/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, openFirstRequest, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 'wss-secret';
@@ -39,7 +39,6 @@ test.describe('wss', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
   let certsDir: string | undefined;
 
   test.afterEach(async () => {
@@ -51,21 +50,20 @@ test.describe('wss', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir, certsDir]) {
+    for (const dir of [userDataDir, certsDir]) {
       if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }
     userDataDir = undefined;
-    projectDir = undefined;
     certsDir = undefined;
   });
 
   test('applies a Timestamp and a digest UsernameToken at send time, with the password masked and never on disk', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Project');
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server, { expectProjectName: 'WSS Project' });
+    const projectDir = workspaceProjectDir(userDataDir);
     await openFirstRequest(page);
 
     // --- build the outgoing configuration ---------------------------------------------------
@@ -118,7 +116,7 @@ test.describe('wss', () => {
     await expect
       .poll(
         () =>
-          listFiles(projectDir!)
+          listFiles(projectDir)
             .filter((file) => file.includes(join('wss', 'outgoing')))
             .map((file) => readFileSync(file, 'utf8'))
             .find((text) => passwordRefPattern.test(text)),
@@ -139,10 +137,8 @@ test.describe('wss', () => {
 
     server = await startTestSoapServer({ fixture: 'calculator' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Sign Project');
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
     });
@@ -203,10 +199,8 @@ test.describe('wss', () => {
 
     server = await startTestSoapServer({ fixture: 'calculator' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Encrypt Project');
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
     });
@@ -288,10 +282,8 @@ test.describe('wss', () => {
       wss: { serverIdentity, clientCertPem: client.certPem },
     });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSS Incoming Project');
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath },
     });

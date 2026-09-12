@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { PropertyTable } from '../properties/property-table.js';
-import { useProjectStore } from '../../state/project.js';
-import type { InterfaceWire, PropertyMapWire } from '../../../shared/wire-types.js';
+import { selectEnvironment, useProjectStore } from '../../state/project.js';
+import type { EnvironmentPatchWire, InterfaceWire, PropertyMapWire } from '../../../shared/wire-types.js';
 
 /** How long the name field waits after the last keystroke before it saves. */
 export const NAME_DEBOUNCE_MS = 300;
@@ -78,17 +78,30 @@ export interface EnvironmentEditorProps {
 }
 
 /**
- * The environment tab: its name, one endpoint override per interface, and its properties.
+ * One **project** environment's editor: its name, one endpoint override per interface of that
+ * project, and its properties. Only a linked project has environments of its own; the
+ * workspace's environments are edited in the grid (`environment-grid.tsx`).
+ *
  * Both maps are sent back whole — `update-environment` REPLACES them — so every edit here
  * rebuilds the map from the mirror and hands main the complete result.
  */
 export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
-  const environment = useProjectStore((state) =>
-    state.environments.find((candidate) => candidate.id === environmentId),
-  );
+  const environment = useProjectStore((state) => selectEnvironment(state, environmentId));
   const interfaces = useProjectStore((state) => state.interfaces);
+  const projectId = useProjectStore((state) => state.projectOf[environmentId]);
   const order = useProjectStore((state) => state.order);
-  const updateEnvironment = useProjectStore((state) => state.updateEnvironment);
+  const projectName = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.name,
+  );
+  const updateProjectEnvironment = useProjectStore((state) => state.updateEnvironment);
+  const updateEnvironment = useCallback(
+    async (id: string, patch: EnvironmentPatchWire): Promise<void> => {
+      if (projectId !== undefined) {
+        await updateProjectEnvironment(projectId, id, patch);
+      }
+    },
+    [projectId, updateProjectEnvironment],
+  );
 
   const [name, setName] = useState(environment?.name ?? '');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -138,10 +151,8 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
   // Reads the latest environment from the store rather than the value captured at render time:
   // two commits fired back-to-back (before either IPC round trip resolves) must each build their
   // map from what the other just wrote, or the second overwrites the first.
-  const latestEnvironment = (): typeof environment => {
-    const fromStore = useProjectStore.getState().environments.find((candidate) => candidate.id === environmentId);
-    return fromStore ?? environment;
-  };
+  const latestEnvironment = (): NonNullable<typeof environment> =>
+    selectEnvironment(useProjectStore.getState(), environmentId) ?? environment;
 
   const replaceEndpoints = (slug: string, url: string): void => {
     const current = latestEnvironment();
@@ -162,7 +173,13 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
     void updateEnvironment(environmentId, { properties });
   };
 
-  const summaries = order.map((id) => interfaces[id]).filter((iface): iface is InterfaceWire => iface !== undefined);
+  // Only the owning project's interfaces: a project environment keys its overrides by interface
+  // slug alone, and knows nothing about the other projects in the workspace.
+  const summaries = order
+    .filter((group) => group.projectId === projectId)
+    .flatMap((group) => group.interfaceIds)
+    .map((id) => interfaces[id])
+    .filter((iface): iface is InterfaceWire => iface !== undefined);
 
   return (
     <section
@@ -170,6 +187,8 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
       aria-label={`Environment ${environment.name}`}
       className="flex h-full min-h-0 flex-col gap-4 overflow-auto p-4"
     >
+      <p className="text-xs text-fg-subtle">Project environments ({projectName ?? 'this project'} — linked project)</p>
+
       <label className="flex max-w-md flex-col gap-1">
         <span className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Name</span>
         <input
@@ -196,16 +215,18 @@ export function EnvironmentEditor({ environmentId }: EnvironmentEditorProps) {
               </tr>
             </thead>
             <tbody>
-              {summaries.map((iface) => (
-                <EndpointRow
-                  key={iface.id}
-                  iface={iface}
-                  override={environment.endpoints[iface.slug]}
-                  onCommit={(url) => {
-                    replaceEndpoints(iface.slug, url);
-                  }}
-                />
-              ))}
+              {summaries.map((iface) => {
+                return (
+                  <EndpointRow
+                    key={iface.id}
+                    iface={iface}
+                    override={environment.endpoints[iface.slug]}
+                    onCommit={(url) => {
+                      replaceEndpoints(iface.slug, url);
+                    }}
+                  />
+                );
+              })}
             </tbody>
           </table>
         )}

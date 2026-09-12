@@ -100,7 +100,7 @@ describe('RequestProperties', () => {
     const patch = vi.fn();
     useProjectStore.setState({
       updateRequestProperties: patch,
-      keystores: [{ id: 'k1', name: 'corp', path: '/tmp/corp.p12', type: 'pkcs12' }],
+      keystores: [{ id: 'k1', name: 'corp', path: '/tmp/corp.p12', type: 'pkcs12', projectId: 'p1' }],
     });
     render(<RequestProperties requestId="req-1" />);
 

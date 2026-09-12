@@ -4,7 +4,7 @@ import { ProblemsView } from '../../src/renderer/features/problems/problems-view
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
-import type { RequestWire } from '../../src/shared/wire-types.js';
+import type { InterfaceWire, ProjectWire, RequestWire } from '../../src/shared/wire-types.js';
 
 const request = {
   id: 'req-1',
@@ -27,7 +27,7 @@ describe('ProblemsView', () => {
 
   afterEach(() => {
     cleanup();
-    useProjectStore.setState({ requests: {} });
+    useProjectStore.setState({ requests: {}, interfaces: {}, projects: {}, projectOf: {} });
   });
 
   it('says so when there is nothing to report', () => {
@@ -157,5 +157,96 @@ describe('ProblemsView', () => {
       { id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' },
     ]);
     expect(useEditorsStore.getState().responseViewFor('req-1')).toBe('xml');
+  });
+
+  it('labels rows `<project> › <interface> › ...` with two projects open', () => {
+    const requestB = {
+      id: 'req-2',
+      interfaceId: 'iface-2',
+      bindingName: '{tns}B',
+      operationName: 'Sub',
+      name: 'Request 2',
+      envelopeXml: '<Envelope/>',
+      soapVersion: '1.1',
+      headers: [],
+      order: 0,
+    } as unknown as RequestWire;
+    useProjectStore.setState({
+      requests: { 'req-1': request, 'req-2': requestB },
+      interfaces: {
+        'iface-1': { id: 'iface-1', name: 'Calculator' } as InterfaceWire,
+        'iface-2': { id: 'iface-2', name: 'Weather' } as InterfaceWire,
+      },
+      projects: {
+        p1: { id: 'p1', name: 'Calc Project' } as ProjectWire,
+        p2: { id: 'p2', name: 'Weather Project' } as ProjectWire,
+      },
+      projectOf: { 'req-1': 'p1', 'iface-1': 'p1', 'req-2': 'p2', 'iface-2': 'p2' },
+    });
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'expansion:req-1',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'req-1',
+          problem: { code: 'x', message: 'From project one' },
+        },
+        {
+          groupId: 'expansion:req-2',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'req-2',
+          problem: { code: 'x', message: 'From project two' },
+        },
+        {
+          groupId: 'iface-2',
+          source: 'import',
+          severity: 'error',
+          problem: { code: 'x', message: 'Import problem, no request' },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    const rows = screen.getAllByTestId('problem-row');
+    expect(rows[0]?.textContent).toContain('Calc Project › Calculator');
+    expect(rows[1]?.textContent).toContain('Weather Project › Weather');
+    expect(rows[2]?.textContent).toContain('Weather Project › Weather');
+  });
+
+  it("opens the right project's request when clicking a row in a multi-project list", () => {
+    const requestB = {
+      id: 'req-2',
+      interfaceId: 'iface-2',
+      bindingName: '{tns}B',
+      operationName: 'Sub',
+      name: 'Request 2',
+      envelopeXml: '<Envelope/>',
+      soapVersion: '1.1',
+      headers: [],
+      order: 0,
+    } as unknown as RequestWire;
+    useProjectStore.setState({
+      requests: { 'req-1': request, 'req-2': requestB },
+      projectOf: { 'req-1': 'p1', 'req-2': 'p2' },
+    });
+    useProblemsStore.setState({
+      items: [
+        {
+          groupId: 'expansion:req-2',
+          source: 'expansion',
+          severity: 'warning',
+          requestId: 'req-2',
+          problem: { code: 'x', message: 'From project two' },
+        },
+      ],
+    });
+    render(<ProblemsView />);
+
+    fireEvent.click(screen.getByTestId('problem-row'));
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'request:req-2', kind: 'request', title: 'Request 2', requestId: 'req-2' },
+    ]);
   });
 });

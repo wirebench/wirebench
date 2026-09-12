@@ -44,6 +44,9 @@ const REJECTED_PATTERNS = /\([^)]*[+*]\)\s*[+*]/;
 export interface SearchDocument {
   readonly kind: SearchMatchWire['kind'];
   readonly text: string;
+  /** Which project of the open workspace the text came from, and its display name. */
+  readonly projectId?: string;
+  readonly projectName?: string;
   readonly requestId?: string;
   readonly requestName?: string;
   readonly interfaceId?: string;
@@ -191,6 +194,8 @@ export function searchDocuments(
       }
       matches.push({
         kind: document.kind,
+        ...(document.projectId !== undefined ? { projectId: document.projectId } : {}),
+        ...(document.projectName !== undefined ? { projectName: document.projectName } : {}),
         ...(document.requestId !== undefined ? { requestId: document.requestId } : {}),
         ...(document.requestName !== undefined ? { requestName: document.requestName } : {}),
         ...(document.interfaceId !== undefined ? { interfaceId: document.interfaceId } : {}),

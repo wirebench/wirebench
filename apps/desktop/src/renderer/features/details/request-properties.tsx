@@ -9,6 +9,7 @@ import {
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { selectRequestEndpointUrl } from '../../state/project-endpoint.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import type { RequestPropertiesPatchWire } from '../../../shared/wire-types.js';
 
 export interface RequestPropertiesProps {
@@ -58,7 +59,10 @@ const ENCODING_OPTIONS = [
  */
 export function RequestProperties({ requestId }: RequestPropertiesProps) {
   const request = useProjectStore((state) => state.requests[requestId]);
-  const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, requestId));
+  // The active environment lives on the workspace, so an environment switch has to rerender
+  // the endpoint as well as a project change.
+  const workspace = useWorkspaceStore((state) => state.workspace);
+  const endpoint = useProjectStore((state) => selectRequestEndpointUrl(state, workspace, requestId));
   const updateRequest = useProjectStore((state) => state.updateRequest);
   const updateRequestProperties = useProjectStore((state) => state.updateRequestProperties);
   const keystores = useProjectStore((state) => state.keystores);

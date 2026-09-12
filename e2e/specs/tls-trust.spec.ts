@@ -25,7 +25,6 @@ test.describe('endpoint TLS trust', () => {
   let plain: TestSoapServer | undefined;
   let secure: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
   let certsDir: string | undefined;
 
   test.afterEach(async () => {
@@ -38,11 +37,10 @@ test.describe('endpoint TLS trust', () => {
     }
     plain = undefined;
     secure = undefined;
-    for (const dir of [userDataDir, projectDir, certsDir]) {
+    for (const dir of [userDataDir, certsDir]) {
       if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }
     userDataDir = undefined;
-    projectDir = undefined;
     certsDir = undefined;
   });
 
@@ -62,10 +60,8 @@ test.describe('endpoint TLS trust', () => {
     });
 
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'CA Project');
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: bundlePath },
     });
@@ -111,8 +107,7 @@ test.describe('endpoint TLS trust', () => {
     });
 
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'TLS Project');
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, plain, { expectProjectName: 'TLS Project' });
     await openFirstRequest(page);

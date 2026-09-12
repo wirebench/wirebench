@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import type { EngineProgressEvent, ImportProblemWire, ImportSourceWire } from '../../../shared/wire-types.js';
+import type {
+  EngineProgressEvent,
+  ImportProblemWire,
+  ImportSourceWire,
+  ProjectAddInterfaceTarget,
+} from '../../../shared/wire-types.js';
 import { Button } from '../../components/button.js';
 import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
@@ -9,15 +14,66 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { projectActions } from '../welcome/project-actions.js';
 
 type SourceTab = 'url' | 'file' | 'paste';
+
+/** The `import-target-project` value standing for *New project "<name>"*. Never a project id. */
+const NEW_PROJECT = '';
 
 const TABS = [
   { id: 'url', label: 'URL' },
   { id: 'file', label: 'File' },
   { id: 'paste', label: 'Paste' },
 ] as const satisfies readonly { id: SourceTab; label: string }[];
+
+/**
+ * The name the *New project* option offers, derived from what is being imported:
+ * `…/Calculator.wsdl` becomes `Calculator`, a URL with no useful path falls back to its host,
+ * and pasted text — which names nothing — becomes "Imported service".
+ */
+function projectNameFor(source: ImportSourceWire | undefined): string {
+  if (source === undefined) {
+    return 'Imported service';
+  }
+  let host = '';
+  const raw =
+    source.kind === 'url'
+      ? (() => {
+          try {
+            const url = new URL(source.url);
+            host = url.hostname;
+            return url.pathname;
+          } catch {
+            return source.url;
+          }
+        })()
+      : source.kind === 'file'
+        ? source.path
+        : (source.location ?? '');
+  const segment =
+    raw
+      .split(/[\\/]/)
+      .filter((part) => part.length > 0)
+      .at(-1) ?? '';
+  const name = segment
+    .replace(/\?.*$/, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/^dropped:/, '')
+    .trim();
+  if (name.length > 0) {
+    return name;
+  }
+  return host.length > 0 ? host : 'Imported service';
+}
+
+/** The project selected in the explorer, by whichever entity the selection names. */
+function selectedProjectId(): string | undefined {
+  const selection = useUiStore.getState().selection;
+  const store = useProjectStore.getState();
+  return selection === undefined
+    ? undefined
+    : store.projectOf[selection.requestId ?? selection.interfaceId ?? selection.id];
+}
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -48,12 +104,35 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   const [progress, setProgress] = useState<string | undefined>(undefined);
   const [importing, setImporting] = useState(false);
   const [problems, setProblems] = useState<ImportProblemWire[]>([]);
-  // An import has to land somewhere: with no project open the dialog offers to make one first.
-  const [needsProject, setNeedsProject] = useState(false);
+  // The project the import lands in: a project id, or `NEW_PROJECT` for one created for it.
+  const [target, setTarget] = useState<string>(NEW_PROJECT);
   const tokenRef = useRef<string | undefined>(undefined);
   // Tokens for imports the user cancelled — the in-flight promise still settles after `onCancel`
   // returns, so its resolution/rejection must be ignored rather than surfaced as an error.
   const cancelledTokensRef = useRef<Set<string>>(new Set());
+
+  // The projects an import can actually land in: the ones the renderer's mirror holds. A
+  // project still opening, or one whose folder is missing, is deliberately not offered.
+  const order = useProjectStore((state) => state.order);
+  const mirror = useProjectStore((state) => state.projects);
+  const openProjects = order
+    .map((group) => mirror[group.projectId])
+    .filter((project): project is NonNullable<typeof project> => project !== undefined)
+    .map((project) => ({ id: project.id, name: project.name }));
+
+  // Each opening picks its own default: the project the explorer has selected, else the only
+  // project there is, else a new one. Re-picked on every open so it follows the selection.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    // Read at open time rather than from the render closure: this must run on `open` alone —
+    // re-running it as the project list changes would overwrite a choice already made.
+    const store = useProjectStore.getState();
+    const selected = selectedProjectId();
+    const only = store.order.length === 1 ? store.order[0]?.projectId : undefined;
+    setTarget(selected ?? only ?? NEW_PROJECT);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -71,7 +150,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     setImportError(undefined);
     setProgress(undefined);
     setProblems([]);
-    setNeedsProject(false);
   }
 
   function closeAndReset(): void {
@@ -136,10 +214,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     if (source === undefined) {
       return;
     }
-    if (useProjectStore.getState().project === null) {
-      setNeedsProject(true);
-      return;
-    }
     // A password typed but not Saved must not be silently dropped by pressing Import.
     const flushedRef = (await passwordFlushRef.current?.()) ?? passwordRef;
 
@@ -151,7 +225,11 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
         useAuth && username.length > 0 && flushedRef !== undefined
           ? { auth: { username, passwordRef: flushedRef }, useForRequests }
           : undefined;
-      const summary = await useProjectStore.getState().importDefinition(source, options, token);
+      // A project that left the workspace while the dialog sat open falls back to a new one.
+      const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+      const into: ProjectAddInterfaceTarget =
+        chosen === NEW_PROJECT ? { newProjectName: projectNameFor(source) } : { projectId: chosen };
+      const summary = await useProjectStore.getState().importDefinition(into, source, options, token);
       if (cancelledTokensRef.current.has(token)) {
         return;
       }
@@ -189,6 +267,23 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
     useUiStore.getState().showConsoleTab('problems');
     onOpenChange(false);
   }
+
+  // What the *New project* option would be called, from whatever is typed so far. Derived on
+  // render (not from `buildSource`, which reports validation errors) so the option tracks the
+  // field as the user types.
+  const newProjectName = projectNameFor(
+    tab === 'url'
+      ? url.length > 0
+        ? { kind: 'url', url }
+        : undefined
+      : tab === 'file'
+        ? dropped !== undefined
+          ? { kind: 'text', text: '', location: `dropped:${dropped.name}` }
+          : filePath.length > 0
+            ? { kind: 'file', path: filePath }
+            : undefined
+        : undefined,
+  );
 
   return (
     <Dialog.Root
@@ -309,19 +404,25 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
             )}
           </div>
 
-          {needsProject && (
-            <div data-testid="import-needs-project" className="mt-3 rounded border border-hairline-strong p-2">
-              <p className="text-sm text-fg-default">
-                Interfaces are saved into a project folder. Create one to import into.
-              </p>
-              <div className="mt-2 flex gap-2">
-                <Button variant="primary" onClick={() => void projectActions.newProject()}>
-                  Create a project folder…
-                </Button>
-                <Button onClick={() => void projectActions.openProject()}>Open an existing project…</Button>
-              </div>
-            </div>
-          )}
+          <div className="mt-3 flex items-center gap-2">
+            <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
+              Into project
+            </label>
+            <select
+              id="import-target-project"
+              data-testid="import-target-project"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+            >
+              {openProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+              <option value={NEW_PROJECT}>{`New project “${newProjectName}”`}</option>
+            </select>
+          </div>
 
           {progress !== undefined && <p className="mt-3 text-sm text-fg-subtle">{progress}</p>}
           {importError !== undefined && <p className="mt-3 text-sm text-status-danger">{importError}</p>}

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const EDITED_ENVELOPE = [
@@ -34,12 +34,10 @@ test.describe('request editor actions', () => {
   // Assigned in `beforeEach`; kept non-optional so `launchApp` (under
   // `exactOptionalPropertyTypes`) does not have to be handed `string | undefined`.
   let userDataDir = '';
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'EditorActions');
   });
 
   test.afterEach(async () => {
@@ -51,17 +49,16 @@ test.describe('request editor actions', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir.length > 0) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = '';
-    projectDir = '';
   });
 
   test('the layout orientation toggle survives a relaunch', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     await createProjectWithCalculator(launched.window, server!);
     await openFirstRequest(launched.window);
 
@@ -69,10 +66,10 @@ test.describe('request editor actions', () => {
     await expect(launched.window.getByRole('button', { name: 'Place panes side by side' })).toBeVisible();
 
     await launched.close();
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
-    // The relaunched app reopens the folder from Recent, then the request from the explorer.
-    await page.getByTestId('recent-project').first().click();
+    // The relaunched app reopens the workspace itself; the request comes from the explorer.
+    await expectReopenedWorkspace(page);
     await openFirstRequest(page);
 
     // Stacked is what the persisted default said; the button offers the way back to side-by-side.
@@ -80,7 +77,7 @@ test.describe('request editor actions', () => {
   });
 
   test('Recreate (keep values) keeps an edited intA', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
@@ -106,7 +103,7 @@ test.describe('request editor actions', () => {
   });
 
   test('the endpoint field shows the whole URL the request will be sent to', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
@@ -116,7 +113,7 @@ test.describe('request editor actions', () => {
   });
 
   test('the Code panel previews the cURL command and copies it', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
@@ -136,7 +133,7 @@ test.describe('request editor actions', () => {
   });
 
   test('Import cURL creates a request pointing at the pasted endpoint', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);

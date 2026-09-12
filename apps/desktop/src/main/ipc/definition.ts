@@ -1,29 +1,39 @@
 import { writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks, RecordsWritePicks } from '../dialog-picks.js';
-import { allowsReadPath } from '../path-access.js';
+import { checkedImportSource } from '../path-access.js';
 import type { EngineService } from '../engine-service.js';
 import { pickFolder, pickSaveFile } from '../native-dialogs.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectRouter } from '../project-router.js';
 import { declarationAtOffset, schemaIndexOf } from '../schema-index.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
 /**
- * The `ProjectService` surface the Update/Export/Docs channels drive; a stub stands in for it
+ * The `ProjectRouter` surface the Update/Export/Docs channels drive; a stub stands in for it
  * in tests, exactly as `request.*` does.
  */
 export type DefinitionChannelProject = Pick<
-  ProjectService,
-  'planDefinitionUpdate' | 'applyDefinitionUpdate' | 'exportDefinitionTo' | 'definitionDocs' | 'snapshot'
+  ProjectRouter,
+  | 'planDefinitionUpdate'
+  | 'applyDefinitionUpdate'
+  | 'exportDefinitionTo'
+  | 'definitionDocs'
+  | 'projectSnapshot'
+  | 'projectId'
 >;
 
 /** What the Update/Export/Docs half of the `definition.*` channels needs beyond the engine. */
 export interface DefinitionChannelDeps {
   readonly project: DefinitionChannelProject;
+  /**
+   * The folders of every project open in the workspace. A `definition.import { kind: 'file' }`
+   * path is allowed when it is inside one of them — the workspace replaces the single "the
+   * open project folder" this check used to ask `snapshot()` for.
+   */
+  readonly projectDirs?: () => readonly string[];
   /**
    * The session's dialog memory: the *write* half records the Save-as target the docs picker
    * returns, the *read* half is what proves a `definition.import { kind: 'file' }` path was
@@ -47,25 +57,8 @@ function docsFileName(format: 'html' | 'markdown'): string {
  */
 export function registerDefinitionChannels(service: EngineService, deps?: DefinitionChannelDeps): void {
   registerHandler(channels.definition.import, async (request, sender) => {
-    // A `file` import is a file *read* at a renderer-named path, so it answers the same
-    // question every other main-side read does (`main/path-access.ts`): the path is inside the
-    // open project folder, or the user drove the "Browse…" Open dialog to it this session.
-    // Nothing else — not a drag-and-drop, not a typed-in path — is evidence. The dialog's
-    // drop zone therefore reads the file in the renderer and imports it as `text`.
-    let source = request.source;
-    if (source.kind === 'file') {
-      const resolved = resolve(source.path);
-      const projectDir = deps?.project.snapshot()?.dir;
-      const allowed = await allowsReadPath(projectDir !== undefined ? [projectDir] : [], deps?.picks, resolved);
-      if (!allowed) {
-        throw new WirebenchError(
-          'import-path-refused',
-          `Wirebench will not read "${source.path}": use Browse… to pick a WSDL outside the project folder`,
-          { details: { path: source.path } },
-        );
-      }
-      source = { kind: 'file', path: resolved };
-    }
+    // A `file` import is a file *read* at a renderer-named path (see `checkedImportSource`).
+    const source = await checkedImportSource(deps?.projectDirs?.() ?? [], deps?.picks, request.source);
     return service.importDefinition(
       { ...request, source },
       {
@@ -142,7 +135,8 @@ export function registerDefinitionChannels(service: EngineService, deps?: Defini
 
   registerHandler(channels.definition.applyUpdate, async (request) => {
     const applied = await project.applyDefinitionUpdate(request.interfaceId, request.source, request.options);
-    const snapshot = project.snapshot();
+    const projectId = project.projectId(request.interfaceId);
+    const snapshot = projectId === undefined ? null : project.projectSnapshot(projectId);
     if (snapshot === null) {
       throw new WirebenchError('no-project', 'The project was closed while the definition was updating');
     }

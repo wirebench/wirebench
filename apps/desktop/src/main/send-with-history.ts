@@ -8,22 +8,31 @@
 import { isWirebenchError } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import type { HistoryService } from './history-service.js';
-import type { ProjectService } from './project-service.js';
+import type { ProjectRouter } from './project-router.js';
+import type { PropertyScopes } from '@wirebench/engine';
 import type { ExchangeSummary, HistoryEntryWire, ResolvedSendRequest } from '../shared/wire-types.js';
 
-/** What `sendAndRecordHistory` needs from `ProjectService`, so tests can stub a minimal object. */
-export type HistorySendProject = Pick<ProjectService, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
+/** What an ad-hoc send with no `adHocScopes` expands against: nothing but the process env. */
+const EMPTY_SCOPES: PropertyScopes = { project: {}, global: {}, system: process.env };
+
+/** What `sendAndRecordHistory` needs from `ProjectRouter`, so tests can stub a minimal object. */
+export type HistorySendProject = Pick<ProjectRouter, 'scopesFor' | 'authFor' | 'requestMeta' | 'projectId'> &
   // Optional so the many test stubs (and any ad-hoc caller with no project) stay valid: a send
   // without it simply carries no attachments, which is what an ad-hoc send should do anyway.
   // `wssFor` is optional for the same reason, and async besides: it resolves a password out of
   // the secret store, which is why it cannot live on the synchronous send input.
   // `proxyFor` is optional for the same reason, and async besides: resolving the proxy password
   // means a round trip to the OS keychain.
-  Partial<Pick<ProjectService, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
+  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
 
 /** Dependencies for {@link sendAndRecordHistory}. */
 export interface SendWithHistoryDeps {
   readonly project: HistorySendProject;
+  /**
+   * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
+   * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
+   */
+  readonly adHocScopes?: () => PropertyScopes;
   readonly showSecrets?: { get(): boolean };
   /** Omitted only in tests that don't care about history; the app always wires one in. */
   readonly history?: HistoryService;
@@ -36,6 +45,12 @@ export interface HistoryNameFallback {
   readonly requestName: string;
   readonly interfaceName: string;
   readonly operationName: string;
+  /**
+   * The project an entry for a send with no live request is keyed to. Only a resend supplies
+   * one — the project whose history the resent entry came from; with none, such a send is
+   * simply not recorded, since no project owns it.
+   */
+  readonly projectId?: string;
 }
 
 const AD_HOC_NAME: HistoryNameFallback = { requestName: 'Ad-hoc request', interfaceName: '', operationName: '' };
@@ -49,8 +64,8 @@ function errorDetail(error: unknown): { code: string; message: string } {
 
 /**
  * Sends `request` through `service.send`, then records a history entry for it (success, SOAP
- * fault, or transport error) against the open project — a no-op when no project is open or no
- * `HistoryService` was supplied. Rethrows whatever `service.send` throws, after recording.
+ * fault, or transport error) against the project that owns the request — a no-op when no
+ * project does (see {@link HistoryNameFallback.projectId}) or no `HistoryService` was supplied. Rethrows whatever `service.send` throws, after recording.
  */
 export async function sendAndRecordHistory(
   service: EngineService,
@@ -58,17 +73,21 @@ export async function sendAndRecordHistory(
   request: ResolvedSendRequest,
   fallback: HistoryNameFallback = AD_HOC_NAME,
 ): Promise<ExchangeSummary> {
-  const auth = request.requestId !== undefined ? deps.project.authFor(request.requestId) : undefined;
-  const attachments =
-    request.requestId !== undefined ? deps.project.sendAttachmentsFor?.(request.requestId) : undefined;
-  const wss = request.requestId !== undefined ? await deps.project.wssFor?.(request.requestId) : undefined;
+  // An ad-hoc send (a resend of an entry whose request is gone) names no entity, so there is
+  // no project to route to: it carries no auth, no attachments, no WS-Security and no
+  // project-scoped proxy rather than being routed to an arbitrary "current" project.
+  const requestId = request.requestId;
+  const owner = requestId === undefined ? undefined : deps.project.projectId(requestId);
+  const auth = requestId !== undefined ? deps.project.authFor(requestId) : undefined;
+  const attachments = requestId !== undefined ? deps.project.sendAttachmentsFor?.(requestId) : undefined;
+  const wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
   // Resolved per send rather than per session: the exclude list is evaluated against *this*
   // URL, and a system proxy can change under the app while it is running.
-  const proxy = await deps.project.proxyFor?.(request.input.endpoint);
+  const proxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, request.input.endpoint);
   const startedAt = Date.now();
   try {
     const result = await service.send(request, {
-      scopes: deps.project.scopesFor(),
+      scopes: requestId === undefined ? (deps.adHocScopes?.() ?? EMPTY_SCOPES) : deps.project.scopesFor(requestId),
       showSecrets: deps.showSecrets?.get() ?? false,
       ...(auth !== undefined ? { auth } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
@@ -96,7 +115,11 @@ async function record(
   if (deps.history === undefined) {
     return;
   }
-  const projectId = deps.project.projectId();
+  // The entry is keyed to the project the request came from. A send with no live request
+  // belongs to no project, unless the caller named one (a resend of an orphaned entry goes
+  // back into the history it came from); otherwise it is simply not recorded.
+  const projectId =
+    (request.requestId === undefined ? undefined : deps.project.projectId(request.requestId)) ?? fallback.projectId;
   if (projectId === undefined) {
     return;
   }

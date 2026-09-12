@@ -9,10 +9,14 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
 import { ipc } from '../../state/ipc-client.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+import type { HistoryEntryWire, WorkspaceProjectWire } from '../../../shared/wire-types.js';
 
 const ROW_HEIGHT = 40;
 const VIRTUALISE_ABOVE = 200;
+
+/** Stable empty list: a fresh `[]` from the workspace selector would re-render on every tick. */
+const NO_PROJECTS: readonly WorkspaceProjectWire[] = [];
 
 /** The host part of a URL, or the raw string when it doesn't parse (a `${...}` placeholder, say). */
 function hostOf(url: string): string {
@@ -40,6 +44,8 @@ const TONE_CLASS: Record<Tone, string> = {
 
 interface RowProps {
   readonly entry: HistoryEntryWire;
+  /** The entry's project name, when it's known and worth showing (several projects open). */
+  readonly projectName: string | undefined;
   /** 1-based position in the full (unvirtualised) list, for `aria-rowindex`. */
   readonly rowIndex: number;
   /** Roving-tabindex props from {@link useGridNavigation}. */
@@ -51,7 +57,17 @@ interface RowProps {
   readonly onCompareWithCurrent: () => void;
 }
 
-function Row({ entry, rowIndex, rowProps, compareArmed, onOpen, onResend, onCompare, onCompareWithCurrent }: RowProps) {
+function Row({
+  entry,
+  projectName,
+  rowIndex,
+  rowProps,
+  compareArmed,
+  onOpen,
+  onResend,
+  onCompare,
+  onCompareWithCurrent,
+}: RowProps) {
   return (
     <div
       role="row"
@@ -70,6 +86,11 @@ function Row({ entry, rowIndex, rowProps, compareArmed, onOpen, onResend, onComp
           aria-label={`Open ${entry.requestName}`}
         >
           <span className="w-16 shrink-0 font-mono text-fg-subtle">{formatClockTime(entry.at)}</span>
+          {projectName !== undefined && (
+            <span className="w-24 shrink-0 truncate text-fg-faint" title={projectName}>
+              {projectName}
+            </span>
+          )}
           <span className="min-w-0 flex-1 truncate">
             <span className="text-fg-default">{entry.requestName}</span>
             {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
@@ -117,6 +138,11 @@ export function HistoryView() {
   const query = useHistoryStore((state) => state.query);
   const search = useHistoryStore((state) => state.search);
   const clear = useHistoryStore((state) => state.clear);
+  const projectFilter = useHistoryStore((state) => state.projectId);
+  const setProjectFilter = useHistoryStore((state) => state.setProjectFilter);
+  const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects ?? NO_PROJECTS);
+  const projectNameOf = (projectId: string): string | undefined =>
+    workspaceProjects.find((project) => project.id === projectId)?.name;
   const openTab = useEditorsStore((state) => state.open);
   const openOrReplaceTab = useEditorsStore((state) => state.openOrReplace);
   const [compareFirst, setCompareFirst] = useState<string | undefined>(undefined);
@@ -206,6 +232,22 @@ export function HistoryView() {
           onChange={(event) => search(event.target.value)}
           className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
         />
+        <select
+          aria-label="Filter history by project"
+          data-testid="history-project-filter"
+          value={projectFilter ?? ''}
+          onChange={(event) => {
+            setProjectFilter(event.target.value.length > 0 ? event.target.value : undefined);
+          }}
+          className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default"
+        >
+          <option value="">All projects</option>
+          {workspaceProjects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
         {confirmingClear ? (
           <>
             <Button
@@ -260,6 +302,7 @@ export function HistoryView() {
                   >
                     <Row
                       entry={entry}
+                      projectName={projectNameOf(entry.projectId)}
                       rowIndex={item.index + 1}
                       rowProps={rowProps(item.index)}
                       compareArmed={compareFirst === entry.id}
@@ -277,6 +320,7 @@ export function HistoryView() {
               <div key={entry.id} role="presentation" style={{ height: ROW_HEIGHT }}>
                 <Row
                   entry={entry}
+                  projectName={projectNameOf(entry.projectId)}
                   rowIndex={index + 1}
                   rowProps={rowProps(index)}
                   compareArmed={compareFirst === entry.id}

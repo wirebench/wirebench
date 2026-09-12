@@ -44,7 +44,7 @@ const preflight: PreflightResult = {
 
 const TEM = 'http://tempuri.org/';
 
-/** A minimal stand-in for the parts of `ProjectService` the `request.*` actions use. */
+/** A minimal stand-in for the parts of `ProjectHost` the `request.*` actions use. */
 class FakeProject {
   envelopeXml = '';
   endpointUrl = 'http://dev.test/calc.asmx';
@@ -117,7 +117,11 @@ class FakeProject {
   hasOutgoingWss(requestId: string): boolean {
     return requestId === 'req-1' && this.outgoingWss;
   }
-  mutate(change: ProjectChange): Promise<{ project: unknown; createdRequestId?: string }> {
+  /** Every change is addressed at this fake's single project, `proj-1`; anything else is a bug. */
+  projectMutate(projectId: string, change: ProjectChange): Promise<{ project: unknown; createdRequestId?: string }> {
+    if (projectId !== 'proj-1') {
+      throw new Error(`routed to the wrong project: ${projectId}`);
+    }
     this.changes.push(change);
     if (change.kind === 'update-request') {
       const patch = change.patch;

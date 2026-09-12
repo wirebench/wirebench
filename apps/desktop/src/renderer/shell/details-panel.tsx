@@ -4,6 +4,7 @@ import { EndpointProperties } from '../features/details/endpoint-properties.js';
 import { InterfaceProperties } from '../features/details/interface-properties.js';
 import { RequestProperties } from '../features/details/request-properties.js';
 import { PropertyTable } from '../features/properties/property-table.js';
+import { WorkspaceProperties } from '../features/properties/workspace-properties.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { useProjectStore } from '../state/project.js';
@@ -13,13 +14,14 @@ import type { DetailsTab } from '../state/ui-state.js';
 
 const TABS = [
   { id: 'selection', label: 'Details' },
+  { id: 'workspace', label: 'Workspace properties' },
   { id: 'globals', label: 'Global properties' },
   { id: 'code', label: 'Code' },
 ] as const satisfies readonly { id: DetailsTab; label: string }[];
 
-/** The Project row's inspector: the properties every request in the project can expand. */
-function ProjectProperties() {
-  const properties = useProjectStore((state) => state.project?.properties);
+/** The Project row's inspector: the properties every request in that project can expand. */
+function ProjectProperties({ projectId }: { readonly projectId: string }) {
+  const properties = useProjectStore((state) => state.projects[projectId]?.properties);
   const setProjectProperty = useProjectStore((state) => state.setProjectProperty);
   const removeProjectProperty = useProjectStore((state) => state.removeProjectProperty);
 
@@ -30,10 +32,10 @@ function ProjectProperties() {
         label="Project properties"
         properties={properties ?? {}}
         onSet={(name, value) => {
-          void setProjectProperty(name, value);
+          void setProjectProperty(projectId, name, value);
         }}
         onRemove={(name) => {
-          void removeProjectProperty(name);
+          void removeProjectProperty(projectId, name);
         }}
       />
     </>
@@ -64,6 +66,48 @@ function GlobalProperties() {
 }
 
 /**
+ * Where in the workspace the inspected entity lives: `project › interface › operation ›
+ * request` for a request, `project › interface` for an interface, and `project › interface ›
+ * <address>` for an endpoint. Several projects are open at once, so the project segment is
+ * what tells two identically named interfaces apart.
+ *
+ * Segments the store cannot resolve are dropped rather than guessed; an empty breadcrumb
+ * renders nothing at all.
+ */
+function Breadcrumb({
+  requestId,
+  interfaceId,
+  address,
+}: {
+  readonly requestId?: string;
+  readonly interfaceId?: string;
+  readonly address?: string;
+}) {
+  const segments = useProjectStore((state) => {
+    const request = requestId === undefined ? undefined : state.requests[requestId];
+    const ownerId = request?.interfaceId ?? interfaceId;
+    const projectId = state.projectOf[requestId ?? ownerId ?? ''];
+    return [
+      projectId === undefined ? undefined : state.projects[projectId]?.name,
+      ownerId === undefined ? undefined : state.interfaces[ownerId]?.name,
+      request?.operationName,
+      request?.name ?? address,
+    ]
+      .filter((segment): segment is string => segment !== undefined && segment.length > 0)
+      .join(' › ');
+  });
+
+  if (segments.length === 0) {
+    return null;
+  }
+  return (
+    <p data-testid="details-breadcrumb" className="mb-2 truncate text-xs text-fg-subtle" title={segments}>
+      {segments}
+    </p>
+  );
+}
+
+/**
  * What the Details panel is inspecting. The explorer's selection wins when it names something
  * this panel understands; otherwise the panel follows the active request editor, so opening a
  * request tab and looking right shows that request rather than "Nothing selected".
@@ -76,19 +120,39 @@ function SelectionDetails({
   activeRequestId: string | undefined;
 }) {
   if (selection?.kind === 'project') {
-    return <ProjectProperties />;
+    return <ProjectProperties projectId={selection.id} />;
   }
   if (selection?.kind === 'request' && selection.requestId !== undefined) {
-    return <RequestProperties requestId={selection.requestId} />;
+    return (
+      <>
+        <Breadcrumb requestId={selection.requestId} />
+        <RequestProperties requestId={selection.requestId} />
+      </>
+    );
   }
   if (selection?.kind === 'interface' && selection.interfaceId !== undefined) {
-    return <InterfaceProperties interfaceId={selection.interfaceId} />;
+    return (
+      <>
+        <Breadcrumb interfaceId={selection.interfaceId} />
+        <InterfaceProperties interfaceId={selection.interfaceId} />
+      </>
+    );
   }
   if (selection?.kind === 'endpoint' && selection.interfaceId !== undefined && selection.address !== undefined) {
-    return <EndpointProperties interfaceId={selection.interfaceId} address={selection.address} />;
+    return (
+      <>
+        <Breadcrumb interfaceId={selection.interfaceId} address={selection.address} />
+        <EndpointProperties interfaceId={selection.interfaceId} address={selection.address} />
+      </>
+    );
   }
   if (activeRequestId !== undefined) {
-    return <RequestProperties requestId={activeRequestId} />;
+    return (
+      <>
+        <Breadcrumb requestId={activeRequestId} />
+        <RequestProperties requestId={activeRequestId} />
+      </>
+    );
   }
   return (
     <>
@@ -122,7 +186,9 @@ export function DetailsPanel() {
         <Tabs label="Details tabs" items={TABS} active={tab} onSelect={setTab} />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-        {tab === 'globals' ? (
+        {tab === 'workspace' ? (
+          <WorkspaceProperties />
+        ) : tab === 'globals' ? (
           <GlobalProperties />
         ) : tab === 'code' ? (
           <CodePanel />

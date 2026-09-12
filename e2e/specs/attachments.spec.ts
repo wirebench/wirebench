@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import {
+  createProjectWithCalculator,
+  expectReopenedWorkspace,
+  openFirstRequest,
+  workspaceProjectDir,
+} from '../helpers/project.js';
 import { setMonacoText } from '../helpers/editor.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
@@ -26,7 +31,6 @@ test.describe('attachments', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
   let filesDir: string | undefined;
 
   test.afterEach(async () => {
@@ -38,20 +42,18 @@ test.describe('attachments', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir, filesDir]) {
+    for (const dir of [userDataDir, filesDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = undefined;
-    projectDir = undefined;
     filesDir = undefined;
   });
 
   test('adds a file, sends it as an MTOM part, saves the echoed part back, and reloads it', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Attachments Project');
     filesDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-files-'));
     const sourcePath = join(filesDir, 'pixel.png');
     const savedPath = join(filesDir, 'saved-from-response.png');
@@ -59,7 +61,6 @@ test.describe('attachments', () => {
 
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       // Playwright cannot drive the native Add-attachments / Save-as dialogs, so both are pinned.
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: sourcePath, WIREBENCH_E2E_SAVE_PATH: savedPath },
@@ -99,7 +100,7 @@ test.describe('attachments', () => {
 
     // The blob landed in the project's own cache, named by its digest.
     const digest = createHash('sha256').update(FIXTURE_BYTES).digest('hex');
-    expect(existsSync(join(projectDir, 'attachments', digest))).toBe(true);
+    expect(existsSync(join(workspaceProjectDir(userDataDir), 'attachments', digest))).toBe(true);
 
     // Give it the Content-ID the envelope refers to, through the grid's inline editor.
     const contentIdCell = page.getByLabel('Content ID of pixel.png');
@@ -131,15 +132,11 @@ test.describe('attachments', () => {
     await launched.close();
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: sourcePath, WIREBENCH_E2E_SAVE_PATH: savedPath },
     });
     const reopened = launched.window;
-    const recent = reopened.getByTestId('recent-project').first();
-    await expect(recent).toBeVisible();
-    await recent.click();
-    await expect(reopened.getByTestId('title-bar')).toContainText('Attachments Project');
+    await expectReopenedWorkspace(reopened);
 
     await openFirstRequest(reopened);
     await reopened

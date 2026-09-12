@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /** The platform's `Mod`: ⌘ on macOS, Ctrl elsewhere — the same split `lib/keybindings.ts` makes. */
@@ -22,12 +22,10 @@ test.describe('keyboard', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir = '';
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Keyboard');
   });
 
   test.afterEach(async () => {
@@ -39,24 +37,31 @@ test.describe('keyboard', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
-      if (dir.length > 0) {
-        rmSync(dir, { recursive: true, force: true });
-      }
+    if (userDataDir.length > 0) {
+      rmSync(userDataDir, { recursive: true, force: true });
     }
     userDataDir = '';
-    projectDir = '';
   });
 
   test('imports, opens and sends a request without touching the mouse', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
 
-    // The project folder comes from a native picker Playwright cannot drive, so the project
-    // itself is created through the Welcome screen; everything after it is keys only.
-    await page.getByTestId('welcome-new-project').click();
-    await page.getByTestId('new-project-create').click();
+    // The picker's name field is focused on load — the workspace, the project and everything
+    // after it is keys only, with no native picker anywhere in the flow.
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused();
+    await page.keyboard.type('Keyboard');
+    await page.keyboard.press('Enter');
     await expect(page.getByTestId('title-bar')).toContainText('Keyboard');
+
+    // ⌘⇧N — New Project — which asks for a name and nothing else.
+    await page.keyboard.press(`${MOD}+Shift+KeyN`);
+    await expect(page.getByTestId('new-project-name')).toBeFocused({ timeout: 20_000 });
+    await page.keyboard.type('Keyboard Project');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('explorer-project-row').filter({ hasText: 'Keyboard Project' })).toBeVisible({
+      timeout: 20_000,
+    });
 
     // ⌘⇧P — the palette's second chord — then run Import WSDL from it.
     await page.keyboard.press(`${MOD}+Shift+P`);
@@ -88,8 +93,40 @@ test.describe('keyboard', () => {
     await expect(page.getByTestId('response-editor')).toContainText('AddResult');
   });
 
+  test('creates a second workspace and switches back, from the palette alone', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused();
+    await page.keyboard.type('Alpha');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Alpha/, { timeout: 20_000 });
+
+    // Create Workspace… from the palette: the new one opens, which closes Alpha.
+    await page.keyboard.press(`${MOD}+Shift+P`);
+    await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.type('Create Workspace');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-create-name')).toBeFocused({ timeout: 20_000 });
+    await page.keyboard.type('Beta');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Beta/, { timeout: 20_000 });
+
+    // Switch Workspace… opens the title bar's dropdown with the keyboard already in it.
+    await page.keyboard.press(`${MOD}+Shift+P`);
+    await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.type('Switch Workspace');
+    await page.keyboard.press('Enter');
+    const alpha = page.getByTestId('workspace-switcher-item').filter({ hasText: 'Alpha' });
+    await expect(alpha).toBeVisible({ timeout: 20_000 });
+    // Enter on the row, with no pointer anywhere near it: the menu is operable by key alone.
+    await alpha.press('Enter');
+
+    await expect(page.getByTestId('workspace-switcher')).toHaveText(/Alpha/, { timeout: 20_000 });
+  });
+
   test('a rebound Send survives a relaunch, and the old chord no longer sends', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     let page = launched.window;
     await createProjectWithCalculator(page, server!);
 
@@ -103,12 +140,10 @@ test.describe('keyboard', () => {
 
     // --- relaunch against the same profile ------------------------------------
     await launched.close();
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     page = launched.window;
-    // A relaunch opens on Welcome; the project comes back from Recent.
-    const recent = page.getByTestId('recent-project').first();
-    await expect(recent).toBeVisible({ timeout: 20_000 });
-    await recent.click();
+    // A relaunch reopens the last workspace and its project by itself.
+    await expectReopenedWorkspace(page);
 
     const persisted = await shortcutButton(page, 'request.send');
     await expect(persisted).toContainText(process.platform === 'darwin' ? '⌘⇧⏎' : 'Ctrl+Shift+Enter');
@@ -129,7 +164,7 @@ test.describe('keyboard', () => {
   });
 
   test('⌥→ steps the caret through element values and ⇧Tab crosses to the response', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
@@ -164,7 +199,7 @@ test.describe('keyboard', () => {
   });
 
   test('the Search view finds a definition operation and opens it', async () => {
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
 

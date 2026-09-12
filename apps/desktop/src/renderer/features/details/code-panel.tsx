@@ -13,6 +13,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { useUiStore } from '../../state/ui.js';
 import type { CodeShell } from '../../state/ui-state.js';
@@ -56,9 +57,13 @@ export function CodePanel() {
   // active environment's endpoint override and expand `${...}` references against environment,
   // project and global properties — so the preview must regenerate on any of those, not just on
   // edits to the request draft itself.
-  const activeEnvironmentId = useProjectStore((state) => state.activeEnvironmentId);
-  const projectProperties = useProjectStore((state) => state.project?.properties);
-  const environments = useProjectStore((state) => state.environments);
+  const workspace = useWorkspaceStore((state) => state.workspace);
+  const activeEnvironmentId = workspace?.activeEnvironmentId;
+  const environments = workspace?.environments;
+  const projectProperties = useProjectStore((state) => {
+    const projectId = requestId === undefined ? undefined : state.projectOf[requestId];
+    return projectId === undefined ? undefined : state.projects[projectId]?.properties;
+  });
   const interfaceEndpoints = useProjectStore((state) =>
     draft === undefined ? undefined : state.interfaces[draft.interfaceId]?.endpoints,
   );

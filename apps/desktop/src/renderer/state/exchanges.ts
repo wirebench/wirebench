@@ -10,6 +10,7 @@ import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
 import { useProblemsStore } from './problems.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
+import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
@@ -44,6 +45,11 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancel: (requestId: string) => Promise<void>;
   /** Clears the exchange state for a removed request (keeps the log). */
   readonly clearRequest: (requestId: string) => void;
+  /**
+   * Drops every response and the whole HTTP log. Called when the workspace closes: both are
+   * keyed by requests of projects that are no longer open.
+   */
+  readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
   /**
@@ -83,6 +89,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
   return {
     byRequest: {},
     log: [],
+
+    reset: () => {
+      set({ byRequest: {}, log: [] });
+    },
 
     send: async (requestId, force) => {
       const projectState = useProjectStore.getState();
@@ -129,7 +139,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // environment) and dry-runs the expansion; the mirror's own answer is the fallback for
       // an unsaved/unknown request, where preflight cannot help.
       const preflight = await ipc().request.preflight({ requestId });
-      const endpoint = preflight.ok ? preflight.value.endpoint : selectRequestEndpointUrl(projectState, requestId);
+      const endpoint = preflight.ok
+        ? preflight.value.endpoint
+        : selectRequestEndpointUrl(projectState, useWorkspaceStore.getState().workspace, requestId);
       if (preflight.ok && preflight.value.unresolved.length > 0) {
         useProblemsStore.getState().add(expansionProblems(requestId, preflight.value.unresolved));
       }

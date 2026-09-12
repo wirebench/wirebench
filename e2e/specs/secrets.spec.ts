@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 's3cret!';
@@ -26,7 +27,6 @@ test.describe('secrets', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -37,27 +37,25 @@ test.describe('secrets', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
       }
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
   test('a password entered for Basic auth on import never reaches the project folder or secrets.json in plaintext', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Secrets');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
 
-    await page.getByTestId('welcome-new-project').click();
-    await page.getByTestId('new-project-create').click();
+    await createWorkspace(page);
+    await createProject(page, 'Secrets');
 
-    await page.getByTestId('welcome-import').click();
+    await page.getByRole('button', { name: 'Import WSDL…' }).click();
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
     await page.getByLabel('Use Basic auth').check();
     await page.getByLabel('Username').fill('alice');
@@ -82,7 +80,7 @@ test.describe('secrets', () => {
     expect(decoded).toBe(`alice:${PASSWORD}`);
 
     // Nothing in the saved project folder may contain the plaintext password.
-    for (const file of listFiles(projectDir)) {
+    for (const file of listFiles(workspaceProjectDir(userDataDir))) {
       const text = readFileSync(file, 'utf8');
       expect(text, `${file} must not contain the plaintext password`).not.toContain(PASSWORD);
     }
@@ -112,16 +110,15 @@ test.describe('secrets', () => {
   test('the HTTP log redacts the Authorization header until show-secrets is toggled on', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Secrets Log');
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     const isMac = await launched.app.evaluate(() => process.platform === 'darwin');
 
-    await page.getByTestId('welcome-new-project').click();
-    await page.getByTestId('new-project-create').click();
+    await createWorkspace(page);
+    await createProject(page, 'Secrets');
 
-    await page.getByTestId('welcome-import').click();
+    await page.getByRole('button', { name: 'Import WSDL…' }).click();
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
     await page.getByLabel('Use Basic auth').check();
     await page.getByLabel('Username').fill('alice');

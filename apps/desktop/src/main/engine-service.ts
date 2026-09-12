@@ -47,7 +47,7 @@ import type {
 } from '../shared/wire-types.js';
 import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
-import type { SendAttachmentInput } from './project-service.js';
+import type { SendAttachmentInput } from './project-host.js';
 
 /** One imported definition kept in memory, alongside the location it was resolved from. */
 interface StoredDefinition {
@@ -391,7 +391,7 @@ export class EngineService {
    * Adopts `result` (already fetched via {@link importPreview}) as `interfaceId`'s live
    * definition, without fetching or touching the definition cache itself. Used by Update
    * Definition once the project save it depends on has actually succeeded — see
-   * `ProjectService.applyDefinitionUpdate`, which fetches the preview, saves, and only then
+   * `ProjectHost.applyDefinitionUpdate`, which fetches the preview, saves, and only then
    * calls this to make the new definition live.
    */
   commitResult(interfaceId: string, result: ImportResult, definitionUrl: string): InterfaceSummary {
@@ -536,7 +536,7 @@ export class EngineService {
       wss?: SoapSendWss;
       /**
        * The proxy this send must go through, already resolved (and its password already
-       * decrypted) by `ProjectService.proxyFor`. Deliberately an option rather than a field of
+       * decrypted) by `ProjectHost.proxyFor`. Deliberately an option rather than a field of
        * `SoapSendInputWire`: a renderer must be able neither to name a proxy nor to see the
        * credentials for one.
        */

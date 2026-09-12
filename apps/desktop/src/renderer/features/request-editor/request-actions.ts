@@ -100,7 +100,10 @@ export async function importCurl(
   const { requestId, problems } = result.value;
   // The snapshot main broadcast for the new request may not have landed yet; refresh so the
   // tab (and the explorer row) can be opened against a mirror that actually contains it.
-  await useProjectStore.getState().refresh();
+  const projectId = useProjectStore.getState().projectOf[operation.interfaceId];
+  if (projectId !== undefined) {
+    await useProjectStore.getState().refresh(projectId);
+  }
   openRequestTab(requestId, 'Imported request');
   showToast(problems.length === 0 ? 'Imported cURL command' : `Imported with ${problems.length} problem(s)`);
   return requestId;

@@ -1,6 +1,6 @@
 /**
  * Pure, immutable transformations of the engine `Project` model — one per
- * {@link ProjectChange} variant. `ProjectService` owns the I/O (generate, save, watch); this
+ * {@link ProjectChange} variant. `ProjectHost` owns the I/O (generate, save, watch); this
  * module owns "what the model looks like afterwards", so every rule about naming, slugs and
  * ordering is unit-testable without a disk or an Electron app.
  *
@@ -81,7 +81,7 @@ export type AddAttachmentFile = (input: {
 export interface MutationDeps {
   /** Builds a fresh sample envelope for one operation of an already-hydrated interface. */
   readonly generate: (interfaceId: string, bindingName: string, operationName: string) => Promise<GeneratedEnvelope>;
-  /** Supplied by `ProjectService` whenever a project is open; absent only in tests that never attach. */
+  /** Supplied by `ProjectHost` whenever a project is open; absent only in tests that never attach. */
   readonly addAttachmentFile?: AddAttachmentFile;
   /**
    * Whether `add-keystore` may register this path: it must be inside the project folder or
@@ -483,7 +483,7 @@ async function addAttachment(
  * Appends one already-materialised attachment to a request: the caller has resolved the bytes
  * (into the cache or to a path) and knows their size, so this is the pure half of an add.
  *
- * Shared by `add-attachment` and by `ProjectService.addAttachmentBytes` (the drag-and-drop
+ * Shared by `add-attachment` and by `ProjectHost.addAttachmentBytes` (the drag-and-drop
  * path, where the bytes arrive over IPC and never had a path at all), so both produce exactly
  * the same model entry — same id scheme, same default Content-ID, same `UNKNOWN` type.
  */
@@ -811,7 +811,7 @@ export async function applyChange(
   }
 }
 
-/** Derives a project's default name from its folder, matching what the Welcome screen suggests. */
+/** Derives a project's default name from its folder, the folder's last segment. */
 export function projectNameFromDir(dir: string): string {
   const segments = dir.split(/[\\/]/).filter((segment) => segment.length > 0);
   return slugify(segments.at(-1) ?? 'Project');

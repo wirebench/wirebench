@@ -60,6 +60,7 @@ describe('definition actions', () => {
     stubApi();
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface({ loadedAt: LOADED_AT, definitionUrl: 'https://example.test/v1.wsdl' }) },
+      projectOf: { 'if-1': 'p1' },
     });
     useInterfaceEditorStore.setState({ tabs: {}, data: {}, selections: {}, sourceTargets: {}, dialogs: {} });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
@@ -214,7 +215,7 @@ describe('UpdateDefinitionDialog', () => {
     await waitFor(() => {
       expect(showToast).toHaveBeenCalledWith('Definition updated — 1 created, 1 recreated, 1 orphaned');
     });
-    expect(useProjectStore.getState().project?.id).toBe('p1');
+    expect(useProjectStore.getState().projects['p1']?.id).toBe('p1');
   });
 
   it('refuses to plan with no source at all', async () => {
@@ -286,24 +287,29 @@ describe('explorer tree — orphaned requests', () => {
         },
       ],
     });
-    const tree = buildExplorerTree([summary], [
-      {
-        id: 'r1',
-        interfaceId: 'if-1',
-        bindingName: '{urn:x}B',
-        operationName: 'Legacy',
-        name: 'Request 1',
-        orphaned: true,
-      },
-      {
-        id: 'r2',
-        interfaceId: 'if-1',
-        bindingName: '{urn:x}B',
-        operationName: 'Legacy',
-        name: 'Request 2',
-      },
-    ] as never);
-    const requests = tree[0]?.children?.[1]?.children?.[0]?.children ?? [];
+    const tree = buildExplorerTree(
+      [{ id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/projects/demo', status: 'ready' }],
+      [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      { [summary.id]: summary },
+      [
+        {
+          id: 'r1',
+          interfaceId: 'if-1',
+          bindingName: '{urn:x}B',
+          operationName: 'Legacy',
+          name: 'Request 1',
+          orphaned: true,
+        },
+        {
+          id: 'r2',
+          interfaceId: 'if-1',
+          bindingName: '{urn:x}B',
+          operationName: 'Legacy',
+          name: 'Request 2',
+        },
+      ] as never,
+    );
+    const requests = tree[0]?.children?.[0]?.children?.[1]?.children?.[0]?.children ?? [];
     expect(requests.map((node) => node.orphaned)).toEqual([true, undefined]);
   });
 });

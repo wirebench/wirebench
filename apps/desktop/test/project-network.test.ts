@@ -14,8 +14,7 @@ import {
 } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
-import { ProjectService } from '../src/main/project-service.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
+import { ProjectHost } from '../src/main/project-host.js';
 
 const PASSWORD = 'p12-password';
 
@@ -50,10 +49,9 @@ interface ServiceOptions {
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
 }
 
-function newService(options: ServiceOptions = {}): ProjectService {
-  return new ProjectService(
+function newService(options: ServiceOptions = {}): ProjectHost {
+  return new ProjectHost(
     new EngineService(),
-    new RecentProjects(tempDir('ud')),
     {},
     undefined,
     undefined,
@@ -65,7 +63,7 @@ function newService(options: ServiceOptions = {}): ProjectService {
 }
 
 /** An opened project with one imported interface, and the id of its only request. */
-async function openProject(service: ProjectService): Promise<{ dir: string; requestId: string }> {
+async function openProject(service: ProjectHost): Promise<{ dir: string; requestId: string }> {
   const dir = tempDir('proj');
   await service.create({ dir, name: 'Demo' });
   const imported = await service.addInterface({ source: { kind: 'url', url: server.wsdlUrl } });
@@ -73,7 +71,7 @@ async function openProject(service: ProjectService): Promise<{ dir: string; requ
   return { dir, requestId: imported.project.requests[0]?.id as string };
 }
 
-describe('ProjectService.proxyFor', () => {
+describe('ProjectHost.proxyFor', () => {
   it('goes direct when no proxy is configured', async () => {
     const service = newService();
     expect(await service.proxyFor('https://api.test/soap')).toBeUndefined();
@@ -151,7 +149,7 @@ describe('ProjectService.proxyFor', () => {
   });
 });
 
-describe('ProjectService.tlsFor', () => {
+describe('ProjectHost.tlsFor', () => {
   it('adds the CA bundle’s anchors when the path was picked this session', async () => {
     const ca = generateTestCa();
     const picks = new DialogPicks();
@@ -214,9 +212,8 @@ describe('ProjectService.tlsFor', () => {
     // A mutable holder so the global preference can be flipped on the *same* open project,
     // which is what a user changing Preferences mid-session actually does.
     let preferences = DEFAULT_PREFERENCES;
-    const service = new ProjectService(
+    const service = new ProjectHost(
       new EngineService(),
-      new RecentProjects(tempDir('ud')),
       {},
       undefined,
       undefined,

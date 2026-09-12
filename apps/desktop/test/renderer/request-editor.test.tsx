@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RequestEditor } from '../../src/renderer/features/request-editor/request-editor.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { makeDraft, makeExchange, makeInterface } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { resetCommands, runCommand } from '../../src/renderer/lib/commands.js';
@@ -38,7 +40,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft() },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     useExchangesStore.setState({ byRequest: {}, log: [] });
     // The pane's selected view lives in the editors store now, so it outlives a `cleanup()`.
@@ -48,6 +51,36 @@ describe('RequestEditor', () => {
 
   afterEach(() => {
     cleanup();
+    useWorkspaceStore.setState({ workspace: null });
+  });
+
+  it('follows a switch of the workspace environment in the toolbar URL and badge', async () => {
+    const environment = {
+      id: 'env-1',
+      name: 'Dev',
+      slug: 'Dev',
+      order: 0,
+      endpoints: { 'Demo/Calculator': 'http://dev.test/calc.asmx' },
+      properties: {},
+    };
+    const projects = [
+      { id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal' as const, dir: '/w/Demo', status: 'ready' as const },
+    ];
+    useWorkspaceStore.setState({ workspace: workspaceWire({ environments: [environment], projects }) });
+    render(<RequestEditor requestId="req-1" />);
+    expect(screen.queryByTestId('endpoint-env-badge')).toBeNull();
+
+    // Only the workspace store changes, exactly as `workspace.changed` after `setActiveEnvironment`.
+    act(() => {
+      useWorkspaceStore.setState({
+        workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'env-1', projects }),
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('endpoint-env-badge')).toBeTruthy();
+    });
+    expect(screen.getByTestId<HTMLInputElement>('request-endpoint').value).toBe('http://dev.test/calc.asmx');
   });
 
   it('writes the edited envelope back to the draft after the debounce', async () => {
@@ -147,7 +180,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 
@@ -173,7 +207,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
 
     // Set up the editors store with an active request tab so the command's `when` condition passes.
@@ -217,7 +252,8 @@ describe('RequestEditor', () => {
     useProjectStore.setState({
       interfaces: { 'if-1': makeInterface() },
       requests: { 'req-1': makeDraft({ envelopeXml: unformattedXml }) },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 
@@ -250,7 +286,8 @@ describe('RequestEditor', () => {
       requests: {
         'req-1': makeDraft({ envelopeXml: '<soap:Envelope><soap:Body><Add>1</Add></soap:Body></soap:Envelope>' }),
       },
-      order: ['if-1'],
+      order: [{ projectId: 'p1', interfaceIds: ['if-1'] }],
+      projectOf: { 'if-1': 'p1', 'req-1': 'p1' },
     });
     render(<RequestEditor requestId="req-1" />);
 

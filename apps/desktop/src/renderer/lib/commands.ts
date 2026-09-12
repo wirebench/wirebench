@@ -6,7 +6,12 @@ import type { Platform } from './platform.js';
 /** What a command sees when it is listed, gated, or run. */
 export interface CommandContext {
   readonly platform: Platform;
-  readonly ui: UiSnapshot;
+  /**
+   * The layout a command can gate or toggle on. The per-workspace tab memory of
+   * {@link UiSnapshot} is deliberately not part of it: no command reads it, and leaving it out
+   * keeps a context cheap to build on every selection change.
+   */
+  readonly ui: Omit<UiSnapshot, 'workspaces'>;
   /** The explorer's current selection, if any — lets `explorer.*` commands gate on node kind. */
   readonly selection: Selection | undefined;
 }

@@ -133,7 +133,7 @@ export function registerEditorCommands(): void {
     },
   });
 
-  // ⌘W. Closes whichever editor tab is active; the always-present Welcome tab is not a tab in
+  // ⌘W. Closes whichever editor tab is active; the always-present Start tab is not a tab in
   // the store, so with nothing else open this is simply unavailable.
   registerCommand({
     id: 'editor.closeTab',

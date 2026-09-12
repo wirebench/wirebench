@@ -22,8 +22,8 @@ import type {
   ProjectChangedOnDiskEvent,
   ProjectMutateResponse,
   ProjectSettingsPatchWire,
+  ProjectAddInterfaceTarget,
   ProjectWire,
-  RecentProject,
   RequestPatchWire,
   RequestPropertiesPatchWire,
   RequestWire,
@@ -32,6 +32,7 @@ import { useInterfaceEditorStore } from '../features/interface-editor/interface-
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { ipc } from './ipc-client.js';
+import { useUiStore } from './ui.js';
 
 /**
  * One request as the renderer sees it. Historically an in-memory draft; since Task 21 it is
@@ -42,47 +43,66 @@ export type RequestDraft = RequestWire;
 /** Whether an explicit or automatic save is currently running. */
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-/** The renderer's read-only mirror of the main process's project model. */
+/** One keystore (or WS-Security configuration) tagged with the project it belongs to. */
+export type OfProject<T> = T & { readonly projectId: string };
+
+/** The interfaces of one project, in project order — what the explorer's tree iterates. */
+export interface ProjectOrder {
+  readonly projectId: string;
+  readonly interfaceIds: string[];
+}
+
+/** The renderer's read-only mirror of every project open in the workspace. */
 export interface ProjectSnapshot {
-  /** The open project, or `null` when the Welcome screen should be shown. */
-  readonly project: ProjectWire | null;
-  /** Interfaces by id — a derived index over `project.interfaces`. */
+  /** Every open project by id. Empty when no workspace is open. */
+  readonly projects: Readonly<Record<string, ProjectWire>>;
+  /** Interfaces by id, flattened across every open project. */
   readonly interfaces: Record<string, InterfaceWire>;
-  /** Requests by id — a derived index over `project.requests`. */
+  /** Requests by id, flattened across every open project. */
   readonly requests: Record<string, RequestDraft>;
-  /** Interface ids in project order: what the explorer iterates to render the tree. */
-  readonly order: string[];
-  /** The project's environments, in `order`. Empty when no project is open. */
-  readonly environments: readonly EnvironmentWire[];
-  /** The active environment's id, or `undefined` when none is active. */
-  readonly activeEnvironmentId: string | undefined;
-  /** The project's client keystores, in registry order. Empty when no project is open. */
-  readonly keystores: readonly KeystoreWire[];
-  /** The project's outgoing WS-Security configurations. Empty when no project is open. */
-  readonly wssOutgoing: readonly WssOutgoingWire[];
-  /** The project's incoming WS-Security configurations. Empty when no project is open. */
-  readonly wssIncoming: readonly WssIncomingWire[];
-  readonly saveStatus: SaveStatus;
-  readonly lastSavedAt: string | undefined;
-  /** Paths reported by the folder watcher since the banner was last dismissed. */
-  readonly changedOnDisk: readonly string[];
+  /** Project order, and each project's interface ids in its own order. */
+  readonly order: readonly ProjectOrder[];
+  /**
+   * Which project owns an entity — project, interface, request, environment, keystore or
+   * WS-Security configuration id. This is what lets an action the renderer addresses at an
+   * entity be routed to the right project without the caller having to know which one it is.
+   */
+  readonly projectOf: Readonly<Record<string, string>>;
+  /** Every project's client keystores, each tagged with its project. */
+  readonly keystores: readonly OfProject<KeystoreWire>[];
+  /** Every project's outgoing WS-Security configurations, each tagged with its project. */
+  readonly wssOutgoing: readonly OfProject<WssOutgoingWire>[];
+  /** Every project's incoming WS-Security configurations, each tagged with its project. */
+  readonly wssIncoming: readonly OfProject<WssIncomingWire>[];
+  /** Save state per project: a save is per project, and so is its failure. */
+  readonly saveStatus: Readonly<Record<string, SaveStatus>>;
+  /** Paths the folder watcher reported per project, since that project's banner was dismissed. */
+  readonly changedOnDisk: Readonly<Record<string, readonly string[]>>;
 }
 
 /** The project store: {@link ProjectSnapshot} plus the actions that drive main. */
 export interface ProjectStore extends ProjectSnapshot {
-  /** Replaces the mirror wholesale (used by `project.changed` and every action's reply). */
-  readonly applySnapshot: (project: ProjectWire | null) => void;
-  readonly createProject: (dir: string, name: string) => Promise<void>;
-  readonly openProject: (dir: string) => Promise<void>;
-  readonly closeProject: () => Promise<void>;
-  readonly reloadProject: () => Promise<void>;
-  readonly refresh: () => Promise<void>;
-  readonly save: () => Promise<void>;
-  readonly recent: () => Promise<RecentProject[]>;
-  readonly noteChangedOnDisk: (paths: readonly string[]) => void;
-  readonly dismissChangedOnDisk: () => void;
-  /** Imports a WSDL into the open project; the interface and its `Request 1`s come back saved. */
+  /**
+   * Applies one project's snapshot (`project.changed`, and every action's reply). A `null`
+   * project removes it from the mirror — the other projects are untouched.
+   */
+  readonly applySnapshot: (projectId: string, project: ProjectWire | null) => void;
+  /** Empties the mirror. Called by `useWorkspaceStore.applySnapshot(null)`. */
+  readonly reset: () => void;
+  /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */
+  readonly reloadProject: (projectId: string) => Promise<void>;
+  /** Re-pulls one project's snapshot from main. */
+  readonly refresh: (projectId: string) => Promise<void>;
+  /** Saves one project, or — with no id — every open project. */
+  readonly save: (projectId?: string) => Promise<void>;
+  readonly noteChangedOnDisk: (projectId: string, paths: readonly string[]) => void;
+  readonly dismissChangedOnDisk: (projectId: string) => void;
+  /**
+   * Imports a WSDL. `target` names the project it lands in, or asks for a project to be
+   * created for it — importing into an empty workspace is one gesture, not two.
+   */
   readonly importDefinition: (
+    target: ProjectAddInterfaceTarget,
     source: ImportSourceWire,
     options?: {
       readonly auth?: { readonly username: string; readonly passwordRef: string };
@@ -98,8 +118,10 @@ export interface ProjectStore extends ProjectSnapshot {
    * property back to "inherit".
    */
   readonly updateRequestProperties: (requestId: string, patch: RequestPropertiesPatchWire) => void;
-  /** Merges a patch into the project's settings (`wirebench.yaml`). */
-  readonly updateProjectSettings: (patch: ProjectSettingsPatchWire) => Promise<void>;
+  /** Merges a patch into one project's settings (`wirebench.yaml`). */
+  readonly updateProjectSettings: (projectId: string, patch: ProjectSettingsPatchWire) => Promise<void>;
+  /** Renames one project. The folder keeps its slug; only the name in `wirebench.yaml` changes. */
+  readonly renameProject: (projectId: string, name: string) => Promise<void>;
   /** Turns the definition cache on or off for one interface. */
   readonly setCacheDefinition: (interfaceId: string, cacheDefinition: boolean) => Promise<void>;
   readonly setEndpoint: (requestId: string, url: string) => void;
@@ -112,28 +134,29 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly cloneRequest: (requestId: string) => Promise<string>;
   /** Deletes a request and closes its open editor tab, if any. */
   readonly removeRequest: (requestId: string) => Promise<void>;
-  /** Appends an empty environment and returns its id. */
-  readonly addEnvironment: (name: string) => Promise<string>;
+  /** Appends an empty environment to one project and returns its id. */
+  readonly addEnvironment: (projectId: string, name: string) => Promise<string>;
   /**
-   * Patches one environment. `endpoints`/`properties` REPLACE the whole map (send the complete
-   * map you want it to end up with); omit a map to leave it untouched.
+   * Patches one project environment. `endpoints`/`properties` REPLACE the whole map (send the
+   * complete map you want it to end up with); omit a map to leave it untouched.
    */
-  readonly updateEnvironment: (environmentId: string, patch: EnvironmentPatchWire) => Promise<void>;
-  readonly removeEnvironment: (environmentId: string) => Promise<void>;
+  readonly updateEnvironment: (projectId: string, environmentId: string, patch: EnvironmentPatchWire) => Promise<void>;
+  readonly removeEnvironment: (projectId: string, environmentId: string) => Promise<void>;
   /** Registers a keystore file (already chosen through `keystores.pickFile`); returns its id. */
-  readonly addKeystore: (input: { path: string; name?: string; passwordSecretRef?: string }) => Promise<string>;
+  readonly addKeystore: (
+    projectId: string,
+    input: { path: string; name?: string; passwordSecretRef?: string },
+  ) => Promise<string>;
   readonly updateKeystore: (keystoreId: string, patch: KeystorePatchWire) => Promise<void>;
   readonly removeKeystore: (keystoreId: string) => Promise<void>;
   /** Creates an empty outgoing WS-Security configuration; returns its id. */
-  readonly addWssOutgoing: (input?: { name?: string }) => Promise<string>;
+  readonly addWssOutgoing: (projectId: string, input?: { name?: string }) => Promise<string>;
   readonly updateWssOutgoing: (configId: string, patch: WssOutgoingPatchWire) => Promise<void>;
   readonly removeWssOutgoing: (configId: string) => Promise<void>;
   /** Creates an incoming WS-Security configuration with this build's defaults; returns its id. */
-  readonly addWssIncoming: (input?: { name?: string }) => Promise<string>;
+  readonly addWssIncoming: (projectId: string, input?: { name?: string }) => Promise<string>;
   readonly updateWssIncoming: (configId: string, patch: WssIncomingPatchWire) => Promise<void>;
   readonly removeWssIncoming: (configId: string) => Promise<void>;
-  /** Switches the active environment; `null` deactivates. */
-  readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
   /** Appends an endpoint to an interface. */
   readonly addEndpoint: (interfaceId: string, name: string, url: string) => Promise<void>;
   /** Renames or re-addresses one endpoint. */
@@ -165,8 +188,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   /** Makes one endpoint the interface's default, used by requests that pick none of their own. */
   readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
-  readonly setProjectProperty: (name: string, value: string) => Promise<void>;
-  readonly removeProjectProperty: (name: string) => Promise<void>;
+  readonly setProjectProperty: (projectId: string, name: string, value: string) => Promise<void>;
+  readonly removeProjectProperty: (projectId: string, name: string) => Promise<void>;
   /**
    * Attaches a file to a request. Only the path crosses IPC: main stats and reads it, and with
    * `copyToCache` (the default) content-addresses the bytes into the project's `attachments/`
@@ -265,180 +288,260 @@ function withAttachmentPatch(request: RequestDraft, attachmentId: string, patch:
   };
 }
 
-/** Builds the indexes (and environment mirror) the selectors below read. */
-function indexesOf(
-  project: ProjectWire | null,
-): Pick<
+/** Every index {@link ProjectSnapshot} exposes, rebuilt from the whole project map. */
+type Indexes = Pick<
   ProjectSnapshot,
-  | 'interfaces'
-  | 'requests'
-  | 'order'
-  | 'environments'
-  | 'activeEnvironmentId'
-  | 'keystores'
-  | 'wssOutgoing'
-  | 'wssIncoming'
-> {
-  if (project === null) {
-    return {
-      interfaces: {},
-      requests: {},
-      order: [],
-      environments: [],
-      activeEnvironmentId: undefined,
-      keystores: [],
-      wssOutgoing: [],
-      wssIncoming: [],
-    };
-  }
+  'interfaces' | 'requests' | 'order' | 'projectOf' | 'keystores' | 'wssOutgoing' | 'wssIncoming'
+>;
+
+/**
+ * Rebuilds the flattened indexes from every open project.
+ *
+ * Rebuilt wholesale rather than patched per project: the indexes are keyed by entity id across
+ * projects, so removing one project means removing exactly its entries — and recomputing is
+ * both shorter and impossible to get subtly wrong.
+ */
+function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const interfaces: Record<string, InterfaceWire> = {};
-  for (const iface of project.interfaces) {
-    interfaces[iface.id] = iface;
-  }
   const requests: Record<string, RequestDraft> = {};
-  for (const request of project.requests) {
-    const patch = pending.get(request.id);
-    requests[request.id] = patch === undefined ? request : withPatch(request, patch);
+  const projectOf: Record<string, string> = {};
+  const order: ProjectOrder[] = [];
+  const keystores: OfProject<KeystoreWire>[] = [];
+  const wssOutgoing: OfProject<WssOutgoingWire>[] = [];
+  const wssIncoming: OfProject<WssIncomingWire>[] = [];
+
+  for (const project of Object.values(projects)) {
+    projectOf[project.id] = project.id;
+    for (const iface of project.interfaces) {
+      interfaces[iface.id] = iface;
+      projectOf[iface.id] = project.id;
+    }
+    for (const request of project.requests) {
+      const patch = pending.get(request.id);
+      requests[request.id] = patch === undefined ? request : withPatch(request, patch);
+      projectOf[request.id] = project.id;
+    }
+    for (const environment of project.environments) {
+      projectOf[environment.id] = project.id;
+    }
+    for (const keystore of project.keystores) {
+      keystores.push({ ...keystore, projectId: project.id });
+      projectOf[keystore.id] = project.id;
+    }
+    for (const config of project.wssOutgoing) {
+      wssOutgoing.push({ ...config, projectId: project.id });
+      projectOf[config.id] = project.id;
+    }
+    for (const config of project.wssIncoming) {
+      wssIncoming.push({ ...config, projectId: project.id });
+      projectOf[config.id] = project.id;
+    }
+    order.push({ projectId: project.id, interfaceIds: project.interfaces.map((iface) => iface.id) });
   }
-  const environments = project.environments
-    .map((environment) => {
-      const patch = pendingEnvironment.get(environment.id);
-      return patch === undefined ? environment : withEnvironmentPatch(environment, patch);
-    })
-    .sort((a, b) => a.order - b.order);
-  return {
-    interfaces,
-    requests,
-    order: project.interfaces.map((iface) => iface.id),
-    environments,
-    activeEnvironmentId: project.activeEnvironmentId,
-    keystores: project.keystores,
-    wssOutgoing: project.wssOutgoing,
-    wssIncoming: project.wssIncoming,
-  };
+  // Projects are ordered by name so the explorer's tree does not reshuffle on every snapshot
+  // (object key order follows insertion, which follows whichever project replied last).
+  order.sort((a, b) => (projects[a.projectId]?.name ?? '').localeCompare(projects[b.projectId]?.name ?? ''));
+  return { interfaces, requests, order, projectOf, keystores, wssOutgoing, wssIncoming };
 }
+
+/**
+ * The last patched copy handed out per environment object, with the patch it was built from.
+ * An environment with a pending patch must come back as the *same* object on every read until
+ * the patch or the environment changes — a selector returning a fresh object each call would
+ * make every `useProjectStore(selectEnvironment…)` consumer rerender forever.
+ */
+const patchedEnvironments = new WeakMap<
+  EnvironmentWire,
+  { readonly patch: EnvironmentPatchWire; readonly result: EnvironmentWire }
+>();
+
+/** `environment` with its still-unacknowledged patch (if any) applied; referentially stable. */
+function withPendingPatch(environment: EnvironmentWire): EnvironmentWire {
+  const patch = pendingEnvironment.get(environment.id);
+  if (patch === undefined) {
+    return environment;
+  }
+  const cached = patchedEnvironments.get(environment);
+  if (cached?.patch === patch) {
+    return cached.result;
+  }
+  const result = withEnvironmentPatch(environment, patch);
+  patchedEnvironments.set(environment, { patch, result });
+  return result;
+}
+
+/**
+ * One environment by id, wherever in the open projects it lives, with any optimistic edit
+ * applied. A selector rather than store state: environments are per project now, and only the
+ * project environment editor still reads them (the workspace's own live in `useWorkspaceStore`).
+ */
+export function selectEnvironment(state: ProjectSnapshot, environmentId: string): EnvironmentWire | undefined {
+  const projectId = state.projectOf[environmentId];
+  const environment =
+    projectId === undefined
+      ? undefined
+      : state.projects[projectId]?.environments.find((candidate) => candidate.id === environmentId);
+  return environment === undefined ? undefined : withPendingPatch(environment);
+}
+
+/** One project's environments in `order`, optimistic edits applied. Not for use as a hook selector. */
+export function selectProjectEnvironments(state: ProjectSnapshot, projectId: string): readonly EnvironmentWire[] {
+  return (state.projects[projectId]?.environments ?? []).map(withPendingPatch).sort((a, b) => a.order - b.order);
+}
+
+const EMPTY: ProjectSnapshot = {
+  projects: {},
+  interfaces: {},
+  requests: {},
+  order: [],
+  projectOf: {},
+  keystores: [],
+  wssOutgoing: [],
+  wssIncoming: [],
+  saveStatus: {},
+  changedOnDisk: {},
+};
 
 export const useProjectStore = create<ProjectStore>((set, get) => {
   const update = (recipe: Mutate): void => {
     set((state) => produce(state, recipe));
   };
 
-  const apply = (project: ProjectWire | null): void => {
-    set((state) => ({
-      ...state,
-      project,
-      ...indexesOf(project),
-      lastSavedAt: project?.lastSavedAt ?? state.lastSavedAt,
-    }));
+  /** Replaces one project in the mirror (or, with `null`, removes it) and rebuilds the indexes. */
+  const apply = (projectId: string, project: ProjectWire | null): void => {
+    set((state) => {
+      const projects = { ...state.projects };
+      if (project !== null) {
+        projects[project.id] = project;
+        return { ...state, projects, ...indexesOf(projects) };
+      }
+      // A removed project takes its per-project state and its unacknowledged patches with it.
+      const removed = projects[projectId];
+      for (const request of removed?.requests ?? []) {
+        pending.delete(request.id);
+      }
+      for (const environment of removed?.environments ?? []) {
+        pendingEnvironment.delete(environment.id);
+      }
+      delete projects[projectId];
+      const saveStatus = { ...state.saveStatus };
+      delete saveStatus[projectId];
+      const changedOnDisk = { ...state.changedOnDisk };
+      delete changedOnDisk[projectId];
+      return { ...state, projects, saveStatus, changedOnDisk, ...indexesOf(projects) };
+    });
   };
 
-  const mutate = async (change: ProjectChange): Promise<ProjectMutateResponse> => {
-    const result = await ipc().project.mutate({ change });
+  /**
+   * The project owning `entityId`. Throws rather than silently doing nothing: an action
+   * addressed at an entity no open project holds is a renderer bug, and a no-op would hide it.
+   */
+  const ownerOf = (entityId: string): string => {
+    const projectId = get().projectOf[entityId];
+    if (projectId === undefined) {
+      throw new Error(`No open project holds "${entityId}"`);
+    }
+    return projectId;
+  };
+
+  /**
+   * Bumped by `reset()`. A mutation reply that lands after the workspace closed belongs to a
+   * project that is gone, and applying it would put that project back into an empty mirror.
+   */
+  let generation = 0;
+
+  const mutate = async (projectId: string, change: ProjectChange): Promise<ProjectMutateResponse> => {
+    const sentIn = generation;
+    const result = await ipc().project.mutate({ projectId, change });
     if (!result.ok) {
       throw asError(result.error);
     }
-    apply(result.value.project);
+    if (sentIn === generation) {
+      apply(projectId, result.value.project);
+    }
     return result.value;
   };
 
+  /** `mutate`, for a change addressed at an entity rather than at a project. */
+  const mutateEntity = async (entityId: string, change: ProjectChange): Promise<ProjectMutateResponse> =>
+    await mutate(ownerOf(entityId), change);
+
+  /** Saves one project, reporting its own status. */
+  const saveOne = async (projectId: string): Promise<void> => {
+    update((draft) => {
+      draft.saveStatus[projectId] = 'saving';
+    });
+    const result = await ipc().project.save({ projectId });
+    if (!result.ok) {
+      // Leave the project dirty: nothing was written, so the pending edit is still only in
+      // memory and the caller needs the thrown error to toast it.
+      update((draft) => {
+        draft.saveStatus[projectId] = 'error';
+      });
+      throw asError(result.error);
+    }
+    update((draft) => {
+      draft.saveStatus[projectId] = 'saved';
+    });
+  };
+
   return {
-    project: null,
-    interfaces: {},
-    requests: {},
-    order: [],
-    environments: [],
-    activeEnvironmentId: undefined,
-    keystores: [],
-    wssOutgoing: [],
-    wssIncoming: [],
-    saveStatus: 'idle',
-    lastSavedAt: undefined,
-    changedOnDisk: [],
+    ...EMPTY,
 
     applySnapshot: apply,
 
-    createProject: async (dir, name) => {
-      const result = await ipc().project.create({ dir, name });
-      if (!result.ok) {
-        throw asError(result.error);
-      }
-      apply(result.value.project);
+    reset: () => {
+      generation += 1;
+      pending.clear();
+      pendingEnvironment.clear();
+      set((state) => ({ ...state, ...EMPTY }));
     },
 
-    openProject: async (dir) => {
-      const result = await ipc().project.open({ dir });
-      if (!result.ok) {
-        throw asError(result.error);
-      }
-      apply(result.value.project);
-    },
-
-    closeProject: async () => {
-      const result = await ipc().project.close(undefined);
-      if (result.ok) {
-        apply(result.value.project);
-      }
-    },
-
-    reloadProject: async () => {
-      const result = await ipc().project.reload(undefined);
+    reloadProject: async (projectId) => {
+      const result = await ipc().project.reload({ projectId });
       if (!result.ok) {
         throw asError(result.error);
       }
       pending.clear();
-      apply(result.value.project);
+      apply(projectId, result.value.project);
       update((draft) => {
-        draft.changedOnDisk = [];
+        draft.changedOnDisk[projectId] = [];
       });
     },
 
-    refresh: async () => {
-      const result = await ipc().project.snapshot(undefined);
+    refresh: async (projectId) => {
+      const result = await ipc().project.snapshot({ projectId });
       if (result.ok) {
-        apply(result.value.project);
+        apply(projectId, result.value.project);
       }
     },
 
-    save: async () => {
-      update((draft) => {
-        draft.saveStatus = 'saving';
-      });
-      const result = await ipc().project.save(undefined);
-      if (!result.ok) {
-        // Leave the project dirty: nothing was written, so the pending edit is still only
-        // in memory and the caller (`projectActions.save`) needs the thrown error to toast it.
-        update((draft) => {
-          draft.saveStatus = 'error';
-        });
-        throw asError(result.error);
+    save: async (projectId) => {
+      const ids = projectId === undefined ? Object.keys(get().projects) : [projectId];
+      // Every project is saved even when one fails, and the first failure is what the caller
+      // hears about: a failed save on one project must not leave the others unwritten.
+      const results = await Promise.allSettled(ids.map(async (id) => await saveOne(id)));
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed !== undefined && failed.status === 'rejected') {
+        throw failed.reason instanceof Error ? failed.reason : new Error(String(failed.reason));
       }
+    },
+
+    noteChangedOnDisk: (projectId, paths) => {
       update((draft) => {
-        draft.saveStatus = 'saved';
-        if (result.value.savedAt !== undefined) {
-          draft.lastSavedAt = result.value.savedAt;
-        }
+        draft.changedOnDisk[projectId] = [...new Set([...(draft.changedOnDisk[projectId] ?? []), ...paths])];
       });
     },
 
-    recent: async () => {
-      const result = await ipc().project.recent(undefined);
-      return result.ok ? result.value.recent : [];
-    },
-
-    noteChangedOnDisk: (paths) => {
+    dismissChangedOnDisk: (projectId) => {
       update((draft) => {
-        draft.changedOnDisk = [...new Set([...draft.changedOnDisk, ...paths])];
+        draft.changedOnDisk[projectId] = [];
       });
     },
 
-    dismissChangedOnDisk: () => {
-      update((draft) => {
-        draft.changedOnDisk = [];
-      });
-    },
-
-    importDefinition: async (source, options, token) => {
+    importDefinition: async (target, source, options, token) => {
       const result = await ipc().project.addInterface({
+        target,
         source,
         ...(options?.auth !== undefined ? { auth: options.auth } : {}),
         ...(options?.useForRequests !== undefined ? { useForRequests: options.useForRequests } : {}),
@@ -447,7 +550,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (!result.ok) {
         throw asError(result.error);
       }
-      apply(result.value.project);
+      apply(result.value.projectId, result.value.project);
       const added = get().interfaces[result.value.interfaceId];
       if (added === undefined) {
         throw new Error(`import returned an unknown interface: ${result.value.interfaceId}`);
@@ -456,7 +559,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     removeInterface: async (interfaceId) => {
-      await mutate({ kind: 'remove-interface', interfaceId });
+      await mutateEntity(interfaceId, { kind: 'remove-interface', interfaceId });
       // The Interface editor caches this definition's documents, texts and schema index; none
       // of it outlives the interface itself.
       useInterfaceEditorStore.getState().forget(interfaceId);
@@ -464,6 +567,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateRequest: (requestId, patch) => {
       // Applied locally first so typing stays smooth, then merged with whatever main replies.
+      const projectId = ownerOf(requestId);
       const existing = pending.get(requestId);
       const merged: RequestPatchWire = { ...existing, ...patch };
       pending.set(requestId, merged);
@@ -481,8 +585,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           pending.delete(requestId);
         }
         update((draft) => {
-          const project = get().project;
-          const fresh = project?.requests.find((candidate) => candidate.id === requestId);
+          const fresh = get().projects[projectId]?.requests.find((candidate) => candidate.id === requestId);
           if (fresh !== undefined) {
             const stillPending = pending.get(requestId);
             draft.requests[requestId] = stillPending === undefined ? fresh : withPatch(fresh, stillPending);
@@ -491,12 +594,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         showToast(message);
       };
       void ipc()
-        .project.mutate({ change: { kind: 'update-request', requestId, patch } })
+        .project.mutate({ projectId, change: { kind: 'update-request', requestId, patch } })
         .then((result) => {
           // Apply first, drop the pending patch second: the reply already contains this edit,
           // but a snapshot that crossed a later keystroke does not, and the patch covers it.
           if (result.ok) {
-            apply(result.value.project);
+            apply(projectId, result.value.project);
             if (pending.get(requestId) === merged) {
               pending.delete(requestId);
             }
@@ -523,7 +626,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     addRequest: async (interfaceId, bindingName, operationName) => {
-      const { createdRequestId: created } = await mutate({
+      const { createdRequestId: created } = await mutateEntity(interfaceId, {
         kind: 'add-request',
         interfaceId,
         bindingName,
@@ -536,7 +639,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     cloneRequest: async (requestId) => {
-      const { createdRequestId: created } = await mutate({ kind: 'clone-request', requestId });
+      const { createdRequestId: created } = await mutateEntity(requestId, { kind: 'clone-request', requestId });
       if (created === undefined) {
         throw new Error('clone-request did not return a request id');
       }
@@ -544,114 +647,92 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     addEndpoint: async (interfaceId, name, url) => {
-      await mutate({ kind: 'add-endpoint', interfaceId, name, url });
+      await mutateEntity(interfaceId, { kind: 'add-endpoint', interfaceId, name, url });
     },
 
     updateEndpoint: async (interfaceId, endpointId, patch) => {
-      await mutate({ kind: 'update-endpoint', interfaceId, endpointId, patch });
+      await mutateEntity(interfaceId, { kind: 'update-endpoint', interfaceId, endpointId, patch });
     },
 
     updateRequestAuth: (requestId, auth) => {
       // Fire-and-report like the other request edits: the inspector must stay responsive, and
       // a rejected mutation surfaces as a toast rather than an unhandled rejection.
-      void mutate({ kind: 'update-request-auth', requestId, auth }).catch((error: unknown) => {
+      void mutateEntity(requestId, { kind: 'update-request-auth', requestId, auth }).catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'Could not update the request credentials');
       });
     },
 
     updateEndpointAuth: async (interfaceId, endpointId, auth) => {
-      await mutate({ kind: 'update-endpoint-auth', interfaceId, endpointId, auth });
+      await mutateEntity(interfaceId, { kind: 'update-endpoint-auth', interfaceId, endpointId, auth });
     },
 
     updateInterfaceAuth: async (interfaceId, auth) => {
-      await mutate({ kind: 'update-interface-auth', interfaceId, auth });
+      await mutateEntity(interfaceId, { kind: 'update-interface-auth', interfaceId, auth });
     },
 
     updateRequestWsa: (requestId, wsa) => {
       // Fire-and-report like `updateRequestAuth`: the inspector must stay responsive, and a
       // rejected mutation surfaces as a toast rather than an unhandled rejection.
-      void mutate({ kind: 'update-request-wsa', requestId, wsa }).catch((error: unknown) => {
+      void mutateEntity(requestId, { kind: 'update-request-wsa', requestId, wsa }).catch((error: unknown) => {
         showToast(error instanceof Error ? error.message : 'Could not update WS-Addressing');
       });
     },
 
     updateInterfaceWsa: async (interfaceId, wsa) => {
-      await mutate({ kind: 'update-interface-wsa', interfaceId, wsa });
+      await mutateEntity(interfaceId, { kind: 'update-interface-wsa', interfaceId, wsa });
     },
 
     removeEndpoint: async (interfaceId, endpointId) => {
-      await mutate({ kind: 'remove-endpoint', interfaceId, endpointId });
+      await mutateEntity(interfaceId, { kind: 'remove-endpoint', interfaceId, endpointId });
     },
 
     setDefaultEndpoint: async (interfaceId, endpointId) => {
-      await mutate({ kind: 'set-default-endpoint', interfaceId, endpointId });
+      await mutateEntity(interfaceId, { kind: 'set-default-endpoint', interfaceId, endpointId });
     },
 
     removeRequest: async (requestId) => {
-      await mutate({ kind: 'remove-request', requestId });
+      await mutateEntity(requestId, { kind: 'remove-request', requestId });
       pending.delete(requestId);
       useEditorsStore.getState().close(`request:${requestId}`);
       useExchangesStore.getState().clearRequest(requestId);
     },
 
-    addEnvironment: async (name) => {
-      const { createdEnvironmentId } = await mutate({ kind: 'add-environment', name });
+    addEnvironment: async (projectId, name) => {
+      const { createdEnvironmentId } = await mutate(projectId, { kind: 'add-environment', name });
       if (createdEnvironmentId === undefined) {
         throw new Error('add-environment did not return an environment id');
       }
       return createdEnvironmentId;
     },
 
-    updateEnvironment: async (environmentId, patch) => {
+    updateEnvironment: async (projectId, environmentId, patch) => {
       // Applied locally first (and merged with any still-pending patch) so a second commit
       // fired before the first round trip resolves builds on top of both edits, not just the
-      // render-time snapshot; see `withEnvironmentPatch`/`pendingEnvironment` above.
+      // render-time snapshot; see `withPendingPatch`/`pendingEnvironment` above.
       const existing = pendingEnvironment.get(environmentId);
       const merged: EnvironmentPatchWire = { ...existing, ...patch };
       pendingEnvironment.set(environmentId, merged);
-      update((draft) => {
-        const index = draft.environments.findIndex((candidate) => candidate.id === environmentId);
-        const current = index === -1 ? undefined : draft.environments[index];
-        if (index !== -1 && current !== undefined) {
-          draft.environments[index] = withEnvironmentPatch(current, patch);
-        }
-      });
+      // The patch lives outside the state, so readers are told to look again.
+      set((state) => ({ ...state }));
       try {
-        await mutate({ kind: 'update-environment', environmentId, patch });
+        await mutate(projectId, { kind: 'update-environment', environmentId, patch });
+      } finally {
+        // The reply (or the failure) is authoritative either way: on success the snapshot
+        // already carries this edit, and on failure the optimistic one was never saved, so
+        // dropping the patch falls back to the last confirmed snapshot.
         if (pendingEnvironment.get(environmentId) === merged) {
           pendingEnvironment.delete(environmentId);
+          set((state) => ({ ...state }));
         }
-      } catch (error) {
-        // Drop the pending patch and fall back to the last confirmed snapshot, same recovery
-        // as `updateRequest.fail` — otherwise a failed mutate leaves `pendingEnvironment` set
-        // forever and the mirror keeps showing an edit that was never saved.
-        if (pendingEnvironment.get(environmentId) === merged) {
-          pendingEnvironment.delete(environmentId);
-        }
-        update((draft) => {
-          const project = get().project;
-          const fresh = project?.environments.find((candidate) => candidate.id === environmentId);
-          if (fresh !== undefined) {
-            const index = draft.environments.findIndex((candidate) => candidate.id === environmentId);
-            const stillPending = pendingEnvironment.get(environmentId);
-            const resolved = stillPending === undefined ? fresh : withEnvironmentPatch(fresh, stillPending);
-            if (index === -1) {
-              draft.environments.push(resolved);
-            } else {
-              draft.environments[index] = resolved;
-            }
-          }
-        });
-        throw error;
       }
     },
 
-    removeEnvironment: async (environmentId) => {
-      await mutate({ kind: 'remove-environment', environmentId });
+    removeEnvironment: async (projectId, environmentId) => {
+      await mutate(projectId, { kind: 'remove-environment', environmentId });
     },
 
-    addKeystore: async (input) => {
-      const { createdKeystoreId } = await mutate({
+    addKeystore: async (projectId, input) => {
+      const { createdKeystoreId } = await mutate(projectId, {
         kind: 'add-keystore',
         path: input.path,
         ...(input.name !== undefined ? { name: input.name } : {}),
@@ -664,15 +745,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     updateKeystore: async (keystoreId, patch) => {
-      await mutate({ kind: 'update-keystore', keystoreId, patch });
+      await mutateEntity(keystoreId, { kind: 'update-keystore', keystoreId, patch });
     },
 
     removeKeystore: async (keystoreId) => {
-      await mutate({ kind: 'remove-keystore', keystoreId });
+      await mutateEntity(keystoreId, { kind: 'remove-keystore', keystoreId });
     },
 
-    addWssOutgoing: async (input) => {
-      const { createdWssOutgoingId } = await mutate({
+    addWssOutgoing: async (projectId, input) => {
+      const { createdWssOutgoingId } = await mutate(projectId, {
         kind: 'add-wss-outgoing',
         ...(input?.name !== undefined ? { name: input.name } : {}),
       });
@@ -683,15 +764,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     updateWssOutgoing: async (configId, patch) => {
-      await mutate({ kind: 'update-wss-outgoing', configId, patch });
+      await mutateEntity(configId, { kind: 'update-wss-outgoing', configId, patch });
     },
 
     removeWssOutgoing: async (configId) => {
-      await mutate({ kind: 'remove-wss-outgoing', configId });
+      await mutateEntity(configId, { kind: 'remove-wss-outgoing', configId });
     },
 
-    addWssIncoming: async (input) => {
-      const { createdWssIncomingId } = await mutate({
+    addWssIncoming: async (projectId, input) => {
+      const { createdWssIncomingId } = await mutate(projectId, {
         kind: 'add-wss-incoming',
         ...(input?.name !== undefined ? { name: input.name } : {}),
       });
@@ -702,59 +783,65 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     updateWssIncoming: async (configId, patch) => {
-      await mutate({ kind: 'update-wss-incoming', configId, patch });
+      await mutateEntity(configId, { kind: 'update-wss-incoming', configId, patch });
     },
 
     removeWssIncoming: async (configId) => {
-      await mutate({ kind: 'remove-wss-incoming', configId });
-    },
-
-    setActiveEnvironment: async (environmentId) => {
-      await mutate({ kind: 'set-active-environment', environmentId });
+      await mutateEntity(configId, { kind: 'remove-wss-incoming', configId });
     },
 
     updateRequestProperties: (requestId, patch) => {
+      const projectId = ownerOf(requestId);
       update((draft) => {
         const request = draft.requests[requestId];
         if (request !== undefined) {
           draft.requests[requestId] = withPropertiesPatch(request, patch);
         }
       });
+      const revert = (message: string): void => {
+        // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
+        const project = get().projects[projectId];
+        if (project !== undefined) {
+          apply(projectId, project);
+        }
+        showToast(message);
+      };
       void ipc()
-        .project.mutate({ change: { kind: 'update-request-properties', requestId, patch } })
+        .project.mutate({ projectId, change: { kind: 'update-request-properties', requestId, patch } })
         .then((result) => {
           if (result.ok) {
-            apply(result.value.project);
+            apply(projectId, result.value.project);
             return;
           }
-          // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
-          apply(get().project);
-          showToast(asError(result.error).message);
+          revert(asError(result.error).message);
         })
         .catch((error: unknown) => {
-          apply(get().project);
-          showToast(error instanceof Error ? error.message : 'Could not save the change');
+          revert(error instanceof Error ? error.message : 'Could not save the change');
         });
     },
 
-    updateProjectSettings: async (patch) => {
-      await mutate({ kind: 'update-project-settings', patch });
+    updateProjectSettings: async (projectId, patch) => {
+      await mutate(projectId, { kind: 'update-project-settings', patch });
+    },
+
+    renameProject: async (projectId, name) => {
+      await mutate(projectId, { kind: 'rename-project', name });
     },
 
     setCacheDefinition: async (interfaceId, cacheDefinition) => {
-      await mutate({ kind: 'update-interface', interfaceId, patch: { cacheDefinition } });
+      await mutateEntity(interfaceId, { kind: 'update-interface', interfaceId, patch: { cacheDefinition } });
     },
 
-    setProjectProperty: async (name, value) => {
-      await mutate({ kind: 'set-project-property', name, value });
+    setProjectProperty: async (projectId, name, value) => {
+      await mutate(projectId, { kind: 'set-project-property', name, value });
     },
 
-    removeProjectProperty: async (name) => {
-      await mutate({ kind: 'remove-project-property', name });
+    removeProjectProperty: async (projectId, name) => {
+      await mutate(projectId, { kind: 'remove-project-property', name });
     },
 
     addAttachment: async (requestId, path, options) => {
-      const { createdAttachmentId } = await mutate({
+      const { createdAttachmentId } = await mutateEntity(requestId, {
         kind: 'add-attachment',
         requestId,
         path,
@@ -768,49 +855,80 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     updateAttachment: (requestId, attachmentId, patch) => {
+      const projectId = ownerOf(requestId);
       update((draft) => {
         const request = draft.requests[requestId];
         if (request !== undefined) {
           draft.requests[requestId] = withAttachmentPatch(request, attachmentId, patch);
         }
       });
+      const revert = (message: string): void => {
+        // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
+        const project = get().projects[projectId];
+        if (project !== undefined) {
+          apply(projectId, project);
+        }
+        showToast(message);
+      };
       void ipc()
-        .project.mutate({ change: { kind: 'update-attachment', requestId, attachmentId, patch } })
+        .project.mutate({ projectId, change: { kind: 'update-attachment', requestId, attachmentId, patch } })
         .then((result) => {
           if (result.ok) {
-            apply(result.value.project);
+            apply(projectId, result.value.project);
             return;
           }
-          // Fall back to the last confirmed snapshot: the optimistic edit was never saved.
-          apply(get().project);
-          showToast(asError(result.error).message);
+          revert(asError(result.error).message);
         })
         .catch((error: unknown) => {
-          apply(get().project);
-          showToast(error instanceof Error ? error.message : 'Could not save the change');
+          revert(error instanceof Error ? error.message : 'Could not save the change');
         });
     },
 
     removeAttachment: async (requestId, attachmentId) => {
-      await mutate({ kind: 'remove-attachment', requestId, attachmentId });
+      await mutateEntity(requestId, { kind: 'remove-attachment', requestId, attachmentId });
     },
   };
 });
 
 /**
- * Subscribes the mirror to main's project events and pulls the initial snapshot. Called once
- * from the shell; returns an unsubscribe for symmetry with React effects.
+ * The project an action that names no entity applies to: the one selected in the explorer, or
+ * — with nothing selected — the only open project.
+ *
+ * A deliberate stopgap, not a hidden "current project": with several projects open and none
+ * selected there is no answer, and the affordances that use this (Add keystore, Add WS-Security
+ * configuration) are disabled rather than guessing. Task 11 gives those a project of their own.
+ */
+export function useTargetProjectId(): string | undefined {
+  const selectionId = useUiStore((state) => state.selection?.id);
+  const selectionRequestId = useUiStore((state) => state.selection?.requestId);
+  const selectionInterfaceId = useUiStore((state) => state.selection?.interfaceId);
+  return useProjectStore((state) => {
+    const selected = [selectionRequestId, selectionInterfaceId, selectionId]
+      .map((id) => (id === undefined ? undefined : state.projectOf[id]))
+      .find((id) => id !== undefined);
+    if (selected !== undefined) {
+      return selected;
+    }
+    const ids = Object.keys(state.projects);
+    return ids.length === 1 ? ids[0] : undefined;
+  });
+}
+
+/**
+ * Subscribes the mirror to main's project events. Called once from the shell; returns an
+ * unsubscribe for symmetry with React effects.
  */
 export function subscribeToProject(): () => void {
-  const store = useProjectStore.getState();
-  void store.refresh();
+  // No pull here: which projects exist is the workspace's to say, so the workspace store pulls
+  // any ready project the mirror lacks whenever a workspace arrives (`pullMissingProjects`),
+  // and opening one raises `project.changed` per project as each host comes up.
   // `defineEvent` types every event's `name` as `string`, so the derived event map cannot
   // narrow a payload by channel; the casts below are the same ones the import dialog uses.
   const offChanged = window.wirebench.on('project.changed', ((payload: ProjectChangedEvent) => {
-    useProjectStore.getState().applySnapshot(payload.project);
+    useProjectStore.getState().applySnapshot(payload.projectId, payload.project);
   }) as (payload: unknown) => void);
   const offDisk = window.wirebench.on('project.changedOnDisk', ((payload: ProjectChangedOnDiskEvent) => {
-    useProjectStore.getState().noteChangedOnDisk(payload.paths);
+    useProjectStore.getState().noteChangedOnDisk(payload.projectId, payload.paths);
   }) as (payload: unknown) => void);
   return () => {
     offChanged();

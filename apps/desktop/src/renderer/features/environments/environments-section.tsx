@@ -3,18 +3,21 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { ChevronDown, ChevronRight, Circle, Plus } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
-import { useProjectStore } from '../../state/project.js';
-import type { EnvironmentWire } from '../../../shared/wire-types.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
 import { duplicateEnvironment, openEnvironmentTab } from './environment-actions.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
+/** A stable empty list, so the section does not rerender while no workspace is open. */
+const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
+
 const NAME_INPUT_CLASS =
   'h-6 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm text-fg-default outline-none ring-1 ring-accent';
 
 interface RowProps {
-  readonly environment: EnvironmentWire;
+  readonly environment: WorkspaceEnvironmentWire;
   readonly active: boolean;
   readonly renaming: boolean;
   readonly onStartRename: () => void;
@@ -23,7 +26,7 @@ interface RowProps {
 }
 
 function EnvironmentRow({ environment, active, renaming, onStartRename, onFinishRename, onDelete }: RowProps) {
-  const setActiveEnvironment = useProjectStore((state) => state.setActiveEnvironment);
+  const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
 
   return (
     <ContextMenu.Root>
@@ -108,17 +111,15 @@ function EnvironmentRow({ environment, active, renaming, onStartRename, onFinish
 }
 
 /**
- * The Explorer sidebar's Environments section: the project's environments, which one is active,
+ * The Explorer sidebar's Environments section: the workspace's environments, which one is active,
  * and the add/rename/duplicate/delete actions. Double-click (or Enter) opens an environment's
  * editor tab; everything else lives on the right-click menu, mirroring the interfaces tree.
  */
 export function EnvironmentsSection() {
-  const environments = useProjectStore((state) => state.environments);
-  const activeId = useProjectStore((state) => state.activeEnvironmentId);
-  const hasProject = useProjectStore((state) => state.project !== null);
-  const addEnvironment = useProjectStore((state) => state.addEnvironment);
-  const updateEnvironment = useProjectStore((state) => state.updateEnvironment);
-  const removeEnvironment = useProjectStore((state) => state.removeEnvironment);
+  const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
+  const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const hasWorkspace = useWorkspaceStore((state) => state.workspace !== null);
+  const mutate = useWorkspaceStore((state) => state.mutate);
 
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -144,7 +145,7 @@ export function EnvironmentsSection() {
         </button>
         <IconButton
           label="Add environment"
-          disabled={!hasProject}
+          disabled={!hasWorkspace}
           onClick={() => {
             setOpen(true);
             setAdding(true);
@@ -158,7 +159,7 @@ export function EnvironmentsSection() {
         <ul aria-label="Environments" className="flex flex-col gap-0.5 px-1 pb-2">
           {environments.length === 0 && !adding && (
             <li className="px-2 py-1 text-sm text-fg-subtle">
-              {hasProject ? 'No environments yet.' : 'Open a project to add environments.'}
+              {hasWorkspace ? 'No environments yet.' : 'Open a workspace to add environments.'}
             </li>
           )}
           {environments.map((environment) => (
@@ -174,7 +175,11 @@ export function EnvironmentsSection() {
                 setRenamingId(undefined);
                 const trimmed = name?.trim();
                 if (trimmed !== undefined && trimmed.length > 0 && trimmed !== environment.name) {
-                  void updateEnvironment(environment.id, { name: trimmed });
+                  void mutate({
+                    kind: 'update-workspace-environment',
+                    environmentId: environment.id,
+                    patch: { name: trimmed },
+                  });
                 }
               }}
               onDelete={() => {
@@ -193,7 +198,7 @@ export function EnvironmentsSection() {
                   const name = event.currentTarget.value.trim();
                   setAdding(false);
                   if (name.length > 0) {
-                    void addEnvironment(name);
+                    void mutate({ kind: 'add-workspace-environment', name });
                   }
                 }}
                 onKeyDown={(event) => {
@@ -201,7 +206,7 @@ export function EnvironmentsSection() {
                     const name = event.currentTarget.value.trim();
                     setAdding(false);
                     if (name.length > 0) {
-                      void addEnvironment(name);
+                      void mutate({ kind: 'add-workspace-environment', name });
                     }
                   }
                   if (event.key === 'Escape') {
@@ -243,7 +248,7 @@ export function EnvironmentsSection() {
                   className="rounded bg-status-danger px-3 py-1.5 text-sm text-fg-on-accent"
                   onClick={() => {
                     if (pendingDeleteId !== undefined) {
-                      void removeEnvironment(pendingDeleteId);
+                      void mutate({ kind: 'remove-workspace-environment', environmentId: pendingDeleteId });
                     }
                   }}
                 >

@@ -12,7 +12,7 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
  *
  * Two things live here:
  *
- * 1. An axe-core scan of Welcome, the request editor (with a real response) and the interface
+ * 1. An axe-core scan of the workspace picker, the request editor (with a real response) and the interface
  *    viewer, in *both* themes. It fails on `serious` and `critical` violations.
  * 2. Pixel snapshots of the shell in both themes at 1280x800.
  *
@@ -63,6 +63,24 @@ function dynamicRegions(page: Page): Locator[] {
 }
 
 /**
+ * Waits past the folder watcher's self-write window and dismisses any "changed on disk"
+ * banner that came up because of it, then asserts none remain.
+ *
+ * Importing the fixture writes the project folder, and whether the watcher attributes those
+ * writes to the app itself (and so suppresses the banner) or not is a matter of timing. Masking
+ * the banner only paints over its content — the banner still occupies vertical space and shifts
+ * everything below it, so a shell screenshot must instead ensure no banner is showing at all.
+ */
+async function dismissChangedOnDiskBanners(page: Page): Promise<void> {
+  await page.waitForTimeout(2_500);
+  const ignoreButtons = page.locator('[data-testid^="changed-on-disk-ignore"]');
+  while ((await ignoreButtons.count()) > 0) {
+    await ignoreButtons.first().click();
+  }
+  await expect(page.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
+}
+
+/**
  * Runs axe over the whole renderer and asserts nothing serious came back.
  *
  * @param label - Names the page and theme in the failure message.
@@ -109,11 +127,6 @@ async function resizeWindow(launched: LaunchedApp): Promise<void> {
 test.describe('accessibility and theming', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectRoot = '';
-
-  test.beforeEach(() => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'wirebench-e2e-a11y-'));
-  });
 
   test.afterEach(async () => {
     if (launched) {
@@ -123,10 +136,6 @@ test.describe('accessibility and theming', () => {
     if (server) {
       await server.close();
       server = undefined;
-    }
-    if (projectRoot.length > 0) {
-      removeDirSync(projectRoot);
-      projectRoot = '';
     }
   });
 
@@ -177,16 +186,16 @@ test.describe('accessibility and theming', () => {
   });
 
   for (const theme of ['dark', 'light'] as const) {
-    test(`a11y: Welcome has no serious violations (${theme})`, async () => {
+    test(`a11y: the picker has no serious violations (${theme})`, async () => {
       launched = await launchApp();
       await setTheme(launched.window, theme);
-      await expect(launched.window.getByTestId('welcome-new-project')).toBeVisible();
-      await expectNoSeriousViolations(launched.window, `Welcome (${theme})`);
+      await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
+      await expectNoSeriousViolations(launched.window, `workspace picker (${theme})`);
     });
 
     test(`a11y: the request editor with a response has no serious violations (${theme})`, async () => {
       server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
-      launched = await launchApp({ folderDialogPath: join(projectRoot, 'A11y') });
+      launched = await launchApp();
       const { window } = launched;
 
       await createProjectWithCalculator(window, server);
@@ -200,7 +209,7 @@ test.describe('accessibility and theming', () => {
 
     test(`a11y: the interface viewer has no serious violations (${theme})`, async () => {
       server = await startTestSoapServer({ fixture: 'calculator' });
-      launched = await launchApp({ folderDialogPath: join(projectRoot, 'A11yIface') });
+      launched = await launchApp();
       const { window } = launched;
 
       await createProjectWithCalculator(window, server);
@@ -220,16 +229,38 @@ test.describe('accessibility and theming', () => {
         !!process.env['CI'],
         'snapshot baselines are captured on developer machines; CI displays clamp the window size',
       );
+      server = await startTestSoapServer({ fixture: 'calculator' });
+      launched = await launchApp();
+      const { window } = launched;
+      await resizeWindow(launched);
+      await createProjectWithCalculator(window, server);
+      await openFirstRequest(window);
+      await setTheme(window, theme);
+      // The version string only appears once `app.version` resolves; waiting for it keeps the
+      // status bar from being half-rendered in the snapshot.
+      await expect(window.locator('[data-testid="status-bar"]')).toContainText('TLS');
+      await dismissChangedOnDiskBanners(window);
+
+      await expect(window).toHaveScreenshot(`shell-${theme}.png`, {
+        mask: dynamicRegions(window),
+        maxDiffPixelRatio: 0.002,
+        animations: 'disabled',
+      });
+    });
+
+    test(`the workspace picker looks right in ${theme}`, async () => {
+      test.skip(process.platform !== 'darwin', 'snapshots are macOS-only');
+      test.skip(
+        !!process.env['CI'],
+        'snapshot baselines are captured on developer machines; CI displays clamp the window size',
+      );
       launched = await launchApp();
       const { window } = launched;
       await resizeWindow(launched);
       await setTheme(window, theme);
-      await expect(window.getByTestId('welcome-new-project')).toBeVisible();
-      // The version string only appears once `app.version` resolves; waiting for it keeps the
-      // status bar from being half-rendered in the snapshot.
-      await expect(window.locator('[data-testid="status-bar"]')).toContainText('TLS');
+      await expect(window.getByTestId('workspace-picker')).toBeVisible();
 
-      await expect(window).toHaveScreenshot(`shell-${theme}.png`, {
+      await expect(window).toHaveScreenshot(`picker-${theme}.png`, {
         mask: dynamicRegions(window),
         maxDiffPixelRatio: 0.002,
         animations: 'disabled',

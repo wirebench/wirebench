@@ -1,11 +1,9 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
+import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { monacoEditor } from '../helpers/editor.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -71,11 +69,9 @@ async function showInterfaceViewer(page: Page, rowText: string): Promise<void> {
 test.describe('Interface editor', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let projectDir = '';
 
   test.beforeEach(async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'InterfaceViewer');
   });
 
   test.afterEach(async () => {
@@ -87,14 +83,10 @@ test.describe('Interface editor', () => {
       await server.close();
       server = undefined;
     }
-    if (projectDir.length > 0) {
-      removeDirSync(projectDir);
-      projectDir = '';
-    }
   });
 
   test('shows the overview, documents and schema, and lands on a declaration from the editor', async () => {
-    launched = await launchApp({ folderDialogPath: projectDir });
+    launched = await launchApp();
     const page = launched.window;
     await createProjectWithCalculator(page, server!);
 
@@ -146,18 +138,23 @@ test.describe('Interface editor', () => {
   });
 
   test('lists every document of a nested import graph', async () => {
-    launched = await launchApp({ folderDialogPath: projectDir });
+    // The crafted fixture's imports are relative, which the in-process test server cannot
+    // serve — so this one is imported from the working tree, through the (pinned) file picker:
+    // a file outside every project folder is only read when the user picked it in person.
+    launched = await launchApp({
+      extraEnv: {
+        WIREBENCH_E2E_FILE_DIALOG_PATH: join(repoRoot, 'fixtures/wsdl/crafted/nested-imports/service.wsdl'),
+      },
+    });
     const page = launched.window;
 
-    await page.getByTestId('welcome-new-project').click();
-    await expect(page.getByTestId('new-project-name')).toBeVisible();
-    await page.getByTestId('new-project-create').click();
+    await createWorkspace(page);
+    await createProject(page, 'Nested Imports');
 
-    // The crafted fixture's imports are relative, which the in-process test server cannot
-    // serve — so this one is imported from the working tree instead.
-    await page.getByTestId('welcome-import').click();
+    await page.getByRole('button', { name: 'Import WSDL…' }).click();
     await page.getByRole('tab', { name: 'File' }).click();
-    await page.getByLabel('File path').fill(join(repoRoot, 'fixtures/wsdl/crafted/nested-imports/service.wsdl'));
+    await page.getByRole('button', { name: 'Browse…' }).click();
+    await expect(page.getByLabel('File path')).toHaveValue(/service\.wsdl$/);
     await page.getByTestId('import-submit').click();
 
     await showInterfaceViewer(page, 'EchoService');

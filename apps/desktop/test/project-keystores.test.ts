@@ -20,8 +20,7 @@ import {
   removeKeystore,
   updateKeystore,
 } from '../src/main/project-keystore-mutations.js';
-import { ProjectService } from '../src/main/project-service.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
+import { ProjectHost } from '../src/main/project-host.js';
 import { toProjectWire } from '../src/main/project-wire.js';
 
 const PASSWORD = 'p12-password';
@@ -59,16 +58,7 @@ function newService(
   picks?: DialogPicks,
   secrets?: { get(ref: string): Promise<string | undefined> },
 ) {
-  return new ProjectService(
-    new EngineService(),
-    new RecentProjects(userDataDir),
-    {},
-    undefined,
-    undefined,
-    secrets,
-    undefined,
-    picks,
-  );
+  return new ProjectHost(new EngineService(), {}, undefined, undefined, secrets, undefined, picks);
 }
 
 describe('keystore mutations', () => {
@@ -169,11 +159,11 @@ describe('keystore mutations', () => {
  * The parsed-keystore cache, which has no public surface: these tests assert that decrypted key
  * material is actually dropped, not merely that the next read happens to be correct.
  */
-function cacheOf(service: ProjectService): Map<string, unknown> {
+function cacheOf(service: ProjectHost): Map<string, unknown> {
   return (service as unknown as { keystoreCache: Map<string, unknown> }).keystoreCache;
 }
 
-describe('ProjectService keystores', () => {
+describe('ProjectHost keystores', () => {
   it('refuses a keystore outside the project folder unless it was picked', async () => {
     const dir = tempDir('proj');
     const outside = tempDir('outside');

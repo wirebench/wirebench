@@ -25,7 +25,6 @@ test.describe('wsa', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -36,18 +35,16 @@ test.describe('wsa', () => {
       await server.close();
       server = undefined;
     }
-    for (const dir of [userDataDir, projectDir]) {
+    for (const dir of [userDataDir]) {
       if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }
     userDataDir = undefined;
-    projectDir = undefined;
   });
 
   test('auto-enables addressing from the WSDL and sends a fresh MessageID per send', async () => {
     server = await startTestSoapServer({ fixture: 'ws-addressing' });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'WSA Project');
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithFixture(page, server, 'ws-addressing', { expectProjectName: 'WSA Project' });
     await openFirstRequest(page);

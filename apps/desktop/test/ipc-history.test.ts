@@ -54,20 +54,26 @@ function noLiveRequests() {
 /** A fake `HistoryService` — only the surface `ipc/history.ts` calls. */
 function fakeHistory(entries: HistoryEntryWire[]) {
   return {
-    list: vi.fn((query?: { query?: string }) => {
+    list: vi.fn((query?: { query?: string; projectId?: string }) => {
+      const scoped = query?.projectId !== undefined ? entries.filter((e) => e.projectId === query.projectId) : entries;
       const filtered =
         query?.query !== undefined
-          ? entries.filter((e) => e.requestName.toLowerCase().includes(query.query!.toLowerCase()))
-          : entries;
+          ? scoped.filter((e) => e.requestName.toLowerCase().includes(query.query!.toLowerCase()))
+          : scoped;
       return { entries: filtered, total: filtered.length };
     }),
     get: vi.fn((id: string) => entries.find((e) => e.id === id)),
     recordSend: vi.fn(() => Promise.resolve(undefined)),
-    clear: vi.fn(() => {
-      const n = entries.length;
-      entries.length = 0;
+    clear: vi.fn((projectId?: string) => {
+      const kept = projectId !== undefined ? entries.filter((e) => e.projectId !== projectId) : [];
+      const n = entries.length - kept.length;
+      entries.splice(0, entries.length, ...kept);
       return Promise.resolve(n);
     }),
+    openProjectIds: vi.fn((): readonly string[] => ['proj-1']),
+    open: vi.fn(() => Promise.resolve()),
+    close: vi.fn(),
+    closeAll: vi.fn(),
   };
 }
 
@@ -88,6 +94,25 @@ describe('registerHistoryChannels', () => {
 
     const filtered = await invoke('history.list', { query: 'alpha' });
     expect(filtered).toEqual({ ok: true, value: { entries: [entries[0]], total: 1 } });
+  });
+
+  it('history.list passes the project filter through to the history service', async () => {
+    const entries = [
+      makeEntry({ id: 'a', requestName: 'Alpha', projectId: 'proj-1' }),
+      makeEntry({ id: 'b', requestName: 'Beta', projectId: 'proj-2' }),
+    ];
+    const history = fakeHistory(entries);
+    registerHistoryChannels(new EngineService(), history as never, {
+      project: noLiveRequests(),
+    });
+
+    const result = await invoke('history.list', { projectId: 'proj-2' });
+
+    expect(result).toEqual({ ok: true, value: { entries: [entries[1]], total: 1 } });
+    expect(history.list).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 'proj-2' }));
+    // Absent means every project: the key must not be forwarded as `undefined`.
+    await invoke('history.list', {});
+    expect(history.list.mock.calls.at(-1)?.[0]).not.toHaveProperty('projectId');
   });
 
   it('history.get returns the entry or undefined', async () => {

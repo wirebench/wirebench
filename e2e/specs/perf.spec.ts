@@ -17,9 +17,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { seedWorkspace } from '../helpers/seed-workspace.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /** Per-platform budgets in milliseconds. */
@@ -41,6 +42,23 @@ interface PlatformBudgets {
   readonly viewMs: number;
   /** Validating that 1 MB response and having the Problems panel on screen with its rows. */
   readonly problemsMs: number;
+  /**
+   * Opening a large workspace (10 projects x 3 interfaces) from the picker, until the explorer
+   * *paints* every project row — the point at which the user can see and click into the
+   * workspace. This is not "interactive" in the sense of every interface being usable offline;
+   * see {@link workspaceHydrateMs} for that.
+   */
+  readonly workspacePaintMs: number;
+  /** Switching from another workspace back into that same large one. */
+  readonly workspaceSwitchMs: number;
+  /**
+   * From the same start as {@link workspacePaintMs}, until all 30 seeded interfaces have
+   * finished background hydration (`project.hydration` reaching `ready` or `failed` for each).
+   * This is the metric the milestone's "explorer interactive" success criterion actually means:
+   * a user can click a request before this fires, but it is not until hydration completes that
+   * every interface's operations, generated requests and offline validation are all in place.
+   */
+  readonly workspaceHydrateMs: number;
 }
 
 /**
@@ -49,11 +67,74 @@ interface PlatformBudgets {
  */
 const BUDGETS: PlatformBudgets =
   process.platform === 'linux'
-    ? { startupMs: 4000, frameMs: 40, viewMs: 2000, problemsMs: 2000 }
-    : { startupMs: 2000, frameMs: 20, viewMs: 1000, problemsMs: 1000 };
+    ? {
+        startupMs: 4000,
+        frameMs: 40,
+        viewMs: 2000,
+        problemsMs: 2000,
+        workspacePaintMs: 3000,
+        workspaceSwitchMs: 2000,
+        workspaceHydrateMs: 6000,
+      }
+    : {
+        startupMs: 2000,
+        frameMs: 20,
+        viewMs: 1000,
+        problemsMs: 1000,
+        workspacePaintMs: 1500,
+        workspaceSwitchMs: 1000,
+        workspaceHydrateMs: 3000,
+      };
 
 /** Skipped only by `WIREBENCH_SKIP_PERF=1`, the documented escape hatch for slow machines. */
 const SKIP_PERF = process.env['WIREBENCH_SKIP_PERF'] === '1';
+
+/**
+ * Every project row in the explorer, paged through the virtualised tree — only the rows inside
+ * the scroll viewport are ever in the DOM, so a plain `count()` would measure the window.
+ */
+async function projectRowIds(page: Page): Promise<readonly string[]> {
+  const list = page.getByTestId('explorer-tree-scroll');
+  const rows = page.locator('[data-testid="explorer-project-row"]');
+  const seen = new Set<string>();
+  const collect = async (): Promise<void> => {
+    for (const row of await rows.all()) {
+      const id = await row.getAttribute('data-project-id');
+      if (id !== null) {
+        seen.add(id);
+      }
+    }
+  };
+  let previousTop = -1;
+  for (;;) {
+    await collect();
+    const top = await list.evaluate((element: { scrollTop: number; clientHeight: number }) => {
+      element.scrollTop += element.clientHeight;
+      return element.scrollTop;
+    });
+    if (top === previousTop) {
+      break;
+    }
+    previousTop = top;
+    // react-window mounts the newly revealed rows on the render that follows the scroll event;
+    // poll the mounted row count until it stops changing rather than guessing a fixed delay,
+    // so this holds up on a CI runner slower than whatever machine picked the sleep.
+    let previousCount = -1;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const count = await rows.count();
+      if (count === previousCount) {
+        break;
+      }
+      previousCount = count;
+      await page.waitForTimeout(20);
+    }
+  }
+  await collect();
+  await list.evaluate((element: { scrollTop: number }) => {
+    element.scrollTop = 0;
+  });
+  return [...seen];
+}
 
 /** The median of a non-empty sample list. */
 function median(samples: readonly number[]): number {
@@ -107,10 +188,9 @@ test.describe('performance budgets', () => {
   test(`a 1 MB response scrolls at ${(1000 / BUDGETS.frameMs).toFixed(0)} fps and its views render promptly`, async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
     const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    const projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Perf');
-    tempDirs.push(userDataDir, projectDir);
+    tempDirs.push(userDataDir);
 
-    launched = await launchApp({ userDataDir, folderDialogPath: projectDir, keepUserDataDir: true });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createProjectWithCalculator(page, server);
     await openFirstRequest(page);
@@ -210,5 +290,132 @@ test.describe('performance budgets', () => {
     const problemsMs = Date.now() - problemsStarted;
     console.info(`[perf] problems over 1 MB: ${problemsMs} ms (budget ${BUDGETS.problemsMs} ms)`);
     expect(problemsMs).toBeLessThan(BUDGETS.problemsMs);
+  });
+
+  test(`a 10-project workspace paints within ${BUDGETS.workspacePaintMs} ms, hydrates within ${BUDGETS.workspaceHydrateMs} ms, and switches within ${BUDGETS.workspaceSwitchMs} ms`, async () => {
+    // One fixture server serves every seeded interface's definition, so the hydration the app
+    // kicks off on open is real HTTP work rather than a file read.
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    tempDirs.push(userDataDir);
+
+    // 10 projects x 3 interfaces is the shape the milestone budgets, written straight to disk
+    // through the engine's own API; `Side` is the workspace the switch measurement comes from.
+    const interfacesPerProject = 3;
+    const big = await seedWorkspace({
+      userDataDir,
+      name: 'Bench',
+      projects: 10,
+      interfacesPerProject,
+      definitionUrl: server.wsdlUrl,
+      endpointUrl: `${server.url}/soap`,
+    });
+    const side = await seedWorkspace({
+      userDataDir,
+      name: 'Side',
+      projects: 1,
+      interfacesPerProject: 1,
+      definitionUrl: server.wsdlUrl,
+      endpointUrl: `${server.url}/soap`,
+    });
+
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    // No workspace has ever been opened in this profile, so the app starts on the picker —
+    // which is where this measurement starts, not at the process spawn (that is `startupMs`).
+    // The explorer's tree is virtualised, so counting mounted project rows measures the window
+    // rather than the workspace. What it *can* say is that the tree has the workspace's
+    // projects in it: they arrive in one `workspace.changed` snapshot, so the first project's
+    // own row appearing is the moment the explorer is populated and can be acted on.
+    const firstProjectRow = (workspace: { readonly projectIds: readonly string[] }) =>
+      page.locator(`[data-testid="explorer-project-row"][data-project-id="${workspace.projectIds[0] ?? ''}"]`);
+    // Addressed by id, not by name: every row also shows its folder, and those paths live
+    // under `wirebench-e2e-profile-…`, which a name filter would match too.
+    const benchRow = page.locator(`[data-testid="workspace-picker-row"][data-workspace-id="${big.id}"]`);
+    await expect(benchRow).toBeVisible({ timeout: 20_000 });
+
+    // Installed before the click: `project.hydration` fires per interface as its definition
+    // finishes loading (main/index.ts broadcasts it off `ProjectHost.openProject`'s background
+    // hydration), and it is the one signal the app raises today for "this interface is ready
+    // offline" — everything the explorer itself renders (the project row, its `loading` badge)
+    // is about the *project* opening, not each interface's definition. A listener attached here
+    // cannot miss an event fired between the click and some later `page.evaluate` call.
+    const totalInterfaces = 10 * interfacesPerProject;
+    await page.evaluate(
+      ({ projectIds, total }) => {
+        type HydrationEvent = {
+          readonly projectId: string;
+          readonly interfaceId: string;
+          readonly status: 'pending' | 'ready' | 'failed';
+        };
+        const api = (
+          globalThis as unknown as {
+            wirebench: { on(name: 'project.hydration', listener: (payload: HydrationEvent) => void): () => void };
+          }
+        ).wirebench;
+        const seen = new Set<string>();
+        (globalThis as unknown as { __hydrationDone: Promise<void> }).__hydrationDone = new Promise((resolve) => {
+          const off = api.on('project.hydration', (payload) => {
+            if (payload.status === 'pending' || !projectIds.includes(payload.projectId)) {
+              return;
+            }
+            seen.add(payload.interfaceId);
+            if (seen.size >= total) {
+              off();
+              resolve();
+            }
+          });
+        });
+      },
+      { projectIds: big.projectIds, total: totalInterfaces },
+    );
+
+    const openStarted = Date.now();
+    await benchRow.click();
+    await expect(firstProjectRow(big)).toBeVisible({ timeout: 30_000 });
+    const paintMs = Date.now() - openStarted;
+    console.info(
+      `[perf] picker to explorer painted, 10 projects x 3 interfaces: ${paintMs} ms (budget ${BUDGETS.workspacePaintMs} ms)`,
+    );
+    expect(paintMs).toBeLessThan(BUDGETS.workspacePaintMs);
+
+    // Outside the timer: every one of the ten really is in the tree, paged a viewport at a
+    // time, so the measurement above cannot be passing on a half-built explorer.
+    expect(await projectRowIds(page)).toHaveLength(10);
+
+    // From the same start as the paint measurement, until every one of the 30 seeded interfaces
+    // has finished background hydration — the milestone's "explorer interactive" criterion,
+    // which the paint measurement above deliberately does not cover.
+    await page.evaluate(() => (globalThis as unknown as { __hydrationDone: Promise<void> }).__hydrationDone);
+    const hydrateMs = Date.now() - openStarted;
+    console.info(
+      `[perf] workspace hydrate, 10 projects x 3 interfaces: ${hydrateMs} ms (budget ${BUDGETS.workspaceHydrateMs} ms)`,
+    );
+    expect(hydrateMs).toBeLessThan(BUDGETS.workspaceHydrateMs);
+
+    // Three switches out to `Side` and back, median taken: the first one back also pays for
+    // whatever the OS still had to fault in, which is not what this budget is about.
+    const samples: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      await page.getByTestId('workspace-switcher').click();
+      await page.locator(`[data-testid="workspace-switcher-item"][data-workspace-id="${side.id}"]`).click();
+      await expect(firstProjectRow(side)).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('workspace-switcher').click();
+      const back = page.locator(`[data-testid="workspace-switcher-item"][data-workspace-id="${big.id}"]`);
+      await expect(back).toBeVisible();
+      const started = Date.now();
+      await back.click();
+      await expect(firstProjectRow(big)).toBeVisible({ timeout: 30_000 });
+      samples.push(Date.now() - started);
+    }
+    const switchMs = median(samples);
+    console.info(
+      `[perf] workspace switch into ${big.name}: median ${switchMs.toFixed(0)} ms ` +
+        `(budget ${BUDGETS.workspaceSwitchMs} ms; samples ${samples.map((sample) => sample.toFixed(0)).join(', ')} ms)`,
+    );
+    expect(switchMs, `samples: ${samples.map((sample) => sample.toFixed(0)).join(', ')} ms`).toBeLessThan(
+      BUDGETS.workspaceSwitchMs,
+    );
   });
 });

@@ -15,7 +15,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { IconButton } from '../../components/icon-button.js';
 import { SecretField } from '../../components/secret-field.js';
-import { useProjectStore } from '../../state/project.js';
+import { useProjectStore, useTargetProjectId } from '../../state/project.js';
 import { useKeystoreAliases, WSS_FIELD_CLASS } from './outgoing-entry-fields.js';
 import type { WssIncomingPatchWire, WssIncomingWire } from '../../../shared/wire-types.js';
 
@@ -200,7 +200,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
 /** The Incoming section body: one row per configuration, each expanding into its editor. */
 export function IncomingConfigEditor() {
   const configs = useProjectStore((state) => state.wssIncoming);
-  const hasProject = useProjectStore((state) => state.project !== null);
+  const projectId = useTargetProjectId();
   const addWssIncoming = useProjectStore((state) => state.addWssIncoming);
   const removeWssIncoming = useProjectStore((state) => state.removeWssIncoming);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
@@ -213,9 +213,11 @@ export function IncomingConfigEditor() {
         <IconButton
           label="Add incoming WS-Security configuration"
           data-testid="wss-incoming-add"
-          disabled={!hasProject}
+          disabled={projectId === undefined}
           onClick={() => {
-            void addWssIncoming();
+            if (projectId !== undefined) {
+              void addWssIncoming(projectId);
+            }
           }}
         >
           <Plus size={14} aria-hidden="true" />
@@ -225,7 +227,7 @@ export function IncomingConfigEditor() {
       <ul aria-label="Incoming WS-Security configurations" className="flex flex-col gap-0.5 px-1 pb-2">
         {configs.length === 0 && (
           <li className="px-2 py-1 text-sm text-fg-subtle">
-            {hasProject ? 'No incoming configurations yet.' : 'Open a project to add one.'}
+            {projectId === undefined ? 'Select a project to add one.' : 'No incoming configurations yet.'}
           </li>
         )}
         {configs.map((config) => (

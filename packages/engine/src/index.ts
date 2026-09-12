@@ -7,6 +7,7 @@ export {
   WssError,
   ProjectError,
   ValidationError,
+  WorkspaceError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -487,6 +488,48 @@ export {
   upsertEnvironment,
 } from './project/environments.js';
 export type { EndpointSource } from './project/environments.js';
+// Workspace
+export {
+  WORKSPACE_FORMAT_VERSION,
+  assertPathSegment,
+  WORKSPACES_DIR,
+  WORKSPACE_ENVIRONMENTS_DIR,
+  WORKSPACE_MANIFEST,
+  WORKSPACE_PROJECTS_DIR,
+  WORKSPACE_STATE_FILE,
+  createWorkspace,
+  createWorkspaceEnvironment,
+  linkedEnvironment,
+  loadWorkspace,
+  migrateWorkspace,
+  parseWorkspaceFile,
+  reidentifyProject,
+  resolveWorkspaceEndpoint,
+  resolveWorkspaceScopes,
+  saveWorkspace,
+  workspaceDir,
+  workspaceEnvironmentFile,
+  workspaceEnvironmentFileSchema,
+  workspaceFiles,
+  workspaceManifestFile,
+  workspaceManifestSchema,
+  workspaceProjectDir,
+  workspaceProjectRefSchema,
+} from './workspace/index.js';
+export type {
+  LoadWorkspaceOptions,
+  LoadWorkspaceResult,
+  SaveWorkspaceOptions,
+  Workspace,
+  WorkspaceEnvironment,
+  WorkspaceEnvironmentFile,
+  WorkspaceFiles,
+  WorkspaceFilesOptions,
+  WorkspaceManifestFile,
+  WorkspaceProblem,
+  WorkspaceProjectRef,
+  WorkspaceProjectRefFile,
+} from './workspace/index.js';
 export {
   bindingContextFor,
   checkSoapStructure,

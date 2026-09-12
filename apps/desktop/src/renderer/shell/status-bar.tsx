@@ -10,6 +10,7 @@ import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
+import { useWorkspaceStore } from '../state/workspace.js';
 import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
@@ -58,20 +59,30 @@ export function StatusBar() {
   const version = useAppVersion();
   const updateLabel = updateStatusLabel(useUpdateStatus());
   const last = useExchangesStore((state) => state.log.at(-1));
-  const saveStatus = useProjectStore((state) => state.saveStatus);
+  // One label for every open project: `project.save` saves them all, so "saving" is true while
+  // any of them is, and the strip must not sprout one row per project.
+  const saving = useProjectStore((state) => Object.values(state.saveStatus).some((status) => status === 'saving'));
+  const lastSavedAt = useProjectStore((state) =>
+    Object.values(state.projects)
+      .map((project) => project.lastSavedAt)
+      .filter((at): at is string => at !== undefined)
+      .sort()
+      .at(-1),
+  );
   const problemCount = useProblemsStore((state) => state.items.length);
   const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
-  const lastSavedAt = useProjectStore((state) => state.lastSavedAt);
   // The endpoint the *active* request would be sent to — not the last one sent — so the warning
   // is about what the next Send will do.
   const activeRequestId = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.requestId);
+  // The active environment lives on the workspace, so an environment switch has to rerender
+  // the endpoint as well as a project change.
+  const workspace = useWorkspaceStore((state) => state.workspace);
   const trustInvalid = useProjectStore((state) =>
-    activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, activeRequestId),
+    activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, workspace, activeRequestId),
   );
   const tlsLabel = last?.http.tls?.protocol ?? `TLS —`;
-  const saveLabel =
-    saveStatus === 'saving' ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;
+  const saveLabel = saving ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;
 
   return (
     <footer

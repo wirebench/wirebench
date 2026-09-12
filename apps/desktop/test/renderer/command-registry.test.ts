@@ -21,6 +21,7 @@ const SPEC_DEFAULT_SHORTCUTS: Readonly<Record<string, string>> = {
   'editor.formatXml': 'Mod+Shift+F',
   'request.validate': 'Mod+Shift+V',
   'project.save': 'Mod+S',
+  'workspace.newProject': 'Mod+Shift+N',
   'editor.closeTab': 'Mod+W',
   'view.toggleSidebar': 'Mod+B',
   'view.toggleConsole': 'Mod+J',
@@ -33,6 +34,7 @@ const SPEC_DEFAULT_SHORTCUTS: Readonly<Record<string, string>> = {
 const CATEGORIES: readonly CommandCategory[] = [
   'General',
   'View',
+  'Workspace',
   'Project',
   'Definition',
   'Explorer',

@@ -12,13 +12,19 @@ const DEFAULT_SCOPES: SearchScopesWire = { requestBodies: true, headers: true, d
 const CONTROL =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
-/** The heading a match is grouped under: its request, or its definition document. */
+/**
+ * The heading a match is grouped under: `project › interface › request` (or `project ›
+ * interface › location` for a definition document). Search spans every open project, so the
+ * project segment — when the match carries one — comes first.
+ */
 function groupOf(match: SearchMatchWire): string {
-  if (match.kind === 'document') {
-    return `${match.interfaceName ?? 'Interface'} › ${match.location ?? ''}`;
-  }
-  const suffix = match.kind === 'request-header' ? ' › Headers' : '';
-  return `${match.interfaceName ?? 'Interface'} › ${match.requestName ?? 'Request'}${suffix}`;
+  const breadcrumb =
+    match.kind === 'document'
+      ? `${match.interfaceName ?? 'Interface'} › ${match.location ?? ''}`
+      : `${match.interfaceName ?? 'Interface'} › ${match.requestName ?? 'Request'}${
+          match.kind === 'request-header' ? ' › Headers' : ''
+        }`;
+  return match.projectName === undefined ? breadcrumb : `${match.projectName} › ${breadcrumb}`;
 }
 
 function groupMatches(matches: readonly SearchMatchWire[]): readonly (readonly [string, SearchMatchWire[]])[] {
@@ -47,7 +53,7 @@ export function SearchView() {
   const [truncated, setTruncated] = useState<'limit' | 'timeout' | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [searched, setSearched] = useState(false);
-  const project = useProjectStore((state) => state.project);
+  const hasProject = useProjectStore((state) => Object.keys(state.projects).length > 0);
 
   const toggleScope = useCallback((key: keyof SearchScopesWire) => {
     setScopes((current) => ({ ...current, [key]: !current[key] }));
@@ -158,10 +164,10 @@ export function SearchView() {
             {error}
           </p>
         )}
-        {error === undefined && project === null && (
-          <EmptyState title="No project open" description="Open a project to search its requests and definitions." />
+        {error === undefined && !hasProject && (
+          <EmptyState title="No project open" description="Add a project to search its requests and definitions." />
         )}
-        {error === undefined && project !== null && searched && matches.length === 0 && (
+        {error === undefined && hasProject && searched && matches.length === 0 && (
           <p data-testid="search-empty" className="px-3 py-2 text-sm text-fg-subtle">
             No results.
           </p>

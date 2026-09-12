@@ -28,7 +28,6 @@ test.describe('keystores', () => {
   let plain: TestSoapServer | undefined;
   let secure: TestSoapServer | undefined;
   let userDataDir: string | undefined;
-  let projectDir: string | undefined;
   let certsDir: string | undefined;
 
   test.afterEach(async () => {
@@ -41,11 +40,10 @@ test.describe('keystores', () => {
     }
     plain = undefined;
     secure = undefined;
-    for (const dir of [userDataDir, projectDir, certsDir]) {
+    for (const dir of [userDataDir, certsDir]) {
       if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }
     userDataDir = undefined;
-    projectDir = undefined;
     certsDir = undefined;
   });
 
@@ -72,10 +70,8 @@ test.describe('keystores', () => {
     });
 
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
-    projectDir = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-projects-')), 'Keystore Project');
     launched = await launchApp({
       userDataDir,
-      folderDialogPath: projectDir,
       keepUserDataDir: true,
       extraEnv: { WIREBENCH_E2E_OPEN_PATH: keystorePath, WIREBENCH_E2E_EXTRA_CA_FILE: trustPath },
     });

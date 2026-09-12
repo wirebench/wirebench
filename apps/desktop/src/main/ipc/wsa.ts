@@ -8,12 +8,12 @@
  */
 
 import { channels } from '../../shared/ipc.js';
-import type { ProjectService } from '../project-service.js';
+import type { ProjectRouter } from '../project-router.js';
 import { registerHandler } from './register.js';
 
 /** What the `wsa.*` channels need; a stub stands in for it in tests. */
 export interface WsaChannelDeps {
-  readonly project: Pick<ProjectService, 'insertWsaHeaders' | 'removeWsaHeadersFrom'>;
+  readonly project: Pick<ProjectRouter, 'insertWsaHeaders' | 'removeWsaHeadersFrom'>;
 }
 
 /** Registers the `wsa.*` channels. */

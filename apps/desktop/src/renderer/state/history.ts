@@ -11,6 +11,8 @@ export interface HistorySnapshot {
   readonly total: number;
   readonly query: string;
   readonly loading: boolean;
+  /** Narrows `entries` to one open project; `undefined` shows every open project merged. */
+  readonly projectId: string | undefined;
 }
 
 /** The history store: {@link HistorySnapshot} plus the actions the History view drives. */
@@ -19,6 +21,8 @@ export interface HistoryStore extends HistorySnapshot {
   readonly load: () => Promise<void>;
   /** Sets `query` immediately (so the input reflects it) and reloads after a short debounce. */
   readonly search: (query: string) => void;
+  /** Sets which project's entries to show (`undefined` = every open project) and reloads. */
+  readonly setProjectFilter: (projectId: string | undefined) => void;
   /** Clears every entry, both on disk and in the store. */
   readonly clear: () => Promise<void>;
   /** Prepends `entry` when it was appended live and matches the current search, if any. */
@@ -47,16 +51,31 @@ function matchesQuery(entry: HistoryEntryWire, query: string): boolean {
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+/**
+ * Bumped by every `load`: a `history.list` reply is applied only while its own
+ * number is still the latest, so overlapping reloads — a workspace opening raises one per
+ * project — can never land a stale page over a newer one.
+ */
+let loadSequence = 0;
+
 export const useHistoryStore = create<HistoryStore>((set, get) => ({
   entries: [],
   total: 0,
   query: '',
   loading: false,
+  projectId: undefined,
 
   load: async () => {
+    const sequence = ++loadSequence;
     set({ loading: true });
-    const { query } = get();
-    const result = await ipc().history.list({ ...(query.length > 0 ? { query } : {}) });
+    const { query, projectId } = get();
+    const result = await ipc().history.list({
+      ...(query.length > 0 ? { query } : {}),
+      ...(projectId === undefined ? {} : { projectId }),
+    });
+    if (sequence !== loadSequence) {
+      return;
+    }
     if (result.ok) {
       set({ entries: result.value.entries, total: result.value.total, loading: false });
     } else {
@@ -74,6 +93,11 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     }, SEARCH_DEBOUNCE_MS);
   },
 
+  setProjectFilter: (projectId) => {
+    set({ projectId });
+    void get().load();
+  },
+
   clear: async () => {
     const result = await ipc().history.clear(undefined);
     if (result.ok) {
@@ -82,7 +106,10 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
   },
 
   onAppended: (entry) => {
-    const { query, entries, total } = get();
+    const { query, entries, total, projectId } = get();
+    if (projectId !== undefined && entry.projectId !== projectId) {
+      return;
+    }
     if (!matchesQuery(entry, query)) {
       return;
     }
@@ -94,20 +121,24 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
  * Subscribes the store to `history.appended` and pulls the initial page. Called once from the
  * shell; returns an unsubscribe for symmetry with React effects (mirrors `subscribeToProject`).
  *
- * Also reloads on `project.changed`: main opens a *different* history file per project, so
- * switching projects (including the very first `project.open`/`project.create` after launch,
- * which happens after this subscription starts) has to re-fetch, not just wait for new sends.
+ * Also reloads on `workspace.changed` and `project.changed`: main keeps one history file per
+ * open project and `history.list` merges them, so opening or closing a workspace — or adding,
+ * removing or reloading a project inside one — changes what the list should show, and waiting
+ * for the next send would leave it stale.
  */
 export function subscribeToHistory(): () => void {
   void useHistoryStore.getState().load();
   const offAppended = window.wirebench.on('history.appended', ((payload: HistoryAppendedEvent) => {
     useHistoryStore.getState().onAppended(payload.entry);
   }) as (payload: unknown) => void);
-  const offProjectChanged = window.wirebench.on('project.changed', () => {
+  const reload = (): void => {
     void useHistoryStore.getState().load();
-  });
+  };
+  const offProjectChanged = window.wirebench.on('project.changed', reload);
+  const offWorkspaceChanged = window.wirebench.on('workspace.changed', reload);
   return () => {
     offAppended();
     offProjectChanged();
+    offWorkspaceChanged();
   };
 }
