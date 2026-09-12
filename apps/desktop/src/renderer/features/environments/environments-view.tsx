@@ -39,6 +39,7 @@ function ScopeRow({
           data-testid="environment-row"
           data-kind={kind}
           data-active="false"
+          role="row"
           tabIndex={0}
           className={`${ROW_CLASS} text-fg-default hover:bg-surface-raised`}
           onDoubleClick={onOpen}
@@ -93,6 +94,7 @@ function EnvironmentRow({
           data-testid="environment-row"
           data-kind="environment"
           data-active={active}
+          role="row"
           tabIndex={0}
           className={`${ROW_CLASS} ${active ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'}`}
           onDoubleClick={() => {
@@ -217,6 +219,7 @@ export function EnvironmentsView() {
       <div className="flex h-8 shrink-0 items-center justify-end gap-1 px-2">
         <IconButton
           label="Add environment"
+          data-testid="environments-add"
           disabled={!hasWorkspace}
           onClick={() => {
             void mutate({ kind: 'add-workspace-environment', name: nextEnvironmentName(environments) }).then(
@@ -235,7 +238,7 @@ export function EnvironmentsView() {
         </IconButton>
       </div>
 
-      <ul aria-label="Environments" className="flex flex-col gap-0.5 px-1 pb-2">
+      <ul aria-label="Environments" role="grid" className="flex flex-col gap-0.5 px-1 pb-2">
         <ScopeRow
           kind="globals"
           label="Globals"
