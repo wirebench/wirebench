@@ -76,6 +76,9 @@ function VariableRow({
           data-testid="env-variable-enabled"
           checked={enabled}
           disabled={readOnlyEnabled}
+          title={
+            readOnlyEnabled ? "A linked project's own environment variables are managed in that project." : undefined
+          }
           onChange={(event) => {
             onToggleEnabled(event.target.checked);
           }}

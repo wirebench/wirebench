@@ -193,4 +193,19 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     fireEvent.blur(value);
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { properties: { host: 'two.test' } });
   });
+
+  it('names the owning project in the header, so two projects with a same-named environment stay distinguishable', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'linked', dir: '/w/demo', status: 'ready' }],
+      }),
+    });
+    setUp();
+    expect(screen.getByTestId('environment-owning-project').textContent).toBe('Demo — linked project');
+  });
+
+  it('falls back to a generic caption when the owning project cannot be resolved', () => {
+    setUp();
+    expect(screen.getByTestId('environment-owning-project').textContent).toBe('this project — linked project');
+  });
 });

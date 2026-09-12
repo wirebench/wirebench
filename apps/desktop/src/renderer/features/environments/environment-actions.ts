@@ -31,13 +31,27 @@ export function targetFromId(id: string): EnvironmentTarget {
  * One environment by id, from whichever scope owns it: the workspace's own environments, or a
  * project's. Both appear in the same places (the sidebar list, an editor tab), and the id is
  * unique across the open workspace, so the caller never has to say which kind it meant.
+ *
+ * For a linked project's own environment, `owningProjectName` names the project that owns it —
+ * two projects can have an environment of the same name, so the tab title needs both to stay
+ * distinguishable. `undefined` for a workspace environment, which has no single owning project.
  */
-function environmentById(environmentId: string): { readonly name: string } | undefined {
+function environmentById(
+  environmentId: string,
+): { readonly name: string; readonly owningProjectName?: string } | undefined {
   const workspace = useWorkspaceStore.getState().workspace;
-  return (
-    workspace?.environments.find((candidate) => candidate.id === environmentId) ??
-    selectEnvironment(useProjectStore.getState(), environmentId)
-  );
+  const workspaceEnvironment = workspace?.environments.find((candidate) => candidate.id === environmentId);
+  if (workspaceEnvironment !== undefined) {
+    return workspaceEnvironment;
+  }
+  const projectStore = useProjectStore.getState();
+  const projectEnvironment = selectEnvironment(projectStore, environmentId);
+  if (projectEnvironment === undefined) {
+    return undefined;
+  }
+  const projectId = projectStore.projectOf[environmentId];
+  const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name ?? 'this project';
+  return { name: projectEnvironment.name, owningProjectName };
 }
 
 /**
@@ -60,12 +74,17 @@ export function environmentTabId(target: EnvironmentTarget): string {
 
 /** Opens (or focuses) the editor tab for one environment target. No-op for an unknown id. */
 export function openEnvironmentTab(target: EnvironmentTarget): void {
+  const environment = target.kind === 'environment' ? environmentById(target.id) : undefined;
   const title =
     target.kind === 'globals'
       ? 'Globals'
       : target.kind === 'workspace'
         ? 'Workspace'
-        : environmentById(target.id)?.name;
+        : environment !== undefined
+          ? environment.owningProjectName !== undefined
+            ? `${environment.owningProjectName} › ${environment.name}`
+            : environment.name
+          : undefined;
   if (title === undefined) {
     return;
   }

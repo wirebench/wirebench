@@ -76,9 +76,16 @@ describe('VariablesTable', () => {
     expect(onSetEnabled).toHaveBeenCalledWith('host', false);
   });
 
-  it('shows the Enabled checkbox read-only when onSetEnabled is not given', () => {
+  it('shows the Enabled checkbox read-only when onSetEnabled is not given, with a title explaining why', () => {
     renderTable(baseTarget());
-    expect(screen.getByLabelText<HTMLInputElement>('Enable host').disabled).toBe(true);
+    const checkbox = screen.getByLabelText<HTMLInputElement>('Enable host');
+    expect(checkbox.disabled).toBe(true);
+    expect(checkbox.title).toBe("A linked project's own environment variables are managed in that project.");
+  });
+
+  it('has no title on the Enabled checkbox when it is interactive', () => {
+    renderTable(baseTarget({ onSetEnabled: vi.fn() }));
+    expect(screen.getByLabelText<HTMLInputElement>('Enable host').title).toBe('');
   });
 
   it('mutes a disabled variable row', () => {

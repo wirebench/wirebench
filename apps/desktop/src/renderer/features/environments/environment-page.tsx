@@ -15,11 +15,16 @@ const NAME_INPUT_CLASS =
  * precedence order. */
 function PageHeader({
   name,
+  owningProjectName,
   editableName,
   active,
   hint,
 }: {
   readonly name: string;
+  /** For a linked project's own environment: the project that owns it, so two environments named
+   * the same in different projects stay distinguishable. Absent for Globals, Workspace, and
+   * workspace environments (which have no single owning project). */
+  readonly owningProjectName?: string;
   readonly editableName?: { readonly onCommit: (name: string) => void };
   readonly active?: { readonly value: boolean; readonly onToggle: () => void };
   readonly hint: string;
@@ -60,6 +65,11 @@ function PageHeader({
           />
         ) : (
           <h2 className="text-lg font-medium text-fg-default">{name}</h2>
+        )}
+        {owningProjectName !== undefined && (
+          <span data-testid="environment-owning-project" className="text-sm text-fg-subtle">
+            {owningProjectName} — linked project
+          </span>
         )}
         {active !== undefined && (
           <label className="flex items-center gap-1.5 text-sm text-fg-subtle">
@@ -255,6 +265,12 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     >
       <PageHeader
         name={environment.name}
+        {...(isWorkspaceScoped
+          ? {}
+          : {
+              owningProjectName:
+                workspace?.projects.find((candidate) => candidate.id === projectId)?.name ?? 'this project',
+            })}
         editableName={{
           onCommit: (name) => {
             if (isWorkspaceScoped) {
