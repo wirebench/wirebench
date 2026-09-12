@@ -30,7 +30,6 @@ import {
   searchQueryResponseSchema,
   dialogsOpenFileRequestSchema,
   dialogsOpenFileResponseSchema,
-  dialogsOpenFolderRequestSchema,
   dialogsSaveFileRequestSchema,
   dialogsSaveFileResponseSchema,
   preferencesResetRequestSchema,
@@ -40,7 +39,6 @@ import {
   sslClearCaBundleResponseSchema,
   sslPickCaBundleRequestSchema,
   sslPickCaBundleResponseSchema,
-  dialogsOpenFolderResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
@@ -364,7 +362,6 @@ export const channels = {
   },
   dialogs: {
     openFile: defineChannel('dialogs.openFile', dialogsOpenFileRequestSchema, dialogsOpenFileResponseSchema),
-    openFolder: defineChannel('dialogs.openFolder', dialogsOpenFolderRequestSchema, dialogsOpenFolderResponseSchema),
     saveFile: defineChannel('dialogs.saveFile', dialogsSaveFileRequestSchema, dialogsSaveFileResponseSchema),
   },
   preferences: {

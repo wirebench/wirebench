@@ -84,7 +84,6 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     },
     dialogs: {
       openFile: fail('dialogs.openFile'),
-      openFolder: fail('dialogs.openFolder'),
       saveFile: fail('dialogs.saveFile'),
     },
     // Preferences resolve to the defaults rather than a failure: the shell loads them on mount,

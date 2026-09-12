@@ -815,10 +815,6 @@ export const dialogsSaveFileRequestSchema = z.object({
 });
 export const dialogsSaveFileResponseSchema = z.object({ path: z.string().optional() });
 
-/** Request/response for `dialogs.openFolder`. */
-export const dialogsOpenFolderRequestSchema = z.object({ title: z.string().optional() });
-export const dialogsOpenFolderResponseSchema = z.object({ path: z.string().optional() });
-
 /** Payload for the `engine.progress` event. */
 export const engineProgressEventSchema = z.object({
   kind: z.literal('import'),

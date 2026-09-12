@@ -1,12 +1,14 @@
 import { channels } from '../../shared/ipc.js';
 import type { RecordsReadPicks, RecordsWritePicks } from '../dialog-picks.js';
-import { pickFile, pickFolder, pickSaveFile } from '../native-dialogs.js';
+import { pickFile, pickSaveFile } from '../native-dialogs.js';
 import { registerHandler } from './register.js';
 
 /**
- * Registers the `dialogs.*` IPC channels: native file/folder pickers scoped to the caller's
+ * Registers the `dialogs.*` IPC channels: native Open-file and Save-as pickers scoped to the caller's
  * window, implemented in `main/native-dialogs.ts` so the features that run a picker of their
- * own (Export Definition, Generate Documentation) behave identically.
+ * own (Export Definition, Generate Documentation) behave identically. There is deliberately no
+ * folder channel: every folder the app acts on is picked by main itself, so the renderer never
+ * learns — or names — a path main has not already contained.
  *
  * `picks` records every path the user actually chose — a Save-as target as a *write* pick, an
  * Open-file target as a *read* pick — so main-side containment checks can treat a user-driven
@@ -18,10 +20,6 @@ export function registerDialogsChannels(picks: RecordsWritePicks & RecordsReadPi
       ...(request.title !== undefined ? { title: request.title } : {}),
       ...(request.filters !== undefined ? { filters: request.filters } : {}),
     }),
-  }));
-
-  registerHandler(channels.dialogs.openFolder, async (request, sender) => ({
-    path: await pickFolder(sender, request.title !== undefined ? { title: request.title } : {}),
   }));
 
   registerHandler(channels.dialogs.saveFile, async (request, sender) => ({
