@@ -64,10 +64,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # rpm packaging needs rpmbuild, which the Ubuntu runner does not ship with.
-      - name: Install rpm tooling (Linux)
+      # rpm packaging needs rpmbuild and snap packaging needs mksquashfs; the Ubuntu runner
+      # ships with neither.
+      - name: Install Linux packaging tooling
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: sudo apt-get update && sudo apt-get install -y rpm squashfs-tools
 
       # Signing is opt-in. electron-builder reads the certificates and the Apple credentials
       # out of the environment and skips signing (and notarization) when they are empty, so a
@@ -107,6 +108,7 @@ jobs:
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.rpm
+            apps/desktop/release/*.snap
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
 
