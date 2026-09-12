@@ -28,7 +28,7 @@ export function registerProjectCommands(): void {
       ui().openImportDialog();
     },
   });
-  // `Mod+S` saves the tab in front of you; saving every project moved up to `Shift+Mod+S`.
+  // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`.
   registerCommand({
     id: 'item.save',
     label: 'Save',
@@ -38,9 +38,18 @@ export function registerProjectCommands(): void {
     whenScope: 'project',
     run: () => {
       const requestId = activeRequestId();
-      if (requestId !== undefined) {
-        void useProjectStore.getState().saveRequest(requestId);
+      if (requestId === undefined) {
+        return;
       }
+      // Flush before saving, because this is the command every route ends at — including the
+      // one that never touches the editor. On macOS the native menu owns ⌘S: the accelerator
+      // fires File ▸ Save, which invokes this, so the pane's own Monaco binding (which does
+      // flush) never runs. Without this, ⌘S writes the last *debounced* envelope and the 120 ms
+      // debounce then re-stages what was on screen — the dot reappears and the keystroke looks
+      // like it did nothing. Clicking the same menu item worked only because the debounce had
+      // long since fired by the time the mouse got there.
+      getActiveRequestPaneHandle()?.flush();
+      void useProjectStore.getState().saveRequest(requestId);
     },
   });
 

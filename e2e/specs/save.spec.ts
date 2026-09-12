@@ -81,4 +81,26 @@ test.describe('saving the active tab', () => {
     await expect(dirty).toBeHidden();
     await expect.poll(() => savedRequestYaml(), { timeout: 10_000 }).toContain(marker);
   });
+
+  test('Save All writes a staged edit too, rather than a model that never saw it', async () => {
+    const page = launched.window;
+    const dirty = page.getByTestId('editor-tab-dirty');
+    const marker = 'SaveAllMarker';
+
+    await setMonacoText(page, 'Request envelope XML', `<Envelope><Body><${marker}/></Body></Envelope>`);
+    await expect(dirty).toBeVisible();
+    expect(savedRequestYaml()).not.toContain(marker);
+
+    // Through the palette, which is where Save All is reachable without knowing its chord —
+    // and the same command the File menu's item invokes.
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+KeyP`);
+    await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.type('Save All');
+    await page.keyboard.press('Enter');
+
+    // "Save All" writes main's model. A staged edit that was never committed to main is simply
+    // absent from it, so this would report success and leave the edit on the floor.
+    await expect(dirty).toBeHidden({ timeout: 10_000 });
+    await expect.poll(() => savedRequestYaml(), { timeout: 10_000 }).toContain(marker);
+  });
 });

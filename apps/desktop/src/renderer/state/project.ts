@@ -569,6 +569,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     save: async (projectId) => {
       const ids = projectId === undefined ? Object.keys(get().projects) : [projectId];
+      // Staged edits are part of this save. Without committing them first, "Save All" writes
+      // main's model — which has never seen them — and every unsaved request edit is silently
+      // left behind with its tab still marked. Sequentially, because each commit mutates main
+      // and applies the snapshot it returns.
+      for (const requestId of useDraftsStore.getState().dirtyRequestIds()) {
+        if (ids.includes(get().projectOf[requestId] ?? '')) {
+          await get().commitRequest(requestId);
+        }
+      }
       // Every project is saved even when one fails, and the first failure is what the caller
       // hears about: a failed save on one project must not leave the others unwritten.
       const results = await Promise.allSettled(ids.map(async (id) => await saveOne(id)));
