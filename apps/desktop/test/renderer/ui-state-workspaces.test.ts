@@ -10,7 +10,11 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import { restoreWorkspaceTabs, saveWorkspaceTabs } from '../../src/renderer/state/workspace-tabs.js';
+import {
+  rememberOpenWorkspaceTabs,
+  restoreWorkspaceTabs,
+  saveWorkspaceTabs,
+} from '../../src/renderer/state/workspace-tabs.js';
 import { environmentTabId } from '../../src/renderer/features/environments/environment-actions.js';
 import { interfaceTabId } from '../../src/renderer/features/interface-editor/interface-actions.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
@@ -144,5 +148,17 @@ describe('per-workspace UI state', () => {
 
     expect(useEditorsStore.getState().tabs).toEqual([]);
     expect(useEditorsStore.getState().activeId).toBeUndefined();
+  });
+
+  it('records the open workspace on the way out, and nothing at all with none open', () => {
+    useEditorsStore.getState().open({ id: 'request:r1', kind: 'request', title: 'Add', requestId: 'r1' });
+
+    // No workspace open: quitting from the picker must not invent an entry.
+    rememberOpenWorkspaceTabs();
+    expect(useUiStore.getState().workspaces).toEqual({});
+
+    useWorkspaceStore.setState({ workspace: workspaceWire({ id: 'w1' }) });
+    rememberOpenWorkspaceTabs();
+    expect(useUiStore.getState().workspaces['w1']?.tabs).toEqual([{ kind: 'request', id: 'r1' }]);
   });
 });

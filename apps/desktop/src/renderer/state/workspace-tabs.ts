@@ -117,3 +117,19 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
     useUiStore.getState().setSidebarView(entry.sidebarView);
   }
 }
+
+/**
+ * Records the *open* workspace's tabs, for the one moment {@link saveWorkspaceTabs} never
+ * sees: the window going away.
+ *
+ * Tabs are otherwise written only when a workspace is left for another one, because that is
+ * the only point at which the outgoing workspace's tabs are still on screen. Quitting is the
+ * exception — nothing is "left", the renderer simply stops — so without this a relaunch would
+ * reopen the last workspace with no tabs at all, which the app promises it does not.
+ */
+export function rememberOpenWorkspaceTabs(): void {
+  const workspaceId = useWorkspaceStore.getState().workspace?.id;
+  if (workspaceId !== undefined) {
+    saveWorkspaceTabs(workspaceId);
+  }
+}

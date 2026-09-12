@@ -11,6 +11,7 @@ import { useKeybindings } from '../lib/keybindings.js';
 import { detectPlatform } from '../lib/platform.js';
 import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
+import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
@@ -72,6 +73,20 @@ export function AppShell() {
 
   useEffect(() => {
     hydrateUi();
+  }, []);
+
+  // The layout is written to `localStorage` on every change, but the open workspace's *tabs*
+  // are recorded only when a workspace is left for another one. Closing the window is the
+  // other way they can go, so record them on the way out too; the write is synchronous, which
+  // is what makes it safe to do this late.
+  useEffect(() => {
+    const remember = (): void => {
+      rememberOpenWorkspaceTabs();
+    };
+    window.addEventListener('pagehide', remember);
+    return () => {
+      window.removeEventListener('pagehide', remember);
+    };
   }, []);
 
   useEffect(() => subscribeToWorkspace(), []);
