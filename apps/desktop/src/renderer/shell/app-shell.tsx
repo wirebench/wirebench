@@ -93,6 +93,14 @@ export function AppShell() {
   const rowRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
 
+  // How far a collapsed panel's handle has been dragged back out, in pixels. A collapsed panel
+  // has no size to add a delta to, so the outward drag is accumulated here until it amounts to
+  // the panel's minimum share — which is what makes the reopen the mirror image of the collapse,
+  // and stops the small jitter inside a double-click from reopening what it just shut. Reset when
+  // the gesture ends, so a drag that never reached the minimum does not carry into the next one.
+  const sidebarReopenPx = useRef(0);
+  const consoleReopenPx = useRef(0);
+
   const dragSidebar = useCallback((deltaPx: number) => {
     const width = rowRef.current?.clientWidth;
     if (width === undefined || width === 0) {
@@ -100,10 +108,27 @@ export function AppShell() {
     }
     const store = useUiStore.getState();
     if (!store.sidebar.visible) {
+      // Spec §4: "dragging the handle back out reopens it".
+      sidebarReopenPx.current = Math.max(0, sidebarReopenPx.current + deltaPx);
+      const reopenAt = (sidebarReopenPx.current / width) * 100;
+      if (reopenAt >= SIDEBAR_MIN) {
+        sidebarReopenPx.current = 0;
+        store.expandSidebar();
+        store.setSidebarSize(Math.min(SIDEBAR_MAX, reopenAt));
+      }
       return;
     }
     const next = store.sidebar.size + (deltaPx / width) * 100;
     resizePercentPanel(next, SIDEBAR_MIN, SIDEBAR_MAX, store.collapseSidebar, store.setSidebarSize);
+  }, []);
+
+  // A gesture that ended without reopening the panel starts the next one from zero again.
+  const endSidebarDrag = useCallback(() => {
+    sidebarReopenPx.current = 0;
+  }, []);
+
+  const endConsoleDrag = useCallback(() => {
+    consoleReopenPx.current = 0;
   }, []);
 
   const stepSidebar = useCallback((direction: 1 | -1) => {
@@ -128,6 +153,15 @@ export function AppShell() {
     }
     const store = useUiStore.getState();
     if (!store.console.visible) {
+      // The handle sits above the console, so dragging *up* — a negative delta — is the outward
+      // direction that reopens it, the mirror of the downward drag that shut it.
+      consoleReopenPx.current = Math.max(0, consoleReopenPx.current - deltaPx);
+      const reopenAt = (consoleReopenPx.current / height) * 100;
+      if (reopenAt >= CONSOLE_MIN) {
+        consoleReopenPx.current = 0;
+        store.expandConsole();
+        store.setConsoleSize(Math.min(CONSOLE_MAX, reopenAt));
+      }
       return;
     }
     const next = store.console.size - (deltaPx / height) * 100;
@@ -286,8 +320,8 @@ export function AppShell() {
                 </div>
               )}
               {/* The handle stays mounted (and hit-testable) even while the sidebar is collapsed,
-                  so a double-click on it — expand or collapse — always has a target; only the
-                  panel's own content unmounts. */}
+                  so a double-click on it — expand or collapse — and a drag back out always have a
+                  target; only the panel's own content unmounts. */}
               <PanelHandle
                 testId="panel-handle-sidebar"
                 label={sidebar.visible ? 'Resize Sidebar' : 'Show Sidebar'}
@@ -296,6 +330,7 @@ export function AppShell() {
                 valueMin={SIDEBAR_MIN}
                 valueMax={SIDEBAR_MAX}
                 onDrag={dragSidebar}
+                onDragEnd={endSidebarDrag}
                 onStep={stepSidebar}
                 onDoubleClick={onDoubleClickSidebarHandle}
               />
@@ -314,6 +349,7 @@ export function AppShell() {
                   valueMin={CONSOLE_MIN}
                   valueMax={CONSOLE_MAX}
                   onDrag={dragConsole}
+                  onDragEnd={endConsoleDrag}
                   onStep={stepConsole}
                   onDoubleClick={onDoubleClickConsoleHandle}
                 />

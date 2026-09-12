@@ -208,6 +208,42 @@ test.describe('layout: collapsible, resizable panels', () => {
     await expect(page.getByTestId('console-panel')).toBeVisible();
   });
 
+  test('dragging a collapsed sidebar handle back out reopens it', async () => {
+    // Spec §4: "dragging past the minimum snaps it shut … dragging the handle back out reopens
+    // it". Only the first half worked — the drag callback returned early while collapsed, so the
+    // panel could be shut by drag but never reopened the same way.
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+
+    await dragHandle(page, 'panel-handle-sidebar', -300, 0);
+    await expectSidebarCollapsed(page);
+
+    await dragHandle(page, 'panel-handle-sidebar', 300, 0);
+
+    await expectSidebarVisible(page);
+    const reopened = await sidebarWidth(page);
+    expect(reopened).toBeDefined();
+    expect(reopened!).toBeGreaterThan(0);
+  });
+
+  test('dragging a collapsed console handle back out reopens it', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+
+    await dragHandle(page, 'panel-handle-console', 0, 400);
+    await expect(page.getByTestId('console-panel')).toHaveCount(0);
+
+    // The handle sits above the console, so *up* is the outward direction.
+    await dragHandle(page, 'panel-handle-console', 0, -300);
+
+    await expect(page.getByTestId('console-panel')).toBeVisible();
+    const reopened = await consoleHeight(page);
+    expect(reopened).toBeDefined();
+    expect(reopened!).toBeGreaterThan(0);
+  });
+
   test('opening the Code slide-over does not shift the editor area', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
