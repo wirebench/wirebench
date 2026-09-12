@@ -131,7 +131,7 @@ function ownOrigin(params: {
 }): string {
   const { scopeLabel, enabled, name, inherited } = params;
   if (enabled) {
-    // The winner, not the nearest definer: `shadows X` in the Resolves-from column is a promise
+    // The winner, not the nearest definer: `shadows X` in the "Resolves from" column is a promise
     // that X is what would resolve without this row. A nearer scope that defines the name but has
     // it switched off contributes nothing, so naming it would promise a fallback that isn't there
     // — and would contradict the disabled branch below, which already names the winner.
@@ -483,7 +483,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
    * The add row's `will shadow {X}` hint — empty until the typed name matches an inherited definer.
    * Deliberately `nearestDefining`, not `resolvingScope`: this is an authoring warning about a
    * name collision the user is about to create, and a collision with a switched-off definition is
-   * still worth knowing about. The Resolves-from column makes the opposite choice, because it
+   * still worth knowing about. The "Resolves from" column makes the opposite choice, because it
    * states what resolves rather than what collides.
    */
   const trimmedNewName = newName.trim();
