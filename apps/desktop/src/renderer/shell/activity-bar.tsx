@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { FolderTree, Globe, History, Search, Settings, ShieldCheck } from 'lucide-react';
+import { Braces, FolderTree, History, Search, Settings, ShieldCheck } from 'lucide-react';
 import type { CommandId } from '@shared/commands.js';
 import type { Platform } from '../lib/platform.js';
 import { shortcutFor } from '../lib/keybindings.js';
@@ -20,7 +20,7 @@ const ITEMS: readonly ActivityItem[] = [
   {
     view: 'environments',
     label: 'Environments',
-    icon: Globe,
+    icon: Braces,
     command: 'view.showEnvironments',
     testId: 'activity-environments',
   },

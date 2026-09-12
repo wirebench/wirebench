@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Globe } from 'lucide-react';
+import { Braces, Check, ChevronDown } from 'lucide-react';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
@@ -59,7 +59,7 @@ export function EnvSwitcher() {
           // `wb-no-drag`: the title bar drags the window, so every control on it has to opt out.
           className="wb-no-drag inline-flex h-row max-w-48 items-center gap-1.5 rounded-md border border-hairline bg-surface-raised px-2 text-xs text-fg-muted transition-colors hover:border-hairline-strong hover:text-fg-default"
         >
-          <Globe size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          <Braces size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
           <span className="min-w-0 truncate">{active?.name ?? NO_ENVIRONMENT_LABEL}</span>
           <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
         </button>
