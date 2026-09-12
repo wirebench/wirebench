@@ -387,9 +387,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     >
       <PageHeader
         name={environment.name}
-        {...(isWorkspaceScoped
-          ? {}
-          : { owningProjectName: owningProjectName ?? 'this project' })}
+        {...(isWorkspaceScoped ? {} : { owningProjectName: owningProjectName ?? 'this project' })}
         editableName={{
           onCommit: (name) => {
             if (isWorkspaceScoped) {

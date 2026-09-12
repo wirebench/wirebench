@@ -388,21 +388,21 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     // beats the workspace's and has to show up as inherited from the project, not the workspace.
     useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
     withOwningProject({ shared: 'from-workspace' });
-    setUp({ properties: { shared: 'from-project' }, disabledProperties: [] } as Partial<ProjectWire>);
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: [] });
     expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-project');
     expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Demo');
   });
 
   it("skips the owning project's properties when the project has the name switched off", () => {
     withOwningProject({ shared: 'from-workspace' });
-    setUp({ properties: { shared: 'from-project' }, disabledProperties: ['shared'] } as Partial<ProjectWire>);
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: ['shared'] });
     expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
     expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Workspace · Demo has it off');
   });
 
   it("says an own value shadows the owning project's, not the workspace's", () => {
     withOwningProject({ host: 'from-workspace' });
-    setUp({ properties: { host: 'from-project' }, disabledProperties: [] } as Partial<ProjectWire>);
+    setUp({ properties: { host: 'from-project' }, disabledProperties: [] });
     // `host` is disabled in this environment, so it falls through — to the project, not past it.
     expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — falls through to Demo');
   });
