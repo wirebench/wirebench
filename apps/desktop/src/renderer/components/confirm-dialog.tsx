@@ -13,6 +13,14 @@ export interface ConfirmDialogProps {
   /** Optional testids, so a dialog extracted from an inline copy keeps the handles it had. */
   readonly testId?: string;
   readonly confirmTestId?: string;
+  readonly cancelTestId?: string;
+  /**
+   * Where focus lands once the dialog closes. Radix's own default tries to refocus whatever
+   * opened it — but this dialog is always driven by external state, never an `AlertDialog.Trigger`,
+   * so that default silently focuses nothing. Supply this to send focus somewhere specific;
+   * omit it to leave Radix's (currently inert) default in place.
+   */
+  readonly onCloseAutoFocus?: (event: Event) => void;
 }
 
 /**
@@ -30,6 +38,8 @@ export function ConfirmDialog({
   onConfirm,
   testId,
   confirmTestId,
+  cancelTestId,
+  onCloseAutoFocus,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -37,13 +47,29 @@ export function ConfirmDialog({
         <AlertDialog.Overlay className="fixed inset-0 bg-black/40" />
         <AlertDialog.Content
           {...(testId === undefined ? {} : { 'data-testid': testId })}
+          {...(onCloseAutoFocus === undefined
+            ? {}
+            : {
+                onCloseAutoFocus: (event: Event) => {
+                  event.preventDefault();
+                  onCloseAutoFocus(event);
+                },
+              })}
           className="fixed top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <AlertDialog.Title className="text-md font-medium text-fg-default">{title}</AlertDialog.Title>
-          <AlertDialog.Description className="mt-1 text-sm text-fg-subtle">{description}</AlertDialog.Description>
+          {/* asChild swaps Radix's default `<p>` for a `<div>` — `description` is free to nest block
+              content (e.g. a list), which a `<p>` can never legally contain. */}
+          <AlertDialog.Description asChild>
+            <div className="mt-1 text-sm text-fg-subtle">{description}</div>
+          </AlertDialog.Description>
           <div className="mt-4 flex justify-end gap-2">
             <AlertDialog.Cancel asChild>
-              <button type="button" className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base">
+              <button
+                type="button"
+                {...(cancelTestId === undefined ? {} : { 'data-testid': cancelTestId })}
+                className="rounded px-3 py-1.5 text-sm text-fg-default hover:bg-surface-base"
+              >
                 Cancel
               </button>
             </AlertDialog.Cancel>
