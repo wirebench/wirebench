@@ -27,7 +27,7 @@ describe('EnvironmentPage — globals', () => {
   it('shows the fixed Globals name and its properties', () => {
     useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
     renderPage({ kind: 'globals' });
-    expect(screen.getByText('Globals')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Globals' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
   });
 
@@ -35,6 +35,15 @@ describe('EnvironmentPage — globals', () => {
     renderPage({ kind: 'globals' });
     expect(screen.queryByLabelText('Environment name')).toBeNull();
     expect(screen.queryByTestId('environment-active')).toBeNull();
+  });
+
+  it('exposes no editing affordance on the Globals heading', () => {
+    renderPage({ kind: 'globals' });
+    const heading = screen.getByRole('heading', { name: 'Globals' });
+    expect(heading.tagName).toBe('H2');
+    expect(heading.getAttribute('tabindex')).toBeNull();
+    fireEvent.click(heading);
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
   });
 
   it('saves an edit through globals.set', () => {
@@ -52,8 +61,30 @@ describe('EnvironmentPage — workspace', () => {
   it('shows the fixed Workspace name and its properties', () => {
     useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
     renderPage({ kind: 'workspace' });
-    expect(screen.getByText('Workspace')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('one.test');
+  });
+
+  it('exposes no editing affordance on the Workspace heading', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
+    renderPage({ kind: 'workspace' });
+    const heading = screen.getByRole('heading', { name: 'Workspace' });
+    expect(heading.tagName).toBe('H2');
+    expect(heading.getAttribute('tabindex')).toBeNull();
+    fireEvent.click(heading);
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+  });
+
+  it('inherits from Globals, shown in a read-only Inherited group', () => {
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
+    renderPage({ kind: 'workspace' });
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · Workspace',
+      'Inherited · read-only',
+    ]);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
+    expect(screen.getByLabelText<HTMLInputElement>('Enable token').disabled).toBe(true);
   });
 
   it('saves an edit through a set-workspace-property mutation', () => {
@@ -107,14 +138,16 @@ describe('EnvironmentPage — a workspace environment', () => {
     return { mutate, setActiveEnvironment };
   }
 
-  it('shows an editable name and the Active toggle', () => {
+  it('shows a click-to-edit name and the Active toggle', () => {
     setUp();
-    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
     expect(screen.getByTestId('environment-active')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
   });
 
   it('renames on blur', async () => {
     const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
     const name = screen.getByLabelText('Environment name');
     fireEvent.change(name, { target: { value: 'staging' } });
     fireEvent.blur(name);
@@ -125,6 +158,67 @@ describe('EnvironmentPage — a workspace environment', () => {
         patch: { name: 'staging' },
       });
     });
+  });
+
+  it('renders the name as text, not an input, at rest', () => {
+    setUp();
+    const field = screen.getByTestId('environment-name');
+    expect(field.tagName).not.toBe('INPUT');
+    expect(field.textContent).toBe('uat');
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+  });
+
+  it('reveals an input carrying the current name on click', () => {
+    setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const input = screen.getByLabelText<HTMLInputElement>('Environment name');
+    expect(input.value).toBe('uat');
+  });
+
+  it('commits the new name on Enter', async () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText('Environment name');
+    fireEvent.change(name, { target: { value: 'staging' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { name: 'staging' },
+      });
+    });
+  });
+
+  it('reverts on Escape without committing, and leaves editing', () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText<HTMLInputElement>('Environment name');
+    fireEvent.change(name, { target: { value: 'staging' } });
+    fireEvent.keyDown(name, { key: 'Escape' });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Environment name')).toBeNull();
+    expect(screen.getByTestId('environment-name').textContent).toBe('uat');
+  });
+
+  it('reverts an empty or whitespace-only name without committing', () => {
+    const { mutate } = setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
+    const name = screen.getByLabelText('Environment name');
+    fireEvent.change(name, { target: { value: '   ' } });
+    fireEvent.blur(name);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByTestId('environment-name').textContent).toBe('uat');
+  });
+
+  it('starts editing on Enter or F2 from the focused resting element', () => {
+    setUp();
+    const field = screen.getByTestId('environment-name');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(screen.getByLabelText('Environment name')).toBeTruthy();
+    fireEvent.keyDown(screen.getByLabelText('Environment name'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByTestId('environment-name'), { key: 'F2' });
+    expect(screen.getByLabelText('Environment name')).toBeTruthy();
   });
 
   it('activates through the workspace store when toggled on', () => {
@@ -172,6 +266,39 @@ describe('EnvironmentPage — a workspace environment', () => {
       });
     });
   });
+
+  it('sends a multi-variable paste as one patch carrying every pair', async () => {
+    const { mutate } = setUp();
+    const name = screen.getByLabelText('New variable name');
+    name.focus();
+    fireEvent.paste(name, { clipboardData: { getData: () => 'a=1\nb=2\nc=3' } });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { properties: { host: 'one.test', a: '1', b: '2', c: '3' } },
+      });
+    });
+  });
+
+  it('falls back through Workspace then Globals, nearest first', () => {
+    useGlobalsStore.setState({ properties: { token: 'global-token', shared: 'from-globals' }, disabled: [] });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [environment],
+        properties: { shared: 'from-workspace' },
+      }),
+    });
+    renderPage({ kind: 'environment', id: environment.id });
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · This environment',
+      'Inherited · read-only',
+    ]);
+    // `shared` is defined by both Workspace and Globals — Workspace, being nearer, wins.
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('global-token');
+  });
 });
 
 describe("EnvironmentPage — a linked project's own environment", () => {
@@ -185,10 +312,12 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     disabled: ['host'],
   };
 
-  function setUp() {
+  function setUp(project: Partial<ProjectWire> = {}) {
     const updateEnvironment = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({
-      projects: { p1: { id: 'p1', name: 'Demo', environments: [environment] } as unknown as ProjectWire },
+      projects: {
+        p1: { id: 'p1', name: 'Demo', environments: [environment], ...project } as unknown as ProjectWire,
+      },
       projectOf: { e1: 'p1' },
       updateEnvironment,
     });
@@ -196,8 +325,19 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     return { updateEnvironment };
   }
 
+  /** Puts the owning project in the workspace mirror, so the chain can label it by name. */
+  function withOwningProject(properties: Record<string, string> = {}): void {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'linked', dir: '/w/demo', status: 'ready' }],
+        properties,
+      }),
+    });
+  }
+
   it('shows an editable name too', () => {
     setUp();
+    fireEvent.click(screen.getByTestId('environment-name'));
     expect(screen.getByLabelText<HTMLInputElement>('Environment name').value).toBe('uat');
   });
 
@@ -216,12 +356,59 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { properties: { host: 'two.test' } });
   });
 
-  it('names the owning project in the header, so two projects with a same-named environment stay distinguishable', () => {
-    useWorkspaceStore.setState({
-      workspace: workspaceWire({
-        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'linked', dir: '/w/demo', status: 'ready' }],
-      }),
+  it('falls back through Workspace then Globals too, same as a workspace environment', () => {
+    useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { shared: 'from-workspace' } }) });
+    setUp();
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · This environment',
+      'Inherited · read-only',
+    ]);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+  });
+
+  it('keeps every variable of a multi-variable paste, not just the last one', () => {
+    // This scope's writes are not chained through the environment queue, and main REPLACES the
+    // whole properties map — so one `onSet` per pasted variable, all built off the same
+    // render-time snapshot, used to drop everything but the last. The paste has to land as one
+    // write carrying every pair.
+    const { updateEnvironment } = setUp();
+    const name = screen.getByLabelText('New variable name');
+    name.focus();
+    fireEvent.paste(name, { clipboardData: { getData: () => 'a=1\nb=2\nc=3' } });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    expect(updateEnvironment).toHaveBeenCalledTimes(1);
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', {
+      properties: { host: 'one.test', a: '1', b: '2', c: '3' },
     });
+  });
+
+  it("puts the owning project's own properties between this environment and the workspace", () => {
+    // The engine resolves Env -> Project -> Workspace -> Global, so a name the project defines
+    // beats the workspace's and has to show up as inherited from the project, not the workspace.
+    useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
+    withOwningProject({ shared: 'from-workspace' });
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: [] });
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-project');
+    expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Demo');
+  });
+
+  it("skips the owning project's properties when the project has the name switched off", () => {
+    withOwningProject({ shared: 'from-workspace' });
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: ['shared'] });
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+    expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Workspace · Demo has it off');
+  });
+
+  it("says an own value shadows the owning project's, not the workspace's", () => {
+    withOwningProject({ host: 'from-workspace' });
+    setUp({ properties: { host: 'from-project' }, disabledProperties: [] });
+    // `host` is disabled in this environment, so it falls through — to the project, not past it.
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — falls through to Demo');
+  });
+
+  it('names the owning project in the header, so two projects with a same-named environment stay distinguishable', () => {
+    withOwningProject();
     setUp();
     expect(screen.getByTestId('environment-owning-project').textContent).toBe('Demo — linked project');
   });
@@ -229,5 +416,27 @@ describe("EnvironmentPage — a linked project's own environment", () => {
   it('falls back to a generic caption when the owning project cannot be resolved', () => {
     setUp();
     expect(screen.getByTestId('environment-owning-project').textContent).toBe('this project — linked project');
+  });
+
+  it('refuses to rename a disabled variable, explains why, and writes nothing', () => {
+    const { updateEnvironment } = setUp();
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(screen.getByRole('alert').textContent).toBe('Re-enable "host" before renaming it.');
+    expect(updateEnvironment).not.toHaveBeenCalled();
+  });
+
+  it('still renames an enabled variable', () => {
+    const enabledEnvironment: EnvironmentWire = { ...environment, properties: { port: '8080' }, disabled: [] };
+    const { updateEnvironment } = setUp({ environments: [enabledEnvironment] });
+    const name = screen.getByLabelText('Name of port');
+    fireEvent.change(name, { target: { value: 'portnum' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', {
+      properties: { portnum: '8080' },
+    });
   });
 });

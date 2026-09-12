@@ -6,8 +6,11 @@ import { queueEndpointOverride } from './environment-queue.js';
 import type { EffectiveEndpointSource } from '../../state/endpoint-override.js';
 import { effectiveEndpointSource } from '../../state/endpoint-override.js';
 
+// Mirrors the variables table's INPUT_CLASS so both tables read as one system: transparent
+// border and background by default (a row reads as data, not a form field), only the border's
+// colour changes on hover, and focus keeps the accent ring as the only indicator.
 const INPUT_CLASS =
-  'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+  'h-row w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 text-sm text-fg-default hover:border-hairline-strong focus:border-transparent focus:outline-none focus:ring-1 focus:ring-accent';
 
 /** What each source reads as, and what its tooltip spells out. */
 const SOURCE_LABEL: Record<EffectiveEndpointSource, { readonly short: string; readonly title: string }> = {
@@ -52,11 +55,15 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
       data-testid="env-endpoint-row"
       data-endpoint-key={row.key}
       {...(row.source !== undefined ? { 'data-source': row.source } : {})}
+      className="border-b border-hairline hover:bg-surface-hover"
     >
-      <th scope="row" className="py-0.5 pr-2 pl-3 text-left text-sm font-normal text-fg-default">
+      {/* Blank spacer cell — lines this row's Interface column up under the variables table's
+          Variable column, both starting after the same-width leading column. */}
+      <td className="px-2 py-1" />
+      <th scope="row" className="px-2 py-1 text-left text-sm font-normal text-fg-default">
         {row.iface.name}
       </th>
-      <td className="py-0.5 pr-2">
+      <td className="px-2 py-1">
         <input
           aria-label={label}
           data-testid="environment-endpoint"
@@ -86,7 +93,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
         </datalist>
       </td>
       {row.source !== undefined && (
-        <td className="w-24 py-0.5 pl-2">
+        <td className="px-2 py-1">
           <span
             data-testid="workspace-env-source"
             title={SOURCE_LABEL[row.source].title}
@@ -96,6 +103,9 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
           </span>
         </td>
       )}
+      {/* Blank trailing spacer — matches the variables table's delete-action column so both
+          tables' right edges line up. */}
+      <td className="px-2 py-1" />
     </tr>
   );
 }
@@ -236,37 +246,55 @@ function EndpointsTableView({
     return <p className="text-sm text-fg-subtle">Import a WSDL to override its endpoint here.</p>;
   }
   const hasSource = rows.some((row) => row.source !== undefined);
-  const columns = hasSource ? 3 : 2;
+  // Leading and trailing blank spacer columns, matching the variables table's On and
+  // delete-action columns, so the two tables' Interface/Value and Source/Resolves columns —
+  // and their outer edges — line up.
+  const columns = hasSource ? 5 : 4;
   return (
-    <table aria-label="Endpoint overrides" data-testid="env-endpoints-table" className="w-full border-collapse">
-      <thead>
-        <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-          <th className="pb-1 font-medium">Interface</th>
-          <th className="pb-1 font-medium">Override URL</th>
-          {hasSource && <th className="pb-1 font-medium">Source</th>}
-        </tr>
-      </thead>
-      {/* Spec §2.2: one group per project, the project name as the group's header, rather than
-          repeating it on every row. `rows` already arrives in the workspace's project order, so
-          consecutive runs of the same project are exactly the groups. */}
-      {groupByProject(rows).map((group) => (
-        <tbody key={group.projectName}>
-          <tr>
-            <th
-              scope="colgroup"
-              colSpan={columns}
-              data-testid="env-endpoints-group"
-              className="pt-2 pb-0.5 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
-            >
-              {group.projectName}
-            </th>
+    <div className="overflow-hidden rounded-md border border-hairline">
+      <table
+        aria-label="Endpoint overrides"
+        data-testid="env-endpoints-table"
+        className="w-full table-fixed border-collapse text-sm"
+      >
+        <colgroup>
+          <col className="w-11" />
+          <col className="w-[22%]" />
+          <col />
+          {hasSource && <col className="w-[26%]" />}
+          <col className="w-9" />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase">
+            <th className="px-2 py-1.5" />
+            <th className="px-2 py-1.5 font-medium">Interface</th>
+            <th className="px-2 py-1.5 font-medium">Override URL</th>
+            {hasSource && <th className="px-2 py-1.5 font-medium">Source</th>}
+            <th className="px-2 py-1.5" />
           </tr>
-          {group.rows.map((row) => (
-            <EndpointRow key={row.iface.id} row={row} onCommit={onCommit} />
-          ))}
-        </tbody>
-      ))}
-    </table>
+        </thead>
+        {/* Spec §2.2: one group per project, the project name as the group's header, rather than
+            repeating it on every row. `rows` already arrives in the workspace's project order, so
+            consecutive runs of the same project are exactly the groups. */}
+        {groupByProject(rows).map((group) => (
+          <tbody key={group.projectName}>
+            <tr className="bg-surface-raised">
+              <th
+                scope="colgroup"
+                colSpan={columns}
+                data-testid="env-endpoints-group"
+                className="border-b border-hairline px-2 py-1 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
+              >
+                {group.projectName}
+              </th>
+            </tr>
+            {group.rows.map((row) => (
+              <EndpointRow key={row.iface.id} row={row} onCommit={onCommit} />
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
   );
 }
 

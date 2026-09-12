@@ -1,14 +1,100 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EndpointsTable } from './endpoints-table.js';
 import type { EnvironmentTarget } from './environment-actions.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
-import { VariablesTable, type VariablesTableTarget } from './variables-table.js';
+import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 
-const NAME_INPUT_CLASS =
-  'h-row max-w-md min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-lg font-medium text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+// Shared box model between the resting and editing states — same height, padding, border width,
+// font — so nothing shifts by a pixel when the input mounts. Only the border's and background's
+// colour differ between the two, matching the variables/endpoints tables' "chrome on demand".
+const NAME_FIELD_BASE =
+  'h-row max-w-md min-w-0 rounded-md border px-2 text-left text-lg font-medium text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+const NAME_VIEW_CLASS = `${NAME_FIELD_BASE} cursor-text border-transparent bg-transparent hover:bg-surface-raised`;
+const NAME_INPUT_CLASS = `${NAME_FIELD_BASE} border-hairline-strong bg-surface-raised`;
+
+/** A renameable environment's name: a plain heading until clicked (or Enter/F2 while focused),
+ * then an input with the current name selected, so typing replaces it. Enter or blur commits the
+ * trimmed name; Escape reverts and drops back to the resting state. An empty or whitespace-only
+ * name reverts without saving. */
+function EditableName({ name, onCommit }: { readonly name: string; readonly onCommit: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft(name);
+  }, [name]);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function startEditing() {
+    setDraft(name);
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed.length > 0 && trimmed !== name) {
+      onCommit(trimmed);
+    }
+    setDraft(name);
+    setEditing(false);
+  }
+
+  function revert() {
+    setDraft(name);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        autoFocus
+        aria-label="Environment name"
+        data-testid="environment-name"
+        className={NAME_INPUT_CLASS}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            revert();
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="environment-name"
+      className={NAME_VIEW_CLASS}
+      onClick={startEditing}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === 'F2') {
+          event.preventDefault();
+          startEditing();
+        }
+      }}
+    >
+      {name}
+    </button>
+  );
+}
 
 /** The page's header: a name (editable for a real environment, fixed for Globals/Workspace),
  * an Active toggle (environments only), and a one-line reminder of where this scope sits in the
@@ -29,40 +115,11 @@ function PageHeader({
   readonly active?: { readonly value: boolean; readonly onToggle: () => void };
   readonly hint: string;
 }) {
-  const [draft, setDraft] = useState(name);
-  useEffect(() => {
-    setDraft(name);
-  }, [name]);
-
   return (
     <header className="flex flex-col gap-2">
       <div className="flex items-center gap-3">
         {editableName !== undefined ? (
-          <input
-            aria-label="Environment name"
-            data-testid="environment-name"
-            className={NAME_INPUT_CLASS}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-            onBlur={() => {
-              const trimmed = draft.trim();
-              if (trimmed.length > 0 && trimmed !== name) {
-                editableName.onCommit(trimmed);
-              } else {
-                setDraft(name);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.currentTarget.blur();
-              }
-              if (event.key === 'Escape') {
-                setDraft(name);
-              }
-            }}
-          />
+          <EditableName name={name} onCommit={editableName.onCommit} />
         ) : (
           <h2 className="text-lg font-medium text-fg-default">{name}</h2>
         )}
@@ -98,6 +155,7 @@ function GlobalsPage() {
 
   const target: VariablesTableTarget = {
     label: 'Globals variables',
+    scopeLabel: 'Globals',
     properties,
     disabled,
     onSet: (name, value) => {
@@ -131,9 +189,13 @@ function WorkspacePage() {
   const disabled = useWorkspaceStore((state) => state.workspace?.disabled ?? []);
   const mutate = useWorkspaceStore((state) => state.mutate);
   const setWorkspacePropertyEnabled = useWorkspaceStore((state) => state.setWorkspacePropertyEnabled);
+  const globalsProperties = useGlobalsStore((state) => state.properties);
+  const globalsDisabled = useGlobalsStore((state) => state.disabled);
 
   const target: VariablesTableTarget = {
     label: 'Workspace variables',
+    scopeLabel: 'Workspace',
+    inherited: [{ label: 'Globals', properties: globalsProperties, disabled: globalsDisabled }],
     properties,
     disabled,
     onSet: (name, value) => {
@@ -171,8 +233,16 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   const projectActiveId = useProjectStore((state) =>
     projectId === undefined ? undefined : state.projects[projectId]?.activeEnvironmentId,
   );
+  const projectProperties = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.properties,
+  );
+  const projectDisabled = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.disabledProperties,
+  );
   const setWorkspaceActive = useWorkspaceStore((state) => state.setActiveEnvironment);
   const setProjectActive = useProjectStore((state) => state.setActiveEnvironment);
+  const globalsProperties = useGlobalsStore((state) => state.properties);
+  const globalsDisabled = useGlobalsStore((state) => state.disabled);
 
   const environment = workspaceEnvironment ?? projectEnvironment;
   if (environment === undefined) {
@@ -184,15 +254,48 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     ? workspace?.activeEnvironmentId === environmentId
     : projectActiveId === environmentId;
 
+  const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name;
+
+  // The engine resolves Env -> Project -> Workspace -> Global, so the chain below an environment
+  // starts at the project. A linked project's own environment has exactly one project below it —
+  // the project that owns it — so that scope goes in by name. A *workspace* environment is shared
+  // across every project in the workspace and sits above whichever one happens to be open: there
+  // is no single project scope to name, so the layer is left out rather than invented, and the
+  // chain drops straight to the workspace. (`ProjectTab` states the project layer for itself.)
+  const inherited: readonly InheritedScope[] = [
+    ...(isWorkspaceScoped
+      ? []
+      : [
+          {
+            label: owningProjectName ?? 'This project',
+            properties: projectProperties ?? {},
+            disabled: projectDisabled ?? [],
+          },
+        ]),
+    { label: 'Workspace', properties: workspace?.properties ?? {}, disabled: workspace?.disabled ?? [] },
+    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
+  ];
+
   const target: VariablesTableTarget = isWorkspaceScoped
     ? {
         label: `Variables of ${environment.name}`,
+        scopeLabel: 'This environment',
+        inherited,
         properties: environment.properties,
         disabled: environment.disabled,
         onSet: (name, value) => {
           void queueEnvironmentPatch(environmentId, (current) => ({
             properties: { ...current.properties, [name]: value },
           }));
+        },
+        onSetMany: (entries) => {
+          void queueEnvironmentPatch(environmentId, (current) => {
+            const next = { ...current.properties };
+            for (const entry of entries) {
+              next[entry.name] = entry.value;
+            }
+            return { properties: next };
+          });
         },
         onRemove: (name) => {
           void queueEnvironmentPatch(environmentId, (current) => {
@@ -228,11 +331,17 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
       }
     : {
         label: `Variables of ${environment.name}`,
+        scopeLabel: 'This environment',
+        inherited,
         properties: environment.properties,
         // A linked project's own environment publishes `disabled` read-only on the wire — there
         // is deliberately no mutation for it (see `update-environment`'s patch shape), so
         // `onSetEnabled` stays undefined and the table shows the state without letting it change.
         disabled: environment.disabled,
+        // For the same reason, a rename can't carry a disabled flag to the new name (nothing here
+        // can write `disabled` at all) — so the table refuses renaming a disabled variable rather
+        // than silently re-enabling it.
+        renameDisabledUnsupported: true,
         onSet: (name, value) => {
           if (projectId === undefined) {
             return;
@@ -240,6 +349,19 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
           void useProjectStore.getState().updateEnvironment(projectId, environmentId, {
             properties: { ...environment.properties, [name]: value },
           });
+        },
+        // `update-environment` replaces the whole properties map and these writes are not
+        // serialised, so a batch has to go out as one patch: N calls would each rebuild the map
+        // from the same render-time snapshot and only the last would survive.
+        onSetMany: (entries) => {
+          if (projectId === undefined) {
+            return;
+          }
+          const next = { ...environment.properties };
+          for (const entry of entries) {
+            next[entry.name] = entry.value;
+          }
+          void useProjectStore.getState().updateEnvironment(projectId, environmentId, { properties: next });
         },
         onRemove: (name) => {
           if (projectId === undefined) {
@@ -269,12 +391,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     >
       <PageHeader
         name={environment.name}
-        {...(isWorkspaceScoped
-          ? {}
-          : {
-              owningProjectName:
-                workspace?.projects.find((candidate) => candidate.id === projectId)?.name ?? 'this project',
-            })}
+        {...(isWorkspaceScoped ? {} : { owningProjectName: owningProjectName ?? 'this project' })}
         editableName={{
           onCommit: (name) => {
             if (isWorkspaceScoped) {
@@ -301,11 +418,11 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         }
       />
       {/* Spec §2.2's order: the variables table first, the endpoints group below it. */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Variables</h3>
         <VariablesTable target={target} />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Endpoints</h3>
         <EndpointsTable environmentId={environmentId} />
       </div>
