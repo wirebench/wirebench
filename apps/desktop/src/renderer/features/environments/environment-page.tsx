@@ -207,7 +207,11 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
             for (const [key, value] of Object.entries(current.properties)) {
               next[key === from ? to : key] = value;
             }
-            return { properties: next };
+            // `disabled` is keyed by name and pruned of names with no matching property on
+            // save, so the renamed entry has to move with it or the variable silently
+            // re-enables itself.
+            const renamedDisabled = current.disabled.map((name) => (name === from ? to : name));
+            return { properties: next, disabled: renamedDisabled };
           });
         },
         onSetEnabled: (name, enabled) => {

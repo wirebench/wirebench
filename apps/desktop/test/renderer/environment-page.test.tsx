@@ -150,6 +150,20 @@ describe('EnvironmentPage — a workspace environment', () => {
       });
     });
   });
+
+  it('carries the disabled flag across a rename, so a disabled variable does not re-enable itself', async () => {
+    const { mutate } = setUp({ ...environment, disabled: ['host'] });
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        kind: 'update-workspace-environment',
+        environmentId: 'e1',
+        patch: { properties: { hostname: 'one.test' }, disabled: ['hostname'] },
+      });
+    });
+  });
 });
 
 describe("EnvironmentPage — a linked project's own environment", () => {

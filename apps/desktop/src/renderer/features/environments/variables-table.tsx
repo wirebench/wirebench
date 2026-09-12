@@ -20,7 +20,9 @@ export interface VariablesTableTarget {
   readonly onRemove: (name: string) => void;
   /**
    * Renames one variable, keeping its value and its enabled state. Optional: without it a
-   * rename is done as a remove followed by a set, which is two round trips.
+   * rename is done as a remove followed by a set (and, for a disabled variable, a third call
+   * re-asserting the flag under the new name — every writer prunes a `disabled` entry with no
+   * matching property, so the remove drops it).
    */
   readonly onRename?: (from: string, to: string) => void;
   /**
@@ -181,6 +183,12 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     }
     onRemove(from);
     onSet(trimmed, properties[from] ?? '');
+    // The remove takes the `disabled` entry with it (every writer prunes names with no matching
+    // property), so a disabled variable would come back enabled — and start resolving again —
+    // unless the flag is re-asserted under the new name.
+    if (disabledSet.has(from)) {
+      onSetEnabled?.(trimmed, false);
+    }
   };
 
   const add = (): void => {

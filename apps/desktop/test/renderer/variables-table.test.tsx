@@ -141,4 +141,31 @@ describe('VariablesTable', () => {
     expect(onRemove).toHaveBeenCalledWith('host');
     expect(onSet).toHaveBeenCalledWith('hostname', 'one.test');
   });
+
+  it('keeps a disabled variable disabled when the remove-then-set fallback renames it', () => {
+    // The remove drops the `disabled` entry (every writer prunes names with no matching
+    // property), so without the third call the renamed variable comes back enabled and starts
+    // resolving again with nothing to show for it.
+    const onSet = vi.fn();
+    const onRemove = vi.fn();
+    const onSetEnabled = vi.fn();
+    renderTable(baseTarget({ disabled: ['host'], onSet, onRemove, onSetEnabled }));
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(onRemove).toHaveBeenCalledWith('host');
+    expect(onSet).toHaveBeenCalledWith('hostname', 'one.test');
+    expect(onSetEnabled).toHaveBeenCalledWith('hostname', false);
+  });
+
+  it('does not touch the enabled flag when the fallback renames an enabled variable', () => {
+    const onSetEnabled = vi.fn();
+    renderTable(baseTarget({ disabled: [], onSetEnabled }));
+    const name = screen.getByLabelText('Name of host');
+    fireEvent.change(name, { target: { value: 'hostname' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(onSetEnabled).not.toHaveBeenCalled();
+  });
 });
