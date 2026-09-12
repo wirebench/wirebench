@@ -233,6 +233,12 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   const projectActiveId = useProjectStore((state) =>
     projectId === undefined ? undefined : state.projects[projectId]?.activeEnvironmentId,
   );
+  const projectProperties = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.properties,
+  );
+  const projectDisabled = useProjectStore((state) =>
+    projectId === undefined ? undefined : state.projects[projectId]?.disabledProperties,
+  );
   const setWorkspaceActive = useWorkspaceStore((state) => state.setActiveEnvironment);
   const setProjectActive = useProjectStore((state) => state.setActiveEnvironment);
   const globalsProperties = useGlobalsStore((state) => state.properties);
@@ -248,9 +254,24 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     ? workspace?.activeEnvironmentId === environmentId
     : projectActiveId === environmentId;
 
-  // Both a workspace environment and a linked project's own fall back the same way: the
-  // workspace, then Globals.
+  const owningProjectName = workspace?.projects.find((candidate) => candidate.id === projectId)?.name;
+
+  // The engine resolves Env -> Project -> Workspace -> Global, so the chain below an environment
+  // starts at the project. A linked project's own environment has exactly one project below it —
+  // the project that owns it — so that scope goes in by name. A *workspace* environment is shared
+  // across every project in the workspace and sits above whichever one happens to be open: there
+  // is no single project scope to name, so the layer is left out rather than invented, and the
+  // chain drops straight to the workspace. (`ProjectTab` states the project layer for itself.)
   const inherited: readonly InheritedScope[] = [
+    ...(isWorkspaceScoped
+      ? []
+      : [
+          {
+            label: owningProjectName ?? 'This project',
+            properties: projectProperties ?? {},
+            disabled: projectDisabled ?? [],
+          },
+        ]),
     { label: 'Workspace', properties: workspace?.properties ?? {}, disabled: workspace?.disabled ?? [] },
     { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
   ];
@@ -346,10 +367,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         name={environment.name}
         {...(isWorkspaceScoped
           ? {}
-          : {
-              owningProjectName:
-                workspace?.projects.find((candidate) => candidate.id === projectId)?.name ?? 'this project',
-            })}
+          : { owningProjectName: owningProjectName ?? 'this project' })}
         editableName={{
           onCommit: (name) => {
             if (isWorkspaceScoped) {

@@ -297,15 +297,27 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     disabled: ['host'],
   };
 
-  function setUp() {
+  function setUp(project: Partial<ProjectWire> = {}) {
     const updateEnvironment = vi.fn().mockResolvedValue(undefined);
     useProjectStore.setState({
-      projects: { p1: { id: 'p1', name: 'Demo', environments: [environment] } as unknown as ProjectWire },
+      projects: {
+        p1: { id: 'p1', name: 'Demo', environments: [environment], ...project } as unknown as ProjectWire,
+      },
       projectOf: { e1: 'p1' },
       updateEnvironment,
     });
     renderPage({ kind: 'environment', id: 'e1' });
     return { updateEnvironment };
+  }
+
+  /** Puts the owning project in the workspace mirror, so the chain can label it by name. */
+  function withOwningProject(properties: Record<string, string> = {}): void {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'linked', dir: '/w/demo', status: 'ready' }],
+        properties,
+      }),
+    });
   }
 
   it('shows an editable name too', () => {
@@ -340,12 +352,32 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
   });
 
+  it("puts the owning project's own properties between this environment and the workspace", () => {
+    // The engine resolves Env -> Project -> Workspace -> Global, so a name the project defines
+    // beats the workspace's and has to show up as inherited from the project, not the workspace.
+    useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
+    withOwningProject({ shared: 'from-workspace' });
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: [] } as Partial<ProjectWire>);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-project');
+    expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Demo');
+  });
+
+  it("skips the owning project's properties when the project has the name switched off", () => {
+    withOwningProject({ shared: 'from-workspace' });
+    setUp({ properties: { shared: 'from-project' }, disabledProperties: ['shared'] } as Partial<ProjectWire>);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+    expect(screen.getAllByTestId('env-variable-origin')[1]?.textContent).toBe('Workspace · Demo has it off');
+  });
+
+  it("says an own value shadows the owning project's, not the workspace's", () => {
+    withOwningProject({ host: 'from-workspace' });
+    setUp({ properties: { host: 'from-project' }, disabledProperties: [] } as Partial<ProjectWire>);
+    // `host` is disabled in this environment, so it falls through — to the project, not past it.
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — falls through to Demo');
+  });
+
   it('names the owning project in the header, so two projects with a same-named environment stay distinguishable', () => {
-    useWorkspaceStore.setState({
-      workspace: workspaceWire({
-        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'linked', dir: '/w/demo', status: 'ready' }],
-      }),
-    });
+    withOwningProject();
     setUp();
     expect(screen.getByTestId('environment-owning-project').textContent).toBe('Demo — linked project');
   });
