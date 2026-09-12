@@ -13,6 +13,7 @@ const environment: Environment = {
   order: 0,
   endpoints: { Calculator: 'http://dev.test/soap' },
   properties: { who: 'ada' },
+  disabledProperties: [],
 };
 
 function build(): Project {
