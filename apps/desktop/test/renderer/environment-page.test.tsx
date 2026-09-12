@@ -138,6 +138,14 @@ describe('EnvironmentPage — a workspace environment', () => {
     return { mutate, setActiveEnvironment };
   }
 
+  it('says a project layer resolves before the scopes it can show', () => {
+    setUp();
+    // A workspace environment is shared across every project, so the project scope that resolves
+    // between it and Workspace cannot be named here. The page has to say so, or its fall-through
+    // captions read as the whole truth.
+    expect(screen.getByTestId('env-project-layer-note').textContent).toContain('project');
+  });
+
   it('shows a click-to-edit name and the Active toggle', () => {
     setUp();
     expect(screen.getByTestId('environment-active')).toBeTruthy();
