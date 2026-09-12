@@ -87,3 +87,108 @@ export async function monacoModelText(page: Page): Promise<string> {
           .join('\n');
   });
 }
+
+/** The go-to-definition modifier for this platform, matching the request editor's Mod+click. */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+/**
+ * The sliver of the DOM {@link tokenCentre} walks inside the browser. The e2e project compiles
+ * without the DOM lib (it is Node code that drives a browser), so the few members the measuring
+ * callback touches are described here rather than imported.
+ */
+interface MeasurableNode {
+  readonly nodeType: number;
+  readonly textContent: string | null;
+  readonly childNodes: ArrayLike<MeasurableNode>;
+  readonly ownerDocument: {
+    createRange(): {
+      setStart(node: MeasurableNode, offset: number): void;
+      setEnd(node: MeasurableNode, offset: number): void;
+      getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+    };
+  } | null;
+}
+
+/** A point in page coordinates. */
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * The centre of the first run of `token`'s characters inside one rendered line, in page
+ * coordinates, measured with a range over those very characters — `null` when the line no longer
+ * carries them, which a line Monaco has just re-rendered briefly does not.
+ */
+async function tokenCentre(line: Locator, token: string): Promise<Point | null> {
+  return await line
+    .evaluate((element: MeasurableNode, needle: string): Point | null => {
+      const TEXT_NODE = 3;
+      const find = (node: MeasurableNode): Point | null => {
+        if (node.nodeType === TEXT_NODE) {
+          const index = (node.textContent ?? '').indexOf(needle);
+          const range = node.ownerDocument?.createRange();
+          if (index === -1 || range === undefined || range === null) {
+            return null;
+          }
+          range.setStart(node, index);
+          range.setEnd(node, index + needle.length);
+          const rect = range.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        }
+        for (let index = 0; index < node.childNodes.length; index += 1) {
+          const child = node.childNodes[index];
+          const hit = child === undefined ? null : find(child);
+          if (hit !== null) {
+            return hit;
+          }
+        }
+        return null;
+      };
+      return find(element);
+    }, token)
+    .catch(() => null);
+}
+
+/**
+ * Mod+clicks the characters `token` inside the Monaco editor labelled `label` — the second half
+ * of go-to-definition.
+ *
+ * Clicking the `.view-line` locator itself is not the same gesture. Monaco lays every line out at
+ * the width of the document's longest line and clips it to the editor's viewport, so Playwright
+ * aims at the centre of the *visible* slice: the horizontal middle of the editor, a column that
+ * has nothing to do with where `token` sits and that moves with the editor's width and with the
+ * platform's character width. This measures the token's own characters instead and clicks their
+ * centre, so the same characters are hit whatever the layout.
+ */
+export async function modClickToken(page: Page, label: string, token: string): Promise<void> {
+  const editor = monacoEditor(page, label);
+  const line = editor.locator('.view-line').filter({ hasText: token }).first();
+  await expect(line).toBeVisible({ timeout: 20_000 });
+
+  let target: Point | null = null;
+  await expect
+    .poll(
+      async () => {
+        target = await tokenCentre(line, token);
+        return target;
+      },
+      { timeout: 20_000 },
+    )
+    .not.toBeNull();
+  const point = target as Point | null;
+  if (point === null) {
+    throw new Error(`No "${token}" characters are rendered in the "${label}" editor`);
+  }
+
+  // A token scrolled out of the editor's own viewport would be clicked through whatever covers
+  // it, which is exactly the silent mis-aim this helper exists to rule out.
+  const box = await editor.boundingBox();
+  if (box === null || point.x < box.x || point.x > box.x + box.width) {
+    throw new Error(`"${token}" is outside the visible area of the "${label}" editor`);
+  }
+
+  await page.keyboard.down(MOD);
+  await page.mouse.click(point.x, point.y);
+  await page.keyboard.up(MOD);
+}
