@@ -28,6 +28,15 @@ import {
 } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
+/** Runs a command by name from the command palette — the only route some commands have. */
+async function runCommand(page: Page, name: string): Promise<void> {
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+P`);
+  await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.type(name);
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('command-palette-input')).toBeHidden({ timeout: 20_000 });
+}
+
 /** The editor tabs, Start included — the shell's own tablist, not a response-view one. */
 function editorTabs(page: Page) {
   return page.getByRole('tablist', { name: 'Open editors' }).getByRole('tab');
@@ -252,12 +261,3 @@ test.describe('workspaces', () => {
     expect(readdirSync(exportDir)).toContain('wirebench.yaml');
   });
 });
-
-/** Runs a command by name from the command palette — the only route some commands have. */
-async function runCommand(page: Page, name: string): Promise<void> {
-  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+P`);
-  await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
-  await page.keyboard.type(name);
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('command-palette-input')).toBeHidden({ timeout: 20_000 });
-}

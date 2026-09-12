@@ -44,12 +44,21 @@ interface PlatformBudgets {
   readonly problemsMs: number;
   /**
    * Opening a large workspace (10 projects x 3 interfaces) from the picker, until the explorer
-   * lists every project — the point at which the user can act on it. Interface hydration runs
-   * on behind that, deliberately: nothing about it blocks the explorer.
+   * *paints* every project row — the point at which the user can see and click into the
+   * workspace. This is not "interactive" in the sense of every interface being usable offline;
+   * see {@link workspaceHydrateMs} for that.
    */
-  readonly workspaceOpenMs: number;
+  readonly workspacePaintMs: number;
   /** Switching from another workspace back into that same large one. */
   readonly workspaceSwitchMs: number;
+  /**
+   * From the same start as {@link workspacePaintMs}, until all 30 seeded interfaces have
+   * finished background hydration (`project.hydration` reaching `ready` or `failed` for each).
+   * This is the metric the milestone's "explorer interactive" success criterion actually means:
+   * a user can click a request before this fires, but it is not until hydration completes that
+   * every interface's operations, generated requests and offline validation are all in place.
+   */
+  readonly workspaceHydrateMs: number;
 }
 
 /**
@@ -58,8 +67,24 @@ interface PlatformBudgets {
  */
 const BUDGETS: PlatformBudgets =
   process.platform === 'linux'
-    ? { startupMs: 4000, frameMs: 40, viewMs: 2000, problemsMs: 2000, workspaceOpenMs: 3000, workspaceSwitchMs: 2000 }
-    : { startupMs: 2000, frameMs: 20, viewMs: 1000, problemsMs: 1000, workspaceOpenMs: 1500, workspaceSwitchMs: 1000 };
+    ? {
+        startupMs: 4000,
+        frameMs: 40,
+        viewMs: 2000,
+        problemsMs: 2000,
+        workspacePaintMs: 3000,
+        workspaceSwitchMs: 2000,
+        workspaceHydrateMs: 6000,
+      }
+    : {
+        startupMs: 2000,
+        frameMs: 20,
+        viewMs: 1000,
+        problemsMs: 1000,
+        workspacePaintMs: 1500,
+        workspaceSwitchMs: 1000,
+        workspaceHydrateMs: 3000,
+      };
 
 /** Skipped only by `WIREBENCH_SKIP_PERF=1`, the documented escape hatch for slow machines. */
 const SKIP_PERF = process.env['WIREBENCH_SKIP_PERF'] === '1';
@@ -91,8 +116,18 @@ async function projectRowIds(page: Page): Promise<readonly string[]> {
       break;
     }
     previousTop = top;
-    // react-window mounts the newly revealed rows on the render that follows the scroll event.
-    await page.waitForTimeout(100);
+    // react-window mounts the newly revealed rows on the render that follows the scroll event;
+    // poll the mounted row count until it stops changing rather than guessing a fixed delay,
+    // so this holds up on a CI runner slower than whatever machine picked the sleep.
+    let previousCount = -1;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const count = await rows.count();
+      if (count === previousCount) {
+        break;
+      }
+      previousCount = count;
+      await page.waitForTimeout(20);
+    }
   }
   await collect();
   await list.evaluate((element: { scrollTop: number }) => {
@@ -257,7 +292,7 @@ test.describe('performance budgets', () => {
     expect(problemsMs).toBeLessThan(BUDGETS.problemsMs);
   });
 
-  test(`a 10-project workspace opens within ${BUDGETS.workspaceOpenMs} ms and switches within ${BUDGETS.workspaceSwitchMs} ms`, async () => {
+  test(`a 10-project workspace paints within ${BUDGETS.workspacePaintMs} ms, hydrates within ${BUDGETS.workspaceHydrateMs} ms, and switches within ${BUDGETS.workspaceSwitchMs} ms`, async () => {
     // One fixture server serves every seeded interface's definition, so the hydration the app
     // kicks off on open is real HTTP work rather than a file read.
     server = await startTestSoapServer({ fixture: 'calculator' });
@@ -266,11 +301,12 @@ test.describe('performance budgets', () => {
 
     // 10 projects x 3 interfaces is the shape the milestone budgets, written straight to disk
     // through the engine's own API; `Side` is the workspace the switch measurement comes from.
+    const interfacesPerProject = 3;
     const big = await seedWorkspace({
       userDataDir,
       name: 'Bench',
       projects: 10,
-      interfacesPerProject: 3,
+      interfacesPerProject,
       definitionUrl: server.wsdlUrl,
       endpointUrl: `${server.url}/soap`,
     });
@@ -298,18 +334,64 @@ test.describe('performance budgets', () => {
     const benchRow = page.locator(`[data-testid="workspace-picker-row"][data-workspace-id="${big.id}"]`);
     await expect(benchRow).toBeVisible({ timeout: 20_000 });
 
+    // Installed before the click: `project.hydration` fires per interface as its definition
+    // finishes loading (main/index.ts broadcasts it off `ProjectHost.openProject`'s background
+    // hydration), and it is the one signal the app raises today for "this interface is ready
+    // offline" — everything the explorer itself renders (the project row, its `loading` badge)
+    // is about the *project* opening, not each interface's definition. A listener attached here
+    // cannot miss an event fired between the click and some later `page.evaluate` call.
+    const totalInterfaces = 10 * interfacesPerProject;
+    await page.evaluate(
+      ({ projectIds, total }) => {
+        type HydrationEvent = {
+          readonly projectId: string;
+          readonly interfaceId: string;
+          readonly status: 'pending' | 'ready' | 'failed';
+        };
+        const api = (
+          globalThis as unknown as {
+            wirebench: { on(name: 'project.hydration', listener: (payload: HydrationEvent) => void): () => void };
+          }
+        ).wirebench;
+        const seen = new Set<string>();
+        (globalThis as unknown as { __hydrationDone: Promise<void> }).__hydrationDone = new Promise((resolve) => {
+          const off = api.on('project.hydration', (payload) => {
+            if (payload.status === 'pending' || !projectIds.includes(payload.projectId)) {
+              return;
+            }
+            seen.add(payload.interfaceId);
+            if (seen.size >= total) {
+              off();
+              resolve();
+            }
+          });
+        });
+      },
+      { projectIds: big.projectIds, total: totalInterfaces },
+    );
+
     const openStarted = Date.now();
     await benchRow.click();
     await expect(firstProjectRow(big)).toBeVisible({ timeout: 30_000 });
-    const openMs = Date.now() - openStarted;
+    const paintMs = Date.now() - openStarted;
     console.info(
-      `[perf] picker to explorer, 10 projects x 3 interfaces: ${openMs} ms (budget ${BUDGETS.workspaceOpenMs} ms)`,
+      `[perf] picker to explorer painted, 10 projects x 3 interfaces: ${paintMs} ms (budget ${BUDGETS.workspacePaintMs} ms)`,
     );
-    expect(openMs).toBeLessThan(BUDGETS.workspaceOpenMs);
+    expect(paintMs).toBeLessThan(BUDGETS.workspacePaintMs);
 
     // Outside the timer: every one of the ten really is in the tree, paged a viewport at a
     // time, so the measurement above cannot be passing on a half-built explorer.
     expect(await projectRowIds(page)).toHaveLength(10);
+
+    // From the same start as the paint measurement, until every one of the 30 seeded interfaces
+    // has finished background hydration — the milestone's "explorer interactive" criterion,
+    // which the paint measurement above deliberately does not cover.
+    await page.evaluate(() => (globalThis as unknown as { __hydrationDone: Promise<void> }).__hydrationDone);
+    const hydrateMs = Date.now() - openStarted;
+    console.info(
+      `[perf] workspace hydrate, 10 projects x 3 interfaces: ${hydrateMs} ms (budget ${BUDGETS.workspaceHydrateMs} ms)`,
+    );
+    expect(hydrateMs).toBeLessThan(BUDGETS.workspaceHydrateMs);
 
     // Three switches out to `Side` and back, median taken: the first one back also pays for
     // whatever the OS still had to fault in, which is not what this budget is about.
