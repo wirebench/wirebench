@@ -1,9 +1,54 @@
 # Releasing Wirebench
 
-Wirebench ships as an Electron app packaged by [electron-builder]: a macOS `.dmg` and `.zip`
-(universal), a Windows NSIS installer, and Linux `AppImage`, `.deb` and `.rpm` packages. The
+Wirebench ships as an Electron app packaged by [electron-builder]: macOS `.dmg` and `.zip`
+(universal, Intel and Apple silicon), a Windows NSIS installer, and Linux `AppImage`, `.deb`,
+`.rpm` and `.snap` packages. The
 configuration lives in `apps/desktop/electron-builder.yml`; the release pipeline is
 `.github/workflows/release.yml`.
+
+## Artifact names
+
+Every artifact carries the product, the version, the operating system and the architecture, so
+a file keeps its meaning once it is out of the release page and sitting in a downloads folder:
+
+| OS | File (at version 1.0.0) |
+| --- | --- |
+| macOS | `Wirebench-1.0.0-mac-universal.dmg`, `Wirebench-1.0.0-mac-x64.dmg`, `Wirebench-1.0.0-mac-arm64.dmg` |
+| macOS | the same three as `.zip`, which is what the updater downloads |
+| Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
+| Windows | `Wirebench-1.0.0-windows-setup.exe` — both architectures in one installer |
+| Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
+| Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
+| Linux | `wirebench-1.0.0.x86_64.rpm` |
+| Linux | `wirebench_1.0.0_amd64.snap` |
+
+`${arch}` is not one vocabulary: electron-builder renders x64 as `x86_64` for the AppImage and
+the rpm, and as `amd64` for the deb, because that is what each format calls it. Only the arm64
+spelling is shared. The `.deb` and `.rpm` names are a further exception: `dpkg` and `rpm` both parse the file name, so
+those two keep their own conventions (lowercase package name, `amd64`/`x86_64`, no `linux`
+segment) rather than the shape above. A GitHub release asset name is also its download URL —
+`https://github.com/wirebench/wirebench/releases/download/v1.0.0/<name>` — so renaming an
+artifact after a release breaks any link to it. Auto-update is unaffected: `electron-updater`
+reads the names out of `latest*.yml`.
+
+`universal` is the download to point people at: it runs on both Macs. The `x64` (Intel) and
+`arm64` (Apple silicon) builds are there for anyone who knows which Mac they have and would
+rather not carry both architectures — roughly half the size.
+
+### Installing the snap
+
+The `.snap` is a file, not a Snap Store listing, so it is installed unasserted:
+
+```bash
+sudo snap install --dangerous wirebench_1.0.0_amd64.snap
+```
+
+`--dangerous` is required for any snap that did not come from the store, and is what the flag
+means here — the snap is unsigned, not unsafe. Publishing to the Snap Store instead would drop
+the flag and bring automatic updates, at the cost of a `snapcraft` account and review; nothing
+in the repository does that today. Confinement is `strict`, so the app can reach the network
+and `$HOME` and nothing else: **a WSDL stored outside the home directory is not readable from a
+snap install**. The AppImage and `.deb` have no such restriction.
 
 ## Building locally
 

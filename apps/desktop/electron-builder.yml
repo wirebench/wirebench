@@ -58,11 +58,16 @@ publish:
 
 mac:
   category: public.app-category.developer-tools
+  # Covers the zip; the dmg overrides it below with the same shape.
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  # Universal covers both Macs in one ~230 MB download; the per-arch builds are roughly half
+  # that for users who know which Mac they have. The universal build has to produce the x64 and
+  # arm64 apps anyway in order to merge them, so shipping all three costs little extra time.
   target:
     - target: dmg
-      arch: [universal]
+      arch: [universal, x64, arm64]
     - target: zip
-      arch: [universal]
+      arch: [universal, x64, arm64]
   icon: resources/icon.png
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -74,7 +79,7 @@ mac:
     NSHumanReadableCopyright: Copyright © 2026 Wirebench contributors
 
 dmg:
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
 
 win:
   target:
@@ -83,12 +88,16 @@ win:
   icon: resources/icon.png
 
 nsis:
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
   # Per-user by default: no elevation prompt, and an installer that cannot touch the machine.
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+appImage:
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
 
 linux:
   # Without this the executable is named after the package (`@wirebench/desktop` minus the
@@ -100,6 +109,10 @@ linux:
     - target: deb
       arch: [x64, arm64]
     - target: rpm
+      arch: [x64]
+    # x64 only: a snap is built by unpacking a base snap and repacking it, which does not
+    # cross-build the way the AppImage and .deb targets do.
+    - target: snap
       arch: [x64]
   icon: resources/icon.png
   category: Development
@@ -120,3 +133,14 @@ deb:
 rpm:
   packageName: wirebench
   artifactName: wirebench-${version}.${arch}.${ext}
+
+# Confinement is `strict`: the app can reach the network and the user's home directory, and
+# nothing else. A WSDL kept outside `$HOME` is not readable from a snap install — that is the
+# format's trade-off, not a packaging mistake.
+snap:
+  artifactName: wirebench_${version}_${arch}.${ext}
+  confinement: strict
+  plugs:
+    - default
+    - network
+    - home
