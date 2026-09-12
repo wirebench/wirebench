@@ -204,6 +204,67 @@ describe('workspace properties', () => {
   }, 60_000);
 });
 
+describe('workspace environment disabled properties', () => {
+  it('a disabled workspace-env property falls through to the workspace value on the next send', async () => {
+    const { service, projectId, requestId, interfaceSlug } = await workspaceWithCalculator();
+    await service.mutate({ kind: 'set-workspace-property', name: 'region', value: 'emea' });
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    const environmentId = createdEnvironmentId as string;
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      patch: { properties: { region: 'us' }, endpoints: { [`Calc/${interfaceSlug}`]: `${secondary.url}/soap` } },
+    });
+    await service.setActiveEnvironment(environmentId);
+
+    const host = service.hostFor(projectId);
+    await host.mutate({
+      kind: 'update-request',
+      requestId,
+      patch: { headers: [{ name: 'X-Region', value: '${region}' }] },
+    });
+
+    expect(host.scopesFor().env).toEqual({ region: 'us' });
+    await sendThroughHost(service, projectId, requestId);
+    expect(secondary.requests.at(-1)?.headers['x-region']).toBe('us');
+
+    // Disabling the env-level property (whole-list replace, like `properties`/`endpoints`)
+    // removes it from `env`, so the shorthand falls through to the workspace's own value.
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      patch: { disabled: ['region'] },
+    });
+
+    expect(host.scopesFor().env).toEqual({});
+    await sendThroughHost(service, projectId, requestId);
+    expect(secondary.requests.at(-1)?.headers['x-region']).toBe('emea');
+
+    // Re-enabling (sending the empty list back) restores the env-level value.
+    await service.mutate({
+      kind: 'update-workspace-environment',
+      environmentId,
+      patch: { disabled: [] },
+    });
+    expect(host.scopesFor().env).toEqual({ region: 'us' });
+
+    await service.close();
+  }, 60_000);
+
+  it('a disabled workspace property is excluded from the workspace scope', async () => {
+    const { service, requestId } = await workspaceWithCalculator();
+    await service.mutate({ kind: 'set-workspace-property', name: 'region', value: 'emea' });
+    await service.mutate({ kind: 'set-workspace-property-enabled', name: 'region', enabled: false });
+
+    expect(service.scopesFor(requestId).workspace).toEqual({});
+
+    await service.mutate({ kind: 'set-workspace-property-enabled', name: 'region', enabled: true });
+    expect(service.scopesFor(requestId).workspace).toEqual({ region: 'emea' });
+
+    await service.close();
+  }, 60_000);
+});
+
 describe('WorkspaceService.mutate and setActiveEnvironment', () => {
   it('round-trips every change through disk', async () => {
     const { service } = await workspaceWithCalculator();
@@ -217,7 +278,12 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
     await service.mutate({
       kind: 'update-workspace-environment',
       environmentId: dev as string,
-      patch: { name: 'Development', properties: { region: 'us' }, endpoints: { 'Calc/calculator': 'http://x.test' } },
+      patch: {
+        name: 'Development',
+        properties: { region: 'us' },
+        endpoints: { 'Calc/calculator': 'http://x.test' },
+        disabled: [],
+      },
     });
     await service.setActiveEnvironment(dev as string);
 

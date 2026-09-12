@@ -19,7 +19,7 @@ import type { WsaConfig } from '../wsa/model.js';
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
 /** The on-disk format version written to (and required by) `wirebench.yaml`. */
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
@@ -221,6 +221,13 @@ export interface Environment {
   /** Interface slug to endpoint URL. */
   readonly endpoints: Readonly<Record<string, string>>;
   readonly properties: PropertyMap;
+  /**
+   * Names of {@link properties} entries that are switched off: resolution treats a disabled
+   * property exactly as if it were absent from the map (see `project/properties.ts`), while its
+   * value stays on disk. Written sorted and deduplicated, and only for names still present in
+   * `properties` — see `serialize.ts`.
+   */
+  readonly disabledProperties: readonly string[];
 }
 
 /** A pointer to a WS-Security or keystore configuration file (contents land in later tasks). */
@@ -265,6 +272,8 @@ export interface Project {
   readonly description?: string;
   readonly settings: ProjectSettings;
   readonly properties: PropertyMap;
+  /** Names of {@link properties} entries switched off; see {@link Environment.disabledProperties}. */
+  readonly disabledProperties: readonly string[];
   readonly interfaces: readonly Interface[];
   readonly environments: readonly Environment[];
   /** Id of the environment currently active for this project, if any. */
@@ -301,6 +310,7 @@ export function createProject(name: string, options?: CreateOptions): Project {
     name,
     settings: DEFAULT_PROJECT_SETTINGS,
     properties: {},
+    disabledProperties: [],
     interfaces: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },

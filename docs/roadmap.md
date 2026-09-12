@@ -81,6 +81,18 @@ that need no server. Parked for after it ships:
   gap in what shipped (`docs/adr/0006-workspaces-in-app-data.md`, Consequences); see
   [Teams and sign-in](#teams-and-sign-in) for the networked version of this.
 
+### Environments
+
+Shipped: the Environments view (activity bar → left menu, its own editor page), a per-variable
+enabled checkbox, and the `disabled` list format bump
+(`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`). Parked:
+
+- **Initial value / Current value split.** Postman-style: a variable's committed value versus a
+  session-only override that never touches disk. Deliberately deferred at spec time (`docs/specs/
+  2026-09-12-wirebench-layout-and-environments-design.md` §12, question 1) — it needs a
+  session-only value store in main and a further format decision, and is a candidate for a later
+  spec rather than something this pass should fold in.
+
 ### Compatibility and adoption
 
 - **Legacy project import.** The one-file XML format older SOAP workbenches use: interfaces, requests,
@@ -158,6 +170,22 @@ wizard; code generation; a TCP monitor proxy.
 - The `xmlsec1` cross-check is skipped locally unless `WIREBENCH_REQUIRE_XMLSEC=1`; CI always runs it.
 - The interop suite covers four public services, not five: one was unreachable when fixtures were captured.
 - English only.
+
+### Known limitations carried from the layout and environments work
+
+- The global properties file's loader (`apps/desktop/src/main/global-properties.ts`) does not
+  validate its `version` field, so a future version-3 globals file would be silently misread
+  rather than refused — unlike the project and workspace loaders, which do refuse a too-new file.
+- The Environments view's rows (`apps/desktop/src/renderer/features/environments/
+  environments-view.tsx`) use `role="row"` without `gridcell` children or `aria-rowindex`, and the
+  environment page's variables and endpoint-overrides tables
+  (`apps/desktop/src/renderer/features/environments/{variables-table,endpoints-table}.tsx`) use
+  native `<table>` markup instead of the `role="grid"` convention `history-view.tsx` and
+  `keystores-view.tsx` use. Three views, two conventions; worth reconciling before another grid
+  is added.
+- The panel handle's hover tint (the `group-hover:bg-handle-hover` class in
+  `apps/desktop/src/renderer/shell/panel-handle.tsx`) has no end-to-end coverage; it exists only
+  as a CSS pseudo-class, unasserted by any unit or e2e test.
 
 ## Audience fit
 

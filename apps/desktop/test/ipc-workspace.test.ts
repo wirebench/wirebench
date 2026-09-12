@@ -44,6 +44,7 @@ const WORKSPACE: WorkspaceWire = {
   name: 'Workspace 1',
   dir: '/user-data/workspaces/w1',
   properties: {},
+  disabled: [],
   environments: [],
   projects: [
     {
@@ -75,6 +76,7 @@ const PROJECT: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],

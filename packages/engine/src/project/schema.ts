@@ -98,6 +98,8 @@ export const manifestSchema = z.looseObject({
     prettyPrintResponses: z.boolean(),
   }),
   properties: propertyMapSchema,
+  /** Names of `properties` entries switched off; absent means none. See `model.ts`'s `Project.disabledProperties`. */
+  disabled: z.array(z.string()).optional(),
   activeEnvironmentId: z.string().optional(),
   /** Name of the Wirebench build that last wrote this manifest; informational only. */
   writtenBy: z.string().optional(),
@@ -186,6 +188,8 @@ export const environmentFileSchema = z.looseObject({
   order: z.number().int(),
   endpoints: z.record(z.string(), z.string()),
   properties: propertyMapSchema,
+  /** Names of `properties` entries switched off; absent means none. */
+  disabled: z.array(z.string()).optional(),
 });
 
 /** A `wsu:Timestamp` entry inside an outgoing configuration. */

@@ -2,14 +2,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { monacoEditor } from '../helpers/editor.js';
+import { modClickToken, monacoEditor } from '../helpers/editor.js';
 import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-
-/** The platform's go-to-definition modifier, matching the Monaco Mod+click binding. */
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 /**
  * How many operation rows the explorer shows for the imported interfaces — the same operations
@@ -114,15 +111,12 @@ test.describe('Interface editor', () => {
       .click();
     await expect(page.getByTestId('schema-detail-name')).toHaveText('Add');
 
-    // Go to definition: Mod+click on the intA line of the request envelope selects its
-    // declaration in this very viewer.
+    // Go to definition: Mod+click on the `intA` element of the request envelope selects its
+    // declaration in this very viewer. The click has to land on those four characters, not
+    // merely somewhere on their line — one column further right is the enclosing `Add`.
     await openFirstRequest(page);
-    const intALine = monacoEditor(page, 'Request envelope XML')
-      .locator('.view-line')
-      .filter({ hasText: 'intA' })
-      .first();
-    await expect(intALine).toBeVisible({ timeout: 20_000 });
-    await intALine.click({ modifiers: [MOD] });
+    await expect(monacoEditor(page, 'Request envelope XML')).toBeVisible({ timeout: 20_000 });
+    await modClickToken(page, 'Request envelope XML', 'intA');
 
     await expect(page.getByTestId('interface-editor')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('schema-detail-name')).toHaveText('intA');

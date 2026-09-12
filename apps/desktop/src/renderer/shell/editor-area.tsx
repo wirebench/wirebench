@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
-import { EnvironmentEditor } from '../features/environments/environment-editor.js';
-import { EnvironmentGrid } from '../features/environments/environment-grid.js';
+import { EnvironmentPage } from '../features/environments/environment-page.js';
+import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
+import { ProjectTab } from '../features/project/project-tab.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -43,6 +44,12 @@ function environmentName(
   workspaceEnvironments: readonly WorkspaceEnvironmentWire[],
   environmentId: string,
 ): string | undefined {
+  if (environmentId === 'globals') {
+    return 'Globals';
+  }
+  if (environmentId === 'workspace') {
+    return 'Workspace';
+  }
   const workspaceEnvironment = workspaceEnvironments.find((candidate) => candidate.id === environmentId);
   if (workspaceEnvironment !== undefined) {
     return workspaceEnvironment.name;
@@ -160,6 +167,7 @@ export function EditorArea() {
             (tab.kind === 'interface' && tab.interfaceId !== undefined
               ? interfaces[tab.interfaceId]?.name
               : undefined) ??
+            (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
             (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
             (tab.environmentId !== undefined
               ? environmentName(projects, workspaceEnvironments, tab.environmentId)
@@ -226,13 +234,9 @@ export function EditorArea() {
             <InterfaceEditor interfaceId={activeTab.interfaceId} />
           </Suspense>
         ) : activeTab.environmentId !== undefined ? (
-          // A workspace environment opens the grid (every environment at once); a linked
-          // project's own environment keeps its single-environment editor.
-          workspaceEnvironments.some((candidate) => candidate.id === activeTab.environmentId) ? (
-            <EnvironmentGrid environmentId={activeTab.environmentId} />
-          ) : (
-            <EnvironmentEditor environmentId={activeTab.environmentId} />
-          )
+          <EnvironmentPage target={targetFromId(activeTab.environmentId)} />
+        ) : activeTab.kind === 'project' && activeTab.projectId !== undefined ? (
+          <ProjectTab projectId={activeTab.projectId} />
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <HistoryEntryView historyId={activeTab.historyId} />

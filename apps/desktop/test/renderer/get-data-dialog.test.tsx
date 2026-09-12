@@ -18,6 +18,7 @@ const PROJECT: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: { host: 'example.test' },
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],
@@ -34,7 +35,9 @@ describe('GetDataDialog', () => {
     // The Env scope is the *workspace's* active environment now.
     useWorkspaceStore.setState({
       workspace: workspaceWire({
-        environments: [{ id: 'e1', name: 'QA', slug: 'qa', order: 0, endpoints: {}, properties: { user: 'qa-bot' } }],
+        environments: [
+          { id: 'e1', name: 'QA', slug: 'qa', order: 0, endpoints: {}, properties: { user: 'qa-bot' }, disabled: [] },
+        ],
         activeEnvironmentId: 'e1',
         properties: { region: 'emea' },
       }),

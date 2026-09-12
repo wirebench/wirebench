@@ -8,6 +8,7 @@ import {
   upsertEnvironment,
 } from '../../../src/project/environments.js';
 import { createInterface, createProject, type Environment, type Project } from '../../../src/project/model.js';
+import { expand } from '../../../src/project/properties.js';
 
 function fixtureProject(): { project: Project; iface: ReturnType<typeof createInterface> } {
   let project = createProject('Demo', { id: 'proj-1' });
@@ -32,6 +33,7 @@ const env: Environment = {
   order: 0,
   endpoints: { calculator: 'https://qa.test/soap' },
   properties: { name: 'env-name' },
+  disabledProperties: [],
 };
 
 describe('findEnvironment', () => {
@@ -155,6 +157,21 @@ describe('resolveScopes', () => {
     const scopes = resolveScopes(project, undefined, {}, { FOO: 'bar' });
     expect(scopes.system).toEqual({ FOO: 'bar' });
   });
+
+  it('excludes a property disabled on the project from the project scope', () => {
+    const { project } = fixtureProject();
+    const disabled = { ...project, disabledProperties: ['name'] };
+    const scopes = resolveScopes(disabled, undefined, { g: 'gv' });
+    expect(scopes.project).toEqual({});
+  });
+
+  it('excludes a property disabled on the active environment from the env scope', () => {
+    const { project } = fixtureProject();
+    const disabledEnv: Environment = { ...env, disabledProperties: ['name'] };
+    const withEnv = { ...project, environments: [disabledEnv] };
+    const scopes = resolveScopes(withEnv, 'env-1', { g: 'gv' });
+    expect(scopes.env).toEqual({});
+  });
 });
 
 describe('upsertEnvironment / removeEnvironment', () => {
@@ -178,5 +195,36 @@ describe('upsertEnvironment / removeEnvironment', () => {
     const withEnvs = { ...project, environments: [env, envB] };
     const updated = removeEnvironment(withEnvs, 'env-1');
     expect(updated.environments).toEqual([envB]);
+  });
+});
+
+describe('resolveScopes + expand: disabled properties are treated as absent', () => {
+  it('shorthand falls through to project when the env value is disabled', () => {
+    const { project } = fixtureProject();
+    const disabledEnv: Environment = { ...env, disabledProperties: ['name'] };
+    const withEnv = { ...project, environments: [disabledEnv] };
+    const scopes = resolveScopes(withEnv, 'env-1', {});
+    expect(expand('${name}', scopes).text).toBe('proj-name');
+  });
+
+  it('${#Env#x} is unresolved with code missing when the env value is disabled', () => {
+    const { project } = fixtureProject();
+    const disabledEnv: Environment = { ...env, disabledProperties: ['name'] };
+    const withEnv = { ...project, environments: [disabledEnv] };
+    const scopes = resolveScopes(withEnv, 'env-1', {});
+    const result = expand('${#Env#name}', scopes);
+    expect(result.text).toBe('${#Env#name}');
+    expect(result.unresolved).toEqual([expect.objectContaining({ scope: 'Env', name: 'name', code: 'missing' })]);
+  });
+
+  it('a property disabled everywhere is unresolved', () => {
+    const { project } = fixtureProject();
+    const disabledProject = { ...project, disabledProperties: ['name'] };
+    const disabledEnv: Environment = { ...env, disabledProperties: ['name'] };
+    const withEnv = { ...disabledProject, environments: [disabledEnv] };
+    const scopes = resolveScopes(withEnv, 'env-1', {});
+    const result = expand('${name}', scopes);
+    expect(result.text).toBe('${name}');
+    expect(result.unresolved).toEqual([expect.objectContaining({ name: 'name', code: 'missing' })]);
   });
 });

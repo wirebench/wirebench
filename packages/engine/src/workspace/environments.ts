@@ -19,6 +19,7 @@ import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef
 import type { EndpointSource } from '../project/environments.js';
 import { resolveEndpoint } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
+import { enabledProperties } from '../project/properties.js';
 import type { Workspace, WorkspaceEnvironment } from './model.js';
 
 /**
@@ -49,7 +50,11 @@ function activeWorkspaceEnvironment(workspace: Workspace): WorkspaceEnvironment 
  * `workspace`. `env` merges the active workspace environment's properties with the linked
  * project environment's (project wins on a shared key), and is omitted entirely when neither
  * exists, so shorthand lookups correctly skip it — matching `resolveScopes`'s behaviour for a
- * project with no active environment.
+ * project with no active environment. A property switched off via `disabledProperties` (on the
+ * workspace, the project, the active workspace environment, or the linked project environment)
+ * is excluded from its own scope before the merge, so e.g. a value disabled only in the
+ * workspace environment still falls through to an enabled value in the linked project
+ * environment — see {@link enabledProperties}.
  */
 export function resolveWorkspaceScopes(input: {
   readonly workspace: Workspace;
@@ -61,14 +66,23 @@ export function resolveWorkspaceScopes(input: {
   const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);
   const linkedProjectEnv = linkedEnvironment(project, activeWorkspaceEnv);
 
+  const enabledWorkspaceEnvProperties =
+    activeWorkspaceEnv !== undefined
+      ? enabledProperties(activeWorkspaceEnv.properties, activeWorkspaceEnv.disabledProperties)
+      : undefined;
+  const enabledLinkedProjectEnvProperties =
+    linkedProjectEnv !== undefined
+      ? enabledProperties(linkedProjectEnv.properties, linkedProjectEnv.disabledProperties)
+      : undefined;
+
   const env: PropertyMap | undefined =
     activeWorkspaceEnv !== undefined || linkedProjectEnv !== undefined
-      ? { ...activeWorkspaceEnv?.properties, ...linkedProjectEnv?.properties }
+      ? { ...enabledWorkspaceEnvProperties, ...enabledLinkedProjectEnvProperties }
       : undefined;
 
   return {
-    project: project.properties,
-    workspace: workspace.properties,
+    project: enabledProperties(project.properties, project.disabledProperties),
+    workspace: enabledProperties(workspace.properties, workspace.disabledProperties),
     global: globals,
     ...(env !== undefined ? { env } : {}),
     ...(system !== undefined ? { system } : {}),

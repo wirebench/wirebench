@@ -1,0 +1,25 @@
+cacheDefinition: true
+defaultEndpointId: EP-country
+definitionUrl: http://example.test/CountryInfo.wsdl
+endpoints:
+  - authMode: complement
+    id: EP-country
+    name: prod
+    url: https://prod.example.test/country
+id: ID0002
+kind: soap
+name: CountryInfo
+operations:
+  - bindingName: "{urn:country}CountryInfoSoap"
+    name: ListOfCountryNamesByCode
+    order: 0
+    slug: ListOfCountryNamesByCode
+order: 0
+targetNamespace: urn:country
+wsa:
+  addDefaultAction: true
+  addDefaultTo: true
+  enabled: false
+  generateMessageId: true
+  mustUnderstand: none
+  version: 2005/08

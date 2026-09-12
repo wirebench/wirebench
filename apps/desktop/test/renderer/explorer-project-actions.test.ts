@@ -18,6 +18,7 @@ const project: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],
@@ -40,13 +41,15 @@ describe('projectRowActions', () => {
     useProjectStore.getState().applySnapshot('p1', {
       ...project,
       environments: [
-        { id: 'pe-uat', name: 'uat', slug: 'uat', order: 0, properties: {}, endpoints: {} },
-        { id: 'pe-dev', name: 'dev', slug: 'dev', order: 1, properties: {}, endpoints: {} },
+        { id: 'pe-uat', name: 'uat', slug: 'uat', order: 0, properties: {}, endpoints: {}, disabled: [] },
+        { id: 'pe-dev', name: 'dev', slug: 'dev', order: 1, properties: {}, endpoints: {}, disabled: [] },
       ],
     });
     useWorkspaceStore.setState({
       workspace: workspaceWire({
-        environments: [{ id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        environments: [
+          { id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
+        ],
         activeEnvironmentId: 'we-dev',
       }),
     });
@@ -63,7 +66,9 @@ describe('projectRowActions', () => {
     useProjectStore.setState({ addEnvironment });
     useWorkspaceStore.setState({
       workspace: workspaceWire({
-        environments: [{ id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        environments: [
+          { id: 'we-dev', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
+        ],
         activeEnvironmentId: 'we-dev',
       }),
     });
@@ -116,10 +121,11 @@ describe('projectRowActions', () => {
     expect(locateProject).toHaveBeenCalledWith({ projectId: 'p1' });
   });
 
-  it('shows a project’s settings in the details panel, on the selected project', () => {
+  it('shows a project’s settings by selecting it and opening its tab', () => {
     projectRowActions.settings('p1');
 
     expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'selection' });
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toContain('project:p1');
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 });

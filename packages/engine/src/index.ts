@@ -376,7 +376,7 @@ export type {
   HistoryListQuery,
   HistoryOptions,
 } from './project/history.js';
-export { expand, expandSendInput, hasExpansions } from './project/properties.js';
+export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';

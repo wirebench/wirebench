@@ -27,6 +27,8 @@
   --color-accent-hover: var(--wb-accent-hover);
   --color-accent-muted: var(--wb-accent-muted);
   --color-accent-surface: var(--wb-accent-surface);
+  --color-handle-hover: var(--wb-handle-hover);
+  --color-handle-active: var(--wb-handle-active);
 
   --color-status-success: var(--wb-status-success);
   --color-status-warning: var(--wb-status-warning);
@@ -49,6 +51,7 @@
   --spacing-title-bar: var(--wb-title-bar-height);
   --spacing-status-bar: var(--wb-status-bar-height);
   --spacing-activity-bar: var(--wb-activity-bar-width);
+  --spacing-right-rail: var(--wb-right-rail-width);
 }
 
 @layer components {

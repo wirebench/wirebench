@@ -21,9 +21,34 @@ export interface PropertyScopes {
   readonly env?: PropertyMap;
   /** Workspace-level properties, when expanding within a workspace. */
   readonly workspace?: PropertyMap;
+  /**
+   * Global properties. Unlike the other scopes, globals have no `disabledProperties` list of
+   * their own in this package (they are not part of `Project`/`Workspace`) — a caller that wants
+   * disabled globals excluded from resolution must filter this map itself (with
+   * {@link enabledProperties}, say) before passing it in.
+   */
   readonly global: PropertyMap;
   /** Defaults to `process.env` when omitted. */
   readonly system?: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Filters `map` down to the entries not listed in `disabled`, preserving the map's key order.
+ * Used to make property resolution treat a disabled property as absent (its value stays on disk,
+ * see `Environment.disabledProperties`) without mutating the stored map itself.
+ */
+export function enabledProperties(map: PropertyMap, disabled: readonly string[]): PropertyMap {
+  if (disabled.length === 0) {
+    return map;
+  }
+  const disabledSet = new Set(disabled);
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(map)) {
+    if (!disabledSet.has(key)) {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 /** One `${...}` expression that could not be resolved, with offsets into the original text. */

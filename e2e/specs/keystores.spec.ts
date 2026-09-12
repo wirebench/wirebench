@@ -107,6 +107,7 @@ test.describe('keystores', () => {
 
     // --- select it for Request 1 and send over mutual TLS ------------------------------------
     await page.getByTestId('request-endpoint').fill(`${secure.url}/soap`);
+    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Properties' }).click();
     await page.getByTestId('request-ssl-keystore').selectOption({ label: 'corp' });
 
     await page.getByTestId('request-send').click();

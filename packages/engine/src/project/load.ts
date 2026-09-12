@@ -226,6 +226,7 @@ async function loadEnvironments(fs: FsLike, root: string): Promise<Environment[]
       order: parsed.order,
       endpoints: parsed.endpoints,
       properties: parsed.properties,
+      disabledProperties: parsed.disabled ?? [],
     });
   }
   return environments.sort(byOrder);
@@ -292,6 +293,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     ...optional('description', manifest.description),
     settings: exact<ProjectSettings>(manifest.settings),
     properties: manifest.properties,
+    disabledProperties: manifest.disabled ?? [],
     ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     interfaces: interfaces.sort(byOrder),
     environments: await loadEnvironments(fs, root),

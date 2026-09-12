@@ -8,6 +8,7 @@
  * uses (sorted keys, no line wrapping, `undefined` fields dropped).
  */
 
+import type { PropertyMap } from '../project/model.js';
 import type { Workspace, WorkspaceProjectRef } from './model.js';
 import { assertPathSegment, WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST } from './paths.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
@@ -23,6 +24,17 @@ export interface WorkspaceFilesOptions {
 
 function projectRefDocument(ref: WorkspaceProjectRef): Record<string, unknown> {
   return compact({ id: ref.id, slug: ref.slug, source: ref.source, path: ref.path });
+}
+
+/**
+ * The `disabled` list as written: sorted, deduplicated, and dropped entirely once it would be
+ * empty — a name with no entry left in `properties` never outlives its map. Mirrors
+ * `project/serialize.ts`'s helper of the same purpose.
+ */
+function disabledList(disabled: readonly string[], properties: PropertyMap): readonly string[] | undefined {
+  const known = new Set(Object.keys(properties));
+  const kept = [...new Set(disabled.filter((name) => known.has(name)))].sort();
+  return kept.length > 0 ? kept : undefined;
 }
 
 /**
@@ -47,6 +59,7 @@ export function workspaceFiles(workspace: Workspace, options?: WorkspaceFilesOpt
         description: workspace.description,
         createdAt: workspace.createdAt,
         properties: { ...workspace.properties },
+        disabled: disabledList(workspace.disabledProperties, workspace.properties),
         activeEnvironmentId: workspace.activeEnvironmentId,
         projects: workspace.projects.map((ref) => projectRefDocument(ref)),
         writtenBy: writer,
@@ -58,13 +71,16 @@ export function workspaceFiles(workspace: Workspace, options?: WorkspaceFilesOpt
     assertPathSegment(environment.slug);
     files.set(
       `${WORKSPACE_ENVIRONMENTS_DIR}/${environment.slug}.yaml`,
-      stringifyYaml({
-        id: environment.id,
-        name: environment.name,
-        order: environment.order,
-        properties: { ...environment.properties },
-        endpoints: { ...environment.endpoints },
-      }),
+      stringifyYaml(
+        compact({
+          id: environment.id,
+          name: environment.name,
+          order: environment.order,
+          properties: { ...environment.properties },
+          endpoints: { ...environment.endpoints },
+          disabled: disabledList(environment.disabledProperties, environment.properties),
+        }),
+      ),
     );
   }
 

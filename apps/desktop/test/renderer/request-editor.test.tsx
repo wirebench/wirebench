@@ -62,6 +62,7 @@ describe('RequestEditor', () => {
       order: 0,
       endpoints: { 'Demo/Calculator': 'http://dev.test/calc.asmx' },
       properties: {},
+      disabled: [],
     };
     const projects = [
       { id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal' as const, dir: '/w/Demo', status: 'ready' as const },
@@ -226,9 +227,9 @@ describe('RequestEditor', () => {
     const context: CommandContext = {
       platform: 'mac',
       ui: {
-        sidebar: { visible: true, view: 'explorer', size: 20 },
-        console: { visible: true, activeTab: 'http-log', size: 25 },
-        details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
+        sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
+        console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+        slideOver: { open: false, width: 420, codeShell: 'posix' },
         theme: 'dark',
         editorLineNumbers: true,
         editorLayout: { orientation: 'side-by-side', mode: 'split' },

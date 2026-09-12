@@ -70,12 +70,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
   registerCommand({
-    id: 'view.toggleDetails',
-    label: 'Toggle Details Panel',
+    id: 'view.toggleCode',
+    label: 'Toggle Code Panel',
     category: 'View',
     shortcut: 'Mod+Alt+B',
     run: () => {
-      ui().toggleDetails();
+      ui().toggleCode();
     },
   });
 
@@ -86,6 +86,14 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     shortcut: 'Mod+Shift+E',
     run: () => {
       ui().showSidebarView('explorer');
+    },
+  });
+  registerCommand({
+    id: 'view.showEnvironments',
+    label: 'Show Environments',
+    category: 'View',
+    run: () => {
+      ui().showSidebarView('environments');
     },
   });
   registerCommand({

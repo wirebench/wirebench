@@ -13,6 +13,7 @@ import {
 } from '../../../src/project/model.js';
 import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';
 import { WORKSPACE_FORMAT_VERSION } from '../../../src/workspace/model.js';
+import { expand } from '../../../src/project/properties.js';
 
 const projectEnv: Environment = {
   id: 'penv-1',
@@ -21,6 +22,7 @@ const projectEnv: Environment = {
   order: 0,
   endpoints: { calculator: 'https://qa.project.test/soap' },
   properties: { name: 'proj-env-name', onlyProjectEnv: 'p-env-value' },
+  disabledProperties: [],
 };
 
 function fixtureProject(environments: readonly Environment[] = []): { project: Project; iface: Interface } {
@@ -43,6 +45,7 @@ function fixtureWorkspace(activeEnv: WorkspaceEnvironment | undefined, overrides
     name: 'Workspace',
     createdAt: '2026-01-01T00:00:00.000Z',
     properties: { name: 'ws-name', onlyWorkspace: 'w-value' },
+    disabledProperties: [],
     ...(activeEnv !== undefined ? { activeEnvironmentId: activeEnv.id } : {}),
     projects: [{ id: 'proj-1', slug: 'demo', source: 'internal' }],
     environments: activeEnv !== undefined ? [activeEnv] : [],
@@ -57,6 +60,7 @@ const workspaceEnv: WorkspaceEnvironment = {
   order: 0,
   properties: { name: 'ws-env-name', onlyWorkspaceEnv: 'w-env-value' },
   endpoints: { 'demo/calculator': 'https://qa.workspace.test/soap' },
+  disabledProperties: [],
 };
 
 describe('linkedEnvironment', () => {
@@ -110,6 +114,39 @@ describe('resolveWorkspaceScopes', () => {
     const workspace = fixtureWorkspace(undefined);
     const scopes = resolveWorkspaceScopes({ workspace, project, globals: {}, system: { X: 'y' } });
     expect(scopes.system).toEqual({ X: 'y' });
+  });
+
+  it('excludes properties disabled on the workspace and the project from their scopes', () => {
+    const { project } = fixtureProject([]);
+    const disabledProject = { ...project, disabledProperties: ['name'] };
+    const workspace = fixtureWorkspace(undefined, { disabledProperties: ['name'] });
+    const scopes = resolveWorkspaceScopes({ workspace, project: disabledProject, globals: {} });
+    expect(scopes.workspace).toEqual({ onlyWorkspace: 'w-value' });
+    expect(scopes.project).toEqual({});
+  });
+
+  it('a value disabled only in the workspace environment still falls through to the enabled linked project environment value', () => {
+    const { project } = fixtureProject([projectEnv]);
+    const disabledWorkspaceEnv: WorkspaceEnvironment = { ...workspaceEnv, disabledProperties: ['name'] };
+    const workspace = fixtureWorkspace(disabledWorkspaceEnv);
+    const scopes = resolveWorkspaceScopes({ workspace, project, globals: {} });
+    expect(scopes.env).toEqual({
+      onlyWorkspaceEnv: 'w-env-value',
+      onlyProjectEnv: 'p-env-value',
+      name: 'proj-env-name',
+    });
+    expect(expand('${name}', scopes).text).toBe('proj-env-name');
+  });
+
+  it('is unresolved when disabled in both the workspace environment and the linked project environment', () => {
+    const { project } = fixtureProject([{ ...projectEnv, disabledProperties: ['name'] }]);
+    const disabledWorkspaceEnv: WorkspaceEnvironment = { ...workspaceEnv, disabledProperties: ['name'] };
+    const workspace = fixtureWorkspace(disabledWorkspaceEnv);
+    const scopes = resolveWorkspaceScopes({ workspace, project, globals: {} });
+    expect(scopes.env).toEqual({ onlyWorkspaceEnv: 'w-env-value', onlyProjectEnv: 'p-env-value' });
+    const result = expand('${#Env#name}', scopes);
+    expect(result.text).toBe('${#Env#name}');
+    expect(result.unresolved).toEqual([expect.objectContaining({ scope: 'Env', name: 'name', code: 'missing' })]);
   });
 });
 

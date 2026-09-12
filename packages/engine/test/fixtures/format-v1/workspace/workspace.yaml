@@ -1,0 +1,18 @@
+activeEnvironmentId: ID0003
+createdAt: 2026-01-01T00:00:00.000Z
+description: Round-trip fixture
+formatVersion: 1
+id: ID0005
+name: Demo Workspace
+projects:
+  - id: ID0001
+    slug: CountryInfo
+    source: internal
+  - id: ID0002
+    path: /srv/wirebench-projects/orders
+    slug: Orders
+    source: linked
+properties:
+  region: eu-west-1
+  tier: gold
+writtenBy: wirebench

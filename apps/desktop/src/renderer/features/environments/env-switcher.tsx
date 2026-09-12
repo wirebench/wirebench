@@ -97,14 +97,13 @@ export function EnvSwitcher() {
           <DropdownMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              // The grid shows every environment at once, so any id opens the same view; the
-              // one it opens on is just which column's properties start out below it.
+              showSidebarView('environments');
+              // Also opens the active environment's editor tab, when there is one — the sidebar
+              // list alone does not show its contents.
               const target = activeId ?? environments[0]?.id;
               if (target !== undefined) {
-                openEnvironmentTab(target);
-                return;
+                openEnvironmentTab({ kind: 'environment', id: target });
               }
-              showSidebarView('explorer');
             }}
           >
             Manage environments…

@@ -1,10 +1,32 @@
 import { showToast } from '../../components/toast.js';
 import { openEnvironmentTab } from '../environments/environment-actions.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { startRenamingProject } from './explorer-api.js';
+
+/** The editor-tab id a project's tab opens under; stable so re-opening focuses the same tab. */
+export function projectTabId(projectId: string): string {
+  return `project:${projectId}`;
+}
+
+/**
+ * Opens (or focuses) a project's tab: name, folder, source, `ProjectSettings`, and the
+ * project's own properties table. Replaces what used to be the Details panel's project view.
+ *
+ * The name comes from the project mirror when it holds one, else the workspace manifest's own
+ * copy — the same fallback the explorer's roots use — so the tab title is never blank while a
+ * project is still opening.
+ */
+export function openProjectTab(projectId: string): void {
+  const title =
+    useProjectStore.getState().projects[projectId]?.name ??
+    useWorkspaceStore.getState().workspace?.projects.find((project) => project.id === projectId)?.name ??
+    'Project';
+  useEditorsStore.getState().open({ id: projectTabId(projectId), kind: 'project', title, projectId });
+}
 
 /**
  * The explorer's project-root actions — the right-click menu on a project, and the
@@ -38,11 +60,11 @@ export const projectRowActions = {
     const active = workspace?.environments.find((candidate) => candidate.id === workspace.activeEnvironmentId);
     const match = environments.find((candidate) => candidate.slug === active?.slug) ?? environments[0];
     if (match !== undefined) {
-      openEnvironmentTab(match.id);
+      openEnvironmentTab({ kind: 'environment', id: match.id });
       return;
     }
     const created = await store.addEnvironment(projectId, active?.name ?? 'New environment');
-    openEnvironmentTab(created);
+    openEnvironmentTab({ kind: 'environment', id: created });
   },
 
   /** Enters inline rename mode on the project's row. */
@@ -65,13 +87,10 @@ export const projectRowActions = {
       });
   },
 
-  /**
-   * Shows the project's settings: its properties, in the Details panel. That is where a
-   * project's own settings are edited today — there is no separate editor tab for them.
-   */
+  /** Shows the project's settings: opens its tab, the same one a single click on the row opens. */
   settings(projectId: string): void {
     projectRowActions.select(projectId);
-    useUiStore.getState().showDetails('selection');
+    openProjectTab(projectId);
   },
 
   /** Shows the project folder in the OS file manager (main resolves the path from the id). */

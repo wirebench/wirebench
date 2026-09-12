@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { PanelBottomClose } from 'lucide-react';
 import { IconButton } from '../components/icon-button.js';
 import { Tabs } from '../components/tabs.js';
 import { HttpLog } from '../features/console/http-log.js';
@@ -26,7 +26,7 @@ const EMPTY_COPY: Readonly<Record<ConsoleTab, string>> = {
 export function ConsolePanel() {
   const activeTab = useUiStore((state) => state.console.activeTab);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
-  const toggleConsole = useUiStore((state) => state.toggleConsole);
+  const collapseConsole = useUiStore((state) => state.collapseConsole);
   const problemCount = useProblemsStore((state) => state.items.length);
   const tabs = TABS.map((tab) =>
     tab.id === 'problems' && problemCount > 0 ? { ...tab, badge: String(problemCount) } : tab,
@@ -40,8 +40,14 @@ export function ConsolePanel() {
     >
       <div className="flex h-row shrink-0 items-center justify-between border-b border-hairline pr-2">
         <Tabs label="Console tabs" items={tabs} active={activeTab} onSelect={showConsoleTab} />
-        <IconButton label="Hide console" onClick={toggleConsole}>
-          <X size={14} aria-hidden="true" />
+        <IconButton
+          label="Collapse Console"
+          data-testid="console-collapse"
+          onClick={() => {
+            collapseConsole();
+          }}
+        >
+          <PanelBottomClose size={14} aria-hidden="true" />
         </IconButton>
       </div>
       <div role="tabpanel" className="min-h-0 flex-1 overflow-auto p-3 font-mono text-sm text-fg-subtle">

@@ -1,0 +1,29 @@
+attachments: []
+endpointId: EP-country
+headers:
+  - name: X-Trace
+    value: on
+  - name: X-Trace
+    value: verbose
+id: ID0003
+kind: soap
+name: Request 1
+order: 0
+properties:
+  disableMultiparts: false
+  enableInlineFiles: false
+  enableMtom: false
+  encodeAttachments: false
+  encoding: UTF-8
+  entitizeProperties: false
+  expandMtomAttachments: false
+  followRedirects: false
+  forceMtom: false
+  inlineResponseAttachments: false
+  prettyPrint: false
+  removeEmptyContent: false
+  skipSoapAction: false
+  stripWhitespaces: false
+  timeoutMs: 30000
+soapAction: urn:demo/Request 1
+soapVersion: "1.1"

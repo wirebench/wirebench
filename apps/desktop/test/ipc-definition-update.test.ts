@@ -68,6 +68,7 @@ const SNAPSHOT = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   settings: { cacheDefinitions: true, defaultTimeoutMs: 1000, prettyPrintResponses: true },

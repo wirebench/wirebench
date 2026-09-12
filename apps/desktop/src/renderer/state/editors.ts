@@ -22,7 +22,7 @@ export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
 const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
 
 /** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
-export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl';
+export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties';
 
 /** Which pane's strip an inspector selection belongs to — the two are independent. */
 export type InspectorPane = 'request' | 'response';
@@ -37,12 +37,14 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface';
+  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface' | 'project';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
   /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */
   readonly interfaceId?: string;
+  /** Set when `kind` is `'project'`: the project this tab shows. */
+  readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */
   readonly environmentId?: string;
   /** Set when `kind` is `'history'`: the history entry this read-only tab shows. */

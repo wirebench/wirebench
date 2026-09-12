@@ -1,4 +1,5 @@
 import { channels } from '../../shared/ipc.js';
+import type { GlobalsState } from '../../shared/wire-types.js';
 import type { GlobalProperties } from '../global-properties.js';
 import { registerHandler } from './register.js';
 
@@ -7,8 +8,9 @@ import { registerHandler } from './register.js';
  *
  * Global properties are user-scoped, not project-scoped, so a change made in one window has to
  * reach every other one: `onChanged` is invoked after each write and `main/index.ts` broadcasts
- * it as the `globals.changed` event. Every channel answers with the whole map, so the renderer
- * never has to merge a patch into a mirror that might have drifted.
+ * it as the `globals.changed` event. Every channel answers with the whole state (map plus its
+ * `disabled` names), so the renderer never has to merge a patch into a mirror that might have
+ * drifted.
  *
  * `globals.get` awaits {@link GlobalProperties.ready} before answering: these channels can be
  * registered (and called) before the startup warm-up's `load()` resolves, and an early caller
@@ -16,22 +18,28 @@ import { registerHandler } from './register.js';
  */
 export function registerGlobalsChannels(
   globals: GlobalProperties,
-  onChanged: (properties: Record<string, string>) => void = () => undefined,
+  onChanged: (state: GlobalsState) => void = () => undefined,
 ): void {
   registerHandler(channels.globals.get, async () => {
     await globals.ready();
-    return { properties: globals.get() };
+    return globals.get();
   });
 
   registerHandler(channels.globals.set, async (request) => {
-    const properties = await globals.set(request.name, request.value);
-    onChanged(properties);
-    return { properties };
+    const state = await globals.set(request.name, request.value);
+    onChanged(state);
+    return state;
   });
 
   registerHandler(channels.globals.remove, async (request) => {
-    const properties = await globals.remove(request.name);
-    onChanged(properties);
-    return { properties };
+    const state = await globals.remove(request.name);
+    onChanged(state);
+    return state;
+  });
+
+  registerHandler(channels.globals.setEnabled, async (request) => {
+    const state = await globals.setEnabled(request.name, request.enabled);
+    onChanged(state);
+    return state;
   });
 }

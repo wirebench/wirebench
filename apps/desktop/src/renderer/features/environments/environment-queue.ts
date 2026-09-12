@@ -10,7 +10,7 @@
  * `useWorkspaceStore.mutate` applies the fresh snapshot before it resolves.
  */
 
-import type { EnvironmentPatchWire, WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
+import type { WorkspaceEnvironmentPatchWire, WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 
 /** The tail of each environment's chain, keyed by environment id. */
@@ -27,7 +27,7 @@ const queues = new Map<string, Promise<void>>();
  */
 export function queueEnvironmentPatch(
   environmentId: string,
-  build: (environment: WorkspaceEnvironmentWire) => EnvironmentPatchWire | undefined,
+  build: (environment: WorkspaceEnvironmentWire) => WorkspaceEnvironmentPatchWire | undefined,
 ): Promise<void> {
   const run = (queues.get(environmentId) ?? Promise.resolve())
     .then(async () => {

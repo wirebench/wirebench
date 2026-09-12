@@ -23,7 +23,7 @@ import { useWorkspaceStore } from '../../state/workspace.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
-import { projectRowActions } from './project-actions.js';
+import { openProjectTab, projectRowActions } from './project-actions.js';
 import { registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
 import { buildExplorerTree } from './tree-nodes.js';
@@ -322,6 +322,13 @@ export function ExplorerView() {
                 }
                 const definitionUrl =
                   node.kind === 'interface' ? interfaces[node.interfaceId ?? '']?.definitionUrl : undefined;
+                // A project row's tab opens immediately on selection — a single click, not a
+                // double-click — per the approved spec's amendment; project rows have no
+                // "activate" behaviour of their own (see `onActivate` below), so this is the
+                // only path that opens one.
+                if (node.kind === 'project' && node.projectId !== undefined) {
+                  openProjectTab(node.projectId);
+                }
                 setSelection({
                   kind: node.kind,
                   // A project row stands for a project, so the selection names the project id —

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { expand, expandSendInput, hasExpansions, type PropertyScopes } from '../../../src/project/properties.js';
+import {
+  enabledProperties,
+  expand,
+  expandSendInput,
+  hasExpansions,
+  type PropertyScopes,
+} from '../../../src/project/properties.js';
 import type { SoapSendInput } from '../../../src/types.js';
 
 const scopes: PropertyScopes = {
@@ -375,5 +381,24 @@ describe('expandSendInput attachments', () => {
     expect(input.attachments?.[0]?.source).toEqual({ kind: 'path', path: '/data/invoice.pdf' });
     expect(input.attachments?.[0]?.contentId).toBe('${#Project#file}');
     expect(input.attachments?.[1]?.source).toEqual({ kind: 'cache', sha256: 'b'.repeat(64) });
+  });
+});
+
+describe('enabledProperties', () => {
+  it('returns the map unchanged when nothing is disabled', () => {
+    const map = { a: '1', b: '2' };
+    expect(enabledProperties(map, [])).toBe(map);
+  });
+
+  it('drops disabled names from the map', () => {
+    expect(enabledProperties({ a: '1', b: '2', c: '3' }, ['b'])).toEqual({ a: '1', c: '3' });
+  });
+
+  it('ignores disabled names not present in the map', () => {
+    expect(enabledProperties({ a: '1' }, ['nope'])).toEqual({ a: '1' });
+  });
+
+  it('can disable every entry', () => {
+    expect(enabledProperties({ a: '1', b: '2' }, ['a', 'b'])).toEqual({});
   });
 });

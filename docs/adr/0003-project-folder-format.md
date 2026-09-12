@@ -68,3 +68,14 @@ keyed by project id, so a project directory is safe to commit and share.
 **Update (workspaces, ADR-0006):** projects now normally live inside a workspace folder in app
 data (`<userData>/workspaces/<id>/projects/<slug>/`), unchanged in format; they are exported or
 linked to a folder of the user's choosing when git is wanted.
+
+**Update (2026-09-12, per-variable enabled flag): `formatVersion: 2`.** Every property scope
+gained a per-variable enabled flag: a variable can be switched off without deleting it, so
+resolution falls through to the next scope as if it were absent. On disk this is a sibling
+`disabled:` list of names next to `properties` (which stays a plain `name -> value` map), sorted,
+deduplicated, and omitted entirely when empty — exactly the additive-field case this ADR's
+Consequences section calls out, so it is a format bump like any other. A version-1 file (no
+`disabled` key) migrates as "all enabled" and is rewritten at version 2 on the next save; a
+version-3-or-later file is refused with the existing clear error. This also means a 1.0.0 build
+cannot open a project this build has saved — it sees `formatVersion: 2` and refuses it with its
+"created by a newer version of Wirebench" error.

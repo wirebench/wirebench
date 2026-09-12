@@ -15,9 +15,12 @@ type RawWorkspaceManifest = Record<string, unknown>;
 /**
  * Brings a raw manifest document up to {@link WORKSPACE_FORMAT_VERSION}.
  *
- * Version 1 is the initial format, so this is a no-op today; the function
- * exists so the call site (and its tests) are already in place when version 2
- * arrives.
+ * Version 1 needs no rewrite of its own: it simply has no `disabled` key, and
+ * `load.ts` defaults a missing list to empty. This function's job is narrower
+ * — validate the version is in `[1, WORKSPACE_FORMAT_VERSION]` and stamp the
+ * document with the current `formatVersion` so schema validation (which pins
+ * `formatVersion` to a literal) accepts a document written by an older build.
+ * The next save then writes the file back at the current version.
  *
  * @throws WorkspaceError `workspace-format-too-new` when the file was written
  * by a newer Wirebench, `workspace-file-invalid` when the document is not a
@@ -46,5 +49,5 @@ export function migrateWorkspace(document: unknown, file: string): RawWorkspaceM
       { details: { file, formatVersion: version, supported: WORKSPACE_FORMAT_VERSION } },
     );
   }
-  return raw;
+  return { ...raw, formatVersion: WORKSPACE_FORMAT_VERSION };
 }

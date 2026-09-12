@@ -11,6 +11,7 @@ export function workspaceWire(
     readonly activeEnvironmentId?: string;
     readonly projects?: readonly WorkspaceProjectWire[];
     readonly properties?: Readonly<Record<string, string>>;
+    readonly disabled?: readonly string[];
     readonly name?: string;
     readonly id?: string;
   } = {},
@@ -20,6 +21,7 @@ export function workspaceWire(
     name: patch.name ?? 'Workspace 1',
     dir: `/tmp/workspaces/${patch.id ?? 'w1'}`,
     properties: { ...patch.properties },
+    disabled: [...(patch.disabled ?? [])],
     environments: [...(patch.environments ?? [])],
     ...(patch.activeEnvironmentId !== undefined ? { activeEnvironmentId: patch.activeEnvironmentId } : {}),
     projects: [...(patch.projects ?? [])],

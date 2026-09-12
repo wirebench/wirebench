@@ -39,7 +39,9 @@ describe('saveWorkspace', () => {
       "activeEnvironmentId: ID0003
       createdAt: 2026-01-01T00:00:00.000Z
       description: Round-trip fixture
-      formatVersion: 1
+      disabled:
+        - tier
+      formatVersion: 2
       id: ID0005
       name: Demo Workspace
       projects:
@@ -57,7 +59,9 @@ describe('saveWorkspace', () => {
       "
     `);
     expect((await readBytes(dir, 'environments/dev.yaml')).toString('utf8')).toMatchInlineSnapshot(`
-      "endpoints:
+      "disabled:
+        - region
+      endpoints:
         CountryInfo/CountryInfoSoap: http://localhost:8080/country
       id: ID0003
       name: dev
@@ -162,6 +166,33 @@ describe('saveWorkspace', () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it('writes disabled sorted, deduplicated, and dropped once its list would be empty', async () => {
+    const dir = await tempWorkspaceDir();
+    const workspace: Workspace = {
+      ...sampleWorkspace(),
+      properties: { b: '2', a: '1' },
+      disabledProperties: ['b', 'a', 'b', 'ghost'],
+    };
+    await saveWorkspace(workspace, dir);
+
+    const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
+    expect(text).toContain('disabled:\n  - a\n  - b\n');
+    expect(text).not.toContain('ghost');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('omits disabled entirely once every disabled name has been removed from properties', async () => {
+    const dir = await tempWorkspaceDir();
+    const workspace: Workspace = { ...sampleWorkspace(), properties: {}, disabledProperties: ['tier'] };
+    await saveWorkspace(workspace, dir);
+
+    const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
+    expect(text).not.toContain('disabled');
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe('loadWorkspace', () => {
@@ -231,11 +262,11 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 1', 'formatVersion: 2'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 2', 'formatVersion: 3'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 2 });
+    expect(error.details).toMatchObject({ formatVersion: 3, supported: 2 });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -244,7 +275,7 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 1', 'formatVersion: "1"'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 2', 'formatVersion: "1"'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-file-invalid');

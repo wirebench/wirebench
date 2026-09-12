@@ -125,22 +125,28 @@ test.describe('workspaces', () => {
     expect(posts(addressing)).toBe(1);
 
     // --- a `dev` workspace environment overriding the Calculator interface --------------
+    await page.getByTestId('activity-environments').click();
+    await expect(page.getByTestId('environments-view')).toBeVisible();
     await page.getByRole('button', { name: 'Add environment' }).click();
-    await page.getByLabel('New environment name').fill('dev');
-    await page.getByLabel('New environment name').press('Enter');
+    const createdRow = page.getByTestId('environment-row').filter({ hasText: 'Environment 1' });
+    await expect(createdRow).toBeVisible();
+    await createdRow.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Rename' }).click();
+    await page.getByLabel('Rename Environment 1').fill('dev');
+    await page.getByLabel('Rename Environment 1').press('Enter');
     const devRow = page.getByTestId('environment-row').filter({ hasText: 'dev' });
     await expect(devRow).toBeVisible();
 
-    // Double-click opens the workspace environment grid: one row per interface of every open
-    // project, one column per environment.
-    await devRow.dblclick();
-    await expect(page.getByTestId('workspace-env-grid')).toBeVisible({ timeout: 20_000 });
-    const override = page.getByLabel(/^Endpoint override for Calculator Project .* Calculator in dev$/);
+    // "Add environment" already opened the workspace environment's page: one row per interface
+    // of every open project.
+    await page.getByRole('button', { name: 'Explorer', exact: true }).click();
+    await expect(page.getByTestId('environment-page')).toBeVisible({ timeout: 20_000 });
+    const override = page.getByLabel(/^Endpoint override for Calculator Project .* Calculator$/);
     await expect(override).toBeVisible({ timeout: 20_000 });
     await override.fill(`${deployed.url}/soap`);
     await override.press('Enter');
     // The override is the layer that wins for this interface in this environment.
-    await expect(page.locator('[data-testid="workspace-env-cell"][data-source="workspace"]').first()).toBeVisible({
+    await expect(page.locator('[data-testid="env-endpoint-row"][data-source="workspace"]').first()).toBeVisible({
       timeout: 20_000,
     });
 
@@ -163,7 +169,7 @@ test.describe('workspaces', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     page = launched.window;
     await expectReopenedWorkspace(page);
-    // Start, the two requests, and the environment grid the `dev` row opened — every tab kind
+    // Start, the two requests, and the environment page the `dev` row opened — every tab kind
     // that names a durable entity comes back.
     await expect(editorTabs(page)).toHaveCount(4, { timeout: 20_000 });
 

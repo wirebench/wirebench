@@ -41,6 +41,7 @@ export function addEnvironment(project: Project, name: string): { project: Proje
     order: highestOrder + 1,
     endpoints: {},
     properties: {},
+    disabledProperties: [],
   };
   return { project: { ...project, environments: [...project.environments, environment] }, environment };
 }
@@ -64,6 +65,7 @@ export function updateEnvironment(project: Project, environmentId: string, patch
     order: existing.order,
     endpoints: patch.endpoints === undefined ? existing.endpoints : { ...patch.endpoints },
     properties: patch.properties === undefined ? existing.properties : { ...patch.properties },
+    disabledProperties: existing.disabledProperties,
   };
   return upsertEnvironment(project, next);
 }

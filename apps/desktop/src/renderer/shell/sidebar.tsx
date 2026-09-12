@@ -1,4 +1,6 @@
-import { EnvironmentsSection } from '../features/environments/environments-section.js';
+import { PanelLeftClose } from 'lucide-react';
+import { IconButton } from '../components/icon-button.js';
+import { EnvironmentsView } from '../features/environments/environments-view.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { PreferencesSectionList } from '../features/preferences/section-list.js';
@@ -18,6 +20,11 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
     title: 'Explorer',
     headline: 'No project open',
     body: 'Import a WSDL or open a project to see its interfaces, operations, and requests here.',
+  },
+  environments: {
+    title: 'Environments',
+    headline: 'No workspace open',
+    body: 'Open a workspace to see its environments here.',
   },
   search: {
     title: 'Search',
@@ -44,6 +51,7 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
 /** The sidebar panel: a section title plus the active view's content. */
 export function Sidebar() {
   const view = useUiStore((state) => state.sidebar.view);
+  const collapseSidebar = useUiStore((state) => state.collapseSidebar);
   const copy = VIEWS[view];
 
   return (
@@ -52,14 +60,24 @@ export function Sidebar() {
       aria-label={copy.title}
       className="flex h-full min-w-0 flex-col bg-surface-base text-fg-default"
     >
-      <h2 className="flex h-row shrink-0 items-center px-3 text-xs font-medium tracking-wider text-fg-subtle uppercase">
-        {copy.title}
-      </h2>
+      {/* The chevron is a sibling of the heading, not a child of it: nested inside, its label
+          became part of the heading's own accessible name ("Explorer Collapse Sidebar"). */}
+      <div className="flex h-row shrink-0 items-center justify-between px-3">
+        <h2 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">{copy.title}</h2>
+        <IconButton
+          label="Collapse Sidebar"
+          data-testid="sidebar-collapse"
+          onClick={() => {
+            collapseSidebar();
+          }}
+        >
+          <PanelLeftClose size={14} aria-hidden="true" />
+        </IconButton>
+      </div>
       {view === 'explorer' ? (
-        <>
-          <ExplorerView />
-          <EnvironmentsSection />
-        </>
+        <ExplorerView />
+      ) : view === 'environments' ? (
+        <EnvironmentsView />
       ) : view === 'search' ? (
         <SearchView />
       ) : view === 'history' ? (

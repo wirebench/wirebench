@@ -123,6 +123,7 @@ async function loadEnvironments(
       order: parsed.order,
       properties: parsed.properties,
       endpoints: parsed.endpoints,
+      disabledProperties: parsed.disabled ?? [],
     });
   }
   return environments.sort(byOrder);
@@ -188,6 +189,7 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
     ...optional('description', manifest.description),
     createdAt: manifest.createdAt,
     properties: manifest.properties,
+    disabledProperties: manifest.disabled ?? [],
     ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     projects,
     environments: await loadEnvironments(fs, root, problems),

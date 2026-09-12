@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CodePanel } from '../../src/renderer/features/details/code-panel.js';
+import { CodePanel } from '../../src/renderer/shell/code-panel.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
@@ -52,7 +52,7 @@ describe('CodePanel', () => {
     expect(curl).toHaveBeenCalledWith({ requestId: 'req-1', shell: 'posix' });
   });
 
-  it('regenerates in the chosen shell and remembers the choice', async () => {
+  it('regenerates in the chosen shell', async () => {
     const curl = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, value: { command: COMMAND } })
@@ -73,7 +73,6 @@ describe('CodePanel', () => {
       { timeout: 3000 },
     );
     expect(curl).toHaveBeenLastCalledWith({ requestId: 'req-1', shell: 'powershell' });
-    expect(useUiStore.getState().details.codeShell).toBe('powershell');
   });
 
   it('copies the shown command', async () => {
@@ -143,7 +142,10 @@ describe('CodePanel', () => {
         name: 'Workspace 1',
         dir: '/tmp/w',
         properties: {},
-        environments: [{ id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        disabled: [],
+        environments: [
+          { id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
+        ],
         activeEnvironmentId: 'env-1',
         projects: [],
       },

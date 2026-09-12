@@ -54,7 +54,7 @@ export function RequestToolbar({
   validateShortcut,
 }: RequestToolbarProps) {
   const layout = useEditorLayout(draft.id);
-  const showDetails = useUiStore((state) => state.showDetails);
+  const openCode = useUiStore((state) => state.openCode);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
 
   const soapAction = draft.soapAction !== undefined && draft.soapAction.length > 0 ? draft.soapAction : 'no SOAPAction';
@@ -128,7 +128,7 @@ export function RequestToolbar({
         data-testid="request-code"
         className={ICON_BUTTON_CLASS}
         onClick={() => {
-          showDetails('code');
+          openCode();
         }}
       >
         <Code2 size={14} aria-hidden="true" />

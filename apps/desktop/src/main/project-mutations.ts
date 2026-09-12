@@ -736,6 +736,13 @@ export async function applyChange(
       return { project: { ...project, properties } };
     }
 
+    case 'set-project-property-enabled': {
+      const disabledProperties = change.enabled
+        ? project.disabledProperties.filter((name) => name !== change.name)
+        : [...project.disabledProperties, change.name];
+      return { project: { ...project, disabledProperties } };
+    }
+
     case 'update-request-properties':
       return updateRequestProperties(project, change.requestId, change.patch);
 

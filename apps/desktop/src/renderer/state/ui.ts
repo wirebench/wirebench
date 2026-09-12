@@ -4,7 +4,6 @@ import { create } from 'zustand';
 import type {
   CodeShell,
   ConsoleTab,
-  DetailsTab,
   EditorLayoutSnapshot,
   PersistedWorkspaceUi,
   SidebarView,
@@ -13,7 +12,7 @@ import type {
 } from './ui-state.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
-/** A selected node in the explorer tree, read by the details panel (Task 30) and explorer actions. */
+/** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
 export interface Selection {
   readonly kind: string;
   readonly id: string;
@@ -63,22 +62,41 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
+  /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. What
+   *  a double-click on its (still-mounted) handle does while the sidebar is visible — "collapse
+   *  or restore", the collapse half. */
+  readonly collapseSidebar: () => void;
+  /** Reveals the sidebar at its remembered `lastSize`. A no-op while already visible. What a
+   *  double-click on its handle does while the sidebar is collapsed — the "restore" half. */
+  readonly expandSidebar: () => void;
+  /** Snaps a visible sidebar back to `lastSize` without touching visibility — a plain "undo the
+   *  last drag" with no collapse involved. Kept for callers that want exactly that; the handle's
+   *  own double-click uses {@link collapseSidebar}/{@link expandSidebar} instead. */
+  readonly restoreSidebarSize: () => void;
   readonly toggleSidebar: () => void;
+  /** The console's equivalent of {@link collapseSidebar}. */
+  readonly collapseConsole: () => void;
+  /** The console's equivalent of {@link expandSidebar}. */
+  readonly expandConsole: () => void;
+  /** The console's equivalent of {@link restoreSidebarSize}. */
+  readonly restoreConsoleSize: () => void;
   readonly toggleConsole: () => void;
-  readonly toggleDetails: () => void;
+  /** Flips the Code slide-over open or closed — what the right rail's icon does. */
+  readonly toggleCode: () => void;
+  /** Opens the Code slide-over unconditionally — what "Show code" (toolbar, context menu) does. */
+  readonly openCode: () => void;
+  /** Closes the Code slide-over unconditionally — the close icon and Escape. */
+  readonly closeCode: () => void;
   readonly showSidebarView: (view: SidebarView) => void;
   /** Selects a sidebar view without the collapse-on-reselect behaviour of {@link showSidebarView}. */
   readonly setSidebarView: (view: SidebarView) => void;
   readonly showConsoleTab: (tab: ConsoleTab) => void;
-  /** Switches the Details panel's tab, leaving its visibility alone. */
-  readonly setDetailsTab: (tab: DetailsTab) => void;
-  /** Switches the Details panel's tab and reveals the panel — what "Show code" does. */
-  readonly showDetails: (tab: DetailsTab) => void;
-  /** Remembers which shell the Code panel quotes for. */
-  readonly setDetailsCodeShell: (shell: CodeShell) => void;
   readonly setSidebarSize: (size: number) => void;
   readonly setConsoleSize: (size: number) => void;
-  readonly setDetailsSize: (size: number) => void;
+  /** Remembers the Code slide-over's width, dragged from its left-edge handle. */
+  readonly setSlideOverWidth: (width: number) => void;
+  /** Remembers the Code panel's POSIX/PowerShell choice. */
+  readonly setCodeShell: (shell: CodeShell) => void;
   readonly toggleTheme: () => void;
   readonly setTheme: (theme: ThemePreference) => void;
   readonly toggleEditorLineNumbers: () => void;
@@ -153,28 +171,98 @@ export const useUiStore = create<UiStore>((set, get) => {
       set({ confirmRemoveProjectId: projectId });
     },
 
+    collapseSidebar: () =>
+      update((draft) => {
+        if (!draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.lastSize = draft.sidebar.size;
+        draft.sidebar.visible = false;
+      }),
+    expandSidebar: () =>
+      update((draft) => {
+        if (draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.visible = true;
+        draft.sidebar.size = draft.sidebar.lastSize;
+      }),
+    restoreSidebarSize: () =>
+      update((draft) => {
+        if (!draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.size = draft.sidebar.lastSize;
+      }),
     toggleSidebar: () =>
       update((draft) => {
-        draft.sidebar.visible = !draft.sidebar.visible;
+        if (draft.sidebar.visible) {
+          draft.sidebar.lastSize = draft.sidebar.size;
+          draft.sidebar.visible = false;
+        } else {
+          draft.sidebar.visible = true;
+          draft.sidebar.size = draft.sidebar.lastSize;
+        }
+      }),
+    collapseConsole: () =>
+      update((draft) => {
+        if (!draft.console.visible) {
+          return;
+        }
+        draft.console.lastSize = draft.console.size;
+        draft.console.visible = false;
+      }),
+    expandConsole: () =>
+      update((draft) => {
+        if (draft.console.visible) {
+          return;
+        }
+        draft.console.visible = true;
+        draft.console.size = draft.console.lastSize;
+      }),
+    restoreConsoleSize: () =>
+      update((draft) => {
+        if (!draft.console.visible) {
+          return;
+        }
+        draft.console.size = draft.console.lastSize;
       }),
     toggleConsole: () =>
       update((draft) => {
-        draft.console.visible = !draft.console.visible;
+        if (draft.console.visible) {
+          draft.console.lastSize = draft.console.size;
+          draft.console.visible = false;
+        } else {
+          draft.console.visible = true;
+          draft.console.size = draft.console.lastSize;
+        }
       }),
-    toggleDetails: () =>
+    toggleCode: () =>
       update((draft) => {
-        draft.details.visible = !draft.details.visible;
+        draft.slideOver.open = !draft.slideOver.open;
+      }),
+    openCode: () =>
+      update((draft) => {
+        draft.slideOver.open = true;
+      }),
+    closeCode: () =>
+      update((draft) => {
+        draft.slideOver.open = false;
       }),
 
     showSidebarView: (view) =>
       update((draft) => {
         // Clicking the active view again collapses the sidebar, the way VS Code's activity bar does.
         if (draft.sidebar.visible && draft.sidebar.view === view) {
+          draft.sidebar.lastSize = draft.sidebar.size;
           draft.sidebar.visible = false;
           return;
         }
         draft.sidebar.view = view;
-        draft.sidebar.visible = true;
+        if (!draft.sidebar.visible) {
+          draft.sidebar.visible = true;
+          draft.sidebar.size = draft.sidebar.lastSize;
+        }
       }),
     setSidebarView: (view) =>
       update((draft) => {
@@ -186,20 +274,6 @@ export const useUiStore = create<UiStore>((set, get) => {
         draft.console.visible = true;
       }),
 
-    setDetailsTab: (tab) =>
-      update((draft) => {
-        draft.details.tab = tab;
-      }),
-    showDetails: (tab) =>
-      update((draft) => {
-        draft.details.tab = tab;
-        draft.details.visible = true;
-      }),
-    setDetailsCodeShell: (shell) =>
-      update((draft) => {
-        draft.details.codeShell = shell;
-      }),
-
     setSidebarSize: (size) =>
       update((draft) => {
         draft.sidebar.size = size;
@@ -208,9 +282,13 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         draft.console.size = size;
       }),
-    setDetailsSize: (size) =>
+    setSlideOverWidth: (width) =>
       update((draft) => {
-        draft.details.size = size;
+        draft.slideOver.width = width;
+      }),
+    setCodeShell: (shell) =>
+      update((draft) => {
+        draft.slideOver.codeShell = shell;
       }),
 
     toggleTheme: () =>
@@ -245,8 +323,8 @@ export const useUiStore = create<UiStore>((set, get) => {
       }),
 
     snapshot: () => {
-      const { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces } = get();
-      return { sidebar, console: consoleState, details, theme, editorLineNumbers, editorLayout, workspaces };
+      const { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces } = get();
+      return { sidebar, console: consoleState, slideOver, theme, editorLineNumbers, editorLayout, workspaces };
     },
 
     persistTo: (storage) => {

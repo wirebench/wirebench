@@ -20,7 +20,7 @@ import { generateId } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
 
 /** The on-disk format version written to (and required by) `workspace.yaml`. */
-export const WORKSPACE_FORMAT_VERSION = 1;
+export const WORKSPACE_FORMAT_VERSION = 2;
 
 /**
  * A pointer to one project inside a workspace. `internal` projects live under
@@ -51,17 +51,26 @@ export interface WorkspaceEnvironment {
   readonly order: number;
   readonly properties: PropertyMap;
   readonly endpoints: Readonly<Record<string, string>>;
+  /**
+   * Names of {@link properties} entries that are switched off, mirroring
+   * `project/model.ts`'s `Environment.disabledProperties`: resolution treats a disabled
+   * property as absent, while its value stays on disk. Written sorted, deduplicated, and only
+   * for names still present in `properties`.
+   */
+  readonly disabledProperties: readonly string[];
 }
 
 /** A whole Wirebench workspace, as loaded from (or saved to) a workspace folder. */
 export interface Workspace {
-  readonly formatVersion: 1;
+  readonly formatVersion: typeof WORKSPACE_FORMAT_VERSION;
   readonly id: string;
   readonly name: string;
   readonly description?: string;
   /** ISO 8601 timestamp of when the workspace was created. */
   readonly createdAt: string;
   readonly properties: PropertyMap;
+  /** Names of {@link properties} entries switched off; see {@link WorkspaceEnvironment.disabledProperties}. */
+  readonly disabledProperties: readonly string[];
   /** Id of the environment currently active for this workspace, if any. */
   readonly activeEnvironmentId?: string;
   readonly projects: readonly WorkspaceProjectRef[];
@@ -81,6 +90,7 @@ export function createWorkspace(name: string, options?: CreateOptions & { readon
     name,
     createdAt: now().toISOString(),
     properties: {},
+    disabledProperties: [],
     projects: [],
     environments: [],
   };
@@ -104,5 +114,6 @@ export function createWorkspaceEnvironment(
     order: options?.order ?? taken.size,
     properties: {},
     endpoints: {},
+    disabledProperties: [],
   };
 }

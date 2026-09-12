@@ -1055,6 +1055,8 @@ export const environmentWireSchema = z.object({
   order: z.number(),
   endpoints: z.record(z.string(), z.string()),
   properties: z.record(z.string(), z.string()),
+  /** Names in `properties` skipped during resolution, without being deleted. */
+  disabled: z.array(z.string()),
 });
 export type EnvironmentWire = z.infer<typeof environmentWireSchema>;
 
@@ -1218,6 +1220,8 @@ export const projectWireSchema = z.object({
   interfaces: z.array(interfaceWireSchema),
   requests: z.array(requestWireSchema),
   properties: z.record(z.string(), z.string()),
+  /** Names in `properties` skipped during resolution, without being deleted. */
+  disabledProperties: z.array(z.string()),
   environments: z.array(environmentWireSchema),
   /** The environment endpoints/properties resolve against, or absent when none is active. */
   activeEnvironmentId: z.string().optional(),
@@ -1337,6 +1341,7 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('set-active-environment'), environmentId: z.string().nullable() }),
   z.object({ kind: z.literal('set-project-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-project-property'), name: z.string() }),
+  z.object({ kind: z.literal('set-project-property-enabled'), name: z.string(), enabled: z.boolean() }),
   z.object({
     kind: z.literal('update-request-properties'),
     requestId: z.string(),
@@ -1500,15 +1505,21 @@ export const projectHydrationEventSchema = z.object({
 export const propertyMapSchema = z.record(z.string(), z.string());
 export type PropertyMapWire = z.infer<typeof propertyMapSchema>;
 
-/** Response for every `globals.*` channel (and the `globals.changed` event): the whole map. */
-export const globalsPropertiesResponseSchema = z.object({ properties: propertyMapSchema });
-export type GlobalsPropertiesResponse = z.infer<typeof globalsPropertiesResponseSchema>;
+/**
+ * Response for every `globals.*` channel (and the `globals.changed` event): the whole map, plus
+ * which of its names are currently disabled (skipped during resolution, not deleted).
+ */
+export const globalsStateSchema = z.object({ properties: propertyMapSchema, disabled: z.array(z.string()) });
+export type GlobalsState = z.infer<typeof globalsStateSchema>;
 
 /** Request payload for `globals.set`. */
 export const globalsSetRequestSchema = z.object({ name: z.string(), value: z.string() });
 
 /** Request payload for `globals.remove`. */
 export const globalsRemoveRequestSchema = z.object({ name: z.string() });
+
+/** Request payload for `globals.setEnabled`. */
+export const globalsSetEnabledRequestSchema = z.object({ name: z.string(), enabled: z.boolean() });
 
 // ---------------------------------------------------------------------------
 // Secrets (Task 23): keychain-backed store. There is deliberately no `secrets.get`
@@ -2468,6 +2479,8 @@ export const workspaceEnvironmentWireSchema = z.object({
   order: z.number().int().nonnegative(),
   properties: z.record(z.string(), z.string()),
   endpoints: z.record(z.string(), z.string()),
+  /** Names in `properties` skipped during resolution, without being deleted. */
+  disabled: z.array(z.string()),
 });
 export type WorkspaceEnvironmentWire = z.infer<typeof workspaceEnvironmentWireSchema>;
 
@@ -2479,6 +2492,8 @@ export const workspaceWireSchema = z.object({
   /** Absolute path of the workspace folder. */
   dir: z.string(),
   properties: z.record(z.string(), z.string()),
+  /** Names in `properties` skipped during resolution, without being deleted. */
+  disabled: z.array(z.string()),
   environments: z.array(workspaceEnvironmentWireSchema),
   /** The environment endpoints/properties resolve against, or absent when none is active. */
   activeEnvironmentId: z.string().optional(),
@@ -2496,6 +2511,8 @@ export const workspaceEnvironmentPatchSchema = z.object({
   properties: z.record(z.string(), z.string()).optional(),
   /** Keyed `<projectSlug>/<interfaceSlug>`; unknown keys are accepted, as for a project environment. */
   endpoints: z.record(z.string(), z.string()).optional(),
+  /** Replaces the whole disabled-names list, like `properties`/`endpoints` above. */
+  disabled: z.array(z.string()).optional(),
 });
 export type WorkspaceEnvironmentPatchWire = z.infer<typeof workspaceEnvironmentPatchSchema>;
 
@@ -2508,6 +2525,7 @@ export const workspaceChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('rename-workspace'), name: z.string() }),
   z.object({ kind: z.literal('set-workspace-property'), name: z.string(), value: z.string() }),
   z.object({ kind: z.literal('remove-workspace-property'), name: z.string() }),
+  z.object({ kind: z.literal('set-workspace-property-enabled'), name: z.string(), enabled: z.boolean() }),
   z.object({ kind: z.literal('add-workspace-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-workspace-environment'),

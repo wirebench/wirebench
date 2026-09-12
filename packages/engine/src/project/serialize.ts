@@ -6,7 +6,7 @@
  * touching a file system.
  */
 
-import type { Interface, Project, RequestDef, WssRef } from './model.js';
+import type { Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
 import {
   assertPathSegment,
   assertWssRelativePath,
@@ -27,6 +27,17 @@ export const MANIFEST_PATH = 'wirebench.yaml';
 
 /** Relative path of the keystore registry. */
 export const KEYSTORES_PATH = `${WSS_DIR}/keystores.yaml`;
+
+/**
+ * The `disabled` list as written: sorted, deduplicated, and dropped entirely once it would be
+ * empty — a name with no entry left in `properties` never outlives its map, so it is filtered
+ * out here rather than merely sorted.
+ */
+function disabledList(disabled: readonly string[], properties: PropertyMap): readonly string[] | undefined {
+  const known = new Set(Object.keys(properties));
+  const kept = [...new Set(disabled.filter((name) => known.has(name)))].sort();
+  return kept.length > 0 ? kept : undefined;
+}
 
 function requestDocument(request: RequestDef): Record<string, unknown> {
   return compact({
@@ -121,6 +132,7 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
         description: project.description,
         settings: compact({ ...project.settings }),
         properties: { ...project.properties },
+        disabled: disabledList(project.disabledProperties, project.properties),
         activeEnvironmentId: project.activeEnvironmentId,
         writtenBy: writer,
       }),
@@ -131,13 +143,16 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
     assertPathSegment(environment.slug);
     files.set(
       `${ENVIRONMENTS_DIR}/${environment.slug}.yaml`,
-      stringifyYaml({
-        id: environment.id,
-        name: environment.name,
-        order: environment.order,
-        endpoints: { ...environment.endpoints },
-        properties: { ...environment.properties },
-      }),
+      stringifyYaml(
+        compact({
+          id: environment.id,
+          name: environment.name,
+          order: environment.order,
+          endpoints: { ...environment.endpoints },
+          properties: { ...environment.properties },
+          disabled: disabledList(environment.disabledProperties, environment.properties),
+        }),
+      ),
     );
   }
 

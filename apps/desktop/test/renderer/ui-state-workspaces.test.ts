@@ -63,11 +63,14 @@ describe('per-workspace UI state', () => {
     });
   });
 
-  it('drops a payload written by an older version', () => {
+  it('drops a payload written by a version too old to migrate', () => {
     const storage = memoryStorage();
+    // `UI_STORAGE_VERSION - 1` (the prior version, 3) is still accepted — its `sidebar`/
+    // `console`/`workspaces`/etc. shape carries over unchanged, only its `details` slice is
+    // dropped; see `ui-state-v4.test.tsx`. Anything older than that has no migration path.
     storage.setItem(
       UI_STORAGE_KEY,
-      JSON.stringify({ version: UI_STORAGE_VERSION - 1, state: { workspaces: { w1: { tabs: [] } } } }),
+      JSON.stringify({ version: UI_STORAGE_VERSION - 2, state: { workspaces: { w1: { tabs: [] } } } }),
     );
 
     expect(readUi(storage).workspaces).toEqual({});
@@ -95,7 +98,12 @@ describe('per-workspace UI state', () => {
     const editors = useEditorsStore.getState();
     editors.open({ id: 'request:r1', kind: 'request', title: 'Add', requestId: 'r1' });
     editors.open({ id: interfaceTabId('i1'), kind: 'interface', title: 'Calculator', interfaceId: 'i1' });
-    editors.open({ id: environmentTabId('e1'), kind: 'environment', title: 'Dev', environmentId: 'e1' });
+    editors.open({
+      id: environmentTabId({ kind: 'environment', id: 'e1' }),
+      kind: 'environment',
+      title: 'Dev',
+      environmentId: 'e1',
+    });
     editors.open({ id: 'history:h1', kind: 'history', title: 'Sent', historyId: 'h1' });
     editors.open({ id: 'preferences', kind: 'preferences', title: 'Preferences' });
 
@@ -124,7 +132,7 @@ describe('per-workspace UI state', () => {
     });
     useWorkspaceStore.setState({
       workspace: workspaceWire({
-        environments: [{ id: 'we1', name: 'Dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        environments: [{ id: 'we1', name: 'Dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] }],
       }),
     });
     useProjectStore.setState({
@@ -135,7 +143,11 @@ describe('per-workspace UI state', () => {
     restoreWorkspaceTabs('w1');
 
     const { tabs, activeId } = useEditorsStore.getState();
-    expect(tabs.map((tab) => tab.id)).toEqual(['request:r1', interfaceTabId('i1'), environmentTabId('we1')]);
+    expect(tabs.map((tab) => tab.id)).toEqual([
+      'request:r1',
+      interfaceTabId('i1'),
+      environmentTabId({ kind: 'environment', id: 'we1' }),
+    ]);
     expect(tabs.map((tab) => tab.title)).toEqual(['Add', 'Calculator', 'Dev']);
     expect(activeId).toBe(interfaceTabId('i1'));
     expect(useUiStore.getState().sidebar.view).toBe('wss');

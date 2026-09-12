@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
@@ -81,7 +81,7 @@ describe('AppShell', () => {
       'sidebar',
       'editor-area',
       'console',
-      'details-panel',
+      'right-rail',
       'status-bar',
     ]) {
       expect(screen.getByTestId(region)).toBeTruthy();
@@ -157,6 +157,23 @@ describe('AppShell', () => {
     await user.keyboard('{Meta>}j{/Meta}');
 
     expect(screen.queryByTestId('console')).toBeNull();
+  });
+
+  it('opens the Code slide-over on Mod+Alt+B and closes it again', () => {
+    // Unlike the sidebar and the console, the slide-over unmounts completely while closed: it
+    // overlays the editor, so a handle left behind would sit over the editor's right edge and
+    // swallow clicks there.
+    render(<App />);
+
+    expect(screen.queryByTestId('slide-over')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'b', metaKey: true, altKey: true });
+    expect(screen.getByTestId('slide-over')).toBeTruthy();
+    expect(screen.getByTestId('slide-over-close')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'b', metaKey: true, altKey: true });
+    expect(screen.queryByTestId('slide-over-close')).toBeNull();
+    expect(screen.queryByTestId('slide-over')).toBeNull();
   });
 
   it('opens the command palette on Mod+K and lists commands with their shortcuts', async () => {

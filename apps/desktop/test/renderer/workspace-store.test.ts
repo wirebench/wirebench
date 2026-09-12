@@ -28,6 +28,7 @@ const PROJECT: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],
@@ -279,7 +280,7 @@ describe('useWorkspaceStore', () => {
   });
 
   it('setActiveEnvironment and mutate send their change and mirror the reply', async () => {
-    const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} };
+    const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] };
     const setActiveEnvironment = vi.fn().mockResolvedValue({
       ok: true,
       value: { workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'e1' }) },
@@ -300,6 +301,44 @@ describe('useWorkspaceStore', () => {
     expect(mutate).toHaveBeenCalledWith({ change: { kind: 'add-workspace-environment', name: 'dev' } });
     expect(setActiveEnvironment).toHaveBeenCalledWith({ environmentId: 'e1' });
     expect(useWorkspaceStore.getState().workspace?.activeEnvironmentId).toBe('e1');
+  });
+
+  it('setWorkspacePropertyEnabled sends the toggle through mutate', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } });
+    installWirebenchApi({ workspace: { mutate } });
+
+    await useWorkspaceStore.getState().setWorkspacePropertyEnabled('host', false);
+
+    expect(mutate).toHaveBeenCalledWith({
+      change: { kind: 'set-workspace-property-enabled', name: 'host', enabled: false },
+    });
+  });
+
+  it('updateEnvironment sends the patch through update-workspace-environment', async () => {
+    const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] };
+    useWorkspaceStore.getState().applySnapshot(workspaceWire({ environments: [environment] }));
+    const mutate = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { workspace: workspaceWire({ environments: [{ ...environment, disabled: ['host'] }] }) },
+    });
+    installWirebenchApi({ workspace: { mutate } });
+
+    await useWorkspaceStore.getState().updateEnvironment('e1', { disabled: ['host'] });
+
+    expect(mutate).toHaveBeenCalledWith({
+      change: { kind: 'update-workspace-environment', environmentId: 'e1', patch: { disabled: ['host'] } },
+    });
+    expect(useWorkspaceStore.getState().workspace?.environments[0]?.disabled).toEqual(['host']);
+  });
+
+  it('updateEnvironment does nothing when the environment has since been removed', async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire({ environments: [] }));
+    const mutate = vi.fn();
+    installWirebenchApi({ workspace: { mutate } });
+
+    await useWorkspaceStore.getState().updateEnvironment('gone', { disabled: ['host'] });
+
+    expect(mutate).not.toHaveBeenCalled();
   });
 
   it('subscribeToWorkspace pulls the snapshot and follows workspace.changed', async () => {

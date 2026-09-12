@@ -170,6 +170,12 @@ describe('ExplorerView', () => {
     // The selection names the project id, not the tree node id, so the details panel and the
     // `selection.project` commands can act on it.
     expect(useUiStore.getState().selection).toMatchObject({ kind: 'project', id: 'p2' });
+    // A single click on a project row also opens its tab immediately, as a normal pinned tab
+    // (the approved spec's amendment) — not just a selection.
+    expect(useEditorsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'project:p2', kind: 'project', projectId: 'p2', title: 'Billing' }),
+    ]);
+    expect(useEditorsStore.getState().activeId).toBe('project:p2');
   });
 
   it('offers Locate… and Remove on a project whose folder is missing', () => {

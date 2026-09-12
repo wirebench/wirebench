@@ -1,17 +1,8 @@
 /** Which view the sidebar shows; mirrors the activity bar's icons. */
-export type SidebarView = 'explorer' | 'search' | 'history' | 'wss' | 'settings';
+export type SidebarView = 'explorer' | 'environments' | 'search' | 'history' | 'wss' | 'settings';
 
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
-
-/**
- * The Details panel's tabs: the selection inspector, the workspace and global property tables,
- * the Code panel.
- */
-export type DetailsTab = 'selection' | 'workspace' | 'globals' | 'code';
-
-/** Which shell the Code panel quotes its `curl` command for. */
-export type CodeShell = 'posix' | 'powershell';
 
 /** How a request editor arranges its panes; see `features/request-editor/layout.ts`. */
 export interface EditorLayoutSnapshot {
@@ -25,8 +16,8 @@ export interface EditorLayoutSnapshot {
  * thing the next session can reopen.
  */
 export interface PersistedTab {
-  readonly kind: 'request' | 'interface' | 'environment';
-  /** The entity id — the request, interface or environment the tab edits. */
+  readonly kind: 'request' | 'interface' | 'environment' | 'project';
+  /** The entity id — the request, interface, environment or project the tab edits. */
   readonly id: string;
 }
 
@@ -41,15 +32,30 @@ export interface PersistedWorkspaceUi {
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
 export type ThemePreference = 'dark' | 'light' | 'system';
 
+/** Which shell the Code slide-over quotes its `curl` command for. */
+export type CodeShell = 'posix' | 'powershell';
+
 /** The serialisable half of the UI store — layout and theme, no actions. */
 export interface UiSnapshot {
-  readonly sidebar: { readonly visible: boolean; readonly view: SidebarView; readonly size: number };
-  readonly console: { readonly visible: boolean; readonly activeTab: ConsoleTab; readonly size: number };
-  readonly details: {
+  readonly sidebar: {
     readonly visible: boolean;
+    readonly view: SidebarView;
     readonly size: number;
-    readonly tab: DetailsTab;
-    /** The Code panel's shell choice, remembered across sessions. */
+    /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
+    readonly lastSize: number;
+  };
+  readonly console: {
+    readonly visible: boolean;
+    readonly activeTab: ConsoleTab;
+    readonly size: number;
+    /** The size to restore on expand, after a collapse; Task 9's collapse button reads this. */
+    readonly lastSize: number;
+  };
+  /** The right-hand slide-over hosting the Code panel; opened from the right rail. */
+  readonly slideOver: {
+    readonly open: boolean;
+    readonly width: number;
+    /** The Code panel's POSIX/PowerShell choice; carried here since the panel now lives in the slide-over. */
     readonly codeShell: CodeShell;
   };
   readonly theme: ThemePreference;
@@ -68,17 +74,26 @@ export interface UiSnapshot {
 export const UI_STORAGE_KEY = 'wirebench.ui';
 
 /**
- * Bumped only when a stored payload can no longer be reconciled with the current shape. Adding a
- * field to a section handled by a merge function (e.g. `details`, whose new `tab`/`codeShell`
- * fall back to their defaults per key in {@link mergeDetails}) does not need a bump.
+ * Bumped only when a stored payload can no longer be reconciled with the current shape. This
+ * went 3 → 4 when the right panel (and its `details` slice) was replaced by the right rail and
+ * the Code slide-over: `readUi` still accepts a version-3 blob (its `sidebar`/`console`/`theme`/
+ * `editorLineNumbers`/`editorLayout`/`workspaces` fields are structurally the same as v4's), it
+ * simply never reads the old `details` key, so a v3 blob loses only that slice and keeps every
+ * other preference — except `details.codeShell`, the Code panel's POSIX/PowerShell choice, which
+ * `readUi` carries forward into `slideOver.codeShell` since the Code panel now lives in the
+ * slide-over (see {@link mergeSlideOver}). Adding a field to a section handled by a merge
+ * function does not need a further bump.
  */
-export const UI_STORAGE_VERSION = 3;
+export const UI_STORAGE_VERSION = 4;
+
+/** The previous storage version, whose stored shape `readUi` still accepts (see above). */
+const PRIOR_UI_STORAGE_VERSION = 3;
 
 /** The layout a first run gets: everything visible, Explorer selected, dark theme. */
 export const DEFAULT_UI_STATE: UiSnapshot = {
-  sidebar: { visible: true, view: 'explorer', size: 20 },
-  console: { visible: true, activeTab: 'http-log', size: 25 },
-  details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
+  sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
+  console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+  slideOver: { open: false, width: 420, codeShell: 'posix' },
   theme: 'dark',
   editorLineNumbers: true,
   editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -106,29 +121,6 @@ function mergeSection<T extends Record<string, unknown>>(defaults: T, stored: un
   return merged as T;
 }
 
-/**
- * Reads the persisted Details section. `tab` and `codeShell` arrived after the first releases,
- * so a payload written without them (or with a value no longer understood) keeps the default
- * rather than being discarded — the panel must never open on a tab that does not exist.
- */
-function mergeDetails(stored: unknown): UiSnapshot['details'] {
-  const merged = mergeSection(
-    { visible: DEFAULT_UI_STATE.details.visible, size: DEFAULT_UI_STATE.details.size },
-    stored,
-  );
-  const record = asRecord(stored);
-  const tab = record?.['tab'];
-  const codeShell = record?.['codeShell'];
-  return {
-    ...merged,
-    tab:
-      tab === 'selection' || tab === 'workspace' || tab === 'globals' || tab === 'code'
-        ? tab
-        : DEFAULT_UI_STATE.details.tab,
-    codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.details.codeShell,
-  };
-}
-
 /** Reads a persisted editor layout, falling back per-field to the default for anything odd. */
 function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
   const record = asRecord(stored);
@@ -143,7 +135,46 @@ function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
   };
 }
 
-const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'search', 'history', 'wss', 'settings'];
+/**
+ * Reads the persisted slide-over slice. `codeShell` is validated as an enum rather than by
+ * `mergeSection`'s `typeof` check (any string would pass that), and falls back to
+ * `legacyCodeShell` — the v3 blob's `details.codeShell`, when there is one — before the default,
+ * so a version-3 payload's shell preference survives the v3 → v4 migration.
+ */
+function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['slideOver'] {
+  const record = asRecord(stored);
+  const open = record?.['open'];
+  const width = record?.['width'];
+  const codeShell = record?.['codeShell'] ?? legacyCodeShell;
+  return {
+    open: typeof open === 'boolean' ? open : DEFAULT_UI_STATE.slideOver.open,
+    width: typeof width === 'number' ? width : DEFAULT_UI_STATE.slideOver.width,
+    codeShell: codeShell === 'posix' || codeShell === 'powershell' ? codeShell : DEFAULT_UI_STATE.slideOver.codeShell,
+  };
+}
+
+/**
+ * Reads the persisted sidebar slice. `lastSize` — the size Task 9's collapse/expand restores —
+ * falls back to the *merged* `size`, not `DEFAULT_UI_STATE.sidebar.lastSize`, when the stored
+ * payload has none: a version-3 blob (and any payload written before the collapse feature
+ * existed) never wrote `lastSize` at all, and seeding it from the global default (20) rather than
+ * the size the user actually had would make their first post-upgrade expand jump to a size they
+ * never chose.
+ */
+function mergeSidebar(stored: unknown): UiSnapshot['sidebar'] {
+  const merged = mergeSection(DEFAULT_UI_STATE.sidebar, stored);
+  const lastSize = asRecord(stored)?.['lastSize'];
+  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+}
+
+/** The console's equivalent of {@link mergeSidebar}. */
+function mergeConsole(stored: unknown): UiSnapshot['console'] {
+  const merged = mergeSection(DEFAULT_UI_STATE.console, stored);
+  const lastSize = asRecord(stored)?.['lastSize'];
+  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+}
+
+const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'environments', 'search', 'history', 'wss', 'settings'];
 
 /** Reads one persisted tab, or `undefined` for anything that is not a `{ kind, id }` pair. */
 function readTab(value: unknown): PersistedTab | undefined {
@@ -153,7 +184,9 @@ function readTab(value: unknown): PersistedTab | undefined {
   if (typeof id !== 'string' || id.length === 0) {
     return undefined;
   }
-  return kind === 'request' || kind === 'interface' || kind === 'environment' ? { kind, id } : undefined;
+  return kind === 'request' || kind === 'interface' || kind === 'environment' || kind === 'project'
+    ? { kind, id }
+    : undefined;
 }
 
 /**
@@ -188,8 +221,15 @@ function mergeWorkspaces(stored: unknown): Record<string, PersistedWorkspaceUi> 
 
 /**
  * Reads the persisted layout, merging it over {@link DEFAULT_UI_STATE}. Every failure mode —
- * storage unavailable, absent key, corrupt JSON, a payload from another version — yields the
- * defaults rather than an error: a broken layout preference must never block startup.
+ * storage unavailable, absent key, corrupt JSON, a payload from a version this reader does not
+ * know how to read — yields the defaults rather than an error: a broken layout preference must
+ * never block startup.
+ *
+ * A `version: 4` payload is read directly; a `version: 3` payload is accepted too (see
+ * {@link UI_STORAGE_VERSION}'s doc comment) — only `sidebar`, `console`, `theme`,
+ * `editorLineNumbers`, `editorLayout` and `workspaces` are ever read off `state`, so the v3
+ * blob's `details` key is silently dropped and everything else survives. Any other version
+ * (missing, too old, too new, corrupt) falls back to the defaults wholesale.
  */
 export function readUi(storage: Storage = localStorage): UiSnapshot {
   try {
@@ -198,16 +238,21 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
       return DEFAULT_UI_STATE;
     }
     const payload = asRecord(JSON.parse(raw));
-    if (payload?.['version'] !== UI_STORAGE_VERSION) {
+    const version = payload?.['version'];
+    if (version !== UI_STORAGE_VERSION && version !== PRIOR_UI_STORAGE_VERSION) {
       return DEFAULT_UI_STATE;
     }
-    const stored = asRecord(payload['state']) ?? {};
+    const stored = asRecord(payload?.['state']) ?? {};
     const theme = stored['theme'];
     const editorLineNumbers = stored['editorLineNumbers'];
+    // Only a version-3 blob carries the legacy `details.codeShell`; a v4 blob's `slideOver`
+    // already has its own `codeShell` (or doesn't, and gets the default).
+    const legacyCodeShell =
+      version === PRIOR_UI_STORAGE_VERSION ? asRecord(stored['details'])?.['codeShell'] : undefined;
     return {
-      sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
-      console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
-      details: mergeDetails(stored['details']),
+      sidebar: mergeSidebar(stored['sidebar']),
+      console: mergeConsole(stored['console']),
+      slideOver: mergeSlideOver(stored['slideOver'], legacyCodeShell),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:
         typeof editorLineNumbers === 'boolean' ? editorLineNumbers : DEFAULT_UI_STATE.editorLineNumbers,

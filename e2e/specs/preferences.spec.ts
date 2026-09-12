@@ -41,7 +41,7 @@ test.describe('request properties and preferences', () => {
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    // The Details panel follows the active request tab, so the grid is already showing.
+    await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Properties' }).click();
     const timeout = page.getByTestId('request-timeout');
     await expect(timeout).toBeVisible({ timeout: 20_000 });
     await timeout.fill('100');

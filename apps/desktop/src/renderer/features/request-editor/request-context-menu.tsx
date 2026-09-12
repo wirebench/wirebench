@@ -160,7 +160,7 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              useUiStore.getState().showDetails('code');
+              useUiStore.getState().openCode();
             }}
           >
             Show code

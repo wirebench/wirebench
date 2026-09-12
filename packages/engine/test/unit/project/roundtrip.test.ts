@@ -71,7 +71,9 @@ describe('saveProject', () => {
 
     expect((await readBytes(dir, 'wirebench.yaml')).toString('utf8')).toMatchInlineSnapshot(`
       "description: Round-trip fixture
-      formatVersion: 1
+      disabled:
+        - tier
+      formatVersion: 2
       id: ID0001
       name: Demo Project
       properties:
@@ -86,7 +88,9 @@ describe('saveProject', () => {
       "
     `);
     expect((await readBytes(dir, 'environments/dev.yaml')).toString('utf8')).toMatchInlineSnapshot(`
-      "endpoints:
+      "disabled:
+        - region
+      endpoints:
         CountryInfo: http://localhost:8080/country
       id: ID0009
       name: dev
@@ -266,6 +270,33 @@ describe('saveProject', () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it('writes disabled sorted, deduplicated, and dropped once its list would be empty', async () => {
+    const dir = await tempProjectDir();
+    const project: Project = {
+      ...sampleProject(),
+      properties: { b: '2', a: '1' },
+      disabledProperties: ['b', 'a', 'b', 'ghost'],
+    };
+    await saveProject(project, dir);
+
+    const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
+    expect(text).toContain('disabled:\n  - a\n  - b\n');
+    expect(text).not.toContain('ghost');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('omits disabled entirely once every disabled name has been removed from properties', async () => {
+    const dir = await tempProjectDir();
+    const project: Project = { ...sampleProject(), properties: {}, disabledProperties: ['tier'] };
+    await saveProject(project, dir);
+
+    const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
+    expect(text).not.toContain('disabled');
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe('loadProject', () => {
@@ -393,11 +424,11 @@ describe('loadProject', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
-    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 1', 'formatVersion: 2'));
+    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 2', 'formatVersion: 3'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
     expect(error.code).toBe('project-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 2 });
+    expect(error.details).toMatchObject({ formatVersion: 3, supported: 2 });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -406,7 +437,7 @@ describe('loadProject', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
-    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 1', 'formatVersion: "1"'));
+    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 2', 'formatVersion: "1"'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
     expect(error.code).toBe('project-file-invalid');

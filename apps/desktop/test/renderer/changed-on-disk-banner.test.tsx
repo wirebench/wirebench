@@ -17,6 +17,7 @@ function project(dirty: boolean): ProjectWire {
     interfaces: [],
     requests: [],
     properties: {},
+    disabledProperties: [],
     environments: [],
     problems: [],
     keystores: [],

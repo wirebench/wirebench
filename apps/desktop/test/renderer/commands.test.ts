@@ -13,7 +13,15 @@ import type { WorkspaceEnvironmentWire, WorkspaceWire } from '../../src/shared/w
 
 /** The smallest open workspace carrying exactly these environments. */
 function workspace(environments: readonly WorkspaceEnvironmentWire[]): WorkspaceWire {
-  return { id: 'w', name: 'Workspace 1', dir: '/tmp/w', properties: {}, environments: [...environments], projects: [] };
+  return {
+    id: 'w',
+    name: 'Workspace 1',
+    dir: '/tmp/w',
+    properties: {},
+    disabled: [],
+    environments: [...environments],
+    projects: [],
+  };
 }
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import {
@@ -28,9 +36,9 @@ import {
 const context: CommandContext = {
   platform: 'mac',
   ui: {
-    sidebar: { visible: true, view: 'explorer', size: 20 },
-    console: { visible: true, activeTab: 'http-log', size: 25 },
-    details: { visible: true, size: 20, tab: 'selection', codeShell: 'posix' },
+    sidebar: { visible: true, view: 'explorer', size: 20, lastSize: 20 },
+    console: { visible: true, activeTab: 'http-log', size: 25, lastSize: 25 },
+    slideOver: { open: false, width: 420, codeShell: 'posix' },
     theme: 'dark',
     editorLineNumbers: true,
     editorLayout: { orientation: 'side-by-side', mode: 'split' },
@@ -100,14 +108,14 @@ describe('command registry', () => {
 
   it('lists only commands whose `when` passes, sorted by category then label', () => {
     registerCommand({ id: 'view.toggleConsole', label: 'Toggle Console', category: 'View', run: vi.fn() });
-    registerCommand({ id: 'view.toggleDetails', label: 'Toggle Details', category: 'View', run: vi.fn() });
+    registerCommand({ id: 'view.toggleCode', label: 'Toggle Code', category: 'View', run: vi.fn() });
     registerCommand({ id: 'palette.open', label: 'Open Command Palette', category: 'General', run: vi.fn() });
     registerCommand({ id: 'project.save', label: 'Save All', category: 'Project', run: vi.fn(), when: () => false });
 
     expect(listCommands(context).map((command) => command.id)).toEqual([
       'palette.open',
+      'view.toggleCode',
       'view.toggleConsole',
-      'view.toggleDetails',
     ]);
   });
 
@@ -147,7 +155,9 @@ describe('environment commands', () => {
   it('switches straight to a named environment when the palette passes one', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
     useWorkspaceStore.setState({
-      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
+      workspace: workspace([
+        { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] },
+      ]),
       setActiveEnvironment,
     });
     await runCommand('env.switch', context, 'uat');
@@ -161,7 +171,9 @@ describe('environment commands', () => {
     expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
 
     useWorkspaceStore.setState({
-      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
+      workspace: workspace([
+        { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] },
+      ]),
     });
     await runCommand('env.next', context);
     expect(setActiveEnvironment).toHaveBeenCalledWith('e1');
@@ -350,11 +362,11 @@ describe('request action commands', () => {
     expect(removeAttachment).toHaveBeenCalledWith('req-1', 'att-9');
   });
 
-  it('reveals the Details panel on the Code tab', async () => {
-    useUiStore.setState({ details: { ...useUiStore.getState().details, visible: false, tab: 'selection' } });
+  it('opens the Code slide-over', async () => {
+    useUiStore.setState({ slideOver: { ...useUiStore.getState().slideOver, open: false } });
 
     await runCommand('request.showCode', context);
 
-    expect(useUiStore.getState().details).toMatchObject({ visible: true, tab: 'code' });
+    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });
