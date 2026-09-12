@@ -1,17 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { VariablesTable, type VariablesTableTarget } from '../../src/renderer/features/environments/variables-table.js';
+import {
+  VariablesTable,
+  type InheritedScope,
+  type VariablesTableTarget,
+} from '../../src/renderer/features/environments/variables-table.js';
 
 function baseTarget(patch: Partial<VariablesTableTarget> = {}): VariablesTableTarget {
   return {
     label: 'Test variables',
+    scopeLabel: 'This environment',
     properties: { host: 'one.test' },
     disabled: [],
     onSet: vi.fn(),
     onRemove: vi.fn(),
     ...patch,
   };
+}
+
+function scope(patch: Partial<InheritedScope> & { readonly label: string }): InheritedScope {
+  return { properties: {}, disabled: [], ...patch };
 }
 
 function renderTable(target: VariablesTableTarget) {
@@ -167,5 +176,150 @@ describe('VariablesTable', () => {
     fireEvent.keyDown(name, { key: 'Enter' });
 
     expect(onSetEnabled).not.toHaveBeenCalled();
+  });
+});
+
+describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows the header row for Resolves from', () => {
+    renderTable(baseTarget());
+    expect(screen.getByRole('columnheader', { name: 'Resolves from' })).toBeTruthy();
+  });
+
+  it('labels a name defined only here, with nothing inherited, plainly with the scope label', () => {
+    renderTable(baseTarget({ scopeLabel: 'Globals' }));
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Globals');
+  });
+
+  it('groups own rows under "Set here · {scopeLabel}" and omits the Inherited header when nothing is inherited', () => {
+    renderTable(baseTarget({ scopeLabel: 'Globals' }));
+    const groups = screen.getAllByTestId('env-variable-group');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.textContent).toBe('Set here · Globals');
+  });
+
+  it('says an enabled own value shadows the nearest inherited scope that also defines it', () => {
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        inherited: [scope({ label: 'Workspace', properties: { host: 'ws.test' } }), scope({ label: 'Globals' })],
+      }),
+    );
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('This environment · shadows Workspace');
+  });
+
+  it('skips past an inherited scope that defines the name but disables it, per the precedence rule', () => {
+    // The ordering trap: Workspace defines `host` but disables it, so it does not win — Globals
+    // does, and that's who should be named both as the shadow target and the fallback target.
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: {},
+        disabled: ['host'],
+        inherited: [
+          scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
+          scope({ label: 'Globals', properties: { host: 'global.test' } }),
+        ],
+      }),
+    );
+    // `host` is not in this scope's own properties, so it renders as an Inherited row, owned by
+    // the nearest scope that defines it at all — Workspace — even though Workspace disables it.
+    expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('ws.test');
+    expect(screen.getByLabelText<HTMLInputElement>('Enable host').checked).toBe(false);
+    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('Workspace');
+  });
+
+  it('says a disabled own value falls through to the scope that would win', () => {
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: { host: 'here.test' },
+        disabled: ['host'],
+        inherited: [
+          scope({ label: 'Workspace', properties: { host: 'ws.test' }, disabled: ['host'] }),
+          scope({ label: 'Globals', properties: { host: 'global.test' } }),
+        ],
+      }),
+    );
+    // Workspace defines `host` too but disables it — the ordering trap — so resolution continues
+    // to Globals, which is who this scope's disabled value actually falls through to.
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — falls through to Globals');
+  });
+
+  it('says a disabled own value with nothing else defining it resolves to nothing', () => {
+    renderTable(baseTarget({ properties: { host: 'here.test' }, disabled: ['host'] }));
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Off — no value resolves');
+  });
+
+  it('groups a name defined only in an inherited scope under "Inherited · read-only"', () => {
+    renderTable(
+      baseTarget({
+        properties: { host: 'here.test' },
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const groups = screen.getAllByTestId('env-variable-group');
+    expect(groups.map((group) => group.textContent)).toEqual(['Set here · This environment', 'Inherited · read-only']);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
+  });
+
+  it('picks the nearest inherited scope when several define the same inherited-only name', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [
+          scope({ label: 'Workspace', properties: { token: 'ws-token' } }),
+          scope({ label: 'Globals', properties: { token: 'global-token' } }),
+        ],
+      }),
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('ws-token');
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Workspace');
+  });
+
+  it('renders an inherited row read-only: no delete button, disabled Enabled checkbox with a title naming the owner', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const checkbox = screen.getByLabelText<HTMLInputElement>('Enable token');
+    expect(checkbox.disabled).toBe(true);
+    expect(checkbox.title).toContain('Workspace');
+    expect(screen.getByLabelText<HTMLInputElement>('Name of token').readOnly).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').readOnly).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Remove token' })).toBeNull();
+  });
+
+  it('mutes an inherited row whose owning scope disables it', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' }, disabled: ['token'] })],
+      }),
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Enable token').checked).toBe(false);
+    const rows = screen.getAllByTestId('env-variable-row');
+    expect(rows[0]?.className).toContain('opacity-50');
+  });
+
+  it('omits the Set-here header when this scope defines nothing of its own', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const groups = screen.getAllByTestId('env-variable-group');
+    expect(groups.map((group) => group.textContent)).toEqual(['Inherited · read-only']);
+  });
+
+  it('still shows the empty message when both this scope and every inherited scope have nothing', () => {
+    renderTable(baseTarget({ properties: {} }));
+    expect(screen.getByText('No variables yet.')).toBeTruthy();
   });
 });
