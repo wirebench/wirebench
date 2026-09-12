@@ -56,7 +56,7 @@ function folderOverride(): string | undefined {
 }
 
 /** The save-dialog counterpart of {@link folderOverride}. */
-function saveOverride(): string | undefined {
+export function saveOverride(): string | undefined {
   return e2eOverridesAllowed() ? process.env['WIREBENCH_E2E_DIALOG_SAVE'] : undefined;
 }
 

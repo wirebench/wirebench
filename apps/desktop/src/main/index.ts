@@ -4,6 +4,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
+import { saveOverride } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
@@ -238,7 +239,7 @@ void app.whenReady().then(() => {
       // Mirrors `dialogs.saveFile`, including its e2e override: a Playwright run cannot drive a
       // native Save-as panel, so the same env var short-circuits both.
       showSave: async (options) => {
-        const override = process.env['WIREBENCH_E2E_DIALOG_SAVE'];
+        const override = saveOverride();
         if (override !== undefined) {
           return override;
         }
