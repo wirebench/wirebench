@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PanelSize } from 'react-resizable-panels';
-import { Group, Panel, Separator } from 'react-resizable-panels';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { ToastViewport } from '../components/toast.js';
@@ -30,20 +28,40 @@ import type { PaletteMode } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
 import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
+import { PanelHandle } from './panel-handle.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
 import { SlideOver } from './slide-over.js';
 import { StatusBar } from './status-bar.js';
 import { TitleBar } from './title-bar.js';
 
-const SEPARATOR_VERTICAL = 'w-px bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
-const SEPARATOR_HORIZONTAL = 'h-px bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
+/** The sidebar's size bounds, as a percentage of the row it shares with the editor/console column. */
+const SIDEBAR_MIN = 12;
+const SIDEBAR_MAX = 40;
+/** The console's size bounds, as a percentage of the column it shares with the editor area. */
+const CONSOLE_MIN = 10;
+const CONSOLE_MAX = 70;
+/** Arrow-key resize step for both, per the layout plan's §4. */
+const PANEL_STEP = 2;
 
-/** Panel sizes are stored as percentages, so only that half of the reported size is kept. */
-function asPercentage(setSize: (size: number) => void) {
-  return (size: PanelSize) => {
-    setSize(size.asPercentage);
-  };
+/**
+ * Resizes (or, past `min`, collapses) a percentage-sized panel. Shared by the sidebar and the
+ * console: both read their live state from the store directly (rather than a closed-over prop)
+ * so a fast sequence of drag deltas — each one only the pixels moved since the last — always
+ * builds on the size the previous delta actually produced.
+ */
+function resizePercentPanel(
+  next: number,
+  min: number,
+  max: number,
+  collapse: () => void,
+  setSize: (size: number) => void,
+): void {
+  if (next < min) {
+    collapse();
+  } else {
+    setSize(Math.min(max, next));
+  }
 }
 
 /**
@@ -63,12 +81,73 @@ export function AppShell() {
   const editorLineNumbers = useUiStore((state) => state.editorLineNumbers);
   const editorLayout = useUiStore((state) => state.editorLayout);
   const selection = useUiStore((state) => state.selection);
-  const setSidebarSize = useUiStore((state) => state.setSidebarSize);
-  const setConsoleSize = useUiStore((state) => state.setConsoleSize);
   const setSlideOverWidth = useUiStore((state) => state.setSlideOverWidth);
+  const restoreSidebarSize = useUiStore((state) => state.restoreSidebarSize);
+  const restoreConsoleSize = useUiStore((state) => state.restoreConsoleSize);
   const closeCode = useUiStore((state) => state.closeCode);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
+
+  // The row the sidebar and the editor/console column share, and the column the editor area and
+  // the console share — measured on drag so a pixel delta can be turned into a percentage of the
+  // space it actually resizes.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+
+  const dragSidebar = useCallback((deltaPx: number) => {
+    const width = rowRef.current?.clientWidth;
+    if (width === undefined || width === 0) {
+      return;
+    }
+    const store = useUiStore.getState();
+    if (!store.sidebar.visible) {
+      return;
+    }
+    const next = store.sidebar.size + (deltaPx / width) * 100;
+    resizePercentPanel(next, SIDEBAR_MIN, SIDEBAR_MAX, store.collapseSidebar, store.setSidebarSize);
+  }, []);
+
+  const stepSidebar = useCallback((direction: 1 | -1) => {
+    const store = useUiStore.getState();
+    if (!store.sidebar.visible) {
+      return;
+    }
+    resizePercentPanel(
+      store.sidebar.size + direction * PANEL_STEP,
+      SIDEBAR_MIN,
+      SIDEBAR_MAX,
+      store.collapseSidebar,
+      store.setSidebarSize,
+    );
+  }, []);
+
+  // The handle sits above the console: dragging (or stepping) down shrinks it, up grows it.
+  const dragConsole = useCallback((deltaPx: number) => {
+    const height = columnRef.current?.clientHeight;
+    if (height === undefined || height === 0) {
+      return;
+    }
+    const store = useUiStore.getState();
+    if (!store.console.visible) {
+      return;
+    }
+    const next = store.console.size - (deltaPx / height) * 100;
+    resizePercentPanel(next, CONSOLE_MIN, CONSOLE_MAX, store.collapseConsole, store.setConsoleSize);
+  }, []);
+
+  const stepConsole = useCallback((direction: 1 | -1) => {
+    const store = useUiStore.getState();
+    if (!store.console.visible) {
+      return;
+    }
+    resizePercentPanel(
+      store.console.size - direction * PANEL_STEP,
+      CONSOLE_MIN,
+      CONSOLE_MAX,
+      store.collapseConsole,
+      store.setConsoleSize,
+    );
+  }, []);
 
   const workspace = useWorkspaceStore((state) => state.workspace);
   const workspaceReady = useWorkspaceStore((state) => state.ready);
@@ -175,51 +254,58 @@ export function AppShell() {
           <div className="relative flex min-h-0 flex-1">
             <ActivityBar platform={platform} />
 
-            <Group
-              // Panels are added and removed as regions are toggled; keying the group on which
-              // are mounted lets it recompute its constraints instead of reconciling across shapes.
-              key={String(sidebar.visible)}
-              orientation="horizontal"
-              className="flex min-w-0 flex-1"
-            >
+            <div ref={rowRef} className="flex min-w-0 flex-1">
               {sidebar.visible && (
                 <>
-                  <Panel
-                    id="sidebar-panel"
-                    defaultSize={`${String(sidebar.size)}%`}
-                    minSize="12%"
-                    maxSize="40%"
-                    onResize={asPercentage(setSidebarSize)}
-                    className="border-r border-hairline"
+                  <div
+                    data-testid="sidebar-panel"
+                    style={{ width: `${String(sidebar.size)}%` }}
+                    className="min-w-0 shrink-0 border-r border-hairline"
                   >
                     <Sidebar />
-                  </Panel>
-                  <Separator aria-label="Resize" className={SEPARATOR_VERTICAL} />
+                  </div>
+                  <PanelHandle
+                    testId="panel-handle-sidebar"
+                    label="Resize Sidebar"
+                    orientation="vertical"
+                    valueNow={sidebar.size}
+                    valueMin={SIDEBAR_MIN}
+                    valueMax={SIDEBAR_MAX}
+                    onDrag={dragSidebar}
+                    onStep={stepSidebar}
+                    onDoubleClick={restoreSidebarSize}
+                  />
                 </>
               )}
 
-              <Panel id="main-panel" minSize="30%">
-                <Group key={String(consoleState.visible)} orientation="vertical" className="flex h-full flex-col">
-                  <Panel id="editors-panel" minSize="20%">
-                    <EditorArea />
-                  </Panel>
-                  {consoleState.visible && (
-                    <>
-                      <Separator aria-label="Resize" className={SEPARATOR_HORIZONTAL} />
-                      <Panel
-                        id="console-panel"
-                        defaultSize={`${String(consoleState.size)}%`}
-                        minSize="10%"
-                        maxSize="70%"
-                        onResize={asPercentage(setConsoleSize)}
-                      >
-                        <ConsolePanel />
-                      </Panel>
-                    </>
-                  )}
-                </Group>
-              </Panel>
-            </Group>
+              <div ref={columnRef} data-testid="main-panel" className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="min-h-0 min-w-0 flex-1">
+                  <EditorArea />
+                </div>
+                {consoleState.visible && (
+                  <>
+                    <PanelHandle
+                      testId="panel-handle-console"
+                      label="Resize Console"
+                      orientation="horizontal"
+                      valueNow={consoleState.size}
+                      valueMin={CONSOLE_MIN}
+                      valueMax={CONSOLE_MAX}
+                      onDrag={dragConsole}
+                      onStep={stepConsole}
+                      onDoubleClick={restoreConsoleSize}
+                    />
+                    <div
+                      data-testid="console-panel"
+                      style={{ height: `${String(consoleState.size)}%` }}
+                      className="min-h-0 shrink-0"
+                    >
+                      <ConsolePanel />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
             <RightRail platform={platform} />
             {slideOver.open && (

@@ -72,6 +72,10 @@ export function StatusBar() {
   const problemCount = useProblemsStore((state) => state.items.length);
   const errorCount = useProblemsStore((state) => state.items.filter((item) => item.severity === 'error').length);
   const showConsoleTab = useUiStore((state) => state.showConsoleTab);
+  const sidebarVisible = useUiStore((state) => state.sidebar.visible);
+  const consoleVisible = useUiStore((state) => state.console.visible);
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  const toggleConsole = useUiStore((state) => state.toggleConsole);
   // The endpoint the *active* request would be sent to — not the last one sent — so the warning
   // is about what the next Send will do.
   const activeRequestId = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.requestId);
@@ -91,6 +95,42 @@ export function StatusBar() {
       className="flex h-status-bar shrink-0 items-center justify-between border-t border-hairline bg-surface-sunken px-3 text-xs text-fg-subtle"
     >
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          data-testid="status-bar-sidebar"
+          title="Toggle Sidebar"
+          aria-label="Toggle Sidebar"
+          aria-pressed={sidebarVisible}
+          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+            sidebarVisible ? 'text-fg-default' : ''
+          }`}
+          onClick={() => {
+            toggleSidebar();
+          }}
+        >
+          Sidebar
+        </button>
+        <span aria-hidden="true" className="text-fg-faint">
+          ·
+        </span>
+        <button
+          type="button"
+          data-testid="status-bar-console"
+          title="Toggle Console"
+          aria-label="Toggle Console"
+          aria-pressed={consoleVisible}
+          className={`rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default ${
+            consoleVisible ? 'text-fg-default' : ''
+          } ${errorCount > 0 ? 'text-status-danger' : problemCount > 0 ? 'text-status-warning' : ''}`}
+          onClick={() => {
+            toggleConsole();
+          }}
+        >
+          Console{problemCount > 0 ? ` (${String(problemCount)})` : ''}
+        </button>
+        <span aria-hidden="true" className="text-fg-faint">
+          ·
+        </span>
         <EnvSwitcher />
         {saveLabel !== undefined && (
           <>

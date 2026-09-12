@@ -153,6 +153,27 @@ function mergeSlideOver(stored: unknown, legacyCodeShell: unknown): UiSnapshot['
   };
 }
 
+/**
+ * Reads the persisted sidebar slice. `lastSize` — the size Task 9's collapse/expand restores —
+ * falls back to the *merged* `size`, not `DEFAULT_UI_STATE.sidebar.lastSize`, when the stored
+ * payload has none: a version-3 blob (and any payload written before the collapse feature
+ * existed) never wrote `lastSize` at all, and seeding it from the global default (20) rather than
+ * the size the user actually had would make their first post-upgrade expand jump to a size they
+ * never chose.
+ */
+function mergeSidebar(stored: unknown): UiSnapshot['sidebar'] {
+  const merged = mergeSection(DEFAULT_UI_STATE.sidebar, stored);
+  const lastSize = asRecord(stored)?.['lastSize'];
+  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+}
+
+/** The console's equivalent of {@link mergeSidebar}. */
+function mergeConsole(stored: unknown): UiSnapshot['console'] {
+  const merged = mergeSection(DEFAULT_UI_STATE.console, stored);
+  const lastSize = asRecord(stored)?.['lastSize'];
+  return { ...merged, lastSize: typeof lastSize === 'number' ? lastSize : merged.size };
+}
+
 const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'environments', 'search', 'history', 'wss', 'settings'];
 
 /** Reads one persisted tab, or `undefined` for anything that is not a `{ kind, id }` pair. */
@@ -229,8 +250,8 @@ export function readUi(storage: Storage = localStorage): UiSnapshot {
     const legacyCodeShell =
       version === PRIOR_UI_STORAGE_VERSION ? asRecord(stored['details'])?.['codeShell'] : undefined;
     return {
-      sidebar: mergeSection(DEFAULT_UI_STATE.sidebar, stored['sidebar']),
-      console: mergeSection(DEFAULT_UI_STATE.console, stored['console']),
+      sidebar: mergeSidebar(stored['sidebar']),
+      console: mergeConsole(stored['console']),
       slideOver: mergeSlideOver(stored['slideOver'], legacyCodeShell),
       theme: theme === 'dark' || theme === 'light' || theme === 'system' ? theme : DEFAULT_UI_STATE.theme,
       editorLineNumbers:

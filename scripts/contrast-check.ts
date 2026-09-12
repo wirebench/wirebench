@@ -101,6 +101,10 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-accent-default', bg: '--wb-bg-raised', kind: 'ui', where: 'active tab underline' },
   { fg: '--wb-status-danger', bg: '--wb-bg-raised', kind: 'ui', where: 'error icon' },
   { fg: '--wb-status-warning', bg: '--wb-bg-raised', kind: 'ui', where: 'warning icon' },
+
+  // Panel drag handles: sidebar/console sit on the base surface, the slide-over's handle on it too.
+  { fg: '--wb-handle-hover', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, hovered' },
+  { fg: '--wb-handle-active', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, dragging' },
 ];
 
 /** One `[data-theme]`-style block's declarations, as `--wb-token` -> literal value. */

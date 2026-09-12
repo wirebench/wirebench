@@ -1,3 +1,5 @@
+import { PanelLeftClose } from 'lucide-react';
+import { IconButton } from '../components/icon-button.js';
 import { EnvironmentsView } from '../features/environments/environments-view.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
@@ -49,6 +51,7 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
 /** The sidebar panel: a section title plus the active view's content. */
 export function Sidebar() {
   const view = useUiStore((state) => state.sidebar.view);
+  const collapseSidebar = useUiStore((state) => state.collapseSidebar);
   const copy = VIEWS[view];
 
   return (
@@ -57,8 +60,18 @@ export function Sidebar() {
       aria-label={copy.title}
       className="flex h-full min-w-0 flex-col bg-surface-base text-fg-default"
     >
-      <h2 className="flex h-row shrink-0 items-center px-3 text-xs font-medium tracking-wider text-fg-subtle uppercase">
+      <h2 className="flex h-row shrink-0 items-center justify-between px-3 text-xs font-medium tracking-wider text-fg-subtle uppercase">
         {copy.title}
+        <IconButton
+          label="Collapse Sidebar"
+          data-testid="sidebar-collapse"
+          className="normal-case"
+          onClick={() => {
+            collapseSidebar();
+          }}
+        >
+          <PanelLeftClose size={14} aria-hidden="true" />
+        </IconButton>
       </h2>
       {view === 'explorer' ? (
         <ExplorerView />

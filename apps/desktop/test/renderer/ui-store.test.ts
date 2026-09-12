@@ -73,8 +73,10 @@ describe('ui persistence', () => {
 
     expect(() => readUi(storage)).not.toThrow();
     expect(result).toEqual({
-      sidebar: { visible: false, view: 'history', size: 31, lastSize: DEFAULT_UI_STATE.sidebar.lastSize },
-      console: { visible: false, activeTab: 'problems', size: 42, lastSize: DEFAULT_UI_STATE.console.lastSize },
+      // `lastSize` was never written by a v3 blob; it seeds from the stored `size` (31 / 42),
+      // not the global default (20 / 25) — see the dedicated migration test below.
+      sidebar: { visible: false, view: 'history', size: 31, lastSize: 31 },
+      console: { visible: false, activeTab: 'problems', size: 42, lastSize: 42 },
       // Carried forward from the removed `details` slice; see ui-state-v4.test.tsx.
       slideOver: { ...DEFAULT_UI_STATE.slideOver, codeShell: 'powershell' },
       theme: 'light',
@@ -83,6 +85,55 @@ describe('ui persistence', () => {
       workspaces: { w1: { tabs: [{ kind: 'request', id: 'req-1' }], activeId: 'req-1' } },
     });
     expect(result).not.toHaveProperty('details');
+  });
+
+  it('seeds `lastSize` from the stored `size` when a v3 blob has none, not the global default', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        state: {
+          sidebar: { visible: true, view: 'explorer', size: 33 },
+          console: { visible: true, activeTab: 'http-log', size: 44 },
+          workspaces: {},
+        },
+      }),
+    );
+
+    const result = readUi(storage);
+
+    expect(result.sidebar.lastSize).toBe(33);
+    expect(result.console.lastSize).toBe(44);
+    // Sanity: this only matters because the sizes here differ from the global defaults.
+    expect(result.sidebar.lastSize).not.toBe(DEFAULT_UI_STATE.sidebar.lastSize);
+    expect(result.console.lastSize).not.toBe(DEFAULT_UI_STATE.console.lastSize);
+  });
+
+  it('a v4 blob missing `lastSize` also seeds it from the stored `size`', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: { sidebar: { visible: true, view: 'explorer', size: 37 } },
+      }),
+    );
+
+    expect(readUi(storage).sidebar).toEqual({ visible: true, view: 'explorer', size: 37, lastSize: 37 });
+  });
+
+  it('a stored `lastSize` is honoured over the stored `size`', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: { sidebar: { visible: true, view: 'explorer', size: 12, lastSize: 28 } },
+      }),
+    );
+
+    expect(readUi(storage).sidebar).toMatchObject({ size: 12, lastSize: 28 });
   });
 
   it('falls back to defaults for a blob that parses to something other than an object', () => {

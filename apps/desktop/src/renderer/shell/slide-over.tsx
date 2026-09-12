@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconButton } from '../components/icon-button.js';
+import { PanelHandle } from './panel-handle.js';
 
 /** The width the left-edge handle will not drag the panel narrower or wider than. */
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 720;
+/** The width a double-click on the handle restores — there is no per-session "last size" concept
+    for the slide-over the way there is for the sidebar/console, so it resets to this instead. */
+const DEFAULT_WIDTH = 420;
+/** Arrow-key resize step, in pixels. */
+const STEP_PX = 16;
 
 export interface SlideOverProps {
   readonly label: string;
@@ -22,8 +28,6 @@ export interface SlideOverProps {
  * it, and its left edge is a drag handle that remembers the chosen width.
  */
 export function SlideOver({ label, width, onWidthChange, onClose, children }: SlideOverProps) {
-  const dragging = useRef<{ readonly startX: number; readonly startWidth: number } | undefined>(undefined);
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
@@ -36,34 +40,14 @@ export function SlideOver({ label, width, onWidthChange, onClose, children }: Sl
     };
   }, [onClose]);
 
-  const onPointerMove = useCallback(
-    (event: PointerEvent) => {
-      if (dragging.current === undefined) {
-        return;
-      }
-      // The handle sits on the panel's left edge and the panel is anchored right, so dragging
-      // the pointer left (a smaller clientX) widens it.
-      const delta = dragging.current.startX - event.clientX;
-      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragging.current.startWidth + delta));
-      onWidthChange(next);
-    },
-    [onWidthChange],
-  );
-
-  const endDrag = useCallback(() => {
-    dragging.current = undefined;
-    window.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', endDrag);
-  }, [onPointerMove]);
-
-  const onHandlePointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    dragging.current = { startX: event.clientX, startWidth: width };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', endDrag);
+  // The handle sits on the panel's left edge and the panel is anchored right, so dragging the
+  // pointer left (a negative delta) widens it — the opposite sign from the sidebar's handle.
+  const onDrag = (deltaPx: number): void => {
+    onWidthChange(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width - deltaPx)));
   };
-
-  // Cleanup for the rare case the panel unmounts (e.g. its own close) mid-drag.
-  useEffect(() => () => endDrag(), [endDrag]);
+  const onStep = (direction: 1 | -1): void => {
+    onWidthChange(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width - direction * STEP_PX)));
+  };
 
   return (
     <aside
@@ -73,13 +57,18 @@ export function SlideOver({ label, width, onWidthChange, onClose, children }: Sl
       style={{ width: `${String(width)}px`, right: 'var(--wb-right-rail-width)' }}
       className="absolute inset-y-0 z-30 flex min-w-0 border-l border-hairline bg-surface-base shadow-lg"
     >
-      <div
-        data-testid="panel-handle-slide-over"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={`Resize ${label}`}
-        onPointerDown={onHandlePointerDown}
-        className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-accent-muted focus-visible:bg-accent"
+      <PanelHandle
+        testId="panel-handle-slide-over"
+        label={`Resize ${label}`}
+        orientation="vertical"
+        valueNow={width}
+        valueMin={MIN_WIDTH}
+        valueMax={MAX_WIDTH}
+        onDrag={onDrag}
+        onStep={onStep}
+        onDoubleClick={() => {
+          onWidthChange(DEFAULT_WIDTH);
+        }}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-row shrink-0 items-center justify-between border-b border-hairline pl-3 pr-2">

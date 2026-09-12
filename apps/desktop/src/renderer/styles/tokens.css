@@ -44,6 +44,13 @@
   --wb-accent-muted: #8a4a34;
   --wb-accent-surface: #2b1c16;
 
+  /* Panel drag handles (sidebar, console, Code slide-over): a hover tint and a stronger one
+     while actively dragging. Aliases onto the one accent rather than new colours, so both
+     themes stay covered automatically; named separately because a handle's 4px strip earns its
+     own line in `pnpm contrast:check` rather than borrowing another element's justification. */
+  --wb-handle-hover: var(--wb-accent-hover);
+  --wb-handle-active: var(--wb-accent-default);
+
   /* Status, used only where status is the message. */
   --wb-status-success: #6fbf8f;
   --wb-status-warning: #d9a441;

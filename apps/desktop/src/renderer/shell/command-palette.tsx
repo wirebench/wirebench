@@ -40,8 +40,14 @@ function groupByCategory(commands: readonly Definition[]): readonly (readonly [C
  * keybindings — and ⌘P, the same dialog in quick-open mode over operations and requests.
  */
 export function CommandPalette({ open, onOpenChange, context, mode = 'commands' }: CommandPaletteProps) {
-  // `listCommands` is filtered by `when`, so reopening after a state change re-evaluates it.
-  const groups = useMemo(() => groupByCategory(listCommands(context)), [context]);
+  // `listCommands` is filtered by `when`, whose predicates (e.g. "a workspace is open") read
+  // stores that are *not* part of `context` (workspace, selection-adjacent project state, …), so
+  // `context`'s own identity can stay unchanged across a state change that should still affect
+  // what is listed. `open` is in the dependency list for exactly that reason: every reopen
+  // re-evaluates `when` against the current world, rather than reusing whatever was computed the
+  // last time `context` itself happened to change identity — which, before this, only reliably
+  // happened once, coincidentally, from a library's mount-time resize callback.
+  const groups = useMemo(() => groupByCategory(listCommands(context)), [context, open]);
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
   const projectOf = useProjectStore((state) => state.projectOf);

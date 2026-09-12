@@ -62,7 +62,20 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
+  /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. */
+  readonly collapseSidebar: () => void;
+  /** Reveals the sidebar at its remembered `lastSize`. A no-op while already visible. */
+  readonly expandSidebar: () => void;
+  /** Snaps the (visible) sidebar back to `lastSize` without touching visibility — what a
+   *  double-click on its handle does, so a manual drag can be undone without collapsing it. */
+  readonly restoreSidebarSize: () => void;
   readonly toggleSidebar: () => void;
+  /** The console's equivalent of {@link collapseSidebar}. */
+  readonly collapseConsole: () => void;
+  /** The console's equivalent of {@link expandSidebar}. */
+  readonly expandConsole: () => void;
+  /** The console's equivalent of {@link restoreSidebarSize}. */
+  readonly restoreConsoleSize: () => void;
   readonly toggleConsole: () => void;
   /** Flips the Code slide-over open or closed — what the right rail's icon does. */
   readonly toggleCode: () => void;
@@ -154,13 +167,71 @@ export const useUiStore = create<UiStore>((set, get) => {
       set({ confirmRemoveProjectId: projectId });
     },
 
+    collapseSidebar: () =>
+      update((draft) => {
+        if (!draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.lastSize = draft.sidebar.size;
+        draft.sidebar.visible = false;
+      }),
+    expandSidebar: () =>
+      update((draft) => {
+        if (draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.visible = true;
+        draft.sidebar.size = draft.sidebar.lastSize;
+      }),
+    restoreSidebarSize: () =>
+      update((draft) => {
+        if (!draft.sidebar.visible) {
+          return;
+        }
+        draft.sidebar.size = draft.sidebar.lastSize;
+      }),
     toggleSidebar: () =>
       update((draft) => {
-        draft.sidebar.visible = !draft.sidebar.visible;
+        if (draft.sidebar.visible) {
+          draft.sidebar.lastSize = draft.sidebar.size;
+          draft.sidebar.visible = false;
+        } else {
+          draft.sidebar.visible = true;
+          draft.sidebar.size = draft.sidebar.lastSize;
+        }
+      }),
+    collapseConsole: () =>
+      update((draft) => {
+        if (!draft.console.visible) {
+          return;
+        }
+        draft.console.lastSize = draft.console.size;
+        draft.console.visible = false;
+      }),
+    expandConsole: () =>
+      update((draft) => {
+        if (draft.console.visible) {
+          return;
+        }
+        draft.console.visible = true;
+        draft.console.size = draft.console.lastSize;
+      }),
+    restoreConsoleSize: () =>
+      update((draft) => {
+        if (!draft.console.visible) {
+          return;
+        }
+        draft.console.size = draft.console.lastSize;
       }),
     toggleConsole: () =>
       update((draft) => {
-        draft.console.visible = !draft.console.visible;
+        if (draft.console.visible) {
+          draft.console.lastSize = draft.console.size;
+          draft.console.visible = false;
+        } else {
+          draft.console.visible = true;
+          draft.console.size = draft.console.lastSize;
+        }
       }),
     toggleCode: () =>
       update((draft) => {
@@ -179,11 +250,15 @@ export const useUiStore = create<UiStore>((set, get) => {
       update((draft) => {
         // Clicking the active view again collapses the sidebar, the way VS Code's activity bar does.
         if (draft.sidebar.visible && draft.sidebar.view === view) {
+          draft.sidebar.lastSize = draft.sidebar.size;
           draft.sidebar.visible = false;
           return;
         }
         draft.sidebar.view = view;
-        draft.sidebar.visible = true;
+        if (!draft.sidebar.visible) {
+          draft.sidebar.visible = true;
+          draft.sidebar.size = draft.sidebar.lastSize;
+        }
       }),
     setSidebarView: (view) =>
       update((draft) => {
