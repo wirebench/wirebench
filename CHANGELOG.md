@@ -190,5 +190,4 @@ contract, send it with whatever the service demands, and read the answer.
 
 <!-- The `v1.0.0` tag does not exist yet; both links resolve once it is pushed (see docs/release.md). -->
 [Unreleased]: https://github.com/wirebench/wirebench/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/wirebench/wirebench/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/wirebench/wirebench/releases/tag/v1.0.0
+[1.1.0]: https://github.com/wirebench/wirebench/releases/tag/v1.1.0
