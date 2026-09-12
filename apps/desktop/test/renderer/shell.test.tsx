@@ -160,12 +160,12 @@ describe('AppShell', () => {
   });
 
   it('opens the Code slide-over on Mod+Alt+B and closes it again', () => {
-    // The slide-over stays mounted at every state (its handle must remain a double-clickable
-    // target while closed — see `panel-handle.tsx`); "closed" is proven by its content and close
-    // icon being absent, not by the whole element unmounting.
+    // Unlike the sidebar and the console, the slide-over unmounts completely while closed: it
+    // overlays the editor, so a handle left behind would sit over the editor's right edge and
+    // swallow clicks there.
     render(<App />);
 
-    expect(screen.queryByTestId('slide-over-close')).toBeNull();
+    expect(screen.queryByTestId('slide-over')).toBeNull();
 
     fireEvent.keyDown(window, { key: 'b', metaKey: true, altKey: true });
     expect(screen.getByTestId('slide-over')).toBeTruthy();
@@ -173,7 +173,7 @@ describe('AppShell', () => {
 
     fireEvent.keyDown(window, { key: 'b', metaKey: true, altKey: true });
     expect(screen.queryByTestId('slide-over-close')).toBeNull();
-    expect(screen.getByTestId('slide-over')).toBeTruthy();
+    expect(screen.queryByTestId('slide-over')).toBeNull();
   });
 
   it('opens the command palette on Mod+K and lists commands with their shortcuts', async () => {

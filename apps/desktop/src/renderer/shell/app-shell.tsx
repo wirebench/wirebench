@@ -366,8 +366,10 @@ export function AppShell() {
             </div>
 
             <RightRail platform={platform} />
-            {/* Likewise: the slide-over's handle stays mounted while it is closed, so double-click
-                can reopen it; only its header/content unmount. */}
+            {/* The slide-over is the exception to the two handles above: it overlays the editor
+                rather than sharing the row with it, so while closed it unmounts completely — a
+                handle left over the editor's right edge would swallow clicks and drag-selection
+                there. The rail's Code icon and `view.toggleCode` reopen it. */}
             <SlideOver
               label="Code"
               open={slideOver.open}

@@ -254,12 +254,65 @@ test.describe('layout: collapsible, resizable panels', () => {
     const before = await editor.boundingBox();
     expect(before).not.toBeNull();
 
+    // False before the click: a closed slide-over is not in the document at all.
+    await expect(page.getByTestId('slide-over')).toHaveCount(0);
+
     await page.getByTestId('rail-code').click();
-    await expect(page.getByTestId('slide-over')).toBeVisible();
+
+    await expect(page.getByTestId('slide-over-close')).toBeVisible();
+    const panel = await page.getByTestId('slide-over').boundingBox();
+    expect(panel).not.toBeNull();
+    // Its own minimum width, so this cannot pass on a sliver of a panel.
+    expect(panel!.width).toBeGreaterThanOrEqual(280);
 
     const after = await editor.boundingBox();
     expect(after).not.toBeNull();
     expect(after).toEqual(before);
+  });
+
+  test('Escape closes the Code slide-over', async () => {
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+
+    await page.getByTestId('rail-code').click();
+    await expect(page.getByTestId('slide-over-close')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+
+    await expect(page.getByTestId('slide-over')).toHaveCount(0);
+    await expect(page.getByTestId('rail-code')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a closed Code slide-over leaves nothing over the editor to swallow clicks', async () => {
+    // The regression: while closed, the slide-over still rendered an 8px `z-30` col-resize,
+    // focusable handle across the editor's right edge, eating clicks and drag-selection there.
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+
+    await expect(page.getByTestId('panel-handle-slide-over')).toHaveCount(0);
+
+    const editor = page.getByTestId('editor-area');
+    const box = await editor.boundingBox();
+    expect(box).not.toBeNull();
+    // Three pixels inside the editor's right edge — inside the strip the handle used to occupy.
+    const onTop = await page.evaluate(
+      ([x, y]) => {
+        // `e2e/tsconfig.json` has no DOM lib, so the browser-context callback reaches `document`
+        // through this minimal local shape rather than the real one.
+        const { document } = globalThis as unknown as {
+          document: { elementFromPoint(x: number, y: number): { closest(selector: string): unknown } | null };
+        };
+        const element = document.elementFromPoint(x!, y!);
+        return {
+          inEditor: element !== null && element.closest('[data-testid="editor-area"]') !== null,
+          inSlideOver: element !== null && element.closest('[data-testid="slide-over"]') !== null,
+        };
+      },
+      [box!.x + box!.width - 3, box!.y + box!.height / 2],
+    );
+    expect(onTop).toEqual({ inEditor: true, inSlideOver: false });
   });
 
   test('a relaunch restores collapsed states and sizes', async () => {
