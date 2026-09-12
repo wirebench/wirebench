@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -362,5 +362,72 @@ describe('useWorkspaceStore tab memory', () => {
       expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['request:r1']);
     });
     expect(useEditorsStore.getState().activeId).toBe('request:r1');
+  });
+});
+
+/**
+ * `workspace === null` is what makes the shell show the picker, so a reply that lands *after*
+ * the workspace closed must never be applied: it would put the IDE back on screen over
+ * projects whose hosts main has already stopped.
+ */
+describe('useWorkspaceStore stale replies', () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ workspace: null, workspaces: [] });
+  });
+  afterEach(() => {
+    useWorkspaceStore.setState({ workspace: null, workspaces: [] });
+    vi.restoreAllMocks();
+  });
+
+  /** A promise the test resolves by hand, standing in for a reply still in flight. */
+  function deferred(): { promise: Promise<unknown>; resolve: (value: unknown) => void } {
+    let resolve: (value: unknown) => void = () => undefined;
+    const promise = new Promise<unknown>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it.each([
+    [
+      'mutate',
+      (): Promise<unknown> =>
+        useWorkspaceStore.getState().mutate({ kind: 'set-workspace-property', name: 'a', value: 'b' }),
+    ],
+    ['setActiveEnvironment', (): Promise<unknown> => useWorkspaceStore.getState().setActiveEnvironment('e1')],
+  ])('drops a %s reply that lands after the workspace closed', async (_name, start) => {
+    const pending = deferred();
+    installWirebenchApi({
+      workspace: {
+        mutate: vi.fn().mockReturnValue(pending.promise),
+        setActiveEnvironment: vi.fn().mockReturnValue(pending.promise),
+        close: vi.fn().mockResolvedValue({ ok: true, value: { workspace: null } }),
+        list: vi.fn().mockResolvedValue({ ok: true, value: { workspaces: [] } }),
+      },
+    });
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    expect(useWorkspaceStore.getState().workspace).not.toBeNull();
+
+    const inFlight = start();
+    await useWorkspaceStore.getState().close();
+    expect(useWorkspaceStore.getState().workspace).toBeNull();
+
+    pending.resolve({ ok: true, value: { workspace: workspaceWire() } });
+    await inFlight;
+
+    expect(useWorkspaceStore.getState().workspace).toBeNull();
+  });
+
+  it('still applies a reply when nothing closed in the meantime', async () => {
+    installWirebenchApi({
+      workspace: {
+        mutate: vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire({ name: 'Renamed' }) } }),
+      },
+    });
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+
+    await useWorkspaceStore.getState().mutate({ kind: 'set-workspace-property', name: 'a', value: 'b' });
+
+    expect(useWorkspaceStore.getState().workspace?.name).toBe('Renamed');
   });
 });

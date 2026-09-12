@@ -135,7 +135,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   /** Which workspace the tabs currently on screen belong to; `undefined` when none is open. */
   let tabsOwner: string | undefined;
 
+  /**
+   * Bumped every time the mirror goes empty. A reply that was already in flight when the
+   * workspace closed describes a workspace that is no longer open, and applying it would flip
+   * the shell from the picker back into an IDE over projects whose hosts are gone. Mirrors the
+   * counter `state/project.ts` uses for the same reason.
+   */
+  let generation = 0;
+
   const apply = (workspace: WorkspaceWire | null): void => {
+    if (workspace === null && tabsOwner !== undefined) {
+      // Only a real close bumps it. A `null` while nothing is open — the startup `refresh()`
+      // answering before `openLast()` has settled — must not invalidate an `open()` the user
+      // started in the meantime.
+      generation += 1;
+    }
     const leaving = tabsOwner !== undefined && tabsOwner !== workspace?.id;
     if (leaving && tabsOwner !== undefined) {
       // Recorded while the outgoing workspace's tabs are still open, so neither closing it nor
@@ -166,6 +180,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
           restoreWorkspaceTabs(workspace.id);
         }
       });
+    }
+  };
+
+  /**
+   * `apply`, for a reply to a request sent in `sentIn`: a stale reply is dropped rather than
+   * put back on screen. Every action that awaits main and then mirrors the answer goes through
+   * this; `apply` itself stays direct for the `workspace.changed` event, which is always
+   * current by construction.
+   */
+  const applyReply = (sentIn: number, workspace: WorkspaceWire | null): void => {
+    if (sentIn === generation) {
+      apply(workspace);
     }
   };
 
@@ -204,11 +230,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     refresh: async () => {
+      const sentIn = generation;
       const result = await ipc()
         .workspace.snapshot(undefined)
         .catch(() => undefined);
       if (result?.ok === true) {
-        apply(result.value.workspace);
+        applyReply(sentIn, result.value.workspace);
       }
       // Even a failed pull ends the wait: the picker (with its error) beats an endless spinner.
       if (!get().ready) {
@@ -217,17 +244,20 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     create: async (name) => {
-      apply(unwrap(await ipc().workspace.create({ name })).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.create({ name })).workspace);
       await get().list();
     },
 
     open: async (workspaceId) => {
-      apply(unwrap(await ipc().workspace.open({ workspaceId })).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.open({ workspaceId })).workspace);
       await get().list();
     },
 
     close: async () => {
-      apply(unwrap(await ipc().workspace.close(undefined)).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.close(undefined)).workspace);
       await get().list();
     },
 
@@ -240,33 +270,37 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     addProject: async (name) => {
+      const sentIn = generation;
       const value = unwrap(await ipc().workspace.addProject({ name }));
-      apply(value.workspace);
+      applyReply(sentIn, value.workspace);
       return value.projectId;
     },
 
     linkProject: async () => {
+      const sentIn = generation;
       const { workspace } = unwrap(await ipc().workspace.linkProject(undefined));
       if (workspace === null) {
         return false;
       }
-      apply(workspace);
+      applyReply(sentIn, workspace);
       return true;
     },
 
     importProjectFolder: async () => {
+      const sentIn = generation;
       const { workspace } = unwrap(await ipc().workspace.importProjectFolder(undefined));
       if (workspace === null) {
         return false;
       }
-      apply(workspace);
+      applyReply(sentIn, workspace);
       // From the picker this may have created a workspace, which the list should now show.
       await get().list();
       return true;
     },
 
     importSuggestion: async (index) => {
-      apply(unwrap(await ipc().workspace.importSuggestion({ index })).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.importSuggestion({ index })).workspace);
       await get().list();
     },
 
@@ -281,25 +315,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     exportProject: async (projectId) => unwrap(await ipc().workspace.exportProject({ projectId })).dir,
 
     locateProject: async (projectId) => {
+      const sentIn = generation;
       const { workspace } = unwrap(await ipc().workspace.locateProject({ projectId }));
       if (workspace === null) {
         return false;
       }
-      apply(workspace);
+      applyReply(sentIn, workspace);
       return true;
     },
 
     removeProject: async (projectId, deleteFiles) => {
-      apply(unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
     },
 
     setActiveEnvironment: async (environmentId) => {
-      apply(unwrap(await ipc().workspace.setActiveEnvironment({ environmentId })).workspace);
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.setActiveEnvironment({ environmentId })).workspace);
     },
 
     mutate: async (change) => {
+      const sentIn = generation;
       const value = unwrap(await ipc().workspace.mutate({ change }));
-      apply(value.workspace);
+      applyReply(sentIn, value.workspace);
       return value.createdEnvironmentId === undefined ? {} : { createdEnvironmentId: value.createdEnvironmentId };
     },
   };
