@@ -268,7 +268,10 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
   const incomingRef = useProjectStore((state) => state.requests[requestId]?.wssIncomingRef);
   const configs = useProjectStore((state) => state.wssOutgoing);
   const incomingConfigs = useProjectStore((state) => state.wssIncoming);
-  const editRequest = useProjectStore((state) => state.editRequest);
+  // Written through, not staged: main resolves a request's WS-Security configuration from its
+  // own model when it secures the envelope at send time, so a reference left sitting in a draft
+  // would simply not be there — the request would go out unsecured with no sign of why.
+  const updateRequest = useProjectStore((state) => state.updateRequest);
 
   return (
     <div className="mt-1 flex flex-col gap-2 border-t border-hairline pt-2">
@@ -280,7 +283,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           className={INPUT_CLASS}
           value={outgoingRef ?? ''}
           onChange={(event) => {
-            editRequest(requestId, { wssOutgoingRef: event.target.value === '' ? null : event.target.value });
+            updateRequest(requestId, { wssOutgoingRef: event.target.value === '' ? null : event.target.value });
           }}
         >
           <option value="">—</option>
@@ -304,7 +307,7 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
           className={INPUT_CLASS}
           value={incomingRef ?? ''}
           onChange={(event) => {
-            editRequest(requestId, { wssIncomingRef: event.target.value === '' ? null : event.target.value });
+            updateRequest(requestId, { wssIncomingRef: event.target.value === '' ? null : event.target.value });
           }}
         >
           <option value="">—</option>
