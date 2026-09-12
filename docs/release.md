@@ -16,12 +16,15 @@ a file keeps its meaning once it is out of the release page and sitting in a dow
 | macOS | `Wirebench-1.0.0-mac-universal.dmg`, `Wirebench-1.0.0-mac-x64.dmg`, `Wirebench-1.0.0-mac-arm64.dmg` |
 | macOS | the same three as `.zip`, which is what the updater downloads |
 | Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
-| Linux | `Wirebench-1.0.0-linux-x64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
+| Windows | `Wirebench-1.0.0-windows-setup.exe` — both architectures in one installer |
+| Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
 | Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
 | Linux | `wirebench-1.0.0.x86_64.rpm` |
 | Linux | `wirebench_1.0.0_amd64.snap` |
 
-The `.deb` and `.rpm` names are the exception: `dpkg` and `rpm` both parse the file name, so
+`${arch}` is not one vocabulary: electron-builder renders x64 as `x86_64` for the AppImage and
+the rpm, and as `amd64` for the deb, because that is what each format calls it. Only the arm64
+spelling is shared. The `.deb` and `.rpm` names are a further exception: `dpkg` and `rpm` both parse the file name, so
 those two keep their own conventions (lowercase package name, `amd64`/`x86_64`, no `linux`
 segment) rather than the shape above. A GitHub release asset name is also its download URL —
 `https://github.com/wirebench/wirebench/releases/download/v1.0.0/<name>` — so renaming an
