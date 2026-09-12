@@ -234,6 +234,14 @@ Principles.
 - WS-I Basic Profile 1.1 (documented subset, each check carries the BP assertion id, e.g. R2201, R2210, R2710, R2716, R2803): WSDL-level (styles, use=literal, parts/elements per style, soapAction, imports, namespaces, no soapenc in document/literal) and message-level (envelope, encodingStyle absence, mustUnderstand values, fault detail, HTTP status/Content-Type/SOAPAction quoting). Report view + HTML export. The list of implemented assertions lives in `docs/ws-i-assertions.md`.
 
 ### 6.9 Project, environments, properties, history
+
+> **Superseded in part by `docs/specs/2026-09-11-wirebench-workspaces-design.md`** (ADR-0006):
+> a project now normally lives inside a workspace rather than being opened from an arbitrary
+> folder, environments and their active selection moved up to the workspace (with a project's
+> own environments still honoured, name-linked, for a *linked* project), and property expansion
+> gained a `${#Workspace#…}` scope between Project and Global. The project folder format below
+> (§7) is unchanged.
+
 - Project folder format (§7); recent projects; autosave on change with atomic writes; external change detection (reload prompt).
 - Environments: list of named environments; each maps interface → endpoint and overrides properties; active environment in status bar and command palette.
 - Properties: Global (app-level), Project, Environment; expansion syntax `${#Project#name}`, `${#Env#name}`, `${#Global#name}`, `${#System#name}` (env vars), nesting allowed; unresolved expansions flagged in Problems.
@@ -243,6 +251,13 @@ Principles.
 ---
 
 ## 7. Data model and project format
+
+> **Note (workspaces, ADR-0006):** the project folder format below is unchanged and still what
+> ships. What changed is where a project's folder lives and how it is found: normally inside a
+> workspace folder in app data, at `<userData>/workspaces/<id>/projects/<slug>/`, rather than at
+> a location the user picks with a folder dialog. See
+> `docs/specs/2026-09-11-wirebench-workspaces-design.md` for the workspace layer this project
+> format now sits inside.
 
 Project = a directory. Everything is UTF-8 text, stable key order, one concept per file, so diffs are reviewable.
 

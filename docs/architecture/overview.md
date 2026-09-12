@@ -23,15 +23,17 @@ flowchart TB
 
   subgraph M["Main — the only process with authority"]
     IPC["IPC handlers<br/>one zod request/response pair per channel"]
-    Proj["ProjectHost<br/>load · watch · mutate · save"]
+    WS["WorkspaceService<br/>+ ProjectRouter"]
+    Proj["ProjectHost (× N)<br/>load · watch · mutate · save"]
     Sec["Secrets<br/>safeStorage · secretRef · redaction"]
     Paths["Path safety<br/>containment · dialog picks"]
-    Hist["History · preferences · recent projects"]
+    Hist["HistoryService · preferences"]
     Eng["EngineService"]
-    IPC --> Proj
+    IPC --> WS
+    WS --> Proj
     IPC --> Sec
     IPC --> Paths
-    IPC --> Hist
+    WS --> Hist
     IPC --> Eng
   end
 
@@ -46,7 +48,7 @@ flowchart TB
   end
 
   Net(["Remote SOAP service"])
-  Disk[("Project folder<br/>YAML + XML")]
+  Disk[("Workspace folder<br/>workspace.yaml · environments/ · projects/<slug>/")]
   Key[("OS keychain<br/>userData/secrets.json")]
 
   R -->|"window.wirebench.*"| P
@@ -70,12 +72,28 @@ custom `app://` protocol.
 `ipcRenderer` itself is never exposed — the renderer can call the methods that exist and
 nothing else.
 
-**Main.** Windows, menus, native dialogs, the project on disk, the keychain, history,
-preferences — and the engine. Every channel is declared once in
+**Main.** Windows, menus, native dialogs, the workspace and its projects on disk, the keychain,
+history, preferences — and the engine. Every channel is declared once in
 `apps/desktop/src/shared/ipc.ts` with a zod schema for the request and for the response, so a
 malformed message from either direction fails at the boundary with a typed error instead of
 deeper in. Renderer-supplied paths are never trusted (ADR-0005); secrets never travel back out
 (ADR-0004).
+
+**The workspace layer (ADR-0006).** `WorkspaceService` (`apps/desktop/src/main/workspace-service.ts`)
+owns the one open workspace: its manifest, its environments, and one `ProjectHost` per project
+in it (`apps/desktop/src/main/project-host.ts` — the renamed, otherwise-unchanged v1 project
+engine, now instantiated per project instead of once globally). It implements
+`ProjectRouter`, the union of every `ProjectHost` method an `ipc/*.ts` module needs, re-expressed
+so each call resolves its host from the entity id already on the request (`hostFor(projectId)` /
+`hostOfEntity(entityId)`) — the IPC handlers do not know or care that more than one project
+exists. Storage mirrors this: `<userData>/workspaces/<id>/workspace.yaml` plus
+`environments/*.yaml` for the workspace, and `projects/<slug>/` per internal project (an ordinary
+ADR-0003 folder); a linked project's folder lives wherever the user pointed it, addressed via an
+absolute path recorded in the manifest, never sent to the renderer. Every event that used to
+carry no project context now carries `projectId` — `project.changed { projectId, project }`,
+`project.changedOnDisk { projectId, paths }`, `project.hydration { projectId, interfaceId,
+status }` — so the renderer's stores (`state/workspace.ts`, `state/project.ts`) can keep several
+projects' worth of state keyed by id and merge tabs, history and environments across them.
 
 **Engine.** `packages/engine`, `@wirebench/engine`. Zero Electron, DOM or React imports —
 enforced by lint, not convention. Every I/O entry point takes an `AbortSignal`, every export
@@ -86,17 +104,21 @@ planned `wirebench run` CLI unchanged.
 ## How a send actually happens
 
 1. The user presses Send. The renderer dispatches a command and calls
-   `window.wirebench.request.send(…)` with the request id — not an envelope, not an endpoint.
+   `window.wirebench.request.send(…)` with the request's project id and the request id — not an
+   envelope, not an endpoint.
 2. Preload forwards it over the typed channel; main validates the payload against the channel's
-   zod schema.
-3. Main resolves what the renderer was never given: the active environment's endpoint,
-   property expansions, `secretRef`s → real credentials from `safeStorage`, keystore files
-   (containment- or dialog-proven), the effective TLS and proxy settings.
+   zod schema, and `WorkspaceService` resolves the `projectId` to the right `ProjectHost`.
+3. Main resolves what the renderer was never given: the active workspace environment's endpoint
+   (falling back to the project's own environment for a linked project, then the interface's
+   default — ADR-0006), property expansions across `Env → Project → Workspace → Global`,
+   `secretRef`s → real credentials from `safeStorage`, keystore files (containment- or
+   dialog-proven), the effective TLS and proxy settings.
 4. Main calls `EngineService.send(…)` with a fully resolved request and an `AbortSignal`.
    The engine builds the envelope, applies WS-Security and WS-Addressing, prepares MTOM/SwA
    parts, and sends it through undici — capturing raw wire bytes and a timing breakdown.
-5. The response comes back; main parses it, appends a redacted entry to history (stored in app
-   data, keyed by project id — never in the project folder), and answers the channel.
+5. The response comes back; main parses it, and `HistoryService` appends a redacted entry
+   (stored in app data, keyed by project id — never in the project folder, and merged
+   newest-first across every open project for the History view), and answers the channel.
 6. The renderer renders what it was given. Cancel is the same path in reverse: one IPC call
    aborts the signal the engine is already holding.
 
@@ -110,8 +132,10 @@ planned `wirebench run` CLI unchanged.
 | WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |
 | Schema + WS-I validation, XPath/XQuery | `packages/engine/src/validate`, `.../xpath` |
 | Project folder format, environments, properties | `packages/engine/src/project` |
+| Workspace format, environments, properties (`${#Workspace#…}`) | `packages/engine/src/workspace` |
 | IPC channel schemas (one file, both directions) | `apps/desktop/src/shared/ipc.ts` |
 | IPC handlers | `apps/desktop/src/main/ipc/` |
+| WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
 
@@ -122,5 +146,6 @@ planned `wirebench run` CLI unchanged.
 - [ADR-0003](../adr/0003-project-folder-format.md) — the project folder format
 - [ADR-0004](../adr/0004-secrets-outside-project-files.md) — secrets
 - [ADR-0005](../adr/0005-renderer-path-safety.md) — path safety
+- [ADR-0006](../adr/0006-workspaces-in-app-data.md) — workspaces live in app data
 - [Security model](../security.md)
 - [Success criteria and their evidence](../success-criteria.md)

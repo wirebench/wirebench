@@ -14,3 +14,14 @@ recorded here so they are not lost.
   request was declined rather than silently sent nowhere. Left as a follow-up because it is a
   design decision (which of the two, and how narrow "same-host, upgrade-only" needs to be) that
   a bug-fix pass should not make in passing.
+
+- **Multi-window.** The workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`
+  §1, assumption 7) deliberately keeps one window holding one open workspace at a time. Several
+  workspaces open at once, each in its own window, is a natural next step but changes how main's
+  singletons (the open `WorkspaceService`, dialog picks) are scoped, so it is left as a
+  follow-up rather than folded into workspaces v1.
+- **Workspace sharing/syncing.** Nothing propagates a workspace's projects or environments to
+  another machine or another person today — a workspace is one user's local app-data folder.
+  Export/link/import are the only way a project crosses machines, one project at a time. Sharing
+  a whole workspace (its environments, its project set) is a deliberately deferred idea, not a
+  gap in what shipped (`docs/adr/0006-workspaces-in-app-data.md`, Consequences).
