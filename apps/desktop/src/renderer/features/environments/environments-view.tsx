@@ -206,7 +206,9 @@ export function EnvironmentsView() {
   const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
   const hasWorkspace = useWorkspaceStore((state) => state.workspace !== null);
   const mutate = useWorkspaceStore((state) => state.mutate);
-  const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  // `collapseSidebar`, not `toggleSidebar`: this button is only ever reachable while the sidebar
+  // is open, and every other collapse affordance on the shell collapses rather than toggles.
+  const collapseSidebar = useUiStore((state) => state.collapseSidebar);
 
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
@@ -232,7 +234,7 @@ export function EnvironmentsView() {
         >
           <Plus size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Collapse sidebar" onClick={toggleSidebar}>
+        <IconButton label="Collapse sidebar" onClick={collapseSidebar}>
           <PanelLeftClose size={14} aria-hidden="true" />
         </IconButton>
       </div>
@@ -254,7 +256,9 @@ export function EnvironmentsView() {
             openEnvironmentTab({ kind: 'workspace' });
           }}
         />
-        <li role="separator" aria-orientation="horizontal" className="my-1 h-px bg-hairline" />
+        {/* Decorative only: a `separator` is not a valid child of a `grid`, whose children are
+            rows, so this one is hidden from assistive tech rather than mis-typed. */}
+        <li role="presentation" aria-hidden="true" className="my-1 h-px bg-hairline" />
         {environments.length === 0 && (
           <li className="px-2 py-1 text-sm text-fg-subtle">
             {hasWorkspace ? 'No environments yet.' : 'Open a workspace to add environments.'}

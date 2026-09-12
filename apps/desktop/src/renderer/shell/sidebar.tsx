@@ -60,19 +60,20 @@ export function Sidebar() {
       aria-label={copy.title}
       className="flex h-full min-w-0 flex-col bg-surface-base text-fg-default"
     >
-      <h2 className="flex h-row shrink-0 items-center justify-between px-3 text-xs font-medium tracking-wider text-fg-subtle uppercase">
-        {copy.title}
+      {/* The chevron is a sibling of the heading, not a child of it: nested inside, its label
+          became part of the heading's own accessible name ("Explorer Collapse Sidebar"). */}
+      <div className="flex h-row shrink-0 items-center justify-between px-3">
+        <h2 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">{copy.title}</h2>
         <IconButton
           label="Collapse Sidebar"
           data-testid="sidebar-collapse"
-          className="normal-case"
           onClick={() => {
             collapseSidebar();
           }}
         >
           <PanelLeftClose size={14} aria-hidden="true" />
         </IconButton>
-      </h2>
+      </div>
       {view === 'explorer' ? (
         <ExplorerView />
       ) : view === 'environments' ? (

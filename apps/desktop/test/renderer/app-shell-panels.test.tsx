@@ -110,6 +110,21 @@ describe('sidebar/console collapse, expand and restore', () => {
     expect(useUiStore.getState().sidebar.visible).toBe(false);
   });
 
+  it("keeps the collapse chevron out of the heading's accessible name", () => {
+    // Nested inside the `<h2>`, the button's label was absorbed into the heading, which then
+    // announced as "Explorer Collapse Sidebar".
+    render(
+      <TooltipPrimitive.Provider>
+        <Sidebar />
+      </TooltipPrimitive.Provider>,
+    );
+
+    const heading = screen.getByRole('heading', { level: 2 });
+    expect(heading.textContent).toBe('Explorer');
+    expect(heading.querySelector('button')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse Sidebar' })).toBeTruthy();
+  });
+
   it('the console header collapse button hides the console', () => {
     render(
       <TooltipPrimitive.Provider>
