@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RequestContextMenu } from '../../src/renderer/features/request-editor/request-context-menu.js';
 import { useRequestDialogsStore } from '../../src/renderer/features/request-editor/request-dialogs.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
@@ -51,6 +52,9 @@ describe('RequestContextMenu', () => {
     installWirebenchApi();
     useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
     useProjectStore.setState({ requests: { 'req-1': makeDraft() } });
+    // The drafts store is module state and survives `cleanup()`. A recreate now stages its
+    // result, so without this each test would start holding the previous one's unsaved edit.
+    useDraftsStore.setState({ requests: {} });
     useRequestDialogsStore.getState().close();
   });
 
@@ -105,6 +109,64 @@ describe('RequestContextMenu', () => {
         empty: true,
       });
     });
+  });
+
+  it('sends a staged edit to main before recreating, so "keep values" keeps what is on screen', async () => {
+    // Main rebuilds the envelope from its own model. Without the commit it would merge against
+    // the last *saved* envelope and silently drop the edit the user is looking at.
+    const mutate = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        project: {
+          id: 'p1',
+          name: 'P',
+          dir: '/tmp/p',
+          dirty: true,
+          interfaces: [],
+          requests: [],
+          properties: {},
+          environments: [],
+          keystores: [],
+          wssOutgoing: [],
+          wssIncoming: [],
+          problems: [],
+        },
+      },
+    });
+    const recreate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { envelopeXml: '<fresh/>', kept: 1, added: 0, removed: 0 } });
+    installWirebenchApi({ request: { recreate }, project: { mutate } });
+    // `commitRequest` addresses the mutation at the owning project, so the mirror needs one.
+    useProjectStore.setState({ requests: { 'req-1': makeDraft() }, projectOf: { 'req-1': 'p1' } });
+    useDraftsStore.getState().stageRequest('req-1', { envelopeXml: '<edited/>' });
+    openMenu();
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Recreate request (keep values)' }));
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: { kind: 'update-request', requestId: 'req-1', patch: { envelopeXml: '<edited/>' } },
+      });
+    });
+    // And the commit happened first: a recreate against a stale model is the bug being fixed.
+    expect(mutate.mock.invocationCallOrder[0]).toBeLessThan(recreate.mock.invocationCallOrder[0]!);
+  });
+
+  it('leaves the recreated envelope unsaved, so the tab still says so and Mod+S has work', async () => {
+    const recreate = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { envelopeXml: '<fresh/>', kept: 0, added: 0, removed: 0 } });
+    installWirebenchApi({ request: { recreate } });
+    openMenu();
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Create empty' }));
+
+    await waitFor(() => {
+      expect(useDraftsStore.getState().isRequestDirty('req-1')).toBe(true);
+    });
+    expect(useProjectStore.getState().requests['req-1']?.envelopeXml).toBe('<fresh/>');
   });
 
   it('Copy as cURL writes the POSIX command to the clipboard', async () => {

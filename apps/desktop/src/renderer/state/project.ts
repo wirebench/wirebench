@@ -124,6 +124,12 @@ export interface ProjectStore extends ProjectSnapshot {
    * makes a tab's unsaved mark meaningful.
    */
   readonly editRequest: (requestId: string, patch: RequestPatchWire) => void;
+  /**
+   * Sends one request's staged edits to main without writing the project, so anything main
+   * derives from its own model sees them. Returns false when the mutation failed, leaving the
+   * draft in place. A no-op (true) when the request is clean.
+   */
+  readonly commitRequest: (requestId: string) => Promise<boolean>;
   /** Writes one request's staged edits and saves its project. A no-op when it is clean. */
   readonly saveRequest: (requestId: string) => Promise<void>;
   /**
@@ -671,27 +677,38 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useDraftsStore.getState().stageRequest(requestId, patch);
     },
 
-    saveRequest: async (requestId) => {
+    commitRequest: async (requestId) => {
       const staged = useDraftsStore.getState().peekRequest(requestId);
       if (staged === undefined) {
-        return;
+        return true;
       }
       const projectId = ownerOf(requestId);
-      // Replayed as one ordinary mutation, so main's model is whole again before it writes:
-      // `saveProject` reconciles the entire project against that model, and handing it a model
-      // that is missing this edit would write the file back without it.
+      // Replayed as one ordinary mutation, so main's model is whole again: `saveProject`
+      // reconciles the entire project against that model, and anything main derives from it —
+      // a recreate's "keep values", a preflight — reads it directly.
       const result = await ipc().project.mutate({
         projectId,
         change: { kind: 'update-request', requestId, patch: staged },
       });
       if (!result.ok) {
-        // The draft survives a failed save: nothing reached disk, so the edit is still unsaved
-        // and the tab must keep saying so.
+        // The draft survives a failed commit: nothing landed, so the edit is still unsaved and
+        // the tab must keep saying so.
         showToast(asError(result.error).message);
-        return;
+        return false;
       }
       apply(projectId, result.value.project);
       useDraftsStore.getState().clearRequestIfUnchanged(requestId, staged);
+      return true;
+    },
+
+    saveRequest: async (requestId) => {
+      if (useDraftsStore.getState().peekRequest(requestId) === undefined) {
+        return;
+      }
+      const projectId = ownerOf(requestId);
+      if (!(await get().commitRequest(requestId))) {
+        return;
+      }
       await saveOne(projectId);
     },
 

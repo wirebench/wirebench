@@ -37,6 +37,13 @@ export function openRequestTab(requestId: string, fallbackTitle?: string): void 
  * debounced edit it was still holding.
  */
 export async function recreateRequest(requestId: string, mode: RecreateMode): Promise<void> {
+  // Main rebuilds the envelope from *its* model, so a staged edit has to reach it first —
+  // otherwise "keep values" keeps the last saved ones and silently discards what is on screen.
+  // Same rule as the WS-Security references: anything main resolves for itself cannot stay
+  // staged in the renderer.
+  if (!(await useProjectStore.getState().commitRequest(requestId))) {
+    return;
+  }
   const result = await ipc().request.recreate({
     requestId,
     keepValues: mode === 'keep-values',
@@ -50,7 +57,10 @@ export async function recreateRequest(requestId: string, mode: RecreateMode): Pr
     return;
   }
   const { envelopeXml, kept, added, removed } = result.value;
-  useProjectStore.getState().applyEnvelope(requestId, envelopeXml);
+  // Staged rather than mirrored: main has the recreated envelope in its model but nothing has
+  // been written, so the tab has to keep saying it is unsaved and Mod+S has to have something
+  // to write. Saving replays an envelope main already holds, which the reconciler skips.
+  useProjectStore.getState().editRequest(requestId, { envelopeXml });
   showToast(mode === 'empty' ? 'Request emptied' : `Kept ${kept} values, added ${added}, removed ${removed}`);
 }
 
