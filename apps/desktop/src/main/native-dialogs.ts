@@ -8,7 +8,7 @@
  */
 
 import { delimiter } from 'node:path';
-import { BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 
@@ -16,6 +16,18 @@ import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 export interface DialogFilter {
   readonly name: string;
   readonly extensions: readonly string[];
+}
+
+/**
+ * Whether the e2e dialog overrides below may be honoured at all.
+ *
+ * They exist so Playwright can answer a native picker it cannot drive, and every e2e run is
+ * unpackaged. In a shipped build they would let anything that can set an environment variable
+ * decide which folder the app links, exports to or reads — without a dialog the user ever saw —
+ * so a packaged app ignores them outright.
+ */
+function e2eOverridesAllowed(): boolean {
+  return !app.isPackaged;
 }
 
 /** How many entries of `WIREBENCH_E2E_DIALOG_FOLDERS` the folder pickers have consumed. */
@@ -31,6 +43,9 @@ let queuedFolderAnswers = 0;
  * with the single `WIREBENCH_E2E_DIALOG_FOLDER`.
  */
 function folderOverride(): string | undefined {
+  if (!e2eOverridesAllowed()) {
+    return undefined;
+  }
   const queue = (process.env['WIREBENCH_E2E_DIALOG_FOLDERS'] ?? '').split(delimiter).filter((entry) => entry !== '');
   const next = queue[queuedFolderAnswers];
   if (next !== undefined) {
@@ -42,7 +57,7 @@ function folderOverride(): string | undefined {
 
 /** The save-dialog counterpart of {@link folderOverride}. */
 function saveOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_DIALOG_SAVE'];
+  return e2eOverridesAllowed() ? process.env['WIREBENCH_E2E_DIALOG_SAVE'] : undefined;
 }
 
 /**
@@ -51,7 +66,7 @@ function saveOverride(): string | undefined {
  * a keystore *and* picks a CA bundle needs different answers from each.
  */
 function openFileOverride(): string | undefined {
-  return process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'];
+  return e2eOverridesAllowed() ? process.env['WIREBENCH_E2E_FILE_DIALOG_PATH'] : undefined;
 }
 
 function windowOf(sender: WebContents): BrowserWindow | undefined {

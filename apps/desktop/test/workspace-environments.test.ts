@@ -16,6 +16,8 @@ import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 let folderPick: string | undefined;
 
 vi.mock('electron', () => ({
+  // The e2e dialog overrides are honoured only in an unpackaged run.
+  app: { isPackaged: false },
   BrowserWindow: { fromWebContents: () => undefined },
   dialog: {
     showOpenDialog: () =>

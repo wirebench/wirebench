@@ -97,9 +97,13 @@ const historyService = new HistoryService(app.getPath('userData'), () => prefere
  * e2e, a move into `WIREBENCH_E2E_TRASH_DIR`, because a Playwright run must be able to *assert*
  * on what was trashed and the OS trash is neither readable nor per-profile. Either way nothing
  * is ever removed: there is no `rm` on this path.
+ *
+ * The override is honoured only in an unpackaged run (every e2e run is one). In a shipped build
+ * it would let an environment variable redirect a deletion to a folder of someone else's
+ * choosing, so a packaged app always uses the real trash.
  */
 async function trashFolder(target: string): Promise<void> {
-  const e2eTrashDir = process.env['WIREBENCH_E2E_TRASH_DIR'];
+  const e2eTrashDir = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_TRASH_DIR'];
   if (e2eTrashDir === undefined) {
     await shell.trashItem(target);
     return;
