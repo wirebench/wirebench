@@ -7,7 +7,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 import type { HeaderEntryWire } from '../../src/shared/wire-types.js';
 
-const updateRequest = vi.fn();
+const editRequest = vi.fn();
 
 function renderInspector(): void {
   render(<HeadersInspector requestId="req-1" />);
@@ -16,13 +16,13 @@ function renderInspector(): void {
 function install(headers: readonly HeaderEntryWire[]): void {
   useProjectStore.setState({
     requests: { 'req-1': makeDraft({ headers: [...headers] }) },
-    updateRequest,
+    editRequest,
   } as never);
 }
 
 describe('HeadersInspector (request)', () => {
   beforeEach(() => {
-    updateRequest.mockClear();
+    editRequest.mockClear();
     useProblemsStore.setState({ items: [] });
     install([{ name: 'X-Trace', value: 'abc' }]);
   });
@@ -44,7 +44,7 @@ describe('HeadersInspector (request)', () => {
     await userEvent.type(screen.getByLabelText('New header value'), 'yes');
     await userEvent.click(screen.getByRole('button', { name: 'Add header' }));
 
-    expect(updateRequest).toHaveBeenCalledWith('req-1', {
+    expect(editRequest).toHaveBeenCalledWith('req-1', {
       headers: [
         { name: 'X-Trace', value: 'abc' },
         { name: 'X-Extra', value: 'yes' },
@@ -58,13 +58,13 @@ describe('HeadersInspector (request)', () => {
 
     await userEvent.clear(value);
     await userEvent.type(value, 'zzz{Enter}');
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Trace', value: 'zzz' }] });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Trace', value: 'zzz' }] });
 
-    updateRequest.mockClear();
+    editRequest.mockClear();
     await userEvent.clear(value);
     await userEvent.type(value, 'nope{Escape}');
     expect(value.value).toBe('abc');
-    expect(updateRequest).not.toHaveBeenCalled();
+    expect(editRequest).not.toHaveBeenCalled();
   });
 
   it('commits a name edit on blur', async () => {
@@ -75,7 +75,7 @@ describe('HeadersInspector (request)', () => {
     await userEvent.type(name, 'X-Renamed');
     await userEvent.tab();
 
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Renamed', value: 'abc' }] });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Renamed', value: 'abc' }] });
   });
 
   it('trims a name edit before committing, same as adding a new header', async () => {
@@ -85,7 +85,7 @@ describe('HeadersInspector (request)', () => {
     await userEvent.clear(name);
     await userEvent.type(name, '  X-Padded  {Enter}');
 
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Padded', value: 'abc' }] });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'X-Padded', value: 'abc' }] });
   });
 
   it('rejects an empty or whitespace-only name on inline commit, reverting to the previous name', async () => {
@@ -95,13 +95,13 @@ describe('HeadersInspector (request)', () => {
     await userEvent.clear(name);
     await userEvent.type(name, '{Enter}');
     expect(name.value).toBe('X-Trace');
-    expect(updateRequest).not.toHaveBeenCalled();
+    expect(editRequest).not.toHaveBeenCalled();
 
     await userEvent.clear(name);
     await userEvent.type(name, '   ');
     await userEvent.tab();
     expect(name.value).toBe('X-Trace');
-    expect(updateRequest).not.toHaveBeenCalled();
+    expect(editRequest).not.toHaveBeenCalled();
   });
 
   it('removes a header by index, keeping the duplicate that shares its name', async () => {
@@ -113,7 +113,7 @@ describe('HeadersInspector (request)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove header 1 (Accept)' }));
 
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'Accept', value: 'b' }] });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { headers: [{ name: 'Accept', value: 'b' }] });
   });
 
   it('keeps duplicate names and their order when rendering', () => {
@@ -136,7 +136,7 @@ describe('HeadersInspector (request)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Move header 2 (B) up' }));
 
-    expect(updateRequest).toHaveBeenCalledWith('req-1', {
+    expect(editRequest).toHaveBeenCalledWith('req-1', {
       headers: [
         { name: 'B', value: '2' },
         { name: 'A', value: '1' },

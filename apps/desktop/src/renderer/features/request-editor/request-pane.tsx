@@ -12,6 +12,7 @@ import {
   PREVIOUS_VALUE_KEYBINDING,
   GOTO_DEFINITION_KEYBINDING,
   GOTO_LINE_KEYBINDING,
+  SAVE_KEYBINDING,
   SEND_KEYBINDING,
 } from '../../editor/monaco.js';
 import { XmlEditor } from '../../editor/xml-editor.js';
@@ -20,6 +21,7 @@ import { formatEditorInPlace, gotoLine, registerXmlLanguageFeaturesOnce } from '
 import { useEditorsStore } from '../../state/editors.js';
 import type { RequestViewType } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
+import { useProjectStore } from '../../state/project.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
@@ -216,6 +218,14 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         flush();
         sendRef.current();
       });
+      // Saving has to be bound here for the same reason sending is: with the caret in the
+      // editor Monaco consumes the keystroke, and the window-level dispatcher never sees it.
+      // `flush` first, or a save pressed mid-keystroke-burst writes the last *debounced*
+      // envelope rather than what is on screen.
+      editor.addCommand(SAVE_KEYBINDING, () => {
+        flush();
+        void useProjectStore.getState().saveRequest(requestId);
+      });
       editor.addCommand(FORMAT_KEYBINDING, () => {
         formatAndCommit();
       });
@@ -273,7 +283,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         });
       }
     },
-    [flush, formatAndCommit, interfaceId, local],
+    [flush, formatAndCommit, interfaceId, local, requestId],
   );
 
   // The outline writes back through the very same path as typing: apply the edit to the current

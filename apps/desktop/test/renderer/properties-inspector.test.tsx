@@ -227,30 +227,30 @@ describe('PropertiesInspector', () => {
   });
 
   it('renames the request through update-request, ignoring an empty name', () => {
-    const updateRequest = vi.fn();
-    useProjectStore.setState({ updateRequest });
+    const editRequest = vi.fn();
+    useProjectStore.setState({ editRequest });
     render(<PropertiesInspector requestId="req-1" />);
 
     const name = screen.getByLabelText('Request name');
     fireEvent.change(name, { target: { value: '  ' } });
     fireEvent.blur(name);
-    expect(updateRequest).not.toHaveBeenCalled();
+    expect(editRequest).not.toHaveBeenCalled();
 
     fireEvent.change(name, { target: { value: 'Renamed' } });
     fireEvent.blur(name);
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { name: 'Renamed' });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { name: 'Renamed' });
   });
 
   it('writes the description as null when it is cleared', () => {
-    const updateRequest = vi.fn();
+    const editRequest = vi.fn();
     seed({ description: 'old' });
-    useProjectStore.setState({ updateRequest });
+    useProjectStore.setState({ editRequest });
     render(<PropertiesInspector requestId="req-1" />);
 
     const field = screen.getByLabelText('Description');
     fireEvent.change(field, { target: { value: '' } });
     fireEvent.blur(field);
-    expect(updateRequest).toHaveBeenCalledWith('req-1', { description: null });
+    expect(editRequest).toHaveBeenCalledWith('req-1', { description: null });
   });
 
   it('fills the dump file from the Save-as picker', async () => {

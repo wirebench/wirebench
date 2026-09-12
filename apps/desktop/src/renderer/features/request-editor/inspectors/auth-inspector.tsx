@@ -268,6 +268,9 @@ function WssSelectors({ requestId }: { readonly requestId: string }) {
   const incomingRef = useProjectStore((state) => state.requests[requestId]?.wssIncomingRef);
   const configs = useProjectStore((state) => state.wssOutgoing);
   const incomingConfigs = useProjectStore((state) => state.wssIncoming);
+  // Written through, not staged: main resolves a request's WS-Security configuration from its
+  // own model when it secures the envelope at send time, so a reference left sitting in a draft
+  // would simply not be there — the request would go out unsecured with no sign of why.
   const updateRequest = useProjectStore((state) => state.updateRequest);
 
   return (

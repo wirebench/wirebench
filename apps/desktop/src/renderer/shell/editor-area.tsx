@@ -3,6 +3,7 @@ import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { ProjectTab } from '../features/project/project-tab.js';
+import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -78,6 +79,7 @@ function panelId(id: string): string {
  */
 export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
+  const dirtyRequests = useDraftsStore((state) => state.requests);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
   const showStart = useEditorsStore((state) => state.showStart);
@@ -161,6 +163,8 @@ export function EditorArea() {
               ? environmentName(projects, workspaceEnvironments, tab.environmentId)
               : undefined) ??
             tab.title;
+          // Only request tabs carry drafts today; every other kind still autosaves.
+          const dirty = tab.requestId !== undefined && dirtyRequests[tab.requestId] !== undefined;
           return (
             // One focusable control per tab. A nested close *button* would be interactive
             // content inside a `tab` widget, which screen readers do not announce reliably, so
@@ -187,6 +191,16 @@ export function EditorArea() {
               }`}
             >
               {label}
+              {dirty && (
+                // Announced, not just drawn: the dot is the only thing distinguishing a tab
+                // with unsaved edits from one without, and it is too small to rely on colour.
+                <span
+                  data-testid="editor-tab-dirty"
+                  title="Unsaved changes"
+                  aria-label="Unsaved changes"
+                  className="size-1.5 shrink-0 rounded-full bg-fg-muted"
+                />
+              )}
               <span
                 aria-hidden="true"
                 data-testid="editor-tab-close"

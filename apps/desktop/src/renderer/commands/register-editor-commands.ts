@@ -99,7 +99,7 @@ export function registerEditorCommands(): void {
       }
       void loadXmlFrom(currentText).then((text) => {
         if (text !== undefined) {
-          useProjectStore.getState().updateRequest(requestId, { envelopeXml: text });
+          useProjectStore.getState().editRequest(requestId, { envelopeXml: text });
         }
       });
     },

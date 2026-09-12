@@ -24,7 +24,7 @@ function currentEnvelope(requestId: string): string | undefined {
 
 /** Writes `envelopeXml` back into the editor and the project. */
 function replaceEnvelope(requestId: string, envelopeXml: string): void {
-  useProjectStore.getState().updateRequest(requestId, { envelopeXml });
+  useProjectStore.getState().editRequest(requestId, { envelopeXml });
 }
 
 /** Inserts one ad-hoc entry into the envelope text. */

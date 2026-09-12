@@ -53,6 +53,9 @@ export function monacoThemeName(theme: 'dark' | 'light'): string {
  */
 export const SEND_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter;
 
+/** Monaco's numeric encoding of ⌘S / Ctrl+S: `item.save`. */
+export const SAVE_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS;
+
 /** Monaco's numeric encoding of ⌘⇧F / Ctrl+Shift+F: `editor.formatXml`. */
 export const FORMAT_KEYBINDING = monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF;
 

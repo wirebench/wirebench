@@ -1,0 +1,71 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
+
+/**
+ * The draft store holds edits made in an editor tab until the user saves them. It is the only
+ * place an unsaved edit exists, so the two things that matter are that successive edits to one
+ * request accumulate rather than replace, and that clearing a draft after a save cannot throw
+ * away a keystroke that landed while that save was in flight.
+ */
+describe('drafts store', () => {
+  beforeEach(() => {
+    useDraftsStore.setState({ requests: {} });
+  });
+
+  it('reports nothing dirty to begin with', () => {
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
+  });
+
+  it('marks a request dirty once an edit is staged', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(true);
+    expect(useDraftsStore.getState().isRequestDirty('r2')).toBe(false);
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual(['r1']);
+  });
+
+  it('accumulates successive edits instead of replacing them', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+    useDraftsStore.getState().stageRequest('r1', { name: 'Renamed' });
+
+    expect(useDraftsStore.getState().peekRequest('r1')).toEqual({ envelopeXml: '<a/>', name: 'Renamed' });
+  });
+
+  it('keeps each request separate', () => {
+    useDraftsStore.getState().stageRequest('r1', { name: 'One' });
+    useDraftsStore.getState().stageRequest('r2', { name: 'Two' });
+
+    expect(useDraftsStore.getState().peekRequest('r1')).toEqual({ name: 'One' });
+    expect(useDraftsStore.getState().peekRequest('r2')).toEqual({ name: 'Two' });
+  });
+
+  it('clears a draft that was saved unchanged', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+    const committed = useDraftsStore.getState().peekRequest('r1');
+
+    useDraftsStore.getState().clearRequestIfUnchanged('r1', committed);
+
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
+  });
+
+  it('keeps a keystroke that landed while the save was in flight', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+    const committed = useDraftsStore.getState().peekRequest('r1');
+
+    // The user carries on typing before the save resolves.
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<ab/>' });
+    useDraftsStore.getState().clearRequestIfUnchanged('r1', committed);
+
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(true);
+    expect(useDraftsStore.getState().peekRequest('r1')).toEqual({ envelopeXml: '<ab/>' });
+  });
+
+  it('discards a draft outright when its tab is closed without saving', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+
+    useDraftsStore.getState().discardRequest('r1');
+
+    expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
+  });
+});
