@@ -5,7 +5,10 @@
  * The file is YAML (`{ version: 2, properties: { … }, disabled: [ … ] }`) to match the project
  * and workspace file formats, and is written atomically so a crash mid-write cannot leave a
  * half-written map behind. A missing, malformed or unexpectedly-shaped file yields an empty
- * state: broken globals must never stop the app from starting.
+ * state: broken globals must never stop the app from starting. The one file that is refused
+ * rather than read is one stamped with a `version` newer than this build's — reading it would
+ * mean the next write rewriting it at this version with the parts this build cannot see
+ * dropped, so `load` rejects and every mutator rejects with it, leaving the file untouched.
  *
  * `disabled` names a property whose value is skipped during resolution (see the engine's
  * `enabledProperties`) without deleting it — the same per-variable enabled flag the project and
@@ -20,6 +23,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { WirebenchError } from '@wirebench/engine';
 import type { GlobalsState } from '../shared/wire-types.js';
 
 /** File name (inside `userData`) the global properties are persisted to. */
@@ -53,6 +57,30 @@ function propertiesFrom(document: unknown): PropertyMap {
     }
   }
   return properties;
+}
+
+/**
+ * Refuses a file written by a newer build, the way the project and workspace loaders do
+ * (`engine/project/migrate.ts`): without this, a future version-3 file would be read as if it
+ * were a v2 and the very next write would stamp it back at `version: 2` with every key this
+ * build does not know silently dropped — the user's globals destroyed by a build that should
+ * have declined to touch them. A missing, non-numeric or `<= FORMAT_VERSION` version reads
+ * exactly as before, which is what the v1 → v2 migration needs.
+ *
+ * @throws WirebenchError `globals-format-too-new`.
+ */
+function assertVersionSupported(document: unknown, file: string): void {
+  if (typeof document !== 'object' || document === null) {
+    return;
+  }
+  const version = (document as { version?: unknown }).version;
+  if (typeof version === 'number' && Number.isInteger(version) && version > FORMAT_VERSION) {
+    throw new WirebenchError(
+      'globals-format-too-new',
+      `Global properties were written by a newer version of Wirebench (format ${String(version)}, this build supports ${String(FORMAT_VERSION)})`,
+      { details: { file, version, supported: FORMAT_VERSION } },
+    );
+  }
 }
 
 /** Reads the `disabled` list out of a parsed document, keeping only string entries. */
@@ -137,14 +165,20 @@ export class GlobalProperties {
       this.loaded = true;
       return this.get();
     }
+    let document: unknown;
     try {
-      const document: unknown = parseYaml(text);
-      this.properties = propertiesFrom(document);
-      this.disabled = disabledFrom(document);
+      document = parseYaml(text);
     } catch {
       this.properties = {};
       this.disabled = [];
+      this.loaded = true;
+      return this.get();
     }
+    // Deliberately outside the catch above: a file this build cannot safely rewrite must be
+    // refused, not read as an empty map that the next write would then overwrite.
+    assertVersionSupported(document, this.file);
+    this.properties = propertiesFrom(document);
+    this.disabled = disabledFrom(document);
     this.loaded = true;
     return this.get();
   }

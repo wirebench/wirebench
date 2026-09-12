@@ -87,6 +87,32 @@ describe('GlobalProperties', () => {
     expect(await new GlobalProperties(dir).load()).toEqual({ properties: { token: 'abc' }, disabled: [] });
   });
 
+  it('reads a v2 file exactly as written', async () => {
+    writeFileSync(
+      join(dir, GLOBAL_PROPERTIES_FILE),
+      'version: 2\nproperties:\n  token: abc\n  who: ada\ndisabled:\n  - who\n',
+      'utf8',
+    );
+    expect(await new GlobalProperties(dir).load()).toEqual({
+      properties: { token: 'abc', who: 'ada' },
+      disabled: ['who'],
+    });
+  });
+
+  it('refuses a file written by a newer build instead of rewriting it at this version', async () => {
+    const text = 'version: 3\nproperties:\n  token: abc\nsomethingNew: kept\n';
+    writeFileSync(join(dir, GLOBAL_PROPERTIES_FILE), text, 'utf8');
+    const globals = new GlobalProperties(dir);
+
+    await expect(globals.load()).rejects.toMatchObject({ code: 'globals-format-too-new' });
+    // And, crucially, every write refuses too — the file is left byte-for-byte as it was rather
+    // than stamped back at version 2 with `somethingNew` dropped.
+    await expect(globals.set('token', 'xyz')).rejects.toMatchObject({ code: 'globals-format-too-new' });
+    await expect(globals.setEnabled('token', false)).rejects.toMatchObject({ code: 'globals-format-too-new' });
+    await expect(globals.remove('token')).rejects.toMatchObject({ code: 'globals-format-too-new' });
+    expect(fileText()).toBe(text);
+  });
+
   it('setEnabled toggles a name in the disabled list without touching its value', async () => {
     const globals = new GlobalProperties(dir);
     await globals.set('token', 'abc');

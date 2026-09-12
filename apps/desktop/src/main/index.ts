@@ -282,9 +282,17 @@ void app.whenReady().then(() => {
   void clearAttachmentsTmp(app.getPath('userData'));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
-  void globalProperties.load().then((state) => {
-    broadcast(events.globals.changed, state);
-  });
+  void globalProperties.load().then(
+    (state) => {
+      broadcast(events.globals.changed, state);
+    },
+    (error: unknown) => {
+      // A globals file this build refuses (one stamped with a newer format version) must not
+      // take the app down with it: the store keeps rejecting every read and write, so the file
+      // stays untouched, and there is simply no global scope this session.
+      console.error('Global properties could not be loaded', error);
+    },
+  );
   // Same warm-up for preferences: the send path reads them synchronously, and any renderer that
   // asked before the load finished is corrected by the broadcast.
   void preferencesService.load().then((preferences) => {
