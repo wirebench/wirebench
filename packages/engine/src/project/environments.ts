@@ -12,6 +12,7 @@
 
 import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
 import type { PropertyScopes } from './properties.js';
+import { enabledProperties } from './properties.js';
 
 /** Finds the environment with `envId` in `project`, or `undefined` when there is none or it isn't found. */
 export function findEnvironment(project: Project, envId: string | undefined): Environment | undefined {
@@ -102,6 +103,9 @@ export function resolveAuthEndpoint(iface: Interface, request: Pick<RequestDef, 
  * Builds the {@link PropertyScopes} for expanding properties against `project`
  * under the (optional) active environment `envId`. `env` is omitted entirely
  * when there is no active environment, so shorthand lookups correctly skip it.
+ * A property switched off via `disabledProperties` (on the project, or on the
+ * active environment) is excluded from its scope's map, so it resolves exactly
+ * as if it were absent — see {@link enabledProperties}.
  */
 export function resolveScopes(
   project: Project,
@@ -111,9 +115,11 @@ export function resolveScopes(
 ): PropertyScopes {
   const environment = findEnvironment(project, envId);
   return {
-    project: project.properties,
+    project: enabledProperties(project.properties, project.disabledProperties),
     global: globals,
-    ...(environment !== undefined ? { env: environment.properties } : {}),
+    ...(environment !== undefined
+      ? { env: enabledProperties(environment.properties, environment.disabledProperties) }
+      : {}),
     ...(system !== undefined ? { system } : {}),
   };
 }
