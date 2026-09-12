@@ -26,6 +26,8 @@ function tabIdFor(tab: PersistedTab): string {
       return `interface:${tab.id}`;
     case 'environment':
       return `env:${tab.id}`;
+    case 'project':
+      return `project:${tab.id}`;
   }
 }
 
@@ -39,6 +41,9 @@ function persist(tab: EditorTab): PersistedTab | undefined {
   }
   if (tab.kind === 'environment' && tab.environmentId !== undefined) {
     return { kind: 'environment', id: tab.environmentId };
+  }
+  if (tab.kind === 'project' && tab.projectId !== undefined) {
+    return { kind: 'project', id: tab.projectId };
   }
   return undefined;
 }
@@ -66,6 +71,8 @@ function titleFor(tab: PersistedTab): string | undefined {
         workspace?.environments.find((candidate) => candidate.id === tab.id) ?? selectEnvironment(projects, tab.id);
       return environment?.name;
     }
+    case 'project':
+      return projects.projects[tab.id]?.name;
   }
 }
 
@@ -110,6 +117,7 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
       ...(tab.kind === 'request' ? { requestId: tab.id } : {}),
       ...(tab.kind === 'interface' ? { interfaceId: tab.id } : {}),
       ...(tab.kind === 'environment' ? { environmentId: tab.id } : {}),
+      ...(tab.kind === 'project' ? { projectId: tab.id } : {}),
     });
     if (tab.id === entry.activeId) {
       activeTabId = id;

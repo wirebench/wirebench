@@ -25,8 +25,8 @@ export interface EditorLayoutSnapshot {
  * thing the next session can reopen.
  */
 export interface PersistedTab {
-  readonly kind: 'request' | 'interface' | 'environment';
-  /** The entity id — the request, interface or environment the tab edits. */
+  readonly kind: 'request' | 'interface' | 'environment' | 'project';
+  /** The entity id — the request, interface, environment or project the tab edits. */
   readonly id: string;
 }
 
@@ -153,7 +153,9 @@ function readTab(value: unknown): PersistedTab | undefined {
   if (typeof id !== 'string' || id.length === 0) {
     return undefined;
   }
-  return kind === 'request' || kind === 'interface' || kind === 'environment' ? { kind, id } : undefined;
+  return kind === 'request' || kind === 'interface' || kind === 'environment' || kind === 'project'
+    ? { kind, id }
+    : undefined;
 }
 
 /**

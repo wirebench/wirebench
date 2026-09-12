@@ -24,6 +24,7 @@ import { usePreferencesStore } from '../../state/preferences.js';
 import { useUiStore } from '../../state/ui.js';
 import { AttachmentsInspector } from './inspectors/attachments-inspector.js';
 import { AuthInspector } from './inspectors/auth-inspector.js';
+import { DetailsInspector } from './inspectors/details-inspector.js';
 import { HeadersInspector } from './inspectors/headers-inspector.js';
 import { InspectorStrip, type InspectorItem } from './inspectors/inspector-strip.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
@@ -39,6 +40,7 @@ const DEBOUNCE_MS = 120;
 
 /** The request pane's inspector strip. */
 const REQUEST_INSPECTORS: readonly InspectorItem[] = [
+  { id: 'details', label: 'Details' },
   { id: 'headers', label: 'Headers' },
   { id: 'attachments', label: 'Attachments' },
   { id: 'auth', label: 'Auth' },
@@ -346,7 +348,9 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
         label="Request inspectors"
         items={REQUEST_INSPECTORS}
         render={(inspector) =>
-          inspector === 'headers' ? (
+          inspector === 'details' ? (
+            <DetailsInspector requestId={requestId} />
+          ) : inspector === 'headers' ? (
             <HeadersInspector requestId={requestId} />
           ) : inspector === 'ssl' ? (
             <SslInspector exchange={exchange} />

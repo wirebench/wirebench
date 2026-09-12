@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
+import { ProjectTab } from '../features/project/project-tab.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -166,6 +167,7 @@ export function EditorArea() {
             (tab.kind === 'interface' && tab.interfaceId !== undefined
               ? interfaces[tab.interfaceId]?.name
               : undefined) ??
+            (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
             (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
             (tab.environmentId !== undefined
               ? environmentName(projects, workspaceEnvironments, tab.environmentId)
@@ -233,6 +235,8 @@ export function EditorArea() {
           </Suspense>
         ) : activeTab.environmentId !== undefined ? (
           <EnvironmentPage target={targetFromId(activeTab.environmentId)} />
+        ) : activeTab.kind === 'project' && activeTab.projectId !== undefined ? (
+          <ProjectTab projectId={activeTab.projectId} />
         ) : activeTab.kind === 'history' && activeTab.historyId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <HistoryEntryView historyId={activeTab.historyId} />
