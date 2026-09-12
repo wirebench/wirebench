@@ -19,6 +19,7 @@ import { basename, join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
+  expandExplorer,
   createProject,
   createWorkspace,
   expectExplorerRow,
@@ -246,6 +247,8 @@ test.describe('workspaces', () => {
     const linked = page.getByTestId('explorer-project-row').filter({ hasText: 'Calculator Project' });
     await expect(linked).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('explorer-project-linked-badge')).toBeVisible();
+    // Fold state is per workspace, so in this one the linked project's interface starts shut.
+    await expandExplorer(page, 'Request 1');
     await openFirstRequest(page);
 
     // --- linking the same folder again is refused, in words --------------------------

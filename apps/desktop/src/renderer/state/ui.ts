@@ -110,6 +110,8 @@ export interface UiStore extends UiSnapshot {
   readonly setEditorLineNumbers: (lineNumbers: boolean) => void;
   /** Remembers (or, with `undefined`, forgets) one workspace's editor tabs and sidebar view. */
   readonly setWorkspaceUi: (workspaceId: string, entry: PersistedWorkspaceUi | undefined) => void;
+  /** Remembers whether one explorer node is folded open in `workspaceId` — written on every toggle. */
+  readonly setExplorerOpen: (workspaceId: string, nodeId: string, open: boolean) => void;
   /** Replaces the default request-editor layout (persisted); see `request-editor/layout.ts`. */
   readonly setEditorLayout: (layout: EditorLayoutSnapshot) => void;
   /** The layout without the actions — what commands and keybindings receive as context. */
@@ -332,6 +334,14 @@ export const useUiStore = create<UiStore>((set, get) => {
           return;
         }
         draft.workspaces[workspaceId] = entry as Draft<PersistedWorkspaceUi>;
+      }),
+    setExplorerOpen: (workspaceId, nodeId, open) =>
+      update((draft) => {
+        const entry = (draft.workspaces[workspaceId] ??= { tabs: [] });
+        const explorerOpen = (entry.explorerOpen ??= {});
+        if (explorerOpen[nodeId] !== open) {
+          explorerOpen[nodeId] = open;
+        }
       }),
 
     setEditorLayout: (layout) =>

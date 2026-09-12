@@ -78,7 +78,7 @@ describe('ExplorerView', () => {
   beforeEach(() => {
     useProjectStore.setState({ projects: {}, interfaces: {}, requests: {}, order: [] });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
-    useUiStore.setState({ selection: undefined });
+    useUiStore.setState({ selection: undefined, workspaces: {} });
     openWorkspace([wireProject()]);
     globalThis.ResizeObserver = ManualResizeObserver;
   });
@@ -118,6 +118,15 @@ describe('ExplorerView', () => {
           soapVersion: '1.1',
           headers: [],
           order: 0,
+        },
+      },
+    });
+    // Below a project everything starts folded shut; unfold the path down to the request.
+    useUiStore.setState({
+      workspaces: {
+        w1: {
+          tabs: [],
+          explorerOpen: { 'iface:iface-1': true, 'operations:iface-1': true, 'op:iface-1:{tns}B:Add': true },
         },
       },
     });
@@ -211,19 +220,46 @@ describe('ExplorerView', () => {
 
     const interfaceRow = screen.getByText('Calculator');
 
-    // An interface row has children, so a single click folds it rather than opening a viewer —
+    // An imported interface starts folded shut under its (open) project.
+    expect(screen.queryByText('Operations')).toBeNull();
+
+    // An interface row has children, so a single click unfolds it rather than opening a viewer —
     // browsing the tree must not spawn a tab per row it passes through.
     fireEvent.click(interfaceRow);
     expect(useEditorsStore.getState().tabs).toHaveLength(0);
-    expect(screen.queryByText('Operations')).toBeNull();
+    expect(screen.queryByText('Operations')).toBeTruthy();
 
     fireEvent.click(interfaceRow);
-    expect(screen.queryByText('Operations')).toBeTruthy();
+    expect(screen.queryByText('Operations')).toBeNull();
 
     // The viewer still answers to a double-click, as it always has.
     fireEvent.doubleClick(interfaceRow);
 
     expect(useEditorsStore.getState().tabs).toHaveLength(1);
     expect(useEditorsStore.getState().tabs[0]?.id).toBe('interface:iface-1');
+  });
+
+  it('remembers what was folded open per workspace and restores it on the next mount', () => {
+    useProjectStore.setState({
+      interfaces: { [summary.id]: summary },
+      order: [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      requests: {},
+    });
+
+    const view = render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByText('Calculator'));
+    expect(useUiStore.getState().workspaces['w1']?.explorerOpen).toMatchObject({ 'iface:iface-1': true });
+
+    view.unmount();
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByText('Operations')).toBeTruthy();
   });
 });

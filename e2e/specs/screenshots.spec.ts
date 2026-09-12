@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
+import {
+  createProject,
+  createProjectWithCalculator,
+  createWorkspace,
+  expandExplorer,
+  openFirstRequest,
+} from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -136,9 +142,7 @@ test.describe('README screenshots', () => {
     await capture(window, 'import-wsdl');
 
     await window.getByTestId('import-submit').click();
-    await expect(window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first()).toBeVisible({
-      timeout: 20_000,
-    });
+    await expandExplorer(window, 'Request 1');
 
     // The generated envelope, open in the editor.
     await openFirstRequest(window);

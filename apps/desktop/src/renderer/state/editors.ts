@@ -85,6 +85,11 @@ export interface EditorsStore {
    * what a diff tab needs when "Compare…" is run again with a different pair of entries. */
   readonly openOrReplace: (tab: EditorTab) => void;
   readonly close: (id: string) => void;
+  /**
+   * Moves an open tab to `toIndex` in the strip (clamped to the ends), leaving which tab is
+   * active untouched. Unknown ids are ignored. What drag-and-drop and Move Tab Left/Right do.
+   */
+  readonly move: (id: string, toIndex: number) => void;
   readonly activate: (id: string) => void;
   /**
    * Leaves every tab unselected, which is what shows the empty Start tab. The editor area's
@@ -188,6 +193,24 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
       nextActive = fallback?.id;
     }
     set({ tabs: nextTabs, activeId: nextActive });
+  },
+
+  move: (id, toIndex) => {
+    const { tabs } = get();
+    const from = tabs.findIndex((t) => t.id === id);
+    if (from === -1) {
+      return;
+    }
+    const to = Math.max(0, Math.min(toIndex, tabs.length - 1));
+    if (to === from) {
+      return;
+    }
+    const nextTabs = [...tabs];
+    const [tab] = nextTabs.splice(from, 1);
+    if (tab !== undefined) {
+      nextTabs.splice(to, 0, tab);
+    }
+    set({ tabs: nextTabs });
   },
 
   activate: (id) => {

@@ -14,6 +14,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
+import { getExplorerTree } from './explorer-api.js';
 
 type SourceTab = 'url' | 'file' | 'paste';
 
@@ -232,6 +233,10 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       const summary = await useProjectStore.getState().importDefinition(into, source, options, token);
       if (cancelledTokensRef.current.has(token)) {
         return;
+      }
+      // The new interface arrives folded shut; unfold its project so it is at least visible.
+      if (chosen !== NEW_PROJECT) {
+        getExplorerTree()?.open(`proj:${chosen}`);
       }
       useProblemsStore.getState().set(summary.id, summary.problems);
       setProblems(summary.problems);

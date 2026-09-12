@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { createProjectWithCalculator, saveAll, workspaceProjectDir } from '../helpers/project.js';
+import { createProjectWithCalculator, expandExplorer, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -132,6 +132,8 @@ test.describe('Update Definition, Export and Documentation', () => {
 
     await page.getByTestId('update-definition-submit').click();
     await expect(dialog).toBeHidden({ timeout: 20_000 });
+    // A new operation arrives folded shut, like everything an import adds.
+    await expandExplorer(page, 'Subtract');
 
     // The new operation brought a request with it, so there are now four `Request 1` rows.
     await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' })).toHaveCount(4, {

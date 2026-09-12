@@ -63,6 +63,25 @@ describe('per-workspace UI state', () => {
     });
   });
 
+  it('round-trips the explorer fold state, dropping non-boolean entries', () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        version: UI_STORAGE_VERSION,
+        state: { workspaces: { w1: { tabs: [], explorerOpen: { 'proj:p1': false, i1: true, bad: 'yes' } } } },
+      }),
+    );
+
+    expect(readUi(storage).workspaces['w1']?.explorerOpen).toEqual({ 'proj:p1': false, i1: true });
+  });
+
+  it('keeps the explorer fold state when the tabs are saved', () => {
+    useUiStore.getState().setExplorerOpen('w1', 'i1', true);
+    saveWorkspaceTabs('w1');
+    expect(useUiStore.getState().workspaces['w1']?.explorerOpen).toEqual({ i1: true });
+  });
+
   it('drops a payload written by a version too old to migrate', () => {
     const storage = memoryStorage();
     // `UI_STORAGE_VERSION - 1` (the prior version, 3) is still accepted — its `sidebar`/

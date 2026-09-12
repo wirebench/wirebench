@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace, saveAll, workspaceProjectDir } from '../helpers/project.js';
+import { createProject, createWorkspace, expandExplorer, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 's3cret!';
@@ -65,9 +65,7 @@ test.describe('secrets', () => {
     await expect(page.getByLabel('Password')).toHaveText('••••••••');
 
     await page.getByTestId('import-submit').click();
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first()).toBeVisible({
-      timeout: 20_000,
-    });
+    await expandExplorer(page, 'Request 1');
 
     // The test server ignores auth but records every request's headers, including the WSDL
     // fetch itself — so the recorded Authorization header proves the credentials were sent.
@@ -133,6 +131,7 @@ test.describe('secrets', () => {
     // `Authorization` header on the exchange the HTTP log shows.
     await page.getByLabel('Use these credentials for requests too').check();
     await page.getByTestId('import-submit').click();
+    await expandExplorer(page, 'Request 1');
 
     const requestRow = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
     await expect(requestRow).toBeVisible({ timeout: 20_000 });

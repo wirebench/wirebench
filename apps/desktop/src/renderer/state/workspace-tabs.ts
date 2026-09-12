@@ -85,10 +85,13 @@ export function saveWorkspaceTabs(workspaceId: string): void {
   const persisted = tabs.map(persist).filter((tab): tab is PersistedTab => tab !== undefined);
   const active = tabs.find((tab) => tab.id === activeId);
   const activeEntity = active === undefined ? undefined : persist(active);
+  // The explorer's fold state is written as it changes, not here; carry it over untouched.
+  const explorerOpen = useUiStore.getState().workspaces[workspaceId]?.explorerOpen;
   useUiStore.getState().setWorkspaceUi(workspaceId, {
     tabs: persisted,
     ...(activeEntity === undefined ? {} : { activeId: activeEntity.id }),
     sidebarView: useUiStore.getState().sidebar.view,
+    ...(explorerOpen === undefined ? {} : { explorerOpen }),
   });
 }
 

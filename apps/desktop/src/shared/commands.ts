@@ -83,6 +83,8 @@ export const COMMAND_IDS = [
   'editor.toggleLayoutOrientation',
   'editor.toggleLayoutMode',
   'editor.closeTab',
+  'editor.moveTabLeft',
+  'editor.moveTabRight',
   'editor.nextValue',
   'editor.previousValue',
   'editor.focusOtherPane',

@@ -24,16 +24,15 @@ v1 spec puts the item in; the spec's "1.1" list is not the 1.1.0 release, which 
 | --- | -------------------------------------------------------------------- | ---- | -------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Signed and notarised releases                                        | Ent  | XS                   | follow-up      | Managed Macs and Windows fleets block unsigned apps. Nothing else matters if IT cannot install it.                                          |
 | 2   | Documentation site                                                   | Both | S tooling, M content | new            | A release that people can install but cannot learn sends every question to the issue tracker.                                              |
-| 3   | Import of the legacy one-file XML project format                     | Both | M                    | spec 1.1       | The adoption unlock for teams with years of existing projects. Clean-room, from the file format itself.                                    |
-| 4   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
-| 5   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
-| 6   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
-| 7   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
-| 8   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
-| 9   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
-| 10  | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
-| 11  | JKS keystores, SAML tokens, WS-ReliableMessaging                     | Ent  | S each               | spec 1.1       | Build when a customer asks; each is a niche.                                                                                               |
-| 12  | Full functional testing: suites, assertion catalogue, scripting, data | Both | XL                   | phase 2        | After the runner has proved the CI story.                                                                                                  |
+| 3   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
+| 4   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
+| 5   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
+| 6   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
+| 7   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
+| 8   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
+| 9   | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
+| 10  | JKS keystores, SAML tokens, WS-ReliableMessaging                     | Ent  | S each               | spec 1.1       | Build when a customer asks; each is a niche.                                                                                               |
+| 11  | Full functional testing: suites, assertion catalogue, scripting, data | Both | XL                   | phase 2        | After the runner has proved the CI story.                                                                                                  |
 | —   | Load testing, WSDL coverage and refactoring, code generation, TCP monitor | —    | XL                   | phase 4        | Deferred indefinitely; other tools do these better.                                                                                        |
 | —   | Hosted cloud                                                         | Ent  | a business           | idea           | Only with a company behind it; see [Teams and sign-in](#teams-and-sign-in).                                                                |
 
@@ -103,9 +102,6 @@ enabled checkbox, and the `disabled` list format bump
 
 ### Compatibility and adoption
 
-- **Legacy project import.** The one-file XML format older SOAP workbenches use: interfaces, requests,
-  endpoints and WSS configurations. Implemented from the file format alone, never from another tool's
-  source.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
 - **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
 - **Same-host `http://` → `https://` 301 on a POST.** Wirebench does not follow redirects on send by
@@ -209,7 +205,9 @@ wizard; code generation; a TCP monitor proxy.
 - The CLI runner is pulled ahead of the rest of phase 2, and REST is started before mocks: both widen who
   can adopt the tool, while the full assertion catalogue and mocks deepen it for existing users.
 - Workspaces was not in the spec at all and shipped as 1.1.0, ahead of the spec's own "1.1" list
-  (Kerberos, JKS, SAML, WS-RM, legacy import); that list is still open, under the `spec 1.1` status.
+  (Kerberos, JKS, SAML, WS-RM); that list is still open, under the `spec 1.1` status.
+- The spec's legacy single-XML project import is dropped. Wirebench has no older format of its own to
+  bring forward, and importing other tools' project files is not a goal.
 - Signing and distribution, the documentation site, and teams and sign-in are new; the spec does not
   mention them.
 - Everything else keeps the phase §14 assigns it.

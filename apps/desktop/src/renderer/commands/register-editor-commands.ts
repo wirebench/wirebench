@@ -150,6 +150,29 @@ export function registerEditorCommands(): void {
     },
   });
 
+  // ⌘⇧PageUp/PageDown. Shifts the active tab one place along the strip; the Start tab is not
+  // in the store, so it always stays first.
+  for (const [id, label, shortcut, step] of [
+    ['editor.moveTabLeft', 'Move Tab Left', 'Mod+Shift+PageUp', -1],
+    ['editor.moveTabRight', 'Move Tab Right', 'Mod+Shift+PageDown', 1],
+  ] as const) {
+    registerCommand({
+      id,
+      label,
+      category: 'Editor',
+      shortcut,
+      when: () => useEditorsStore.getState().activeId !== undefined,
+      whenScope: 'editor',
+      run: () => {
+        const { tabs, activeId, move } = useEditorsStore.getState();
+        const index = tabs.findIndex((tab) => tab.id === activeId);
+        if (activeId !== undefined && index !== -1) {
+          move(activeId, index + step);
+        }
+      },
+    });
+  }
+
   // ⌥←/⌥→: step the caret through the envelope's element values, not its tags.
   registerCommand({
     id: 'editor.nextValue',
