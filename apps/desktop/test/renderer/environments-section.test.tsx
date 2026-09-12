@@ -7,8 +7,24 @@ import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceEnvironmentWire } from '../../src/shared/wire-types.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
-const dev: WorkspaceEnvironmentWire = { id: 'e1', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: {} };
-const uat: WorkspaceEnvironmentWire = { id: 'e2', name: 'uat', slug: 'uat', order: 1, endpoints: {}, properties: {} };
+const dev: WorkspaceEnvironmentWire = {
+  id: 'e1',
+  name: 'dev',
+  slug: 'dev',
+  order: 0,
+  endpoints: {},
+  properties: {},
+  disabled: [],
+};
+const uat: WorkspaceEnvironmentWire = {
+  id: 'e2',
+  name: 'uat',
+  slug: 'uat',
+  order: 1,
+  endpoints: {},
+  properties: {},
+  disabled: [],
+};
 
 function setUp() {
   const actions = {

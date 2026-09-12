@@ -24,6 +24,7 @@ import {
   applyUpdate,
   createProject,
   definitionCacheDir,
+  enabledProperties,
   exportDefinition,
   generateDocs,
   generateId,
@@ -615,7 +616,8 @@ export class ProjectHost {
    * so an ad-hoc send still expands `${#Global#…}`.
    */
   scopesFor(envId?: string): PropertyScopes {
-    const globals = this.globals?.get() ?? {};
+    const globalsState = this.globals?.get();
+    const globals = globalsState === undefined ? {} : enabledProperties(globalsState.properties, globalsState.disabled);
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }

@@ -21,6 +21,7 @@ const dev: WorkspaceEnvironmentWire = {
   order: 0,
   properties: { host: 'dev.test' },
   endpoints: { 'demo/calculator': 'http://dev.test/soap' },
+  disabled: [],
 };
 const uat: WorkspaceEnvironmentWire = {
   id: 'e2',
@@ -29,6 +30,7 @@ const uat: WorkspaceEnvironmentWire = {
   order: 1,
   properties: {},
   endpoints: {},
+  disabled: [],
 };
 
 const calculator = {
@@ -201,7 +203,15 @@ describe('EnvironmentGrid', () => {
   it('labels each cell with the layer that actually wins', () => {
     setUp({
       projectEnvironments: [
-        { id: 'pe1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: { weather: 'http://own.test' } },
+        {
+          id: 'pe1',
+          name: 'dev',
+          slug: 'dev',
+          order: 0,
+          properties: {},
+          endpoints: { weather: 'http://own.test' },
+          disabled: [],
+        },
       ],
     });
 

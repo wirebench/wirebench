@@ -64,6 +64,7 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
       },
     ],
     properties: {},
+    disabledProperties: [],
     environments: [],
     problems: [],
     keystores: [],
@@ -351,6 +352,7 @@ describe('selectRequestEndpoint', () => {
       order: 0,
       endpoints: { 'Demo/Calculator': 'http://dev.test/soap' },
       properties: {},
+      disabled: [],
     };
     const projects = [
       {
@@ -397,6 +399,7 @@ describe('selectRequestEndpoint', () => {
       order: 0,
       endpoints: { 'Demo/Calculator': 'http://dev.test/soap' },
       properties: {},
+      disabled: [],
     };
     const projects = [
       {
@@ -420,6 +423,7 @@ describe('selectRequestEndpoint', () => {
           order: 0,
           endpoints: { Calculator: 'http://linked-dev.test/soap' },
           properties: {},
+          disabled: [],
         },
       ],
     });
@@ -431,7 +435,9 @@ describe('selectRequestEndpoint', () => {
     // The linked project's environment has no override for this interface: falls through to the
     // workspace environment's override (the unchanged case).
     applyProject({
-      environments: [{ id: 'proj-env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} }],
+      environments: [
+        { id: 'proj-env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {}, disabled: [] },
+      ],
     });
     expect(resolve('req-1')).toEqual({ url: 'http://dev.test/soap', source: 'workspace-environment' });
 
@@ -446,6 +452,7 @@ describe('selectRequestEndpoint', () => {
           order: 0,
           endpoints: { Calculator: 'http://linked-prod.test/soap' },
           properties: {},
+          disabled: [],
         },
       ],
     });
@@ -470,8 +477,8 @@ describe('useProjectStore: environments and properties', () => {
   it("reads a project's environments in order", () => {
     applyProject({
       environments: [
-        { id: 'env-2', name: 'Prod', slug: 'Prod', order: 1, endpoints: {}, properties: {} },
-        { id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: { who: 'ada' } },
+        { id: 'env-2', name: 'Prod', slug: 'Prod', order: 1, endpoints: {}, properties: {}, disabled: [] },
+        { id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: { who: 'ada' }, disabled: [] },
       ],
     });
 
@@ -522,7 +529,7 @@ describe('useProjectStore: environments and properties', () => {
 
   it('builds each updateEnvironment endpoints patch from the latest pending state, not a stale snapshot', () => {
     applyProject({
-      environments: [{ id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} }],
+      environments: [{ id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {}, disabled: [] }],
     });
 
     const mutate = vi.fn().mockImplementation(
@@ -725,7 +732,7 @@ describe('useProjectStore: several projects at once', () => {
       dir: '/tmp/billing',
       interfaces: [{ ...base.interfaces[0]!, id: 'iface-2', name: 'Invoices', slug: 'Invoices' }],
       requests: [{ ...base.requests[0]!, id: 'req-2', interfaceId: 'iface-2', name: 'Invoice 1' }],
-      environments: [{ id: 'env-2', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} }],
+      environments: [{ id: 'env-2', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {}, disabled: [] }],
       keystores: [{ id: 'ks-2', name: 'billing', path: '/tmp/billing/b.p12', type: 'pkcs12' }],
     };
   }

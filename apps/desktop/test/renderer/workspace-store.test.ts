@@ -28,6 +28,7 @@ const PROJECT: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],
@@ -279,7 +280,7 @@ describe('useWorkspaceStore', () => {
   });
 
   it('setActiveEnvironment and mutate send their change and mirror the reply', async () => {
-    const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} };
+    const environment = { id: 'e1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] };
     const setActiveEnvironment = vi.fn().mockResolvedValue({
       ok: true,
       value: { workspace: workspaceWire({ environments: [environment], activeEnvironmentId: 'e1' }) },

@@ -1,6 +1,7 @@
 import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { enabledProperties } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
@@ -181,7 +182,10 @@ void app.whenReady().then(() => {
   });
   registerRequestChannels(engineService, {
     project: workspaceService,
-    adHocScopes: () => ({ project: {}, global: globalProperties.get(), system: process.env }),
+    adHocScopes: () => {
+      const state = globalProperties.get();
+      return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
+    },
     showSecrets: showSecretsFlag,
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
@@ -190,7 +194,10 @@ void app.whenReady().then(() => {
   });
   registerHistoryChannels(engineService, historyService, {
     project: workspaceService,
-    adHocScopes: () => ({ project: {}, global: globalProperties.get(), system: process.env }),
+    adHocScopes: () => {
+      const state = globalProperties.get();
+      return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
+    },
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
   });
@@ -217,8 +224,8 @@ void app.whenReady().then(() => {
       shell.showItemInFolder(dir);
     },
   });
-  registerGlobalsChannels(globalProperties, (properties) => {
-    broadcast(events.globals.changed, { properties });
+  registerGlobalsChannels(globalProperties, (state) => {
+    broadcast(events.globals.changed, state);
   });
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
@@ -275,8 +282,8 @@ void app.whenReady().then(() => {
   void clearAttachmentsTmp(app.getPath('userData'));
   // Warms the in-memory map so the first send does not have to wait on a disk read, and corrects
   // any early `globals.get` subscriber that raced ahead of the load with the on-disk properties.
-  void globalProperties.load().then((properties) => {
-    broadcast(events.globals.changed, { properties });
+  void globalProperties.load().then((state) => {
+    broadcast(events.globals.changed, state);
   });
   // Same warm-up for preferences: the send path reads them synchronously, and any renderer that
   // asked before the load finished is corrected by the broadcast.

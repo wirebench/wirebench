@@ -215,6 +215,7 @@ function toEnvironmentWire(environment: Environment): EnvironmentWire {
     order: environment.order,
     endpoints: { ...environment.endpoints },
     properties: { ...environment.properties },
+    disabled: [...environment.disabledProperties],
   };
 }
 
@@ -319,6 +320,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
     properties: { ...project.properties },
+    disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),
     ...(project.activeEnvironmentId !== undefined ? { activeEnvironmentId: project.activeEnvironmentId } : {}),
     problems: [...context.problems],

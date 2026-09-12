@@ -19,6 +19,7 @@ const PROJECT: ProjectWire = {
   interfaces: [],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],

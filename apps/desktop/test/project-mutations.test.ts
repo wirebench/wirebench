@@ -152,6 +152,27 @@ describe('applyChange', () => {
     expect(removed.project.properties).toEqual({});
   });
 
+  it('a project property can be disabled and re-enabled without losing its value', async () => {
+    const set = await applyChange(build(), { kind: 'set-project-property', name: 'host', value: 'a.test' }, deps);
+    expect(set.project.disabledProperties).toEqual([]);
+
+    const disabled = await applyChange(
+      set.project,
+      { kind: 'set-project-property-enabled', name: 'host', enabled: false },
+      deps,
+    );
+    expect(disabled.project.disabledProperties).toEqual(['host']);
+    expect(disabled.project.properties).toEqual({ host: 'a.test' });
+
+    const reEnabled = await applyChange(
+      disabled.project,
+      { kind: 'set-project-property-enabled', name: 'host', enabled: true },
+      deps,
+    );
+    expect(reEnabled.project.disabledProperties).toEqual([]);
+    expect(reEnabled.project.properties).toEqual({ host: 'a.test' });
+  });
+
   it('remove-interface drops the interface and renumbers the rest', async () => {
     const result = await applyChange(build(), { kind: 'remove-interface', interfaceId: 'iface-1' }, deps);
     expect(result.project.interfaces).toEqual([]);
@@ -204,7 +225,14 @@ describe('applyChange: environments', () => {
     const [environment] = result.project.environments;
 
     expect(result.createdEnvironmentId).toBe(environment?.id);
-    expect(environment).toMatchObject({ name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {} });
+    expect(environment).toMatchObject({
+      name: 'Dev',
+      slug: 'Dev',
+      order: 0,
+      endpoints: {},
+      properties: {},
+      disabledProperties: [],
+    });
 
     const twice = await applyChange(result.project, { kind: 'add-environment', name: 'Dev' }, deps);
     expect(twice.project.environments.map((env) => env.slug)).toEqual(['Dev', 'Dev-2']);

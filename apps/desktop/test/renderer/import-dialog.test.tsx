@@ -32,6 +32,7 @@ const project: ProjectWire = {
   ],
   requests: [],
   properties: {},
+  disabledProperties: [],
   environments: [],
   problems: [],
   keystores: [],

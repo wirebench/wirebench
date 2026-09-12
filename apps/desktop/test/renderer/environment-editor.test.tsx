@@ -24,6 +24,7 @@ const environment: EnvironmentWire = {
   order: 0,
   endpoints: { calculator: 'http://two.test/soap' },
   properties: { host: 'two.test' },
+  disabled: [],
 };
 
 function setUp() {

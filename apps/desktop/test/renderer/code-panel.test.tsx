@@ -143,7 +143,10 @@ describe('CodePanel', () => {
         name: 'Workspace 1',
         dir: '/tmp/w',
         properties: {},
-        environments: [{ id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        disabled: [],
+        environments: [
+          { id: 'env-1', name: 'dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] },
+        ],
         activeEnvironmentId: 'env-1',
         projects: [],
       },

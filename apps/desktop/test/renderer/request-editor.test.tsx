@@ -62,6 +62,7 @@ describe('RequestEditor', () => {
       order: 0,
       endpoints: { 'Demo/Calculator': 'http://dev.test/calc.asmx' },
       properties: {},
+      disabled: [],
     };
     const projects = [
       { id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal' as const, dir: '/w/Demo', status: 'ready' as const },

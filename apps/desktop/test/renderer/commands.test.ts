@@ -13,7 +13,15 @@ import type { WorkspaceEnvironmentWire, WorkspaceWire } from '../../src/shared/w
 
 /** The smallest open workspace carrying exactly these environments. */
 function workspace(environments: readonly WorkspaceEnvironmentWire[]): WorkspaceWire {
-  return { id: 'w', name: 'Workspace 1', dir: '/tmp/w', properties: {}, environments: [...environments], projects: [] };
+  return {
+    id: 'w',
+    name: 'Workspace 1',
+    dir: '/tmp/w',
+    properties: {},
+    disabled: [],
+    environments: [...environments],
+    projects: [],
+  };
 }
 import type { CommandContext } from '../../src/renderer/lib/commands.js';
 import {
@@ -147,7 +155,9 @@ describe('environment commands', () => {
   it('switches straight to a named environment when the palette passes one', async () => {
     const setActiveEnvironment = vi.fn().mockResolvedValue(undefined);
     useWorkspaceStore.setState({
-      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
+      workspace: workspace([
+        { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] },
+      ]),
       setActiveEnvironment,
     });
     await runCommand('env.switch', context, 'uat');
@@ -161,7 +171,9 @@ describe('environment commands', () => {
     expect(listCommands(context).some((command) => command.id === 'env.next')).toBe(false);
 
     useWorkspaceStore.setState({
-      workspace: workspace([{ id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {} }]),
+      workspace: workspace([
+        { id: 'e1', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: {}, disabled: [] },
+      ]),
     });
     await runCommand('env.next', context);
     expect(setActiveEnvironment).toHaveBeenCalledWith('e1');

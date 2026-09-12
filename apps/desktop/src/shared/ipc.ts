@@ -42,7 +42,7 @@ import {
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
-  globalsPropertiesResponseSchema,
+  globalsStateSchema,
   historyAppendedEventSchema,
   historyClearResponseSchema,
   historyGetRequestSchema,
@@ -51,6 +51,7 @@ import {
   historyListResponseSchema,
   historyResendRequestSchema,
   globalsRemoveRequestSchema,
+  globalsSetEnabledRequestSchema,
   globalsSetRequestSchema,
   projectAddInterfaceRequestSchema,
   projectAddInterfaceResponseSchema,
@@ -352,9 +353,10 @@ export const channels = {
     mutate: defineChannel('workspace.mutate', workspaceMutateRequestSchema, workspaceMutateResponseSchema),
   },
   globals: {
-    get: defineChannel('globals.get', z.undefined(), globalsPropertiesResponseSchema),
-    set: defineChannel('globals.set', globalsSetRequestSchema, globalsPropertiesResponseSchema),
-    remove: defineChannel('globals.remove', globalsRemoveRequestSchema, globalsPropertiesResponseSchema),
+    get: defineChannel('globals.get', z.undefined(), globalsStateSchema),
+    set: defineChannel('globals.set', globalsSetRequestSchema, globalsStateSchema),
+    remove: defineChannel('globals.remove', globalsRemoveRequestSchema, globalsStateSchema),
+    setEnabled: defineChannel('globals.setEnabled', globalsSetEnabledRequestSchema, globalsStateSchema),
   },
   theme: {
     /** The OS colour scheme right now; the renderer asks once at startup, then listens. */
@@ -503,7 +505,7 @@ export const events = {
     progress: defineEvent('engine.progress', engineProgressEventSchema),
   },
   globals: {
-    changed: defineEvent('globals.changed', globalsPropertiesResponseSchema),
+    changed: defineEvent('globals.changed', globalsStateSchema),
   },
   preferences: {
     changed: defineEvent('preferences.changed', preferencesResponseSchema),

@@ -124,7 +124,7 @@ describe('per-workspace UI state', () => {
     });
     useWorkspaceStore.setState({
       workspace: workspaceWire({
-        environments: [{ id: 'we1', name: 'Dev', slug: 'dev', order: 0, properties: {}, endpoints: {} }],
+        environments: [{ id: 'we1', name: 'Dev', slug: 'dev', order: 0, properties: {}, endpoints: {}, disabled: [] }],
       }),
     });
     useProjectStore.setState({

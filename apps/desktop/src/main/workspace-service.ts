@@ -908,7 +908,8 @@ export class WorkspaceService implements ProjectRouter {
    *
    * `properties` and `endpoints` in an `update-workspace-environment` patch **replace** the
    * whole map (like a project `EnvironmentPatchWire`): removing a key is sending the map
-   * without it. Removing the active environment clears `activeEnvironmentId` — an id pointing
+   * without it. `disabled` replaces the whole list the same way. Removing the active
+   * environment clears `activeEnvironmentId` — an id pointing
    * at an environment that no longer exists would silently resolve to "no environment" on the
    * next send, which is the same outcome said out loud.
    *
@@ -937,6 +938,13 @@ export class WorkspaceService implements ProjectRouter {
         open.workspace = { ...open.workspace, properties };
         break;
       }
+      case 'set-workspace-property-enabled': {
+        const disabledProperties = change.enabled
+          ? open.workspace.disabledProperties.filter((name) => name !== change.name)
+          : [...open.workspace.disabledProperties, change.name];
+        open.workspace = { ...open.workspace, disabledProperties };
+        break;
+      }
       case 'add-workspace-environment': {
         // `order` is `max + 1`, not the count: after a removal the count can collide with an
         // order still in use, which would leave two environments claiming the same column.
@@ -960,6 +968,7 @@ export class WorkspaceService implements ProjectRouter {
           ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
           ...(change.patch.properties !== undefined ? { properties: { ...change.patch.properties } } : {}),
           ...(change.patch.endpoints !== undefined ? { endpoints: { ...change.patch.endpoints } } : {}),
+          ...(change.patch.disabled !== undefined ? { disabledProperties: [...change.patch.disabled] } : {}),
         };
         open.workspace = {
           ...open.workspace,
@@ -1026,6 +1035,7 @@ export class WorkspaceService implements ProjectRouter {
       ...(workspace.description !== undefined ? { description: workspace.description } : {}),
       dir: open.dir,
       properties: { ...workspace.properties },
+      disabled: [...workspace.disabledProperties],
       environments: workspace.environments.map((environment): WorkspaceEnvironmentWire => ({
         id: environment.id,
         name: environment.name,
@@ -1033,6 +1043,7 @@ export class WorkspaceService implements ProjectRouter {
         order: environment.order,
         properties: { ...environment.properties },
         endpoints: { ...environment.endpoints },
+        disabled: [...environment.disabledProperties],
       })),
       ...(workspace.activeEnvironmentId !== undefined ? { activeEnvironmentId: workspace.activeEnvironmentId } : {}),
       projects: open.entries.map((entry): WorkspaceProjectWire => {
