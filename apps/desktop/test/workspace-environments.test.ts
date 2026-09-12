@@ -9,7 +9,6 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 
@@ -90,7 +89,7 @@ async function sendThroughHost(service: WorkspaceService, projectId: string, req
 /** A standalone project folder with its own `dev` environment, ready to be linked. */
 async function seedLinkedProject(name: string, properties: Record<string, string>): Promise<string> {
   const dir = join(realpathSync(mkdtempSync(join(tmpdir(), 'wirebench-linked-'))), name);
-  const host = new ProjectHost(engine, new RecentProjects(root));
+  const host = new ProjectHost(engine);
   await host.create({ dir, name });
   await host.addInterface({ source: { kind: 'url', url: primary.wsdlUrl } });
   await host.whenHydrated();

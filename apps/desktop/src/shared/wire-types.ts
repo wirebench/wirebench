@@ -1447,16 +1447,6 @@ export const projectSaveResponseSchema = z.object({
 });
 export type ProjectSaveResult = z.infer<typeof projectSaveResponseSchema>;
 
-/** One entry of the recent-projects list, most recent first. */
-export const recentProjectSchema = z.object({
-  dir: z.string(),
-  name: z.string(),
-  lastOpenedAt: z.string(),
-  /** False when the folder no longer exists — shown disabled rather than silently dropped. */
-  exists: z.boolean(),
-});
-export type RecentProject = z.infer<typeof recentProjectSchema>;
-
 /**
  * Where a `project.addInterface` import lands: an existing project of the open workspace, or a
  * project created for it on the spot. The second arm is what lets "Import WSDL" work from an

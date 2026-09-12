@@ -15,7 +15,6 @@ import {
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
 
 const PASSWORD = 'p12-password';
 
@@ -53,7 +52,6 @@ interface ServiceOptions {
 function newService(options: ServiceOptions = {}): ProjectHost {
   return new ProjectHost(
     new EngineService(),
-    new RecentProjects(tempDir('ud')),
     {},
     undefined,
     undefined,
@@ -216,7 +214,6 @@ describe('ProjectHost.tlsFor', () => {
     let preferences = DEFAULT_PREFERENCES;
     const service = new ProjectHost(
       new EngineService(),
-      new RecentProjects(tempDir('ud')),
       {},
       undefined,
       undefined,

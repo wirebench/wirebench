@@ -51,7 +51,6 @@ import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
-import { RecentProjects } from './recent-projects.js';
 import type { SecretStore } from './secrets.js';
 import { WorkspaceState } from './workspace-state.js';
 import type {
@@ -433,9 +432,6 @@ export class WorkspaceService implements ProjectRouter {
     let held: { project: ProjectWire | null } | undefined;
     const host = new ProjectHost(
       this.deps.engine,
-      // Retired in a later task; until then a host still wants one, backed by the app's own
-      // `userData` so it never writes inside a workspace or a linked folder.
-      new RecentProjects(this.deps.userDataDir),
       {
         onChanged: (project) => {
           if (project !== null) {
@@ -1295,13 +1291,57 @@ export class WorkspaceService implements ProjectRouter {
 }
 
 /**
- * The project folders named by a pre-workspace `recent-projects.json`, most recent first and
- * limited to folders that still exist.
+ * Every project folder already known to some workspace on disk — both internal (copied into
+ * the workspace) and linked (an absolute path kept in the manifest) — resolved through
+ * `realpath` so a symlinked or differently-cased path still matches.
  *
- * Deliberately its own two-field reader rather than the `RecentProjects` class: the picker only
- * wants "here are folders you used to open, link one if you like", and reading the file through
- * the class would re-establish a dependency on a list nothing else in the workspace world
- * keeps up to date. The file is never written here, and a missing or corrupt one yields none.
+ * Used only to filter {@link readLeftoverProjectFolders}'s suggestions: a folder that is
+ * already a project somewhere must never be offered again as something to import.
+ */
+async function existingWorkspaceProjectDirs(userDataDir: string): Promise<Set<string>> {
+  const root = join(userDataDir, WORKSPACES_DIR);
+  let names: string[];
+  try {
+    names = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return new Set();
+  }
+  const dirs = new Set<string>();
+  for (const name of names) {
+    const dir = join(root, name);
+    if (!existsSync(workspaceManifestFile(dir))) {
+      continue;
+    }
+    let workspace: Workspace;
+    try {
+      ({ workspace } = await loadWorkspace(dir));
+    } catch {
+      continue;
+    }
+    for (const ref of workspace.projects) {
+      let projectDir: string;
+      try {
+        projectDir =
+          ref.source === 'internal' ? workspaceProjectDir(dir, ref.slug) : requireAbsolute(ref.path, ref.slug);
+      } catch {
+        continue;
+      }
+      dirs.add(await realpath(projectDir).catch(() => projectDir));
+    }
+  }
+  return dirs;
+}
+
+/**
+ * The project folders named by a pre-workspace `recent-projects.json`, most recent first,
+ * limited to folders that still exist, and with any folder already present as a project in
+ * some workspace filtered out — those are no longer "leftover", they were already imported.
+ *
+ * Deliberately its own two-field reader rather than the `RecentProjects` class that used to
+ * back the old "Open project…" flow: the picker only wants "here are folders you used to
+ * open, link one if you like", and reading the file through that class would re-establish a
+ * dependency on a list nothing else in the workspace world keeps up to date. The file is never
+ * written here, and a missing or corrupt one yields none.
  */
 export async function readLeftoverProjectFolders(userDataDir: string): Promise<readonly string[]> {
   let text: string;
@@ -1321,5 +1361,14 @@ export async function readLeftoverProjectFolders(userDataDir: string): Promise<r
   if (!result.success) {
     return [];
   }
-  return result.data.entries.map((entry) => entry.dir).filter((dir) => existsSync(dir));
+  const candidates = result.data.entries.map((entry) => entry.dir).filter((dir) => existsSync(dir));
+  const taken = await existingWorkspaceProjectDirs(userDataDir);
+  const leftover: string[] = [];
+  for (const dir of candidates) {
+    const resolved = await realpath(dir).catch(() => dir);
+    if (!taken.has(resolved)) {
+      leftover.push(dir);
+    }
+  }
+  return leftover;
 }

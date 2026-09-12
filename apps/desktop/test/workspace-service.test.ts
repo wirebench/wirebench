@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -17,7 +17,6 @@ import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 
@@ -65,7 +64,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceSer
  * reference for it — the id is the project's own, as the spec requires.
  */
 async function seedProject(wsDir: string, slug: string, name: string): Promise<WorkspaceProjectRef> {
-  const host = new ProjectHost(new EngineService(), new RecentProjects(root));
+  const host = new ProjectHost(new EngineService());
   const project = await host.create({ dir: workspaceProjectDir(wsDir, slug), name });
   await host.close();
   return { id: project.id, slug, source: 'internal' };
@@ -161,6 +160,27 @@ describe('WorkspaceService lifecycle', () => {
 
     await service.close();
     expect(history.openProjectIds()).toEqual([]);
+  }, 60_000);
+
+  it('never writes recent-projects.json for a project opened as part of a workspace', async () => {
+    // `recent-projects.json` predates workspaces: it is a leftover-import hint for the picker,
+    // not a log of every project a workspace host happens to open. `ProjectHost.create`/
+    // `openProject` used to record every project unconditionally; a host built by
+    // `WorkspaceService` must not resurrect that file.
+    const bootstrap = newService();
+    const created = await bootstrap.create('No recents');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const countries = await seedProject(dir, 'countries', 'Countries');
+    await registerProjects(dir, [countries]);
+
+    const service = newService();
+    await service.open(created.id);
+    await service.addProject('Second project');
+    await service.close();
+
+    expect(existsSync(join(root, 'recent-projects.json'))).toBe(false);
   }, 60_000);
 
   it("opens a project's history before announcing the project", async () => {

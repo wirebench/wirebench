@@ -106,7 +106,6 @@ import type {
   ProjectSaveResult,
   KeystoresInspectResponse,
   ProjectWire,
-  RecentProject,
   SoapSendInputWire,
   ProxyOptionsWire,
   TlsOptionsWire,
@@ -134,7 +133,6 @@ import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
 import { renameWithRetry } from './rename-dir.js';
-import type { RecentProjects } from './recent-projects.js';
 
 /**
  * What a send needs to carry a request's attachments: the attachments themselves plus the
@@ -294,7 +292,6 @@ export class ProjectHost {
 
   constructor(
     private readonly engine: EngineService,
-    private readonly recent: RecentProjects,
     private readonly hooks: ProjectHostHooks = {},
     /** Overrides the filesystem `saveProject` writes through. Test-only (deferred writes). */
     private readonly fs?: FsLike,
@@ -818,7 +815,6 @@ export class ProjectHost {
     await this.closeInternal();
     this.adopt(createProject(input.name.trim().length > 0 ? input.name : projectNameFromDir(input.dir)), input.dir, []);
     await this.save({ reason: 'create' });
-    await this.recent.remember(input.dir, this.require().project.name);
     this.emitChanged();
     return this.snapshot() as ProjectWire;
   }
@@ -832,7 +828,6 @@ export class ProjectHost {
       dir,
       problems.map((problem) => ({ code: problem.code, message: problem.message, file: problem.file })),
     );
-    await this.recent.remember(dir, project.name);
     this.emitChanged();
     this.hydrating = this.hydrateAll();
     return this.snapshot() as ProjectWire;
@@ -1605,11 +1600,6 @@ export class ProjectHost {
       contentType: input.contentType,
     });
     return { size, source: { kind: 'cache', sha256 } };
-  }
-
-  /** The recent-projects list, most recent first. */
-  recentProjects(): Promise<RecentProject[]> {
-    return this.recent.list();
   }
 
   /**

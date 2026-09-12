@@ -21,7 +21,6 @@ import {
   updateKeystore,
 } from '../src/main/project-keystore-mutations.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import { RecentProjects } from '../src/main/recent-projects.js';
 import { toProjectWire } from '../src/main/project-wire.js';
 
 const PASSWORD = 'p12-password';
@@ -59,16 +58,7 @@ function newService(
   picks?: DialogPicks,
   secrets?: { get(ref: string): Promise<string | undefined> },
 ) {
-  return new ProjectHost(
-    new EngineService(),
-    new RecentProjects(userDataDir),
-    {},
-    undefined,
-    undefined,
-    secrets,
-    undefined,
-    picks,
-  );
+  return new ProjectHost(new EngineService(), {}, undefined, undefined, secrets, undefined, picks);
 }
 
 describe('keystore mutations', () => {
