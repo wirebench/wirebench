@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
+import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import type { PropertyMapWire } from '../../../shared/wire-types.js';
 
 /**
@@ -91,6 +92,41 @@ function ownOrigin(params: {
   }
   const winner = resolvingScope(name, inherited);
   return winner === undefined ? 'Off — no value resolves' : `Off — falls through to ${winner.label}`;
+}
+
+/** One `name=value` (or `name: value`) pair parsed out of a pasted block. */
+interface PastedVariable {
+  readonly name: string;
+  readonly value: string;
+}
+
+/**
+ * Parses a pasted block as one variable per line: `name=value` or `name: value`, blank lines and
+ * `#`-comments ignored, whichever of `=`/`:` comes first on the line splitting it — so a value
+ * containing `=` (a token, say) survives intact after an earlier `:` splits the line. Lines with
+ * neither separator, or an empty name, are dropped. Returns an empty array when nothing on the
+ * pasted block was usable, which the caller reads as "fall back to a plain-text paste".
+ */
+function parsePastedVariables(text: string): readonly PastedVariable[] {
+  const items: PastedVariable[] = [];
+  for (const rawLine of text.split(/\r\n|\r|\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0 || line.startsWith('#')) {
+      continue;
+    }
+    const separators = [line.indexOf('='), line.indexOf(':')].filter((index) => index >= 0);
+    if (separators.length === 0) {
+      continue;
+    }
+    const at = Math.min(...separators);
+    const name = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim();
+    if (name.length === 0) {
+      continue;
+    }
+    items.push({ name, value });
+  }
+  return items;
 }
 
 const INPUT_CLASS =
@@ -279,6 +315,8 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
   const [newName, setNewName] = useState('');
   const [newValue, setNewValue] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
+  const [pasteItems, setPasteItems] = useState<readonly PastedVariable[] | undefined>(undefined);
+  const newNameRef = useRef<HTMLInputElement>(null);
 
   const disabledSet = new Set(disabled);
   const names = Object.keys(properties).sort((a, b) => a.localeCompare(b));
@@ -323,6 +361,11 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     }
   };
 
+  /** Puts focus back in the add row's name input so several variables can be typed in a row. */
+  const focusNewName = (): void => {
+    newNameRef.current?.focus();
+  };
+
   const add = (): void => {
     const trimmed = newName.trim();
     if (trimmed.length === 0) {
@@ -341,6 +384,46 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     onSet(trimmed, newValue);
     setNewName('');
     setNewValue('');
+    focusNewName();
+  };
+
+  /** The add row's `will shadow {X}` hint — empty until the typed name matches an inherited definer. */
+  const trimmedNewName = newName.trim();
+  const shadowedByInherited = trimmedNewName.length === 0 ? undefined : nearestDefining(trimmedNewName, inherited);
+  const addRowOrigin = shadowedByInherited === undefined ? '' : `will shadow ${shadowedByInherited.label}`;
+
+  const applyPaste = (): void => {
+    if (pasteItems === undefined) {
+      return;
+    }
+    for (const item of pasteItems) {
+      onSet(item.name, item.value);
+    }
+    setPasteItems(undefined);
+    setNewName('');
+    setNewValue('');
+    // Not `focusNewName()` here: the dialog's own focus trap is still mounted at this point and
+    // would fight a focus jump made before it unmounts. Radix already returns focus to the name
+    // input on close — it was the active element when the dialog opened — once its unmount
+    // completes, so there's nothing left for us to do.
+  };
+
+  const onPasteName = (event: React.ClipboardEvent<HTMLInputElement>): void => {
+    const text = event.clipboardData.getData('text');
+    // Strip a leading/trailing newline (a trailing one is common when a single line is copied
+    // from a file) before deciding whether this is a genuine multi-line block — a single-line
+    // paste is an ordinary paste, not a bulk one, even when it looks like `name=value`.
+    const withoutEdgeNewlines = text.replace(/^[\r\n]+|[\r\n]+$/g, '');
+    if (!/\r\n|\r|\n/.test(withoutEdgeNewlines)) {
+      return;
+    }
+    const parsed = parsePastedVariables(text);
+    if (parsed.length === 0) {
+      // Nothing usable in the block — fall back to today's behaviour, a plain-text paste.
+      return;
+    }
+    event.preventDefault();
+    setPasteItems(parsed);
   };
 
   return (
@@ -430,10 +513,13 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
           })}
           <tr data-testid="env-variable-row">
             <td className="w-8 py-0.5 pr-2 text-center">
-              <input type="checkbox" aria-label="New variable enabled" checked disabled />
+              {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
+                  checked the moment one is typed. Never interactive: there's nothing to toggle yet. */}
+              <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
             </td>
             <td className="py-0.5 pr-2">
               <input
+                ref={newNameRef}
                 aria-label="New variable name"
                 data-testid="env-variable-name"
                 placeholder="name"
@@ -442,6 +528,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                 onChange={(event) => {
                   setNewName(event.target.value);
                 }}
+                onPaste={onPasteName}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     add();
@@ -473,12 +560,48 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                 }}
               />
             </td>
-            {/* Stage 2 fills this in with a live "will shadow {X}" hint while typing the name. */}
-            <td className="w-8 py-0.5" />
+            <td className="py-0.5 pr-2 text-xs text-fg-subtle" data-testid="env-variable-origin">
+              {addRowOrigin}
+            </td>
             <td className="w-8 py-0.5" />
           </tr>
         </tbody>
       </table>
+
+      {pasteItems !== undefined && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setPasteItems(undefined);
+            }
+          }}
+          title="Add pasted variables?"
+          description={
+            <ul className="flex flex-col gap-1 text-left font-mono text-xs">
+              {pasteItems.map((item) => {
+                const overwritesOwn = Object.hasOwn(properties, item.name);
+                const shadow = nearestDefining(item.name, inherited);
+                return (
+                  <li key={item.name}>
+                    <span className="text-fg-default">
+                      {item.name} = {item.value}
+                    </span>
+                    {overwritesOwn && <span className="text-status-danger"> · will overwrite the current value</span>}
+                    {shadow !== undefined && <span className="text-fg-subtle"> · will shadow {shadow.label}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          }
+          confirmLabel={`Add ${pasteItems.length} variable${pasteItems.length === 1 ? '' : 's'}`}
+          onConfirm={applyPaste}
+          testId="env-variable-paste-confirm"
+          confirmTestId="env-variable-paste-add"
+          cancelTestId="env-variable-paste-cancel"
+          onCloseAutoFocus={focusNewName}
+        />
+      )}
 
       {error !== undefined && (
         <p role="alert" className="text-sm text-status-danger">

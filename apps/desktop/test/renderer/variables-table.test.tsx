@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import {
   VariablesTable,
@@ -229,7 +229,9 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
     // the nearest scope that defines it at all — Workspace — even though Workspace disables it.
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('ws.test');
     expect(screen.getByLabelText<HTMLInputElement>('Enable host').checked).toBe(false);
-    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('Workspace');
+    // `.at(-1)` would now be the add row's origin cell (empty, per stage 2) — the inherited row
+    // is the only one shown, at index 0.
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Workspace');
   });
 
   it('says a disabled own value falls through to the scope that would win', () => {
@@ -321,5 +323,184 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
   it('still shows the empty message when both this scope and every inherited scope have nothing', () => {
     renderTable(baseTarget({ properties: {} }));
     expect(screen.getByText('No variables yet.')).toBeTruthy();
+  });
+});
+
+describe('VariablesTable — the growing row (stage 2)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders the add row Enabled toggle unchecked and non-interactive while the name is empty', () => {
+    renderTable(baseTarget());
+    const checkbox = screen.getByLabelText<HTMLInputElement>('New variable enabled');
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(true);
+  });
+
+  it('checks the add row Enabled toggle the moment a name is typed, still non-interactive', () => {
+    renderTable(baseTarget());
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'port' } });
+    const checkbox = screen.getByLabelText<HTMLInputElement>('New variable enabled');
+    expect(checkbox.checked).toBe(true);
+    expect(checkbox.disabled).toBe(true);
+  });
+
+  it('leaves the add row origin cell empty when the name is empty or defined nowhere inherited', () => {
+    renderTable(baseTarget({ inherited: [scope({ label: 'Workspace', properties: { host: 'ws.test' } })] }));
+    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('');
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'brandNew' } });
+    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('');
+  });
+
+  it('warns "will shadow {X}" in the add row while typing a name an inherited scope defines', () => {
+    renderTable(baseTarget({ inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })] }));
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'token' } });
+    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('will shadow Workspace');
+  });
+
+  it('still warns "will shadow" when the defining inherited scope disables the name there', () => {
+    // nearestDefining, not resolvingScope — a disabled definer still shadows visibly.
+    renderTable(
+      baseTarget({
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' }, disabled: ['token'] })],
+      }),
+    );
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'token' } });
+    expect(screen.getAllByTestId('env-variable-origin').at(-1)?.textContent).toBe('will shadow Workspace');
+  });
+
+  it('keeps focus in the add row name input after Enter in the value field commits', () => {
+    renderTable(baseTarget({ onSet: vi.fn() }));
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'port' } });
+    fireEvent.change(screen.getByLabelText('New variable value'), { target: { value: '8080' } });
+    fireEvent.keyDown(screen.getByLabelText('New variable value'), { key: 'Enter' });
+    expect(document.activeElement).toBe(screen.getByLabelText('New variable name'));
+  });
+
+  it('keeps focus in the add row name input after blur on the value field commits', () => {
+    renderTable(baseTarget({ onSet: vi.fn() }));
+    fireEvent.change(screen.getByLabelText('New variable name'), { target: { value: 'port' } });
+    fireEvent.change(screen.getByLabelText('New variable value'), { target: { value: '8080' } });
+    fireEvent.blur(screen.getByLabelText('New variable value'));
+    expect(document.activeElement).toBe(screen.getByLabelText('New variable name'));
+  });
+
+  it('does not paste-hijack a single-line paste into the name field', () => {
+    renderTable(baseTarget());
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'onlyName=onlyValue' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    expect(screen.queryByTestId('env-variable-paste-confirm')).toBeNull();
+  });
+
+  it('shows a confirmation list for a multi-line paste of name=value pairs', () => {
+    renderTable(baseTarget());
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'a=1\nb=2\n' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    const container = screen.getByTestId('env-variable-paste-confirm');
+    expect(container.textContent).toContain('a');
+    expect(container.textContent).toContain('1');
+    expect(container.textContent).toContain('b');
+    expect(container.textContent).toContain('2');
+    expect(screen.getByTestId('env-variable-paste-add').textContent).toBe('Add 2 variables');
+  });
+
+  it('parses "name: value", ignores blank lines and # comments, and splits on the first separator', () => {
+    renderTable(baseTarget());
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'a: 1\n\n# a comment\nb=x=y\n' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    const container = screen.getByTestId('env-variable-paste-confirm');
+    expect(container.textContent).toContain('a');
+    expect(container.textContent).toContain('1');
+    expect(container.textContent).toContain('b');
+    expect(container.textContent).toContain('x=y');
+    expect(screen.getByTestId('env-variable-paste-add').textContent).toBe('Add 2 variables');
+  });
+
+  it('marks a pasted name that already exists in this scope as an overwrite', () => {
+    renderTable(baseTarget({ properties: { host: 'one.test' } }));
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'host=two.test\nport=8080' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    const container = screen.getByTestId('env-variable-paste-confirm');
+    expect(container.textContent).toMatch(/host.*overwrit/i);
+  });
+
+  it('marks a pasted name an inherited scope defines as a shadow', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'token=xyz\nother=1' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    const container = screen.getByTestId('env-variable-paste-confirm');
+    expect(container.textContent).toMatch(/token.*shadow.*Workspace/i);
+  });
+
+  it('writes every pasted variable through onSet on confirm, then clears the row and refocuses the name field', async () => {
+    const onSet = vi.fn();
+    renderTable(baseTarget({ onSet }));
+    const name = screen.getByLabelText<HTMLInputElement>('New variable name');
+    const clipboardData = { getData: () => 'a=1\nb=2' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    fireEvent.click(screen.getByTestId('env-variable-paste-add'));
+    expect(onSet).toHaveBeenCalledWith('a', '1');
+    expect(onSet).toHaveBeenCalledWith('b', '2');
+    expect(screen.queryByTestId('env-variable-paste-confirm')).toBeNull();
+    expect(name.value).toBe('');
+    // The dialog's own focus trap returns focus on a macrotask once it unmounts — it was the
+    // active element when the dialog opened, so this is Radix's restore, not a manual jump.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(name);
+    });
+  });
+
+  it('writes nothing when the paste confirmation is cancelled', () => {
+    const onSet = vi.fn();
+    renderTable(baseTarget({ onSet }));
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => 'a=1\nb=2' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    fireEvent.click(screen.getByTestId('env-variable-paste-cancel'));
+    expect(onSet).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('env-variable-paste-confirm')).toBeNull();
+  });
+
+  it('falls back to plain-text paste when the pasted block parses to nothing usable', () => {
+    renderTable(baseTarget());
+    const name = screen.getByLabelText('New variable name');
+    const clipboardData = { getData: () => '# just a comment\n\n' };
+    // A real paste can only land on a focused field — give the name input focus first, matching
+    // reality (and letting the dialog's own focus-restore hand focus back here on close).
+    name.focus();
+    fireEvent.paste(name, { clipboardData });
+    expect(screen.queryByTestId('env-variable-paste-confirm')).toBeNull();
   });
 });
