@@ -5,10 +5,11 @@ import {
   SettingsGroup,
   TextSetting,
 } from '../../components/settings-grid.js';
+import { useGlobalsStore } from '../../state/globals.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
-import { VariablesTable, type VariablesTableTarget } from '../environments/variables-table.js';
+import { VariablesTable, type InheritedScope, type VariablesTableTarget } from '../environments/variables-table.js';
 import type { ProjectSettingsPatchWire } from '../../../shared/wire-types.js';
 
 export interface ProjectTabProps {
@@ -30,6 +31,10 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
   const setProjectProperty = useProjectStore((state) => state.setProjectProperty);
   const removeProjectProperty = useProjectStore((state) => state.removeProjectProperty);
   const setProjectPropertyEnabled = useProjectStore((state) => state.setProjectPropertyEnabled);
+  const workspaceProperties = useWorkspaceStore((state) => state.workspace?.properties ?? {});
+  const workspaceDisabled = useWorkspaceStore((state) => state.workspace?.disabled ?? []);
+  const globalsProperties = useGlobalsStore((state) => state.properties);
+  const globalsDisabled = useGlobalsStore((state) => state.disabled);
 
   if (project === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This project is no longer in the workspace.</p>;
@@ -39,8 +44,15 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
     void updateProjectSettings(projectId, next);
   };
 
+  const inherited: readonly InheritedScope[] = [
+    { label: 'Workspace', properties: workspaceProperties, disabled: workspaceDisabled },
+    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
+  ];
+
   const propertiesTarget: VariablesTableTarget = {
     label: 'Project properties',
+    scopeLabel: 'This project',
+    inherited,
     properties: project.properties,
     disabled: project.disabledProperties,
     onSet: (name, value) => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { EndpointsTable } from './endpoints-table.js';
 import type { EnvironmentTarget } from './environment-actions.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
-import { VariablesTable, type VariablesTableTarget } from './variables-table.js';
+import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -98,6 +98,7 @@ function GlobalsPage() {
 
   const target: VariablesTableTarget = {
     label: 'Globals variables',
+    scopeLabel: 'Globals',
     properties,
     disabled,
     onSet: (name, value) => {
@@ -131,9 +132,13 @@ function WorkspacePage() {
   const disabled = useWorkspaceStore((state) => state.workspace?.disabled ?? []);
   const mutate = useWorkspaceStore((state) => state.mutate);
   const setWorkspacePropertyEnabled = useWorkspaceStore((state) => state.setWorkspacePropertyEnabled);
+  const globalsProperties = useGlobalsStore((state) => state.properties);
+  const globalsDisabled = useGlobalsStore((state) => state.disabled);
 
   const target: VariablesTableTarget = {
     label: 'Workspace variables',
+    scopeLabel: 'Workspace',
+    inherited: [{ label: 'Globals', properties: globalsProperties, disabled: globalsDisabled }],
     properties,
     disabled,
     onSet: (name, value) => {
@@ -173,6 +178,8 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   );
   const setWorkspaceActive = useWorkspaceStore((state) => state.setActiveEnvironment);
   const setProjectActive = useProjectStore((state) => state.setActiveEnvironment);
+  const globalsProperties = useGlobalsStore((state) => state.properties);
+  const globalsDisabled = useGlobalsStore((state) => state.disabled);
 
   const environment = workspaceEnvironment ?? projectEnvironment;
   if (environment === undefined) {
@@ -184,9 +191,18 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
     ? workspace?.activeEnvironmentId === environmentId
     : projectActiveId === environmentId;
 
+  // Both a workspace environment and a linked project's own fall back the same way: the
+  // workspace, then Globals.
+  const inherited: readonly InheritedScope[] = [
+    { label: 'Workspace', properties: workspace?.properties ?? {}, disabled: workspace?.disabled ?? [] },
+    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
+  ];
+
   const target: VariablesTableTarget = isWorkspaceScoped
     ? {
         label: `Variables of ${environment.name}`,
+        scopeLabel: 'This environment',
+        inherited,
         properties: environment.properties,
         disabled: environment.disabled,
         onSet: (name, value) => {
@@ -228,6 +244,8 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
       }
     : {
         label: `Variables of ${environment.name}`,
+        scopeLabel: 'This environment',
+        inherited,
         properties: environment.properties,
         // A linked project's own environment publishes `disabled` read-only on the wire — there
         // is deliberately no mutation for it (see `update-environment`'s patch shape), so

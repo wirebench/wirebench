@@ -27,7 +27,7 @@ describe('EnvironmentPage — globals', () => {
   it('shows the fixed Globals name and its properties', () => {
     useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
     renderPage({ kind: 'globals' });
-    expect(screen.getByText('Globals')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Globals' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
   });
 
@@ -52,8 +52,20 @@ describe('EnvironmentPage — workspace', () => {
   it('shows the fixed Workspace name and its properties', () => {
     useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
     renderPage({ kind: 'workspace' });
-    expect(screen.getByText('Workspace')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Value of host').value).toBe('one.test');
+  });
+
+  it('inherits from Globals, shown in a read-only Inherited group', () => {
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { host: 'one.test' } }) });
+    renderPage({ kind: 'workspace' });
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · Workspace',
+      'Inherited · read-only',
+    ]);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
+    expect(screen.getByLabelText<HTMLInputElement>('Enable token').disabled).toBe(true);
   });
 
   it('saves an edit through a set-workspace-property mutation', () => {
@@ -172,6 +184,24 @@ describe('EnvironmentPage — a workspace environment', () => {
       });
     });
   });
+
+  it('falls back through Workspace then Globals, nearest first', () => {
+    useGlobalsStore.setState({ properties: { token: 'global-token', shared: 'from-globals' }, disabled: [] });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [environment],
+        properties: { shared: 'from-workspace' },
+      }),
+    });
+    renderPage({ kind: 'environment', id: environment.id });
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · This environment',
+      'Inherited · read-only',
+    ]);
+    // `shared` is defined by both Workspace and Globals — Workspace, being nearer, wins.
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('global-token');
+  });
 });
 
 describe("EnvironmentPage — a linked project's own environment", () => {
@@ -214,6 +244,17 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     fireEvent.change(value, { target: { value: 'two.test' } });
     fireEvent.blur(value);
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { properties: { host: 'two.test' } });
+  });
+
+  it('falls back through Workspace then Globals too, same as a workspace environment', () => {
+    useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
+    useWorkspaceStore.setState({ workspace: workspaceWire({ properties: { shared: 'from-workspace' } }) });
+    setUp();
+    expect(screen.getAllByTestId('env-variable-group').map((group) => group.textContent)).toEqual([
+      'Set here · This environment',
+      'Inherited · read-only',
+    ]);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
   });
 
   it('names the owning project in the header, so two projects with a same-named environment stay distinguishable', () => {

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { DEFAULT_PROJECT_SETTINGS } from '@wirebench/engine';
 import { ProjectTab } from '../../src/renderer/features/project/project-tab.js';
+import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -154,5 +155,37 @@ describe('ProjectTab', () => {
     await waitFor(() => {
       expect(setProjectProperty).toHaveBeenCalledWith('p1', 'port', '8080');
     });
+  });
+
+  it('falls back through Workspace then Globals for the project properties table', () => {
+    useGlobalsStore.setState({ properties: { shared: 'from-globals' }, disabled: [] });
+    useWorkspaceStore.setState({
+      workspace: {
+        id: 'w1',
+        name: 'Workspace',
+        dir: '/tmp/w1',
+        properties: { shared: 'from-workspace' },
+        disabled: [],
+        environments: [],
+        projects: [
+          {
+            id: 'p1',
+            name: 'Demo',
+            slug: 'Demo',
+            source: 'internal',
+            dir: '/tmp/workspaces/w1/projects/Demo',
+            status: 'ready',
+          },
+        ],
+      },
+    } as never);
+    useProjectStore.setState({ projects: { p1: project() } });
+    renderTab();
+
+    const table = screen.getByTestId('project-properties-table');
+    expect(
+      Array.from(table.querySelectorAll('[data-testid="env-variable-group"]')).map((group) => group.textContent),
+    ).toEqual(['Set here · This project', 'Inherited · read-only']);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of shared').value).toBe('from-workspace');
   });
 });
