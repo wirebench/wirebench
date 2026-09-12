@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { setMonacoText } from '../helpers/editor.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
@@ -40,9 +40,11 @@ test.describe('saving the active tab', () => {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
           walk(path);
-        } else if (dir.includes('/operations/')) {
+        } else if (dir.split(sep).includes('operations')) {
           // A request is a `.request.yaml` of metadata plus a sibling `.xml` holding the
-          // envelope, so both are collected — the envelope is what this spec edits.
+          // envelope, so both are collected — the envelope is what this spec edits. Split on
+          // the platform's own separator: a literal '/operations/' matches nothing on Windows,
+          // where this found no files at all and the spec failed on its own baseline.
           found.push(path);
         }
       }
