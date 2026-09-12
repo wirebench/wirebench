@@ -43,6 +43,8 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
     setDraft(row.override ?? '');
   }, [row.override]);
 
+  // The project is the group header now, not part of the row; the field's accessible name keeps
+  // both, so an interface of the same name in two projects stays distinguishable out of context.
   const label = `Endpoint override for ${row.projectName} › ${row.iface.name}`;
 
   return (
@@ -51,8 +53,8 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
       data-endpoint-key={row.key}
       {...(row.source !== undefined ? { 'data-source': row.source } : {})}
     >
-      <th scope="row" className="py-0.5 pr-2 text-left text-sm font-normal text-fg-default">
-        {row.projectName} › {row.iface.name}
+      <th scope="row" className="py-0.5 pr-2 pl-3 text-left text-sm font-normal text-fg-default">
+        {row.iface.name}
       </th>
       <td className="py-0.5 pr-2">
         <input
@@ -149,8 +151,9 @@ export interface EndpointsTableProps {
 }
 
 /**
- * One environment's endpoint overrides: one row per interface, grouped by project, each backed
- * by the interface's declared addresses. A workspace environment shows every open project's
+ * One environment's endpoint overrides: one row per interface, grouped under the owning
+ * project's name as a group header (spec §2.2), each backed by the interface's declared
+ * addresses. A workspace environment shows every open project's
  * interfaces (keyed `<projectSlug>/<interfaceSlug>`) plus which layer currently wins for it; a
  * linked project's own environment shows only that project's interfaces (keyed by slug alone),
  * with nothing else to show precedence against.
@@ -232,20 +235,51 @@ function EndpointsTableView({
   if (rows.length === 0) {
     return <p className="text-sm text-fg-subtle">Import a WSDL to override its endpoint here.</p>;
   }
+  const hasSource = rows.some((row) => row.source !== undefined);
+  const columns = hasSource ? 3 : 2;
   return (
     <table aria-label="Endpoint overrides" data-testid="env-endpoints-table" className="w-full border-collapse">
       <thead>
         <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
           <th className="pb-1 font-medium">Interface</th>
           <th className="pb-1 font-medium">Override URL</th>
-          {rows.some((row) => row.source !== undefined) && <th className="pb-1 font-medium">Source</th>}
+          {hasSource && <th className="pb-1 font-medium">Source</th>}
         </tr>
       </thead>
-      <tbody>
-        {rows.map((row) => (
-          <EndpointRow key={row.iface.id} row={row} onCommit={onCommit} />
-        ))}
-      </tbody>
+      {/* Spec §2.2: one group per project, the project name as the group's header, rather than
+          repeating it on every row. `rows` already arrives in the workspace's project order, so
+          consecutive runs of the same project are exactly the groups. */}
+      {groupByProject(rows).map((group) => (
+        <tbody key={group.projectName}>
+          <tr>
+            <th
+              scope="colgroup"
+              colSpan={columns}
+              data-testid="env-endpoints-group"
+              className="pt-2 pb-0.5 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
+            >
+              {group.projectName}
+            </th>
+          </tr>
+          {group.rows.map((row) => (
+            <EndpointRow key={row.iface.id} row={row} onCommit={onCommit} />
+          ))}
+        </tbody>
+      ))}
     </table>
   );
+}
+
+/** Consecutive rows of the same project, in the order they arrive. */
+function groupByProject(rows: readonly Row[]): readonly { readonly projectName: string; readonly rows: Row[] }[] {
+  const groups: { projectName: string; rows: Row[] }[] = [];
+  for (const row of rows) {
+    const last = groups.at(-1);
+    if (last !== undefined && last.projectName === row.projectName) {
+      last.rows.push(row);
+    } else {
+      groups.push({ projectName: row.projectName, rows: [row] });
+    }
+  }
+  return groups;
 }

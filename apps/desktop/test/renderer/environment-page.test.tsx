@@ -151,6 +151,14 @@ describe('EnvironmentPage — a workspace environment', () => {
     });
   });
 
+  it('puts the variables table above the endpoints group, per spec §2.2', () => {
+    setUp();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      'Variables',
+      'Endpoints',
+    ]);
+  });
+
   it('carries the disabled flag across a rename, so a disabled variable does not re-enable itself', async () => {
     const { mutate } = setUp({ ...environment, disabled: ['host'] });
     const name = screen.getByLabelText('Name of host');

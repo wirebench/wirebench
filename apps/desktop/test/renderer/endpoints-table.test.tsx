@@ -65,9 +65,15 @@ describe('EndpointsTable — workspace environment', () => {
     render(<EndpointsTable environmentId={env.id} />);
   }
 
-  it('shows one row per interface, grouped by project', () => {
+  it('shows one row per interface under a per-project group header, not a label on every row', () => {
     setUp();
-    expect(screen.getByText('Demo › Calculator')).toBeTruthy();
+    const group = screen.getByTestId('env-endpoints-group');
+    expect(group.textContent).toBe('Demo');
+    expect(group.getAttribute('scope')).toBe('colgroup');
+    expect(screen.getByRole('rowheader', { name: 'Calculator' })).toBeTruthy();
+    expect(screen.queryByText('Demo › Calculator')).toBeNull();
+    // The project stays in the field's accessible name, so the row is still unambiguous.
+    expect(screen.getByLabelText('Endpoint override for Demo › Calculator')).toBeTruthy();
   });
 
   it('offers the interface addresses as suggestions', () => {
