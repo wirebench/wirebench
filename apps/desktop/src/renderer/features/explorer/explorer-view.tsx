@@ -13,6 +13,7 @@ import {
   Plug,
   RefreshCw,
   FoldVertical,
+  UnfoldVertical,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
@@ -24,7 +25,7 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
-import { registerExplorerTree } from './explorer-api.js';
+import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
 import { buildExplorerTree } from './tree-nodes.js';
 
@@ -229,6 +230,8 @@ export function ExplorerView() {
   const setSelection = useUiStore((state) => state.setSelection);
   const projects = useProjectStore((state) => state.projects);
   const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects);
+  const workspaceId = useWorkspaceStore((state) => state.workspace?.id);
+  const setExplorerOpen = useUiStore((state) => state.setExplorerOpen);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
   const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
@@ -256,6 +259,29 @@ export function ExplorerView() {
     return () => registerExplorerTree(null);
   }, [treeRef]);
 
+  // What the user last folded open or shut in this workspace. Read once per tree mount — the tree
+  // owns the live state and reports every change back through `onToggle`.
+  const storedOpen = (): Readonly<Record<string, boolean>> =>
+    (workspaceId === undefined ? undefined : useUiStore.getState().workspaces[workspaceId]?.explorerOpen) ?? {};
+
+  // Everything below a project starts folded shut (so a freshly imported interface arrives
+  // collapsed), but a project root starts open unless the user shut it. A root that appears after
+  // the tree mounted — a new project, an import into a new one — is not in the tree's initial
+  // state, so it is unfolded here.
+  const rootIds = data.map((root) => root.id).join('\n');
+  useEffect(() => {
+    if (treeRef === null || treeRef === undefined) {
+      return;
+    }
+    const stored = storedOpen();
+    for (const id of rootIds.split('\n')) {
+      if (id !== '' && stored[id] === undefined && !treeRef.isOpen(id)) {
+        treeRef.open(id);
+      }
+    }
+    // `storedOpen` reads the store directly; it is deliberately not a dependency.
+  }, [treeRef, rootIds]);
+
   const requestPendingDeletion = confirmDeleteRequestId !== undefined ? requests[confirmDeleteRequestId] : undefined;
 
   return (
@@ -272,6 +298,9 @@ export function ExplorerView() {
         </IconButton>
         <IconButton label="Import WSDL…" onClick={openImportDialog}>
           <FileDown size={14} aria-hidden="true" />
+        </IconButton>
+        <IconButton label="Expand all" onClick={() => treeRef?.openAll()}>
+          <UnfoldVertical size={14} aria-hidden="true" />
         </IconButton>
         <IconButton label="Collapse all" onClick={() => treeRef?.closeAll()}>
           <FoldVertical size={14} aria-hidden="true" />
@@ -302,13 +331,22 @@ export function ExplorerView() {
         ) : (
           size.height > 0 && (
             <Tree<ExplorerNode>
+              // Remounted per workspace, so each one starts from its own remembered fold state.
+              key={workspaceId}
               ref={setTreeRef}
               data={data}
               width={size.width}
               height={size.height}
               rowHeight={26}
               outerElementType={FocusableListOuter}
-              openByDefault
+              openByDefault={false}
+              initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
+              onToggle={(id) => {
+                const tree = getExplorerTree();
+                if (workspaceId !== undefined && tree !== null) {
+                  setExplorerOpen(workspaceId, id, tree.isOpen(id));
+                }
+              }}
               disableEdit={(node) => node.kind !== 'request' && node.kind !== 'project'}
               aria-label="Explorer"
               onActivate={(node: NodeApi<ExplorerNode>) => {

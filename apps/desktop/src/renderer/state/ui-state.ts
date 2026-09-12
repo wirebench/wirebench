@@ -27,6 +27,11 @@ export interface PersistedWorkspaceUi {
   /** The entity id of the tab that was active, when one was. */
   readonly activeId?: string;
   readonly sidebarView?: SidebarView;
+  /**
+   * Which explorer tree nodes the user folded open (`true`) or shut (`false`), by tree node id.
+   * A node with no entry uses the tree's default: project roots open, everything below shut.
+   */
+  readonly explorerOpen?: Readonly<Record<string, boolean>>;
 }
 
 /** Theme preference; `system` follows the OS via `prefers-color-scheme`. */
@@ -210,10 +215,18 @@ function mergeWorkspaces(stored: unknown): Record<string, PersistedWorkspaceUi> 
       : [];
     const activeId = entry['activeId'];
     const sidebarView = entry['sidebarView'];
+    const rawOpen = asRecord(entry['explorerOpen']);
+    const explorerOpen =
+      rawOpen === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(rawOpen).filter((pair): pair is [string, boolean] => typeof pair[1] === 'boolean'),
+          );
     merged[workspaceId] = {
       tabs,
       ...(typeof activeId === 'string' ? { activeId } : {}),
       ...(SIDEBAR_VIEWS.includes(sidebarView as SidebarView) ? { sidebarView: sidebarView as SidebarView } : {}),
+      ...(explorerOpen !== undefined ? { explorerOpen } : {}),
     };
   }
   return merged;

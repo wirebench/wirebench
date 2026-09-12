@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace } from '../helpers/project.js';
+import { createProject, createWorkspace, expandExplorer } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 test.describe('walking skeleton: import -> open request -> send -> response', () => {
@@ -40,6 +40,8 @@ test.describe('walking skeleton: import -> open request -> send -> response', ()
     await window.locator('[data-testid="import-submit"]').click();
 
     await expect(window.getByText('Calculator', { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+    // An imported interface arrives folded shut; unfold the tree down to its requests.
+    await expandExplorer(window, 'Request 1');
 
     // The import already generated one `Request 1` per operation and saved it to disk; open
     // the one under Add, which a single click opens.

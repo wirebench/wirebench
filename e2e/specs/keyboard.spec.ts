@@ -80,7 +80,8 @@ test.describe('keyboard', () => {
     await page.keyboard.type(server!.wsdlUrl);
     await page.keyboard.press('Enter');
 
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first()).toBeVisible({
+    // The imported interface arrives folded shut; its row showing is enough to know it landed.
+    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Calculator' }).first()).toBeVisible({
       timeout: 20_000,
     });
 

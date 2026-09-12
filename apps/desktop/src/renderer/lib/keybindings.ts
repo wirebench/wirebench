@@ -32,6 +32,8 @@ const NAMED_KEYS: Readonly<Record<string, string>> = {
   arrowright: 'arrowright',
   arrowup: 'arrowup',
   arrowdown: 'arrowdown',
+  pageup: 'pageup',
+  pagedown: 'pagedown',
 };
 
 /**
@@ -79,6 +81,8 @@ const MAC_KEY_GLYPHS: Readonly<Record<string, string>> = {
   arrowright: '→',
   arrowup: '↑',
   arrowdown: '↓',
+  pageup: '⇞',
+  pagedown: '⇟',
   '\\': '\\',
 };
 
@@ -92,6 +96,8 @@ const OTHER_KEY_NAMES: Readonly<Record<string, string>> = {
   arrowright: 'Right',
   arrowup: 'Up',
   arrowdown: 'Down',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
   '\\': '\\',
 };
 
@@ -134,6 +140,8 @@ const CHORD_KEY_NAMES: Readonly<Record<string, string>> = {
   escape: 'Escape',
   tab: 'Tab',
   backspace: 'Backspace',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
 };
 
 /**
@@ -172,6 +180,8 @@ const ACCELERATOR_KEYS: Readonly<Record<string, string>> = {
   arrowright: 'Right',
   arrowup: 'Up',
   arrowdown: 'Down',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
 };
 
 /**

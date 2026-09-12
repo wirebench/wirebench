@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Reorder editor tabs.** Drag a tab to a new place in the strip, or move the active tab with
+  *Move Tab Left* / *Move Tab Right* (`Mod+Shift+PageUp` / `Mod+Shift+PageDown`, or
+  `Mod+Shift+←` / `→` on a focused tab). The order is kept with the workspace's tabs.
+- **Explorer fold state is remembered per workspace.** Which projects, interfaces, bindings and
+  operations are expanded or collapsed survives a workspace switch and a relaunch.
+
+### Changed
+
+- The explorer tree now starts collapsed below the project level, so a newly imported WSDL
+  arrives as a single folded interface row; its project is unfolded so the row is visible.
+
 ## [1.1.0] - 2026-09-12
 
 ### Added

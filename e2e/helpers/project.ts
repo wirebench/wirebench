@@ -78,8 +78,18 @@ export async function importCalculator(page: Page, server: TestSoapServer): Prom
   await page.getByRole('button', { name: 'Import WSDL…' }).click();
   await page.getByTestId('import-url-input').fill(server.wsdlUrl);
   await page.getByTestId('import-submit').click();
+  await expandExplorer(page, 'Request 1');
+}
 
-  await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first()).toBeVisible({
+/**
+ * Unfolds the whole explorer tree — an imported interface arrives folded shut — and waits for a
+ * row reading `rowText` to show. Waits for the import dialog to close first, since the tree it
+ * unfolds is only complete once the import has landed.
+ */
+export async function expandExplorer(page: Page, rowText: string): Promise<void> {
+  await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Expand all' }).click();
+  await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: rowText }).first()).toBeVisible({
     timeout: 20_000,
   });
 }

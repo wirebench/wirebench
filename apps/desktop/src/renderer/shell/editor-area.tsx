@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
@@ -84,10 +84,19 @@ export function EditorArea() {
   const activate = useEditorsStore((state) => state.activate);
   const showStart = useEditorsStore((state) => state.showStart);
   const close = useEditorsStore((state) => state.close);
+  const move = useEditorsStore((state) => state.move);
   const requests = useProjectStore((state) => state.requests);
   const projects = useProjectStore((state) => state.projects);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   const interfaces = useProjectStore((state) => state.interfaces);
+
+  // The tab being dragged, and where it would land: before or after the tab under the pointer.
+  const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: 'before' | 'after' } | undefined>(undefined);
+  const endDrag = (): void => {
+    setDraggingId(undefined);
+    setDropTarget(undefined);
+  };
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const showingStart = activeTab === undefined;
@@ -184,11 +193,55 @@ export function EditorArea() {
                 if (event.key === 'Delete' || event.key === 'Backspace') {
                   event.preventDefault();
                   close(tab.id);
+                  return;
+                }
+                // ⌘⇧←/→ (Ctrl+Shift elsewhere) carries the focused tab along the strip instead of
+                // moving focus, so the list's own arrow handling must not see it.
+                if (
+                  (event.metaKey || event.ctrlKey) &&
+                  event.shiftKey &&
+                  (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const index = tabs.findIndex((candidate) => candidate.id === tab.id);
+                  move(tab.id, index + (event.key === 'ArrowLeft' ? -1 : 1));
                 }
               }}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', tab.id);
+                setDraggingId(tab.id);
+              }}
+              onDragOver={(event) => {
+                if (draggingId === undefined) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                const rect = event.currentTarget.getBoundingClientRect();
+                const side = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                if (dropTarget?.id !== tab.id || dropTarget.side !== side) {
+                  setDropTarget({ id: tab.id, side });
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (draggingId !== undefined && dropTarget !== undefined && draggingId !== dropTarget.id) {
+                  const from = tabs.findIndex((candidate) => candidate.id === draggingId);
+                  const over = tabs.findIndex((candidate) => candidate.id === dropTarget.id);
+                  // Index in the list *after* the dragged tab is lifted out of it.
+                  const insertAt = (dropTarget.side === 'after' ? over + 1 : over) - (from < over ? 1 : 0);
+                  move(draggingId, insertAt);
+                }
+                endDrag();
+              }}
+              onDragEnd={endDrag}
+              data-drop={dropTarget?.id === tab.id && draggingId !== tab.id ? dropTarget.side : undefined}
               className={`group inline-flex shrink-0 items-center gap-2 border-r border-hairline px-3 text-sm ${
                 tab.id === activeId ? 'bg-surface-raised text-fg-default' : 'text-fg-subtle hover:bg-surface-raised'
-              }`}
+              } ${draggingId === tab.id ? 'opacity-50' : ''} data-[drop=after]:shadow-[inset_-2px_0_0_var(--color-accent)] data-[drop=before]:shadow-[inset_2px_0_0_var(--color-accent)]`}
             >
               {label}
               {dirty && (

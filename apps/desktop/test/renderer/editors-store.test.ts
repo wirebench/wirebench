@@ -48,6 +48,24 @@ describe('useEditorsStore', () => {
     expect(useEditorsStore.getState().activeId).toBe('a');
   });
 
+  it('move reorders tabs, clamps to the ends, and keeps the active tab', () => {
+    const store = useEditorsStore.getState();
+    store.open({ id: 'a', kind: 'request', title: 'A', requestId: 'a' });
+    store.open({ id: 'b', kind: 'request', title: 'B', requestId: 'b' });
+    store.open({ id: 'c', kind: 'request', title: 'C', requestId: 'c' });
+    const ids = () => useEditorsStore.getState().tabs.map((tab) => tab.id);
+
+    useEditorsStore.getState().move('c', 0);
+    expect(ids()).toEqual(['c', 'a', 'b']);
+    useEditorsStore.getState().move('c', 99);
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    useEditorsStore.getState().move('a', -5);
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    useEditorsStore.getState().move('missing', 0);
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    expect(useEditorsStore.getState().activeId).toBe('c');
+  });
+
   it('activate switches to an already-open tab; ignores unknown ids', () => {
     const store = useEditorsStore.getState();
     store.open({ id: 'a', kind: 'request', title: 'A', requestId: 'a' });

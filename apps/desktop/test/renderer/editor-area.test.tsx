@@ -63,4 +63,27 @@ describe('EditorArea tabs', () => {
     fireEvent.keyDown(screen.getAllByRole('tab')[2] as HTMLElement, { key: 'Delete' });
     expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['a']);
   });
+
+  it('moves the focused tab with Mod+Shift+Left/Right instead of moving focus', () => {
+    const tabB = screen.getByRole('tab', { name: /^B/ });
+    fireEvent.keyDown(tabB, { key: 'ArrowLeft', ctrlKey: true, shiftKey: true });
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['b', 'a']);
+    expect(useEditorsStore.getState().activeId).toBe('b');
+
+    fireEvent.keyDown(tabB, { key: 'ArrowRight', metaKey: true, shiftKey: true });
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['a', 'b']);
+  });
+
+  it('reorders tabs by drag and drop', () => {
+    const tabA = screen.getByRole('tab', { name: /^A/ });
+    const tabB = screen.getByRole('tab', { name: /^B/ });
+    // jsdom lays nothing out, so every rect is zero-wide and a drop always lands "after".
+    const dataTransfer = { setData: () => undefined, effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(tabA, { dataTransfer });
+    fireEvent.dragOver(tabB, { dataTransfer, clientX: 10 });
+    fireEvent.drop(tabB, { dataTransfer });
+    fireEvent.dragEnd(tabA, { dataTransfer });
+
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['b', 'a']);
+  });
 });
