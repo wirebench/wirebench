@@ -1,32 +1,39 @@
 # Roadmap
 
-What Wirebench 1.0 deliberately left out, reorganised by what each item unlocks and in the order it is
+What Wirebench 1.1 deliberately leaves out, reorganised by what each item unlocks and in the order it is
 worth building. The v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`, §14) is
 the phase plan this page argues from; where the two differ, [Departures from the v1 spec](#departures-from-the-v1-spec)
-says so, and the spec stays authoritative until it is updated. The workspaces spec
-(`docs/specs/2026-09-11-wirebench-workspaces-design.md`) is approved and its plan is the next implementation work.
+says so, and the spec stays authoritative until it is updated.
+
+**Where things stand (2026-09-12).** 1.0.0 (explore and send) was tagged and withdrawn unpublished;
+1.1.0 is the first published release. It adds workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
+ADR-0006), the Environments view with per-variable enabling
+(`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`), manual saving with per-tab
+dirty marks (`docs/plans/2026-09-12-save-granularity-plan.md`), and OS- and arch-named release
+artifacts. Unreleased on `main`: tab reordering and explorer fold state remembered per workspace.
+Everything below is what is still open.
 
 **Legend.** _Who_: Dev (an individual developer's daily use), Ent (what enterprise adoption needs), Both.
 _Size_: XS hours · S days · M one to two weeks · L a plan of around fifteen tasks · XL larger than any single
-v1 phase. _Status_: where the item stands today.
+v1 phase. _Status_: where the item stands today. `spec 1.1`, `phase 2` and so on name the bucket §14 of the
+v1 spec puts the item in; the spec's "1.1" list is not the 1.1.0 release, which shipped workspaces instead.
 
 ## Recommended order
 
 | #   | Item                                                                 | Who  | Size                 | Status         | Why here                                                                                                                                  |
 | --- | -------------------------------------------------------------------- | ---- | -------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Signed and notarised releases                                        | Ent  | XS                   | follow-up      | Managed Macs and Windows fleets block unsigned apps. Nothing else matters if IT cannot install it.                                          |
-| 2   | Documentation site                                                   | Both | S tooling, M content | new            | A 1.0 that people can install but cannot learn sends every question to the issue tracker.                                                  |
-| 3   | Workspaces, including git-native teams                               | Both | L                    | specced        | Approved 2026-09-11, 15 tasks. Multi-project with one environment switch; linking a project folder kept in git is the first team story.     |
-| 4   | Import of the legacy one-file XML project format                     | Both | M                    | 1.1            | The adoption unlock for teams with years of existing projects. Clean-room, from the file format itself.                                    |
-| 5   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
-| 6   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking workspaces.                     |
-| 7   | Kerberos/SPNEGO                                                      | Ent  | M                    | 1.1            | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
-| 8   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
-| 9   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
-| 10  | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
-| 11  | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
-| 12  | JKS keystores, SAML tokens, WS-ReliableMessaging                     | Ent  | S each               | 1.1            | Build when a customer asks; each is a niche.                                                                                               |
-| 13  | Full functional testing: suites, assertion catalogue, scripting, data | Both | XL                   | phase 2        | After the runner has proved the CI story.                                                                                                  |
+| 2   | Documentation site                                                   | Both | S tooling, M content | new            | A release that people can install but cannot learn sends every question to the issue tracker.                                              |
+| 3   | Import of the legacy one-file XML project format                     | Both | M                    | spec 1.1       | The adoption unlock for teams with years of existing projects. Clean-room, from the file format itself.                                    |
+| 4   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
+| 5   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
+| 6   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
+| 7   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
+| 8   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
+| 9   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
+| 10  | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
+| 11  | JKS keystores, SAML tokens, WS-ReliableMessaging                     | Ent  | S each               | spec 1.1       | Build when a customer asks; each is a niche.                                                                                               |
+| 12  | Full functional testing: suites, assertion catalogue, scripting, data | Both | XL                   | phase 2        | After the runner has proved the CI story.                                                                                                  |
 | —   | Load testing, WSDL coverage and refactoring, code generation, TCP monitor | —    | XL                   | phase 4        | Deferred indefinitely; other tools do these better.                                                                                        |
 | —   | Hosted cloud                                                         | Ent  | a business           | idea           | Only with a company behind it; see [Teams and sign-in](#teams-and-sign-in).                                                                |
 
@@ -64,10 +71,11 @@ v1 phase. _Status_: where the item stands today.
 
 ### Workspaces
 
-Specced and planned (`docs/plans/2026-09-11-wirebench-workspaces-plan.md`). A workspace groups projects,
-owns environments and a shared property scope, and removes folder picking from the normal flow. Linking a
-project folder that lives in git, and exporting an internal project to a folder, are the bridges to teams
-that need no server. Parked for after it ships:
+Shipped in 1.1.0 (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
+`docs/plans/2026-09-11-wirebench-workspaces-plan.md`, `docs/adr/0006-workspaces-in-app-data.md`). A
+workspace groups projects, owns environments and a shared property scope, and removed folder picking
+from the normal flow. Linking a project folder that lives in git, and exporting an internal project to a
+folder, are the bridges to teams that need no server. Still parked:
 
 - **Multi-window.** The workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`
   §1, assumption 7) deliberately keeps one window holding one open workspace at a time. Several
@@ -151,11 +159,11 @@ Wirebench does not have. Four principles bound the design:
 3. **The server never holds plaintext secrets.** Team secrets are encrypted to member keys and decrypted
    locally; the keychain-only model gains a second path, it does not lose the first.
 4. **The workspaces spec lists network sync as a non-goal.** It gets a follow-up spec, not a rewrite; the
-   plan's ULID entity ids and per-project files are what make a sync protocol possible later.
+   shipped ULID entity ids and per-project files are what make a sync protocol possible later.
 
 | Route                       | What it is                                                                                                                                                        | Size            |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Git-native teams            | A workspace in a git repository. Roles are repository permissions, history is git history, each member supplies their own secrets. Part of the workspaces plan.   | S               |
+| Git-native teams            | Project folders kept in a git repository and linked into each member's workspace. Roles are repository permissions, history is git history, each member supplies their own secrets. The linking, importing and exporting shipped in 1.1.0; what remains is a documented recipe and a way to share the workspace-level environments that sit beside those projects. | S remaining     |
 | Self-hosted Wirebench Server | An open-source service (Node, Postgres): accounts and organisations, roles, shared workspaces with sync, a secrets vault, OIDC and SAML SSO, SCIM, an audit log. | XL              |
 | Hosted cloud                | The same server run as a service: billing, uptime, support, and eventually a SOC 2 report.                                                                        | a business      |
 
@@ -164,12 +172,14 @@ Wirebench does not have. Four principles bound the design:
 Load testing with strategies, load assertions and live charts; WSDL coverage; the WSDL refactoring
 wizard; code generation; a TCP monitor proxy.
 
-### Known limitations carried from 1.0
+### Known limitations carried from 1.0 and 1.1
 
 - The theme screenshot comparison runs on macOS only; the rest of the e2e suite runs on all three OSes.
 - The `xmlsec1` cross-check is skipped locally unless `WIREBENCH_REQUIRE_XMLSEC=1`; CI always runs it.
 - The interop suite covers four public services, not five: one was unreachable when fixtures were captured.
 - English only.
+- A 1.0.0 build cannot open a project or workspace saved by 1.1.0 (`formatVersion: 2`). Moot in
+  practice, since 1.0.0 was never published, but the format bump is the first one the loaders refuse.
 
 ### Known limitations carried from the layout and environments work
 
@@ -191,13 +201,15 @@ wizard; code generation; a TCP monitor proxy.
 
 | Audience   | Already there                                                                                                                                                                                                                                                                 | Missing                                                                                                                          |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Developer  | Schema-aware XML editing with go-to-definition; XPath 3.1 and XQuery 3.1 on responses; persistent searchable history with diff; cURL both ways; environments and property expansion; generated documentation; keyboard-first shell.                                            | Workspaces; REST in the same project; scripting; the MCP surface; a user guide.                                                  |
-| Enterprise | Secrets in the OS keychain and never in project files; git-friendly project folders; TLS verification on by default with a persistent badge when bypassed; complete WS-Security both ways; NTLMv2, client certificates, authenticated proxies, custom CA bundle; no telemetry; consent-gated updates; Apache-2.0; axe and contrast gates. | Signed builds; Kerberos; a CI runner; MSI and silent install; SBOM and attestations; managed preferences; SSO and team sharing. |
+| Developer  | Schema-aware XML editing with go-to-definition; XPath 3.1 and XQuery 3.1 on responses; persistent searchable history with diff; cURL both ways; workspaces with shared environments and one environment switch; property expansion across every scope; manual save with per-tab dirty marks; generated documentation; keyboard-first shell. | REST in the same project; scripting; the MCP surface; a user guide.                                                              |
+| Enterprise | Secrets in the OS keychain and never in project files; git-friendly project folders that link into a workspace; TLS verification on by default with a persistent badge when bypassed; complete WS-Security both ways; NTLMv2, client certificates, authenticated proxies, custom CA bundle; no telemetry; consent-gated updates; Apache-2.0; axe and contrast gates. | Signed builds; Kerberos; a CI runner; MSI and silent install; SBOM and attestations; managed preferences; SSO and team sharing. |
 
 ## Departures from the v1 spec
 
 - The CLI runner is pulled ahead of the rest of phase 2, and REST is started before mocks: both widen who
   can adopt the tool, while the full assertion catalogue and mocks deepen it for existing users.
+- Workspaces was not in the spec at all and shipped as 1.1.0, ahead of the spec's own "1.1" list
+  (Kerberos, JKS, SAML, WS-RM, legacy import); that list is still open, under the `spec 1.1` status.
 - Signing and distribution, the documentation site, and teams and sign-in are new; the spec does not
   mention them.
 - Everything else keeps the phase §14 assigns it.
