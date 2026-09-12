@@ -1,5 +1,4 @@
 import type { CommandId } from '@shared/commands.js';
-import { openPreferencesTab } from '../features/preferences/section-list.js';
 import { registerCommand } from '../lib/commands.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
@@ -128,10 +127,7 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     category: 'View',
     shortcut: 'Mod+Comma',
     run: () => {
-      // The sidebar lists the sections; the editable forms live in the Preferences tab, so the
-      // familiar ⌘, opens both rather than only revealing a table of contents.
-      ui().showSidebarView('settings');
-      openPreferencesTab();
+      ui().openPreferences();
     },
   });
   registerCommand({
@@ -139,7 +135,7 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     label: 'Open Preferences',
     category: 'General',
     run: () => {
-      openPreferencesTab();
+      ui().openPreferences();
     },
   });
   registerCommand({

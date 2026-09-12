@@ -27,13 +27,18 @@ const ITEMS: readonly ActivityItem[] = [
   { view: 'search', label: 'Search', icon: Search, command: 'view.showSearch' },
   { view: 'history', label: 'History', icon: History, command: 'view.showHistory' },
   { view: 'wss', label: 'WS-Security', icon: ShieldCheck, command: 'view.showWss' },
-  { view: 'settings', label: 'Settings', icon: Settings, command: 'view.showSettings' },
 ];
 
-/** The left rail. Selecting the active view again collapses the sidebar. */
+/**
+ * The left rail. Selecting the active view again collapses the sidebar.
+ *
+ * Settings sits apart, at the foot of the rail: it opens a dialog rather than a sidebar view, so
+ * grouping it with the views promised a panel that never came.
+ */
 export function ActivityBar({ platform }: { readonly platform: Platform }) {
   const sidebar = useUiStore((state) => state.sidebar);
   const showSidebarView = useUiStore((state) => state.showSidebarView);
+  const openPreferences = useUiStore((state) => state.openPreferences);
 
   return (
     <nav
@@ -55,6 +60,17 @@ export function ActivityBar({ platform }: { readonly platform: Platform }) {
           <Icon size={17} aria-hidden="true" />
         </IconButton>
       ))}
+      <div className="flex-1" aria-hidden="true" />
+      <IconButton
+        label="Settings"
+        data-testid="activity-settings"
+        shortcut={shortcutFor('preferences.open', platform)}
+        onClick={() => {
+          openPreferences();
+        }}
+      >
+        <Settings size={17} aria-hidden="true" />
+      </IconButton>
     </nav>
   );
 }

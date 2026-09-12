@@ -3,7 +3,6 @@ import { IconButton } from '../components/icon-button.js';
 import { EnvironmentsView } from '../features/environments/environments-view.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
-import { PreferencesSectionList } from '../features/preferences/section-list.js';
 import { SearchView } from '../features/search/search-view.js';
 import { WssSection } from '../features/wss/wss-section.js';
 import type { SidebarView } from '../state/ui-state.js';
@@ -40,11 +39,6 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
     title: 'WS-Security',
     headline: 'WS-Security',
     body: 'Client keystores, and the outgoing/incoming configurations requests can apply.',
-  },
-  settings: {
-    title: 'Settings',
-    headline: 'Preferences',
-    body: 'HTTP, proxy, TLS, WSDL, editor and UI preferences.',
   },
 };
 
@@ -84,8 +78,6 @@ export function Sidebar() {
         <HistoryView />
       ) : view === 'wss' ? (
         <WssSection />
-      ) : view === 'settings' ? (
-        <PreferencesSectionList />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
           <p className="text-md text-fg-muted">{copy.headline}</p>

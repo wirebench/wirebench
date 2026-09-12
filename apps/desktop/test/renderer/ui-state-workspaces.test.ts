@@ -105,7 +105,12 @@ describe('per-workspace UI state', () => {
       environmentId: 'e1',
     });
     editors.open({ id: 'history:h1', kind: 'history', title: 'Sent', historyId: 'h1' });
-    editors.open({ id: 'preferences', kind: 'preferences', title: 'Preferences' });
+    editors.open({
+      id: 'diff:1',
+      kind: 'diff',
+      title: 'Compare',
+      diff: { leftLabel: 'a', rightLabel: 'b', leftXml: '<a/>', rightXml: '<b/>' },
+    });
 
     saveWorkspaceTabs('w1');
 

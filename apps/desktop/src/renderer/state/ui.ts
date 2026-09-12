@@ -10,6 +10,7 @@ import type {
   ThemePreference,
   UiSnapshot,
 } from './ui-state.js';
+import type { PreferencesSectionWire } from '../../shared/wire-types.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
 /** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
@@ -49,6 +50,8 @@ export interface UiStore extends UiSnapshot {
   readonly workspaceManageOpen: boolean;
   /** Whether the Create workspace dialog (a name, nothing else) is open. Transient. */
   readonly workspaceCreateOpen: boolean;
+  /** Whether the Settings dialog is open, and which section it should land on. Transient. */
+  readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
@@ -61,6 +64,9 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
+  /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
+  readonly openPreferences: (section?: PreferencesSectionWire) => void;
+  readonly setPreferencesOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
   /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. What
    *  a double-click on its (still-mounted) handle does while the sidebar is visible — "collapse
@@ -134,6 +140,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     envSwitcherOpen: false,
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
+    preferences: { open: false, section: undefined },
     workspaceCreateOpen: false,
     confirmRemoveProjectId: undefined,
 
@@ -166,6 +173,16 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setWorkspaceCreateOpen: (open) => {
       set({ workspaceCreateOpen: open });
+    },
+    openPreferences: (section) => {
+      set({ preferences: { open: true, section } });
+    },
+    setPreferencesOpen: (open) => {
+      // The section is cleared on close, so reopening from a plain "Settings" lands on the
+      // default rather than wherever the last caller happened to send it.
+      set((state) => ({
+        preferences: open ? { ...state.preferences, open: true } : { open: false, section: undefined },
+      }));
     },
     requestRemoveProject: (projectId) => {
       set({ confirmRemoveProjectId: projectId });
