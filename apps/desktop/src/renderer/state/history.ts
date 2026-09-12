@@ -11,6 +11,8 @@ export interface HistorySnapshot {
   readonly total: number;
   readonly query: string;
   readonly loading: boolean;
+  /** Narrows `entries` to one open project; `undefined` shows every open project merged. */
+  readonly projectId: string | undefined;
 }
 
 /** The history store: {@link HistorySnapshot} plus the actions the History view drives. */
@@ -19,6 +21,8 @@ export interface HistoryStore extends HistorySnapshot {
   readonly load: () => Promise<void>;
   /** Sets `query` immediately (so the input reflects it) and reloads after a short debounce. */
   readonly search: (query: string) => void;
+  /** Sets which project's entries to show (`undefined` = every open project) and reloads. */
+  readonly setProjectFilter: (projectId: string | undefined) => void;
   /** Clears every entry, both on disk and in the store. */
   readonly clear: () => Promise<void>;
   /** Prepends `entry` when it was appended live and matches the current search, if any. */
@@ -59,12 +63,16 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
   total: 0,
   query: '',
   loading: false,
+  projectId: undefined,
 
   load: async () => {
     const sequence = ++loadSequence;
     set({ loading: true });
-    const { query } = get();
-    const result = await ipc().history.list({ ...(query.length > 0 ? { query } : {}) });
+    const { query, projectId } = get();
+    const result = await ipc().history.list({
+      ...(query.length > 0 ? { query } : {}),
+      ...(projectId === undefined ? {} : { projectId }),
+    });
     if (sequence !== loadSequence) {
       return;
     }
@@ -85,6 +93,11 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     }, SEARCH_DEBOUNCE_MS);
   },
 
+  setProjectFilter: (projectId) => {
+    set({ projectId });
+    void get().load();
+  },
+
   clear: async () => {
     const result = await ipc().history.clear(undefined);
     if (result.ok) {
@@ -93,7 +106,10 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
   },
 
   onAppended: (entry) => {
-    const { query, entries, total } = get();
+    const { query, entries, total, projectId } = get();
+    if (projectId !== undefined && entry.projectId !== projectId) {
+      return;
+    }
     if (!matchesQuery(entry, query)) {
       return;
     }

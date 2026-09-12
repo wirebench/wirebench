@@ -210,4 +210,40 @@ describe('DetailsPanel', () => {
     renderPanel();
     expect(screen.getByLabelText<HTMLInputElement>('URL').value).toBe('http://example.test/soap');
   });
+
+  it('breadcrumbs a request selection with its project, interface and operation', () => {
+    useProjectStore.setState({
+      projects: { p1: project, p2: { ...project, id: 'p2', name: 'Geo' } },
+      interfaces: { 'iface-1': interfaceWire },
+      requests: { 'req-1': requestDraft },
+      projectOf: { 'req-1': 'p2', 'iface-1': 'p2' },
+    });
+    useUiStore.setState({ selection: { kind: 'request', id: 'request:req-1', requestId: 'req-1' } });
+    renderPanel();
+
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Geo › Calculator › Add › Request 1');
+  });
+
+  it('names the project on an interface and an endpoint selection too', () => {
+    useProjectStore.setState({
+      projects: { p1: project },
+      interfaces: { 'iface-1': interfaceWire },
+      projectOf: { 'iface-1': 'p1' },
+    });
+    useUiStore.setState({ selection: { kind: 'interface', id: 'iface-1', interfaceId: 'iface-1' } });
+    renderPanel();
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Demo › Calculator');
+
+    cleanup();
+    useUiStore.setState({
+      selection: {
+        kind: 'endpoint',
+        id: 'endpoint:iface-1:S:P',
+        interfaceId: 'iface-1',
+        address: 'http://example.test/soap',
+      },
+    });
+    renderPanel();
+    expect(screen.getByTestId('details-breadcrumb').textContent).toBe('Demo › Calculator › http://example.test/soap');
+  });
 });

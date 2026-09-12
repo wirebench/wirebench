@@ -12,13 +12,19 @@ const DEFAULT_SCOPES: SearchScopesWire = { requestBodies: true, headers: true, d
 const CONTROL =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
-/** The heading a match is grouped under: its request, or its definition document. */
+/**
+ * The heading a match is grouped under: `project › interface › request` (or `project ›
+ * interface › location` for a definition document). Search spans every open project, so the
+ * project segment — when the match carries one — comes first.
+ */
 function groupOf(match: SearchMatchWire): string {
-  if (match.kind === 'document') {
-    return `${match.interfaceName ?? 'Interface'} › ${match.location ?? ''}`;
-  }
-  const suffix = match.kind === 'request-header' ? ' › Headers' : '';
-  return `${match.interfaceName ?? 'Interface'} › ${match.requestName ?? 'Request'}${suffix}`;
+  const breadcrumb =
+    match.kind === 'document'
+      ? `${match.interfaceName ?? 'Interface'} › ${match.location ?? ''}`
+      : `${match.interfaceName ?? 'Interface'} › ${match.requestName ?? 'Request'}${
+          match.kind === 'request-header' ? ' › Headers' : ''
+        }`;
+  return match.projectName === undefined ? breadcrumb : `${match.projectName} › ${breadcrumb}`;
 }
 
 function groupMatches(matches: readonly SearchMatchWire[]): readonly (readonly [string, SearchMatchWire[]])[] {

@@ -191,4 +191,53 @@ describe('SearchView', () => {
 
     expect(screen.getByText('No project open')).toBeTruthy();
   });
+
+  it('groups results by project, then request or document, when several projects are open', async () => {
+    useProjectStore.setState({
+      projects: {
+        p1: { id: 'p1', name: 'Calc Project' } as ProjectWire,
+        p2: { id: 'p2', name: 'Weather Project' } as ProjectWire,
+      },
+    });
+    const fromP1: SearchMatchWire = { ...BODY_MATCH, projectId: 'p1', projectName: 'Calc Project' };
+    const fromP2: SearchMatchWire = {
+      ...BODY_MATCH,
+      projectId: 'p2',
+      projectName: 'Weather Project',
+      requestId: 'req-2',
+      requestName: 'Request 2',
+      interfaceName: 'Weather',
+    };
+    installWirebenchApi({ search: { query: stubQuery([fromP1, fromP2]) } });
+    render(<SearchView />);
+    await type('Add');
+
+    expect(screen.getAllByTestId('search-group')).toHaveLength(2);
+    expect(screen.getByText('Calc Project › Calculator › Request 1')).toBeTruthy();
+    expect(screen.getByText('Weather Project › Weather › Request 2')).toBeTruthy();
+  });
+
+  it("reveals a multi-project result in its own project's request, not any other's", async () => {
+    useProjectStore.setState({
+      projects: {
+        p1: { id: 'p1', name: 'Calc Project' } as ProjectWire,
+        p2: { id: 'p2', name: 'Weather Project' } as ProjectWire,
+      },
+    });
+    const fromP2: SearchMatchWire = {
+      ...BODY_MATCH,
+      projectId: 'p2',
+      projectName: 'Weather Project',
+      requestId: 'req-2',
+      requestName: 'Request 2',
+      interfaceName: 'Weather',
+    };
+    installWirebenchApi({ search: { query: stubQuery([fromP2]) } });
+    render(<SearchView />);
+    await type('Add');
+
+    fireEvent.click(screen.getByTestId('search-result'));
+
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.requestId)).toEqual(['req-2']);
+  });
 });

@@ -93,4 +93,39 @@ describe('quickOpenEntries', () => {
   it('is empty for an empty project', () => {
     expect(quickOpenEntries({}, {})).toEqual([]);
   });
+
+  it('prefixes each row with the project that owns it, leaving the keys alone', () => {
+    const entries = quickOpenEntries(
+      { 'if-1': summary() },
+      { 'req-1': request() },
+      { 'if-1': 'p1', 'req-1': 'p1' },
+      { p1: 'Payments' },
+    );
+
+    const saved = entries.find((entry) => entry.kind === 'request');
+    expect(saved?.key).toBe('request:req-1');
+    expect(saved?.label).toBe('Payments › Request 1');
+    expect(saved?.detail).toBe('Payments › Calculator › CalculatorSoap › Add');
+
+    const operation = entries.find((entry) => entry.kind === 'operation');
+    expect(operation?.key).toBe(`operation:if-1/${BINDING}/Subtract`);
+    expect(operation?.label).toBe('Payments › Subtract');
+  });
+
+  it('tells two open projects apart', () => {
+    const other: InterfaceSummary = { ...summary(), id: 'if-2', name: 'Countries' };
+    const entries = quickOpenEntries(
+      { 'if-1': summary(), 'if-2': other },
+      {},
+      { 'if-1': 'p1', 'if-2': 'p2' },
+      { p1: 'Payments', p2: 'Geo' },
+    );
+
+    expect(entries.map((entry) => entry.label)).toEqual([
+      'Geo › Add',
+      'Geo › Subtract',
+      'Payments › Add',
+      'Payments › Subtract',
+    ]);
+  });
 });

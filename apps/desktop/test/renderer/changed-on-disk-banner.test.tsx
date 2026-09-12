@@ -73,4 +73,33 @@ describe('ChangedOnDiskBanner', () => {
     expect(screen.queryByTestId('changed-on-disk-banner')).toBeNull();
     expect(reload).not.toHaveBeenCalled();
   });
+
+  it('shows one banner per project with changes, each naming its project', () => {
+    useProjectStore.getState().applySnapshot('p2', { ...project(false), id: 'p2', name: 'Geo' });
+    useProjectStore.getState().noteChangedOnDisk('p', ['wirebench.yaml']);
+    useProjectStore.getState().noteChangedOnDisk('p2', ['a.yaml', 'b.yaml']);
+    render(<ChangedOnDiskBanner />);
+
+    const banners = screen.getAllByRole('status');
+    expect(banners).toHaveLength(2);
+    expect(banners.map((banner) => banner.getAttribute('data-project-id'))).toEqual(['p', 'p2']);
+    expect(banners[0]?.textContent).toContain('Demo: 1 file changed on disk');
+    expect(banners[1]?.textContent).toContain('Geo: 2 files changed on disk');
+    // The first banner keeps the stable ids the e2e spec drives.
+    expect(screen.getByTestId('changed-on-disk-banner')).toBe(banners[0]);
+  });
+
+  it('reloads only the project whose banner was used', async () => {
+    const reload = vi.fn().mockResolvedValue({ ok: true, value: { project: project(false) } });
+    installWirebenchApi({ project: { reload } });
+    useProjectStore.getState().applySnapshot('p2', { ...project(false), id: 'p2', name: 'Geo' });
+    useProjectStore.getState().noteChangedOnDisk('p', ['wirebench.yaml']);
+    useProjectStore.getState().noteChangedOnDisk('p2', ['a.yaml']);
+    render(<ChangedOnDiskBanner />);
+
+    await userEvent.click(screen.getByTestId('changed-on-disk-reload-p2'));
+    await waitFor(() => {
+      expect(reload).toHaveBeenCalledWith({ projectId: 'p2' });
+    });
+  });
 });

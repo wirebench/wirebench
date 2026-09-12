@@ -44,9 +44,15 @@ export function CommandPalette({ open, onOpenChange, context, mode = 'commands' 
   const groups = useMemo(() => groupByCategory(listCommands(context)), [context]);
   const interfaces = useProjectStore((state) => state.interfaces);
   const requests = useProjectStore((state) => state.requests);
+  const projectOf = useProjectStore((state) => state.projectOf);
+  const projects = useProjectStore((state) => state.projects);
+  const projectNames = useMemo(
+    () => Object.fromEntries(Object.entries(projects).map(([id, project]) => [id, project.name])),
+    [projects],
+  );
   const entries = useMemo(
-    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests) : []),
-    [mode, interfaces, requests],
+    () => (mode === 'quick-open' ? quickOpenEntries(interfaces, requests, projectOf, projectNames) : []),
+    [mode, interfaces, requests, projectOf, projectNames],
   );
   const quickOpen = mode === 'quick-open';
 
