@@ -49,8 +49,14 @@ describe('explorerMenuItems', () => {
     ]);
     expect(internal.some((item) => item.key === 'project-environments')).toBe(false);
     // Trashing the folder is a choice inside the remove confirmation, and only an internal
-    // project is ever offered it — the menu itself never removes files from either.
-    expect(linked.some((item) => /file|trash|delete/i.test(item.label))).toBe(false);
+    // project is ever offered it — the menu itself never removes files from either. The reveal
+    // item is exempt from the wording check, not from the rule: its neutral label ("Show in file
+    // manager", what this menu says on anything that is not macOS or Windows) names a file
+    // without touching one.
+    for (const items of [internal, linked]) {
+      const wording = items.filter((item) => item.key !== 'reveal').map((item) => item.label);
+      expect(wording.some((label) => /file|trash|delete/i.test(label))).toBe(false);
+    }
   });
 
   it('offers only Locate… and Remove on the row of a project whose folder is gone', () => {
