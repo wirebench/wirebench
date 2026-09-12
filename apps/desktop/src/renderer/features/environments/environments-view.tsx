@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { Check, Globe, Layers, PanelLeftClose, Plus } from 'lucide-react';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
@@ -15,7 +16,41 @@ const NAME_INPUT_CLASS =
   'h-6 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm text-fg-default outline-none ring-1 ring-accent';
 
 const ROW_CLASS =
-  'group flex items-center gap-1.5 rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-accent';
+  'group flex cursor-pointer items-center gap-1.5 rounded border-l-2 py-1 pr-2 pl-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-accent';
+
+/**
+ * How a row shows that its target is the one the editor is on. The left bar and the selected
+ * surface say "you are editing this"; the check in an environment row says something else
+ * entirely — "this one resolves when you send" — so the two signals never share a treatment.
+ */
+const OPEN_ROW_CLASS = 'border-accent bg-surface-selected text-fg-default';
+const CLOSED_ROW_CLASS = 'border-transparent text-fg-default hover:bg-surface-raised';
+
+/**
+ * Which target the active editor tab is editing, or `undefined` when it is on something else.
+ * Read from the tab rather than from a selection of its own: opening an environment is what the
+ * sidebar does, so the tab is the one place that already knows which one is being edited.
+ */
+function useOpenTarget(): string | undefined {
+  return useEditorsStore((state) => {
+    const tab = state.tabs.find((candidate) => candidate.id === state.activeId);
+    return tab?.kind === 'environment' ? tab.environmentId : undefined;
+  });
+}
+
+/**
+ * Keeps the open row on screen. The list is short today but grows with the workspace, and a row
+ * scrolled out of view cannot show anything — `'nearest'` so a row already visible never moves.
+ */
+function useRevealWhenOpen(open: boolean): React.RefObject<HTMLLIElement | null> {
+  const ref = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (open) {
+      ref.current?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [open]);
+  return ref;
+}
 
 /** A stable empty list, so the view does not rerender while no workspace is open. */
 const NO_ENVIRONMENTS: readonly WorkspaceEnvironmentWire[] = [];
@@ -25,24 +60,30 @@ function ScopeRow({
   kind,
   label,
   icon: Icon,
+  open,
   onOpen,
 }: {
   readonly kind: 'globals' | 'workspace';
   readonly label: string;
   readonly icon: typeof Globe;
+  readonly open: boolean;
   readonly onOpen: () => void;
 }) {
+  const ref = useRevealWhenOpen(open);
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
         <li
+          ref={ref}
           data-testid="environment-row"
           data-kind={kind}
           data-active="false"
+          data-open={open}
+          aria-current={open ? 'page' : undefined}
           role="row"
           tabIndex={0}
-          className={`${ROW_CLASS} text-fg-default hover:bg-surface-raised`}
-          onDoubleClick={onOpen}
+          className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
+          onClick={onOpen}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               onOpen();
@@ -67,6 +108,8 @@ function ScopeRow({
 interface EnvironmentRowProps {
   readonly environment: WorkspaceEnvironmentWire;
   readonly active: boolean;
+  /** True when this environment is the one the active editor tab is editing. */
+  readonly open: boolean;
   readonly renaming: boolean;
   readonly onStartRename: () => void;
   readonly onFinishRename: (name: string | undefined) => void;
@@ -76,12 +119,14 @@ interface EnvironmentRowProps {
 function EnvironmentRow({
   environment,
   active,
+  open,
   renaming,
   onStartRename,
   onFinishRename,
   onDelete,
 }: EnvironmentRowProps) {
   const setActiveEnvironment = useWorkspaceStore((state) => state.setActiveEnvironment);
+  const ref = useRevealWhenOpen(open);
 
   const setActive = (): void => {
     void setActiveEnvironment(active ? null : environment.id);
@@ -91,14 +136,19 @@ function EnvironmentRow({
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
         <li
+          ref={ref}
           data-testid="environment-row"
           data-kind="environment"
           data-active={active}
+          data-open={open}
+          aria-current={open ? 'page' : undefined}
           role="row"
           tabIndex={0}
-          className={`${ROW_CLASS} ${active ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'}`}
-          onDoubleClick={() => {
-            openEnvironmentTab({ kind: 'environment', id: environment.id });
+          className={`${ROW_CLASS} ${open ? OPEN_ROW_CLASS : CLOSED_ROW_CLASS}`}
+          onClick={() => {
+            if (!renaming) {
+              openEnvironmentTab({ kind: 'environment', id: environment.id });
+            }
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !renaming) {
@@ -209,6 +259,9 @@ export function EnvironmentsView() {
   // `collapseSidebar`, not `toggleSidebar`: this button is only ever reachable while the sidebar
   // is open, and every other collapse affordance on the shell collapses rather than toggles.
   const collapseSidebar = useUiStore((state) => state.collapseSidebar);
+  // `EditorTab.environmentId` already holds the encoded target — a real id, or `'globals'` /
+  // `'workspace'` for the two fixed scopes — so each row compares against it directly.
+  const openTarget = useOpenTarget();
 
   const [renamingId, setRenamingId] = useState<string | undefined>(undefined);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | undefined>(undefined);
@@ -244,6 +297,7 @@ export function EnvironmentsView() {
           kind="globals"
           label="Globals"
           icon={Globe}
+          open={openTarget === 'globals'}
           onOpen={() => {
             openEnvironmentTab({ kind: 'globals' });
           }}
@@ -252,6 +306,7 @@ export function EnvironmentsView() {
           kind="workspace"
           label="Workspace"
           icon={Layers}
+          open={openTarget === 'workspace'}
           onOpen={() => {
             openEnvironmentTab({ kind: 'workspace' });
           }}
@@ -269,6 +324,7 @@ export function EnvironmentsView() {
             key={environment.id}
             environment={environment}
             active={environment.id === activeId}
+            open={environment.id === openTarget}
             renaming={renamingId === environment.id}
             onStartRename={() => {
               // Deferred: selecting "Rename" from the context menu closes it, and Radix's own

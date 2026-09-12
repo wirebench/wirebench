@@ -79,6 +79,7 @@ const PAIRS: readonly Pair[] = [
   // Accent-on-surface and text on the accent itself.
   { fg: '--wb-accent-default', bg: '--wb-bg-base', kind: 'text', where: 'links, "Set as default"' },
   { fg: '--wb-accent-default', bg: '--wb-bg-raised', kind: 'text', where: 'sidebar links' },
+  { fg: '--wb-accent-default', bg: '--wb-bg-sunken', kind: 'text', where: "the Code panel's curl flags" },
   { fg: '--wb-fg-on-accent', bg: '--wb-accent-default', kind: 'text', where: 'primary buttons' },
   { fg: '--wb-fg-on-accent', bg: '--wb-status-danger', kind: 'text', where: 'destructive buttons, problem badges' },
   { fg: '--wb-fg-on-accent', bg: '--wb-status-warning', kind: 'text', where: 'orphaned-node badge' },

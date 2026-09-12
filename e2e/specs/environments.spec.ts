@@ -129,7 +129,7 @@ test.describe('environments', () => {
 
     // --- a workspace-level value, and an environment value that shadows it --
     await openEnvironmentsView(page);
-    await environmentRow(page, 'Workspace').dblclick();
+    await environmentRow(page, 'Workspace').click();
     await setVariable(page, 'intA', '100');
 
     await openEnvironmentsView(page);

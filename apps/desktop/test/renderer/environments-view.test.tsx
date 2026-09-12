@@ -113,12 +113,42 @@ describe('EnvironmentsView', () => {
     });
   });
 
-  it('opens an environment editor tab on double-click', () => {
+  it('opens an environment editor tab on a single click', () => {
     setUp();
-    fireEvent.doubleClick(screen.getAllByTestId('environment-row')[3]!);
+    fireEvent.click(screen.getAllByTestId('environment-row')[3]!);
     expect(useEditorsStore.getState().tabs).toEqual([
       { id: 'env:e2', kind: 'environment', title: 'uat', environmentId: 'e2' },
     ]);
+  });
+
+  it('opens a fixed scope on a single click', () => {
+    setUp();
+    fireEvent.click(screen.getAllByTestId('environment-row')[0]!);
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' },
+    ]);
+  });
+
+  it('marks the row the active editor tab is editing, and only that row', () => {
+    setUp();
+    fireEvent.click(screen.getAllByTestId('environment-row')[3]!);
+    const rows = screen.getAllByTestId('environment-row');
+    expect(rows.map((row) => row.dataset['open'])).toEqual(['false', 'false', 'false', 'true']);
+    expect(rows[3]?.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('leaves every row unmarked while the active tab is not an environment', () => {
+    setUp();
+    useEditorsStore.getState().open({ id: 'r1', kind: 'request', title: 'Add', requestId: 'r1' });
+    const rows = screen.getAllByTestId('environment-row');
+    expect(rows.every((row) => row.dataset['open'] === 'false')).toBe(true);
+  });
+
+  it('does not open a tab when a click lands on the set-active control', () => {
+    setUp();
+    const uatRow = screen.getAllByTestId('environment-row')[3]!;
+    fireEvent.click(uatRow.querySelector('button[aria-label="Set uat active"]')!);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
   });
 
   it('renames an environment inline', async () => {
