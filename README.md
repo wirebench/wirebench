@@ -173,15 +173,14 @@ repository. It is what the opt-in update feed is derived from.
 
 1. **Signed and notarised releases** — managed Macs and Windows fleets block unsigned apps.
 2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference.
-3. **Legacy project import** — the one-file XML format older SOAP workbenches use.
-4. **CLI runner** — `wirebench run` with assertions and JUnit output, for CI.
-5. **Kerberos/SPNEGO** — Windows-integrated authentication.
-6. **REST client** — collections beside SOAP interfaces, OpenAPI import, OAuth2.
-7. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
-8. **MCP server** — the engine driven by coding agents.
-9. **Teams and sign-in** — git-linked project folders shipped in 1.1; next a sync design, then a self-hosted
+3. **CLI runner** — `wirebench run` with assertions and JUnit output, for CI.
+4. **Kerberos/SPNEGO** — Windows-integrated authentication.
+5. **REST client** — collections beside SOAP interfaces, OpenAPI import, OAuth2.
+6. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
+7. **MCP server** — the engine driven by coding agents.
+8. **Teams and sign-in** — git-linked project folders shipped in 1.1; next a sync design, then a self-hosted
    server with SSO. The app stays fully usable without an account.
-10. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
+9. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
 
 Deferred: load testing, WSDL coverage and refactoring, code generation, a TCP monitor.
 
