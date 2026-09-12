@@ -188,6 +188,6 @@ contract, send it with whatever the service demands, and read the answer.
 - Keystores are PKCS#12 and PEM; JKS is planned. NTLM is NTLMv2 only; SPNEGO/Kerberos is planned.
 - English only.
 
-<!-- The `v1.0.0` tag does not exist yet; both links resolve once it is pushed (see docs/release.md). -->
+<!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
 [Unreleased]: https://github.com/wirebench/wirebench/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/wirebench/wirebench/releases/tag/v1.1.0
