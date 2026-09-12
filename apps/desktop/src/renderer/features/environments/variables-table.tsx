@@ -458,7 +458,9 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
       <table aria-label={label} data-testid="env-variable-table" className="w-full table-fixed border-collapse text-sm">
         <thead>
           <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-            <th className="w-8 pb-1 font-medium">Enabled</th>
+            <th className="w-10 pb-1 font-medium" title="Enabled">
+              On
+            </th>
             <th className="pb-1 font-medium">Variable</th>
             <th className="pb-1 font-medium">Value</th>
             <th className="pb-1 font-medium">Resolves from</th>
