@@ -129,8 +129,11 @@ function parsePastedVariables(text: string): readonly PastedVariable[] {
   return items;
 }
 
+// A transparent border by default so a row reads as data, not a form field; hover swaps only
+// the border's colour (never adds one) so nothing shifts a pixel, and focus keeps the border
+// transparent since the accent ring already marks it.
 const INPUT_CLASS =
-  'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
+  'h-row w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 font-mono text-sm text-fg-default hover:border-hairline-strong focus:border-transparent focus:outline-none focus:ring-1 focus:ring-accent';
 
 interface RowProps {
   readonly name: string;
@@ -168,8 +171,11 @@ function VariableRow({
   }, [value]);
 
   return (
-    <tr data-testid="env-variable-row" className={enabled ? undefined : 'opacity-50'}>
-      <td className="w-8 py-0.5 pr-2 text-center">
+    <tr
+      data-testid="env-variable-row"
+      className={`border-b border-hairline hover:bg-surface-hover ${enabled ? '' : 'opacity-50'}`}
+    >
+      <td className="px-2 py-1 text-center">
         <input
           type="checkbox"
           aria-label={`Enable ${name}`}
@@ -184,7 +190,7 @@ function VariableRow({
           }}
         />
       </td>
-      <td className="py-0.5 pr-2">
+      <td className="px-2 py-1">
         <input
           aria-label={`Name of ${name}`}
           data-testid="env-variable-name"
@@ -206,7 +212,7 @@ function VariableRow({
           }}
         />
       </td>
-      <td className="py-0.5 pr-2">
+      <td className="px-2 py-1">
         <input
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
@@ -228,10 +234,10 @@ function VariableRow({
           }}
         />
       </td>
-      <td className="py-0.5 pr-2 text-xs text-fg-subtle" data-testid="env-variable-origin">
+      <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
-      <td className="w-8 py-0.5">
+      <td className="px-2 py-1 text-center">
         <IconButton label={`Remove ${name}`} data-testid="env-variable-delete" onClick={onRemove}>
           <Trash2 size={13} aria-hidden="true" />
         </IconButton>
@@ -268,8 +274,11 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue 
   }, [value]);
 
   return (
-    <tr data-testid="env-variable-row" className={enabled ? undefined : 'opacity-50'}>
-      <td className="w-8 py-0.5 pr-2 text-center">
+    <tr
+      data-testid="env-variable-row"
+      className={`border-b border-hairline hover:bg-surface-hover ${enabled ? '' : 'opacity-50'}`}
+    >
+      <td className="px-2 py-1 text-center">
         <input
           type="checkbox"
           aria-label={`Enable ${name}`}
@@ -280,7 +289,7 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue 
           readOnly
         />
       </td>
-      <td className="py-0.5 pr-2">
+      <td className="px-2 py-1">
         <input
           aria-label={`Name of ${name}`}
           data-testid="env-variable-name"
@@ -289,7 +298,7 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue 
           readOnly
         />
       </td>
-      <td className="py-0.5 pr-2">
+      <td className="px-2 py-1">
         <input
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
@@ -312,10 +321,10 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue 
           }}
         />
       </td>
-      <td className="py-0.5 pr-2 text-xs text-fg-subtle" data-testid="env-variable-origin">
+      <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {ownerLabel}
       </td>
-      <td className="w-8 py-0.5" />
+      <td className="px-2 py-1" />
     </tr>
   );
 }
@@ -455,153 +464,166 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
 
   return (
     <div className="flex flex-col gap-2">
-      <table aria-label={label} data-testid="env-variable-table" className="w-full table-fixed border-collapse text-sm">
-        <thead>
-          <tr className="text-left text-xs tracking-wider text-fg-subtle uppercase">
-            <th className="w-10 pb-1 font-medium" title="Enabled">
-              On
-            </th>
-            <th className="pb-1 font-medium">Variable</th>
-            <th className="pb-1 font-medium">Value</th>
-            <th className="pb-1 font-medium">Resolves from</th>
-            <th className="w-8" />
-          </tr>
-        </thead>
-        <tbody>
-          {names.length === 0 && inheritedOnlyNames.length === 0 && (
-            <tr>
-              <td colSpan={5} className="py-1 text-sm text-fg-subtle">
-                {emptyMessage}
-              </td>
-            </tr>
-          )}
-          {names.length > 0 && (
-            <tr data-testid="env-variable-group">
-              <th
-                scope="colgroup"
-                colSpan={5}
-                className="pt-2 pb-0.5 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
-              >
-                {`Set here · ${scopeLabel}`}
+      <div className="overflow-hidden rounded-md border border-hairline">
+        <table
+          aria-label={label}
+          data-testid="env-variable-table"
+          className="w-full table-fixed border-collapse text-sm"
+        >
+          <colgroup>
+            <col className="w-11" />
+            <col className="w-[22%]" />
+            <col />
+            <col className="w-[26%]" />
+            <col className="w-9" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase">
+              <th className="px-2 py-1.5 font-medium" title="Enabled">
+                On
               </th>
+              <th className="px-2 py-1.5 font-medium">Variable</th>
+              <th className="px-2 py-1.5 font-medium">Value</th>
+              <th className="px-2 py-1.5 font-medium">Resolves from</th>
+              <th className="px-2 py-1.5" />
             </tr>
-          )}
-          {names.map((name) => {
-            const enabled = !disabledSet.has(name);
-            return (
-              <VariableRow
-                key={name}
-                name={name}
-                value={properties[name] ?? ''}
-                enabled={enabled}
-                readOnlyEnabled={onSetEnabled === undefined}
-                origin={ownOrigin({ scopeLabel, enabled, name, inherited })}
-                onCommitName={(next) => {
-                  rename(name, next);
-                }}
-                onCommitValue={(next) => {
-                  if (next !== properties[name]) {
-                    onSet(name, next);
-                  }
-                }}
-                onToggleEnabled={(next) => {
-                  onSetEnabled?.(name, next);
-                }}
-                onRemove={() => {
-                  onRemove(name);
-                }}
-              />
-            );
-          })}
-          {inheritedOnlyNames.length > 0 && (
-            <tr data-testid="env-variable-group">
-              <th
-                scope="colgroup"
-                colSpan={5}
-                className="pt-2 pb-0.5 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
-              >
-                Inherited · read-only
-              </th>
-            </tr>
-          )}
-          {inheritedOnlyNames.map((name) => {
-            const owner = nearestDefining(name, inherited);
-            // `inheritedOnlyNames` was built from these same scopes, so a definer always exists.
-            if (owner === undefined) {
-              return null;
-            }
-            const ownerValue = owner.properties[name] ?? '';
-            return (
-              <InheritedVariableRow
-                key={name}
-                name={name}
-                value={ownerValue}
-                enabled={!owner.disabled.includes(name)}
-                ownerLabel={owner.label}
-                onCommitValue={(next) => {
-                  if (next !== ownerValue) {
-                    onSet(name, next);
-                  }
-                }}
-              />
-            );
-          })}
-          <tr data-testid="env-variable-row">
-            <td className="w-8 py-0.5 pr-2 text-center">
-              {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
+          </thead>
+          <tbody>
+            {names.length === 0 && inheritedOnlyNames.length === 0 && (
+              <tr className="border-b border-hairline">
+                <td colSpan={5} className="px-2 py-2 text-sm text-fg-subtle">
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+            {names.length > 0 && (
+              <tr data-testid="env-variable-group" className="bg-surface-raised">
+                <th
+                  scope="colgroup"
+                  colSpan={5}
+                  className="border-b border-hairline px-2 py-1 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
+                >
+                  {`Set here · ${scopeLabel}`}
+                </th>
+              </tr>
+            )}
+            {names.map((name) => {
+              const enabled = !disabledSet.has(name);
+              return (
+                <VariableRow
+                  key={name}
+                  name={name}
+                  value={properties[name] ?? ''}
+                  enabled={enabled}
+                  readOnlyEnabled={onSetEnabled === undefined}
+                  origin={ownOrigin({ scopeLabel, enabled, name, inherited })}
+                  onCommitName={(next) => {
+                    rename(name, next);
+                  }}
+                  onCommitValue={(next) => {
+                    if (next !== properties[name]) {
+                      onSet(name, next);
+                    }
+                  }}
+                  onToggleEnabled={(next) => {
+                    onSetEnabled?.(name, next);
+                  }}
+                  onRemove={() => {
+                    onRemove(name);
+                  }}
+                />
+              );
+            })}
+            {inheritedOnlyNames.length > 0 && (
+              <tr data-testid="env-variable-group" className="bg-surface-raised">
+                <th
+                  scope="colgroup"
+                  colSpan={5}
+                  className="border-b border-hairline px-2 py-1 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
+                >
+                  Inherited · read-only
+                </th>
+              </tr>
+            )}
+            {inheritedOnlyNames.map((name) => {
+              const owner = nearestDefining(name, inherited);
+              // `inheritedOnlyNames` was built from these same scopes, so a definer always exists.
+              if (owner === undefined) {
+                return null;
+              }
+              const ownerValue = owner.properties[name] ?? '';
+              return (
+                <InheritedVariableRow
+                  key={name}
+                  name={name}
+                  value={ownerValue}
+                  enabled={!owner.disabled.includes(name)}
+                  ownerLabel={owner.label}
+                  onCommitValue={(next) => {
+                    if (next !== ownerValue) {
+                      onSet(name, next);
+                    }
+                  }}
+                />
+              );
+            })}
+            <tr data-testid="env-variable-row" className="hover:bg-surface-hover">
+              <td className="px-2 py-1 text-center">
+                {/* Neutral until a name exists — a variable that isn't there yet can't be disabled — then
                   checked the moment one is typed. Never interactive: there's nothing to toggle yet. */}
-              <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
-            </td>
-            <td className="py-0.5 pr-2">
-              <input
-                ref={newNameRef}
-                aria-label="New variable name"
-                data-testid="env-variable-name"
-                placeholder="name"
-                className={INPUT_CLASS}
-                value={newName}
-                onChange={(event) => {
-                  setNewName(event.target.value);
-                }}
-                onPaste={onPasteName}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    add();
-                  }
-                  if (event.key === 'Escape') {
-                    setNewName('');
-                  }
-                }}
-              />
-            </td>
-            <td className="py-0.5 pr-2">
-              <input
-                aria-label="New variable value"
-                data-testid="env-variable-value"
-                placeholder="value"
-                className={INPUT_CLASS}
-                value={newValue}
-                onChange={(event) => {
-                  setNewValue(event.target.value);
-                }}
-                onBlur={add}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    add();
-                  }
-                  if (event.key === 'Escape') {
-                    setNewValue('');
-                  }
-                }}
-              />
-            </td>
-            <td className="py-0.5 pr-2 text-xs text-fg-subtle" data-testid="env-variable-origin">
-              {addRowOrigin}
-            </td>
-            <td className="w-8 py-0.5" />
-          </tr>
-        </tbody>
-      </table>
+                <input type="checkbox" aria-label="New variable enabled" checked={trimmedNewName.length > 0} disabled />
+              </td>
+              <td className="px-2 py-1">
+                <input
+                  ref={newNameRef}
+                  aria-label="New variable name"
+                  data-testid="env-variable-name"
+                  placeholder="name"
+                  className={INPUT_CLASS}
+                  value={newName}
+                  onChange={(event) => {
+                    setNewName(event.target.value);
+                  }}
+                  onPaste={onPasteName}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      add();
+                    }
+                    if (event.key === 'Escape') {
+                      setNewName('');
+                    }
+                  }}
+                />
+              </td>
+              <td className="px-2 py-1">
+                <input
+                  aria-label="New variable value"
+                  data-testid="env-variable-value"
+                  placeholder="value"
+                  className={INPUT_CLASS}
+                  value={newValue}
+                  onChange={(event) => {
+                    setNewValue(event.target.value);
+                  }}
+                  onBlur={add}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      add();
+                    }
+                    if (event.key === 'Escape') {
+                      setNewValue('');
+                    }
+                  }}
+                />
+              </td>
+              <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
+                {addRowOrigin}
+              </td>
+              <td className="px-2 py-1" />
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       {pasteItems !== undefined && (
         <ConfirmDialog

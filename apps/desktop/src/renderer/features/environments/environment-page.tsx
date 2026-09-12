@@ -319,11 +319,11 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         }
       />
       {/* Spec §2.2's order: the variables table first, the endpoints group below it. */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Variables</h3>
         <VariablesTable target={target} />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-medium tracking-wider text-fg-subtle uppercase">Endpoints</h3>
         <EndpointsTable environmentId={environmentId} />
       </div>
