@@ -1,11 +1,50 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { TestSoapServer } from './test-server.js';
 
 export interface CreateProjectOptions {
   /** The project to create before importing; defaults to `Calculator Project`. */
   readonly expectProjectName?: string;
+}
+
+/**
+ * Asserts an explorer row is on screen, scrolling the tree to find it first.
+ *
+ * react-arborist virtualises the tree: only the rows inside the scroll viewport (plus a row or
+ * two of overscan) exist in the DOM at all, so a row far enough down a tall tree is not merely
+ * off screen — it is absent, and `toBeVisible` never resolves however long it waits. A second
+ * project added under a fully expanded Calculator (24 rows) sits exactly there on any display
+ * short enough to clamp the shell, which is every CI runner.
+ *
+ * So page the list a viewport at a time, wrapping back to the top, until the row mounts. The
+ * scroll is left where the row was found: that is the row the caller goes on to use, and
+ * putting the list back at the top would unmount it again.
+ */
+export async function expectExplorerRow(target: Locator, page: Page, timeout = 20_000): Promise<void> {
+  const list = page.getByTestId('explorer-tree-scroll');
+  await expect(async () => {
+    if ((await target.count()) === 0) {
+      await list.evaluate((element: { scrollTop: number; clientHeight: number; scrollHeight: number }) => {
+        const next = element.scrollTop + element.clientHeight;
+        element.scrollTop = next >= element.scrollHeight ? 0 : next;
+      });
+    }
+    await expect(target.first()).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout });
+}
+
+/**
+ * Asserts how many projects the workspace holds, by collapsing the tree first.
+ *
+ * Counting mounted rows is only meaningful when every project row can be mounted at once, and
+ * a single expanded project is enough to push the others out of the virtualised window (see
+ * {@link expectExplorerRow}). *Collapse all* is the explorer's own answer to that: it leaves
+ * exactly one row per project, which fits on any display.
+ */
+export async function expectProjectCount(page: Page, count: number): Promise<void> {
+  await page.getByRole('button', { name: 'Collapse all' }).click();
+  await expect(page.getByTestId('explorer-project-row')).toHaveCount(count, { timeout: 20_000 });
 }
 
 /**
@@ -31,7 +70,7 @@ export async function createProject(page: Page, name: string): Promise<void> {
   await page.getByTestId('new-project-name').fill(name);
   await page.getByTestId('new-project-create').click();
   await expect(page.getByTestId('new-project-dialog')).toBeHidden();
-  await expect(page.getByTestId('explorer-project-row').filter({ hasText: name })).toBeVisible({ timeout: 20_000 });
+  await expectExplorerRow(page.getByTestId('explorer-project-row').filter({ hasText: name }), page);
 }
 
 /** Imports `server`'s WSDL through the explorer toolbar into the selected project. */
@@ -109,9 +148,7 @@ export async function createProjectWithFixture(
   await createProjectWithCalculator(page, server, options);
   const interfaceName = FIXTURE_INTERFACE_NAMES[name];
   if (interfaceName !== undefined) {
-    await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: interfaceName }).first()).toBeVisible({
-      timeout: 20_000,
-    });
+    await expectExplorerRow(page.locator('[data-testid="explorer-tree-row"]', { hasText: interfaceName }), page);
   }
 }
 

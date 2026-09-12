@@ -21,6 +21,8 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProject,
   createWorkspace,
+  expectExplorerRow,
+  expectProjectCount,
   expectReopenedWorkspace,
   importCalculator,
   openFirstRequest,
@@ -106,10 +108,11 @@ test.describe('workspaces', () => {
     await page.getByTestId('import-url-input').fill(addressing.wsdlUrl);
     await page.getByTestId('import-target-project').selectOption('');
     await page.getByTestId('import-submit').click();
-    await expect(
-      page.locator('[data-testid="explorer-tree-row"]', { hasText: 'WsAddressingService' }).first(),
-    ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('explorer-project-row')).toHaveCount(2);
+    await expectExplorerRow(
+      page.locator('[data-testid="explorer-tree-row"]', { hasText: 'WsAddressingService' }),
+      page,
+    );
+    await expectProjectCount(page, 2);
 
     // --- a tab on a request from each project, and a send from each ---------------------
     await openRequestByQuickOpen(page, 'Calculator Project');
@@ -176,7 +179,7 @@ test.describe('workspaces', () => {
     await page.getByTestId('workspace-switcher-item').filter({ hasText: 'Workspace 1' }).click();
     await expect(page.getByTestId('workspace-switcher')).toHaveText(/Workspace 1/, { timeout: 20_000 });
     await expect(editorTabs(page)).toHaveCount(4, { timeout: 20_000 });
-    await expect(page.getByTestId('explorer-project-row')).toHaveCount(2, { timeout: 20_000 });
+    await expectProjectCount(page, 2);
   });
 
   test('a project leaves one workspace for another, and the empty workspace is deleted', async () => {
@@ -200,7 +203,7 @@ test.describe('workspaces', () => {
     await createProject(page, 'Calculator Project');
     await importCalculator(page, server);
     await createProject(page, 'Scratch');
-    await expect(page.getByTestId('explorer-project-row')).toHaveCount(2);
+    await expectProjectCount(page, 2);
 
     // --- remove the scratch project, folder and all ------------------------------------
     const scratchRow = page.getByTestId('explorer-project-row').filter({ hasText: 'Scratch' });
