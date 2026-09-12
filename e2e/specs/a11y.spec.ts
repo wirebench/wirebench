@@ -59,6 +59,9 @@ function dynamicRegions(page: Page): Locator[] {
     page.locator('[data-testid="status-bar"] .font-mono'),
     page.locator('[data-testid="http-log-row"]'),
     page.locator('[data-testid="history-row"]'),
+    // The banner names how many files the watcher has coalesced, and that count depends on
+    // how the run's writes happened to batch — the layout is asserted, the number is not.
+    page.locator('[data-testid^="changed-on-disk-banner"]'),
   ];
 }
 
