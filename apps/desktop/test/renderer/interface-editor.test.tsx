@@ -269,4 +269,74 @@ describe('InterfaceEditor', () => {
       expect(useInterfaceEditorStore.getState().selectionFor('if-1')?.name).toBe('Add');
     });
   });
+
+  it('edits the interface default Authentication on Overview', async () => {
+    const mutate = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          project: {
+            id: 'p1',
+            name: 'P',
+            dir: '/tmp/p',
+            dirty: false,
+            interfaces: [makeInterface({ auth: { type: 'basic' } })],
+            requests: [],
+            properties: {},
+            environments: [],
+            problems: [],
+            keystores: [],
+            wssOutgoing: [],
+            wssIncoming: [],
+          },
+        },
+      }),
+    );
+    installWirebenchApi({ definition: window.wirebench.definition, project: { mutate } });
+    useProjectStore.setState((state) => ({ projectOf: { ...state.projectOf, 'if-1': 'p1' } }));
+
+    render(<InterfaceEditor interfaceId="if-1" />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Interface authentication type'), 'basic');
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
+      change: { kind: 'update-interface-auth', interfaceId: 'if-1', auth: { type: 'basic' } },
+    });
+  });
+
+  it('edits the interface default WS-Addressing on Overview', async () => {
+    const mutate = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          project: {
+            id: 'p1',
+            name: 'P',
+            dir: '/tmp/p',
+            dirty: false,
+            interfaces: [makeInterface({ wsaConfig: { enabled: true } })],
+            requests: [],
+            properties: {},
+            environments: [],
+            problems: [],
+            keystores: [],
+            wssOutgoing: [],
+            wssIncoming: [],
+          },
+        },
+      }),
+    );
+    installWirebenchApi({ definition: window.wirebench.definition, project: { mutate } });
+    useProjectStore.setState((state) => ({ projectOf: { ...state.projectOf, 'if-1': 'p1' } }));
+
+    render(<InterfaceEditor interfaceId="if-1" />);
+
+    await userEvent.click(screen.getByTestId('interface-wsa-enabled'));
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
+      change: { kind: 'update-interface-wsa', interfaceId: 'if-1', wsa: { enabled: true } },
+    });
+  });
 });
