@@ -282,7 +282,7 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
     expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Workspace');
   });
 
-  it('renders an inherited row read-only: no delete button, disabled Enabled checkbox with a title naming the owner', () => {
+  it("keeps an inherited row's name and Enabled non-interactive, with no delete button — only the value is editable", () => {
     renderTable(
       baseTarget({
         properties: {},
@@ -293,7 +293,8 @@ describe('VariablesTable — the ledger (groups, origin, inheritance)', () => {
     expect(checkbox.disabled).toBe(true);
     expect(checkbox.title).toContain('Workspace');
     expect(screen.getByLabelText<HTMLInputElement>('Name of token').readOnly).toBe(true);
-    expect(screen.getByLabelText<HTMLInputElement>('Value of token').readOnly).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').readOnly).toBe(false);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').title).toContain('Workspace');
     expect(screen.queryByRole('button', { name: 'Remove token' })).toBeNull();
   });
 
@@ -502,5 +503,84 @@ describe('VariablesTable — the growing row (stage 2)', () => {
     name.focus();
     fireEvent.paste(name, { clipboardData });
     expect(screen.queryByTestId('env-variable-paste-confirm')).toBeNull();
+  });
+});
+
+describe('VariablesTable — overriding an inherited row', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('calls onSet with the typed name and value when a value is committed on an inherited row', () => {
+    const onSet = vi.fn();
+    renderTable(
+      baseTarget({
+        properties: {},
+        onSet,
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const value = screen.getByLabelText('Value of token');
+    fireEvent.change(value, { target: { value: 'xyz' } });
+    fireEvent.keyDown(value, { key: 'Enter' });
+    expect(onSet).toHaveBeenCalledWith('token', 'xyz');
+  });
+
+  it('moves the row to "Set here" with origin "{scopeLabel} · shadows {X}" once the override exists', () => {
+    // Once `onSet` has actually written `token` into this scope's own properties, the row is no
+    // longer "inherited-only" — it belongs to Set here, and the existing origin logic already
+    // says it shadows Workspace with no special-casing needed.
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: { token: 'xyz' },
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const groups = screen.getAllByTestId('env-variable-group');
+    expect(groups.map((group) => group.textContent)).toEqual(['Set here · This environment']);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('xyz');
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').readOnly).toBe(false);
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('This environment · shadows Workspace');
+  });
+
+  it('returns the row to the inherited group, showing the inherited value again, once the override is removed', () => {
+    const onRemove = vi.fn();
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: { token: 'xyz' },
+        onRemove,
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove token' }));
+    expect(onRemove).toHaveBeenCalledWith('token');
+
+    // Simulate the caller re-rendering after the removal actually took effect: `token` drops out
+    // of this scope's own properties, so it falls back to being inherited.
+    cleanup();
+    renderTable(
+      baseTarget({
+        scopeLabel: 'This environment',
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    const groups = screen.getAllByTestId('env-variable-group');
+    expect(groups.map((group) => group.textContent)).toEqual(['Inherited · read-only']);
+    expect(screen.getByLabelText<HTMLInputElement>('Value of token').value).toBe('abc');
+    expect(screen.getAllByTestId('env-variable-origin')[0]?.textContent).toBe('Workspace');
+  });
+
+  it('leaves the name input and Enabled toggle non-interactive on an inherited row', () => {
+    renderTable(
+      baseTarget({
+        properties: {},
+        inherited: [scope({ label: 'Workspace', properties: { token: 'abc' } })],
+      }),
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Name of token').readOnly).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Enable token').disabled).toBe(true);
   });
 });

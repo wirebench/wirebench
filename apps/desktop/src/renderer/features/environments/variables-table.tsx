@@ -246,14 +246,27 @@ interface InheritedRowProps {
   readonly enabled: boolean;
   /** The scope that owns this value — named in the Enabled checkbox's title and the origin cell. */
   readonly ownerLabel: string;
+  /**
+   * Commits a typed value, promoting this name into an override of `ownerLabel`'s value in this
+   * scope's own properties. Committing (Enter or blur, matching every other row) is the only way
+   * to create the override — there's no separate "override" button.
+   */
+  readonly onCommitValue: (next: string) => void;
 }
 
 /**
- * One name inherited from a scope below this one. Read-only: the name and value are shown but not
- * editable, there is no delete, and the Enabled checkbox is `disabled` with a title naming the
- * scope that owns it — this table can only show what a lower scope resolves to, not change it.
+ * One name inherited from a scope below this one. Mostly read-only — the name stays fixed (this
+ * overrides a specific inherited name, not a rename) and there's no delete or Enabled toggle
+ * until an override exists — but the value is editable: committing a value here promotes the row
+ * to an override, written into this scope's own properties via `onCommitValue`.
  */
-function InheritedVariableRow({ name, value, enabled, ownerLabel }: InheritedRowProps) {
+function InheritedVariableRow({ name, value, enabled, ownerLabel, onCommitValue }: InheritedRowProps) {
+  const [draftValue, setDraftValue] = useState(value);
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
   return (
     <tr data-testid="env-variable-row" className={enabled ? undefined : 'opacity-50'}>
       <td className="w-8 py-0.5 pr-2 text-center">
@@ -263,7 +276,7 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel }: InheritedRow
           data-testid="env-variable-enabled"
           checked={enabled}
           disabled
-          title={`Set in ${ownerLabel} — edit it there.`}
+          title={`Set in ${ownerLabel} — edit it there, or override the value here.`}
           readOnly
         />
       </td>
@@ -281,8 +294,22 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel }: InheritedRow
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
           className={INPUT_CLASS}
-          value={value}
-          readOnly
+          value={draftValue}
+          title={`Override ${ownerLabel} here`}
+          onChange={(event) => {
+            setDraftValue(event.target.value);
+          }}
+          onBlur={() => {
+            onCommitValue(draftValue);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              onCommitValue(draftValue);
+            }
+            if (event.key === 'Escape') {
+              setDraftValue(value);
+            }
+          }}
         />
       </td>
       <td className="py-0.5 pr-2 text-xs text-fg-subtle" data-testid="env-variable-origin">
@@ -501,13 +528,19 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
             if (owner === undefined) {
               return null;
             }
+            const ownerValue = owner.properties[name] ?? '';
             return (
               <InheritedVariableRow
                 key={name}
                 name={name}
-                value={owner.properties[name] ?? ''}
+                value={ownerValue}
                 enabled={!owner.disabled.includes(name)}
                 ownerLabel={owner.label}
+                onCommitValue={(next) => {
+                  if (next !== ownerValue) {
+                    onSet(name, next);
+                  }
+                }}
               />
             );
           })}
