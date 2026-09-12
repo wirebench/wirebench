@@ -54,8 +54,9 @@ then press **Send**. The response arrives beside the request with its status, du
 the HTTP Log at the bottom shows the timing breakdown, and the run is in History for re-sending or diffing later.
 
 That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
-evaluates XPath 3.1 and XQuery 3.1 over the response; the request editor's _Details_ inspector carries auth,
-WS-Security, WS-Addressing and attachments; `Mod+K` opens the command palette; and **Environments**, reached from the
+evaluates XPath 3.1 and XQuery 3.1 over the response; the request editor's inspector strip carries _Details_,
+_Properties_, _Headers_, _Attachments_, _Auth_, _WS-A_ and _SSL_, one inspector each; `Mod+K` opens the command
+palette; and **Environments**, reached from the
 activity bar, is workspace-wide — one set of environments and endpoint overrides shared by every project, switched
 without touching a request, with a per-variable checkbox to disable a value without deleting it.
 

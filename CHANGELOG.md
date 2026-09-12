@@ -33,8 +33,10 @@ All notable changes to this project are documented here. The format follows
   slide-over showing the active request as `curl` (`view.toggleCode`, `Mod+Alt+B`, the shortcut
   freed by the removed Details-panel toggle), closed by Escape or the rail icon again.
 - **Collapsible, resizable panels.** The sidebar, console and Code slide-over can each be
-  collapsed and resized by dragging their handle, by a titlebar button, or by double-clicking the
-  handle to snap collapsed or restored; sizes and collapsed state persist across a relaunch.
+  collapsed and resized by dragging their handle, by the chevron in the panel's own header or its
+  status-bar toggle, or by double-clicking the handle to snap collapsed or restored. Dragging the
+  sidebar's or the console's handle past the panel's minimum closes it, and dragging the same
+  handle back out reopens it; sizes and collapsed state persist across a relaunch.
 
 ### Changed
 
@@ -52,9 +54,13 @@ All notable changes to this project are documented here. The format follows
 - **Opening or creating a project by picking a folder.** The Welcome-screen "Open Project…" and
   folder-picker "New Project" flows are gone; a project is now created by name inside a
   workspace, and a folder dialog only appears for linking, importing or exporting a project.
-- **The right panel.** Its contents moved: auth, WS-Security, WS-Addressing and attachments are
-  now the request editor's *Details* inspector; the Code view moved to the right-rail slide-over
-  above. `view.toggleDetails` is gone.
+- **The right panel.** Its contents moved, each to where it belongs: the request's interface,
+  operation, SOAPAction, resolved endpoint (and which layer it came from) and project are now the
+  request editor's *Details* inspector — one of the strip's inspectors, alongside the *Auth*,
+  *WS-A*, *Attachments*, *Headers*, *Properties* and *SSL* inspectors that already existed;
+  interface-level settings are in the interface tab, project settings and properties in the
+  project tab, environments in the Environments view, and the Code view in the right-rail
+  slide-over above. `view.toggleDetails` is gone.
 
 ## [1.0.0] - 2026-09-11
 
