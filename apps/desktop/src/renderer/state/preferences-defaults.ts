@@ -42,6 +42,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     wordWrap: false,
     autoValidateOnSend: false,
     autoFormatResponses: true,
+    autosave: false,
   },
   ui: {
     theme: 'dark',

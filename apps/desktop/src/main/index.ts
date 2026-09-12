@@ -229,6 +229,13 @@ void app.whenReady().then(() => {
   });
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
+    // Turning autosave on mid-session must pick up whatever is already outstanding, rather than
+    // waiting for one more edit to arm the timer.
+    if (preferences.editor.autosave) {
+      for (const host of workspaceService.hosts()) {
+        host.onAutosaveEnabled();
+      }
+    }
   });
   registerSslChannels({
     preferences: preferencesService,
