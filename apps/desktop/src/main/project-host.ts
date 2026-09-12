@@ -38,6 +38,7 @@ import {
   putAttachment,
   resolveAuthEndpoint,
   resolveEndpoint,
+  DEFAULT_PREFERENCES,
   resolveScopes,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
@@ -963,17 +964,46 @@ export class ProjectHost {
     };
   }
 
+  /**
+   * Whether edits should write themselves out. Off unless the user turned it on: a project
+   * folder is theirs, and a tool that writes to it behind them is one they cannot experiment
+   * in. `undefined` preferences (tests that inject none) take the same default as a real user
+   * who has never opened Settings.
+   */
+  private autosaveEnabled(): boolean {
+    return this.prefs()?.editor.autosave ?? DEFAULT_PREFERENCES.editor.autosave;
+  }
+
+  /**
+   * Records that the model no longer matches disk, and — only with autosave on — schedules the
+   * write. With it off the project simply stays dirty until {@link save} is called: by ⌘S, by
+   * closing the workspace, or by quitting, none of which this flag touches.
+   */
   private markDirty(): void {
     const open = this.require();
     open.dirty = true;
     if (this.autosave !== undefined) {
       clearTimeout(this.autosave);
+      this.autosave = undefined;
+    }
+    if (!this.autosaveEnabled()) {
+      return;
     }
     this.autosave = setTimeout(() => {
       this.autosave = undefined;
       void this.save({ reason: 'autosave' });
     }, AUTOSAVE_DEBOUNCE_MS);
     this.autosave.unref?.();
+  }
+
+  /**
+   * Picks up an outstanding edit when autosave is switched on mid-session, so turning it on
+   * does not leave the one change the user made just before doing so sitting unwritten.
+   */
+  onAutosaveEnabled(): void {
+    if (this.open?.dirty === true && this.autosave === undefined && this.autosaveEnabled()) {
+      this.markDirty();
+    }
   }
 
   /** Applies one change to the model, marks the project dirty and schedules an autosave. */

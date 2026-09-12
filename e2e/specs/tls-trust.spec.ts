@@ -84,6 +84,10 @@ test.describe('endpoint TLS trust', () => {
     await expect(trustAll).not.toBeChecked();
     await expect(trustAll).toBeDisabled();
 
+    // Settings is a modal now: close it before touching the editor behind it.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
+
     // --- the private-CA server is now reachable, with no per-endpoint opt-out ----------------
     await page.getByRole('tab', { name: 'Request 1' }).click();
     await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });

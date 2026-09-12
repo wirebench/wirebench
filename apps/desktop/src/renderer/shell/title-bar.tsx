@@ -3,6 +3,7 @@ import type { Platform } from '../lib/platform.js';
 import { shortcutFor } from '../lib/keybindings.js';
 import { IconButton } from '../components/icon-button.js';
 import { useUiStore } from '../state/ui.js';
+import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { WorkspaceSwitcher } from '../features/workspace/switcher.js';
 
 export interface TitleBarProps {
@@ -58,7 +59,10 @@ export function TitleBar({ platform, workspaceName, dirty = false, onOpenPalette
         </button>
       </div>
 
-      <div className="wb-no-drag flex shrink-0 items-center">
+      <div className="wb-no-drag flex shrink-0 items-center gap-2">
+        {/* Before the theme toggle: the active environment decides where the next Send goes, so
+            it is the one piece of state worth carrying at the top right. */}
+        {workspaceName !== null && <EnvSwitcher />}
         <IconButton
           label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
           onClick={onToggleTheme}

@@ -136,14 +136,15 @@ describe('ExplorerView', () => {
 
     const requestRow = screen.getByText('Request 1');
 
-    // A single click only selects the node — it must not open an editor tab.
+    // A single click opens the request; nothing about it needs a second one.
     fireEvent.click(requestRow);
-    expect(useEditorsStore.getState().tabs).toHaveLength(0);
-
-    fireEvent.doubleClick(requestRow);
 
     expect(useEditorsStore.getState().tabs).toHaveLength(1);
     expect(useEditorsStore.getState().tabs[0]?.requestId).toBe('req-1');
+
+    // And a second click is idempotent: the same tab is focused, never duplicated.
+    fireEvent.click(requestRow);
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
   });
 
   it('badges a linked project with its folder, and selects the project on click', () => {
@@ -210,11 +211,16 @@ describe('ExplorerView', () => {
 
     const interfaceRow = screen.getByText('Calculator');
 
-    // react-arborist's own row wrapper activates on any click that reaches it, so the row
-    // handler stops propagation; a single click must only select.
+    // An interface row has children, so a single click folds it rather than opening a viewer —
+    // browsing the tree must not spawn a tab per row it passes through.
     fireEvent.click(interfaceRow);
     expect(useEditorsStore.getState().tabs).toHaveLength(0);
+    expect(screen.queryByText('Operations')).toBeNull();
 
+    fireEvent.click(interfaceRow);
+    expect(screen.queryByText('Operations')).toBeTruthy();
+
+    // The viewer still answers to a double-click, as it always has.
     fireEvent.doubleClick(interfaceRow);
 
     expect(useEditorsStore.getState().tabs).toHaveLength(1);

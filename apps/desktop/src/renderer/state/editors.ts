@@ -37,7 +37,7 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'preferences' | 'interface' | 'project';
+  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'interface' | 'project';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -49,8 +49,6 @@ export interface EditorTab {
   readonly environmentId?: string;
   /** Set when `kind` is `'history'`: the history entry this read-only tab shows. */
   readonly historyId?: string;
-  /** Set when `kind` is `'preferences'`: which section to open on. */
-  readonly preferencesSection?: string;
   /** Set when `kind` is `'diff'`: the two sides being compared. */
   readonly diff?: {
     readonly leftLabel: string;

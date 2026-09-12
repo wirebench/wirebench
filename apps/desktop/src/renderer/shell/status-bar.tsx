@@ -1,5 +1,4 @@
 import { Moon, Sun, SunMoon } from 'lucide-react';
-import { EnvSwitcher } from '../features/environments/env-switcher.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { useAppVersion } from '../lib/use-app-version.js';
@@ -128,10 +127,6 @@ export function StatusBar() {
         >
           Console{problemCount > 0 ? ` (${String(problemCount)})` : ''}
         </button>
-        <span aria-hidden="true" className="text-fg-faint">
-          ·
-        </span>
-        <EnvSwitcher />
         {saveLabel !== undefined && (
           <>
             <span aria-hidden="true" className="text-fg-faint">

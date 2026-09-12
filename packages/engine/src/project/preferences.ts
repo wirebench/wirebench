@@ -111,6 +111,15 @@ export interface EditorPreferences {
   readonly autoValidateOnSend: boolean;
   /** Pretty-print responses in the response pane. */
   readonly autoFormatResponses: boolean;
+  /**
+   * Write a project's edits out on a short debounce instead of waiting to be told to.
+   *
+   * Off by default: an edit is the user's to commit, and a tool that writes to their project
+   * folder behind them is a tool they cannot experiment in. Closing a workspace and quitting
+   * still save whatever is outstanding — this chooses when routine edits land, not whether
+   * work can be lost.
+   */
+  readonly autosave: boolean;
 }
 
 /** How a request editor arranges its panes. Mirrors the renderer's layout snapshot. */
@@ -188,6 +197,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     wordWrap: false,
     autoValidateOnSend: false,
     autoFormatResponses: true,
+    autosave: false,
   }),
   ui: Object.freeze({
     theme: 'dark',
@@ -259,6 +269,7 @@ export const preferencesSchema = z.object({
       wordWrap: z.boolean().optional(),
       autoValidateOnSend: z.boolean().optional(),
       autoFormatResponses: z.boolean().optional(),
+      autosave: z.boolean().optional(),
     })
     .optional(),
   ui: z

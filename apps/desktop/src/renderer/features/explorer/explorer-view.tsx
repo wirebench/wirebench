@@ -100,14 +100,24 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         // No `role`/`aria-selected`/`tabIndex` here: react-arborist's own row wrapper is the
         // `treeitem` (with `aria-level`, `aria-selected` and `aria-expanded`), and repeating
         // them on this child would nest a second treeitem inside the real one.
-        // A single click only selects (feeds the details panel / palette `when` gates); opening
-        // a request tab needs a double-click or Enter. react-arborist's default row wrapper
-        // calls `node.handleClick` (which both selects AND activates) on any click that bubbles
-        // to it, so both handlers here stop propagation to keep that default from also firing.
+        // One click does the obvious thing for the row it lands on: a request opens, and
+        // anything with children folds or unfolds. Everything else selects only — that is what
+        // feeds the details panel and the palette's `when` gates. react-arborist's default row
+        // wrapper calls `node.handleClick` (which both selects AND activates) on any click that
+        // bubbles to it, so both handlers here stop propagation to keep it from also firing.
         onClick={(e) => {
           e.stopPropagation();
           node.select();
+          if (node.data.kind === 'request') {
+            node.activate();
+          } else if (node.isInternal && node.data.kind !== 'project') {
+            // A project row opens its tab from `onSelect` (see below) and must not also fold
+            // itself shut under the very click that opened it.
+            node.toggle();
+          }
         }}
+        // Kept for the rows a single click does not open: the interface viewer still answers to
+        // a double-click, as it always has, so folding an interface open costs nothing.
         onDoubleClick={(e) => {
           e.stopPropagation();
           node.activate();
@@ -302,10 +312,11 @@ export function ExplorerView() {
               disableEdit={(node) => node.kind !== 'request' && node.kind !== 'project'}
               aria-label="Explorer"
               onActivate={(node: NodeApi<ExplorerNode>) => {
-                // Double-click opens a request; on an interface row it opens the viewer, the
-                // same thing "Show Interface Viewer" does.
+                // Reached by a click on a request row, a double-click on anything, and Enter.
+                // On an interface row it opens the viewer, the same thing "Show Interface
+                // Viewer" does.
                 if (node.data.kind === 'project') {
-                  // Double-clicking a root only folds it; a project has no editor of its own.
+                  // A project has no editor of its own; its tab opens from `onSelect`.
                   return;
                 }
                 if (node.data.kind === 'interface') {

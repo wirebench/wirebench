@@ -42,13 +42,12 @@ test.describe('walking skeleton: import -> open request -> send -> response', ()
     await expect(window.getByText('Calculator', { exact: false }).first()).toBeVisible({ timeout: 20_000 });
 
     // The import already generated one `Request 1` per operation and saved it to disk; open
-    // the one under Add through its context menu (react-arborist owns double-click).
+    // the one under Add, which a single click opens.
     const addRow = window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Add' }).first();
     await expect(addRow).toBeVisible({ timeout: 10_000 });
     const requestRow = window.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
     await expect(requestRow).toBeVisible({ timeout: 10_000 });
-    await requestRow.click({ button: 'right' });
-    await window.getByRole('menuitem', { name: 'Open', exact: true }).click();
+    await requestRow.click();
 
     await expect(window.locator('[data-testid="request-editor"]')).toBeVisible({ timeout: 10_000 });
 

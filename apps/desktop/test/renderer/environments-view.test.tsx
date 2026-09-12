@@ -71,28 +71,28 @@ describe('EnvironmentsView', () => {
     expect(rows[3]?.dataset['active']).toBe('false');
   });
 
-  it('opens the Globals editor tab from the Open menu item', async () => {
+  it('opens the Globals editor tab from the row itself', () => {
     setUp();
-    fireEvent.contextMenu(screen.getAllByTestId('environment-row')[0]!);
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open' }));
+    fireEvent.click(screen.getAllByTestId('environment-row')[0]!);
     expect(useEditorsStore.getState().tabs).toContainEqual(
       expect.objectContaining({ id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' }),
     );
     expect(useEditorsStore.getState().activeId).toBe('env:globals');
   });
 
-  it('offers only Open on the Globals and Workspace rows', async () => {
+  it('gives the Globals and Workspace rows no menu at all — a click is all they offer', async () => {
     setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[1]!);
-    const menuItems = await screen.findAllByRole('menuitem');
-    expect(menuItems.map((item) => item.textContent)).toEqual(['Open']);
+    // `findAllByRole` would wait for a menu that is never coming, so assert the absence.
+    await Promise.resolve();
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
   });
 
-  it('offers the full action set on an environment row', async () => {
+  it('drops Open from an environment row, since a click already opens it', async () => {
     setUp();
     fireEvent.contextMenu(screen.getAllByTestId('environment-row')[3]!);
     const menuItems = await screen.findAllByRole('menuitem');
-    expect(menuItems.map((item) => item.textContent)).toEqual(['Open', 'Set active', 'Rename', 'Duplicate', 'Delete']);
+    expect(menuItems.map((item) => item.textContent)).toEqual(['Set active', 'Duplicate', 'Rename', 'Delete']);
   });
 
   it('deactivates the active environment from its context menu', async () => {
@@ -113,12 +113,42 @@ describe('EnvironmentsView', () => {
     });
   });
 
-  it('opens an environment editor tab on double-click', () => {
+  it('opens an environment editor tab on a single click', () => {
     setUp();
-    fireEvent.doubleClick(screen.getAllByTestId('environment-row')[3]!);
+    fireEvent.click(screen.getAllByTestId('environment-row')[3]!);
     expect(useEditorsStore.getState().tabs).toEqual([
       { id: 'env:e2', kind: 'environment', title: 'uat', environmentId: 'e2' },
     ]);
+  });
+
+  it('opens a fixed scope on a single click', () => {
+    setUp();
+    fireEvent.click(screen.getAllByTestId('environment-row')[0]!);
+    expect(useEditorsStore.getState().tabs).toEqual([
+      { id: 'env:globals', kind: 'environment', title: 'Globals', environmentId: 'globals' },
+    ]);
+  });
+
+  it('marks the row the active editor tab is editing, and only that row', () => {
+    setUp();
+    fireEvent.click(screen.getAllByTestId('environment-row')[3]!);
+    const rows = screen.getAllByTestId('environment-row');
+    expect(rows.map((row) => row.dataset['open'])).toEqual(['false', 'false', 'false', 'true']);
+    expect(rows[3]?.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('leaves every row unmarked while the active tab is not an environment', () => {
+    setUp();
+    useEditorsStore.getState().open({ id: 'r1', kind: 'request', title: 'Add', requestId: 'r1' });
+    const rows = screen.getAllByTestId('environment-row');
+    expect(rows.every((row) => row.dataset['open'] === 'false')).toBe(true);
+  });
+
+  it('does not open a tab when a click lands on the set-active control', () => {
+    setUp();
+    const uatRow = screen.getAllByTestId('environment-row')[3]!;
+    fireEvent.click(uatRow.querySelector('button[aria-label="Set uat active"]')!);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
   });
 
   it('renames an environment inline', async () => {

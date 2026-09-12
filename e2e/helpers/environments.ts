@@ -26,7 +26,7 @@ export function environmentRow(page: Page, name: string): Locator {
 export async function openEnvironment(page: Page, name: string): Promise<void> {
   const row = environmentRow(page, name);
   await expect(row).toBeVisible();
-  await row.dblclick();
+  await row.click();
 }
 
 /**

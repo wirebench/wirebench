@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
+import { createProject, createWorkspace, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 's3cret!';
@@ -79,6 +79,10 @@ test.describe('secrets', () => {
     const decoded = Buffer.from(String(authHeader).replace(/^Basic /, ''), 'base64').toString('utf8');
     expect(decoded).toBe(`alice:${PASSWORD}`);
 
+    // Saving is manual by default. Without this the folder holds nothing yet and the assertions
+    // below would pass for the wrong reason — there is no plaintext because there is no file.
+    await saveAll(page);
+
     // Nothing in the saved project folder may contain the plaintext password.
     for (const file of listFiles(workspaceProjectDir(userDataDir))) {
       const text = readFileSync(file, 'utf8');
@@ -132,8 +136,7 @@ test.describe('secrets', () => {
 
     const requestRow = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
     await expect(requestRow).toBeVisible({ timeout: 20_000 });
-    await requestRow.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+    await requestRow.click();
     await expect(page.locator('[data-testid="request-editor"]')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('[data-testid="request-send"]').click();

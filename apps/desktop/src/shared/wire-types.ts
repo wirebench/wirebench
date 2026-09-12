@@ -2176,6 +2176,7 @@ export const preferencesWireSchema = z.object({
     wordWrap: z.boolean(),
     autoValidateOnSend: z.boolean(),
     autoFormatResponses: z.boolean(),
+    autosave: z.boolean(),
   }),
   ui: z.object({
     theme: z.enum(['dark', 'light', 'system']),

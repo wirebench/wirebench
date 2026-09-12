@@ -20,7 +20,7 @@ import {
   generateTestCa,
 } from '@wirebench/engine/test-helpers';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest, workspaceProjectDir } from '../helpers/project.js';
+import { createProjectWithCalculator, openFirstRequest, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 'wss-secret';
@@ -110,6 +110,9 @@ test.describe('wss', () => {
     await expect(requestRaw).toBeVisible({ timeout: 10_000 });
     await expect(requestRaw).toContainText('wsse:UsernameToken');
     await expect(requestRaw).not.toContainText(PASSWORD);
+
+    // Saving is manual by default, so say when the project should be on disk before reading it.
+    await saveAll(page);
 
     // --- and the configuration on disk carries only a reference ------------------------------
     const passwordRefPattern = /passwordRef:\s*['"]?([\w.:-]+)['"]?/;

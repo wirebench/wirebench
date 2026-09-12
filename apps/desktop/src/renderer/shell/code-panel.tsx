@@ -14,6 +14,7 @@ import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
+import { highlightCurl, type CurlTokenKind } from './curl-highlight.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
 import { useUiStore } from '../state/ui.js';
 import type { CodeShell } from '../state/ui-state.js';
@@ -23,6 +24,20 @@ const DEBOUNCE_MS = 300;
 
 /** Must match `REDACTED_MARKER` in `main/redact.ts` — the renderer may not import from main. */
 const REDACTED_MARKER = '<redacted>';
+
+/**
+ * How each span of the command is painted. Only the flags carry the accent: in a command that is
+ * mostly one long quoted string per line, colouring the strings too would leave nothing plain to
+ * read the shape against.
+ */
+const TOKEN_CLASS: Readonly<Record<CurlTokenKind, string>> = {
+  command: 'font-semibold text-fg-default',
+  flag: 'text-accent',
+  string: 'text-fg-default',
+  punctuation: 'text-fg-faint',
+  body: 'text-fg-muted',
+  plain: 'text-fg-subtle',
+};
 
 const SHELLS: readonly { readonly value: CodeShell; readonly label: string }[] = [
   { value: 'posix', label: 'POSIX shell' },
@@ -186,11 +201,27 @@ export function CodePanel() {
 
       <pre
         data-testid="code-panel-preview"
-        className={`max-h-[60vh] overflow-auto rounded-md border border-hairline bg-surface-sunken p-2 font-mono text-xs break-all whitespace-pre-wrap select-text ${
+        className={`max-h-[60vh] overflow-auto rounded-md border border-hairline bg-surface-sunken p-3 font-mono text-xs leading-5 break-words whitespace-pre-wrap select-text ${
           generated?.error === true ? 'text-status-danger' : 'text-fg-default'
         }`}
       >
-        {command}
+        {/* A failure is prose, not shell: highlighting it would dress an error message up as a
+            command. Only a real command is tokenised. */}
+        {generated?.error === true
+          ? command
+          : highlightCurl(command).map((line, lineIndex) => (
+              // Lines have no identity of their own — the command is regenerated whole on every
+              // edit, so the index is the only key there is, and nothing is preserved across
+              // renders that a better one would protect.
+              <span key={lineIndex}>
+                {lineIndex > 0 && '\n'}
+                {line.map((token, tokenIndex) => (
+                  <span key={tokenIndex} className={TOKEN_CLASS[token.kind]}>
+                    {token.text}
+                  </span>
+                ))}
+              </span>
+            ))}
       </pre>
 
       {command.includes(REDACTED_MARKER) && (

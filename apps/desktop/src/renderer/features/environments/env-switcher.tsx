@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Braces, Check, ChevronDown } from 'lucide-react';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { useUiStore } from '../../state/ui.js';
 import type { WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
@@ -8,7 +8,7 @@ import { openEnvironmentTab } from './environment-actions.js';
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
 
-/** The label the status bar shows for whichever environment is active. */
+/** The label shown for "nothing is active", in the trigger and as the last menu entry. */
 export const NO_ENVIRONMENT_LABEL = 'No environment';
 
 /** A stable empty list, so the switcher does not rerender while no workspace is open. */
@@ -33,7 +33,12 @@ export async function cycleEnvironment(step = 1): Promise<void> {
   await setActiveEnvironment(next);
 }
 
-/** The status bar's environment dropdown: which environment is active, and how to change it. */
+/**
+ * The title bar's environment dropdown: which environment is active, and how to change it. It
+ * sits beside the theme toggle rather than in the status bar because the active environment
+ * decides where a Send goes — that belongs where the user looks before sending, not in the
+ * strip they read after.
+ */
 export function EnvSwitcher() {
   const environments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   const activeId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
@@ -51,16 +56,18 @@ export function EnvSwitcher() {
           type="button"
           data-testid="env-switcher"
           aria-label="Active environment"
-          className="inline-flex items-center gap-1 rounded px-1 text-xs text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
+          // `wb-no-drag`: the title bar drags the window, so every control on it has to opt out.
+          className="wb-no-drag inline-flex h-row max-w-48 items-center gap-1.5 rounded-md border border-hairline bg-surface-raised px-2 text-xs text-fg-muted transition-colors hover:border-hairline-strong hover:text-fg-default"
         >
-          {active?.name ?? NO_ENVIRONMENT_LABEL}
-          <ChevronsUpDown size={11} aria-hidden="true" />
+          <Braces size={12} aria-hidden="true" className="shrink-0 text-fg-subtle" />
+          <span className="min-w-0 truncate">{active?.name ?? NO_ENVIRONMENT_LABEL}</span>
+          <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-fg-subtle" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
-          side="top"
-          align="start"
+          side="bottom"
+          align="end"
           sideOffset={4}
           className="min-w-48 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
         >

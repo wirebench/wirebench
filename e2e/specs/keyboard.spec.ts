@@ -9,13 +9,19 @@ import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server
 /** The platform's `Mod`: ⌘ on macOS, Ctrl elsewhere — the same split `lib/keybindings.ts` makes. */
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-/** Opens Preferences → Shortcuts and returns the chord button for `command`. */
+/** Opens Settings → Shortcuts and returns the chord button for `command`. */
 async function shortcutButton(page: Page, command: string) {
   await page.keyboard.press(`${MOD}+Comma`);
   await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
   await page.getByTestId('preferences-editor').getByRole('button', { name: 'Shortcuts', exact: true }).click();
   await expect(page.getByTestId('shortcuts-table')).toBeVisible();
   return page.locator(`[data-testid="shortcut-row"][data-command="${command}"] [data-testid="shortcut-chord"]`);
+}
+
+/** Closes the Settings dialog — it is modal, so nothing behind it is reachable until it goes. */
+async function closeSettings(page: Page) {
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
 }
 
 test.describe('keyboard', () => {
@@ -137,6 +143,7 @@ test.describe('keyboard', () => {
     await expect(chord).toHaveText('Press a key…');
     await page.keyboard.press(`${MOD}+Shift+Enter`);
     await expect(chord).not.toHaveText('Press a key…');
+    await closeSettings(page);
 
     // --- relaunch against the same profile ------------------------------------
     await launched.close();
@@ -149,9 +156,9 @@ test.describe('keyboard', () => {
     await expect(persisted).toContainText(process.platform === 'darwin' ? '⌘⇧⏎' : 'Ctrl+Shift+Enter');
 
     // --- the old chord is dead, the new one sends -----------------------------
-    // ⌘, left the sidebar on Settings; the explorer has to come back before a request can be
-    // opened from it.
-    await page.keyboard.press(`${MOD}+Shift+E`);
+    await closeSettings(page);
+    // No ⌘⇧E here: ⌘, opens a dialog now and never moves the sidebar off the Explorer, so
+    // pressing the Explorer chord would *re-select* the active view — which collapses it.
     await openFirstRequest(page);
     const status = page.getByTestId('response-status');
     await page.keyboard.press(`${MOD}+Enter`);

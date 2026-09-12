@@ -18,6 +18,7 @@ import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
+import { PreferencesDialog } from '../features/preferences/preferences-dialog.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ActivityBar } from './activity-bar.js';
@@ -394,6 +395,7 @@ export function AppShell() {
       <NewProjectDialog />
       <CreateWorkspaceDialog />
       <WorkspaceManageDialog />
+      <PreferencesDialog />
       <RemoveProjectDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>

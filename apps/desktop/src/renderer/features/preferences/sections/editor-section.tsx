@@ -58,6 +58,12 @@ export function EditorSection({ preferences, update }: SectionProps) {
           value={editor.autoFormatResponses}
           onChange={(autoFormatResponses) => update({ editor: { autoFormatResponses } })}
         />
+        <BooleanSetting
+          label="Autosave projects"
+          value={editor.autosave}
+          onChange={(autosave) => update({ editor: { autosave } })}
+          hint="Off: edits are yours until you save (⌘S / Ctrl+S). Closing a workspace and quitting always save."
+        />
       </SettingsGroup>
     </>
   );

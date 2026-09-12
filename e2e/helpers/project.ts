@@ -156,8 +156,8 @@ export async function createProjectWithFixture(
 export async function openFirstRequest(page: Page): Promise<void> {
   const row = page.locator('[data-testid="explorer-tree-row"]', { hasText: 'Request 1' }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
-  await row.click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Open', exact: true }).click();
+  // A single click opens it; the context menu no longer carries an *Open* that says so twice.
+  await row.click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
 }
 
@@ -190,4 +190,23 @@ export async function openRequestByQuickOpen(page: Page, query: string): Promise
   await expect(item).toContainText(query.split(' ')[0] ?? query);
   await item.click();
   await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * Writes every open project to disk and waits for the write to land.
+ *
+ * Saving is manual unless the user turns autosave on, so a spec that reads the project folder
+ * mid-session has to say when the files should exist — otherwise it is asserting against a
+ * folder the app has deliberately not written to yet. Driven through the palette rather than
+ * the ⌘S chord: the chord is rebindable (one spec rebinds a different one and relaunches), and
+ * the palette entry is the same command either way.
+ */
+export async function saveAll(page: Page): Promise<void> {
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+KeyP`);
+  await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.type('Save All');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('command-palette-input')).toHaveCount(0);
+  // The status strip is the one place that reports the write completing, for every open project.
+  await expect(page.getByTestId('status-bar-save')).toContainText('Saved', { timeout: 20_000 });
 }

@@ -68,7 +68,7 @@ test.describe('request properties and preferences', () => {
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    // ⌘, / Ctrl+, opens the Preferences tab.
+    // ⌘, / Ctrl+, opens the Settings dialog.
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma');
     await expect(page.getByTestId('preferences-editor')).toBeVisible({ timeout: 20_000 });
 
@@ -81,6 +81,10 @@ test.describe('request properties and preferences', () => {
     await page.getByTestId('preferences-editor').getByRole('button', { name: 'UI', exact: true }).click();
     await page.getByTestId('preferences-theme').selectOption('light');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light', { timeout: 10_000 });
+
+    // Settings is a modal now: close it before touching the editor behind it.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('preferences-dialog')).toHaveCount(0);
 
     // --- back to the request, and recreate it with the new indent -------------
     await page.getByRole('tab', { name: 'Request 1' }).click();
