@@ -89,6 +89,9 @@ win:
 
 nsis:
   artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
+  # One installer per architecture, and no combined x64+arm64 installer on top. `latest.yml`
+  # lists both, and electron-updater picks the file whose name contains `process.arch`.
+  buildUniversalInstaller: false
   # Per-user by default: no elevation prompt, and an installer that cannot touch the machine.
   oneClick: false
   perMachine: false
