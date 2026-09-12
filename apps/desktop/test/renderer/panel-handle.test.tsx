@@ -216,4 +216,27 @@ describe('PanelHandle', () => {
 
     expect(onDoubleClick).toHaveBeenCalledTimes(1);
   });
+
+  it('calls onDoubleClick on Enter too — the keyboard equivalent, for a handle a mouse never reaches', () => {
+    const onDoubleClick = vi.fn();
+    const onStep = vi.fn();
+    render(
+      <PanelHandle
+        testId="panel-handle-sidebar"
+        label="Show Sidebar"
+        orientation="vertical"
+        valueNow={0}
+        valueMin={12}
+        valueMax={40}
+        onDrag={vi.fn()}
+        onStep={onStep}
+        onDoubleClick={onDoubleClick}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByTestId('panel-handle-sidebar'), { key: 'Enter' });
+
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+    expect(onStep).not.toHaveBeenCalled();
+  });
 });

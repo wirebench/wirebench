@@ -4,18 +4,27 @@ import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SlideOver } from '../../src/renderer/shell/slide-over.js';
 
-function renderSlideOver(overrides: { width?: number } = {}) {
+function renderSlideOver(overrides: { width?: number; open?: boolean } = {}) {
   const onClose = vi.fn();
   const onWidthChange = vi.fn();
+  const onToggle = vi.fn();
   const width = overrides.width ?? 420;
+  const open = overrides.open ?? true;
   render(
     <TooltipPrimitive.Provider>
-      <SlideOver label="Code" width={width} onWidthChange={onWidthChange} onClose={onClose}>
+      <SlideOver
+        label="Code"
+        open={open}
+        width={width}
+        onWidthChange={onWidthChange}
+        onToggle={onToggle}
+        onClose={onClose}
+      >
         <p>panel body</p>
       </SlideOver>
     </TooltipPrimitive.Provider>,
   );
-  return { onClose, onWidthChange };
+  return { onClose, onWidthChange, onToggle };
 }
 
 describe('SlideOver', () => {
@@ -90,5 +99,54 @@ describe('SlideOver', () => {
     expect(onWidthChange).toHaveBeenLastCalledWith(280);
 
     fireEvent.pointerUp(window);
+  });
+
+  it('while closed, renders only the handle — no header, close icon, or children', () => {
+    renderSlideOver({ open: false });
+
+    expect(screen.queryByText('panel body')).toBeNull();
+    expect(screen.queryByTestId('slide-over-close')).toBeNull();
+    expect(screen.getByTestId('panel-handle-slide-over')).toBeTruthy();
+  });
+
+  it('labels the handle for its current state — "Resize" while open, "Show" while closed', () => {
+    const { rerender } = render(
+      <TooltipPrimitive.Provider>
+        <SlideOver label="Code" open={true} width={420} onWidthChange={vi.fn()} onToggle={vi.fn()} onClose={vi.fn()}>
+          <p>panel body</p>
+        </SlideOver>
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('panel-handle-slide-over').getAttribute('aria-label')).toBe('Resize Code');
+
+    rerender(
+      <TooltipPrimitive.Provider>
+        <SlideOver label="Code" open={false} width={420} onWidthChange={vi.fn()} onToggle={vi.fn()} onClose={vi.fn()}>
+          <p>panel body</p>
+        </SlideOver>
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByTestId('panel-handle-slide-over').getAttribute('aria-label')).toBe('Show Code');
+  });
+
+  it('double-clicking the handle calls onToggle, whether open or closed', () => {
+    const { onToggle } = renderSlideOver({ open: false });
+
+    fireEvent.doubleClick(screen.getByTestId('panel-handle-slide-over'));
+
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('a closed handle ignores drags and arrow-key steps — there is nothing to resize yet', () => {
+    const { onWidthChange } = renderSlideOver({ open: false, width: 420 });
+    const handle = screen.getByTestId('panel-handle-slide-over');
+
+    fireEvent.pointerDown(handle, { clientX: 600 });
+    fireEvent.pointerMove(window, { clientX: 500 });
+    fireEvent.pointerUp(window);
+    handle.focus();
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+
+    expect(onWidthChange).not.toHaveBeenCalled();
   });
 });

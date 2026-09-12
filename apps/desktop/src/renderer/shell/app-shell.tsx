@@ -82,8 +82,7 @@ export function AppShell() {
   const editorLayout = useUiStore((state) => state.editorLayout);
   const selection = useUiStore((state) => state.selection);
   const setSlideOverWidth = useUiStore((state) => state.setSlideOverWidth);
-  const restoreSidebarSize = useUiStore((state) => state.restoreSidebarSize);
-  const restoreConsoleSize = useUiStore((state) => state.restoreConsoleSize);
+  const toggleCode = useUiStore((state) => state.toggleCode);
   const closeCode = useUiStore((state) => state.closeCode);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
@@ -147,6 +146,28 @@ export function AppShell() {
       store.collapseConsole,
       store.setConsoleSize,
     );
+  }, []);
+
+  // What double-clicking the sidebar/console handle does: collapse an expanded panel (remembering
+  // its size as `lastSize`), or restore a collapsed one to that remembered size — the product
+  // owner's "double-click the handle to collapse or restore". Read live from the store, the same
+  // way the drag/step callbacks above do, since these are stable identities registered once.
+  const onDoubleClickSidebarHandle = useCallback(() => {
+    const store = useUiStore.getState();
+    if (store.sidebar.visible) {
+      store.collapseSidebar();
+    } else {
+      store.expandSidebar();
+    }
+  }, []);
+
+  const onDoubleClickConsoleHandle = useCallback(() => {
+    const store = useUiStore.getState();
+    if (store.console.visible) {
+      store.collapseConsole();
+    } else {
+      store.expandConsole();
+    }
   }, []);
 
   const workspace = useWorkspaceStore((state) => state.workspace);
@@ -256,63 +277,71 @@ export function AppShell() {
 
             <div ref={rowRef} className="flex min-w-0 flex-1">
               {sidebar.visible && (
-                <>
-                  <div
-                    data-testid="sidebar-panel"
-                    style={{ width: `${String(sidebar.size)}%` }}
-                    className="min-w-0 shrink-0 border-r border-hairline"
-                  >
-                    <Sidebar />
-                  </div>
-                  <PanelHandle
-                    testId="panel-handle-sidebar"
-                    label="Resize Sidebar"
-                    orientation="vertical"
-                    valueNow={sidebar.size}
-                    valueMin={SIDEBAR_MIN}
-                    valueMax={SIDEBAR_MAX}
-                    onDrag={dragSidebar}
-                    onStep={stepSidebar}
-                    onDoubleClick={restoreSidebarSize}
-                  />
-                </>
+                <div
+                  data-testid="sidebar-panel"
+                  style={{ width: `${String(sidebar.size)}%` }}
+                  className="min-w-0 shrink-0 border-r border-hairline"
+                >
+                  <Sidebar />
+                </div>
               )}
+              {/* The handle stays mounted (and hit-testable) even while the sidebar is collapsed,
+                  so a double-click on it — expand or collapse — always has a target; only the
+                  panel's own content unmounts. */}
+              <PanelHandle
+                testId="panel-handle-sidebar"
+                label={sidebar.visible ? 'Resize Sidebar' : 'Show Sidebar'}
+                orientation="vertical"
+                valueNow={sidebar.visible ? sidebar.size : 0}
+                valueMin={SIDEBAR_MIN}
+                valueMax={SIDEBAR_MAX}
+                onDrag={dragSidebar}
+                onStep={stepSidebar}
+                onDoubleClick={onDoubleClickSidebarHandle}
+              />
 
               <div ref={columnRef} data-testid="main-panel" className="flex min-h-0 min-w-0 flex-1 flex-col">
                 <div className="min-h-0 min-w-0 flex-1">
                   <EditorArea />
                 </div>
+                {/* Same rationale as the sidebar's handle above: stays mounted while the console
+                    is collapsed. */}
+                <PanelHandle
+                  testId="panel-handle-console"
+                  label={consoleState.visible ? 'Resize Console' : 'Show Console'}
+                  orientation="horizontal"
+                  valueNow={consoleState.visible ? consoleState.size : 0}
+                  valueMin={CONSOLE_MIN}
+                  valueMax={CONSOLE_MAX}
+                  onDrag={dragConsole}
+                  onStep={stepConsole}
+                  onDoubleClick={onDoubleClickConsoleHandle}
+                />
                 {consoleState.visible && (
-                  <>
-                    <PanelHandle
-                      testId="panel-handle-console"
-                      label="Resize Console"
-                      orientation="horizontal"
-                      valueNow={consoleState.size}
-                      valueMin={CONSOLE_MIN}
-                      valueMax={CONSOLE_MAX}
-                      onDrag={dragConsole}
-                      onStep={stepConsole}
-                      onDoubleClick={restoreConsoleSize}
-                    />
-                    <div
-                      data-testid="console-panel"
-                      style={{ height: `${String(consoleState.size)}%` }}
-                      className="min-h-0 shrink-0"
-                    >
-                      <ConsolePanel />
-                    </div>
-                  </>
+                  <div
+                    data-testid="console-panel"
+                    style={{ height: `${String(consoleState.size)}%` }}
+                    className="min-h-0 shrink-0"
+                  >
+                    <ConsolePanel />
+                  </div>
                 )}
               </div>
             </div>
 
             <RightRail platform={platform} />
-            {slideOver.open && (
-              <SlideOver label="Code" width={slideOver.width} onWidthChange={setSlideOverWidth} onClose={closeCode}>
-                <CodePanel />
-              </SlideOver>
-            )}
+            {/* Likewise: the slide-over's handle stays mounted while it is closed, so double-click
+                can reopen it; only its header/content unmount. */}
+            <SlideOver
+              label="Code"
+              open={slideOver.open}
+              width={slideOver.width}
+              onWidthChange={setSlideOverWidth}
+              onToggle={toggleCode}
+              onClose={closeCode}
+            >
+              <CodePanel />
+            </SlideOver>
           </div>
         )}
 

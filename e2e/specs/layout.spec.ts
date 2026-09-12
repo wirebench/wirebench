@@ -78,45 +78,75 @@ test.describe('layout: collapsible, resizable panels', () => {
     await expect(page.getByTestId('editor-area')).toBeVisible();
   });
 
-  test('double-clicking the sidebar handle restores the size a manual drag moved it away from', async () => {
+  test('double-clicking the sidebar handle collapses it, and double-clicking it again restores its size', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createWorkspace(page);
 
-    const before = await sidebarWidth(page);
-    expect(before).toBeDefined();
-
+    // Drag first, so the size the second double-click restores is provably the sidebar's own
+    // last size — not just whatever it happened to start at.
     await dragHandle(page, 'panel-handle-sidebar', 100, 0);
     const widened = await sidebarWidth(page);
     expect(widened).toBeDefined();
-    expect(widened! - before!).toBeGreaterThan(50);
+
+    await doubleClickHandle(page, 'panel-handle-sidebar');
+    // Collapsing must be visible, not just a store flag: the panel itself unmounts and the
+    // handle's own label switches to name the "restore" it now performs.
+    await expectSidebarCollapsed(page);
+    await expect(page.getByTestId('panel-handle-sidebar')).toHaveAttribute('aria-label', 'Show Sidebar');
 
     await doubleClickHandle(page, 'panel-handle-sidebar');
 
+    await expectSidebarVisible(page);
+    await expect(page.getByTestId('panel-handle-sidebar')).toHaveAttribute('aria-label', 'Resize Sidebar');
     const restored = await sidebarWidth(page);
     expect(restored).toBeDefined();
-    expect(Math.abs(restored! - before!)).toBeLessThan(3);
+    expect(Math.abs(restored! - widened!)).toBeLessThan(3);
   });
 
-  test('double-clicking the console handle restores its size the same way', async () => {
+  test('double-clicking the console handle collapses it, and double-clicking it again restores its size', async () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     const page = launched.window;
     await createWorkspace(page);
-
-    const before = await consoleHeight(page);
-    expect(before).toBeDefined();
 
     // Dragging up grows the console (the handle sits above it).
     await dragHandle(page, 'panel-handle-console', 0, -80);
     const grown = await consoleHeight(page);
     expect(grown).toBeDefined();
-    expect(grown! - before!).toBeGreaterThan(40);
+
+    await doubleClickHandle(page, 'panel-handle-console');
+    await expect(page.getByTestId('console-panel')).toHaveCount(0);
+    await expect(page.getByTestId('editor-area')).toBeVisible();
+    await expect(page.getByTestId('panel-handle-console')).toHaveAttribute('aria-label', 'Show Console');
 
     await doubleClickHandle(page, 'panel-handle-console');
 
+    await expect(page.getByTestId('console-panel')).toBeVisible();
+    await expect(page.getByTestId('panel-handle-console')).toHaveAttribute('aria-label', 'Resize Console');
     const restored = await consoleHeight(page);
     expect(restored).toBeDefined();
-    expect(Math.abs(restored! - before!)).toBeLessThan(3);
+    expect(Math.abs(restored! - grown!)).toBeLessThan(3);
+  });
+
+  test('double-clicking a handle still works after the panel it belongs to was never manually resized', async () => {
+    // Finding 1's actual bug: a collapsed panel's handle unmounted along with the panel, so there
+    // was no way at all to double-click-expand it. This proves the round trip from a completely
+    // untouched (default-size) panel — collapse, then restore — needs no prior drag to work.
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page);
+
+    const defaultWidth = await sidebarWidth(page);
+    expect(defaultWidth).toBeDefined();
+
+    await doubleClickHandle(page, 'panel-handle-sidebar');
+    await expectSidebarCollapsed(page);
+
+    await doubleClickHandle(page, 'panel-handle-sidebar');
+    await expectSidebarVisible(page);
+    const restored = await sidebarWidth(page);
+    expect(restored).toBeDefined();
+    expect(Math.abs(restored! - defaultWidth!)).toBeLessThan(3);
   });
 
   test('arrow keys resize the sidebar in 2% steps while the handle has focus', async () => {
@@ -219,5 +249,35 @@ test.describe('layout: collapsible, resizable panels', () => {
     const consoleAfterRelaunch = await consoleHeight(page);
     expect(consoleAfterRelaunch).toBeDefined();
     expect(Math.abs(consoleAfterRelaunch! - consoleResized!)).toBeLessThan(3);
+  });
+
+  test('a relaunch restores the other combination too: a resized sidebar and a collapsed console', async () => {
+    // The first persistence test only ever covered a *collapsed* sidebar and a *resized* console;
+    // this covers the two cases it left out, so both panels' collapsed and resized states are each
+    // proven to survive a relaunch at least once.
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    let page = launched.window;
+    await createWorkspace(page);
+
+    const sidebarBefore = await sidebarWidth(page);
+    expect(sidebarBefore).toBeDefined();
+    await dragHandle(page, 'panel-handle-sidebar', 60, 0);
+    const sidebarResized = await sidebarWidth(page);
+    expect(sidebarResized).toBeDefined();
+    expect(sidebarResized! - sidebarBefore!).toBeGreaterThan(30);
+
+    await dragHandle(page, 'panel-handle-console', 0, 400); // past its minimum: collapses it
+    await expect(page.getByTestId('console-panel')).toHaveCount(0);
+    await expect(page.getByTestId('editor-area')).toBeVisible();
+
+    await launched.close();
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    page = launched.window;
+
+    await expectSidebarVisible(page);
+    const sidebarAfterRelaunch = await sidebarWidth(page);
+    expect(sidebarAfterRelaunch).toBeDefined();
+    expect(Math.abs(sidebarAfterRelaunch! - sidebarResized!)).toBeLessThan(3);
+    await expect(page.getByTestId('console-panel')).toHaveCount(0);
   });
 });

@@ -100,6 +100,12 @@ export function PanelHandle({
     } else if (event.key === keys.backward) {
       event.preventDefault();
       onStep(-1);
+    } else if (event.key === 'Enter') {
+      // Enter is the keyboard equivalent of a double-click — there is no keyboard "double press" —
+      // so a collapsed handle stays operable to collapse/restore from the keyboard, not only a
+      // pointer.
+      event.preventDefault();
+      onDoubleClick();
     }
   };
 

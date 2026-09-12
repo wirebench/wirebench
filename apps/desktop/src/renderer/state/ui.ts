@@ -62,12 +62,16 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
   readonly requestRemoveProject: (projectId: string | undefined) => void;
-  /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. */
+  /** Hides the sidebar, remembering its current size in `lastSize` so expand can restore it. What
+   *  a double-click on its (still-mounted) handle does while the sidebar is visible — "collapse
+   *  or restore", the collapse half. */
   readonly collapseSidebar: () => void;
-  /** Reveals the sidebar at its remembered `lastSize`. A no-op while already visible. */
+  /** Reveals the sidebar at its remembered `lastSize`. A no-op while already visible. What a
+   *  double-click on its handle does while the sidebar is collapsed — the "restore" half. */
   readonly expandSidebar: () => void;
-  /** Snaps the (visible) sidebar back to `lastSize` without touching visibility — what a
-   *  double-click on its handle does, so a manual drag can be undone without collapsing it. */
+  /** Snaps a visible sidebar back to `lastSize` without touching visibility — a plain "undo the
+   *  last drag" with no collapse involved. Kept for callers that want exactly that; the handle's
+   *  own double-click uses {@link collapseSidebar}/{@link expandSidebar} instead. */
   readonly restoreSidebarSize: () => void;
   readonly toggleSidebar: () => void;
   /** The console's equivalent of {@link collapseSidebar}. */
