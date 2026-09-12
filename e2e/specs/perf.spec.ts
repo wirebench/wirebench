@@ -17,9 +17,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
+import { seedWorkspace } from '../helpers/seed-workspace.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /** Per-platform budgets in milliseconds. */
@@ -41,6 +42,14 @@ interface PlatformBudgets {
   readonly viewMs: number;
   /** Validating that 1 MB response and having the Problems panel on screen with its rows. */
   readonly problemsMs: number;
+  /**
+   * Opening a large workspace (10 projects x 3 interfaces) from the picker, until the explorer
+   * lists every project — the point at which the user can act on it. Interface hydration runs
+   * on behind that, deliberately: nothing about it blocks the explorer.
+   */
+  readonly workspaceOpenMs: number;
+  /** Switching from another workspace back into that same large one. */
+  readonly workspaceSwitchMs: number;
 }
 
 /**
@@ -49,11 +58,48 @@ interface PlatformBudgets {
  */
 const BUDGETS: PlatformBudgets =
   process.platform === 'linux'
-    ? { startupMs: 4000, frameMs: 40, viewMs: 2000, problemsMs: 2000 }
-    : { startupMs: 2000, frameMs: 20, viewMs: 1000, problemsMs: 1000 };
+    ? { startupMs: 4000, frameMs: 40, viewMs: 2000, problemsMs: 2000, workspaceOpenMs: 3000, workspaceSwitchMs: 2000 }
+    : { startupMs: 2000, frameMs: 20, viewMs: 1000, problemsMs: 1000, workspaceOpenMs: 1500, workspaceSwitchMs: 1000 };
 
 /** Skipped only by `WIREBENCH_SKIP_PERF=1`, the documented escape hatch for slow machines. */
 const SKIP_PERF = process.env['WIREBENCH_SKIP_PERF'] === '1';
+
+/**
+ * Every project row in the explorer, paged through the virtualised tree — only the rows inside
+ * the scroll viewport are ever in the DOM, so a plain `count()` would measure the window.
+ */
+async function projectRowIds(page: Page): Promise<readonly string[]> {
+  const list = page.getByTestId('explorer-tree-scroll');
+  const rows = page.locator('[data-testid="explorer-project-row"]');
+  const seen = new Set<string>();
+  const collect = async (): Promise<void> => {
+    for (const row of await rows.all()) {
+      const id = await row.getAttribute('data-project-id');
+      if (id !== null) {
+        seen.add(id);
+      }
+    }
+  };
+  let previousTop = -1;
+  for (;;) {
+    await collect();
+    const top = await list.evaluate((element: { scrollTop: number; clientHeight: number }) => {
+      element.scrollTop += element.clientHeight;
+      return element.scrollTop;
+    });
+    if (top === previousTop) {
+      break;
+    }
+    previousTop = top;
+    // react-window mounts the newly revealed rows on the render that follows the scroll event.
+    await page.waitForTimeout(100);
+  }
+  await collect();
+  await list.evaluate((element: { scrollTop: number }) => {
+    element.scrollTop = 0;
+  });
+  return [...seen];
+}
 
 /** The median of a non-empty sample list. */
 function median(samples: readonly number[]): number {
@@ -209,5 +255,85 @@ test.describe('performance budgets', () => {
     const problemsMs = Date.now() - problemsStarted;
     console.info(`[perf] problems over 1 MB: ${problemsMs} ms (budget ${BUDGETS.problemsMs} ms)`);
     expect(problemsMs).toBeLessThan(BUDGETS.problemsMs);
+  });
+
+  test(`a 10-project workspace opens within ${BUDGETS.workspaceOpenMs} ms and switches within ${BUDGETS.workspaceSwitchMs} ms`, async () => {
+    // One fixture server serves every seeded interface's definition, so the hydration the app
+    // kicks off on open is real HTTP work rather than a file read.
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    tempDirs.push(userDataDir);
+
+    // 10 projects x 3 interfaces is the shape the milestone budgets, written straight to disk
+    // through the engine's own API; `Side` is the workspace the switch measurement comes from.
+    const big = await seedWorkspace({
+      userDataDir,
+      name: 'Bench',
+      projects: 10,
+      interfacesPerProject: 3,
+      definitionUrl: server.wsdlUrl,
+      endpointUrl: `${server.url}/soap`,
+    });
+    const side = await seedWorkspace({
+      userDataDir,
+      name: 'Side',
+      projects: 1,
+      interfacesPerProject: 1,
+      definitionUrl: server.wsdlUrl,
+      endpointUrl: `${server.url}/soap`,
+    });
+
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    // No workspace has ever been opened in this profile, so the app starts on the picker —
+    // which is where this measurement starts, not at the process spawn (that is `startupMs`).
+    // The explorer's tree is virtualised, so counting mounted project rows measures the window
+    // rather than the workspace. What it *can* say is that the tree has the workspace's
+    // projects in it: they arrive in one `workspace.changed` snapshot, so the first project's
+    // own row appearing is the moment the explorer is populated and can be acted on.
+    const firstProjectRow = (workspace: { readonly projectIds: readonly string[] }) =>
+      page.locator(`[data-testid="explorer-project-row"][data-project-id="${workspace.projectIds[0] ?? ''}"]`);
+    // Addressed by id, not by name: every row also shows its folder, and those paths live
+    // under `wirebench-e2e-profile-…`, which a name filter would match too.
+    const benchRow = page.locator(`[data-testid="workspace-picker-row"][data-workspace-id="${big.id}"]`);
+    await expect(benchRow).toBeVisible({ timeout: 20_000 });
+
+    const openStarted = Date.now();
+    await benchRow.click();
+    await expect(firstProjectRow(big)).toBeVisible({ timeout: 30_000 });
+    const openMs = Date.now() - openStarted;
+    console.info(
+      `[perf] picker to explorer, 10 projects x 3 interfaces: ${openMs} ms (budget ${BUDGETS.workspaceOpenMs} ms)`,
+    );
+    expect(openMs).toBeLessThan(BUDGETS.workspaceOpenMs);
+
+    // Outside the timer: every one of the ten really is in the tree, paged a viewport at a
+    // time, so the measurement above cannot be passing on a half-built explorer.
+    expect(await projectRowIds(page)).toHaveLength(10);
+
+    // Three switches out to `Side` and back, median taken: the first one back also pays for
+    // whatever the OS still had to fault in, which is not what this budget is about.
+    const samples: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      await page.getByTestId('workspace-switcher').click();
+      await page.locator(`[data-testid="workspace-switcher-item"][data-workspace-id="${side.id}"]`).click();
+      await expect(firstProjectRow(side)).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('workspace-switcher').click();
+      const back = page.locator(`[data-testid="workspace-switcher-item"][data-workspace-id="${big.id}"]`);
+      await expect(back).toBeVisible();
+      const started = Date.now();
+      await back.click();
+      await expect(firstProjectRow(big)).toBeVisible({ timeout: 30_000 });
+      samples.push(Date.now() - started);
+    }
+    const switchMs = median(samples);
+    console.info(
+      `[perf] workspace switch into ${big.name}: median ${switchMs.toFixed(0)} ms ` +
+        `(budget ${BUDGETS.workspaceSwitchMs} ms; samples ${samples.map((sample) => sample.toFixed(0)).join(', ')} ms)`,
+    );
+    expect(switchMs, `samples: ${samples.map((sample) => sample.toFixed(0)).join(', ')} ms`).toBeLessThan(
+      BUDGETS.workspaceSwitchMs,
+    );
   });
 });

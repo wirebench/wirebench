@@ -134,3 +134,23 @@ export async function expectReopenedWorkspace(page: Page, workspaceName = 'Works
   await expect(page.getByTestId('workspace-picker')).toHaveCount(0);
   await expect(page.getByTestId('title-bar')).toContainText(workspaceName, { timeout: 20_000 });
 }
+
+/**
+ * Opens a request through quick-open (⌘P), narrowed by `query`.
+ *
+ * With two projects open, every project has a `Request 1` of its own and the explorer cannot
+ * say which row is whose — the labels are identical and the tree is virtualised. Quick-open
+ * can: every row names the project and interface it belongs to (`quickOpenEntries`), so a
+ * query naming one of those picks a request out of exactly one project. Landing on an
+ * operation that has no request yet opens its first one, which is the same outcome.
+ */
+export async function openRequestByQuickOpen(page: Page, query: string): Promise<void> {
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+KeyP`);
+  await expect(page.getByTestId('quick-open-input')).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.type(query);
+  const item = page.getByTestId('quick-open-item').first();
+  await expect(item).toBeVisible({ timeout: 20_000 });
+  await expect(item).toContainText(query.split(' ')[0] ?? query);
+  await item.click();
+  await expect(page.getByTestId('request-editor')).toBeVisible({ timeout: 20_000 });
+}
