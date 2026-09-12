@@ -89,6 +89,14 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     },
   });
   registerCommand({
+    id: 'view.showEnvironments',
+    label: 'Show Environments',
+    category: 'View',
+    run: () => {
+      ui().showSidebarView('environments');
+    },
+  });
+  registerCommand({
     id: 'view.showSearch',
     label: 'Show Search',
     category: 'View',

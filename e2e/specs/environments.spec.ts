@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { setMonacoText } from '../helpers/editor.js';
+import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -42,15 +43,19 @@ test.describe('environments', () => {
     const page = launched.window;
     await createProjectWithCalculator(page, imported);
 
-    // --- add `uat` through the sidebar section ------------------------------
+    // --- add `uat` via the sidebar Environments view -------------------------
+    await openEnvironmentsView(page);
     await page.getByRole('button', { name: 'Add environment' }).click();
-    await page.getByLabel('New environment name').fill('uat');
-    await page.getByLabel('New environment name').press('Enter');
-    const row = page.getByTestId('environment-row').filter({ hasText: 'uat' });
-    await expect(row).toBeVisible();
+    const created = environmentRow(page, 'Environment 1');
+    await expect(created).toBeVisible();
+    await created.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Rename' }).click();
+    await page.getByLabel('Rename Environment 1').fill('uat');
+    await page.getByLabel('Rename Environment 1').press('Enter');
+    await expect(environmentRow(page, 'uat')).toBeVisible();
 
     // --- point it at the second server --------------------------------------
-    await row.dblclick();
+    // "Add environment" already opened this environment's tab.
     const override = page.getByLabel('Endpoint override for Calculator');
     await expect(override).toBeVisible({ timeout: 20_000 });
     await override.fill(`${deployed.url}/soap`);
@@ -62,6 +67,9 @@ test.describe('environments', () => {
     await expect(page.getByTestId('env-switcher')).toContainText('uat');
 
     // --- send: the override wins over the imported address ------------------
+    // Back to the Explorer view — sending a request needs the interfaces tree, and adding the
+    // environment above left the Environments view showing.
+    await page.getByRole('button', { name: 'Explorer', exact: true }).click();
     await openFirstRequest(page);
     await expect(page.getByTestId('endpoint-env-badge')).toBeVisible();
     await page.getByTestId('request-send').click();

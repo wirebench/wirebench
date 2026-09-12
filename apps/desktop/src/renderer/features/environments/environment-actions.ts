@@ -15,6 +15,19 @@ function environmentById(environmentId: string): { readonly name: string } | und
   );
 }
 
+/**
+ * The default name the Environments view's "Add environment" toolbar button assigns: the first
+ * `Environment N` not already taken by one of the workspace's environments.
+ */
+export function nextEnvironmentName(existing: readonly { readonly name: string }[]): string {
+  const taken = new Set(existing.map((environment) => environment.name));
+  let n = 1;
+  while (taken.has(`Environment ${n}`)) {
+    n += 1;
+  }
+  return `Environment ${n}`;
+}
+
 /** The editor-tab id an environment opens under; stable so re-opening focuses the same tab. */
 export function environmentTabId(environmentId: string): string {
   return `env:${environmentId}`;

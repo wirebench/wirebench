@@ -16,6 +16,7 @@ export const COMMAND_IDS = [
   'view.toggleConsole',
   'view.toggleDetails',
   'view.showExplorer',
+  'view.showEnvironments',
   'view.showSearch',
   'view.showHistory',
   'view.showWss',

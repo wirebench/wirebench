@@ -1,5 +1,5 @@
 /** Which view the sidebar shows; mirrors the activity bar's icons. */
-export type SidebarView = 'explorer' | 'search' | 'history' | 'wss' | 'settings';
+export type SidebarView = 'explorer' | 'environments' | 'search' | 'history' | 'wss' | 'settings';
 
 /** The console's four tabs, in the order the spec lists them. */
 export type ConsoleTab = 'http-log' | 'problems' | 'ws-i-report' | 'errors';
@@ -143,7 +143,7 @@ function mergeEditorLayout(stored: unknown): EditorLayoutSnapshot {
   };
 }
 
-const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'search', 'history', 'wss', 'settings'];
+const SIDEBAR_VIEWS: readonly SidebarView[] = ['explorer', 'environments', 'search', 'history', 'wss', 'settings'];
 
 /** Reads one persisted tab, or `undefined` for anything that is not a `{ kind, id }` pair. */
 function readTab(value: unknown): PersistedTab | undefined {

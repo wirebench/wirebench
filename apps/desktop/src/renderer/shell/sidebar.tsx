@@ -1,4 +1,4 @@
-import { EnvironmentsSection } from '../features/environments/environments-section.js';
+import { EnvironmentsView } from '../features/environments/environments-view.js';
 import { ExplorerView } from '../features/explorer/explorer-view.js';
 import { HistoryView } from '../features/history/history-view.js';
 import { PreferencesSectionList } from '../features/preferences/section-list.js';
@@ -18,6 +18,11 @@ const VIEWS: Readonly<Record<SidebarView, ViewCopy>> = {
     title: 'Explorer',
     headline: 'No project open',
     body: 'Import a WSDL or open a project to see its interfaces, operations, and requests here.',
+  },
+  environments: {
+    title: 'Environments',
+    headline: 'No workspace open',
+    body: 'Open a workspace to see its environments here.',
   },
   search: {
     title: 'Search',
@@ -56,10 +61,9 @@ export function Sidebar() {
         {copy.title}
       </h2>
       {view === 'explorer' ? (
-        <>
-          <ExplorerView />
-          <EnvironmentsSection />
-        </>
+        <ExplorerView />
+      ) : view === 'environments' ? (
+        <EnvironmentsView />
       ) : view === 'search' ? (
         <SearchView />
       ) : view === 'history' ? (
