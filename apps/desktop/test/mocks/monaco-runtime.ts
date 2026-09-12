@@ -19,6 +19,9 @@ export function monacoThemeName(theme: 'dark' | 'light'): string {
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter`, with Monaco's real numeric values. */
 export const SEND_KEYBINDING = 2048 | 3;
 
+/** `monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS` (KeyA is 31, so KeyS is 49). */
+export const SAVE_KEYBINDING = 2048 | 49;
+
 /** `monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF`. */
 export const FORMAT_KEYBINDING = 2048 | 1024 | 36;
 

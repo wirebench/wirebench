@@ -1,10 +1,14 @@
 /**
  * Unsaved edits made in an editor tab.
  *
- * Everything else in Wirebench autosaves: a mutation goes straight to the main process, which
- * writes the project out half a second later (`AUTOSAVE_DEBOUNCE_MS`). The editor surfaces are
- * the exception — what you type into a request stays here until you save it, so a tab can show
- * an unsaved mark and `Mod+S` has something to write.
+ * Every other edit goes straight to the main process, which holds it in the project model —
+ * written on save, or on the debounce when `editor.autosave` is on. The editor surfaces are the
+ * exception: what you type into a request does not leave the renderer until you save it, so a
+ * tab can show an unsaved mark of its own and `Mod+S` has one item's worth of work to write.
+ *
+ * That distinction still matters with autosave off. Main's `dirty` flag is per *project*, which
+ * is the granularity the title bar and the project tab report; this store is per *request*,
+ * which is what a tab's mark needs.
  *
  * Only the *patch* lives here. The edited value itself is applied optimistically to the project
  * store as before, so every reader — the editor, the code panel, and the send path, which builds

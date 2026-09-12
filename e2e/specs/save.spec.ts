@@ -68,9 +68,9 @@ test.describe('saving the active tab', () => {
 
     // The tab marks itself immediately...
     await expect(dirty).toBeVisible();
-    // ...and the autosave that used to write this within 500ms no longer does. Waited out
-    // rather than checked instantly, so a passing assertion means "still unwritten", not
-    // "checked before the write landed".
+    // ...and nothing writes it on a timer — not the pane's debounce, and not main, where
+    // `editor.autosave` is off by default. Waited out rather than checked instantly, so a
+    // passing assertion means "still unwritten", not "checked before the write landed".
     await page.waitForTimeout(1_500);
     expect(savedRequestYaml()).not.toContain(marker);
 

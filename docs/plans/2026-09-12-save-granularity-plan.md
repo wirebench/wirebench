@@ -3,7 +3,14 @@
 Goal: `Mod+S` saves the active tab's item only; `Shift+Mod+S` saves everything; each editor tab
 shows a dot while it has unsaved edits.
 
-## The blocker
+> **Status (2026-09-12, after the fact):** shipped as option C, on top of a main that had since
+> made saving manual (`editor.autosave`, off by default). That changes the premise below — main
+> now holds unsaved state of its own — but not the conclusion: main's `dirty` is per *project*,
+> and a per-tab mark needs per-*request*, which is what the draft layer provides. The Save All
+> chord landed on `Mod+Alt+S` rather than the `Shift+Mod+S` proposed here, because `Mod+S` went
+> to the new per-item save.
+
+## The blocker (as it stood when this was written)
 
 Wirebench has no unsaved state to save. Today:
 
