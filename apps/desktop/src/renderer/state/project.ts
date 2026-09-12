@@ -190,6 +190,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly setDefaultEndpoint: (interfaceId: string, endpointId: string) => Promise<void>;
   readonly setProjectProperty: (projectId: string, name: string, value: string) => Promise<void>;
   readonly removeProjectProperty: (projectId: string, name: string) => Promise<void>;
+  /** Toggles one project property's disabled flag without removing it. */
+  readonly setProjectPropertyEnabled: (projectId: string, name: string, enabled: boolean) => Promise<void>;
   /**
    * Attaches a file to a request. Only the path crosses IPC: main stats and reads it, and with
    * `copyToCache` (the default) content-addresses the bytes into the project's `attachments/`
@@ -838,6 +840,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeProjectProperty: async (projectId, name) => {
       await mutate(projectId, { kind: 'remove-project-property', name });
+    },
+
+    setProjectPropertyEnabled: async (projectId, name, enabled) => {
+      await mutate(projectId, { kind: 'set-project-property-enabled', name, enabled });
     },
 
     addAttachment: async (requestId, path, options) => {

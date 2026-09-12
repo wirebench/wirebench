@@ -9,13 +9,17 @@ import type {
   WorkspaceWire,
 } from '../../../shared/wire-types.js';
 import { queueEndpointOverride, queueEnvironmentPatch } from './environment-queue.js';
-import { resolveEndpointOverride } from '../../state/endpoint-override.js';
+import type { EffectiveEndpointSource } from '../../state/endpoint-override.js';
+import { effectiveEndpointSource } from '../../state/endpoint-override.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
 
-/** Where the URL a request would actually be sent to comes from, for one interface + environment. */
-export type EffectiveEndpointSource = 'project' | 'workspace' | 'interface' | 'none';
+// `effectiveEndpointSource` now lives in `state/endpoint-override.ts` (Task 4), alongside the
+// URL-resolving `resolveEndpointOverride` it is built on; re-exported here so nothing else in
+// this module (or its test) has to change until Task 6 deletes this file.
+export type { EffectiveEndpointSource };
+export { effectiveEndpointSource };
 
 /** What each source reads as in the grid, and what its tooltip spells out. */
 const SOURCE_LABEL: Record<EffectiveEndpointSource, { readonly short: string; readonly title: string }> = {
@@ -24,24 +28,6 @@ const SOURCE_LABEL: Record<EffectiveEndpointSource, { readonly short: string; re
   interface: { short: 'interface', title: 'No override: the request uses the interface address.' },
   none: { short: 'not set', title: 'No override and no interface address — the request has nowhere to go.' },
 };
-
-/**
- * Which layer wins for one interface under one environment. Mirrors the engine's
- * `resolveWorkspaceEndpoint` precedence on the renderer's mirror: a linked project's own
- * environment (matched to this one by slug) beats the workspace environment's override, which
- * beats the interface's declared address.
- */
-export function effectiveEndpointSource(input: {
-  readonly projectOverride?: string;
-  readonly workspaceOverride?: string;
-  readonly interfaceDefault?: string;
-}): EffectiveEndpointSource {
-  const override = resolveEndpointOverride(input);
-  if (override !== undefined) {
-    return override.source;
-  }
-  return input.interfaceDefault !== undefined ? 'interface' : 'none';
-}
 
 /** One row of the grid: an interface, and how to address it in an environment's endpoint map. */
 interface GridRow {

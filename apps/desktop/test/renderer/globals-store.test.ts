@@ -2,23 +2,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { subscribeToGlobals, useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
-const ok = (properties: Record<string, string>) => ({ ok: true, value: { properties } });
+const ok = (properties: Record<string, string>, disabled: readonly string[] = []) => ({
+  ok: true,
+  value: { properties, disabled },
+});
 
 describe('useGlobalsStore', () => {
   beforeEach(() => {
-    useGlobalsStore.setState({ properties: {} });
+    useGlobalsStore.setState({ properties: {}, disabled: [] });
   });
 
-  it('load() mirrors the map main returns', async () => {
-    installWirebenchApi({ globals: { get: vi.fn().mockResolvedValue(ok({ token: 'abc' })) } });
+  it('load() mirrors the map and disabled list main returns', async () => {
+    installWirebenchApi({ globals: { get: vi.fn().mockResolvedValue(ok({ token: 'abc' }, ['token'])) } });
 
     await useGlobalsStore.getState().load();
 
     expect(useGlobalsStore.getState().properties).toEqual({ token: 'abc' });
+    expect(useGlobalsStore.getState().disabled).toEqual(['token']);
   });
 
   it('keeps the last good map when a channel fails', async () => {
-    useGlobalsStore.setState({ properties: { token: 'abc' } });
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
     installWirebenchApi({
       globals: { get: vi.fn().mockResolvedValue({ ok: false, error: { code: 'boom', message: 'boom' } }) },
     });
@@ -42,6 +46,17 @@ describe('useGlobalsStore', () => {
     expect(useGlobalsStore.getState().properties).toEqual({ token: 'abc' });
   });
 
+  it('setEnabled() sends the toggle and mirrors the reply', async () => {
+    const setEnabled = vi.fn().mockResolvedValue(ok({ token: 'abc' }, ['token']));
+    installWirebenchApi({ globals: { setEnabled } });
+
+    await useGlobalsStore.getState().setEnabled('token', false);
+
+    expect(setEnabled).toHaveBeenCalledWith({ name: 'token', enabled: false });
+    expect(useGlobalsStore.getState().properties).toEqual({ token: 'abc' });
+    expect(useGlobalsStore.getState().disabled).toEqual(['token']);
+  });
+
   it('subscribeToGlobals pulls the map and applies later globals.changed events', () => {
     const listeners = new Map<string, (payload: unknown) => void>();
     const off = vi.fn();
@@ -54,8 +69,9 @@ describe('useGlobalsStore', () => {
     });
 
     const unsubscribe = subscribeToGlobals();
-    listeners.get('globals.changed')?.({ properties: { who: 'ada' } });
+    listeners.get('globals.changed')?.({ properties: { who: 'ada' }, disabled: ['who'] });
     expect(useGlobalsStore.getState().properties).toEqual({ who: 'ada' });
+    expect(useGlobalsStore.getState().disabled).toEqual(['who']);
 
     unsubscribe();
     expect(off).toHaveBeenCalled();

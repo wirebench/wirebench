@@ -12,9 +12,11 @@ import type { IpcError } from '../../shared/ipc.js';
 import type {
   WorkspaceChange,
   WorkspaceChangedEvent,
+  WorkspaceEnvironmentPatchWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
 } from '../../shared/wire-types.js';
+import { queueEnvironmentPatch } from '../features/environments/environment-queue.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
@@ -82,6 +84,15 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   readonly setActiveEnvironment: (environmentId: string | null) => Promise<void>;
   /** Applies one change to the workspace manifest; returns any entity it created. */
   readonly mutate: (change: WorkspaceChange) => Promise<{ readonly createdEnvironmentId?: string }>;
+  /** Toggles one workspace property's disabled flag without removing it. */
+  readonly setWorkspacePropertyEnabled: (name: string, enabled: boolean) => Promise<void>;
+  /**
+   * Patches one workspace environment. `endpoints`/`properties`/`disabled` REPLACE the whole
+   * map or list (send the complete one you want it to end up with); omit a field to leave it
+   * untouched. Routed through {@link queueEnvironmentPatch} so a burst of edits to the same
+   * environment serialise rather than race — see `environment-queue.ts`.
+   */
+  readonly updateEnvironment: (environmentId: string, patch: WorkspaceEnvironmentPatchWire) => Promise<void>;
 }
 
 /** Projects whose `project.snapshot` pull is in flight, so a burst of workspace updates asks once. */
@@ -339,6 +350,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const value = unwrap(await ipc().workspace.mutate({ change }));
       applyReply(sentIn, value.workspace);
       return value.createdEnvironmentId === undefined ? {} : { createdEnvironmentId: value.createdEnvironmentId };
+    },
+
+    setWorkspacePropertyEnabled: async (name, enabled) => {
+      await get().mutate({ kind: 'set-workspace-property-enabled', name, enabled });
+    },
+
+    updateEnvironment: async (environmentId, patch) => {
+      await queueEnvironmentPatch(environmentId, () => patch);
     },
   };
 });

@@ -527,6 +527,17 @@ describe('useProjectStore: environments and properties', () => {
     ]);
   });
 
+  it('setProjectPropertyEnabled sends the toggle to the named project', async () => {
+    const mutate = stubMutate();
+
+    await useProjectStore.getState().setProjectPropertyEnabled('proj-1', 'who', false);
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'set-project-property-enabled', name: 'who', enabled: false },
+    });
+  });
+
   it('builds each updateEnvironment endpoints patch from the latest pending state, not a stale snapshot', () => {
     applyProject({
       environments: [{ id: 'env-1', name: 'Dev', slug: 'Dev', order: 0, endpoints: {}, properties: {}, disabled: [] }],
