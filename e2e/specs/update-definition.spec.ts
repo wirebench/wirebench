@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
-import { createProjectWithCalculator, workspaceProjectDir } from '../helpers/project.js';
+import { createProjectWithCalculator, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 /**
@@ -114,7 +114,9 @@ test.describe('Update Definition, Export and Documentation', () => {
     await setMonacoText(page, 'Request envelope XML', EDITED_ECHO);
     await expect.poll(async () => await envelopeText(page), { timeout: 15_000 }).toContain('WB-EDIT');
     // The backup is a copy of what is on disk, so the edit has to be saved before the update
-    // runs — otherwise the `.bak` would preserve the envelope as imported, not as edited.
+    // runs — otherwise the `.bak` would preserve the envelope as imported, not as edited. With
+    // saving manual this is load-bearing rather than belt-and-braces, and ⌘S has to flush the
+    // editor's own debounce before it writes (see `project.save`).
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
     await expect.poll(() => anyFileContains(projectDir, '.xml', 'WB-EDIT'), { timeout: 20_000 }).toBe(true);
 
@@ -143,6 +145,9 @@ test.describe('Update Definition, Export and Documentation', () => {
     await openRequest(page, 1);
     await expect.poll(async () => await envelopeText(page), { timeout: 20_000 }).toContain('WB-EDIT');
     await expect.poll(async () => await envelopeText(page), { timeout: 20_000 }).toContain('lang');
+
+    // Saving is manual by default, so say when the project should be on disk before reading it.
+    await saveAll(page);
 
     await expect.poll(() => filesEndingWith(projectDir, '.xml.bak').length, { timeout: 20_000 }).toBe(1);
     expect(readFileSync(filesEndingWith(projectDir, '.xml.bak')[0] ?? '', 'utf8')).toContain('WB-EDIT');

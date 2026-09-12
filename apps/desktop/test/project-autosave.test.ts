@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
 import type { Preferences } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
@@ -12,12 +12,10 @@ import { AUTOSAVE_DEBOUNCE_MS, ProjectHost } from '../src/main/project-host.js';
 let root: string | undefined;
 
 beforeEach(() => {
-  vi.useFakeTimers();
   root = mkdtempSync(join(tmpdir(), 'wirebench-autosave-'));
 });
 
 afterEach(() => {
-  vi.useRealTimers();
   if (root !== undefined) {
     rmSync(root, { recursive: true, force: true });
     root = undefined;
@@ -41,14 +39,19 @@ function hostWith(autosave: boolean | undefined) {
 }
 
 /**
- * Runs the debounce out and waits for the write it triggers to finish. The timer is faked but
- * the disk is not, so advancing the clock only *starts* the save; each further turn of the loop
- * lets its real I/O settle. Bounded, so a save that never lands fails the assertion after it
- * rather than hanging the suite.
+ * Real time, not fake: the debounce is a timer but the save it fires is disk I/O, and faking
+ * only the clock leaves the write racing the assertion — which passed on one platform and
+ * failed on another. Polling the state the feature actually reports removes the race.
  */
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Waits for an autosave to land, up to a budget many times the debounce it is waiting on. */
 async function waitForAutosave(host: ProjectHost): Promise<void> {
-  for (let attempt = 0; attempt < 50 && host.snapshot()?.dirty !== false; attempt += 1) {
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS);
+  const deadline = Date.now() + AUTOSAVE_DEBOUNCE_MS * 20;
+  while (host.snapshot()?.dirty !== false && Date.now() < deadline) {
+    await delay(25);
   }
 }
 
@@ -72,7 +75,7 @@ describe('autosave is opt-in', () => {
     expect(host.snapshot()?.dirty).toBe(true);
 
     // Well past the debounce: with autosave off there was never a timer to fire.
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 10);
+    await delay(AUTOSAVE_DEBOUNCE_MS * 3);
 
     expect(host.snapshot()?.dirty).toBe(true);
     expect(await nameOnDisk(dir)).toBe('Manual');
@@ -109,7 +112,7 @@ describe('autosave is opt-in', () => {
     const { host, setAutosave } = hostWith(false);
     await host.create({ dir, name: 'Switched' });
     await host.mutate({ kind: 'rename-project', name: 'Renamed' });
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS * 2);
+    await delay(AUTOSAVE_DEBOUNCE_MS * 3);
     expect(await nameOnDisk(dir)).toBe('Switched');
 
     setAutosave(true);
@@ -127,7 +130,7 @@ describe('autosave is opt-in', () => {
 
     setAutosave(true);
     host.onAutosaveEnabled();
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_DEBOUNCE_MS);
+    await delay(AUTOSAVE_DEBOUNCE_MS * 3);
 
     expect(host.snapshot()?.dirty).toBe(false);
   });

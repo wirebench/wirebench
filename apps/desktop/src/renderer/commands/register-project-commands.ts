@@ -1,4 +1,5 @@
 import { checkForUpdates } from '../lib/update-status.js';
+import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/project/project-actions.js';
 import { registerCommand } from '../lib/commands.js';
@@ -35,6 +36,11 @@ export function registerProjectCommands(): void {
     when: () => Object.keys(useProjectStore.getState().projects).length > 0,
     whenScope: 'project',
     run: () => {
+      // Flush first: the envelope edit the user is mid-way through typing is still sitting on
+      // the pane's debounce, and a save is the moment they asked for everything to be written.
+      // Autosave used to cover this by firing again once the debounce landed; with saving
+      // manual, skipping it writes the model without the very edit that prompted the save.
+      getActiveRequestPaneHandle()?.flush();
       void projectActions.save();
     },
   });

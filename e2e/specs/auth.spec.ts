@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest, workspaceProjectDir } from '../helpers/project.js';
+import { createProjectWithCalculator, openFirstRequest, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const PASSWORD = 'pass';
@@ -79,6 +79,9 @@ test.describe('auth', () => {
     await page.getByTestId('request-send').click();
     await expect(page.getByTestId('response-status')).toContainText('200', { timeout: 20_000 });
     await expect(page.getByTestId('response-status')).toContainText('Authenticated after 401 challenge');
+
+    // Saving is manual by default, so say when the project should be on disk before reading it.
+    await saveAll(page);
 
     // --- the password never reaches disk in plaintext; only its ref is saved -----------------
     const passwordRefPattern = /passwordRef:\s*['"]?([\w.-]+)['"]?/;

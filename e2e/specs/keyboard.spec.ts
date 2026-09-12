@@ -157,9 +157,8 @@ test.describe('keyboard', () => {
 
     // --- the old chord is dead, the new one sends -----------------------------
     await closeSettings(page);
-    // ⌘, no longer touches the sidebar, but the explorer is asserted rather than assumed: the
-    // view this workspace reopens with is whatever the last session left it on.
-    await page.keyboard.press(`${MOD}+Shift+E`);
+    // No ⌘⇧E here: ⌘, opens a dialog now and never moves the sidebar off the Explorer, so
+    // pressing the Explorer chord would *re-select* the active view — which collapses it.
     await openFirstRequest(page);
     const status = page.getByTestId('response-status');
     await page.keyboard.press(`${MOD}+Enter`);
