@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-12
+
 ### Added
 
 - **Workspaces.** Wirebench now groups any number of projects into a workspace stored under
@@ -37,9 +39,29 @@ All notable changes to this project are documented here. The format follows
   status-bar toggle, or by double-clicking the handle to snap collapsed or restored. Dragging the
   sidebar's or the console's handle past the panel's minimum closes it, and dragging the same
   handle back out reopens it; sizes and collapsed state persist across a relaunch.
+- **Environment selector in the title bar.** The active-environment switcher moved from the status
+  bar to the top-right of the title bar, beside the theme toggle.
+- **Preferences dialog.** Settings open as a modal dialog from the activity bar's foot (or
+  `preferences.open`) instead of a sidebar list plus an editor tab.
+- **Per-tab save.** `Mod+S` saves the request tab in front of you, and each tab shows its own
+  unsaved dot; *Save All* (`Mod+Alt+S`) saves every open project. The project tab shows
+  *Unsaved changes* / *Saving…* / *Saved* beside the project name.
+- **Autosave preference.** *Preferences → Editor → Autosave projects* turns autosave back on;
+  turning it on mid-session writes any outstanding edit straight away.
+- **Code panel highlighting.** The `curl` / PowerShell preview is rendered as highlighted code,
+  with flags, strings and heredoc bodies told apart.
 
 ### Changed
 
+- **Saving is manual by default.** Edits stay in the open project until you save; closing a
+  project or quitting still writes it. Enable the autosave preference above for the old
+  behaviour.
+- **One click opens.** Explorer requests and environments open on a single click; the environment
+  being edited is highlighted in the Environments list. *Open* is gone from their context menus.
+- **Context menus are grouped** with separators, and *Clone* sits with *Rename* and *Delete*.
+- **Release artifact names** carry the OS and architecture (for example
+  `Wirebench-1.1.0-mac-universal.dmg`, `Wirebench-1.1.0-windows-x64-setup.exe`); macOS ships
+  universal, Intel and Apple-silicon builds, and Linux gains a `.snap`. See `docs/release.md`.
 - **Project and workspace format, `formatVersion: 2`.** The per-variable enabled flag above is an
   additive format change: `properties` stays a plain `name -> value` map, and a sibling
   `disabled:` list of names sits beside it, sorted, deduplicated, and omitted entirely when
@@ -61,6 +83,13 @@ All notable changes to this project are documented here. The format follows
   interface-level settings are in the interface tab, project settings and properties in the
   project tab, environments in the Environments view, and the Code view in the right-rail
   slide-over above. `view.toggleDetails` is gone.
+
+### Fixed
+
+- `Mod+S` pressed straight after typing saved the envelope as it was before the last keystrokes,
+  and *Save All* could report success while staged request edits stayed unsaved.
+- `Mod+S` with the caret in the request editor kept saving the first tab opened after switching
+  tabs; go-to-definition had the same stale-tab lookup.
 
 ## [1.0.0] - 2026-09-11
 
@@ -160,5 +189,6 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- The `v1.0.0` tag does not exist yet; both links resolve once it is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/wirebench/wirebench/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wirebench/wirebench/releases/tag/v1.0.0
