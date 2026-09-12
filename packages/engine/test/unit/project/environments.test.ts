@@ -32,6 +32,7 @@ const env: Environment = {
   order: 0,
   endpoints: { calculator: 'https://qa.test/soap' },
   properties: { name: 'env-name' },
+  disabledProperties: [],
 };
 
 describe('findEnvironment', () => {

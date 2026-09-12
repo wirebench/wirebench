@@ -83,6 +83,7 @@ export function sampleProject(): Project {
     description: 'Round-trip fixture',
     settings: { ...DEFAULT_PROJECT_SETTINGS, resourceRoot: './res' },
     properties: { region: 'eu-west-1', tier: 'gold' },
+    disabledProperties: ['tier'],
     interfaces: [
       {
         kind: 'soap',
@@ -194,6 +195,7 @@ export function sampleProject(): Project {
         order: 0,
         endpoints: { CountryInfo: 'http://localhost:8080/country' },
         properties: { region: 'local' },
+        disabledProperties: ['region'],
       },
       {
         id: nextId(),
@@ -202,6 +204,7 @@ export function sampleProject(): Project {
         order: 1,
         endpoints: {},
         properties: {},
+        disabledProperties: [],
       },
     ],
     wss: {

@@ -53,6 +53,7 @@ export function sampleWorkspace(): Workspace {
     description: 'Round-trip fixture',
     createdAt: '2026-01-01T00:00:00.000Z',
     properties: { region: 'eu-west-1', tier: 'gold' },
+    disabledProperties: ['tier'],
     activeEnvironmentId: devEnvId,
     projects: [
       { id: countryProjectId, slug: 'CountryInfo', source: 'internal' },
@@ -66,6 +67,7 @@ export function sampleWorkspace(): Workspace {
         order: 0,
         properties: { region: 'local' },
         endpoints: { 'CountryInfo/CountryInfoSoap': 'http://localhost:8080/country' },
+        disabledProperties: ['region'],
       },
       {
         id: prodEnvId,
@@ -74,6 +76,7 @@ export function sampleWorkspace(): Workspace {
         order: 1,
         properties: {},
         endpoints: {},
+        disabledProperties: [],
       },
     ],
   };

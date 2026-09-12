@@ -12,6 +12,7 @@ describe('createWorkspace', () => {
       name: 'Demo',
       createdAt: '2026-01-01T00:00:00.000Z',
       properties: {},
+      disabledProperties: [],
       projects: [],
       environments: [],
     });
@@ -51,6 +52,7 @@ describe('createWorkspaceEnvironment', () => {
       order: 2,
       properties: {},
       endpoints: {},
+      disabledProperties: [],
     });
   });
 

@@ -98,6 +98,16 @@ function normalizeIds(project: Project): unknown {
 }
 
 describe('reidentifyProject', () => {
+  it('keeps disabledProperties, at both project and environment scope, untouched', () => {
+    const project = sampleProject();
+    const reidentified = reidentifyProject(project, fixedIds('NEW'));
+
+    expect(reidentified.disabledProperties).toEqual(project.disabledProperties);
+    expect(reidentified.environments.map((e) => e.disabledProperties)).toEqual(
+      project.environments.map((e) => e.disabledProperties),
+    );
+  });
+
   it('gives every entity a new id and leaves no old id in any file', () => {
     const project = sampleProject();
     const oldIds = allIds(project);

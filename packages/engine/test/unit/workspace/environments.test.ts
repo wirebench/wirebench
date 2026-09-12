@@ -21,6 +21,7 @@ const projectEnv: Environment = {
   order: 0,
   endpoints: { calculator: 'https://qa.project.test/soap' },
   properties: { name: 'proj-env-name', onlyProjectEnv: 'p-env-value' },
+  disabledProperties: [],
 };
 
 function fixtureProject(environments: readonly Environment[] = []): { project: Project; iface: Interface } {
@@ -43,6 +44,7 @@ function fixtureWorkspace(activeEnv: WorkspaceEnvironment | undefined, overrides
     name: 'Workspace',
     createdAt: '2026-01-01T00:00:00.000Z',
     properties: { name: 'ws-name', onlyWorkspace: 'w-value' },
+    disabledProperties: [],
     ...(activeEnv !== undefined ? { activeEnvironmentId: activeEnv.id } : {}),
     projects: [{ id: 'proj-1', slug: 'demo', source: 'internal' }],
     environments: activeEnv !== undefined ? [activeEnv] : [],
@@ -57,6 +59,7 @@ const workspaceEnv: WorkspaceEnvironment = {
   order: 0,
   properties: { name: 'ws-env-name', onlyWorkspaceEnv: 'w-env-value' },
   endpoints: { 'demo/calculator': 'https://qa.workspace.test/soap' },
+  disabledProperties: [],
 };
 
 describe('linkedEnvironment', () => {

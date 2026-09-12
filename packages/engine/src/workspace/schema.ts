@@ -49,6 +49,8 @@ export const workspaceManifestSchema = z.looseObject({
   description: z.string().optional(),
   createdAt: nonEmpty,
   properties: propertyMapSchema,
+  /** Names of `properties` entries switched off; absent means none. See `model.ts`. */
+  disabled: z.array(z.string()).optional(),
   activeEnvironmentId: z.string().optional(),
   projects: z.array(workspaceProjectRefSchema),
   /** Name of the Wirebench build that last wrote this manifest; informational only. */
@@ -62,6 +64,8 @@ export const workspaceEnvironmentFileSchema = z.looseObject({
   order: z.number().int(),
   properties: propertyMapSchema,
   endpoints: z.record(z.string(), z.string()),
+  /** Names of `properties` entries switched off; absent means none. */
+  disabled: z.array(z.string()).optional(),
 });
 
 /** The manifest document as persisted. */

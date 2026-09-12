@@ -1,0 +1,7 @@
+endpoints:
+  CountryInfo/CountryInfoSoap: http://localhost:8080/country
+id: ID0003
+name: dev
+order: 0
+properties:
+  region: local

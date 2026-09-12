@@ -22,12 +22,15 @@ import {
 import { stringifyYaml, parseYaml } from '../../../src/project/yaml.js';
 
 const validManifest = {
-  formatVersion: 1,
+  formatVersion: 2,
   id: 'X',
   name: 'p',
   settings: { ...DEFAULT_PROJECT_SETTINGS },
   properties: {},
 };
+
+/** A raw version-1 manifest document: no `disabled` key, `formatVersion: 1`. */
+const v1Manifest = { ...validManifest, formatVersion: 1 };
 
 describe('parseFile', () => {
   it('returns the parsed document when valid', () => {
@@ -51,6 +54,11 @@ describe('parseFile', () => {
 
   it('accepts (and ignores, at the model layer) an unknown top-level manifest key', () => {
     expect(() => parseFile(manifestSchema, { ...validManifest, extra: true }, 'wirebench.yaml')).not.toThrow();
+  });
+
+  it('accepts an optional disabled list on the manifest', () => {
+    const withDisabled = { ...validManifest, properties: { a: '1' }, disabled: ['a'] };
+    expect(parseFile(manifestSchema, withDisabled, 'wirebench.yaml')).toEqual(withDisabled);
   });
 });
 
@@ -95,6 +103,12 @@ describe('loose schemas', () => {
     expect(() => parseFile(environmentFileSchema, { ...env, active: true }, 'e.yaml')).not.toThrow();
   });
 
+  it('accepts an optional disabled list on an environment document', () => {
+    const env = { id: 'E', name: 'dev', order: 0, endpoints: {}, properties: { a: '1' }, disabled: ['a'] };
+    expect(parseFile(environmentFileSchema, env, 'e.yaml')).toEqual(env);
+    expect(parseFile(environmentFileSchema, { ...env, disabled: undefined }, 'e.yaml').disabled).toBeUndefined();
+  });
+
   it('never accepts a plaintext password field, even though the rest of the object is loose', () => {
     const iface = {
       kind: 'soap',
@@ -134,8 +148,13 @@ describe('extension-point schemas', () => {
 });
 
 describe('migrate', () => {
-  it('passes version 1 through unchanged', () => {
-    expect(migrate(validManifest, 'wirebench.yaml')).toBe(validManifest);
+  it('brings version 1 up to the current format version, otherwise unchanged', () => {
+    expect(migrate(v1Manifest, 'wirebench.yaml')).toEqual({ ...v1Manifest, formatVersion: 2 });
+  });
+
+  it('passes a version-2 document through with the same formatVersion', () => {
+    const v2 = { ...validManifest, formatVersion: 2, disabled: ['tier'] };
+    expect(migrate(v2, 'wirebench.yaml')).toEqual(v2);
   });
 
   it('rejects a newer format version', () => {
@@ -148,7 +167,7 @@ describe('migrate', () => {
       return undefined;
     })();
     expect(error?.code).toBe('project-format-too-new');
-    expect(error?.details).toMatchObject({ formatVersion: 7, supported: 1 });
+    expect(error?.details).toMatchObject({ formatVersion: 7, supported: 2 });
   });
 
   it.each([[{ formatVersion: 0 }], [{ formatVersion: '1' }], [{}], [{ formatVersion: 1.5 }]])(
@@ -196,7 +215,12 @@ describe('yaml helpers', () => {
 describe('factories', () => {
   it('creates a project with defaults and a ULID id', () => {
     const project = createProject('Demo');
-    expect(project).toMatchObject({ formatVersion: 1, name: 'Demo', settings: DEFAULT_PROJECT_SETTINGS });
+    expect(project).toMatchObject({
+      formatVersion: 2,
+      name: 'Demo',
+      settings: DEFAULT_PROJECT_SETTINGS,
+      disabledProperties: [],
+    });
     expect(project.id).toHaveLength(26);
     expect(generateId()).toHaveLength(26);
   });
