@@ -9,6 +9,7 @@ import { useGlobalsStore } from '../../state/globals.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
+import { SaveIndicator } from './save-indicator.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from '../environments/variables-table.js';
 import type { ProjectSettingsPatchWire } from '../../../shared/wire-types.js';
 
@@ -72,6 +73,13 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
       aria-label={`Project ${project.name}`}
       className="flex h-full min-h-0 flex-col gap-4 overflow-auto p-4"
     >
+      {/* Above the first field rather than beside one: every group below writes through the same
+          autosave, so one indicator speaks for the whole tab. */}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="truncate text-md font-medium text-fg-default">{project.name}</h2>
+        <SaveIndicator projectId={projectId} />
+      </div>
+
       <SettingsGroup title="Project">
         <ReadOnlySetting label="Name" value={project.name} />
         <div className="flex items-end gap-2">

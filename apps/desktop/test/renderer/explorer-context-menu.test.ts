@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
+import { explorerMenuGroups, explorerMenuItems } from '../../src/renderer/features/explorer/context-menu.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 
@@ -24,10 +24,10 @@ describe('explorerMenuItems', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Import WSDL…',
-      'Rename',
       'Settings…',
       REVEAL,
       'Export project…',
+      'Rename',
       'Remove from workspace',
     ]);
   });
@@ -40,11 +40,11 @@ describe('explorerMenuItems', () => {
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
       'Import WSDL…',
-      'Rename',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
       'Export project…',
+      'Rename',
       'Remove from workspace',
     ]);
     expect(internal.some((item) => item.key === 'project-environments')).toBe(false);
@@ -71,10 +71,10 @@ describe('explorerMenuItems', () => {
       'Update Definition…',
       'Export Definition…',
       'Generate Documentation…',
+      'Check WSDL WS-I compliance',
+      'Copy definition URL',
       'Import another WSDL…',
       'Remove interface',
-      'Copy definition URL',
-      'Check WSDL WS-I compliance',
     ]);
     expect(explorerMenuItems(node({ kind: 'operation' })).map((item) => item.label)).toEqual([
       'New request',
@@ -82,10 +82,10 @@ describe('explorerMenuItems', () => {
     ]);
     expect(explorerMenuItems(node({ kind: 'request', requestId: 'r1' })).map((item) => item.label)).toEqual([
       'Open',
-      'Clone',
       'Recreate request (keep values)',
       'Recreate (discard values)',
       'Create empty',
+      'Clone',
       'Rename…',
       'Delete',
     ]);
@@ -94,6 +94,27 @@ describe('explorerMenuItems', () => {
     ]);
     // A grouping row has nothing to offer, and so renders no menu at all.
     expect(explorerMenuItems(node({ kind: 'operations' }))).toHaveLength(0);
+  });
+
+  it('groups a request menu so opening, recreating and naming are each their own block', () => {
+    expect(
+      explorerMenuGroups(node({ kind: 'request', requestId: 'r1' })).map((group) => group.map((i) => i.key)),
+    ).toEqual([['open'], ['recreate', 'recreate-discard', 'recreate-empty'], ['clone', 'rename', 'delete']]);
+  });
+
+  it('never draws a rule against nothing: an internal project has no environments group', () => {
+    const internal = explorerMenuGroups(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    const linked = explorerMenuGroups(node({ kind: 'project', id: 'proj:p2', projectId: 'p2', linked: true }));
+
+    expect(internal.every((group) => group.length > 0)).toBe(true);
+    expect(internal.map((group) => group.map((i) => i.key))).toEqual([
+      ['import'],
+      ['settings'],
+      ['reveal', 'export'],
+      ['rename', 'remove'],
+    ]);
+    // Only the second group differs — the linked project's own environments join Settings.
+    expect(linked[1]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
   });
 
   it('Import WSDL… selects the project first, so the dialog opens on it', () => {
