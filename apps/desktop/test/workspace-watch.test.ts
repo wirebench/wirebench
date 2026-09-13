@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +18,7 @@ import {
 import type { Workspace } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
+import { ProjectHost } from '../src/main/project-host.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import type { WorkspaceWire } from '../src/shared/wire-types.js';
@@ -43,10 +44,13 @@ let root: string;
 interface Recorded {
   changed: (WorkspaceWire | null)[];
   onDisk: { paths: readonly string[]; message: string }[];
+  /** Files-changed-on-disk events forwarded from an open project's own watcher — used only by
+   * the close()-races-a-reload test, to detect a host that a reload opened but never closed. */
+  projectOnDisk: { projectId: string; paths: readonly string[] }[];
 }
 
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: WorkspaceService; recorded: Recorded } {
-  const recorded: Recorded = { changed: [], onDisk: [] };
+  const recorded: Recorded = { changed: [], onDisk: [], projectOnDisk: [] };
   const service = new WorkspaceService({
     userDataDir: root,
     engine: new EngineService(),
@@ -55,6 +59,7 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: W
     hooks: {
       onChanged: (workspace) => recorded.changed.push(workspace),
       onWorkspaceChangedOnDisk: (paths, message) => recorded.onDisk.push({ paths: [...paths], message }),
+      onProjectChangedOnDisk: (projectId, paths) => recorded.projectOnDisk.push({ projectId, paths: [...paths] }),
     },
     ...overrides,
   });
@@ -313,6 +318,66 @@ describe('WorkspaceService — workspace-level watcher', () => {
     expect(onDiskFinal.projects.map((ref) => ref.slug)).toEqual(['beta']);
 
     await service.close();
+  }, 20_000);
+
+  it('closes a host a reload was still opening when close() ran concurrently', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const gamma = createProject('Gamma');
+    const gammaDir = workspaceProjectDir(tree, 'gamma');
+    await saveProject(gamma, gammaDir);
+    const gammaManifestPath = join(gammaDir, 'wirebench.yaml');
+
+    // Gates `ProjectHost.openProject` for gamma's folder specifically, so the reload can be
+    // caught reliably mid-way through opening gamma's host — not left to real disk-I/O timing.
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- captured only to be re-applied with `this` preserved below, never called unbound.
+    const original = ProjectHost.prototype.openProject;
+    const spy = vi.spyOn(ProjectHost.prototype, 'openProject').mockImplementation(async function (
+      this: ProjectHost,
+      ...args: Parameters<typeof original>
+    ) {
+      if (args[0] === gammaDir) {
+        await gate;
+      }
+      return original.apply(this, args);
+    });
+
+    try {
+      const { service, recorded } = newService();
+      await service.open(workspace.id);
+      await settle();
+
+      // An outside edit appends gamma's ref; the watcher's reload will try to open its host and
+      // block inside the gate above.
+      const withGamma: Workspace = {
+        ...workspace,
+        projects: [...workspace.projects, { id: gamma.id, slug: 'gamma', source: 'internal' }],
+      };
+      await saveWorkspace(withGamma, tree);
+
+      // Give the reload time to notice the change and reach (and block inside) the gate — well
+      // past the watcher's own debounce window.
+      await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+
+      // `close()` is deliberately not queued behind the reload (see `enqueueWorkspaceOp`), so it
+      // runs concurrently with the still-blocked reload — exactly the race this test exists for.
+      const closePromise = service.close();
+      releaseGate?.();
+      await closePromise;
+
+      // The host the reload was mid-way through opening must have been closed, not left running
+      // — proven by writing to gamma's folder now and confirming no `onProjectChangedOnDisk`
+      // follows: a host whose watcher was never stopped would still report this.
+      const before = recorded.projectOnDisk.length;
+      await writeFile(gammaManifestPath, await readFile(gammaManifestPath, 'utf8'), 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+      expect(recorded.projectOnDisk.length).toBe(before);
+    } finally {
+      spy.mockRestore();
+    }
   }, 20_000);
 
   it('stops the watcher on close(): no callbacks arrive afterwards', async () => {

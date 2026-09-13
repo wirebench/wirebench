@@ -187,6 +187,13 @@ interface OpenWorkspace {
    * the "workspace-level watcher" region).
    */
   watcher: ProjectWatcher | undefined;
+  /**
+   * Set as the very first statement of `close()`, before anything else — including before
+   * `this.current` is nulled — so an in-flight {@link reloadWorkspaceFromDisk} (which cannot
+   * detect closing purely from `this.current`, since that stays `open` throughout `close()`'s own
+   * entry-closing loop) has a signal it can check between its own awaits.
+   */
+  closing: boolean;
 }
 
 function errorMessage(error: unknown): string {
@@ -526,7 +533,7 @@ export class WorkspaceService implements ProjectRouter {
         ? local.activeEnvironmentId
         : undefined;
     const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
-    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [], watcher: undefined };
+    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [], watcher: undefined, closing: false };
     this.current = open;
     this.failure = undefined;
     this.unsaved = new UnsavedStore(dir);
@@ -742,8 +749,11 @@ export class WorkspaceService implements ProjectRouter {
     if (open === undefined) {
       return null;
     }
-    // Stopped before anything else: a late event during close must never reload a record that
-    // is about to be torn down.
+    // Set before anything else, together with stopping the watcher: `this.current` stays `open`
+    // for the rest of this method (it is nulled further down, after the entries loop below), so
+    // an in-flight `reloadWorkspaceFromDisk` cannot tell "closing" from "still open" by looking
+    // at `this.current` alone — `closing` is the signal it checks instead.
+    open.closing = true;
     open.watcher?.stop();
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
@@ -808,21 +818,24 @@ export class WorkspaceService implements ProjectRouter {
    */
   private async reloadWorkspaceFromDisk(open: OpenWorkspace, paths: readonly string[]): Promise<void> {
     // Re-checked after every `await` below (not just here): `enqueueWorkspaceOp` only keeps this
-    // from interleaving with another queued op, but `close()` is deliberately *not* queued (a
+    // from interleaving with another *queued* op, but `close()` is deliberately *not* queued (a
     // shutdown must not wait behind a stuck reload), so the workspace can still close mid-reload.
-    if (this.current !== open) {
+    // `this.current !== open` alone would miss that window: `close()` leaves `this.current` set
+    // to `open` for the whole of its own entry-closing loop, only nulling it afterwards — so
+    // `open.closing` (set as `close()`'s very first statement) is the signal actually checked.
+    if (this.stale(open)) {
       return;
     }
     let loaded: Workspace;
     try {
       ({ workspace: loaded } = await loadWorkspace(open.tree, this.fsOption()));
     } catch (error) {
-      if (this.current === open) {
+      if (!this.stale(open)) {
         this.deps.hooks?.onWorkspaceChangedOnDisk?.(paths, errorMessage(error));
       }
       return;
     }
-    if (this.current !== open) {
+    if (this.stale(open)) {
       return;
     }
 
@@ -843,7 +856,7 @@ export class WorkspaceService implements ProjectRouter {
     // a ref genuinely gone from the manifest (`nextRef === undefined`) has that record discarded.
     const nextRefs = new Map(loaded.projects.map((ref) => [ref.id, ref] as const));
     for (const entry of [...open.entries]) {
-      if (this.current !== open) {
+      if (this.stale(open)) {
         return;
       }
       const nextRef = nextRefs.get(entry.ref.id);
@@ -852,18 +865,32 @@ export class WorkspaceService implements ProjectRouter {
       }
     }
     for (const ref of loaded.projects) {
-      if (this.current !== open) {
+      if (this.stale(open)) {
         return;
       }
       if (!open.entries.some((entry) => entry.ref.id === ref.id)) {
         await this.addEntryForRef(open, ref);
+        if (open.closing) {
+          // `close()`'s own entry-closing loop started before this entry existed (it was pushed
+          // by `addEntryForRef` mid-await), so nothing else is going to stop this host or it
+          // would outlive the workspace it belongs to.
+          const added = open.entries.find((candidate) => candidate.ref.id === ref.id);
+          await added?.host?.close({ keepUnsaved: true }).catch(() => undefined);
+          return;
+        }
       }
     }
-    if (this.current !== open) {
+    if (this.stale(open)) {
       return;
     }
     this.reindex();
     this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /** Whether `open` is no longer the live workspace to keep reloading — closed, replaced, or in
+   * the middle of closing (see {@link OpenWorkspace.closing}). */
+  private stale(open: OpenWorkspace): boolean {
+    return this.current !== open || open.closing;
   }
 
   /**
