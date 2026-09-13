@@ -253,6 +253,7 @@ export type {
 } from './types.js';
 
 export {
+  DEFAULT_OAUTH2_AUTH,
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_REQUEST_PROPERTIES,
   FORMAT_VERSION,
@@ -263,9 +264,14 @@ export {
   generateId,
 } from './project/model.js';
 export type {
+  AnyRequestDef,
+  ApiKeyAuth,
   Attachment,
   AttachmentSource,
   AttachmentType,
+  AuthConfig,
+  AuthType,
+  BearerAuth,
   CreateInterfaceInput,
   CreateOptions,
   CreateRequestInput,
@@ -274,23 +280,63 @@ export type {
   Environment,
   HeaderEntry,
   IdGenerator,
+  InheritAuth,
   Interface,
+  OAuth2Auth,
   OperationDef,
   Project,
   ProjectSettings,
   PropertyMap,
   RequestDef,
   RequestProperties,
+  SoapRequestDef,
   WsaConfig,
   WssRef,
 } from './project/model.js';
 export {
+  COMMON_METHODS,
+  NO_BODY,
+  RAW_LANGUAGE_CONTENT_TYPES,
+  RAW_LANGUAGE_EXTENSIONS,
+  apiFolders,
+  apiRequests,
+  createApi,
+  createFolder,
+  createRestRequest,
+  entry,
+  folderRequests,
+} from './rest/model.js';
+export type {
+  CreateApiInput,
+  CreateFolderInput,
+  CreateRestRequestInput,
+  KeyValueEntry,
+  MultipartFormPart,
+  RawLanguage,
+  RestApi,
+  RestBody,
+  RestDefinitionRef,
+  RestFolder,
+  RestMethod,
+  RestRequestDef,
+  RestRequestSettings,
+  RestServer,
+} from './rest/model.js';
+export {
+  API_FILE,
+  APIS_DIR,
   ATTACHMENTS_DIR,
   ENVIRONMENTS_DIR,
+  FOLDER_FILE,
   INTERFACES_DIR,
+  MAX_FOLDER_DEPTH,
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
+  REQUESTS_DIR,
   WSS_DIR,
+  apiDefinitionDir,
+  apiDir,
+  apiFile,
   definitionCacheDir,
   definitionDir,
   environmentFile,
@@ -300,31 +346,47 @@ export {
   manifestFile,
   operationDir,
   requestFiles,
+  restBodyFileName,
+  restFolderDir,
+  restFolderFile,
+  restRequestFile,
   slugify,
   uniqueSlug,
   wssFile,
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
 export {
+  apiFileSchema,
+  assertSupportedKind,
+  attachmentSourceSchema,
+  authConfigSchema,
   definitionCacheManifestSchema,
   environmentFileSchema,
+  keyValueEntrySchema,
   interfaceFileSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
   requestFileSchema,
+  restBodySchema,
+  restFolderFileSchema,
+  restRequestFileSchema,
   wssIncomingFileSchema,
   wssEntrySchema,
   wssOutgoingFileSchema,
 } from './project/schema.js';
 export type {
+  ApiFile,
   DefinitionCacheDocument,
   DefinitionCacheManifest,
   EnvironmentFile,
   InterfaceFile,
+  KeyValueEntryFile,
   ManifestFile,
   RequestFile,
+  RestFolderFile,
+  RestRequestFile,
 } from './project/schema.js';
 export { DEFAULT_PREFERENCES, mergePreferences, preferencesSchema, resetPreferences } from './project/preferences.js';
 export type {
@@ -347,7 +409,7 @@ export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
-export { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './project/serialize.js';
+export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
@@ -366,7 +428,7 @@ export {
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
 export { nodeFs } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export { appendHistory, generateHistoryId, openHistory } from './project/history.js';
+export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
 export type {
   HistoryEntry,
   HistoryError,

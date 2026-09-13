@@ -152,6 +152,23 @@ export const OPERATIONS_DIR = 'operations';
 export const ATTACHMENTS_DIR = 'attachments';
 /** Suffix identifying a request metadata file. */
 export const REQUEST_SUFFIX = '.request.yaml';
+/** Directory holding every REST API, beside `interfaces/`. */
+export const APIS_DIR = 'apis';
+/** Per-API directory holding the request tree: request files and folder directories. */
+export const REQUESTS_DIR = 'requests';
+/** File naming a folder inside an API's request tree. */
+export const FOLDER_FILE = 'folder.yaml';
+/** File describing an API. */
+export const API_FILE = 'api.yaml';
+/**
+ * How deeply folders may nest inside an API's request tree.
+ *
+ * Eight is not a taste judgement: `apis/<slug>/requests/` plus eight 80-character folder slugs
+ * plus a request file already sits close to the 260-character path limit Windows still applies to
+ * many APIs, and a tree deeper than this is unreadable in an explorer anyway. A folder below the
+ * cap loads as a {@link ProjectProblem} rather than being written to a path that might not open.
+ */
+export const MAX_FOLDER_DEPTH = 8;
 
 /** Absolute path of the project manifest. */
 export function manifestFile(root: string): string {
@@ -202,6 +219,52 @@ export function requestFiles(
     yaml: join(dir, `${requestSlug}${REQUEST_SUFFIX}`),
     xml: join(dir, `${requestSlug}.xml`),
   };
+}
+
+/** Absolute path of an API's directory (`apis/<slug>/`). */
+export function apiDir(root: string, apiSlug: string): string {
+  return join(root, APIS_DIR, apiSlug);
+}
+
+/** Absolute path of an API's metadata file. */
+export function apiFile(root: string, apiSlug: string): string {
+  return join(apiDir(root, apiSlug), API_FILE);
+}
+
+/** Absolute path of an API's definition cache directory (`apis/<slug>/definition/`). */
+export function apiDefinitionDir(root: string, apiSlug: string): string {
+  return join(apiDir(root, apiSlug), DEFINITION_DIR);
+}
+
+/**
+ * Absolute path of a directory inside an API's request tree: `apis/<slug>/requests/` itself when
+ * `folderSlugs` is empty, and one directory per folder below it otherwise.
+ */
+export function restFolderDir(root: string, apiSlug: string, folderSlugs: readonly string[] = []): string {
+  return join(apiDir(root, apiSlug), REQUESTS_DIR, ...folderSlugs);
+}
+
+/** Absolute path of the `folder.yaml` describing the folder at `folderSlugs`. */
+export function restFolderFile(root: string, apiSlug: string, folderSlugs: readonly string[]): string {
+  return join(restFolderDir(root, apiSlug, folderSlugs), FOLDER_FILE);
+}
+
+/** Absolute path of a REST request's metadata file. */
+export function restRequestFile(
+  root: string,
+  apiSlug: string,
+  folderSlugs: readonly string[],
+  requestSlug: string,
+): string {
+  return join(restFolderDir(root, apiSlug, folderSlugs), `${requestSlug}${REQUEST_SUFFIX}`);
+}
+
+/**
+ * The file name a raw body is stored under, beside its request file: `<slug>.body.<ext>`, the
+ * extension chosen by the body's language so the file diffs and highlights as what it is.
+ */
+export function restBodyFileName(requestSlug: string, extension: string): string {
+  return `${requestSlug}.body.${extension}`;
 }
 
 /** Absolute path of an environment file. */

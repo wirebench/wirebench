@@ -13,7 +13,17 @@
 
 import { dirname, join } from 'node:path';
 import type { Project } from './model.js';
-import { ENVIRONMENTS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX, WSS_DIR } from './paths.js';
+import {
+  API_FILE,
+  APIS_DIR,
+  ENVIRONMENTS_DIR,
+  FOLDER_FILE,
+  INTERFACES_DIR,
+  OPERATIONS_DIR,
+  REQUEST_SUFFIX,
+  REQUESTS_DIR,
+  WSS_DIR,
+} from './paths.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import type { ProjectFiles } from './serialize.js';
@@ -110,6 +120,17 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
     managed.push(KEYSTORES_PATH);
   }
 
+  for (const entry of await readdirIfExists(fs, toAbsolute(root, APIS_DIR))) {
+    if (!entry.isDirectory) {
+      continue;
+    }
+    const base = `${APIS_DIR}/${entry.name}`;
+    if ((await readFileIfExists(fs, toAbsolute(root, `${base}/${API_FILE}`))) !== undefined) {
+      managed.push(`${base}/${API_FILE}`);
+    }
+    managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
+  }
+
   for (const entry of await readdirIfExists(fs, toAbsolute(root, INTERFACES_DIR))) {
     if (!entry.isDirectory) {
       continue;
@@ -142,6 +163,46 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
           }
         }
       }
+    }
+  }
+  return managed;
+}
+
+/**
+ * Lists the managed files inside one directory of an API's request tree: its `folder.yaml`, every
+ * `*.request.yaml`, and the `<slug>.body.*` sibling of any such request. A stray file — notes, a
+ * `.body.json` with no request — is foreign and never a deletion candidate, exactly as in an
+ * operation folder.
+ */
+async function listApiTreeFiles(fs: FsLike, root: string, dir: string): Promise<string[]> {
+  const managed: string[] = [];
+  const entries = await readdirIfExists(fs, toAbsolute(root, dir));
+  const requestSlugs = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.isFile) {
+      continue;
+    }
+    if (entry.name === FOLDER_FILE) {
+      managed.push(`${dir}/${entry.name}`);
+      continue;
+    }
+    if (entry.name.endsWith(REQUEST_SUFFIX)) {
+      requestSlugs.add(entry.name.slice(0, -REQUEST_SUFFIX.length));
+      managed.push(`${dir}/${entry.name}`);
+    }
+  }
+  for (const entry of entries) {
+    if (!entry.isFile) {
+      continue;
+    }
+    const body = /^(.*)\.body\.[A-Za-z0-9]+$/.exec(entry.name);
+    if (body !== null && requestSlugs.has(body[1]!)) {
+      managed.push(`${dir}/${entry.name}`);
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory) {
+      managed.push(...(await listApiTreeFiles(fs, root, `${dir}/${entry.name}`)));
     }
   }
   return managed;
@@ -213,20 +274,24 @@ export async function saveProject(project: Project, root: string, options?: Save
   const removed: string[] = [];
   const touchedDirs = new Set<string>();
 
-  // A deleted interface takes its whole folder with it, definition cache included.
-  const liveSlugs = new Set(project.interfaces.map((i) => i.slug));
-  const goneInterfaces = new Set<string>();
-  for (const entry of await readdirIfExists(fs, toAbsolute(root, INTERFACES_DIR))) {
-    if (entry.isDirectory && !liveSlugs.has(entry.name)) {
-      const relative = `${INTERFACES_DIR}/${entry.name}`;
-      await fs.rm(toAbsolute(root, relative), { recursive: true, force: true });
-      removed.push(relative);
-      goneInterfaces.add(`${relative}/`);
+  // A deleted interface or API takes its whole folder with it, definition cache included.
+  const goneEntities = new Set<string>();
+  for (const [dir, liveSlugs] of [
+    [INTERFACES_DIR, new Set(project.interfaces.map((i) => i.slug))],
+    [APIS_DIR, new Set(project.apis.map((a) => a.slug))],
+  ] as const) {
+    for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
+      if (entry.isDirectory && !liveSlugs.has(entry.name)) {
+        const relative = `${dir}/${entry.name}`;
+        await fs.rm(toAbsolute(root, relative), { recursive: true, force: true });
+        removed.push(relative);
+        goneEntities.add(`${relative}/`);
+      }
     }
   }
 
   for (const relative of existing) {
-    if (desired.has(relative) || [...goneInterfaces].some((prefix) => relative.startsWith(prefix))) {
+    if (desired.has(relative) || [...goneEntities].some((prefix) => relative.startsWith(prefix))) {
       continue;
     }
     await fs.rm(toAbsolute(root, relative), { force: true });

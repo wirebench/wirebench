@@ -3,7 +3,8 @@
  * (see the design spec, "Data model and project format").
  *
  * Every field is `readonly` and every polymorphic type carries a `kind`
- * discriminator (`'soap'` in v1, `'rest'` reserved). Ids are ULIDs so entities
+ * discriminator (`'soap'` for a WSDL interface, `'rest'` for an API — see
+ * `rest/model.ts` — with `'grpc'` reserved and refused by the loader). Ids are ULIDs so entities
  * keep a stable identity across renames; `slug` is the file-system name derived
  * from `name` and is what the folder layout is keyed by.
  *
@@ -15,11 +16,12 @@ import { ulid } from 'ulidx';
 import { slugify } from './paths.js';
 import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
 import type { WsaConfig } from '../wsa/model.js';
+import type { RestApi, RestRequestDef } from '../rest/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
 /** The on-disk format version written to (and required by) `wirebench.yaml`. */
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
@@ -233,8 +235,8 @@ export const DEFAULT_REQUEST_PROPERTIES: RequestProperties = Object.freeze({
   stripWhitespaces: false,
 });
 
-/** A saved request: everything but the envelope lives in `<slug>.request.yaml`, the envelope in `<slug>.xml`. */
-export interface RequestDef {
+/** A saved SOAP request: everything but the envelope lives in `<slug>.request.yaml`, the envelope in `<slug>.xml`. */
+export interface SoapRequestDef {
   readonly kind: 'soap';
   readonly id: string;
   readonly name: string;
@@ -268,6 +270,18 @@ export interface RequestDef {
   readonly envelopeXml: string;
 }
 
+/**
+ * The name this type had before REST requests existed, kept as an alias for one release so
+ * callers that only ever mean a SOAP request need not be touched. Prefer {@link SoapRequestDef}.
+ */
+export type RequestDef = SoapRequestDef;
+
+/**
+ * A saved request of either protocol, which is what a lookup by request id can return: the id
+ * space is one (ULIDs), so `kind` is how a caller finds out what it has.
+ */
+export type AnyRequestDef = SoapRequestDef | RestRequestDef;
+
 /** A binding operation of an interface, holding its saved requests. */
 export interface OperationDef {
   readonly name: string;
@@ -275,7 +289,7 @@ export interface OperationDef {
   readonly bindingName: string;
   readonly slug: string;
   readonly order: number;
-  readonly requests: readonly RequestDef[];
+  readonly requests: readonly SoapRequestDef[];
 }
 
 /** An imported WSDL interface: its definition, endpoints and operations. */
@@ -360,6 +374,11 @@ export interface Project {
   /** Names of {@link properties} entries switched off; see {@link Environment.disabledProperties}. */
   readonly disabledProperties: readonly string[];
   readonly interfaces: readonly Interface[];
+  /**
+   * The project's REST APIs. `order` is shared with {@link interfaces}, so the two kinds
+   * interleave in the explorer in whatever order the user arranged them.
+   */
+  readonly apis: readonly RestApi[];
   readonly environments: readonly Environment[];
   /** Id of the environment currently active for this project, if any. */
   readonly activeEnvironmentId?: string;
@@ -397,6 +416,7 @@ export function createProject(name: string, options?: CreateOptions): Project {
     properties: {},
     disabledProperties: [],
     interfaces: [],
+    apis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

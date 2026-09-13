@@ -6,14 +6,23 @@
  * touching a file system.
  */
 
+import { ProjectError } from '../errors.js';
 import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
+import type { KeyValueEntry, RestApi, RestBody, RestFolder, RestRequestDef } from '../rest/model.js';
+import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
 import {
+  API_FILE,
+  APIS_DIR,
   assertPathSegment,
   assertWssRelativePath,
   ENVIRONMENTS_DIR,
+  FOLDER_FILE,
   INTERFACES_DIR,
+  MAX_FOLDER_DEPTH,
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
+  REQUESTS_DIR,
+  restBodyFileName,
   WSS_DIR,
   slugify,
 } from './paths.js';
@@ -95,6 +104,144 @@ function interfaceDocument(iface: Interface): Record<string, unknown> {
       order: op.order,
     })),
   });
+}
+
+/** One table row as written: `enabled` only when `false`, so a file stays quiet about the default. */
+function keyValueDocuments(rows: readonly KeyValueEntry[]): Record<string, unknown>[] {
+  return rows.map((row) =>
+    compact({
+      name: row.name,
+      value: row.value,
+      enabled: row.enabled ? undefined : false,
+      description: row.description,
+    }),
+  );
+}
+
+/**
+ * A body as written, plus the sibling file a raw body needs.
+ *
+ * The text of a raw body is deliberately *not* in the request document: it goes to
+ * `<slug>.body.<ext>` beside it, so a JSON payload is a JSON file in git — reviewable, searchable
+ * and mergeable — rather than a quoted blob inside YAML.
+ */
+function bodyDocument(
+  body: RestBody,
+  requestSlug: string,
+): { readonly document: Record<string, unknown>; readonly file?: readonly [string, string] } {
+  switch (body.kind) {
+    case 'raw': {
+      const name = restBodyFileName(requestSlug, RAW_LANGUAGE_EXTENSIONS[body.language]);
+      assertPathSegment(name);
+      return {
+        document: compact({ kind: 'raw', language: body.language, contentType: body.contentType, file: name }),
+        file: [name, body.text],
+      };
+    }
+    case 'form':
+      return { document: { kind: 'form', fields: keyValueDocuments(body.fields) } };
+    case 'multipart':
+      return {
+        document: {
+          kind: 'multipart',
+          parts: body.parts.map((part) => compact({ ...part, enabled: part.enabled ? undefined : false })),
+        },
+      };
+    case 'binary':
+      return { document: { kind: 'binary', source: { ...body.source }, contentType: body.contentType } };
+    default:
+      return { document: { kind: 'none' } };
+  }
+}
+
+function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
+  const body = bodyDocument(request.body, request.slug);
+  return compact({
+    kind: request.kind,
+    id: request.id,
+    name: request.name,
+    order: request.order,
+    description: request.description,
+    method: request.method,
+    url: request.url,
+    pathParams: request.pathParams.length > 0 ? keyValueDocuments(request.pathParams) : undefined,
+    query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
+    headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
+    body: body.document,
+    auth: authDocument(request.auth),
+    settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+    orphaned: request.orphaned === true ? true : undefined,
+  });
+}
+
+/**
+ * Adds one folder's own file, its requests (and their body files) and, recursively, the folders
+ * below it.
+ *
+ * @throws ProjectError `project-path-invalid` for an unsafe slug, `project-folder-too-deep` for a
+ * tree deeper than {@link MAX_FOLDER_DEPTH} — before any path is built, never after.
+ */
+function addFolderFiles(
+  files: Map<string, string>,
+  dir: string,
+  node: { readonly folders: readonly RestFolder[]; readonly requests: readonly RestRequestDef[] },
+  depth: number,
+): void {
+  for (const request of node.requests) {
+    assertPathSegment(request.slug);
+    const body = bodyDocument(request.body, request.slug);
+    files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(restRequestDocument(request)));
+    if (body.file !== undefined) {
+      files.set(`${dir}/${body.file[0]}`, body.file[1]);
+    }
+  }
+  for (const folder of node.folders) {
+    assertPathSegment(folder.slug);
+    if (depth + 1 > MAX_FOLDER_DEPTH) {
+      throw new ProjectError(
+        'project-folder-too-deep',
+        `Folder "${folder.name}" would nest more than ${String(MAX_FOLDER_DEPTH)} deep`,
+        { details: { folder: folder.slug, depth: depth + 1, max: MAX_FOLDER_DEPTH } },
+      );
+    }
+    const childDir = `${dir}/${folder.slug}`;
+    files.set(
+      `${childDir}/${FOLDER_FILE}`,
+      stringifyYaml(
+        compact({
+          id: folder.id,
+          name: folder.name,
+          order: folder.order,
+          description: folder.description,
+          auth: folder.auth === undefined ? undefined : authDocument(folder.auth),
+        }),
+      ),
+    );
+    addFolderFiles(files, childDir, folder, depth + 1);
+  }
+}
+
+/** Every file one API occupies, keyed by path relative to the project root. */
+function addApiFiles(files: Map<string, string>, api: RestApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        baseUrl: api.baseUrl,
+        servers: api.servers.length > 0 ? api.servers.map((server) => compact({ ...server })) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition: api.definition === undefined ? undefined : compact({ ...api.definition }),
+      }),
+    ),
+  );
+  addFolderFiles(files, `${base}/${REQUESTS_DIR}`, api, 0);
 }
 
 function wssDocument(ref: WssRef): string {
@@ -181,6 +328,10 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
         files.set(`${dir}/${request.slug}.xml`, request.envelopeXml);
       }
     }
+  }
+
+  for (const api of project.apis) {
+    addApiFiles(files, api);
   }
 
   for (const [direction, refs] of [
