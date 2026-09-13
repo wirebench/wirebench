@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as engine from '@wirebench/engine';
 import {
   createProject,
   createWorkspace,
@@ -379,6 +380,96 @@ describe('WorkspaceService — workspace-level watcher', () => {
       spy.mockRestore();
     }
   }, 20_000);
+
+  it('serialises mutate and setActiveEnvironment behind an in-flight reload, so neither loses the other', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+
+    // Wraps `loadWorkspace` (used only by the watcher's reload, `open()`, `list()` and rename's
+    // "not open" branch — never by `mutate`/`setActiveEnvironment`, which only ever call
+    // `saveWorkspace`/`saveLocalState`) so the reload's read can be captured immediately (getting
+    // whatever is on disk *right now*, exactly like the real race) while its *resolution* is held
+    // back until the test releases it — simulating "the reload is still in flight" without
+    // touching any of the writes this test goes on to make.
+    let armed = false;
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const originalLoadWorkspace = engine.loadWorkspace;
+    const spy = vi
+      .spyOn(engine, 'loadWorkspace')
+      .mockImplementation(async (...args: Parameters<typeof engine.loadWorkspace>) => {
+        const result = await originalLoadWorkspace(...args);
+        if (armed) {
+          await gate;
+        }
+        return result;
+      });
+
+    try {
+      const { service } = newService();
+      await service.open(workspace.id);
+      await settle();
+
+      armed = true;
+      // An outside edit — unrelated to environments — starts a reload; its `loadWorkspace` read
+      // captures this content right away but will not resolve until `releaseGate()` below.
+      await saveWorkspace({ ...workspace, name: 'Touched externally' }, tree);
+      await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+
+      const chained = service.mutate({ kind: 'add-workspace-environment', name: 'Dev' }).then((added) => {
+        const createdId = added.createdEnvironmentId;
+        if (createdId === undefined) {
+          throw new Error('expected mutate to report createdEnvironmentId');
+        }
+        return service.setActiveEnvironment(createdId).then(() => createdId);
+      });
+
+      // Gives the unfixed code every chance to run `mutate` and `setActiveEnvironment` to
+      // completion *while the reload is still gated* — exactly the interleaving window the
+      // defect exploited. Under the fix neither has even started yet: both are queued behind
+      // the still-running reload.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      releaseGate?.();
+      const createdId = await chained;
+
+      // Let the now-unblocked reload run to completion before checking the final state — this is
+      // where the defect showed up: a reload finishing *after* `mutate`/`setActiveEnvironment`
+      // already returned would silently overwrite their result with what it read before they ran.
+      await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+
+      const finalSnapshot = service.snapshot();
+      expect(finalSnapshot?.environments.map((environment) => environment.id)).toContain(createdId);
+      expect(finalSnapshot?.activeEnvironmentId).toBe(createdId);
+
+      spy.mockRestore();
+      const { workspace: onDisk } = await loadWorkspace(tree);
+      expect(onDisk.environments.map((environment) => environment.id)).toContain(createdId);
+
+      await service.close();
+    } finally {
+      spy.mockRestore();
+    }
+  }, 20_000);
+
+  it('a single mutate that adds an environment does not trigger a second, watcher-driven onChanged', async () => {
+    const { workspace } = await seedWorkspace('Team');
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await settle();
+    const before = recorded.changed.length;
+
+    await service.mutate({ kind: 'add-workspace-environment', name: 'Dev' });
+
+    // `mutate` itself fires exactly one `onChanged` synchronously; pre-announcing the write's
+    // candidate paths before `saveWorkspace` runs (not just after) is what keeps the watcher from
+    // treating `mutate`'s own atomic renames as an outside edit and queuing a second, redundant
+    // reload once the debounce window passes.
+    await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+    expect(recorded.changed.length).toBe(before + 1);
+
+    await service.close();
+  });
 
   it('stops the watcher on close(): no callbacks arrive afterwards', async () => {
     const { workspace, tree } = await seedWorkspace('Team');

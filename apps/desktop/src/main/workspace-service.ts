@@ -40,6 +40,8 @@ import {
   uniqueSlug,
   WirebenchError,
   WorkspaceError,
+  WORKSPACE_ENVIRONMENTS_DIR,
+  WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
   WORKSPACE_SHARE_FILE,
   WORKSPACES_DIR,
@@ -358,6 +360,25 @@ function refsEqual(a: WorkspaceProjectRef, b: WorkspaceProjectRef): boolean {
   return a.slug === b.slug && a.source === b.source && a.path === b.path;
 }
 
+/**
+ * Every tree-relative path a write of `workspaces` might touch: `workspace.yaml` plus one
+ * `environments/<slug>.yaml` per environment across every model given (typically the workspace
+ * before and after the in-memory edit) — a conservative superset, not an exact diff. Passed to
+ * `watcher.expect()` *before* `saveWorkspace` runs (not just after, with the actual written/
+ * removed lists), because `saveWorkspace` performs several separately-awaited atomic renames,
+ * each visible to `fs.watch` the moment it happens — a path only marked self-write once the
+ * whole call resolves can already have been queued by the watcher as an outside edit.
+ */
+function candidateWorkspacePaths(...workspaces: readonly Workspace[]): string[] {
+  const paths = new Set<string>([WORKSPACE_MANIFEST]);
+  for (const workspace of workspaces) {
+    for (const environment of workspace.environments) {
+      paths.add(`${WORKSPACE_ENVIRONMENTS_DIR}/${environment.slug}.yaml`);
+    }
+  }
+  return [...paths];
+}
+
 /** `workspace` with no active environment — the field dropped, not set to `undefined`. */
 function withoutActiveEnvironment(workspace: Workspace): Workspace {
   const copy: Omit<Workspace, 'activeEnvironmentId'> & { activeEnvironmentId?: string } = { ...workspace };
@@ -387,14 +408,17 @@ export class WorkspaceService implements ProjectRouter {
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
   private stashWaiters: (() => void)[] = [];
   /**
-   * Serialises every operation that reads or rewrites `open.entries`/the project-ref manifest
-   * from more than one caller: a workspace-level reload (the watcher) and the project-set
-   * mutations below (`addProject`, `removeProject`, `linkProject`, `importProjectFolder`,
-   * `importKnownProjectFolder`, `locateProject`) all go through {@link enqueueWorkspaceOp}, so
-   * two of them can never interleave and corrupt `entries` or race two manifest saves. `mutate`,
-   * `setActiveEnvironment` and `rename` touch the manifest too but never `entries`, so they stay
-   * outside this chain. Reset on `close()`, so a closed workspace's still-pending op cannot delay
-   * (or reach into) the next one opened.
+   * Serialises every operation that reads or replaces `open.workspace`/`open.entries`: a
+   * workspace-level reload (the watcher) and every method that mutates the open workspace in
+   * place — `addProject`, `removeProject`, `linkProject`, `importProjectFolder`,
+   * `importKnownProjectFolder`, `locateProject`, `mutate`, `setActiveEnvironment`, and the
+   * open-workspace branch of `rename` — all go through {@link enqueueWorkspaceOp}, so two of them
+   * can never interleave. `mutate`/`setActiveEnvironment` used to run outside this chain on the
+   * theory that they never touch `entries`; that missed that a watcher-driven reload replaces
+   * `open.workspace` *wholesale* and can land between two such calls, silently reverting one of
+   * them (see the `task-4f1` fix). `close()` still never awaits this chain — see `open.closing`
+   * and {@link stale} — and resets it, so a closed workspace's still-pending op cannot delay (or
+   * reach into) the next one opened.
    */
   private workspaceOps: Promise<void> = Promise.resolve();
 
@@ -794,10 +818,12 @@ export class WorkspaceService implements ProjectRouter {
 
   /**
    * Runs `op` after every previously enqueued workspace operation has settled (successfully or
-   * not), so a workspace-level reload and a project-set mutation (`addProject`, `removeProject`,
-   * `linkProject`, `importProjectFolder`, `importKnownProjectFolder`, `locateProject`) can never
-   * interleave their reads and writes of `open.entries`/the manifest. `op`'s rejection propagates
-   * to *this* call's caller — it does not break the chain for whatever is enqueued next.
+   * not), so a workspace-level reload and every method that reads or replaces
+   * `open.workspace`/`open.entries` (`addProject`, `removeProject`, `linkProject`,
+   * `importProjectFolder`, `importKnownProjectFolder`, `locateProject`, `mutate`,
+   * `setActiveEnvironment`, the open-workspace branch of `rename`) can never interleave. `op`'s
+   * rejection propagates to *this* call's caller — it does not break the chain for whatever is
+   * enqueued next.
    */
   private enqueueWorkspaceOp<T>(op: () => Promise<T>): Promise<T> {
     const result = this.workspaceOps.then(op, op);
@@ -894,6 +920,19 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
+   * Throws the same error `requireOpen()` throws, once `open` has gone {@link stale} — used
+   * inside a queued op after an `await`, when the workspace it captured at the start may have
+   * closed (or been replaced) while the op's write was in flight.
+   *
+   * @throws WorkspaceError `workspace-not-found`.
+   */
+  private requireStillOpen(open: OpenWorkspace): void {
+    if (this.stale(open)) {
+      throw new WorkspaceError('workspace-not-found', 'No workspace is open.');
+    }
+  }
+
+  /**
    * Closes one entry's host and releases its history file, and — unless `discardUnsaved` is
    * `false` — its unsaved-changes record. `removeProject` always discards (the project is truly
    * gone); the workspace-level reload's relocation case (a slug or path change with the same ref
@@ -924,10 +963,24 @@ export class WorkspaceService implements ProjectRouter {
   async rename(id: string, name: string): Promise<WorkspaceSummaryWire[]> {
     const open = this.current;
     if (open !== undefined && open.workspace.id === id) {
-      open.workspace = { ...open.workspace, name };
-      const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
-      open.watcher?.expect([...result.written, ...result.removed]);
-      this.deps.hooks?.onChanged?.(this.snapshot());
+      await this.enqueueWorkspaceOp(async () => {
+        // Captured (not re-fetched via `requireOpen()`) before enqueueing: this is specifically
+        // "rename *this* workspace", so if it closed while queued there is nothing left to do —
+        // silently, since a rename racing a close is not a user-facing failure the way `mutate`
+        // failing outright would be.
+        if (this.stale(open)) {
+          return;
+        }
+        const previousWorkspace = open.workspace;
+        open.workspace = { ...open.workspace, name };
+        open.watcher?.expect(candidateWorkspacePaths(previousWorkspace, open.workspace));
+        const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+        if (this.stale(open)) {
+          return;
+        }
+        open.watcher?.expect([...result.written, ...result.removed]);
+        this.deps.hooks?.onChanged?.(this.snapshot());
+      });
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
       const share = await loadShare(dir, this.fsOption());
@@ -1422,84 +1475,95 @@ export class WorkspaceService implements ProjectRouter {
    * when a change names an environment this workspace does not have.
    */
   async mutate(change: WorkspaceChange): Promise<{ workspace: WorkspaceWire; createdEnvironmentId?: string }> {
-    const open = this.requireOpen();
-    let createdEnvironmentId: string | undefined;
+    return await this.enqueueWorkspaceOp(async () => {
+      // Fetched fresh here, not before enqueueing: this op may sit behind others (a reload
+      // included) before its turn comes, and `this.current` can have changed by then.
+      const open = this.requireOpen();
+      const previousWorkspace = open.workspace;
+      let createdEnvironmentId: string | undefined;
 
-    switch (change.kind) {
-      case 'rename-workspace':
-        open.workspace = { ...open.workspace, name: change.name };
-        break;
-      case 'set-workspace-property':
-        open.workspace = {
-          ...open.workspace,
-          properties: { ...open.workspace.properties, [change.name]: change.value },
-        };
-        break;
-      case 'remove-workspace-property': {
-        const properties = { ...open.workspace.properties };
-        delete properties[change.name];
-        open.workspace = { ...open.workspace, properties };
-        break;
+      switch (change.kind) {
+        case 'rename-workspace':
+          open.workspace = { ...open.workspace, name: change.name };
+          break;
+        case 'set-workspace-property':
+          open.workspace = {
+            ...open.workspace,
+            properties: { ...open.workspace.properties, [change.name]: change.value },
+          };
+          break;
+        case 'remove-workspace-property': {
+          const properties = { ...open.workspace.properties };
+          delete properties[change.name];
+          open.workspace = { ...open.workspace, properties };
+          break;
+        }
+        case 'set-workspace-property-enabled': {
+          const disabledProperties = change.enabled
+            ? open.workspace.disabledProperties.filter((name) => name !== change.name)
+            : [...open.workspace.disabledProperties, change.name];
+          open.workspace = { ...open.workspace, disabledProperties };
+          break;
+        }
+        case 'add-workspace-environment': {
+          // `order` is `max + 1`, not the count: after a removal the count can collide with an
+          // order still in use, which would leave two environments claiming the same column.
+          const highestOrder = open.workspace.environments.reduce(
+            (highest, candidate) => Math.max(highest, candidate.order),
+            -1,
+          );
+          const environment = createWorkspaceEnvironment(
+            change.name,
+            new Set(open.workspace.environments.map((candidate) => candidate.slug)),
+            { order: highestOrder + 1 },
+          );
+          createdEnvironmentId = environment.id;
+          open.workspace = { ...open.workspace, environments: [...open.workspace.environments, environment] };
+          break;
+        }
+        case 'update-workspace-environment': {
+          const existing = requireEnvironment(open.workspace, change.environmentId);
+          const updated: WorkspaceEnvironment = {
+            ...existing,
+            ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
+            ...(change.patch.properties !== undefined ? { properties: { ...change.patch.properties } } : {}),
+            ...(change.patch.endpoints !== undefined ? { endpoints: { ...change.patch.endpoints } } : {}),
+            ...(change.patch.disabled !== undefined ? { disabledProperties: [...change.patch.disabled] } : {}),
+          };
+          open.workspace = {
+            ...open.workspace,
+            environments: open.workspace.environments.map((candidate) =>
+              candidate.id === updated.id ? updated : candidate,
+            ),
+          };
+          break;
+        }
+        case 'remove-workspace-environment': {
+          requireEnvironment(open.workspace, change.environmentId);
+          const environments = open.workspace.environments.filter((candidate) => candidate.id !== change.environmentId);
+          const base =
+            open.workspace.activeEnvironmentId === change.environmentId
+              ? withoutActiveEnvironment(open.workspace)
+              : open.workspace;
+          open.workspace = { ...base, environments };
+          break;
+        }
       }
-      case 'set-workspace-property-enabled': {
-        const disabledProperties = change.enabled
-          ? open.workspace.disabledProperties.filter((name) => name !== change.name)
-          : [...open.workspace.disabledProperties, change.name];
-        open.workspace = { ...open.workspace, disabledProperties };
-        break;
-      }
-      case 'add-workspace-environment': {
-        // `order` is `max + 1`, not the count: after a removal the count can collide with an
-        // order still in use, which would leave two environments claiming the same column.
-        const highestOrder = open.workspace.environments.reduce(
-          (highest, candidate) => Math.max(highest, candidate.order),
-          -1,
-        );
-        const environment = createWorkspaceEnvironment(
-          change.name,
-          new Set(open.workspace.environments.map((candidate) => candidate.slug)),
-          { order: highestOrder + 1 },
-        );
-        createdEnvironmentId = environment.id;
-        open.workspace = { ...open.workspace, environments: [...open.workspace.environments, environment] };
-        break;
-      }
-      case 'update-workspace-environment': {
-        const existing = requireEnvironment(open.workspace, change.environmentId);
-        const updated: WorkspaceEnvironment = {
-          ...existing,
-          ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
-          ...(change.patch.properties !== undefined ? { properties: { ...change.patch.properties } } : {}),
-          ...(change.patch.endpoints !== undefined ? { endpoints: { ...change.patch.endpoints } } : {}),
-          ...(change.patch.disabled !== undefined ? { disabledProperties: [...change.patch.disabled] } : {}),
-        };
-        open.workspace = {
-          ...open.workspace,
-          environments: open.workspace.environments.map((candidate) =>
-            candidate.id === updated.id ? updated : candidate,
-          ),
-        };
-        break;
-      }
-      case 'remove-workspace-environment': {
-        requireEnvironment(open.workspace, change.environmentId);
-        const environments = open.workspace.environments.filter((candidate) => candidate.id !== change.environmentId);
-        const base =
-          open.workspace.activeEnvironmentId === change.environmentId
-            ? withoutActiveEnvironment(open.workspace)
-            : open.workspace;
-        open.workspace = { ...base, environments };
-        break;
-      }
-    }
 
-    const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
-    open.watcher?.expect([...result.written, ...result.removed]);
-    this.deps.hooks?.onChanged?.(this.snapshot());
-    return {
-      workspace: this.requireSnapshot(),
-      ...(createdEnvironmentId !== undefined ? { createdEnvironmentId } : {}),
-    };
+      // Pre-announced before the write (not just after, with the actual written/removed lists):
+      // `saveWorkspace`'s several atomic renames are each individually visible to `fs.watch`
+      // before this call returns, and a path only marked self-write afterwards can already have
+      // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`.
+      open.watcher?.expect(candidateWorkspacePaths(previousWorkspace, open.workspace));
+      const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+      this.requireStillOpen(open);
+      open.watcher?.expect([...result.written, ...result.removed]);
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return {
+        workspace: this.requireSnapshot(),
+        ...(createdEnvironmentId !== undefined ? { createdEnvironmentId } : {}),
+      };
+    });
   }
 
   /**
@@ -1512,21 +1576,26 @@ export class WorkspaceService implements ProjectRouter {
    * leave the UI showing an environment that is not applied.
    */
   async setActiveEnvironment(environmentId: string | null): Promise<WorkspaceWire> {
-    const open = this.requireOpen();
-    if (environmentId === null) {
-      open.workspace = withoutActiveEnvironment(open.workspace);
-    } else {
-      requireEnvironment(open.workspace, environmentId);
-      open.workspace = { ...open.workspace, activeEnvironmentId: environmentId };
-    }
-    // Machine-local: written to local.yaml, never to workspace.yaml (see local-state.ts).
-    await saveLocalState(
-      open.dir,
-      environmentId === null ? EMPTY_LOCAL_STATE : { version: 1, activeEnvironmentId: environmentId },
-      this.fsOption(),
-    );
-    this.deps.hooks?.onChanged?.(this.snapshot());
-    return this.requireSnapshot();
+    return await this.enqueueWorkspaceOp(async () => {
+      const open = this.requireOpen();
+      if (environmentId === null) {
+        open.workspace = withoutActiveEnvironment(open.workspace);
+      } else {
+        requireEnvironment(open.workspace, environmentId);
+        open.workspace = { ...open.workspace, activeEnvironmentId: environmentId };
+      }
+      // Machine-local: written to local.yaml, in the app-data dir, never to a tree file (see
+      // local-state.ts) — so, unlike `mutate`/`rename`, there is nothing here for
+      // `open.watcher` (which only watches the tree) to ever see or need pre-announcing.
+      await saveLocalState(
+        open.dir,
+        environmentId === null ? EMPTY_LOCAL_STATE : { version: 1, activeEnvironmentId: environmentId },
+        this.fsOption(),
+      );
+      this.requireStillOpen(open);
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return this.requireSnapshot();
+    });
   }
 
   // ——— snapshot ———————————————————————————————————————————————————————————————————————————
