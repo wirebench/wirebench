@@ -28,6 +28,7 @@ import { HeadersTab } from './headers-tab.js';
 import { ParamsTab } from './params-tab.js';
 import { RestBreadcrumb } from './rest-breadcrumb.js';
 import { SettingsTab } from './settings-tab.js';
+import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
@@ -162,25 +163,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
     </div>
   );
 
-  // The response pane arrives with the response task; until then the region says what is there so
-  // the editor's shape is honest rather than empty.
-  const responsePane = (
-    <div data-testid="rest-response" className="flex h-full flex-col gap-1 p-3 text-sm">
-      {exchange === undefined && <p className="text-fg-subtle">Send the request to see its response.</p>}
-      {sending && <p className="text-fg-muted">Sending…</p>}
-      {exchange?.status === 'error' && (
-        <p className="text-status-danger">
-          {exchange.error?.code}: {exchange.error?.message}
-        </p>
-      )}
-      {exchange?.exchange !== undefined && (
-        <p data-testid="rest-response-status" className="font-mono text-fg-default">
-          {exchange.exchange.http.status} {exchange.exchange.http.statusText} ·{' '}
-          {exchange.exchange.durationMs.toFixed(0)} ms
-        </p>
-      )}
-    </div>
-  );
+  const responsePane = <RestResponsePane state={exchange} />;
 
   return (
     <section aria-label={`Request ${request.name}`} data-testid="rest-editor" className="flex h-full min-h-0 flex-col">

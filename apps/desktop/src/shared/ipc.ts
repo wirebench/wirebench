@@ -47,6 +47,8 @@ import {
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
+  exchangesSaveRestBodyRequestSchema,
+  exchangesSaveRestBodyResponseSchema,
   globalsStateSchema,
   historyAppendedEventSchema,
   historyClearResponseSchema,
@@ -436,6 +438,13 @@ export const channels = {
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.
   exchanges: {
     get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangeSummarySchema),
+    // The REST response body, written to a file the *user* picks. The bytes never cross the bridge:
+    // main holds them in the exchange cache and writes them itself.
+    saveRestBody: defineChannel(
+      'exchanges.saveRestBody',
+      exchangesSaveRestBodyRequestSchema,
+      exchangesSaveRestBodyResponseSchema,
+    ),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),

@@ -1,11 +1,17 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXCHANGE_CACHE_CAP, ExchangeCache } from '../src/main/exchange-cache.js';
 import { registerExchangeChannels } from '../src/main/ipc/exchanges.js';
 import { ShowSecretsFlag } from '../src/main/secrets.js';
-import type { ExchangeSummary } from '../src/shared/wire-types.js';
+import type { ExchangeSummary, RestExchangeSummary } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+
+/** The native Save-as dialog, stubbed: the channel must be the thing that chooses nothing itself. */
+const showSaveDialog = vi.fn();
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -13,6 +19,12 @@ vi.mock('electron', () => ({
       handlers.set(name, handler);
     },
   },
+  dialog: {
+    showSaveDialog: (...args: unknown[]): unknown => showSaveDialog(...args) as unknown,
+  },
+  BrowserWindow: { fromWebContents: () => undefined },
+  shell: { openPath: () => Promise.resolve('') },
+  app: { getPath: () => '/tmp' },
 }));
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
@@ -127,5 +139,87 @@ describe('exchanges.get', () => {
     registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
 
     expect(await invoke('exchanges.get', {})).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
+  });
+});
+
+/**
+ * Saving a REST response body.
+ *
+ * The channel takes a send id and nothing else, for the reason `attachments.saveResponse` does: these
+ * are bytes a remote server sent, so the file they land in is chosen by the *user*. The test pins the
+ * two halves of that — the write goes where the dialog said, and the bytes are the cached ones.
+ */
+describe('exchanges.saveRestBody', () => {
+  const restExchange = (sendId: string): RestExchangeSummary => ({
+    sendId,
+    durationMs: 5,
+    url: 'https://api.test/pet/1',
+    method: 'GET',
+    text: '{"id":1}',
+    language: 'json',
+    cookies: [],
+    methodChanged: false,
+    problems: [],
+    http: { ...unredactedExchange(sendId).http, headers: { 'content-type': 'application/json' } },
+  });
+
+  let dir: string;
+
+  beforeEach(() => {
+    handlers.clear();
+    dir = mkdtempSync(join(tmpdir(), 'wirebench-save-rest-'));
+    delete process.env['WIREBENCH_E2E_SAVE_PATH'];
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    delete process.env['WIREBENCH_E2E_SAVE_PATH'];
+    showSaveDialog.mockReset();
+  });
+
+  it('writes the cached bytes to the file the dialog returned', async () => {
+    const target = join(dir, 'picked.json');
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
+    const cache = new ExchangeCache();
+    cache.putRest('send-1', restExchange('send-1'), new TextEncoder().encode('{"id":1}'));
+    registerExchangeChannels(cache, new ShowSecretsFlag());
+
+    const result = await invoke('exchanges.saveRestBody', { sendId: 'send-1' });
+
+    expect(result).toMatchObject({ ok: true, value: { path: target } });
+    expect(readFileSync(target, 'utf8')).toBe('{"id":1}');
+    // The default name carries the extension the content type implies, so the OS can open it.
+    expect(showSaveDialog.mock.calls[0]?.[1]).toMatchObject({ defaultPath: 'response.json' });
+  });
+
+  it('writes nothing when the user cancels', async () => {
+    showSaveDialog.mockResolvedValue({ canceled: true });
+    const cache = new ExchangeCache();
+    cache.putRest('send-1', restExchange('send-1'), new TextEncoder().encode('{}'));
+    registerExchangeChannels(cache, new ShowSecretsFlag());
+
+    expect(await invoke('exchanges.saveRestBody', { sendId: 'send-1' })).toMatchObject({
+      ok: true,
+      value: { cancelled: true },
+    });
+  });
+
+  it('answers unknown-send for an exchange the cache has evicted', async () => {
+    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+
+    expect(await invoke('exchanges.saveRestBody', { sendId: 'gone' })).toMatchObject({
+      ok: false,
+      error: { code: 'unknown-send' },
+    });
+  });
+
+  it('takes no path from the renderer: an extra field is rejected outright', async () => {
+    registerExchangeChannels(new ExchangeCache(), new ShowSecretsFlag());
+
+    // The schema is strict, so a renderer cannot smuggle a target past it.
+    expect(await invoke('exchanges.saveRestBody', {})).toMatchObject({
+      ok: false,
+      error: { code: 'ipc-invalid-request' },
+    });
   });
 });

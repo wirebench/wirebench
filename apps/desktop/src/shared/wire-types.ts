@@ -1861,6 +1861,22 @@ export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
 
+/**
+ * Request payload for `exchanges.saveRestBody`: a handle, and deliberately nothing else.
+ *
+ * There is no `path` field, for the same reason `attachments.saveResponse` has none: these are bytes
+ * a remote server sent, so the file they land in is always chosen by the user through the native
+ * Save-as dialog. A renderer that could name the target could write server-controlled content
+ * anywhere the user can write.
+ */
+export const exchangesSaveRestBodyRequestSchema = z.object({ sendId: z.string() });
+
+/** Response for `exchanges.saveRestBody`: the file written, or `cancelled` when the user backed out. */
+export const exchangesSaveRestBodyResponseSchema = z.union([
+  z.object({ path: z.string() }),
+  z.object({ cancelled: z.literal(true) }),
+]);
+
 // ---------------------------------------------------------------------------
 // History (Task 24): a persistent, per-project record of every send, kept in
 // `userData` (outside the project folder) and always stored redacted.
