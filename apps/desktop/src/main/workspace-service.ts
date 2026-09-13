@@ -53,6 +53,7 @@ import {
 import type {
   FsLike,
   Project,
+  SaveResult,
   Workspace,
   WorkspaceEnvironment,
   WorkspaceProjectRef,
@@ -377,6 +378,27 @@ function candidateWorkspacePaths(...workspaces: readonly Workspace[]): string[] 
     }
   }
   return [...paths];
+}
+
+/**
+ * Reconciles a pre-announced candidate superset (see {@link candidateWorkspacePaths}) against
+ * what a write actually touched: the touched paths are (re-)marked self-write, exactly as if
+ * `expect()` alone had been called with them, and every candidate that turned out untouched is
+ * un-marked via {@link ProjectWatcher.unexpect} — so a genuine outside edit to one of them, made
+ * during the write's own window, is not suppressed for the rest of `selfWriteTtlMs` just because
+ * it briefly looked like something this write might change.
+ */
+function reconcileWatcherExpectations(
+  watcher: ProjectWatcher | undefined,
+  candidates: readonly string[],
+  result: SaveResult,
+): void {
+  if (watcher === undefined) {
+    return;
+  }
+  const touched = new Set([...result.written, ...result.removed]);
+  watcher.expect([...touched]);
+  watcher.unexpect(candidates.filter((path) => !touched.has(path)));
 }
 
 /** `workspace` with no active environment — the field dropped, not set to `undefined`. */
@@ -973,12 +995,13 @@ export class WorkspaceService implements ProjectRouter {
         }
         const previousWorkspace = open.workspace;
         open.workspace = { ...open.workspace, name };
-        open.watcher?.expect(candidateWorkspacePaths(previousWorkspace, open.workspace));
+        const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
+        open.watcher?.expect(candidates);
         const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
         if (this.stale(open)) {
           return;
         }
-        open.watcher?.expect([...result.written, ...result.removed]);
+        reconcileWatcherExpectations(open.watcher, candidates, result);
         this.deps.hooks?.onChanged?.(this.snapshot());
       });
     } else {
@@ -1475,10 +1498,15 @@ export class WorkspaceService implements ProjectRouter {
    * when a change names an environment this workspace does not have.
    */
   async mutate(change: WorkspaceChange): Promise<{ workspace: WorkspaceWire; createdEnvironmentId?: string }> {
+    // Captured *before* enqueueing, like `rename`'s open-workspace branch: this op may sit behind
+    // others (a reload included) before its turn comes, and re-fetching `this.requireOpen()`
+    // once the closure finally runs would silently apply to whatever workspace happens to be
+    // open *then* — including a different one the user switched to while this call was queued.
+    const open = this.requireOpen();
     return await this.enqueueWorkspaceOp(async () => {
-      // Fetched fresh here, not before enqueueing: this op may sit behind others (a reload
-      // included) before its turn comes, and `this.current` can have changed by then.
-      const open = this.requireOpen();
+      // The workspace this call captured may have closed (or a different one opened) while it
+      // sat behind another queued op — checked again after every `await` below.
+      this.requireStillOpen(open);
       const previousWorkspace = open.workspace;
       let createdEnvironmentId: string | undefined;
 
@@ -1554,10 +1582,13 @@ export class WorkspaceService implements ProjectRouter {
       // `saveWorkspace`'s several atomic renames are each individually visible to `fs.watch`
       // before this call returns, and a path only marked self-write afterwards can already have
       // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`.
-      open.watcher?.expect(candidateWorkspacePaths(previousWorkspace, open.workspace));
+      const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
+      open.watcher?.expect(candidates);
       const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
       this.requireStillOpen(open);
-      open.watcher?.expect([...result.written, ...result.removed]);
+      // Keeps every touched path marked, and un-marks whatever candidate this write turned out
+      // not to touch — see `reconcileWatcherExpectations`.
+      reconcileWatcherExpectations(open.watcher, candidates, result);
       this.deps.hooks?.onChanged?.(this.snapshot());
       return {
         workspace: this.requireSnapshot(),
@@ -1576,8 +1607,12 @@ export class WorkspaceService implements ProjectRouter {
    * leave the UI showing an environment that is not applied.
    */
   async setActiveEnvironment(environmentId: string | null): Promise<WorkspaceWire> {
+    // Captured before enqueueing — see `mutate`'s identical reasoning: re-fetching
+    // `this.requireOpen()` only once the closure's turn comes up would silently apply this
+    // change to whatever workspace happens to be open by then, not the one the caller meant.
+    const open = this.requireOpen();
     return await this.enqueueWorkspaceOp(async () => {
-      const open = this.requireOpen();
+      this.requireStillOpen(open);
       if (environmentId === null) {
         open.workspace = withoutActiveEnvironment(open.workspace);
       } else {

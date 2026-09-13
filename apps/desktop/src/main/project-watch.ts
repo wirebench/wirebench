@@ -125,6 +125,12 @@ export class ProjectWatcher {
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
   private readonly selfWrites = new Map<string, number>();
+  /**
+   * Paths whose event arrived while marked self-write (so `record()` dropped it) and have not
+   * been un-marked since. `unexpect()` consults this to re-deliver a genuine outside edit that a
+   * too-broad `expect()` call (a conservative superset, not an exact diff) happened to suppress.
+   */
+  private readonly droppedWhileExpected = new Set<string>();
   private timer: NodeJS.Timeout | undefined;
 
   constructor(options: ProjectWatcherOptions) {
@@ -177,6 +183,7 @@ export class ProjectWatcher {
       this.timer = undefined;
     }
     this.pending.clear();
+    this.droppedWhileExpected.clear();
   }
 
   /**
@@ -187,6 +194,31 @@ export class ProjectWatcher {
     const until = this.options.now() + this.options.selfWriteTtlMs;
     for (const path of paths) {
       this.selfWrites.set(this.normalise(path), until);
+    }
+  }
+
+  /**
+   * Un-marks `paths` as self-write, ahead of `selfWriteTtlMs` — for a candidate `expect()` turned
+   * out not to touch (see {@link WorkspaceService}'s `candidateWorkspacePaths`, a conservative
+   * superset announced before the write it covers, not an exact diff of what the write changed).
+   *
+   * If an event for one of `paths` already arrived while it was still marked (and so `record()`
+   * dropped it), that path is fed back into the pending batch so the normal debounce still
+   * delivers it — an outside edit made to an untouched file during the write's window must not be
+   * lost just because it briefly looked, in advance, like something the write might touch.
+   */
+  unexpect(paths: readonly string[]): void {
+    let revived = false;
+    for (const rawPath of paths) {
+      const path = this.normalise(rawPath);
+      this.selfWrites.delete(path);
+      if (this.droppedWhileExpected.delete(path)) {
+        this.pending.add(path);
+        revived = true;
+      }
+    }
+    if (revived) {
+      this.schedule();
     }
   }
 
@@ -211,7 +243,11 @@ export class ProjectWatcher {
       return;
     }
     const path = this.normalise(typeof filename === 'string' ? filename : filename.toString('utf8'));
-    if (!this.options.isManaged(path) || this.isSelfWrite(path)) {
+    if (!this.options.isManaged(path)) {
+      return;
+    }
+    if (this.isSelfWrite(path)) {
+      this.droppedWhileExpected.add(path);
       return;
     }
     this.pending.add(path);
