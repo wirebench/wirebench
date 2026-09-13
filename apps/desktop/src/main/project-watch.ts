@@ -35,12 +35,15 @@ export interface ProjectWatcherOptions {
 }
 
 /**
- * Every directory a non-recursive fallback watch has to cover: the project root and its
- * subtree down to the operation folders (`interfaces/<slug>/operations/<slug>`), which is
- * four levels — deep enough for the whole managed layout, shallow enough that a big
- * definition cache never turns into thousands of watches.
+ * Every directory a non-recursive fallback watch has to cover: the project root and its subtree
+ * down to the operation folders (`interfaces/<slug>/operations/<slug>`) and an API's folder tree
+ * (`apis/<slug>/requests/<folder>/…`) — deep enough for the whole managed layout, shallow enough
+ * that a big definition cache never turns into thousands of watches.
+ *
+ * An API's folders may nest deeper than this (up to `MAX_FOLDER_DEPTH`); a change below the watched
+ * depth is simply not noticed on Linux, which is the same trade the definition cache already makes.
  */
-const MAX_WATCH_DEPTH = 4;
+const MAX_WATCH_DEPTH = 5;
 
 function managedDirs(root: string, depth = 0): string[] {
   if (depth > MAX_WATCH_DEPTH) {
@@ -72,6 +75,11 @@ export function isManagedPath(path: string): boolean {
   }
   if (path.startsWith('interfaces/')) {
     return !path.includes('/definition/') && (path.endsWith('.yaml') || path.endsWith('.xml'));
+  }
+  if (path.startsWith('apis/')) {
+    // An API's own file, a folder file, a request file — and a raw body, which is edited as the
+    // file it is (`Create pet.body.json`), so an external change to one is a change to the request.
+    return !path.includes('/definition/') && (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path));
   }
   return (path.startsWith('environments/') || path.startsWith('wss/')) && path.endsWith('.yaml');
 }

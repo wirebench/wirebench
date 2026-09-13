@@ -1,18 +1,34 @@
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@wirebench/engine';
+import {
+  composeUrl,
+  fromCurl,
+  isWirebenchError,
+  prettyPrint,
+  ProjectError,
+  recreateRequest,
+  toCurl,
+  WirebenchError,
+} from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { PropertyScopes } from '@wirebench/engine';
+import type { Cookie, ProxyOptions, TlsOptions, PropertyScopes } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
 import type { HistoryService } from '../history-service.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
+import type { RestSendResolution } from '../rest-send.js';
+import type { PreflightResult } from '../expansion-preflight.js';
+import { toUnresolvedRefWire } from '../engine-wire.js';
 import type {
+  RestRequestPatchWire,
+  UnresolvedRefWire,
+  RequestSendRestRequest,
+  RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
   RequestSendRequest,
@@ -45,7 +61,22 @@ export type RequestChannelProject = Pick<
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
+  Partial<
+    Pick<
+      ProjectRouter,
+      | 'sendAttachmentsFor'
+      | 'tlsFor'
+      | 'wssFor'
+      | 'hasOutgoingWss'
+      | 'proxyFor'
+      // The REST half, optional for the same reason: a stub that never sends a REST request needs
+      // none of it.
+      | 'restSend'
+      | 'restTlsFor'
+      | 'rememberRestCookies'
+      | 'restMeta'
+    >
+  >;
 
 /**
  * The id of the project owning `entityId`, for the handful of calls that address the *project*
@@ -430,6 +461,167 @@ async function importCurl(
 }
 
 /**
+ * Sends one REST request.
+ *
+ * Everything the renderer did not send is resolved here: the API's base URL under the active
+ * environment, the properties, the credentials its folder chain lands on, its TLS identity. A send
+ * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
+ * it reaches the wire, with the problems that explain why.
+ */
+async function sendRestRequest(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  request: RequestSendRestRequest,
+): Promise<RestExchangeSummary> {
+  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
+      details: { requestId: request.requestId },
+    });
+  }
+  if (resolved.unresolved.length > 0) {
+    throw new WirebenchError('rest-unresolved-properties', 'Some property references could not be resolved', {
+      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
+    });
+  }
+
+  const tls = await deps.project.restTlsFor?.(request.requestId);
+  const anchors = extraTrustAnchors();
+  const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
+  const mergedTls = withoutUndefined<TlsOptions>({
+    ...resolved.input.tls,
+    ...tls,
+    ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+  });
+  const owner = deps.project.projectId(request.requestId);
+  const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
+  const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
+  const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
+  const input = { ...resolved.input, tls: mergedTls, ...(proxy !== undefined ? { proxy } : {}) };
+  // The one query parameter an API key may be configured to travel in, so the URL is masked
+  // wherever it is logged even when the key is called something this build has never heard of.
+  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
+
+  const startedAt = Date.now();
+  try {
+    const summary = await service.sendRestRequest(
+      { sendId: request.sendId, requestId: request.requestId, input },
+      {
+        showSecrets: deps.showSecrets?.get() ?? false,
+        auth: resolved.auth,
+        ...(keyParams !== undefined ? { keyParams } : {}),
+      },
+    );
+    deps.project.rememberRestCookies?.(
+      request.requestId,
+      summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
+    );
+    await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt);
+    return summary;
+  } catch (error) {
+    await recordRest(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    throw error;
+  }
+}
+
+/** Appends one REST send's history entry, successful or not. A no-op without a history service. */
+async function recordRest(
+  deps: RequestChannelDeps,
+  requestId: string,
+  resolved: RestSendResolution,
+  summary: RestExchangeSummary | undefined,
+  durationMs: number,
+  error?: unknown,
+): Promise<void> {
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.restMeta?.(requestId);
+  const body = resolved.input.request.body;
+  const entry = await deps.history.recordRestSend(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? resolved.request.name,
+    apiName: meta?.apiName ?? resolved.api.name,
+    folderPath: meta?.folderPath ?? '',
+    method: resolved.input.request.method,
+    url: summary?.url ?? resolved.input.baseUrl,
+    requestHeaders: Object.fromEntries(
+      resolved.input.request.headers.filter((header) => header.enabled).map((header) => [header.name, header.value]),
+    ),
+    requestBody: body.kind === 'raw' ? body.text : '',
+    ...(summary !== undefined ? { exchange: summary } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    durationMs,
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/**
+ * Drops the keys whose value came over as `undefined`.
+ *
+ * The wire's TLS shape has optional fields that may be present-and-undefined; the engine's has
+ * fields that must be absent instead (`exactOptionalPropertyTypes`), and merging the two is exactly
+ * where the difference bites.
+ */
+function withoutUndefined<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+/**
+ * The dry run of a REST send: where it would go, what would not expand, and which credentials it
+ * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
+ * badge while the user types.
+ */
+function preflightRest(
+  deps: RequestChannelDeps,
+  request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
+): PreflightResult {
+  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+  }
+  const composed = composeUrl(
+    resolved.input.baseUrl,
+    resolved.input.request.url,
+    resolved.input.request.pathParams,
+    resolved.input.request.query,
+    { encode: resolved.input.settings.encodeUrl ?? true },
+  );
+  // A `{param}` with no value is reported in the same list as an unresolved property: both are
+  // "this request is not finished", and the console shows them together.
+  const missing: UnresolvedRefWire[] = composed.problems
+    .filter((problem) => problem.code === 'missing-path-param')
+    .map((problem) => ({
+      expr: `{${problem.name}}`,
+      code: 'missing' as const,
+      start: 0,
+      end: 0,
+      scope: 'path',
+      name: problem.name,
+    }));
+  return {
+    endpoint: composed.url,
+    // The base URL's source uses the same vocabulary an interface endpoint's does, so the badge in
+    // the editor reads identically for either protocol.
+    endpointSource: resolved.baseUrlSource === 'api' ? 'interface-default' : resolved.baseUrlSource,
+    unresolved: [...resolved.unresolved.map(toUnresolvedRefWire), ...missing],
+    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    wsa: { enabled: false },
+  };
+}
+
+/** One failure, as a history line records it. */
+function restErrorDetail(error: unknown): { code: string; message: string } {
+  if (isWirebenchError(error)) {
+    return { code: error.code, message: error.message };
+  }
+  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
+}
+
+/**
  * Registers the `request.*` IPC channels against a shared `EngineService` instance.
  *
  * Every send expands properties: the scopes come from the project service, which folds the
@@ -448,6 +640,10 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     const summary = await sendAndRecordHistory(service, deps, effective);
     return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
+
+  registerHandler(channels.request.sendRest, (request) => sendRestRequest(service, deps, request));
+
+  registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

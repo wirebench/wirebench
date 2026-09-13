@@ -690,8 +690,9 @@ export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
  * never crosses IPC (only its `passwordRef` is ever stored, and that stays in main).
  */
 export const requestAuthSourceSchema = z.object({
-  source: z.enum(['request', 'endpoint', 'interface', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm']),
+  /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
+  source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -1392,6 +1393,70 @@ export const restRequestPatchSchema = z.object({
 });
 export type RestRequestPatchWire = z.infer<typeof restRequestPatchSchema>;
 
+/** One cookie a response set, as the Cookies tab shows it. */
+export const cookieWireSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  domain: z.string().optional(),
+  path: z.string().optional(),
+  expires: z.string().optional(),
+  maxAge: z.number().optional(),
+  secure: z.boolean().optional(),
+  httpOnly: z.boolean().optional(),
+  sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+  /** The header could not be parsed as a cookie; `name` holds the whole line. */
+  malformed: z.boolean().optional(),
+});
+export type CookieWire = z.infer<typeof cookieWireSchema>;
+
+/**
+ * What one REST send produced. The same `http` projection a SOAP exchange carries — so the HTTP
+ * log, the raw view and the timing waterfall are one implementation — plus what the body turned out
+ * to be.
+ */
+export const restExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  durationMs: z.number(),
+  http: httpExchangeWireSchema,
+  /** The URL actually sent, redacted unless the session shows secrets. */
+  url: z.string(),
+  method: z.string(),
+  /** The response body decoded to text; empty for an image or another binary body. */
+  text: z.string(),
+  language: z.enum(['json', 'xml', 'html', 'javascript', 'text', 'image', 'binary']),
+  /** Set when the declared charset could not be honoured and UTF-8 was used instead. */
+  decodeNote: z.string().optional(),
+  cookies: z.array(cookieWireSchema),
+  /** A redirect turned the request into a `GET`; the HTTP log calls it out. */
+  methodChanged: z.boolean(),
+  problems: z.array(exchangeProblemSchema),
+  auth: authSummaryWireSchema.optional(),
+  unresolved: z.array(unresolvedRefWireSchema).optional(),
+});
+export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
+
+/**
+ * Request payload for `request.sendRest`.
+ *
+ * The renderer names the request and, when its editor has unsaved edits, hands over the draft it is
+ * looking at. It never sends a resolved URL, a base URL or a credential: main owns the environment,
+ * the project model and the keychain, so it is main that decides where the request goes.
+ */
+export const requestSendRestRequestSchema = z.object({
+  /** Client-generated id, used to correlate a later `request.cancel`. */
+  sendId: z.string(),
+  requestId: z.string(),
+  /** The editor's unsaved edits, applied to this send only. */
+  draft: restRequestPatchSchema.optional(),
+});
+export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
+
+/** Request payload for `request.preflightRest`: the same pair, with nothing sent. */
+export const requestPreflightRestRequestSchema = z.object({
+  requestId: z.string(),
+  draft: restRequestPatchSchema.optional(),
+});
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -1781,6 +1846,12 @@ const historyErrorSchema = z.object({ code: z.string(), message: z.string() });
 /** Wire (and on-disk) shape of one recorded send — mirrors the engine's `HistoryEntry`. */
 export const historyEntrySchema = z.object({
   id: z.string(),
+  /**
+   * Which protocol the send used. Optional, and honestly so: a line written before the REST client
+   * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
+   * main writes from now on names its kind.
+   */
+  kind: z.enum(['soap', 'rest']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -1790,6 +1861,8 @@ export const historyEntrySchema = z.object({
   endpoint: z.string(),
   soapVersion: soapVersionSchema,
   soapAction: z.string().optional(),
+  /** The HTTP method, for a REST send. A SOAP send is always a POST and records none. */
+  method: z.string().optional(),
   status: z.number().optional(),
   durationMs: z.number(),
   ok: z.boolean(),

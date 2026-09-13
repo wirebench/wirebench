@@ -1462,6 +1462,28 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  restSend(...args: Parameters<ProjectRouter['restSend']>): ReturnType<ProjectRouter['restSend']> {
+    return this.hostOfEntity(args[0]).restSend(...args);
+  }
+
+  /** @inheritdoc */
+  restTlsFor(...args: Parameters<ProjectRouter['restTlsFor']>): ReturnType<ProjectRouter['restTlsFor']> {
+    return this.hostOfEntity(args[0]).restTlsFor(...args);
+  }
+
+  /** @inheritdoc */
+  restMeta(...args: Parameters<ProjectRouter['restMeta']>): ReturnType<ProjectRouter['restMeta']> {
+    return this.hostOfEntity(args[0]).restMeta(...args);
+  }
+
+  /** @inheritdoc */
+  rememberRestCookies(
+    ...args: Parameters<ProjectRouter['rememberRestCookies']>
+  ): ReturnType<ProjectRouter['rememberRestCookies']> {
+    return this.hostOfEntity(args[0]).rememberRestCookies(...args);
+  }
+
+  /** @inheritdoc */
   wssFor(...args: Parameters<ProjectRouter['wssFor']>): ReturnType<ProjectRouter['wssFor']> {
     return this.hostOfEntity(args[0]).wssFor(...args);
   }

@@ -6,6 +6,7 @@
  */
 
 import {
+  sendRest,
   applyWsaHeaders,
   expandSendInput,
   generateEmptyRequest,
@@ -16,6 +17,8 @@ import {
   WirebenchError,
 } from '@wirebench/engine';
 import type {
+  AuthConfig,
+  RestSendInput,
   EndpointAuth,
   GenerateOptions,
   ImportProgress,
@@ -28,9 +31,10 @@ import type {
   TlsOptions,
   WsaConfigPatch,
 } from '@wirebench/engine';
-import { resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
+import { resolveAuthConfig, resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
 import type { SendAuth } from '@wirebench/engine';
 import type {
+  RestExchangeSummary,
   DefinitionImportRequest,
   EngineProgressEvent,
   ExchangeSummary,
@@ -45,7 +49,13 @@ import type {
   TlsOptionsWire,
   WsaConfigWire,
 } from '../shared/wire-types.js';
-import { redactExchangeSummary, toExchangeSummary, toGenerateResponse, toInterfaceSummary } from './engine-wire.js';
+import {
+  toRestExchangeSummary,
+  redactExchangeSummary,
+  toExchangeSummary,
+  toGenerateResponse,
+  toInterfaceSummary,
+} from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
 import type { SendAttachmentInput } from './project-host.js';
 
@@ -576,6 +586,50 @@ export class EngineService {
         requestEnvelopeXml: request.input.envelopeXml,
       });
       return redactExchangeSummary(full, { show: options.showSecrets ?? false });
+    } finally {
+      this.sends.delete(request.sendId);
+    }
+  }
+
+  /**
+   * Sends a REST request, registering an `AbortController` so a matching `cancel` can abort it.
+   *
+   * The input arrives fully resolved (`rest-send.ts`): base URL, properties, credentials, TLS and
+   * proxy are all settled before this is called, so this method only runs the exchange and projects
+   * the result. The unredacted summary stays in main's cache; what crosses IPC is redacted per the
+   * session's flag, exactly as a SOAP send's is.
+   */
+  async sendRestRequest(
+    request: { readonly sendId: string; readonly requestId: string; readonly input: RestSendInput },
+    options: {
+      readonly showSecrets?: boolean;
+      readonly keyParams?: readonly string[];
+      /** The credentials as configured, still references; resolved here, as a SOAP send's are. */
+      readonly auth?: AuthConfig;
+      /** An OAuth2 access token the host already obtained; never read from the secret store. */
+      readonly accessToken?: string;
+    } = {},
+  ): Promise<RestExchangeSummary> {
+    const controller = new AbortController();
+    this.sends.set(request.sendId, controller);
+    try {
+      const auth = await resolveAuthConfig(
+        options.auth,
+        (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined),
+        options.accessToken !== undefined ? { accessToken: options.accessToken } : {},
+      );
+      const exchange = await sendRest({
+        ...request.input,
+        ...(auth !== undefined ? { auth } : {}),
+        signal: controller.signal,
+      });
+      const context = {
+        method: request.input.request.method,
+        ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+      };
+      const full = toRestExchangeSummary(exchange, request.sendId, { ...context, show: true });
+      this.exchanges.putRest(request.sendId, full, exchange.body);
+      return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);
     }

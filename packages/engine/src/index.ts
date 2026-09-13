@@ -332,6 +332,8 @@ export type {
   TokenResponseInput,
   TokenSet,
 } from './rest/oauth2.js';
+export { expandRestSendInput } from './rest/expand.js';
+export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
@@ -581,12 +583,13 @@ export type {
 export {
   findEnvironment,
   removeEnvironment,
+  resolveApiBaseUrl,
   resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
 } from './project/environments.js';
-export type { EndpointSource } from './project/environments.js';
+export type { BaseUrlSource, EndpointSource } from './project/environments.js';
 // Workspace
 export {
   WORKSPACE_FORMAT_VERSION,
@@ -603,6 +606,7 @@ export {
   migrateWorkspace,
   parseWorkspaceFile,
   reidentifyProject,
+  resolveWorkspaceApiBaseUrl,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveWorkspace,

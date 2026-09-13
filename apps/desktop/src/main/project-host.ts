@@ -20,6 +20,8 @@ import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import {
+  resolveApiBaseUrl,
+  resolveWorkspaceApiBaseUrl,
   createInterface,
   applyUpdate,
   createProject,
@@ -49,6 +51,9 @@ import {
   writeDefinitionCache,
 } from '@wirebench/engine';
 import type {
+  RestFolder,
+  RestRequestDef,
+  Cookie,
   Attachment,
   AttachmentResolvers,
   AttachmentSource,
@@ -96,6 +101,7 @@ import type {
 } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
+  RestRequestPatchWire,
   ApplyUpdateWire,
   DefinitionUpdateOptions,
   DefinitionUpdateSource,
@@ -121,6 +127,9 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
+import { findRestRequest } from './project-rest-mutations.js';
+import { resolveRestSend } from './rest-send.js';
+import type { RestSendResolution } from './rest-send.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
@@ -290,6 +299,13 @@ export class ProjectHost {
   private open: OpenProject | undefined;
   /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
+  /**
+   * What each REST request's own last response set, for the session only, keyed by request id.
+   *
+   * Not a cookie jar: a request only ever sees what it set itself, so one request's send cannot
+   * change another's, and none of this reaches disk (see `rest/cookies.ts`).
+   */
+  private readonly restCookies = new Map<string, readonly Cookie[]>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
@@ -1234,6 +1250,109 @@ export class ProjectHost {
    * A CA bundle that will not load is *not* fatal — it only ever adds anchors, so a bad path
    * leaves verification exactly as strict as it was.
    */
+  /**
+   * Resolves one REST send the way this project is actually open: the API's base URL under the
+   * active environment (a linked project's own first, then the workspace's), property expansion
+   * across every scope, the folder chain's credentials, and the settings ladder.
+   *
+   * Synchronous and material-free, like `sendInputFor`: the credentials come back as `secretRef`s
+   * and the TLS identity is resolved separately, so the same result can feed the cURL export and
+   * the preflight badge without touching the keychain.
+   */
+  restSend(requestId: string, draft?: RestRequestPatchWire): RestSendResolution | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const context = this.workspaceContext?.();
+    const preferences = this.prefs();
+    return resolveRestSend({
+      project,
+      requestId,
+      ...(draft !== undefined ? { draft } : {}),
+      scopes: this.scopesFor(),
+      ...(preferences !== undefined ? { preferences } : {}),
+      resolveBaseUrl: (api) =>
+        context === undefined
+          ? resolveApiBaseUrl(project, project.activeEnvironmentId, api)
+          : resolveWorkspaceApiBaseUrl({
+              workspace: context.workspace,
+              project,
+              projectSlug: context.projectSlug,
+              api,
+            }),
+      ...(this.restCookiesFor(requestId) !== undefined ? { cookies: this.restCookiesFor(requestId)! } : {}),
+    });
+  }
+
+  /**
+   * What History names a REST send by: the request, its API, and the folder path inside it.
+   *
+   * The REST counterpart of {@link requestMeta}, and shaped to the same three slots, so a history
+   * row needs no per-protocol branching: the API's name takes the interface's place and the folder
+   * path the operation's.
+   */
+  restMeta(
+    requestId: string,
+  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    for (const api of this.open.project.apis) {
+      const found = restPathWithin(api, requestId, []);
+      if (found !== undefined) {
+        return { requestName: found.request.name, apiName: api.name, folderPath: found.folders.join(' / ') };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The cookies this REST request's own last response set, when its *send cookies* setting is on.
+   *
+   * Session-only and per request, deliberately: there is no jar, so one request's send never
+   * depends on another's, and nothing about cookies reaches disk.
+   */
+  private restCookiesFor(requestId: string): readonly Cookie[] | undefined {
+    const request = this.open === undefined ? undefined : findRestRequest(this.open.project, requestId);
+    if (request?.settings.sendCookies !== true) {
+      return undefined;
+    }
+    return this.restCookies.get(requestId);
+  }
+
+  /** Remembers what a REST response set, for the next send of that same request. */
+  rememberRestCookies(requestId: string, cookies: readonly Cookie[]): void {
+    if (cookies.length === 0) {
+      this.restCookies.delete(requestId);
+      return;
+    }
+    this.restCookies.set(requestId, cookies);
+  }
+
+  /**
+   * The TLS material a REST send needs: the trust anchors, the client identity its settings select,
+   * and its own `trustInvalid` flag. The REST counterpart of {@link tlsFor}, reading the request's
+   * settings rather than a SOAP request's properties and an endpoint's flag.
+   */
+  async restTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findRestRequest(this.open.project, requestId);
+    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
+    const ca = await this.trustAnchors();
+    const trustInvalid = request?.settings.trustInvalid === true;
+    if (identity === undefined && ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return {
+      ...(identity !== undefined ? identity : {}),
+      ...(ca !== undefined ? { ca: [...ca] } : {}),
+      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
+    };
+  }
+
   async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
@@ -1966,4 +2085,23 @@ export class ProjectHost {
       this.emitChanged();
     }
   }
+}
+
+/** The request with this id inside `container`, and the names of the folders enclosing it. */
+function restPathWithin(
+  container: { readonly folders: readonly RestFolder[]; readonly requests: readonly RestRequestDef[] },
+  requestId: string,
+  enclosing: readonly string[],
+): { readonly request: RestRequestDef; readonly folders: readonly string[] } | undefined {
+  const own = container.requests.find((request) => request.id === requestId);
+  if (own !== undefined) {
+    return { request: own, folders: enclosing };
+  }
+  for (const folder of container.folders) {
+    const deeper = restPathWithin(folder, requestId, [...enclosing, folder.name]);
+    if (deeper !== undefined) {
+      return deeper;
+    }
+  }
+  return undefined;
 }

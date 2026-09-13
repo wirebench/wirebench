@@ -16,8 +16,9 @@
  */
 
 import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from '../project/model.js';
-import type { EndpointSource } from '../project/environments.js';
-import { resolveEndpoint } from '../project/environments.js';
+import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
+import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
+import type { RestApi } from '../rest/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { enabledProperties } from '../project/properties.js';
 import type { Workspace, WorkspaceEnvironment } from './model.js';
@@ -122,4 +123,35 @@ export function resolveWorkspaceEndpoint(input: {
   }
 
   return resolveEndpoint(project, undefined, iface, request);
+}
+
+/**
+ * Resolves an API's base URL the way a project open inside a workspace actually resolves it:
+ * a linked project's own environment first, then the workspace environment's override keyed
+ * `<projectSlug>/<apiSlug>`, then the API's own base URL.
+ *
+ * The same ladder {@link resolveWorkspaceEndpoint} climbs for a SOAP interface, and keyed the same
+ * way — which is why an API and an interface may not share a slug (`project/load.ts` refuses it).
+ */
+export function resolveWorkspaceApiBaseUrl(input: {
+  readonly workspace: Workspace;
+  readonly project: Project;
+  readonly projectSlug: string;
+  readonly api: Pick<RestApi, 'slug' | 'baseUrl'>;
+}): { url: string; source: BaseUrlSource } {
+  const { workspace, project, projectSlug, api } = input;
+  const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);
+  const linkedProjectEnv = linkedEnvironment(project, activeWorkspaceEnv);
+
+  const linkedOverride = linkedProjectEnv?.endpoints[api.slug];
+  if (linkedOverride !== undefined) {
+    return { url: linkedOverride, source: 'environment' };
+  }
+
+  const workspaceOverride = activeWorkspaceEnv?.endpoints[`${projectSlug}/${api.slug}`];
+  if (workspaceOverride !== undefined) {
+    return { url: workspaceOverride, source: 'workspace-environment' };
+  }
+
+  return resolveApiBaseUrl(project, undefined, api);
 }

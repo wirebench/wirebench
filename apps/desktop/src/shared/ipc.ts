@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import {
+  requestPreflightRestRequestSchema,
+  requestSendRestRequestSchema,
+  restExchangeSummarySchema,
   definitionCancelImportRequestSchema,
   definitionCancelImportResponseSchema,
   definitionCloseRequestSchema,
@@ -280,6 +283,18 @@ export const channels = {
   request: {
     generate: defineChannel('request.generate', requestGenerateRequestSchema, requestGenerateResponseSchema),
     send: defineChannel('request.send', requestSendRequestSchema, exchangeSummarySchema),
+    /**
+     * A REST send. Separate from `request.send` rather than a discriminated union of it: the two
+     * payloads share no fields — one carries an envelope the user typed, the other a request id and
+     * the editor's draft — and one channel for both would give every SOAP call a kind tag it never
+     * reads.
+     */
+    sendRest: defineChannel('request.sendRest', requestSendRestRequestSchema, restExchangeSummarySchema),
+    preflightRest: defineChannel(
+      'request.preflightRest',
+      requestPreflightRestRequestSchema,
+      requestPreflightResponseSchema,
+    ),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
     preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),

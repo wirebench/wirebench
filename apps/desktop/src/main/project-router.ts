@@ -79,6 +79,20 @@ export interface ProjectRouter {
   ): ReturnType<ProjectHost['sendAttachmentsFor']>;
   dumpFileFor(...args: Parameters<ProjectHost['dumpFileFor']>): ReturnType<ProjectHost['dumpFileFor']>;
   tlsFor(...args: Parameters<ProjectHost['tlsFor']>): ReturnType<ProjectHost['tlsFor']>;
+
+  /** Resolves one REST send: base URL, expansion, credentials as refs, settings. */
+  restSend(...args: Parameters<ProjectHost['restSend']>): ReturnType<ProjectHost['restSend']>;
+
+  /** The TLS material a REST send needs: anchors, client identity, its own trust decision. */
+  restTlsFor(...args: Parameters<ProjectHost['restTlsFor']>): ReturnType<ProjectHost['restTlsFor']>;
+
+  /** What History names a REST send by: the request, its API, and its folder path. */
+  restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
+
+  /** Remembers what a REST response set, for the next send of that same request. */
+  rememberRestCookies(
+    ...args: Parameters<ProjectHost['rememberRestCookies']>
+  ): ReturnType<ProjectHost['rememberRestCookies']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(

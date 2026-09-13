@@ -10,7 +10,7 @@
  */
 
 import type { ResponseAttachment, SoapExchange } from '@wirebench/engine';
-import type { ExchangeSummary } from '../shared/wire-types.js';
+import type { ExchangeSummary, RestExchangeSummary } from '../shared/wire-types.js';
 
 /** How many exchanges are retained; mirrors the renderer HTTP log's own cap. */
 export const EXCHANGE_CACHE_CAP = 500;
@@ -41,9 +41,22 @@ export interface CachedEngineExchange {
   readonly requestEnvelopeXml?: string;
 }
 
+/**
+ * One cached REST send: its unredacted summary and the response body's bytes.
+ *
+ * The bytes are held for the same reason a SOAP send's attachments are — the renderer is shown text
+ * and metadata, and asks for the bytes by `sendId` when it needs them (to render an image preview,
+ * or to save the response to a file) — so a binary body never crosses the bridge as base64 twice.
+ */
+interface CachedRestExchange {
+  readonly summary: RestExchangeSummary;
+  readonly body: Uint8Array;
+}
+
 /** Keeps the last {@link EXCHANGE_CACHE_CAP} unredacted exchange summaries. */
 export class ExchangeCache {
   private readonly entries = new Map<string, CachedExchange>();
+  private readonly restEntries = new Map<string, CachedRestExchange>();
   private readonly cap: number;
 
   constructor(cap: number = EXCHANGE_CACHE_CAP) {
@@ -68,6 +81,29 @@ export class ExchangeCache {
     }
   }
 
+  /** Stores (or replaces) the unredacted REST summary for `sendId`, evicting the oldest over cap. */
+  putRest(sendId: string, summary: RestExchangeSummary, body: Uint8Array): void {
+    this.restEntries.delete(sendId);
+    this.restEntries.set(sendId, { summary, body });
+    while (this.restEntries.size > this.cap) {
+      const oldest = this.restEntries.keys().next();
+      if (oldest.done === true) {
+        return;
+      }
+      this.restEntries.delete(oldest.value);
+    }
+  }
+
+  /** The unredacted REST summary for `sendId`, or `undefined` once it has been evicted. */
+  getRest(sendId: string): RestExchangeSummary | undefined {
+    return this.restEntries.get(sendId)?.summary;
+  }
+
+  /** A REST response's bytes, for an image preview or a save-to-file. */
+  getRestBody(sendId: string): Uint8Array | undefined {
+    return this.restEntries.get(sendId)?.body;
+  }
+
   /** The unredacted summary for `sendId`, or `undefined` once it has been evicted. */
   get(sendId: string): ExchangeSummary | undefined {
     return this.entries.get(sendId)?.summary;
@@ -83,13 +119,14 @@ export class ExchangeCache {
     return this.entries.get(sendId)?.attachments[index];
   }
 
-  /** How many exchanges are currently retained. */
+  /** How many exchanges are currently retained, of either protocol. */
   get size(): number {
-    return this.entries.size;
+    return this.entries.size + this.restEntries.size;
   }
 
   /** Drops every entry (used when a project closes, and by tests). */
   clear(): void {
     this.entries.clear();
+    this.restEntries.clear();
   }
 }

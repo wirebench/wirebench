@@ -11,6 +11,7 @@
  */
 
 import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
+import type { RestApi } from '../rest/model.js';
 import type { PropertyScopes } from './properties.js';
 import { enabledProperties } from './properties.js';
 
@@ -73,6 +74,27 @@ export function resolveEndpoint(
   }
 
   return { url: undefined, source: 'none' };
+}
+
+/** Where an API's effective base URL came from. */
+export type BaseUrlSource = 'environment' | 'workspace-environment' | 'api';
+
+/**
+ * Resolves the base URL a REST API's requests are sent against.
+ *
+ * The same shape as {@link resolveEndpoint} and the same precedence as far as it goes: an active
+ * environment's override for the API wins over the API's own base URL, because choosing an
+ * environment is how a user says "point everything at test". An API has no per-request URL
+ * override to consider — a request that needs another host writes an absolute URL instead.
+ */
+export function resolveApiBaseUrl(
+  project: Project,
+  envId: string | undefined,
+  api: Pick<RestApi, 'slug' | 'baseUrl'>,
+): { url: string; source: BaseUrlSource } {
+  const environment = findEnvironment(project, envId);
+  const override = environment?.endpoints[api.slug];
+  return override !== undefined ? { url: override, source: 'environment' } : { url: api.baseUrl, source: 'api' };
 }
 
 /**

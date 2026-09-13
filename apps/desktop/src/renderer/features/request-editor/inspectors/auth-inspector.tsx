@@ -30,6 +30,10 @@ function sourceLabel(auth: RequestAuthSourceWire): string {
       return 'Using the interface credentials';
     case 'request':
       return 'Using this request’s own credentials';
+    case 'folder':
+      return 'Using the folder’s credentials';
+    case 'api':
+      return 'Using the API’s credentials';
     case 'none':
       return 'No credentials are configured for this request.';
   }

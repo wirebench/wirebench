@@ -240,7 +240,7 @@ export function toEngineAuthConfig(auth: AuthConfigWire): AuthConfig {
 }
 
 /** One table row from the wire, with an absent description absent rather than undefined. */
-function toEngineRows(rows: readonly KeyValueWire[]): KeyValueEntry[] {
+export function toEngineRows(rows: readonly KeyValueWire[]): KeyValueEntry[] {
   return rows.map((row) => ({
     name: row.name,
     value: row.value,
@@ -250,7 +250,7 @@ function toEngineRows(rows: readonly KeyValueWire[]): KeyValueEntry[] {
 }
 
 /** Turns a wire body into the engine's, which differs only in that a raw body carries its text. */
-function toEngineBody(body: RestBodyWire): RestBody {
+export function toEngineBody(body: RestBodyWire): RestBody {
   switch (body.kind) {
     case 'raw':
       return {
