@@ -71,12 +71,29 @@ export function rememberPickedGit(
   preferences: Preferences,
   picks: { rememberRead(path: string): void },
 ): string | undefined {
-  const { path, pathPickedByMain } = preferences.git;
-  if (pathPickedByMain !== true || path === undefined || path.length === 0) {
+  const path = configuredGitPath(preferences);
+  if (path === undefined) {
     return undefined;
   }
   picks.rememberRead(path);
   return path;
+}
+
+/**
+ * The `git.path` preference, but only when main itself set it (see {@link rememberPickedGit}):
+ * an unmarked path — one with no `pathPickedByMain: true`, however it got into
+ * `preferences.yaml` — is never treated as "configured", the same containment reasoning that
+ * makes `caBundlePickedByMain` a precondition for the CA bundle, applied to an executable main
+ * is about to *run*. An empty string (`git.clearPath`'s tombstone value) also counts as unset,
+ * so a cleared preference falls straight through to `findGit`'s own discovery.
+ *
+ * Every reader of the git path preference (`git.detect`, `gitLocator`) must go through this —
+ * reading `preferences.git.path` directly would let a hand-edited `preferences.yaml` point main
+ * at an arbitrary executable without ever having been picked.
+ */
+export function configuredGitPath(preferences: Preferences): string | undefined {
+  const { path, pathPickedByMain } = preferences.git;
+  return pathPickedByMain === true && path !== undefined && path.length > 0 ? path : undefined;
 }
 
 /** File name (inside `userData`) the preferences are persisted to. */

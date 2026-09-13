@@ -12,7 +12,6 @@
  */
 
 import { execFile } from 'node:child_process';
-import { delimiter as posixDelimiter } from 'node:path';
 import { promisify } from 'node:util';
 import { WirebenchError } from '@wirebench/engine';
 
@@ -92,8 +91,10 @@ const defaultRunner: Runner = async (file, args, options) => {
     if (nodeError.code === 'ENOENT' || nodeError.code === 'EACCES') {
       throw error;
     }
-    if (nodeError.killed === true || nodeError.signal !== undefined) {
-      // A timeout kill: surface it distinctly so `run` can report `details.timedOut`.
+    if (nodeError.killed === true || (nodeError.signal !== null && nodeError.signal !== undefined)) {
+      // A timeout kill: `killed`/a real signal name. A normal non-zero exit sets `signal: null`
+      // (not `undefined`) and `killed: false` — checking `!== undefined` alone misclassified
+      // every ordinary failure as a timeout.
       throw error;
     }
     const exitCode = typeof nodeError.code === 'number' ? nodeError.code : 1;
@@ -152,10 +153,15 @@ function platformDefaultCandidates(platform: NodeJS.Platform, env: NodeJS.Proces
   return ['/usr/bin/git'];
 }
 
-/** Splits `PATH` into per-entry git candidates for `platform` (`;` on win32, `:` elsewhere). */
+/**
+ * Splits `PATH` into per-entry git candidates for `platform` (`;` on win32, `:` elsewhere).
+ * Hard-coded rather than `node:path`'s own `delimiter`, which reflects the *host* OS this
+ * process runs on — not the `platform` a caller is asking `findGit` to probe for (a unit test
+ * on a Linux/macOS CI runner still exercises the win32 candidate list).
+ */
 function pathCandidates(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
   const raw = env['PATH'] ?? env['Path'] ?? '';
-  const delimiter = platform === 'win32' ? ';' : posixDelimiter;
+  const delimiter = platform === 'win32' ? ';' : ':';
   const entries = raw.split(delimiter).filter((entry) => entry.length > 0);
   const exeName = platform === 'win32' ? 'git.exe' : 'git';
   const join = platform === 'win32' ? '\\' : '/';
@@ -202,6 +208,7 @@ export async function findGit(options: {
       continue;
     }
     if (compareVersions(version, MINIMUM_VERSION) < 0) {
+      console.debug(`findGit: skipping "${candidate}" — version ${version} is below the minimum ${MINIMUM_VERSION}`);
       continue;
     }
     return { path: candidate, version };
@@ -209,39 +216,83 @@ export async function findGit(options: {
   return undefined;
 }
 
-/** `git@host:path` remotes (the scp-like syntax `assertRemoteUrl` accepts alongside URL schemes). */
-const SCP_LIKE_REMOTE = /^[\w.-]+@[\w.-]+:[^\s]+$/;
+/**
+ * `user@host:path` remotes (the scp-like syntax `assertRemoteUrl` accepts alongside URL
+ * schemes), captured so the user/host parts can be checked for a leading `-` individually.
+ */
+const SCP_LIKE_REMOTE = /^([\w.-]+)@([\w.-]+):([^\s]+)$/;
 
-/** Schemes `assertRemoteUrl` accepts. */
+/** A literal `scheme://` prefix — deliberately not matching a scheme-only form like `https:x`. */
+const SCHEME_PREFIX = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//;
+
+/** Schemes `assertRemoteUrl` accepts (compared case-insensitively). */
 const ALLOWED_SCHEMES = ['https:', 'ssh:', 'file:'];
 
+/** Any whitespace or C0/DEL control character. */
+const WHITESPACE_OR_CONTROL = /[\s\x00-\x1f\x7f]/;
+
+/** The scheme (or `'scp-like'`/`'unknown'`) named in a refusal's `details`, never the URL itself. */
+function schemeLabel(trimmed: string): string {
+  if (SCP_LIKE_REMOTE.test(trimmed)) {
+    return 'scp-like';
+  }
+  const bareScheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
+  if (bareScheme === null) {
+    return 'unknown';
+  }
+  return bareScheme[1]!.toLowerCase();
+}
+
 /**
- * Refuses anything that is not a `https://`, `ssh://`, `file://` URL or a `git@host:path`
- * remote — in particular an empty string, a `-`-prefixed value (which `git` would parse as a
- * flag) and `ext::…` (git's "run an arbitrary command" transport).
+ * Refuses anything that is not a literal `https://`, `ssh://` or `file://` URL (scheme
+ * case-insensitive) or a `user@host:path` remote, trims and returns the accepted value
+ * otherwise. In particular refuses: an empty string; whitespace or control characters anywhere
+ * in the trimmed value; a value, user or host starting with `-` (which `git` — or a shell a
+ * transport helper invokes — would parse as a flag, e.g. `ssh://-oProxyCommand=x/y` or
+ * `git@-oProxyCommand:x`); `ext::…` (git's "run an arbitrary command" transport); and a
+ * scheme-only form with no `//` (`https:x`, `file:/etc/r`, `ssh:-oProxyCommand=…`), which would
+ * otherwise let a disallowed or malformed scheme slip past a same-looking check.
+ *
+ * The error `details` carry only the scheme (or `'scp-like'`) — never the URL, which may embed
+ * credentials — and the message stays generic for the same reason.
  */
-export function assertRemoteUrl(url: string): void {
+export function assertRemoteUrl(url: string): string {
   const trimmed = url.trim();
   const fail = (): never => {
-    throw new WirebenchError('git-remote-refused', `"${url}" is not an accepted git remote URL.`, {
-      details: { url },
-    });
+    throw new WirebenchError(
+      'git-remote-refused',
+      'This remote URL is not allowed: use https://, ssh://, file:// or user@host:path.',
+      { details: { scheme: schemeLabel(trimmed) } },
+    );
   };
-  if (trimmed.length === 0 || trimmed.startsWith('-') || trimmed.startsWith('ext::')) {
+  if (trimmed.length === 0 || WHITESPACE_OR_CONTROL.test(trimmed) || trimmed.startsWith('-')) {
     fail();
   }
-  if (SCP_LIKE_REMOTE.test(trimmed)) {
-    return;
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
+  if (trimmed.toLowerCase().startsWith('ext::')) {
     fail();
   }
-  if (!ALLOWED_SCHEMES.includes(parsed!.protocol)) {
+  const scpMatch = SCP_LIKE_REMOTE.exec(trimmed);
+  if (scpMatch !== null) {
+    const [, user, host] = scpMatch;
+    if (user!.startsWith('-') || host!.startsWith('-')) {
+      fail();
+    }
+    return trimmed;
+  }
+  const schemeMatch = SCHEME_PREFIX.exec(trimmed);
+  if (schemeMatch === null) {
+    // No literal `scheme://` — refuses `https:x`, `file:/etc/r`, `ssh:-oProxyCommand=…`, `x/y`.
     fail();
   }
+  const scheme = `${schemeMatch![1]!.toLowerCase()}:`;
+  if (!ALLOWED_SCHEMES.includes(scheme)) {
+    fail();
+  }
+  const rest = trimmed.slice(schemeMatch![0].length);
+  if (rest.startsWith('-')) {
+    fail();
+  }
+  return trimmed;
 }
 
 /** Regexes classifying git's stderr for `run`'s error mapping. */
@@ -266,12 +317,17 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  * requires: no shell, no prompt, no hooks, a fixed subcommand allow-list, and error `details`
  * that never carry the environment or a credential-bearing URL.
  */
+/** `ssh -o BatchMode=yes`, the default `GitCli` sets only when nothing else already names an SSH transport. */
+const DEFAULT_GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
+
 export class GitCli {
   readonly version: string;
   private readonly path: string;
   private readonly hooksDir: string;
   private readonly runner: Runner;
   private readonly extraEnv: NodeJS.ProcessEnv;
+  /** Memoised `git config --get core.sshCommand` lookup; `undefined` covers "unset" too. */
+  private sshCommandConfig: Promise<string | undefined> | undefined;
 
   constructor(location: GitLocation, options: { hooksDir: string; run?: Runner; env?: NodeJS.ProcessEnv }) {
     this.path = location.path;
@@ -279,6 +335,31 @@ export class GitCli {
     this.hooksDir = options.hooksDir;
     this.runner = options.run ?? defaultRunner;
     this.extraEnv = options.env ?? {};
+  }
+
+  /**
+   * Reads `core.sshCommand` once per instance (cached, including a cached "unset"), via the
+   * same runner every other invocation uses — never a shell, no `cwd` (a global/user-level
+   * config lookup, not tied to any one tree). Exit code 1 (and any other failure) means unset.
+   */
+  private queryCoreSshCommand(): Promise<string | undefined> {
+    this.sshCommandConfig ??= (async () => {
+      try {
+        const env: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv, GIT_TERMINAL_PROMPT: '0' };
+        const result = await this.runner(this.path, ['config', '--get', 'core.sshCommand'], {
+          env,
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+        });
+        if (result.exitCode !== 0) {
+          return undefined;
+        }
+        const value = result.stdout.trim();
+        return value.length > 0 ? value : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    return this.sshCommandConfig;
   }
 
   async run(
@@ -295,13 +376,24 @@ export class GitCli {
         details: { args: args.map(redactArg) },
       });
     }
+    const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv };
+    // The `ssh -o BatchMode=yes` default only applies when nothing else already names an SSH
+    // transport: an explicit `GIT_SSH_COMMAND`/`GIT_SSH` (from the process or this instance's
+    // own `env`) is left exactly as `mergedEnv` already carries it, and `core.sshCommand` is
+    // consulted (once, cached) only when neither env var is set.
+    let sshCommandDefault: string | undefined;
+    if (mergedEnv['GIT_SSH_COMMAND'] === undefined && mergedEnv['GIT_SSH'] === undefined) {
+      const configured = await this.queryCoreSshCommand();
+      if (configured === undefined) {
+        sshCommandDefault = DEFAULT_GIT_SSH_COMMAND;
+      }
+    }
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      ...this.extraEnv,
+      ...mergedEnv,
       GIT_TERMINAL_PROMPT: '0',
       GIT_ASKPASS: '',
       LC_ALL: 'C',
-      GIT_SSH_COMMAND: process.env['GIT_SSH_COMMAND'] ?? 'ssh -o BatchMode=yes',
+      ...(sshCommandDefault !== undefined ? { GIT_SSH_COMMAND: sshCommandDefault } : {}),
     };
     const fullArgs = [
       '-c',
@@ -324,7 +416,7 @@ export class GitCli {
           cause: error,
         });
       }
-      if (nodeError.killed === true || nodeError.signal !== undefined) {
+      if (nodeError.killed === true || (nodeError.signal !== null && nodeError.signal !== undefined)) {
         throw new WirebenchError('git-failed', `git ${subcommand ?? ''} timed out.`, {
           details: { args: args.map(redactArg), timedOut: true },
           cause: error,

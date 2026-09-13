@@ -17,7 +17,7 @@ import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { pickFile } from '../native-dialogs.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
-import { toPreferencesWire } from '../preferences.js';
+import { configuredGitPath, toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-types.js';
 import { findGit as defaultFindGit } from '../sync/git-cli.js';
@@ -45,7 +45,9 @@ export function registerGitChannels(deps: GitChannelDeps): void {
   const findGit = deps.findGit ?? defaultFindGit;
 
   registerHandler(channels.git.detect, async () => {
-    const configuredPath = deps.preferences.get().git.path;
+    // Only a path main itself picked counts as "configured" — an unmarked or cleared (`''`)
+    // preference value is never passed to `findGit`, and discovery runs instead.
+    const configuredPath = configuredGitPath(deps.preferences.get());
     const location = await findGit(configuredPath !== undefined ? { configuredPath } : {});
     return { location: location === undefined ? null : toWire(location) };
   });

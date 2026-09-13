@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
-import { PreferencesService, rememberPickedGit } from '../src/main/preferences.js';
+import { configuredGitPath, PreferencesService, rememberPickedGit } from '../src/main/preferences.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerGitChannels } from '../src/main/ipc/git.js';
 import type { GitLocation } from '../src/main/sync/git-cli.js';
@@ -54,11 +54,11 @@ afterEach(() => {
 });
 
 describe('git.detect', () => {
-  it('answers with the location findGit reports, using the configured preference', async () => {
+  it('answers with the location findGit reports, using a preference path main itself picked', async () => {
     const location: GitLocation = { path: '/usr/bin/git', version: '2.40.0' };
     const findGit = vi.fn().mockResolvedValue(location);
     const preferences = new PreferencesService(dir);
-    await preferences.update({ git: { path: '/configured/git' } });
+    await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
 
     registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
 
@@ -76,6 +76,33 @@ describe('git.detect', () => {
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
     expect(result.value.location).toBeNull();
+  });
+
+  /**
+   * The controller ruling this fixes: a configured `git.path` is only ever passed to `findGit`
+   * when `pathPickedByMain === true` and the path is non-empty. A hand-edited or otherwise
+   * unmarked preference — or a cleared (`''`) one — must fall straight through to discovery.
+   */
+  it('never passes an unmarked git.path preference to findGit', async () => {
+    const findGit = vi.fn().mockResolvedValue(undefined);
+    const preferences = new PreferencesService(dir);
+    await preferences.update({ git: { path: '/hand/edited/git' } });
+
+    registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
+    await invoke('git.detect', {});
+
+    expect(findGit).toHaveBeenCalledWith({});
+  });
+
+  it('falls through to discovery when the preference is cleared', async () => {
+    const findGit = vi.fn().mockResolvedValue(undefined);
+    const preferences = new PreferencesService(dir);
+    await preferences.update({ git: { path: '', pathPickedByMain: false } });
+
+    registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
+    await invoke('git.detect', {});
+
+    expect(findGit).toHaveBeenCalledWith({});
   });
 });
 
@@ -187,5 +214,23 @@ describe('rememberPickedGit', () => {
   it('records nothing when no path is configured at all', () => {
     const picks = new DialogPicks();
     expect(rememberPickedGit(DEFAULT_PREFERENCES, picks)).toBeUndefined();
+  });
+});
+
+describe('configuredGitPath', () => {
+  it('is undefined for an unmarked path', () => {
+    expect(configuredGitPath(mergePreferences({ git: { path: '/hand/edited/git' } }))).toBeUndefined();
+  });
+
+  it('is undefined for a marked but empty path (the clearPath tombstone)', () => {
+    expect(configuredGitPath(mergePreferences({ git: { path: '', pathPickedByMain: true } }))).toBeUndefined();
+  });
+
+  it('is the path when marked and non-empty', () => {
+    expect(configuredGitPath(mergePreferences({ git: { path: '/opt/git', pathPickedByMain: true } }))).toBe('/opt/git');
+  });
+
+  it('is undefined when nothing is configured at all', () => {
+    expect(configuredGitPath(DEFAULT_PREFERENCES)).toBeUndefined();
   });
 });

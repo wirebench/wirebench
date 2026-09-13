@@ -11,7 +11,13 @@ import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
-import { PreferencesService, rememberPickedCaBundle, rememberPickedGit, toPreferencesWire } from './preferences.js';
+import {
+  configuredGitPath,
+  PreferencesService,
+  rememberPickedCaBundle,
+  rememberPickedGit,
+  toPreferencesWire,
+} from './preferences.js';
 import { findGit } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
@@ -197,12 +203,15 @@ void app.whenReady().then(() => {
   mkdirSync(hooksDir, { recursive: true });
 
   // e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
-  // at this exact path" instead, when no `git.path` preference already names one. Honoured
-  // only in an unpackaged run, for the same reason every other `WIREBENCH_E2E_*` override is: a
-  // packaged build must not let an environment variable redirect which executable main runs.
+  // at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
+  // other `WIREBENCH_E2E_*` override is: a packaged build must not let an environment variable
+  // redirect which executable main runs. Precedence: the e2e override, then a git.path preference
+  // main itself picked (`configuredGitPath` — an unmarked or cleared value never counts), then
+  // plain discovery.
   const gitLocator = (): ReturnType<typeof findGit> => {
+    const e2eOverride = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH'];
     const configuredPath =
-      preferencesService.get().git.path ?? (app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH']);
+      e2eOverride !== undefined && e2eOverride.length > 0 ? e2eOverride : configuredGitPath(preferencesService.get());
     return findGit(configuredPath !== undefined ? { configuredPath } : {});
   };
 

@@ -127,6 +127,11 @@ describe('GitCli.run', () => {
     let seenArgs: readonly string[] | undefined;
     let seenEnv: NodeJS.ProcessEnv | undefined;
     const run: Runner = (file, args, options) => {
+      // The `core.sshCommand` lookup `run()` issues internally must not stand in for the
+      // tracked call below — answer it "unset" (exit 1) without recording it.
+      if (args[0] === 'config') {
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
+      }
       seenFile = file;
       seenArgs = args;
       seenEnv = options.env;
@@ -175,6 +180,100 @@ describe('GitCli.run', () => {
         process.env['GIT_SSH_COMMAND'] = original;
       }
     }
+  });
+
+  describe('the GIT_SSH_COMMAND default', () => {
+    const originalEnv: Record<string, string | undefined> = {};
+
+    beforeEach(() => {
+      originalEnv['GIT_SSH_COMMAND'] = process.env['GIT_SSH_COMMAND'];
+      originalEnv['GIT_SSH'] = process.env['GIT_SSH'];
+      delete process.env['GIT_SSH_COMMAND'];
+      delete process.env['GIT_SSH'];
+    });
+    afterEach(() => {
+      for (const key of ['GIT_SSH_COMMAND', 'GIT_SSH']) {
+        if (originalEnv[key] === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = originalEnv[key];
+        }
+      }
+    });
+
+    /** A fake `Runner` that answers `git config --get core.sshCommand` and counts those calls. */
+    function configAwareRunner(configValue: string | undefined): {
+      run: Runner;
+      configCalls: () => number;
+      seenEnv: () => NodeJS.ProcessEnv | undefined;
+    } {
+      let configCalls = 0;
+      let seenEnv: NodeJS.ProcessEnv | undefined;
+      const run: Runner = (_file, args, options) => {
+        if (args[0] === 'config' && args[1] === '--get' && args[2] === 'core.sshCommand') {
+          configCalls += 1;
+          return configValue === undefined
+            ? Promise.resolve({ stdout: '', stderr: '', exitCode: 1 })
+            : Promise.resolve({ stdout: `${configValue}\n`, stderr: '', exitCode: 0 });
+        }
+        seenEnv = options.env;
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+      };
+      return { run, configCalls: () => configCalls, seenEnv: () => seenEnv };
+    }
+
+    it('applies the default when nothing else names an SSH transport', async () => {
+      const { run, seenEnv, configCalls } = configAwareRunner(undefined);
+      const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+      await cli.run('/tree', ['status']);
+
+      expect(seenEnv()?.['GIT_SSH_COMMAND']).toBe('ssh -o BatchMode=yes');
+      expect(configCalls()).toBe(1);
+    });
+
+    it('does not apply the default when the process env has GIT_SSH', async () => {
+      process.env['GIT_SSH'] = '/usr/bin/plink';
+      const { run, seenEnv } = configAwareRunner(undefined);
+      const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+      await cli.run('/tree', ['status']);
+
+      expect(seenEnv()?.['GIT_SSH_COMMAND']).toBeUndefined();
+    });
+
+    it("does not apply the default when the constructor's env carries GIT_SSH_COMMAND, and that value reaches the runner", async () => {
+      const { run, seenEnv } = configAwareRunner(undefined);
+      const cli = new GitCli(
+        { path: '/usr/bin/git', version: '2.40.0' },
+        { hooksDir, run, env: { GIT_SSH_COMMAND: 'ssh -custom-ctor' } },
+      );
+
+      await cli.run('/tree', ['status']);
+
+      expect(seenEnv()?.['GIT_SSH_COMMAND']).toBe('ssh -custom-ctor');
+    });
+
+    it('does not apply the default when git config --get core.sshCommand returns a value', async () => {
+      const { run, seenEnv, configCalls } = configAwareRunner('ssh -F /custom/config');
+      const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+      await cli.run('/tree', ['status']);
+
+      expect(seenEnv()?.['GIT_SSH_COMMAND']).toBeUndefined();
+      expect(configCalls()).toBe(1);
+    });
+
+    it('runs the config lookup once across several run() calls', async () => {
+      const { run, configCalls } = configAwareRunner(undefined);
+      const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+      await cli.run('/tree', ['status']);
+      await cli.run('/tree', ['fetch']);
+      await cli.run('/tree', ['diff']);
+
+      expect(configCalls()).toBe(1);
+    });
   });
 
   it('refuses a subcommand outside GIT_SUBCOMMANDS without running it', async () => {
@@ -245,6 +344,33 @@ describe('GitCli.run', () => {
     });
   });
 
+  it('does not classify an ordinary non-zero-exit error (signal: null, killed: false) as a timeout', async () => {
+    // What Node's execFile actually throws for a normal failure — e.g. `git rev-parse` outside
+    // a repo — is an Error with `code` set to the exit code, `killed: false` and `signal: null`
+    // (not `undefined`). A `!== undefined` check alone misclassifies every such failure as a
+    // timeout.
+    const run: Runner = () => {
+      const error = Object.assign(new Error('Command failed'), {
+        code: 128,
+        killed: false,
+        signal: null,
+        stdout: '',
+        stderr: 'fatal: not a git repository (or any of the parent directories): .git',
+      });
+      return Promise.reject(error);
+    };
+    const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+    let caught: WirebenchError | undefined;
+    try {
+      await cli.run('/tree', ['rev-parse', '--is-inside-work-tree']);
+    } catch (error) {
+      caught = error as WirebenchError;
+    }
+    expect(caught?.code).toBe('git-failed');
+    expect(caught?.details).not.toHaveProperty('timedOut');
+  });
+
   it('never includes the environment in error details, strips credentials from a URL argument, and trims stderr to 2 KiB', async () => {
     const longStderr = 'x'.repeat(3000);
     const run: Runner = () => Promise.resolve({ stdout: '', stderr: longStderr, exitCode: 1 });
@@ -267,16 +393,59 @@ describe('GitCli.run', () => {
 });
 
 describe('assertRemoteUrl', () => {
-  it.each(['https://x/y.git', 'ssh://git@x/y', 'git@x:y/z.git', 'file:///tmp/r'])('accepts %s', (url) => {
-    expect(() => assertRemoteUrl(url)).not.toThrow();
-  });
+  it.each(['https://x/y.git', 'ssh://git@x/y', 'git@x:y/z.git', 'file:///tmp/r'])(
+    'accepts %s and returns the trimmed value',
+    (url) => {
+      expect(assertRemoteUrl(url)).toBe(url);
+      expect(assertRemoteUrl(`  ${url}  `)).toBe(url);
+    },
+  );
 
-  it.each(['', '-oProxyCommand=x', 'ext::sh', 'http://x', 'x/y'])('refuses %s', (url) => {
+  it.each([
+    '',
+    '-oProxyCommand=x',
+    'ext::sh',
+    'http://x',
+    'x/y',
+    // Bypass attempts a naive scheme/prefix check would miss.
+    'ssh://-oProxyCommand=x/y',
+    'git@-oProxyCommand:x',
+    'https:x',
+    'file:/etc/r',
+    'ssh:-oProxyCommand=evil',
+    'https://x/y\nrm -rf /',
+    'https://x/y\t/etc',
+  ])('refuses %s', (url) => {
     expect(() => assertRemoteUrl(url)).toThrow(WirebenchError);
     try {
       assertRemoteUrl(url);
     } catch (error) {
       expect((error as WirebenchError).code).toBe('git-remote-refused');
+      if (url.length > 0) {
+        expect((error as WirebenchError).message).not.toContain(url);
+        expect(JSON.stringify((error as WirebenchError).details)).not.toContain(url);
+      }
+    }
+  });
+
+  it('carries only the scheme (never the URL) in details, and a generic message', () => {
+    try {
+      assertRemoteUrl('http://user:token@evil.test/repo.git');
+      throw new Error('expected assertRemoteUrl to throw');
+    } catch (error) {
+      expect((error as WirebenchError).details).toEqual({ scheme: 'http' });
+      expect((error as WirebenchError).message).toBe(
+        'This remote URL is not allowed: use https://, ssh://, file:// or user@host:path.',
+      );
+    }
+  });
+
+  it('labels a refused scp-like remote as scp-like', () => {
+    try {
+      assertRemoteUrl('git@-oProxyCommand:x');
+      throw new Error('expected assertRemoteUrl to throw');
+    } catch (error) {
+      expect((error as WirebenchError).details).toEqual({ scheme: 'scp-like' });
     }
   });
 });
@@ -308,5 +477,31 @@ describe('findGit against the real system git (smoke test)', () => {
     const cli = new GitCli(location, { hooksDir: dir });
     const result = await cli.run(undefined, ['--version']);
     expect(result.stdout).toContain('git version');
+  });
+
+  it('maps a real ordinary failure (rev-parse outside a repo) to git-failed, not a timeout', async () => {
+    const location = await findGit({});
+    if (location === undefined) {
+      console.warn('No system git found; skipping the real-git smoke test.');
+      return;
+    }
+    const nonRepoDir = mkdtempSync(join(tmpdir(), 'wirebench-git-non-repo-'));
+    try {
+      const cli = new GitCli(location, { hooksDir: dir });
+      let caught: WirebenchError | undefined;
+      try {
+        await cli.run(nonRepoDir, ['rev-parse', '--is-inside-work-tree']);
+      } catch (error) {
+        caught = error as WirebenchError;
+      }
+      expect(caught?.code).toBe('git-failed');
+      const details = caught?.details as Record<string, unknown> | undefined;
+      expect(details).not.toHaveProperty('timedOut');
+      expect(details?.['exitCode']).toBeTypeOf('number');
+      expect(details?.['exitCode']).not.toBe(0);
+      expect((details?.['stderr'] as string | undefined)?.length ?? 0).toBeGreaterThan(0);
+    } finally {
+      rmSync(nonRepoDir, { recursive: true, force: true });
+    }
   });
 });
