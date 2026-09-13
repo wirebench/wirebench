@@ -24,6 +24,11 @@ const RestEditor = lazy(async () => {
   return { default: module.RestEditor };
 });
 
+const ApiTab = lazy(async () => {
+  const module = await import('../features/rest-api/api-tab.js');
+  return { default: module.ApiTab };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: module.HistoryEntryView };
@@ -480,9 +485,9 @@ export function EditorArea() {
             <RestEditor requestId={activeTab.restRequestId} />
           </Suspense>
         ) : activeTab.kind === 'api' && activeTab.apiId !== undefined ? (
-          <div data-testid="api-tab-placeholder" className="p-4 text-sm text-fg-subtle">
-            The API page is not built yet.
-          </div>
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <ApiTab apiId={activeTab.apiId} />
+          </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />
