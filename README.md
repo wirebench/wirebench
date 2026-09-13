@@ -164,8 +164,9 @@ repository. It is what the opt-in update feed is derived from.
   [implementation plan](docs/plans/2026-09-09-wirebench-v1-explore-and-send-plan.md)
 - [Workspaces design spec](docs/specs/2026-09-11-wirebench-workspaces-design.md) and
   [implementation plan](docs/plans/2026-09-11-wirebench-workspaces-plan.md)
-- [REST client design spec](docs/specs/2026-09-13-wirebench-rest-client-design.md) — APIs, folders and requests
-  beside SOAP interfaces, OpenAPI import, OAuth2, and what it fixes now so gRPC can follow
+- [REST client design spec](docs/specs/2026-09-13-wirebench-rest-client-design.md) and
+  [implementation plan](docs/plans/2026-09-13-wirebench-rest-client-plan.md) — APIs, folders and requests beside
+  SOAP interfaces, OpenAPI import, OAuth2, and what it fixes now so gRPC can follow
 - [Changelog](CHANGELOG.md)
 
 ## Roadmap

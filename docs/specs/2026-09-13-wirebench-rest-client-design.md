@@ -1,7 +1,7 @@
 # Spec: REST client
 
-- Status: draft 2026-09-13, for review; the §15 defaults apply until changed here. To be implemented by
-  `docs/plans/2026-09-13-wirebench-rest-client-plan.md` (written once this spec is approved).
+- Status: draft 2026-09-13, for review; the §15 defaults apply until changed here. Implemented by
+  `docs/plans/2026-09-13-wirebench-rest-client-plan.md`, which assumes those defaults.
 - Date: 2026-09-13
 - Builds on: the v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`: §4 protocol-neutral
   core, §7 the reserved `kind: rest` discriminator, §10 style, §12 boundaries, §14 the REST item), the workspaces
