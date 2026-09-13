@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
+import { Check, Columns2, PanelTop, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
@@ -9,7 +9,8 @@ import { EndpointsDialog } from './endpoints-dialog.js';
 import { flipMode, flipOrientation, setEditorLayout, useEditorLayout } from './layout.js';
 
 // The toolbar renders outside the shell's `TooltipProvider` in tests, so its icon controls are
-// plain buttons with an accessible name rather than the tooltip-backed `IconButton`.
+// plain buttons with an accessible name and a native `title` rather than the tooltip-backed
+// `IconButton`. Every icon-only control needs that `title`: an icon alone does not say what it does.
 const ICON_BUTTON_CLASS =
   'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg-default';
 
@@ -31,6 +32,8 @@ export interface RequestToolbarProps {
   readonly onValidate: () => void;
   /** The formatted `Mod+Shift+V` shortcut, shown on the Validate button's title. */
   readonly validateShortcut?: string | undefined;
+  /** The formatted `editor.toggleLayoutMode` shortcut, shown on the split/tabs button's title. */
+  readonly layoutModeShortcut?: string | undefined;
 }
 
 /**
@@ -52,9 +55,13 @@ export function RequestToolbar({
   sendShortcut,
   onValidate,
   validateShortcut,
+  layoutModeShortcut,
 }: RequestToolbarProps) {
   const layout = useEditorLayout(draft.id);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
+  const orientationLabel =
+    layout.orientation === 'side-by-side' ? 'Stack panes vertically' : 'Place panes side by side';
+  const modeLabel = layout.mode === 'split' ? 'Show one pane at a time' : 'Show both panes';
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
@@ -121,8 +128,9 @@ export function RequestToolbar({
 
       <button
         type="button"
-        aria-label={layout.orientation === 'side-by-side' ? 'Stack panes vertically' : 'Place panes side by side'}
+        aria-label={orientationLabel}
         data-testid="layout-orientation"
+        title={orientationLabel}
         className={ICON_BUTTON_CLASS}
         onClick={() => setEditorLayout(draft.id, flipOrientation)}
       >
@@ -134,12 +142,18 @@ export function RequestToolbar({
       </button>
       <button
         type="button"
-        aria-label={layout.mode === 'split' ? 'Show one pane at a time' : 'Show both panes'}
+        aria-label={modeLabel}
         data-testid="layout-mode"
+        title={layoutModeShortcut === undefined ? modeLabel : `${modeLabel} (${layoutModeShortcut})`}
         className={ICON_BUTTON_CLASS}
         onClick={() => setEditorLayout(draft.id, flipMode)}
       >
-        <SquareSplitHorizontal size={14} aria-hidden="true" />
+        {/* Draws the layout you are in, like the orientation button: two panes, or one under tabs. */}
+        {layout.mode === 'split' ? (
+          <SquareSplitHorizontal size={14} aria-hidden="true" />
+        ) : (
+          <PanelTop size={14} aria-hidden="true" />
+        )}
       </button>
 
       <EndpointsDialog open={endpointsOpen} onOpenChange={setEndpointsOpen} interfaceId={draft.interfaceId} />
