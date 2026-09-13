@@ -17,20 +17,32 @@ import { registerHandler } from './register.js';
  * be called before the startup warm-up's `load()` resolves, and an early caller must see on-disk
  * state rather than the defaults with no way to be corrected later.
  *
- * One field is not the renderer's to set: see {@link MAIN_ONLY_SSL_KEYS}.
+ * Some fields are not the renderer's to set: see {@link MAIN_ONLY_KEYS}.
  */
 
 /**
- * The `ssl` keys `preferences.update` refuses.
+ * The keys `preferences.update` refuses, one array per section that has any.
  *
- * `caBundlePath` names a file main *reads on every send*, and the renderer may never name a
- * path main later reads — that is the whole containment rule, and it holds for a preference as
- * much as for an attachment. The path is set only by `ssl.pickCaBundle`, which runs a native
- * dialog in main and records the pick; `caBundlePickedByMain` is the marker that says so, and
- * would be worthless if the renderer could set it too. A patch carrying either is rejected
- * rather than silently dropped, so a renderer that still tries fails loudly in development.
+ * `ssl.caBundlePath` names a file main *reads on every send*; `git.path` names an executable
+ * main *executes* on the tree it opens, a stricter reason still. Either way the renderer may
+ * never name a path main later reads or runs — that is the whole containment rule, and it holds
+ * for a preference as much as for an attachment. Each path is set only by its own picker
+ * (`ssl.pickCaBundle`, `git.locate`), which runs in main and records the pick; the matching
+ * `...PickedByMain` marker says so, and would be worthless if the renderer could set it too. A
+ * patch carrying any of these is rejected rather than silently dropped, so a renderer that still
+ * tries fails loudly in development.
  */
-const MAIN_ONLY_SSL_KEYS = ['caBundlePath', 'caBundlePickedByMain'] as const;
+const MAIN_ONLY_KEYS = {
+  ssl: ['caBundlePath', 'caBundlePickedByMain'],
+  git: ['path', 'pathPickedByMain'],
+} as const;
+
+/** Per-section message naming the channel that is the actual way to change a main-only key. */
+const MAIN_ONLY_MESSAGE: Record<keyof typeof MAIN_ONLY_KEYS, string> = {
+  ssl: 'The CA bundle is set only by picking a file (ssl.pickCaBundle), not through preferences.update',
+  git: 'The git executable is set only by detection or picking a file (git.locate), not through preferences.update',
+};
+
 export function registerPreferencesChannels(
   preferences: PreferencesService,
   onChanged: (preferences: PreferencesWire) => void = () => undefined,
@@ -40,14 +52,14 @@ export function registerPreferencesChannels(
   });
 
   registerHandler(channels.preferences.update, async (request) => {
-    const ssl = request.patch.ssl;
-    const refused = ssl === undefined ? [] : MAIN_ONLY_SSL_KEYS.filter((key) => key in ssl);
-    if (refused.length > 0) {
-      throw new WirebenchError(
-        'preference-read-only',
-        `The CA bundle is set only by picking a file (ssl.pickCaBundle), not through preferences.update: ${refused.join(', ')}`,
-        { details: { keys: [...refused] } },
-      );
+    for (const section of Object.keys(MAIN_ONLY_KEYS) as (keyof typeof MAIN_ONLY_KEYS)[]) {
+      const value = request.patch[section];
+      const refused = value === undefined ? [] : MAIN_ONLY_KEYS[section].filter((key) => key in value);
+      if (refused.length > 0) {
+        throw new WirebenchError('preference-read-only', `${MAIN_ONLY_MESSAGE[section]}: ${refused.join(', ')}`, {
+          details: { keys: [...refused] },
+        });
+      }
     }
     const next = toPreferencesWire(await preferences.update(request.patch));
     onChanged(next);

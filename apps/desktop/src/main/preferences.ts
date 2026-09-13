@@ -57,6 +57,28 @@ export function rememberPickedCaBundle(
   return caBundlePath;
 }
 
+/**
+ * Re-records a git executable the user picked in an earlier session as a read pick for this
+ * one. Mirrors {@link rememberPickedCaBundle} exactly, including the reason: only a path
+ * carrying `git.pathPickedByMain` qualifies, so a `preferences.yaml` edited by hand — or a path
+ * that reached the file some other way — gets no pick and no trust until it is picked again.
+ *
+ * @param preferences the loaded preferences document
+ * @param picks the session's picked-path memory
+ * @returns the path that was re-recorded, or `undefined` when none was
+ */
+export function rememberPickedGit(
+  preferences: Preferences,
+  picks: { rememberRead(path: string): void },
+): string | undefined {
+  const { path, pathPickedByMain } = preferences.git;
+  if (pathPickedByMain !== true || path === undefined || path.length === 0) {
+    return undefined;
+  }
+  picks.rememberRead(path);
+  return path;
+}
+
 /** File name (inside `userData`) the preferences are persisted to. */
 export const PREFERENCES_FILE = 'preferences.yaml';
 

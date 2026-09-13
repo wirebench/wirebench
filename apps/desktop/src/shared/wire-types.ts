@@ -2659,6 +2659,11 @@ export const preferencesWireSchema = z.object({
     clientKeystoreRef: z.string().optional(),
     trustAll: z.literal(false),
   }),
+  git: z.object({
+    path: z.string().optional(),
+    /** True when main set `path` through `git.locate`; see `GitPreferences`. */
+    pathPickedByMain: z.boolean().optional(),
+  }),
   wsdl: z.object({
     cacheDefinitions: z.boolean(),
     prettyPrint: z.boolean(),
@@ -2725,6 +2730,7 @@ export const preferencesPatchWireSchema = z.object({
   http: z.record(z.string(), z.unknown()).optional(),
   proxy: z.record(z.string(), z.unknown()).optional(),
   ssl: z.record(z.string(), z.unknown()).optional(),
+  git: z.record(z.string(), z.unknown()).optional(),
   wsdl: z.record(z.string(), z.unknown()).optional(),
   wsi: z.record(z.string(), z.unknown()).optional(),
   rest: z.record(z.string(), z.unknown()).optional(),
@@ -2762,6 +2768,31 @@ export const sslPickCaBundleResponseSchema = z.object({
 export type SslPickCaBundleResponse = z.infer<typeof sslPickCaBundleResponseSchema>;
 export const sslClearCaBundleRequestSchema = z.object({});
 export const sslClearCaBundleResponseSchema = z.object({ preferences: preferencesWireSchema });
+
+/** A located, usable git executable — mirrors `GitLocation` from `main/sync/git-cli.ts`. */
+export const gitLocationWireSchema = z.object({ path: z.string(), version: z.string() });
+export type GitLocationWire = z.infer<typeof gitLocationWireSchema>;
+
+/**
+ * `git.detect` / `git.locate` / `git.clearPath`: like `ssl.pickCaBundle`/`clearCaBundle`, the
+ * only ways the `git.path` preference changes. The renderer never names the git executable
+ * itself — main runs it — so the path is set only by picking a file through `git.locate`, and
+ * `preferences.update` refuses a patch carrying `git.path`/`git.pathPickedByMain`.
+ */
+export const gitDetectRequestSchema = z.object({});
+export const gitDetectResponseSchema = z.object({ location: gitLocationWireSchema.nullable() });
+export type GitDetectResponse = z.infer<typeof gitDetectResponseSchema>;
+
+export const gitLocateRequestSchema = z.object({});
+export const gitLocateResponseSchema = z.object({
+  /** The located git, absent when the user cancelled the dialog (nothing changes then). */
+  location: gitLocationWireSchema.optional(),
+  preferences: preferencesWireSchema,
+});
+export type GitLocateResponse = z.infer<typeof gitLocateResponseSchema>;
+
+export const gitClearPathRequestSchema = z.object({});
+export const gitClearPathResponseSchema = z.object({ preferences: preferencesWireSchema });
 
 /**
  * The largest single file a drag-and-drop may add (32 MiB).

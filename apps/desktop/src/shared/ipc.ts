@@ -53,6 +53,12 @@ import {
   sslClearCaBundleResponseSchema,
   sslPickCaBundleRequestSchema,
   sslPickCaBundleResponseSchema,
+  gitDetectRequestSchema,
+  gitDetectResponseSchema,
+  gitLocateRequestSchema,
+  gitLocateResponseSchema,
+  gitClearPathRequestSchema,
+  gitClearPathResponseSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
@@ -445,6 +451,14 @@ export const channels = {
   ssl: {
     pickCaBundle: defineChannel('ssl.pickCaBundle', sslPickCaBundleRequestSchema, sslPickCaBundleResponseSchema),
     clearCaBundle: defineChannel('ssl.clearCaBundle', sslClearCaBundleRequestSchema, sslClearCaBundleResponseSchema),
+  },
+  // The git executable preference has channels of its own for the same reason `ssl` does: main
+  // *executes* the path (a stricter reason than reading), so it must come from discovery or a
+  // native picker main ran itself, never from a string the renderer sends.
+  git: {
+    detect: defineChannel('git.detect', gitDetectRequestSchema, gitDetectResponseSchema),
+    locate: defineChannel('git.locate', gitLocateRequestSchema, gitLocateResponseSchema),
+    clearPath: defineChannel('git.clearPath', gitClearPathRequestSchema, gitClearPathResponseSchema),
   },
   // No `secrets.get`: the renderer may create/replace/check/delete/list secret refs, but can
   // never read a value back — resolution happens only in main, at send/import time.

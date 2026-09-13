@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
@@ -10,7 +11,8 @@ import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
-import { PreferencesService, rememberPickedCaBundle, toPreferencesWire } from './preferences.js';
+import { PreferencesService, rememberPickedCaBundle, rememberPickedGit, toPreferencesWire } from './preferences.js';
+import { findGit } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
@@ -41,6 +43,7 @@ import { OpenApiImportService } from './openapi-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
+import { registerGitChannels } from './ipc/git.js';
 import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
 import { createUpdateController } from './update-service.js';
@@ -187,6 +190,22 @@ void app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
+  // `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
+  // a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
+  // never runs. Created once, up front, so it exists before any sync operation can start.
+  const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
+  mkdirSync(hooksDir, { recursive: true });
+
+  // e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
+  // at this exact path" instead, when no `git.path` preference already names one. Honoured
+  // only in an unpackaged run, for the same reason every other `WIREBENCH_E2E_*` override is: a
+  // packaged build must not let an environment variable redirect which executable main runs.
+  const gitLocator = (): ReturnType<typeof findGit> => {
+    const configuredPath =
+      preferencesService.get().git.path ?? (app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH']);
+    return findGit(configuredPath !== undefined ? { configuredPath } : {});
+  };
+
   const updates = createUpdateController((status) => {
     broadcast(events.app.updateStatus, { status });
   });
@@ -287,6 +306,17 @@ void app.whenReady().then(() => {
       broadcast(events.preferences.changed, { preferences });
     },
   });
+  registerGitChannels({
+    preferences: preferencesService,
+    picks: dialogPicks,
+    // `git.detect` finds a git with no configured preference through `gitLocator` (so the e2e
+    // "git missing" override applies there); `git.locate` already has an explicit picked path
+    // to verify and must not have that overridden.
+    findGit: (options) => (options.configuredPath !== undefined ? findGit(options) : gitLocator()),
+    onChanged: (preferences) => {
+      broadcast(events.preferences.changed, { preferences });
+    },
+  });
   registerThemeChannels((payload) => {
     broadcast(events.theme.changed, payload);
   });
@@ -351,6 +381,8 @@ void app.whenReady().then(() => {
     // file cannot smuggle a path into the read-pick set. It has to happen after the load
     // resolves: before it, the in-memory document is still the defaults.
     rememberPickedCaBundle(preferences, dialogPicks);
+    // Same evidence, same reason, for a git executable main itself picked (`git.pathPickedByMain`).
+    rememberPickedGit(preferences, dialogPicks);
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();

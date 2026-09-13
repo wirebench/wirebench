@@ -25,6 +25,7 @@ describe('buildApi', () => {
       'env',
       'exchanges',
       'fs',
+      'git',
       'globals',
       'history',
       'keystores',
