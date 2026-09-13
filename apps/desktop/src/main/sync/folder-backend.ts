@@ -66,7 +66,7 @@ export class FolderBackend implements SyncBackend {
     return syncNotSupported('resolve');
   }
 
-  finishMerge(): Promise<void> {
+  finishMerge(): Promise<{ changedPaths: string[] }> {
     return syncNotSupported('finishMerge');
   }
 

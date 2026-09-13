@@ -211,13 +211,12 @@ export class SyncService {
       if ((await this.backend.conflicts()).length > 0) {
         return await this.probeNow();
       }
-      // Captured before the merge commit: with every conflict resolved, the tree's changes against
-      // HEAD are exactly what the merge commit brings in (`diff --name-only HEAD~1 HEAD` after it).
-      const merged = await this.backend.changedPaths();
-      await this.backend.finishMerge();
+      // What the merge commit brought in — not the working tree's status, which would also carry
+      // saves made (and deliberately left uncommitted) while the conflict was open.
+      const { changedPaths } = await this.backend.finishMerge();
       await this.probeNow();
-      if (merged.length > 0) {
-        await this.deps.onPulled(merged.map((change) => change.path));
+      if (changedPaths.length > 0) {
+        await this.deps.onPulled(changedPaths);
       }
       return this.last;
     });
@@ -262,6 +261,12 @@ export class SyncService {
 
   private run<T>(op: () => Promise<T>): Promise<T> {
     const result = this.queue.then(async () => {
+      // Checked right before starting, not at call time: an operation already running when
+      // `stop()` is called finishes, but nothing queued behind it may reach a workspace that is
+      // closing (and possibly being reopened under a new service). No status is emitted for it.
+      if (this.stopped) {
+        throw new WirebenchError('sync-stopped', 'Sync stopped for this workspace.');
+      }
       this.running += 1;
       this.emit();
       try {

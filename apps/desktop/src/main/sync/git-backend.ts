@@ -452,8 +452,12 @@ export class GitBackend implements SyncBackend {
     await this.git.run(this.tree, ['add', '--', path]);
   }
 
-  async finishMerge(): Promise<void> {
+  async finishMerge(): Promise<{ changedPaths: string[] }> {
+    // Commits only what is staged — the resolved merge — so a file saved (and left unstaged or
+    // untracked) while the conflict was open stays uncommitted and out of the list below.
     await this.git.run(this.tree, ['commit', '--no-edit']);
+    const { stdout } = await this.git.run(this.tree, ['diff', '--name-only', '-z', 'HEAD~1', 'HEAD']);
+    return { changedPaths: splitNulPaths(stdout) };
   }
 
   async abortMerge(): Promise<void> {

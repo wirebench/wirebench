@@ -30,8 +30,12 @@ export interface SyncBackend {
   conflicts(): Promise<SyncConflictWire[]>;
   /** Resolves one conflicted path by keeping either side. */
   resolve(path: string, side: 'mine' | 'theirs'): Promise<void>;
-  /** Commits a merge whose conflicts have all been `resolve`d. */
-  finishMerge(): Promise<void>;
+  /**
+   * Commits a merge whose conflicts have all been `resolve`d, returning the tree-relative paths
+   * that merge commit brought into our side (`diff --name-only HEAD~1 HEAD`) — never edits left
+   * uncommitted in the working tree while the conflict was open.
+   */
+  finishMerge(): Promise<{ changedPaths: string[] }>;
   /** Abandons an in-progress merge, restoring the pre-merge tree. */
   abortMerge(): Promise<void>;
   /** The `limit` most recent commits, newest first. */

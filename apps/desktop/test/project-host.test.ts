@@ -269,20 +269,28 @@ describe('ProjectHost', () => {
 
   it('serialises two overlapping saves instead of interleaving their write and prune phases', async () => {
     const dir = join(tempDir('project'), 'Mutex Project');
-    // Each save stamps its `reason` into the project file it writes, so the log below can say
-    // which save is inside its write phase; the delay makes an unserialised pair interleave.
+    // The two saves write different models — the project is renamed from inside the first save's
+    // write phase and the second save is queued right then — so the log below can tell from the
+    // manifest's `name:` which save is inside its write phase; the delay makes an unserialised
+    // pair interleave. (Saves no longer stamp their reason into the file, so that cannot be used.)
     const log: string[] = [];
     function saveOf(data: Buffer | string): string | undefined {
       const text = String(data);
-      if (text.includes('wirebench (one)')) return 'one';
-      if (text.includes('wirebench (two)')) return 'two';
+      if (/^name: One$/m.test(text)) return 'one';
+      if (/^name: Two$/m.test(text)) return 'two';
       return undefined;
     }
+    let secondSave: Promise<{ saved: boolean }> | undefined;
     const fs: FsLike = {
       ...nodeFs,
       async writeFile(path, data) {
         const which = saveOf(data);
         if (which !== undefined) log.push(`${which} enter`);
+        if (which === 'one' && secondSave === undefined) {
+          secondSave = service
+            .mutate({ kind: 'rename-project', name: 'Two' })
+            .then(async () => await service.save({ reason: 'two' }));
+        }
         await new Promise((resolve) => setTimeout(resolve, 10));
         await nodeFs.writeFile(path, data);
         if (which !== undefined) log.push(`${which} exit`);
@@ -300,7 +308,10 @@ describe('ProjectHost', () => {
     const filesBefore = (await readdir(dir)).sort();
     log.length = 0;
 
-    const [first, second] = await Promise.all([service.save({ reason: 'one' }), service.save({ reason: 'two' })]);
+    await service.mutate({ kind: 'rename-project', name: 'One' });
+    const first = await service.save({ reason: 'one' });
+    expect(secondSave).toBeDefined();
+    const second = await secondSave!;
 
     expect(first.saved).toBe(true);
     expect(second.saved).toBe(true);

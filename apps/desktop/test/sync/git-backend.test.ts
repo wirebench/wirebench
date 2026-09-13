@@ -494,3 +494,37 @@ describeGit('GitBackend (real git)', () => {
     expect(await b.probe()).toMatchObject({ state: 'diverged', ahead: 1, behind: 1 });
   });
 });
+
+describe('GitBackend.finishMerge (mocked runner)', () => {
+  it('commits the resolved merge and reports what that commit brought in, NUL-parsed', async () => {
+    const calls: string[][] = [];
+    const runner = mockRunner((args) => {
+      if (args.length === 0) {
+        return {};
+      }
+      calls.push([...args]);
+      if (args[0] === 'commit') {
+        return {};
+      }
+      if (args[0] === 'diff') {
+        return { stdout: ['environments/qa.yaml', 'projects/api/new file.yaml', ''].join('\x00') };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const tree = await mkTempDir('wirebench-sync-unit-');
+    try {
+      const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+      const backend = new GitBackend({ git: cli, tree, settings });
+
+      await expect(backend.finishMerge()).resolves.toEqual({
+        changedPaths: ['environments/qa.yaml', 'projects/api/new file.yaml'],
+      });
+      expect(calls).toEqual([
+        ['commit', '--no-edit'],
+        ['diff', '--name-only', '-z', 'HEAD~1', 'HEAD'],
+      ]);
+    } finally {
+      await removeTempDir(tree);
+    }
+  });
+});

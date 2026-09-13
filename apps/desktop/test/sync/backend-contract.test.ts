@@ -306,6 +306,38 @@ function defineContract(factory: () => Promise<Fixture>): void {
     },
   );
 
+  it('finishMerge reports what the merge brought in, not edits left uncommitted during the conflict', async () => {
+    fixture = await factory();
+    const { a, b } = fixture;
+
+    await fixture.writeA('environments/staging.yaml', 'name: Staging\n');
+    await a.commit('Add staging environment');
+    await a.push();
+    await b.fetch();
+    await b.merge();
+
+    // A changes qa (which B also changes: the conflict) and adds prod (merged in cleanly).
+    await fixture.writeA('environments/qa.yaml', 'name: QA\nurl: https://a.example\n');
+    await fixture.writeA('environments/prod.yaml', 'name: Prod\n');
+    await a.commit('Update QA, add prod (A)');
+    await a.push();
+
+    await fixture.writeB('environments/qa.yaml', 'name: QA\nurl: https://b.example\n');
+    await b.commit('Update QA (B)');
+    await b.fetch();
+    expect((await b.merge()).conflicts).toHaveLength(1);
+
+    // Saved while the conflict is open and never committed.
+    await fixture.writeB('environments/staging.yaml', 'name: Staging\nurl: https://local.example\n');
+
+    await b.resolve('environments/qa.yaml', 'theirs');
+    const finished = await b.finishMerge();
+
+    expect([...finished.changedPaths].sort()).toEqual(['environments/prod.yaml', 'environments/qa.yaml']);
+    expect(await b.probe()).toMatchObject({ uncommitted: 1 });
+    expect(await fixture.readB('environments/staging.yaml')).toBe('name: Staging\nurl: https://local.example\n');
+  });
+
   it('throws sync-uncommitted instead of merging over dirty files', async () => {
     fixture = await factory();
     const { a, b } = fixture;

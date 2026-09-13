@@ -48,6 +48,8 @@ interface MergeState {
   readonly mine: FileMap;
   readonly theirs: FileMap;
   readonly preMergeFiles: FileMap;
+  /** Every path the merge itself wrote or left conflicted — what `finishMerge` commits (git's "staged"). */
+  readonly mergePaths: ReadonlySet<string>;
 }
 
 let nextCommitId = 0;
@@ -131,11 +133,11 @@ export class FakeServerBackend implements SyncBackend {
    * resolved) — a plain fast-forward merge needs no synthetic commit, `lastCommittedFiles()`
    * already equals the merged tree via the advanced `baseVersion`.
    */
-  private recordMergeCommit(): void {
+  private recordMergeCommit(files: FileMap = this.files): void {
     nextCommitId += 1;
     this.pending.push({
       id: `local-${nextCommitId}`,
-      files: new Map(this.files),
+      files: new Map(files),
       subject: 'Merge',
       author: this.identityValue !== undefined ? `${this.identityValue.name} <${this.identityValue.email}>` : 'unknown',
       at: new Date().toISOString(),
@@ -189,12 +191,6 @@ export class FakeServerBackend implements SyncBackend {
     // modify/delete conflict in either direction.
     const conflictPaths = [...merged.conflicts, ...merged.dropped];
     if (conflictPaths.length > 0) {
-      this.mergeState = {
-        conflicts: new Set(conflictPaths),
-        mine: new Map(mine),
-        theirs: new Map(theirs),
-        preMergeFiles: new Map(mine),
-      };
       const files = new Map(merged.files);
       for (const path of merged.dropped) {
         const mineValue = mine.get(path);
@@ -202,6 +198,13 @@ export class FakeServerBackend implements SyncBackend {
           files.set(path, mineValue);
         }
       }
+      this.mergeState = {
+        conflicts: new Set(conflictPaths),
+        mine: new Map(mine),
+        theirs: new Map(theirs),
+        preMergeFiles: new Map(mine),
+        mergePaths: new Set([...diffPaths(mine, files), ...conflictPaths]),
+      };
       this.files = files;
       const conflicts = conflictPaths.map((path) => {
         const entity = describeTreePath(path);
@@ -271,17 +274,28 @@ export class FakeServerBackend implements SyncBackend {
     return Promise.resolve();
   }
 
-  finishMerge(): Promise<void> {
+  finishMerge(): Promise<{ changedPaths: string[] }> {
     if (this.mergeState === undefined) {
-      return Promise.resolve();
+      return Promise.resolve({ changedPaths: [] });
     }
-    // Mirrors a real `git commit --no-edit` after resolving conflicts: the resolved working
-    // tree becomes a new (unpushed) commit, so a `commit()` right afterwards correctly sees
-    // nothing left to commit.
-    this.recordMergeCommit();
+    // Mirrors a real `git commit --no-edit` after resolving conflicts: only what the merge itself
+    // staged (the paths it wrote plus the resolved conflicts) becomes the new (unpushed) commit;
+    // anything else edited in the working tree meanwhile stays uncommitted, as unstaged edits do
+    // in git. `changedPaths` is that commit against its first parent (`diff HEAD~1 HEAD`).
+    const before = this.lastCommittedFiles();
+    const committed = new Map(before);
+    for (const path of this.mergeState.mergePaths) {
+      const value = this.files.get(path);
+      if (value === undefined) {
+        committed.delete(path);
+      } else {
+        committed.set(path, value);
+      }
+    }
+    this.recordMergeCommit(committed);
     this.baseVersion = this.knownRemoteVersion;
     this.mergeState = undefined;
-    return Promise.resolve();
+    return Promise.resolve({ changedPaths: diffPaths(before, committed) });
   }
 
   abortMerge(): Promise<void> {

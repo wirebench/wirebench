@@ -99,9 +99,7 @@ async function seedShared(): Promise<string> {
   await mkdir(tree, { recursive: true });
   await GitBackend.init(git, tree, 'main');
   await setTestIdentity(git, tree);
-  // Stamped as a manual save wrote it, so a host's own manual save changes only what the test edits
-  // (`wirebench.yaml` records its writer and would otherwise change on the first save too).
-  await saveProject(calcProject('<Add>1</Add>'), workspaceProjectDir(tree, 'calc'), { writer: 'wirebench (manual)' });
+  await saveProject(calcProject('<Add>1</Add>'), workspaceProjectDir(tree, 'calc'));
   const dev = { ...createWorkspaceEnvironment('dev', new Set()), properties: { host: 'one' } };
   const staging = { ...createWorkspaceEnvironment('staging', new Set([dev.slug])), properties: { host: 'stage' } };
   workspace = {

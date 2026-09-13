@@ -168,6 +168,13 @@ export interface SendAttachmentInput {
 /** How long an edit sits before autosave writes it out. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 
+/**
+ * `writtenBy` in every project manifest this host writes. Deliberately without the save reason:
+ * a manual save and an autosave of the same model must produce byte-identical files, or every
+ * switch between the two rewrites `wirebench.yaml` (and, in a shared workspace, commits it).
+ */
+const PROJECT_WRITER = 'wirebench';
+
 /** Events the service raises; the IPC layer forwards them to the renderer. */
 export interface ProjectHostHooks {
   /** After any mutation, save, open, close or reload. `null` means no project is open. */
@@ -1057,12 +1064,12 @@ export class ProjectHost {
     const model = open.project;
     const result = await saveProject(model, open.dir, {
       ...(open.lastWritten !== undefined ? { previous: open.lastWritten } : {}),
-      writer: `wirebench (${options.reason})`,
+      writer: PROJECT_WRITER,
       ...(options.backups !== undefined ? { backups: options.backups } : {}),
       ...(this.fs !== undefined ? { fs: this.fs } : {}),
     });
     open.watcher.expect([...result.written, ...result.removed]);
-    open.lastWritten = projectFiles(model, { writer: `wirebench (${options.reason})` });
+    open.lastWritten = projectFiles(model, { writer: PROJECT_WRITER });
     open.baseline = open.lastWritten;
     if (open.project === model) {
       open.dirty = false;

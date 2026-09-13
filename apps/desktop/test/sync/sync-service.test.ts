@@ -53,6 +53,8 @@ class ScriptedBackend implements SyncBackend {
   pushScript: (() => Promise<void>)[] = [];
   mergeResult: { conflicts: SyncConflictWire[]; changedPaths: string[] } = { conflicts: [], changedPaths: [] };
   conflictList: SyncConflictWire[] = [];
+  /** What `finishMerge()` reports the merge commit brought in. */
+  mergeChanged: string[] = [];
 
   private async track<T>(name: string, body: () => Promise<T> | T): Promise<T> {
     this.calls.push(name);
@@ -115,10 +117,11 @@ class ScriptedBackend implements SyncBackend {
     });
   }
 
-  finishMerge(): Promise<void> {
+  finishMerge(): Promise<{ changedPaths: string[] }> {
     return this.track('finishMerge', () => {
-      this.changes = [];
-      this.current = { ...this.current, state: 'clean', uncommitted: 0 };
+      // Like git: only the merge is committed; saves left uncommitted stay in `changes`.
+      this.current = { ...this.current, state: 'clean', uncommitted: this.changes.length };
+      return { changedPaths: [...this.mergeChanged] };
     });
   }
 
@@ -234,6 +237,31 @@ describe('SyncService — queue', () => {
     expect(backend.calls.at(-1)).toBe('log');
     expect(backend.maxActive).toBe(1);
     expect(service.status().state).not.toBe('syncing');
+  });
+
+  it('starts no queued operation after stop(); the one already running finishes', async () => {
+    const { backend, service, statuses } = harness({ autoFetchSeconds: 0 });
+    const gate = deferred();
+    backend.fetchScript.push(() => gate.promise);
+
+    const first = service.fetch();
+    // Rejection handlers attached up front, so the queued rejections are never unhandled.
+    const second = rejectionOf(service.push());
+    const third = rejectionOf(service.log(1));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(backend.calls).toEqual(['fetch']);
+
+    service.stop();
+    const emittedBeforeRelease = statuses.length;
+    gate.resolve();
+
+    await expect(first).resolves.toMatchObject({ state: 'clean' });
+    for (const error of [await second, await third]) {
+      expect(isWirebenchError(error) && error.code).toBe('sync-stopped');
+    }
+    expect(backend.calls).toEqual(['fetch']);
+    // Only the running fetch's closing status; nothing for the two that never started.
+    expect(statuses.length).toBe(emittedBeforeRelease + 1);
   });
 
   it('returns the post-op status and emits it', async () => {
@@ -574,10 +602,7 @@ describe('SyncService — pull, push, conflicts', () => {
     };
     await h.service.pull();
 
-    h.backend.changes = [
-      { path: 'environments/dev.yaml', status: 'modified' },
-      { path: 'projects/calc/wirebench.yaml', status: 'modified' },
-    ];
+    h.backend.mergeChanged = ['environments/dev.yaml', 'projects/calc/wirebench.yaml'];
     const first = await h.service.resolve('environments/dev.yaml', 'theirs');
     expect(first.state).toBe('conflict');
     expect(h.backend.calls).not.toContain('finishMerge');
@@ -587,6 +612,24 @@ describe('SyncService — pull, push, conflicts', () => {
     expect(h.backend.calls).toContain('finishMerge');
     expect(done.state).toBe('clean');
     expect(h.pulled).toEqual([['environments/dev.yaml', 'projects/calc/wirebench.yaml']]);
+  });
+
+  it('a save left uncommitted during the conflict does not reach onPulled when the merge finishes', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.mergeResult = { conflicts: [{ path: 'environments/dev.yaml' }], changedPaths: [] };
+    await h.service.pull();
+
+    const saved: TreeChange = { path: 'projects/calc/wirebench.yaml', status: 'modified' };
+    h.backend.changes = [saved];
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.backend.calls).not.toContain('commit');
+
+    h.backend.mergeChanged = ['environments/dev.yaml'];
+    await h.service.resolve('environments/dev.yaml', 'theirs');
+
+    expect(h.pulled).toEqual([['environments/dev.yaml']]);
   });
 
   it('abortMerge aborts and re-probes', async () => {
