@@ -73,6 +73,19 @@ export interface SslPreferences {
   readonly trustAll: false;
 }
 
+/** Git executable preferences, main-only, never settable through `preferences.update`. */
+export interface GitPreferences {
+  /** Absolute path to the `git` executable the desktop uses; read/written in main only. */
+  readonly path?: string;
+  /**
+   * Set by the desktop main process when, and only when, {@link path} came from a native file
+   * picker it ran itself (`git.locate`). Mirrors `SslPreferences.caBundlePickedByMain`: a
+   * hand-edited `preferences.yaml` gets no trust from this field until the path is picked
+   * again. Never settable through `preferences.update`.
+   */
+  readonly pathPickedByMain?: boolean;
+}
+
 /** WSDL import and request-generation preferences. */
 export interface WsdlPreferences {
   /** Default `cacheDefinition` for a newly imported interface. */
@@ -172,6 +185,7 @@ export interface Preferences {
   readonly http: HttpPreferences;
   readonly proxy: ProxyPreferences;
   readonly ssl: SslPreferences;
+  readonly git: GitPreferences;
   readonly wsdl: WsdlPreferences;
   readonly wsi: WsiPreferences;
   readonly rest: RestPreferences;
@@ -201,6 +215,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   }),
   proxy: Object.freeze({ mode: 'none', excludes: Object.freeze([]) }),
   ssl: Object.freeze({ minVersion: 'TLSv1.2', trustAll: false }),
+  git: Object.freeze({}),
   wsdl: Object.freeze({
     cacheDefinitions: true,
     prettyPrint: true,
@@ -275,6 +290,7 @@ export const preferencesSchema = z.object({
       clientKeystoreRef: z.string().optional(),
     })
     .optional(),
+  git: z.object({ path: z.string().optional(), pathPickedByMain: z.boolean().optional() }).optional(),
   wsdl: z
     .object({
       cacheDefinitions: z.boolean().optional(),
@@ -375,6 +391,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     http: parseSection(shape.http, root['http']),
     proxy: parseSection(shape.proxy, root['proxy']),
     ssl: parseSection(shape.ssl, root['ssl']),
+    git: parseSection(shape.git, root['git']),
     wsdl: parseSection(shape.wsdl, root['wsdl']),
     wsi: parseSection(shape.wsi, root['wsi']),
     rest: parseSection(shape.rest, root['rest']),
@@ -387,6 +404,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     http: mergeSection(base.http, value.http),
     proxy: mergeSection(base.proxy, value.proxy),
     ssl: { ...mergeSection(base.ssl, value.ssl), trustAll: false },
+    git: mergeSection(base.git, value.git),
     wsdl: mergeSection(base.wsdl, value.wsdl),
     wsi: mergeSection(base.wsi, value.wsi),
     rest: mergeSection(base.rest, value.rest),
