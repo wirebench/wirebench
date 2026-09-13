@@ -46,6 +46,51 @@ if still approved then.
 - Ask first: any further format field; any dependency beyond `jsonpath-plus`; any CSP change; any change to
   `shell.openExternal`'s allow-list; any shortcut beyond `Mod+Shift+I`; OpenAPI 2.0.
 
+## Progress (updated 2026-09-13)
+
+W0, W1, W2 and tasks 11–15 of W3 are done, each as its own commit on `claude/rest-support-spec-pgogjv` with
+`pnpm check` green before it. `WIREBENCH_SKIP_PERF=1` is set for those runs: the XPath 1 MB budget fails on the
+development machine even on an unmodified tree, so `pnpm test:perf` is run on CI rather than locally.
+
+| Wave | Tasks | State |
+| --- | --- | --- |
+| W0 format | 1, 2 | done |
+| W1 engine | 3–7 | done |
+| W2 main | 8–10 | done |
+| W3 renderer | 11–15 | done |
+| W3 renderer | 16, 17 | next |
+| W4–W6 | 18–26 | not started |
+
+**Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
+task's commit message.
+
+- **T1** — the `kind: grpc` refusal uses the code `project-kind-not-supported`, prefixed like every sibling error in
+  `project/`, rather than the plan's bare `kind-not-supported`.
+- **T4** — the REST multipart part type is `MultipartFormPart`: `MultipartPart` was already the SOAP attachment part.
+- **T6** — the chain resolver is `resolveAuthChain`, because `effectiveAuth` was already exported by
+  `project/endpoints.ts`.
+- **T7** — the redirect rules stay in the HTTP transport behind one new flag (`preserveMethodOnRedirect`) instead of a
+  second redirect loop inside `rest/send.ts`.
+- **T9** — REST send and preflight are their own channels (`request.sendRest`, `request.preflightRest`) rather than an
+  overload of the SOAP pair: the payloads share no field, and one schema covering both would validate neither.
+- **T11** — the spec's _Import cURL…_, _Copy as cURL_, _Send_ and _Reveal definition_ context-menu items are not in the
+  menu yet; their handlers arrive in T16, T20 and T23, and a menu entry that no-ops is worse than none. The method badge
+  and its six palette tokens landed here rather than in T15, because the explorer row needs it first.
+- **T12** — `variables-table.tsx` stays its own component instead of becoming a `KvTable` wrapper: its data is a keyed
+  map with an inheritance chain and a bulk-paste flow, none of which the ordered grid models. What the two genuinely
+  share — the commit-on-Enter rule and the editable cell's look — has one implementation in `kv-table.tsx`, which the
+  variables table imports.
+- **T13** — the URL field is an input with a highlighted mirror behind it, not a single-line Monaco instance: a URL
+  needs none of an editor's machinery, and one Monaco per open tab would be paid for on every tab switch. `rest/url.ts`
+  is reached through a new browser-safe `@wirebench/engine/rest` subpath (ESLint's engine ban lists it beside `/xml`)
+  rather than duplicated in the renderer. Monaco gains a worker-free JSON grammar, since this build deliberately
+  carries no JSON language service.
+- **T14** — _Save response_ goes through a new `exchanges.saveRestBody` channel that takes a send id and nothing else,
+  following `attachments.saveResponse`, rather than the plan's `dialogs.saveFile` + `fs.saveText` route: that route
+  would carry server-sent bytes across the bridge and let the renderer name the target file.
+- **T15** — _View document_ and _Export…_ on the definition card are rendered disabled with a title naming the task
+  that fills them in (T20), so the card's shape does not change under the user later.
+
 ## Order & rationale
 
 ```
@@ -114,7 +159,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
 
 ### W0 — Format and model
 
-- [ ] **1. REST model, `apis/` format, `formatVersion: 3`, history kind, `grpc` refused**
+- [x] **1. REST model, `apis/` format, `formatVersion: 3`, history kind, `grpc` refused**
   - `rest/model.ts` (§4.3 types, factories, `RestRequestSettings` with every field optional, `DEFAULT_REST_SETTINGS`
     for the preference layer); `project/model.ts` (`apis`, `FORMAT_VERSION = 3`, `RequestDef` → `SoapRequestDef` with
     the alias, `AnyRequestDef`, `createProject` sets `apis: []`); `project/schema.ts` (`apiFileSchema`,
@@ -136,7 +181,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run packages/engine/test/unit/project packages/engine/test/unit/rest/model`
   - Files: packages/engine/src/rest/model.ts, packages/engine/src/project/{model,schema,paths,load,serialize,save,migrate,history}.ts, packages/engine/src/index.ts, packages/engine/test/unit/project/{roundtrip,schema,paths,migrate,history,rest-format}.test.ts, packages/engine/test/unit/rest/model.test.ts, packages/engine/test/fixtures/format-v2/\*\*
 
-- [ ] **2. `AuthConfig` union**
+- [x] **2. `AuthConfig` union**
   - `project/model.ts`: `AuthConfig` per §3.5 (`inherit`, `none`, `basic`, `ntlm`, `bearer`, `api-key`, `oauth2`);
     `EndpointAuth = Exclude<AuthConfig, { type: 'inherit' }>` so SOAP interface/endpoint/request fields keep their type
     name; `project/schema.ts` discriminated union with every secret field a `secretRef` string; `serialize.ts` stable
@@ -152,7 +197,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
 
 ### W1 — Engine
 
-- [ ] **3. URL composition**
+- [x] **3. URL composition**
   - `rest/url.ts`: `composeUrl` (absolute URL wins over base; base with/without trailing slash joins with one `/`;
     `{name}` filled from `pathParams`, missing → `UrlProblem { code: 'missing-path-param', name }`; query from enabled
     entries, RFC 3986 encoding that leaves valid `%XX` alone, `encode: false` passes through; duplicates kept in
@@ -164,7 +209,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/url`
   - Files: packages/engine/src/rest/url.ts, packages/engine/test/unit/rest/url.test.ts
 
-- [ ] **4. Bodies**
+- [x] **4. Bodies**
   - `rest/body.ts`: `encodeBody` for `none` (no bytes, no content type), `raw` (text in the request charset,
     `contentType` from the entry, else the language default), `form` (RFC 1866 `application/x-www-form-urlencoded`,
     `+` for space), `multipart` (RFC 7578 with a random boundary injectable for tests; text parts; file parts through
@@ -177,7 +222,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/body`
   - Files: packages/engine/src/rest/body.ts, packages/engine/test/unit/rest/body.test.ts, packages/engine/test/fixtures/rest/bodies/\*\*
 
-- [ ] **5. Response decoding and cookies**
+- [x] **5. Response decoding and cookies**
   - `rest/response.ts`: `detectLanguage` (`Content-Type` first — `json`, `+json`, `xml`, `+xml`, `html`,
     `javascript`, `image/*`, `text/*` — then a sniff of the first 512 bytes for `{`/`[`/`<?xml`/`<!DOCTYPE`; `binary`
     otherwise), `decodeText` (charset from the header through the existing SOAP charset table; BOM stripped; invalid →
@@ -192,7 +237,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/response packages/engine/test/unit/rest/cookies`
   - Files: packages/engine/src/rest/{response,cookies}.ts, packages/engine/test/unit/rest/{response,cookies}.test.ts
 
-- [ ] **6. Auth application and OAuth2 shapes**
+- [x] **6. Auth application and OAuth2 shapes**
   - `types.ts`: `SendAuth` gains `bearer`, `api-key`, `oauth2` (§ names block); `rest/auth.ts`: `effectiveAuth(chain)`
     and `applyAuth` (Bearer → `Authorization: <scheme> <token>`; api-key → header or query entry; basic preemptive →
     header, challenge → left to the transport as today; NTLM → the existing transport path; oauth2 → Bearer with the
@@ -207,7 +252,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/auth packages/engine/test/unit/rest/oauth2`
   - Files: packages/engine/src/types.ts, packages/engine/src/rest/{auth,oauth2}.ts, packages/engine/test/unit/rest/{auth,oauth2}.test.ts
 
-- [ ] **7. `sendRest`, send options, the REST test server, integration**
+- [x] **7. `sendRest`, send options, the REST test server, integration**
   - `rest/send.ts` per §5 and §11: compose, encode, apply auth and cookies, add `User-Agent`/`Accept-Encoding`/
     `Connection` per preferences exactly as `send-options.ts` does for SOAP, call `sendHttp` with `followRedirects:
     false` and run the §3.3 redirect loop in this module (307/308 keep method and body; 303 → GET; 301/302 on a
@@ -234,7 +279,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
 
 ### W2 — Main
 
-- [ ] **8. Wire types, channels, mutations, drafts, watch**
+- [x] **8. Wire types, channels, mutations, drafts, watch**
   - `shared/wire-types.ts`: `RestApiWire`, `RestFolderWire`, `RestRequestWire` (body text inline, capped by the
     existing size rule), `RestRequestPatchWire` (every field optional, `body` whole-replace), `AuthConfigWire`,
     `projectChangeSchema` gains the nine change kinds; `ProjectWire.apis`; `shared/ipc.ts`: `request.importCurl.target`,
@@ -251,7 +296,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run apps/desktop/test/{project-rest-mutations,project-host,project-wire,unsaved-store,project-watch,search,preload-api}`
   - Files: apps/desktop/src/shared/{ipc,wire-types}.ts, apps/desktop/src/main/{project-rest-mutations,project-host,project-wire,unsaved-store,project-watch,search}.ts, apps/desktop/src/preload/\*\*, apps/desktop/src/renderer/state/unsaved-drafts.ts, apps/desktop/test/{project-rest-mutations,project-host,project-wire,unsaved-store,project-watch,search,preload-api}.test.ts, apps/desktop/test/mocks/wirebench-api.ts
 
-- [ ] **9. Send path by kind, preflight, redaction, history**
+- [x] **9. Send path by kind, preflight, redaction, history**
   - `main/rest-send.ts`: resolve the API's effective base URL through `endpoint-override` precedence (workspace env →
     linked project env → API `baseUrl`), expand `${…}` across scopes in base, URL, params, headers, body and form/
     multipart text values (with `escapeForLanguage` when set), resolve the effective `AuthConfig` chain and its refs
@@ -269,7 +314,7 @@ fixtures: fixtures/openapi/public/{petstore-3.0.yaml, …} · fixtures/openapi/c
   - Verify: `pnpm vitest run apps/desktop/test/{rest-send,send-with-history,history-service,expansion-preflight,redact,secret-resolver,ipc-request,ipc-history}`
   - Files: apps/desktop/src/main/{rest-send,send-with-history,history-service,expansion-preflight,redact,secret-resolver,project-auth,exchange-cache}.ts, apps/desktop/src/main/ipc/{request,history}.ts, apps/desktop/test/{rest-send,send-with-history,history-service,expansion-preflight,redact,secret-resolver,ipc-request,ipc-history}.test.ts
 
-- [ ] **10. OAuth2 in main**
+- [x] **10. OAuth2 in main**
   - `main/oauth2.ts`: `TokenCache` keyed by a hash of the resolved config (memory only; `get`, `set`, `clear`,
     `status`); `fetchToken(ownerId)` — client credentials through the engine's `buildTokenRequest` + `sendHttp` with the
     send's TLS/proxy; authorization code: `startLoopback({ port? })` bound to `127.0.0.1` (random port unless
@@ -295,7 +340,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
 
 ### W3 — Renderer
 
-- [ ] **11. Explorer: APIs, folders, requests**
+- [x] **11. Explorer: APIs, folders, requests**
   - `tree-nodes.ts` (`api`, `folder`, `rest-request` nodes under a project, interleaved with interfaces by `order`;
     `method` on request nodes; `apiId`/`folderId`); `explorer-view.tsx` rows (`api-row` with a REST badge, `folder-row`,
     `rest-request-row` with `method-badge` before the name; drag-and-drop reorder/move within a project via
@@ -311,7 +356,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- explorer project-store`
   - Files: apps/desktop/src/renderer/features/explorer/{tree-nodes,explorer-view,context-menu,explorer-actions,project-actions}.ts(x), apps/desktop/src/renderer/commands/register-explorer-commands.ts, apps/desktop/src/renderer/state/{project,editors,workspace-tabs,ui-state}.ts, apps/desktop/test/renderer/{explorer-view,explorer-context-menu,explorer-actions,project-store,tree-nodes}.test.ts(x)
 
-- [ ] **12. `KvTable` component**
+- [x] **12. `KvTable` component**
   - `components/kv-table.tsx` generalised from `features/environments/variables-table.tsx`: configurable columns
     (`enabled`, `name`, `value`, `description`), `allowDuplicates`, inline commit on Enter/Tab and revert on Escape,
     always-present add row, delete per row, keyboard row navigation from `grid-navigation`, `role="grid"` per the
@@ -322,7 +367,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- kv-table variables-table environment-page`
   - Files: apps/desktop/src/renderer/components/kv-table.tsx, apps/desktop/src/renderer/features/environments/variables-table.tsx, apps/desktop/test/renderer/kv-table.test.tsx
 
-- [ ] **13. REST request editor**
+- [x] **13. REST request editor**
   - `features/rest-editor/rest-editor.tsx` (`rest-editor`; tab kind `rest-request`, id `rest:<id>`, opened by the
     existing request-tab opener on `kind`), `url-bar.tsx` (`rest-method` select with custom entry, `rest-url` with the
     greyed effective base prefix for a relative URL and `${…}`/`{param}` highlighting via a Monaco single-line editor
@@ -344,7 +389,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- rest-editor url-bar params-tab headers-tab body-tab settings-tab drafts-store`
   - Files: apps/desktop/src/renderer/features/rest-editor/{rest-editor,url-bar,params-tab,headers-tab,body-tab,auth-tab,settings-tab,rest-actions}.ts(x), apps/desktop/src/renderer/state/{drafts,editors,rest-url}.ts, apps/desktop/src/renderer/shell/editor-area.tsx, apps/desktop/src/renderer/commands/register-request-commands.ts, apps/desktop/test/renderer/{rest-editor,url-bar,params-tab,headers-tab,body-tab,settings-tab,drafts-store}.test.ts(x)
 
-- [ ] **14. Response pane**
+- [x] **14. Response pane**
   - `features/rest-editor/response/response-pane.tsx` (`rest-response`, the existing request/response split and layout
     toggles), `status-line.tsx` (`rest-response-status`: status + reason coloured by class, duration, body and total
     size, protocol), `body-view.tsx` (`rest-response-view` Pretty/Raw/Preview; Monaco read-only in the detected mode
@@ -360,7 +405,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- response-pane status-line body-view cookies-view redirects-view`
   - Files: apps/desktop/src/renderer/features/rest-editor/response/{response-pane,status-line,body-view,headers-view,cookies-view,redirects-view}.tsx, apps/desktop/src/renderer/state/exchanges.ts, apps/desktop/src/renderer/styles/tokens.css, apps/desktop/test/renderer/{response-pane,status-line,body-view,cookies-view,redirects-view}.test.tsx
 
-- [ ] **15. API tab and method badges**
+- [x] **15. API tab and method badges**
   - `features/rest-api/api-tab.tsx` (`api-tab`, tab id `api:<id>`, opened by a single click on the API row and by
     _Open_): name, description, `api-base-url` with the environment override and its source beside it and the server
     list as a datalist, auth (the shared `AuthFields`), `api-definition-card` (source, fetched at, version, _View
