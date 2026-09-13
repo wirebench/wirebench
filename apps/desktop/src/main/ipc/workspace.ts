@@ -26,6 +26,8 @@ export type WorkspaceChannelService = Pick<
   | 'setActiveEnvironment'
   | 'mutate'
   | 'lastError'
+  | 'stashDrafts'
+  | 'takeRestored'
 >;
 
 /** What `workspace.*` needs beyond the service itself. */
@@ -119,6 +121,16 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   registerHandler(channels.workspace.open, async (request) => ({ workspace: await service.open(request.workspaceId) }));
 
   registerHandler(channels.workspace.close, async () => ({ workspace: await service.close() }));
+
+  registerHandler(channels.workspace.stashDrafts, async (request) => {
+    await service.stashDrafts(request.workspaceId, request.requests);
+    return {};
+  });
+
+  registerHandler(channels.workspace.takeRestored, async () => {
+    await ready();
+    return service.takeRestored();
+  });
 
   registerHandler(channels.workspace.snapshot, async () => {
     await ready();

@@ -135,6 +135,9 @@ import {
   workspaceAddProjectRequestSchema,
   workspaceAddProjectResponseSchema,
   workspaceChangedEventSchema,
+  workspaceFlushDraftsEventSchema,
+  workspaceRestoredResponseSchema,
+  workspaceStashDraftsRequestSchema,
   workspaceCreateRequestSchema,
   workspaceExportProjectResponseSchema,
   workspaceIdRequestSchema,
@@ -307,6 +310,14 @@ export const channels = {
     open: defineChannel('workspace.open', workspaceIdRequestSchema, workspaceResponseSchema),
     close: defineChannel('workspace.close', z.undefined(), workspaceSnapshotResponseSchema),
     snapshot: defineChannel('workspace.snapshot', z.undefined(), workspaceSnapshotResponseSchema),
+    // Unsaved changes across sessions: the renderer hands main its staged request edits (kept with
+    // the workspace, never written to a project), and takes back what the last open restored.
+    stashDrafts: defineChannel(
+      'workspace.stashDrafts',
+      workspaceStashDraftsRequestSchema,
+      workspaceRevealResponseSchema,
+    ),
+    takeRestored: defineChannel('workspace.takeRestored', z.undefined(), workspaceRestoredResponseSchema),
     rename: defineChannel('workspace.rename', workspaceRenameRequestSchema, workspaceSummariesResponseSchema),
     delete: defineChannel('workspace.delete', workspaceIdRequestSchema, workspaceSummariesResponseSchema),
     addProject: defineChannel(
@@ -516,6 +527,8 @@ export const events = {
   },
   workspace: {
     changed: defineEvent('workspace.changed', workspaceChangedEventSchema),
+    /** Main is about to close the workspace (quit): answer with `workspace.stashDrafts`. */
+    flushDrafts: defineEvent('workspace.flushDrafts', workspaceFlushDraftsEventSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),

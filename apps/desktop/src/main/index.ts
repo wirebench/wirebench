@@ -326,19 +326,29 @@ void app.whenReady().then(() => {
   });
 });
 
-// Unsaved work is never lost to a quit: the final save runs before the app exits, without a
-// prompt (an autosaving app that asks "save before quitting?" is just an autosave that failed).
-let quitSaveDone = false;
+// Quitting writes nothing to a project. Unsaved changes are kept with the workspace instead
+// and come back, still unsaved, the next time it opens (`unsaved-store.ts`): the window is asked
+// to hand over its staged request edits first (briefly — a hung window cannot hold the quit),
+// then the workspace closes, recording every open project's unsaved state.
+const QUIT_DRAFTS_TIMEOUT_MS = 2_000;
+let quitStashDone = false;
 app.on('before-quit', (event) => {
-  if (quitSaveDone) {
+  if (quitStashDone) {
     return;
   }
   event.preventDefault();
-  void workspaceService
-    .saveAll('quit')
+  const windowOpen = BrowserWindow.getAllWindows().some((window) => !window.isDestroyed());
+  const stashed = windowOpen ? workspaceService.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS) : Promise.resolve();
+  if (windowOpen) {
+    broadcast(events.workspace.flushDrafts, {});
+  }
+  void stashed
+    .then(async () => {
+      await workspaceService.close();
+    })
     .catch(() => undefined)
     .finally(() => {
-      quitSaveDone = true;
+      quitStashDone = true;
       app.quit();
     });
 });

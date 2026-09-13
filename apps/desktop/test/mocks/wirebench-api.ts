@@ -74,6 +74,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       open: fail('workspace.open'),
       close: fail('workspace.close'),
       snapshot: vi.fn().mockResolvedValue({ ok: true, value: { workspace: null } }),
+      stashDrafts: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+      takeRestored: vi.fn().mockResolvedValue({ ok: true, value: { workspaceId: null, drafts: {}, notices: [] } }),
       rename: fail('workspace.rename'),
       delete: fail('workspace.delete'),
       addProject: fail('workspace.addProject'),

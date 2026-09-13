@@ -68,4 +68,13 @@ describe('drafts store', () => {
 
     expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
   });
+
+  it('reset forgets every draft', () => {
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<a/>' });
+    useDraftsStore.getState().stageRequest('r2', { name: 'Renamed' });
+
+    useDraftsStore.getState().reset();
+
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
+  });
 });

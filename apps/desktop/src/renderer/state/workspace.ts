@@ -18,11 +18,13 @@ import type {
 } from '../../shared/wire-types.js';
 import { queueEnvironmentPatch } from '../features/environments/environment-queue.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
+import { useDraftsStore } from './drafts.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
 import { restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
+import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
 
 function asError(error: IpcError): Error {
   return Object.assign(new Error(error.message), { code: error.code });
@@ -170,7 +172,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     }
     if (leaving || workspace === null) {
       // Order matters only in that all of it happens before the shell rerenders: every one of
-      // these holds ids of projects that are about to stop existing.
+      // these holds ids of projects that are about to stop existing. The drafts were handed to
+      // main before the switch was asked for (`handOverDrafts`), which keeps them with the
+      // workspace being left.
+      useDraftsStore.getState().reset();
       useEditorsStore.getState().reset();
       useExchangesStore.getState().reset();
       useInterfaceEditorStore.getState().reset();
@@ -189,6 +194,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       void pulled.then(() => {
         if (useWorkspaceStore.getState().workspace?.id === workspace.id) {
           restoreWorkspaceTabs(workspace.id);
+          // Unsaved request edits from the last session name requests the mirror now holds.
+          void restoreUnsaved(workspace.id).catch(() => undefined);
         }
       });
     }
@@ -203,6 +210,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
   const applyReply = (sentIn: number, workspace: WorkspaceWire | null): void => {
     if (sentIn === generation) {
       apply(workspace);
+    }
+  };
+
+  /**
+   * Hands the open workspace's unsaved request edits to main before anything that may leave it:
+   * main keeps them with that workspace (nothing is written to a project) and they come back the
+   * next time it opens. A failure is not fatal — leaving still goes ahead.
+   */
+  const handOverDrafts = async (): Promise<void> => {
+    const workspaceId = get().workspace?.id;
+    if (workspaceId !== undefined) {
+      await stashDrafts(workspaceId).catch(() => undefined);
     }
   };
 
@@ -255,18 +274,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     create: async (name) => {
+      await handOverDrafts();
       const sentIn = generation;
       applyReply(sentIn, unwrap(await ipc().workspace.create({ name })).workspace);
       await get().list();
     },
 
     open: async (workspaceId) => {
+      await handOverDrafts();
       const sentIn = generation;
       applyReply(sentIn, unwrap(await ipc().workspace.open({ workspaceId })).workspace);
       await get().list();
     },
 
     close: async () => {
+      await handOverDrafts();
       const sentIn = generation;
       applyReply(sentIn, unwrap(await ipc().workspace.close(undefined)).workspace);
       await get().list();
@@ -310,6 +332,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     importSuggestion: async (index) => {
+      await handOverDrafts();
       const sentIn = generation;
       applyReply(sentIn, unwrap(await ipc().workspace.importSuggestion({ index })).workspace);
       await get().list();
@@ -375,5 +398,9 @@ export function subscribeToWorkspace(): () => void {
   const off = window.wirebench.on('workspace.changed', ((payload: WorkspaceChangedEvent) => {
     useWorkspaceStore.getState().applySnapshot(payload.workspace);
   }) as (payload: unknown) => void);
-  return off;
+  const offStash = subscribeToDraftStash(() => useWorkspaceStore.getState().workspace?.id);
+  return () => {
+    off();
+    offStash();
+  };
 }

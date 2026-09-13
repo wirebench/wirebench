@@ -54,6 +54,7 @@ import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretStore } from './secrets.js';
 import { WorkspaceState } from './workspace-state.js';
+import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
   EngineProgressEvent,
   ProjectWire,
@@ -63,7 +64,18 @@ import type {
   WorkspaceSummaryWire,
   WorkspaceWire,
 } from '../shared/wire-types.js';
-import type { HydrationStatus } from '../shared/wire-types.js';
+import type {
+  HydrationStatus,
+  RequestPatchWire,
+  UnsavedRestoreNoticeWire,
+  WorkspaceRestoredResponse,
+} from '../shared/wire-types.js';
+
+/**
+ * How long after a change a project's unsaved-changes record is rewritten. Short enough that a
+ * crash costs only the last moment of work, long enough that typing does not write per keystroke.
+ */
+export const UNSAVED_RECORD_DEBOUNCE_MS = 2_000;
 
 /**
  * What the service raises. Every project-scoped hook carries the `projectId` its host belongs
@@ -307,6 +319,16 @@ export class WorkspaceService implements ProjectRouter {
   private readonly now: () => Date;
   /** Why the last {@link openLast} (or {@link close} save) failed; see {@link lastError}. */
   private failure: string | undefined;
+  /** The open workspace's recovery records; `undefined` while none is open. */
+  private unsaved: UnsavedStore | undefined;
+  /** Pending debounced record writes, by manifest project id. */
+  private readonly unsavedTimers = new Map<string, NodeJS.Timeout>();
+  /** The renderer's staged request edits for the open workspace, as last stashed. */
+  private drafts: Record<string, RequestPatchWire> = {};
+  /** What the last open restored, until the renderer takes it. */
+  private restored: WorkspaceRestoredResponse | undefined;
+  /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
+  private stashWaiters: (() => void)[] = [];
 
   constructor(private readonly deps: WorkspaceServiceDeps) {
     this.state = new WorkspaceState(deps.userDataDir);
@@ -409,6 +431,10 @@ export class WorkspaceService implements ProjectRouter {
     const open: OpenWorkspace = { workspace, dir, entries: [] };
     this.current = open;
     this.failure = undefined;
+    this.unsaved = new UnsavedStore(dir);
+    this.drafts = {};
+    this.restored = undefined;
+    const notices: UnsavedRestoreNoticeWire[] = [];
 
     // Past this point the service holds hosts, history files and a `current` — so anything that
     // still throws has to put it back at the picker rather than leave it half-open.
@@ -440,8 +466,13 @@ export class WorkspaceService implements ProjectRouter {
           message: undefined,
         };
         open.entries.push(entry);
-        await this.openEntry(entry);
+        await this.openEntry(entry, notices);
       }
+
+      // Kept as the workspace's drafts until the renderer stashes its own, so a close before the
+      // renderer has taken them still carries them forward.
+      this.drafts = await this.unsaved.readDrafts();
+      this.restored = { workspaceId: workspace.id, drafts: { ...this.drafts }, notices };
 
       await this.state.remember(id, this.now().toISOString());
       this.deps.hooks?.onChanged?.(this.snapshot());
@@ -453,7 +484,7 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** Brings up one project's host, recording the outcome on `entry` rather than throwing. */
-  private async openEntry(entry: OpenProjectEntry): Promise<void> {
+  private async openEntry(entry: OpenProjectEntry, notices?: UnsavedRestoreNoticeWire[]): Promise<void> {
     try {
       // The manifest's recorded id, before anything is opened: a workspace linked by an older
       // build (or a manifest edited by hand) can already hold an unusable one.
@@ -484,6 +515,11 @@ export class WorkspaceService implements ProjectRouter {
           // hosts' own snapshots on *every* change — an import, a rename or a removal all add
           // or drop entity ids, and a stale table would route a request to the wrong project.
           this.reindex();
+          // Only once the host is adopted: its first change (the open itself) is not an edit, and
+          // must not delete the record this open is still restoring from.
+          if (entry.host !== undefined) {
+            this.noteUnsaved(entry, project);
+          }
           if (!announced) {
             held = { project };
             return;
@@ -515,7 +551,13 @@ export class WorkspaceService implements ProjectRouter {
       return open === undefined ? undefined : { workspace: open.workspace, projectSlug: entry.ref.slug };
     });
     try {
-      const project = await host.openProject(entry.dir);
+      const record = await this.unsaved?.readProject(entry.ref.id);
+      const project = await host.openProject(
+        entry.dir,
+        record !== undefined
+          ? { unsaved: { baseline: recordToFiles(record.baseline), unsaved: recordToFiles(record.unsaved) } }
+          : {},
+      );
       // The id the *folder* declares, which for a linked project is not necessarily the one the
       // manifest recorded — and which is what every `<userData>` path is built from.
       assertSafeProjectId(project.id);
@@ -524,6 +566,9 @@ export class WorkspaceService implements ProjectRouter {
       entry.status = 'ready';
       entry.message = undefined;
       this.reindex();
+      if (record !== undefined) {
+        this.settleRestore(entry, host, notices);
+      }
       // History has to be open before anything can record a send against this project — and
       // before the project is announced (see `announced` above).
       await this.deps.history.open(project.id);
@@ -566,15 +611,20 @@ export class WorkspaceService implements ProjectRouter {
       return null;
     }
     try {
-      await this.saveAll('close');
+      // Nothing is written to a project on close: unsaved changes stay unsaved and come back
+      // the next time this workspace opens (see `unsaved-store.ts`).
+      await this.keepUnsaved(open);
     } catch (error) {
-      // A failed final save must not strand the app with a half-closed workspace; the message
+      // A failed record write must not strand the app with a half-closed workspace; the message
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
     for (const entry of open.entries) {
-      await entry.host?.close().catch(() => undefined);
+      await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
     }
+    this.unsaved = undefined;
+    this.drafts = {};
+    this.restored = undefined;
     this.deps.history.closeAll();
     this.index.clear();
     this.current = undefined;
@@ -674,7 +724,10 @@ export class WorkspaceService implements ProjectRouter {
         details: { projectId },
       });
     }
-    await entry.host?.close().catch(() => undefined);
+    this.cancelUnsavedWrite(entry.ref.id);
+    // Removing a project discards its unsaved changes: there is no project left to restore into.
+    await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
+    await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
     this.deps.history.close(entry.projectId);
     open.entries.splice(index, 1);
     this.reindex();
@@ -854,6 +907,152 @@ export class WorkspaceService implements ProjectRouter {
     await this.openEntry(entry);
     await this.saveManifest(open);
     this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  // ——— unsaved changes across sessions ————————————————————————————————————————————————————
+
+  /**
+   * Keeps `entry`'s recovery record in step with its host: a dirty project's record is rewritten
+   * shortly after it changes (so a crash costs at most that moment), a clean one's is removed —
+   * which is also how a save, or a reload, clears it.
+   */
+  private noteUnsaved(entry: OpenProjectEntry, project: ProjectWire | null): void {
+    const store = this.unsaved;
+    if (store === undefined || project === null) {
+      return;
+    }
+    this.cancelUnsavedWrite(entry.ref.id);
+    if (!project.dirty) {
+      void store.deleteProject(entry.ref.id).catch(() => undefined);
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.unsavedTimers.delete(entry.ref.id);
+      void this.writeUnsaved(entry).catch(() => undefined);
+    }, UNSAVED_RECORD_DEBOUNCE_MS);
+    timer.unref?.();
+    this.unsavedTimers.set(entry.ref.id, timer);
+  }
+
+  private cancelUnsavedWrite(projectRef: string): void {
+    const timer = this.unsavedTimers.get(projectRef);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.unsavedTimers.delete(projectRef);
+    }
+  }
+
+  /** Writes (or, when it has nothing unsaved, removes) one project's recovery record now. */
+  private async writeUnsaved(entry: OpenProjectEntry): Promise<void> {
+    const store = this.unsaved;
+    if (store === undefined) {
+      return;
+    }
+    const files = entry.host?.unsavedFiles();
+    if (files === undefined) {
+      await store.deleteProject(entry.ref.id);
+      return;
+    }
+    await store.writeProject(entry.ref.id, files, this.now().toISOString());
+  }
+
+  /** Records every open project's unsaved changes, and the renderer's drafts, for next time. */
+  private async keepUnsaved(open: OpenWorkspace): Promise<void> {
+    const store = this.unsaved;
+    if (store === undefined) {
+      return;
+    }
+    for (const projectRef of [...this.unsavedTimers.keys()]) {
+      this.cancelUnsavedWrite(projectRef);
+    }
+    for (const entry of open.entries) {
+      if (entry.host !== undefined) {
+        await this.writeUnsaved(entry);
+      }
+    }
+    await store.writeDrafts(this.drafts);
+    await store.idle();
+  }
+
+  /** Acts on what `openProject` did with the record it was given, and says so in `notices`. */
+  private settleRestore(
+    entry: OpenProjectEntry,
+    host: ProjectHost,
+    notices: UnsavedRestoreNoticeWire[] | undefined,
+  ): void {
+    const store = this.unsaved;
+    const outcome = host.lastRestore();
+    if (store === undefined || outcome === undefined) {
+      return;
+    }
+    const projectName = host.snapshot()?.name ?? entry.ref.slug;
+    if (outcome.status === 'failed') {
+      void store.setAsideProject(entry.ref.id).catch(() => undefined);
+      notices?.push({
+        projectId: entry.projectId,
+        projectName,
+        status: 'failed',
+        conflicts: [],
+        dropped: [],
+        message: outcome.message,
+      });
+      return;
+    }
+    if (outcome.status === 'unchanged') {
+      void store.deleteProject(entry.ref.id).catch(() => undefined);
+      return;
+    }
+    // Restored: the host is dirty again, so its record is rewritten from the merged state.
+    void this.writeUnsaved(entry).catch(() => undefined);
+    notices?.push({
+      projectId: entry.projectId,
+      projectName,
+      status: 'restored',
+      conflicts: [...outcome.conflicts],
+      dropped: [...outcome.dropped],
+    });
+  }
+
+  /**
+   * Replaces the open workspace's stashed request drafts. A stash naming another workspace is
+   * ignored: it was sent for one that has since closed.
+   */
+  async stashDrafts(workspaceId: string, requests: Readonly<Record<string, RequestPatchWire>>): Promise<void> {
+    const waiters = this.stashWaiters;
+    this.stashWaiters = [];
+    try {
+      if (this.current?.workspace.id !== workspaceId || this.unsaved === undefined) {
+        return;
+      }
+      this.drafts = { ...requests };
+      await this.unsaved.writeDrafts(this.drafts);
+    } finally {
+      for (const resolve of waiters) {
+        resolve();
+      }
+    }
+  }
+
+  /**
+   * Resolves on the renderer's next {@link stashDrafts}, or after `timeoutMs` — what quitting
+   * waits on after asking the renderer to flush, so a hung window cannot hold the quit forever.
+   */
+  nextDraftsStash(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      timer.unref?.();
+      this.stashWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  /** Hands over (once) the drafts and notices the last open restored. */
+  takeRestored(): WorkspaceRestoredResponse {
+    const restored = this.restored;
+    this.restored = undefined;
+    return restored ?? { workspaceId: this.current?.workspace.id ?? null, drafts: {}, notices: [] };
   }
 
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */

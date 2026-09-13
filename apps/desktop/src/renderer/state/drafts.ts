@@ -35,6 +35,11 @@ interface DraftsState {
   readonly discardRequest: (requestId: string) => void;
   readonly isRequestDirty: (requestId: string) => boolean;
   readonly dirtyRequestIds: () => readonly string[];
+  /**
+   * Forgets every draft. Called when a workspace is left: its drafts have already been handed to
+   * main, which keeps them with that workspace, and they name requests the next one does not have.
+   */
+  readonly reset: () => void;
 }
 
 export const useDraftsStore = create<DraftsState>((set, get) => ({
@@ -72,4 +77,8 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   isRequestDirty: (requestId) => get().requests[requestId] !== undefined,
 
   dirtyRequestIds: () => Object.keys(get().requests),
+
+  reset: () => {
+    set({ requests: {} });
+  },
 }));
