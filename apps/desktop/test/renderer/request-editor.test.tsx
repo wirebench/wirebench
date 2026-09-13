@@ -313,16 +313,15 @@ describe('RequestEditor', () => {
     });
   });
 
-  it('right-clicking the request pane opens the request actions, and Clone… opens its dialog', async () => {
+  it('right-clicking the request pane opens the request actions, and Import cURL… opens its dialog', async () => {
     render(<RequestEditor requestId="req-1" />);
 
     fireEvent.contextMenu(screen.getByLabelText('Request envelope XML'));
 
-    expect(await screen.findByRole('menuitem', { name: 'Recreate request (keep values)' })).toBeDefined();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Clone…' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Import cURL…' }));
 
     expect(await screen.findByRole('dialog')).toBeDefined();
-    expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'clone', requestId: 'req-1' });
+    expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'import-curl', requestId: 'req-1' });
   });
 
   it('the response Outline renders no editable inputs', async () => {

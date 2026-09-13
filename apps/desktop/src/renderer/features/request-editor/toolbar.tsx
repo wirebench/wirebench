@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Check, Code2, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
+import { Check, Columns2, Rows2, Send, Square, SquareSplitHorizontal } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
-import { useUiStore } from '../../state/ui.js';
 import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/wire-types.js';
 import { EndpointSelect } from './endpoint-select.js';
 import { EndpointsDialog } from './endpoints-dialog.js';
@@ -37,7 +36,8 @@ export interface RequestToolbarProps {
 /**
  * The request editor's top strip: send/cancel, the endpoint, and the view toggles. The endpoint
  * is the only thing allowed to grow — everything that used to compete with it for width
- * (Recreate, cURL, Clone) now lives in the pane's context menu and the Details panel's Code tab.
+ * (Recreate, cURL, Clone, Show code) now lives in the command palette, the explorer's menu and the
+ * right rail's Code panel.
  */
 export function RequestToolbar({
   draft,
@@ -54,10 +54,7 @@ export function RequestToolbar({
   validateShortcut,
 }: RequestToolbarProps) {
   const layout = useEditorLayout(draft.id);
-  const openCode = useUiStore((state) => state.openCode);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
-
-  const soapAction = draft.soapAction !== undefined && draft.soapAction.length > 0 ? draft.soapAction : 'no SOAPAction';
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
@@ -124,18 +121,6 @@ export function RequestToolbar({
 
       <button
         type="button"
-        aria-label="Show code"
-        data-testid="request-code"
-        className={ICON_BUTTON_CLASS}
-        onClick={() => {
-          openCode();
-        }}
-      >
-        <Code2 size={14} aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
         aria-label={layout.orientation === 'side-by-side' ? 'Stack panes vertically' : 'Place panes side by side'}
         data-testid="layout-orientation"
         className={ICON_BUTTON_CLASS}
@@ -156,18 +141,6 @@ export function RequestToolbar({
       >
         <SquareSplitHorizontal size={14} aria-hidden="true" />
       </button>
-
-      {/* The operation is context, not a control: it yields its width to the endpoint. */}
-      <div
-        data-testid="request-operation"
-        title={`${draft.operationName} · SOAPAction: ${soapAction}`}
-        className="flex max-w-[16rem] min-w-0 items-center gap-2 text-sm"
-      >
-        <span className="truncate font-mono text-fg-default">{draft.operationName}</span>
-        <span className="shrink-0 rounded-sm border border-hairline px-1 text-xs text-fg-muted">
-          SOAP {draft.soapVersion}
-        </span>
-      </div>
 
       <EndpointsDialog open={endpointsOpen} onOpenChange={setEndpointsOpen} interfaceId={draft.interfaceId} />
     </div>

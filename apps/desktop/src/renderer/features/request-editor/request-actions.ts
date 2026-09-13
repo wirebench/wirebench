@@ -9,6 +9,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import type { RequestCurlRequest } from '../../../shared/wire-types.js';
+import { getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 
 /** Which of the three Recreate menu items was chosen. */
 export type RecreateMode = 'keep-values' | 'discard-values' | 'empty';
@@ -37,6 +38,9 @@ export function openRequestTab(requestId: string, fallbackTitle?: string): void 
  * debounced edit it was still holding.
  */
 export async function recreateRequest(requestId: string, mode: RecreateMode): Promise<void> {
+  // A keystroke still inside the editor's debounce is not even staged yet — run from the palette,
+  // the editor never loses focus to flush it — so push it into the store before anything else.
+  getActiveRequestPaneHandle()?.flush();
   // Main rebuilds the envelope from *its* model, so a staged edit has to reach it first —
   // otherwise "keep values" keeps the last saved ones and silently discards what is on screen.
   // Same rule as the WS-Security references: anything main resolves for itself cannot stay

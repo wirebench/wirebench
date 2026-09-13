@@ -13,6 +13,7 @@ import { useProjectStore } from '../../state/project.js';
 import { CloneRequestDialog } from './clone-request-dialog.js';
 import { ImportCurlDialog } from './import-curl-dialog.js';
 import { groupOrientation, useEditorLayout } from './layout.js';
+import { RequestBreadcrumb } from './request-breadcrumb.js';
 import { RequestContextMenu } from './request-context-menu.js';
 import { useRequestDialogsStore } from './request-dialogs.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
@@ -42,7 +43,7 @@ function isTextInput(target: EventTarget): boolean {
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
 /**
- * One request tab: toolbar on top, request and response panes below. Everything it needs is
+ * One request tab: its path and toolbar on top, request and response panes below. Everything it needs is
  * read from the stores by id, so a tab is fully described by its `requestId`.
  */
 export function RequestEditor({ requestId }: RequestEditorProps) {
@@ -124,6 +125,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
         onCancel();
       }}
     >
+      <RequestBreadcrumb requestId={requestId} />
       <RequestToolbar
         draft={draft}
         summary={summary}

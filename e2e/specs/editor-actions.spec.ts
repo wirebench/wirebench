@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { runCommand } from '../helpers/palette.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { setMonacoText } from '../helpers/editor.js';
 import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
@@ -20,12 +21,11 @@ const EDITED_ENVELOPE = [
 ].join('\n');
 
 /**
- * Recreate moved from a toolbar split button to the request pane's own context menu (Task 32b),
- * so every spec that recreates a request goes through the same two clicks.
+ * Recreate (keep values) is reached through the command palette — it is not in the request
+ * pane's right-click menu — so every spec that recreates a request goes the same way.
  */
-async function recreateFromContextMenu(page: Page): Promise<void> {
-  await page.getByTestId('request-pane-surface').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Recreate request (keep values)' }).click();
+async function recreateKeepingValues(page: Page): Promise<void> {
+  await runCommand(page, 'Request: Recreate (keep values)');
 }
 
 test.describe('request editor actions', () => {
@@ -83,7 +83,7 @@ test.describe('request editor actions', () => {
     await openFirstRequest(page);
 
     await setMonacoText(page, 'Request envelope XML', EDITED_ENVELOPE);
-    await recreateFromContextMenu(page);
+    await recreateKeepingValues(page);
 
     await expect
       .poll(
@@ -118,7 +118,8 @@ test.describe('request editor actions', () => {
     await createProjectWithCalculator(page, server!);
     await openFirstRequest(page);
 
-    await page.getByTestId('request-code').click();
+    // The request toolbar no longer has a Show code icon; the right rail's Code icon opens the panel.
+    await page.getByTestId('rail-code').click();
     const preview = page.getByTestId('code-panel-preview');
     await expect(preview).toContainText('curl --request POST', { timeout: 20_000 });
     await expect(preview).toContainText(`${server!.url}/soap`);
@@ -149,7 +150,8 @@ test.describe('request editor actions', () => {
       'EOF',
     ].join('\n');
 
-    await page.getByTestId('request-code').click();
+    // The request toolbar no longer has a Show code icon; the right rail's Code icon opens the panel.
+    await page.getByTestId('rail-code').click();
     await page.getByTestId('code-panel-import').click();
     await page.getByLabel('cURL command').fill(command);
     await expect(page.getByText(server!.url, { exact: false }).first()).toBeVisible();

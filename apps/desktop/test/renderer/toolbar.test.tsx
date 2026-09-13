@@ -17,7 +17,7 @@ describe('RequestToolbar', () => {
     cleanup();
   });
 
-  it('shows the operation and SOAP version, with the SOAPAction in the badge title', () => {
+  it('leaves the operation and its SOAP version to the request path above it', () => {
     render(
       <RequestToolbar
         draft={makeDraft()}
@@ -31,10 +31,8 @@ describe('RequestToolbar', () => {
       />,
     );
 
-    const badge = screen.getByTestId('request-operation');
-    expect(badge.textContent).toContain('Add');
-    expect(badge.textContent).toContain('SOAP 1.1');
-    expect(badge.getAttribute('title')).toContain('http://tempuri.org/Add');
+    // The operation's name and SOAP version both live in the request path (the breadcrumb) now.
+    expect(screen.queryByTestId('request-operation')).toBeNull();
   });
 
   it('shows the whole endpoint URL in an always-visible field', () => {
@@ -292,13 +290,5 @@ describe('RequestToolbar actions', () => {
 
     expect(useEditorsStore.getState().editorLayouts['req-1']).toEqual({ orientation: 'side-by-side', mode: 'tabs' });
     expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
-  });
-
-  it('Show code opens the Code slide-over', async () => {
-    renderToolbar();
-
-    await userEvent.click(screen.getByTestId('request-code'));
-
-    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });

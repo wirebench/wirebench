@@ -13,11 +13,28 @@ All notable changes to this project are documented here. The format follows
   `Mod+Shift+←` / `→` on a focused tab). The order is kept with the workspace's tabs.
 - **Explorer fold state is remembered per workspace.** Which projects, interfaces, bindings and
   operations are expanded or collapsed survives a workspace switch and a relaunch.
+- **Request path.** The request editor shows where the request lives — *Project / Interface /
+  Operation / Request* — above its toolbar, with the SOAP version badge (SOAPAction on hover) at
+  its right. Double-click the request's name there to rename it in place.
+- **Tab strip without a scrollbar.** When the open tabs do not fit, chevrons at either end page
+  the strip along, the mouse wheel scrolls it sideways, and a menu at the far right lists every
+  open tab. Long tab names are truncated, with the full name on hover.
 
 ### Changed
 
 - The explorer tree now starts collapsed below the project level, so a newly imported WSDL
   arrives as a single folded interface row; its project is unfolded so the row is visible.
+- The request pane's right-click menu is shorter. *Validate request* stays on the toolbar and
+  *Show code* in the right rail; *Recreate*, *Create empty*, *Clone* and *Copy as cURL* are still
+  in the explorer's request menu and the command palette.
+- The request toolbar's *Show code* icon is gone; the right rail's Code icon opens the same panel.
+- The request toolbar no longer shows the operation's name or SOAP version; both are in the
+  request path above it.
+
+### Fixed
+
+- *Recreate* run from the command palette now keeps an edit typed a moment before, instead of
+  rebuilding the envelope without it.
 
 ## [1.1.0] - 2026-09-12
 
