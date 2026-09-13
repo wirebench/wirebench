@@ -9,6 +9,7 @@ import { monaco } from './monaco-core.js';
 // to — that default would be blocked by the CSP and is the reason `loader.config` runs here.
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { MONACO_THEMES, THEME_DEFINITIONS } from './themes.js';
+import { registerJsonLanguage } from './json-language.js';
 
 export { MONACO_THEMES } from './themes.js';
 
@@ -33,6 +34,11 @@ export function configureMonaco(): typeof monaco {
 
   // `MonacoEnvironment` is declared globally by `monaco-editor`'s own type definitions.
   self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
+
+  // JSON is registered here rather than by the editor component: this function is the one place
+  // that owns Monaco's global setup, and doing it before `loader.config` means no editor can mount
+  // against a Monaco that has the language missing.
+  registerJsonLanguage(monaco);
 
   loader.config({ monaco });
   for (const [name, definition] of Object.entries(THEME_DEFINITIONS)) {

@@ -7,6 +7,12 @@ export function activeRequestId(): string | undefined {
   return tabs.find((tab) => tab.id === activeId && tab.kind === 'request')?.requestId;
 }
 
+/** The REST request behind the active editor tab, or `undefined` when none is a REST tab. */
+export function activeRestRequestId(): string | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  return tabs.find((tab) => tab.id === activeId && tab.kind === 'rest-request')?.restRequestId;
+}
+
 /** The UI store's current actions. A function, not a binding: the store is replaced on every set. */
 export function ui(): ReturnType<typeof useUiStore.getState> {
   return useUiStore.getState();

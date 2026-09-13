@@ -78,3 +78,56 @@ describe('drafts store', () => {
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
 });
+
+/**
+ * The REST half of the drafts store. It is deliberately a separate map: the two patch shapes have
+ * nothing in common, and a request of one protocol must never be reported dirty because the other's
+ * map holds its id.
+ */
+describe('REST drafts', () => {
+  beforeEach(() => {
+    useDraftsStore.getState().reset();
+  });
+
+  it('merges a REST patch over what is already staged', () => {
+    useDraftsStore.getState().stageRestRequest('rest-1', { method: 'POST' });
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
+
+    expect(useDraftsStore.getState().peekRestRequest('rest-1')).toEqual({ method: 'POST', url: '/pets' });
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(true);
+    expect(useDraftsStore.getState().dirtyRestRequestIds()).toEqual(['rest-1']);
+  });
+
+  it("keeps the two protocols' maps apart", () => {
+    useDraftsStore.getState().stageRestRequest('id-1', { url: '/pets' });
+
+    expect(useDraftsStore.getState().isRequestDirty('id-1')).toBe(false);
+    expect(useDraftsStore.getState().isRestRequestDirty('id-1')).toBe(true);
+  });
+
+  it('clears after a save, unless the user typed again while it was in flight', () => {
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
+    const committed = useDraftsStore.getState().peekRestRequest('rest-1');
+
+    useDraftsStore.getState().stageRestRequest('rest-1', { method: 'POST' });
+    useDraftsStore.getState().clearRestRequestIfUnchanged('rest-1', committed);
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(true);
+
+    useDraftsStore
+      .getState()
+      .clearRestRequestIfUnchanged('rest-1', useDraftsStore.getState().peekRestRequest('rest-1'));
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
+  });
+
+  it('discards a REST draft outright, and forgets both maps on reset', () => {
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
+    useDraftsStore.getState().discardRestRequest('rest-1');
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
+
+    useDraftsStore.getState().stageRequest('req-1', { envelopeXml: '<a/>' });
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
+    useDraftsStore.getState().reset();
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
+    expect(useDraftsStore.getState().dirtyRestRequestIds()).toEqual([]);
+  });
+});

@@ -1,15 +1,11 @@
-import { Editor } from '@monaco-editor/react';
+/**
+ * The XML editor both SOAP panes use: {@link CodeEditor} fixed to the XML language.
+ *
+ * Kept as its own component because every caller in the SOAP editor means "the envelope editor",
+ * and because its props are the ones those callers already pass.
+ */
 import type { OnMount } from '@monaco-editor/react';
-import { useMemo } from 'react';
-import { useResolvedTheme } from '../lib/theme.js';
-import { usePreferencesStore } from '../state/preferences.js';
-import { useUiStore } from '../state/ui.js';
-import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
-
-// Monaco's loader must be pointed at the bundled copy before the first editor mounts, and this
-// module is only ever reached through the lazily-loaded request editor, so import time is the
-// right moment — `beforeMount` would already be too late for `loader.config`.
-configureMonaco();
+import { CodeEditor } from './code-editor.js';
 
 export interface XmlEditorProps {
   readonly value: string;
@@ -27,50 +23,7 @@ export interface XmlEditorProps {
   readonly contextMenu?: boolean;
 }
 
-/**
- * The one Monaco wrapper: XML language, Wirebench theme, shared options. Both panes go through
- * it so the request and response editors can never drift apart.
- */
-export function XmlEditor({
-  value,
-  onChange,
-  readOnly = false,
-  ariaLabel,
-  onMount,
-  lineNumbers = true,
-  contextMenu = true,
-}: XmlEditorProps) {
-  const preference = useUiStore((state) => state.theme);
-  const theme = monacoThemeName(useResolvedTheme(preference));
-  const editorPreferences = usePreferencesStore((state) => state.preferences.editor);
-
-  const options = useMemo(
-    () => ({
-      ...BASE_EDITOR_OPTIONS,
-      ...(editorPreferences.fontFamily !== undefined && editorPreferences.fontFamily.length > 0
-        ? { fontFamily: editorPreferences.fontFamily }
-        : {}),
-      fontSize: editorPreferences.fontSize,
-      tabSize: editorPreferences.tabSize,
-      wordWrap: editorPreferences.wordWrap ? ('on' as const) : ('off' as const),
-      readOnly,
-      domReadOnly: readOnly,
-      ariaLabel,
-      lineNumbers: lineNumbers ? ('on' as const) : ('off' as const),
-      contextmenu: contextMenu,
-    }),
-    [readOnly, ariaLabel, lineNumbers, contextMenu, editorPreferences],
-  );
-
-  return (
-    <Editor
-      language={XML_LANGUAGE_ID}
-      theme={theme}
-      value={value}
-      options={options}
-      {...(onChange !== undefined ? { onChange: (next?: string) => onChange(next ?? '') } : {})}
-      {...(onMount !== undefined ? { onMount } : {})}
-      loading={<span className="p-3 text-sm text-fg-subtle">Loading editor…</span>}
-    />
-  );
+/** A Monaco editor in the XML language, with the Wirebench theme and the shared options. */
+export function XmlEditor(props: XmlEditorProps) {
+  return <CodeEditor {...props} language="xml" />;
 }

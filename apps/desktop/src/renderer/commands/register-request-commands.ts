@@ -13,7 +13,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
-import { activeRequestId, onActiveRequest, ui } from './command-helpers.js';
+import { activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
 
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
 export function registerRequestCommands(): void {
@@ -31,6 +31,22 @@ export function registerRequestCommands(): void {
       }
     },
   });
+  // A REST tab's own send. It shares `Mod+Enter` with `request.send` because the two can never be
+  // active at once — a tab is one kind or the other — which is what the distinct `when` scopes say.
+  registerCommand({
+    id: 'rest.send',
+    label: 'Send REST Request',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: () => {
+      const requestId = activeRestRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().sendRest(requestId);
+      }
+    },
+  });
   registerCommand({
     id: 'request.cancel',
     label: 'Cancel Request',
@@ -41,12 +57,23 @@ export function registerRequestCommands(): void {
     whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
-      return requestId !== undefined && useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
+      if (requestId !== undefined) {
+        return useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
+      }
+      const restRequestId = activeRestRequestId();
+      return (
+        restRequestId !== undefined && useExchangesStore.getState().restByRequest[restRequestId]?.status === 'sending'
+      );
     },
     run: () => {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
         void useExchangesStore.getState().cancel(requestId);
+        return;
+      }
+      const restRequestId = activeRestRequestId();
+      if (restRequestId !== undefined) {
+        void useExchangesStore.getState().cancelRest(restRequestId);
       }
     },
   });

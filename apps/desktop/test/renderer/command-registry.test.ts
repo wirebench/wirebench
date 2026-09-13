@@ -107,22 +107,6 @@ describe('command registry audit', () => {
     }
   });
 
-  it('binds no chord to two commands', () => {
-    const seen = new Map<string, CommandId>();
-    for (const id of COMMAND_IDS) {
-      const command = getCommand(id);
-      for (const chord of [command?.shortcut, ...(command?.extraShortcuts ?? [])]) {
-        if (chord === undefined) {
-          continue;
-        }
-        const parsed = parseKeybinding(chord);
-        const key = `${parsed.key}|${String(parsed.mod)}|${String(parsed.shift)}|${String(parsed.alt)}`;
-        expect(seen.get(key), `${chord} is bound to both ${seen.get(key) ?? ''} and ${id}`).toBeUndefined();
-        seen.set(key, id);
-      }
-    }
-  });
-
   it.each(SPEC_SECTION_6_COMMANDS)('%s is registered for its design §6 action', (id: CommandId) => {
     expect(COMMAND_IDS).toContain(id);
     expect(getCommand(id)).toBeDefined();
@@ -146,6 +130,11 @@ describe('command registry audit', () => {
     }
   });
 
+  /**
+   * Two commands may share a chord only when they can never be live together — `request.send` and
+   * `rest.send` are both ⌘⏎, and a tab is a SOAP request or a REST one, never both. Anything else
+   * sharing one is a real clash, because the dispatcher would have to pick.
+   */
   it('binds no chord to two commands that can both be live', () => {
     const byChord = new Map<string, CommandId[]>();
     for (const id of COMMAND_IDS) {

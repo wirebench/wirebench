@@ -15,6 +15,11 @@
       "types": "./dist/xml/index.d.ts",
       "default": "./dist/xml/index.js"
     },
+    "./rest": {
+      "development": "./src/rest/browser.ts",
+      "types": "./dist/rest/browser.d.ts",
+      "default": "./dist/rest/browser.js"
+    },
     "./test-helpers": "./test/helpers/index.ts"
   },
   "scripts": {

@@ -18,6 +18,12 @@ const RequestEditor = lazy(async () => {
   return { default: module.RequestEditor };
 });
 
+// Split out for the same reason as the SOAP editor: its raw-body editor is Monaco.
+const RestEditor = lazy(async () => {
+  const module = await import('../features/rest-editor/rest-editor.js');
+  return { default: module.RestEditor };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: module.HistoryEntryView };
@@ -470,11 +476,9 @@ export function EditorArea() {
             <DiffView {...activeTab.diff} />
           </Suspense>
         ) : activeTab.kind === 'rest-request' && activeTab.restRequestId !== undefined ? (
-          // The editor itself arrives with the REST editor task; the tab exists now so the
-          // explorer's single click has somewhere to land.
-          <div data-testid="rest-editor-placeholder" className="p-4 text-sm text-fg-subtle">
-            The REST request editor is not built yet.
-          </div>
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <RestEditor requestId={activeTab.restRequestId} />
+          </Suspense>
         ) : activeTab.kind === 'api' && activeTab.apiId !== undefined ? (
           <div data-testid="api-tab-placeholder" className="p-4 text-sm text-fg-subtle">
             The API page is not built yet.

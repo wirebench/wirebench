@@ -188,6 +188,19 @@ export interface ProjectStore extends ProjectSnapshot {
    * outside an editor tab — renaming from the tree, naming a request as it is created.
    */
   readonly updateRestRequest: (requestId: string, patch: RestRequestPatchWire) => Promise<void>;
+  /**
+   * Stages an edit made *in the REST editor*: applied to the mirror at once, so the editor and the
+   * send path see it immediately, but not written until {@link saveRestRequest}. This is what makes
+   * the tab's unsaved dot mean something.
+   */
+  readonly editRestRequest: (requestId: string, patch: RestRequestPatchWire) => void;
+  /**
+   * Sends one REST request's staged edits to main without writing the project, so anything main
+   * derives from its own model sees them. False when the mutation failed, leaving the draft.
+   */
+  readonly commitRestRequest: (requestId: string) => Promise<boolean>;
+  /** Writes one REST request's staged edits and saves its project. A no-op when it is clean. */
+  readonly saveRestRequest: (requestId: string) => Promise<void>;
   readonly removeRestRequest: (requestId: string) => Promise<void>;
   /** Copies a REST request beside the original; returns the copy's id. */
   readonly cloneRestRequest: (requestId: string) => Promise<string>;
@@ -572,24 +585,35 @@ export function selectApiOf(state: ProjectSnapshot, entityId: string): RestApiWi
 }
 
 /**
- * The folders a REST request sits in, outermost first — what the breadcrumb shows and what the
- * credentials chain climbs. Empty for a request at the API's root.
+ * The folders from an API's root down to `folderId`, outermost first — what a breadcrumb shows and
+ * what the credentials chain climbs.
+ *
+ * Takes the folder map rather than the whole store so a component can `useMemo` it: the result is a
+ * fresh array, and a zustand selector that built one on every call would rerender forever.
  */
-export function selectFolderChain(state: ProjectSnapshot, requestId: string): readonly RestFolderWire[] {
+export function folderChainOf(
+  folders: Readonly<Record<string, RestFolderWire>>,
+  folderId: string | undefined,
+): readonly RestFolderWire[] {
   const chain: RestFolderWire[] = [];
-  let folderId = state.restRequests[requestId]?.folderId;
   // Bounded by the folder count: a cycle on disk would otherwise loop here forever.
   const seen = new Set<string>();
-  while (folderId !== undefined && !seen.has(folderId)) {
-    seen.add(folderId);
-    const folder = state.folders[folderId];
+  let at = folderId;
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    const folder = folders[at];
     if (folder === undefined) {
       break;
     }
     chain.unshift(folder);
-    folderId = folder.parentId;
+    at = folder.parentId;
   }
   return chain;
+}
+
+/** The folders a REST request sits in, outermost first. Empty for a request at the API's root. */
+export function selectFolderChain(state: ProjectSnapshot, requestId: string): readonly RestFolderWire[] {
+  return folderChainOf(state.folders, state.restRequests[requestId]?.folderId);
 }
 
 const EMPTY: ProjectSnapshot = {
@@ -1039,6 +1063,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateRestRequest: async (requestId, patch) => {
       await mutateEntity(requestId, { kind: 'update-rest-request', requestId, patch });
+    },
+
+    editRestRequest: (requestId, patch) => {
+      update((draft) => {
+        const request = draft.restRequests[requestId];
+        if (request !== undefined) {
+          const merged = layerRestEdits(request, patch);
+          draft.restRequests[requestId] = merged;
+          // The per-project list the explorer and the breadcrumb read is rebuilt from the same
+          // merged request, so a staged rename shows in the tree without a round trip.
+          const projectId = draft.projectOf[requestId];
+          const rest = projectId === undefined ? undefined : draft.rest[projectId];
+          if (rest !== undefined && projectId !== undefined) {
+            draft.rest[projectId] = {
+              ...rest,
+              requests: rest.requests.map((candidate) => (candidate.id === requestId ? merged : candidate)),
+            };
+          }
+        }
+      });
+      useDraftsStore.getState().stageRestRequest(requestId, patch);
+    },
+
+    commitRestRequest: async (requestId) => {
+      const staged = useDraftsStore.getState().peekRestRequest(requestId);
+      if (staged === undefined) {
+        return true;
+      }
+      const projectId = ownerOf(requestId);
+      const result = await ipc().project.mutate({
+        projectId,
+        change: { kind: 'update-rest-request', requestId, patch: staged },
+      });
+      if (!result.ok) {
+        // The draft survives a failed commit: nothing landed, so the edit is still unsaved and the
+        // tab must keep saying so.
+        showToast(asError(result.error).message);
+        return false;
+      }
+      apply(projectId, result.value.project);
+      useDraftsStore.getState().clearRestRequestIfUnchanged(requestId, staged);
+      return true;
+    },
+
+    saveRestRequest: async (requestId) => {
+      if (useDraftsStore.getState().peekRestRequest(requestId) === undefined) {
+        return;
+      }
+      const projectId = ownerOf(requestId);
+      if (!(await get().commitRestRequest(requestId))) {
+        return;
+      }
+      await saveOne(projectId);
     },
 
     removeRestRequest: async (requestId) => {
