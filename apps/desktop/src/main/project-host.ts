@@ -150,7 +150,7 @@ import {
 } from './project-mutations.js';
 import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
-import { ProjectWatcher } from './project-watch.js';
+import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { renameWithRetry } from './rename-dir.js';
@@ -178,6 +178,12 @@ export interface ProjectHostHooks {
   readonly onHydration?: (event: { interfaceId: string; status: HydrationStatus; message?: string }) => void;
   /** Import progress, forwarded from the engine. */
   readonly onProgress?: (event: EngineProgressEvent) => void;
+  /**
+   * A save wrote or removed files (paths relative to the project folder). Raised only when
+   * something changed on disk; the host's own save `reason` (`'autosave'`, `'manual'`, …) is passed
+   * through untouched. The host knows nothing about what listens — a shared workspace commits.
+   */
+  readonly onSaved?: (event: { reason: string; written: readonly string[]; removed: readonly string[] }) => void;
 }
 
 /** The mutable state of one open project. */
@@ -920,6 +926,24 @@ export class ProjectHost {
     return { baseline: open.baseline, unsaved: projectFiles(open.project) };
   }
 
+  /** Paths announced through {@link expectOnDisk}, kept until their TTL so a reload's new watcher honours them too. */
+  private expectedOnDisk: { readonly paths: readonly string[]; readonly until: number }[] = [];
+
+  /**
+   * Marks `paths` (relative to the project folder) as about to be written by someone other than
+   * this host but on the app's behalf — a sync pull — so the watcher does not report them as an
+   * outside edit. Remembered for the watcher's self-write TTL and re-applied to the fresh watcher
+   * {@link reload} creates, because the pull's own events can reach that watcher late.
+   */
+  expectOnDisk(paths: readonly string[]): void {
+    const now = Date.now();
+    this.expectedOnDisk = [
+      ...this.expectedOnDisk.filter((entry) => entry.until > now),
+      { paths: [...paths], until: now + SELF_WRITE_TTL_MS },
+    ];
+    this.open?.watcher.expect(paths);
+  }
+
   /** Re-reads the folder from disk, discarding any unsaved in-memory changes. */
   async reload(): Promise<ProjectWire | null> {
     const open = this.open;
@@ -963,6 +987,11 @@ export class ProjectHost {
       baseline: baseline ?? projectFiles(project),
       watcher,
     };
+    const now = Date.now();
+    this.expectedOnDisk = this.expectedOnDisk.filter((entry) => entry.until > now);
+    for (const entry of this.expectedOnDisk) {
+      watcher.expect(entry.paths);
+    }
     watcher.start();
   }
 
@@ -1044,6 +1073,9 @@ export class ProjectHost {
     }
     open.lastSavedAt = new Date().toISOString();
     this.emitChanged();
+    if (result.written.length > 0 || result.removed.length > 0) {
+      this.hooks.onSaved?.({ reason: options.reason, written: result.written, removed: result.removed });
+    }
     return {
       saved: true,
       savedAt: open.lastSavedAt,

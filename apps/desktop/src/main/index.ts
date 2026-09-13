@@ -18,7 +18,7 @@ import {
   rememberPickedGit,
   toPreferencesWire,
 } from './preferences.js';
-import { findGit } from './sync/git-cli.js';
+import { findGit, GitCli } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
@@ -150,8 +150,33 @@ async function trashFolder(target: string): Promise<void> {
  * `register*Channels` call is handed, so a channel addressed at an entity reaches that entity's
  * own project rather than a single ambient one.
  */
+// `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
+// a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
+// never runs. Created once in `whenReady`, before any workspace (and so any sync) can open.
+const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
+
+// e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
+// at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
+// other `WIREBENCH_E2E_*` override is: a packaged build must not let an environment variable
+// redirect which executable main runs. Precedence: the e2e override, then a git.path preference
+// main itself picked (`configuredGitPath` — an unmarked or cleared value never counts), then
+// plain discovery.
+const gitLocator = (): ReturnType<typeof findGit> => {
+  const e2eOverride = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH'];
+  const configuredPath =
+    e2eOverride !== undefined && e2eOverride.length > 0 ? e2eOverride : configuredGitPath(preferencesService.get());
+  return findGit(configuredPath !== undefined ? { configuredPath } : {});
+};
+
 const workspaceService = new WorkspaceService({
   userDataDir: app.getPath('userData'),
+  // Located afresh for each shared workspace that opens, so a git installed (or picked in
+  // Settings) since the last open is found without a restart.
+  git: async () => {
+    const location = await gitLocator();
+    return location === undefined ? undefined : new GitCli(location, { hooksDir });
+  },
+  hooksDir,
   engine: engineService,
   globals: globalProperties,
   secrets: secretStore,
@@ -196,24 +221,8 @@ void app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  // `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
-  // a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
-  // never runs. Created once, up front, so it exists before any sync operation can start.
-  const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
+  // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).
   mkdirSync(hooksDir, { recursive: true });
-
-  // e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
-  // at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
-  // other `WIREBENCH_E2E_*` override is: a packaged build must not let an environment variable
-  // redirect which executable main runs. Precedence: the e2e override, then a git.path preference
-  // main itself picked (`configuredGitPath` — an unmarked or cleared value never counts), then
-  // plain discovery.
-  const gitLocator = (): ReturnType<typeof findGit> => {
-    const e2eOverride = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH'];
-    const configuredPath =
-      e2eOverride !== undefined && e2eOverride.length > 0 ? e2eOverride : configuredGitPath(preferencesService.get());
-    return findGit(configuredPath !== undefined ? { configuredPath } : {});
-  };
 
   const updates = createUpdateController((status) => {
     broadcast(events.app.updateStatus, { status });

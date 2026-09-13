@@ -25,6 +25,7 @@ import {
   createProject,
   createWorkspace,
   createWorkspaceEnvironment,
+  DEFAULT_GIT_SHARE_SETTINGS,
   definitionCacheDir,
   EMPTY_LOCAL_STATE,
   INTERFACES_DIR,
@@ -52,6 +53,7 @@ import {
 } from '@wirebench/engine';
 import type {
   FsLike,
+  GitShareSettings,
   Project,
   SaveResult,
   Workspace,
@@ -70,6 +72,13 @@ import { isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretStore } from './secrets.js';
+import { createSyncBackend } from './sync/create-backend.js';
+import type { GitCli } from './sync/git-cli.js';
+import { HeldChanges } from './sync/held-changes.js';
+import type { HeldBatch } from './sync/held-changes.js';
+import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
+import { SyncService } from './sync/sync-service.js';
+import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
@@ -119,6 +128,14 @@ export interface WorkspaceHooks {
   ) => void;
   /** Import progress, forwarded from whichever host raised it. */
   readonly onProgress?: (event: EngineProgressEvent) => void;
+  /** The open shared workspace's sync status changed (including `syncing` while an operation runs). */
+  readonly onSyncStatus?: (workspaceId: string, status: SyncStatusWire) => void;
+  /** A pull (or a finished merge) was applied: clean hosts reloaded, dirty ones told their files changed. */
+  readonly onSyncPulled?: (event: SyncPulledEvent) => void;
+  /** A merge stopped on conflicts; each conflict's `projectId` is filled from its `projects/<slug>/` path. */
+  readonly onSyncConflict?: (workspaceId: string, conflicts: readonly SyncConflictWire[]) => void;
+  /** A commit needs a name and email first; `sync().setIdentity` retries it. */
+  readonly onGitIdentityNeeded?: (workspaceId: string) => void;
 }
 
 /** Everything {@link WorkspaceService} needs; all of it injected, none of it from `electron`. */
@@ -158,6 +175,14 @@ export interface WorkspaceServiceDeps {
    * Test-only; defaults to {@link DEFAULT_DEBOUNCE_MS}.
    */
   readonly watchDebounceMs?: number;
+  /**
+   * Finds git for a shared workspace, located afresh on every open; resolving `undefined` means no
+   * git is available (a git share then opens with a `git-not-found` status instead of syncing).
+   * Omitted in tests that never open a shared workspace.
+   */
+  readonly git?: () => Promise<GitCli | undefined>;
+  /** The empty `core.hooksPath` directory every `GitCli` is built with (clones and inits need it). */
+  readonly hooksDir?: string;
 }
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
@@ -197,6 +222,10 @@ interface OpenWorkspace {
    * entry-closing loop) has a signal it can check between its own awaits.
    */
   closing: boolean;
+  /** Drives the share's backend; `undefined` for a local workspace and until `startSync` has built it. */
+  sync: SyncService | undefined;
+  /** Outside-edit notifications held while sync runs an operation or sits in a conflict (see the sync region). */
+  readonly held: HeldChanges;
 }
 
 function errorMessage(error: unknown): string {
@@ -591,7 +620,17 @@ export class WorkspaceService implements ProjectRouter {
         ? local.activeEnvironmentId
         : undefined;
     const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
-    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [], watcher: undefined, closing: false };
+    const open: OpenWorkspace = {
+      workspace,
+      dir,
+      tree,
+      share,
+      entries: [],
+      watcher: undefined,
+      closing: false,
+      sync: undefined,
+      held: new HeldChanges(),
+    };
     this.current = open;
     this.failure = undefined;
     this.unsaved = new UnsavedStore(dir);
@@ -615,6 +654,9 @@ export class WorkspaceService implements ProjectRouter {
         isManaged: isWorkspaceManagedPath,
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
         onChange: (paths) => {
+          if (open.held.offerWorkspace(paths)) {
+            return;
+          }
           void this.enqueueWorkspaceOp(() => this.reloadWorkspaceFromDisk(open, paths));
         },
       });
@@ -634,6 +676,9 @@ export class WorkspaceService implements ProjectRouter {
 
       await this.state.remember(id, this.now().toISOString());
       this.deps.hooks?.onChanged?.(this.snapshot());
+      // Never awaited: a shared workspace opens on its files alone, and git (a missing
+      // executable, a slow remote) only ever shows up in the sync status.
+      void this.startSync(open);
       return this.requireSnapshot();
     } catch (error) {
       await this.close().catch(() => undefined);
@@ -724,7 +769,13 @@ export class WorkspaceService implements ProjectRouter {
           this.deps.hooks?.onProjectChanged?.(entry.projectId, project);
         },
         onChangedOnDisk: (paths) => {
+          if (this.current?.held.offerProject(entry.projectId, paths) === true) {
+            return;
+          }
           this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
+        },
+        onSaved: (event) => {
+          this.current?.sync?.afterSave(event.reason === 'autosave' ? 'autosave' : 'manual');
         },
         onHydration: (event) => {
           this.deps.hooks?.onHydration?.(entry.projectId, event);
@@ -813,6 +864,10 @@ export class WorkspaceService implements ProjectRouter {
     // at `this.current` alone — `closing` is the signal it checks instead.
     open.closing = true;
     open.watcher?.stop();
+    // Same first step: no timer fetch or debounced save commit may start while this closes, and
+    // nothing held for a conflict is replayed into a closing workspace.
+    open.sync?.stop();
+    open.held.clear();
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
       // the next time this workspace opens (see `unsaved-store.ts`).
@@ -822,7 +877,8 @@ export class WorkspaceService implements ProjectRouter {
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
-    for (const entry of open.entries) {
+    // A snapshot: an in-flight `releaseEntry` splicing the live array must not make this skip one.
+    for (const entry of [...open.entries]) {
       await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
     }
     this.unsaved = undefined;
@@ -991,6 +1047,157 @@ export class WorkspaceService implements ProjectRouter {
     }
   }
 
+  // ——— sync ———————————————————————————————————————————————————————————————————————————————
+  //
+  // A shared workspace (one with `share.yaml`) gets a `SyncService` once `open()` has returned.
+  // Pulls are applied inside the workspace operation chain, pre-announcing their own writes to
+  // both watchers. While sync runs an operation (a merge rewrites files under the watchers) or
+  // sits in a conflict, outside-edit notifications from both watchers are held in `open.held` —
+  // the watchers themselves keep running — and replayed, through the chain, once it does not.
+  // The pure parts live in `sync/pull-plan.ts` and `sync/held-changes.ts`.
+
+  /** The open workspace's sync service; `undefined` for a local workspace, or until it has been built. */
+  sync(): SyncService | undefined {
+    return this.current?.sync;
+  }
+
+  /** Builds the share's backend and starts syncing. Never throws: failures end up in the status. */
+  private async startSync(open: OpenWorkspace): Promise<void> {
+    const share = open.share;
+    if (share === undefined) {
+      return;
+    }
+    const settings = (): GitShareSettings => open.share?.git ?? DEFAULT_GIT_SHARE_SETTINGS;
+    const backend = await createSyncBackend({ share, tree: open.tree, git: this.deps.git, settings });
+    if (this.stale(open)) {
+      return;
+    }
+    const workspaceId = open.workspace.id;
+    const sync = new SyncService({
+      backend,
+      settings,
+      onStatus: (status) => {
+        this.onSyncStatus(open, status);
+      },
+      onPulled: (changedPaths) => this.applyPulled(open, changedPaths),
+      onConflict: (conflicts) => {
+        if (this.stale(open)) {
+          return;
+        }
+        const filled = fillConflictProjectIds(conflicts, (slug) => this.entryOfSlug(open, slug)?.projectId);
+        this.deps.hooks?.onSyncConflict?.(workspaceId, filled);
+      },
+      onIdentityNeeded: () => {
+        if (!this.stale(open)) {
+          this.deps.hooks?.onGitIdentityNeeded?.(workspaceId);
+        }
+      },
+    });
+    open.sync = sync;
+    await sync.start();
+  }
+
+  /** Holds outside-edit delivery while sync is busy or in conflict; replays what was held once it is neither. */
+  private onSyncStatus(open: OpenWorkspace, status: SyncStatusWire): void {
+    if (this.stale(open)) {
+      return;
+    }
+    const batch = open.held.setHolding(status.state === 'syncing' || status.state === 'conflict');
+    this.deps.hooks?.onSyncStatus?.(open.workspace.id, status);
+    if (batch !== undefined) {
+      void this.enqueueWorkspaceOp(() => this.replayHeld(open, batch));
+    }
+  }
+
+  private async replayHeld(open: OpenWorkspace, batch: HeldBatch): Promise<void> {
+    if (this.stale(open)) {
+      return;
+    }
+    if (batch.workspacePaths.length > 0) {
+      await this.reloadWorkspaceFromDisk(open, batch.workspacePaths);
+    }
+    for (const [projectId, paths] of batch.projects) {
+      if (this.stale(open)) {
+        return;
+      }
+      if (open.entries.some((entry) => entry.projectId === projectId && entry.host !== undefined)) {
+        this.deps.hooks?.onProjectChangedOnDisk?.(projectId, paths);
+      }
+    }
+  }
+
+  /**
+   * Applies a pull's `changedPaths` (tree-relative): workspace-level files go through the same
+   * reload as an outside edit; each changed project's host is reloaded when clean, or — when it
+   * holds unsaved edits — told its files changed on disk (the existing banner). Every pulled path
+   * is announced to its watcher first, so the pull's own writes are not reported back.
+   */
+  private applyPulled(open: OpenWorkspace, changedPaths: readonly string[]): Promise<void> {
+    return this.enqueueWorkspaceOp(async () => {
+      if (this.stale(open)) {
+        return;
+      }
+      const plan = planPull(changedPaths);
+      open.watcher?.expect(plan.workspacePaths);
+      const byProjectId = new Map<string, readonly string[]>();
+      for (const [slug, paths] of plan.projects) {
+        const entry = this.entryOfSlug(open, slug);
+        entry?.host?.expectOnDisk(paths);
+        if (entry !== undefined) {
+          byProjectId.set(entry.projectId, paths);
+        }
+      }
+      // Events the merge produced before the announcements above were held; they are this pull.
+      open.held.forget(plan.workspacePaths, byProjectId);
+
+      const existing = new Set(open.entries);
+      const workspaceChanged = plan.workspacePaths.length > 0;
+      if (workspaceChanged) {
+        await this.reloadWorkspaceFromDisk(open, plan.workspacePaths);
+        if (this.stale(open)) {
+          return;
+        }
+      }
+      const projectIds: string[] = [];
+      for (const [slug, paths] of plan.projects) {
+        const entry = this.entryOfSlug(open, slug);
+        if (entry === undefined) {
+          continue;
+        }
+        projectIds.push(entry.projectId);
+        // A host the reload above just opened already read the pulled files.
+        if (entry.host === undefined || !existing.has(entry)) {
+          continue;
+        }
+        if (entry.host.snapshot()?.dirty === true) {
+          this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
+          continue;
+        }
+        try {
+          await entry.host.reload();
+        } catch {
+          // Unloadable pulled files (a half-resolved merge, a newer format): leave the model and
+          // let the user decide through the banner rather than failing the whole pull.
+          this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
+        }
+        if (this.stale(open)) {
+          return;
+        }
+      }
+      this.deps.hooks?.onSyncPulled?.({
+        workspaceId: open.workspace.id,
+        projectIds,
+        workspaceChanged,
+        entityCount: plan.entityCount,
+      });
+    });
+  }
+
+  /** The internal project entry stored under `projects/<slug>/` in the tree. */
+  private entryOfSlug(open: OpenWorkspace, slug: string): OpenProjectEntry | undefined {
+    return open.entries.find((entry) => entry.ref.source === 'internal' && entry.ref.slug === slug);
+  }
+
   // ——— manifest ———————————————————————————————————————————————————————————————————————————
 
   /** Renames a workspace — the open one, or any other on disk — and returns the fresh list. */
@@ -1012,6 +1219,7 @@ export class WorkspaceService implements ProjectRouter {
         if (this.stale(open)) {
           return;
         }
+        open.sync?.afterSave('workspace');
         this.deps.hooks?.onChanged?.(this.snapshot());
       });
     } else {
@@ -1449,6 +1657,7 @@ export class WorkspaceService implements ProjectRouter {
     // The write this call just made would otherwise come back through the watcher as if a
     // teammate had made it, triggering a redundant reload of the record this call just built.
     open.watcher?.expect([...result.written, ...result.removed]);
+    open.sync?.afterSave('workspace');
   }
 
   /** Every slug already used in the open workspace — what `uniqueSlug` is asked to avoid. */
@@ -1597,6 +1806,7 @@ export class WorkspaceService implements ProjectRouter {
       const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
       await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
       this.requireStillOpen(open);
+      open.sync?.afterSave('workspace');
       this.deps.hooks?.onChanged?.(this.snapshot());
       return {
         workspace: this.requireSnapshot(),

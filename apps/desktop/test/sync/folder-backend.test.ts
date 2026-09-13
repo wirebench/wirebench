@@ -16,6 +16,24 @@ describe('FolderBackend', () => {
     });
   });
 
+  it('can stand in for another share kind, reporting that kind and an error', async () => {
+    await expect(new FolderBackend({ statusKind: 'server' }).probe()).resolves.toMatchObject({
+      kind: 'server',
+      state: 'clean',
+    });
+    const standIn = new FolderBackend({ statusKind: 'git', error: { code: 'git-not-found', message: 'No git.' } });
+    expect(standIn.kind).toBe('folder');
+    await expect(standIn.probe()).resolves.toEqual({
+      kind: 'git',
+      gitAvailable: false,
+      state: 'error',
+      ahead: 0,
+      behind: 0,
+      uncommitted: 0,
+      error: { code: 'git-not-found', message: 'No git.' },
+    });
+  });
+
   it('reports no history and no changes without support', async () => {
     const backend = new FolderBackend();
     await expect(backend.log(10)).resolves.toEqual([]);

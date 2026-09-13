@@ -36,3 +36,14 @@ export interface SyncLogEntryWire {
   readonly author: string;
   readonly at: string;
 }
+
+/** Raised after a pull (or a finished merge) has been applied to the open workspace. */
+export interface SyncPulledEvent {
+  readonly workspaceId: string;
+  /** Projects whose files the pull changed (reloaded, or told their files changed on disk). */
+  readonly projectIds: readonly string[];
+  /** Whether `workspace.yaml` or an `environments/*.yaml` file changed. */
+  readonly workspaceChanged: boolean;
+  /** Distinct entities changed (a request's `.request.yaml` and `.xml` count once). */
+  readonly entityCount: number;
+}
