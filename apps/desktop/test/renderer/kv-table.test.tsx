@@ -77,11 +77,11 @@ describe('KvTable', () => {
   it('reverts on Escape, and writes nothing', () => {
     const { onChange } = mount();
 
-    const value = screen.getByTestId('rest-query-value');
+    const value = screen.getByTestId<HTMLInputElement>('rest-query-value');
     fireEvent.change(value, { target: { value: 'oops' } });
     fireEvent.keyDown(value, { key: 'Escape' });
 
-    expect((value as HTMLInputElement).value).toBe('1');
+    expect(value.value).toBe('1');
     fireEvent.blur(value);
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -189,8 +189,8 @@ describe('KvTable', () => {
   it('locks the name column when the caller owns the names', () => {
     mount({ lockNames: true });
 
-    expect((screen.getByTestId('rest-query-name') as HTMLInputElement).readOnly).toBe(true);
-    expect((screen.getByTestId('rest-query-value') as HTMLInputElement).readOnly).toBe(false);
+    expect(screen.getByTestId<HTMLInputElement>('rest-query-name').readOnly).toBe(true);
+    expect(screen.getByTestId<HTMLInputElement>('rest-query-value').readOnly).toBe(false);
   });
 
   it('shows the empty message only while there is nothing at all', () => {

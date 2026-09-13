@@ -270,7 +270,7 @@ export function KvTable({
                       onChange={(event) => {
                         // One keystroke creates the row and the caller re-renders with it, so the
                         // add row is empty again and focus follows the new row's own input.
-                        append({ [column]: event.target.value } as Partial<KeyValueWire>);
+                        append({ [column]: event.target.value });
                       }}
                     />
                   )}
