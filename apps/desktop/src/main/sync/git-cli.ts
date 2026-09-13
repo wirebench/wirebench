@@ -243,15 +243,28 @@ function schemeLabel(trimmed: string): string {
   return bareScheme[1]!.toLowerCase();
 }
 
+/** Decodes a percent-encoded user/host component; `undefined` on a malformed `%` sequence. */
+function safeDecode(component: string): string | undefined {
+  try {
+    return decodeURIComponent(component);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Refuses anything that is not a literal `https://`, `ssh://` or `file://` URL (scheme
  * case-insensitive) or a `user@host:path` remote, trims and returns the accepted value
  * otherwise. In particular refuses: an empty string; whitespace or control characters anywhere
- * in the trimmed value; a value, user or host starting with `-` (which `git` — or a shell a
- * transport helper invokes — would parse as a flag, e.g. `ssh://-oProxyCommand=x/y` or
- * `git@-oProxyCommand:x`); `ext::…` (git's "run an arbitrary command" transport); and a
- * scheme-only form with no `//` (`https:x`, `file:/etc/r`, `ssh:-oProxyCommand=…`), which would
- * otherwise let a disallowed or malformed scheme slip past a same-looking check.
+ * in the trimmed value; a value starting with `-` (which `git` — or a shell a transport helper
+ * invokes — would parse as a flag); `ext::…` (git's "run an arbitrary command" transport); a
+ * scheme-only form with no `//` (`https:x`, `file:/etc/r`, `ssh:-oProxyCommand=…`); and —
+ * crucially — a *user or host* starting with `-` once fully parsed out of the authority
+ * (`user@host[:port]`, `[bracketed-IPv6-host]`, `%`-decoded) and off the scp-like form's
+ * `user@host:`, closing bypasses a leading-`-` check on the whole string alone would miss:
+ * `ssh://git@-oProxyCommand=x/y`, `ssh://[-oProxyCommand=x]/y`, `ssh://%2doProxyCommand=x/y`
+ * (git percent-decodes the host), `https://user@-host/y`. A malformed `%` sequence in the user
+ * or host is refused outright rather than passed through undecoded.
  *
  * The error `details` carry only the scheme (or `'scp-like'`) — never the URL, which may embed
  * credentials — and the message stays generic for the same reason.
@@ -271,14 +284,23 @@ export function assertRemoteUrl(url: string): string {
   if (trimmed.toLowerCase().startsWith('ext::')) {
     fail();
   }
+
+  /** Refuses when `raw` (a user or host component, still percent-encoded) is disallowed. */
+  const checkComponent = (raw: string): void => {
+    const decoded = safeDecode(raw);
+    if (decoded === undefined || decoded.startsWith('-') || WHITESPACE_OR_CONTROL.test(decoded)) {
+      fail();
+    }
+  };
+
   const scpMatch = SCP_LIKE_REMOTE.exec(trimmed);
   if (scpMatch !== null) {
     const [, user, host] = scpMatch;
-    if (user!.startsWith('-') || host!.startsWith('-')) {
-      fail();
-    }
+    checkComponent(user!);
+    checkComponent(host!);
     return trimmed;
   }
+
   const schemeMatch = SCHEME_PREFIX.exec(trimmed);
   if (schemeMatch === null) {
     // No literal `scheme://` — refuses `https:x`, `file:/etc/r`, `ssh:-oProxyCommand=…`, `x/y`.
@@ -288,9 +310,33 @@ export function assertRemoteUrl(url: string): string {
   if (!ALLOWED_SCHEMES.includes(scheme)) {
     fail();
   }
-  const rest = trimmed.slice(schemeMatch![0].length);
-  if (rest.startsWith('-')) {
-    fail();
+
+  // The authority is everything after `scheme://` up to the first `/` (or the whole remainder
+  // when there is no path) — empty for `file:///path`, which stays accepted.
+  const afterScheme = trimmed.slice(schemeMatch![0].length);
+  const slashIndex = afterScheme.indexOf('/');
+  const authority = slashIndex === -1 ? afterScheme : afterScheme.slice(0, slashIndex);
+  if (authority.length > 0) {
+    const atIndex = authority.lastIndexOf('@');
+    const userinfo = atIndex === -1 ? undefined : authority.slice(0, atIndex);
+    const hostAndPort = atIndex === -1 ? authority : authority.slice(atIndex + 1);
+    let host: string;
+    if (hostAndPort.startsWith('[')) {
+      // A bracketed IPv6 host (`[::1]` or `[::1]:22`) — a `:port` outside the brackets, if any,
+      // is not itself a place a flag-like value could hide.
+      const closeBracket = hostAndPort.indexOf(']');
+      if (closeBracket === -1) {
+        fail();
+      }
+      host = hostAndPort.slice(1, closeBracket);
+    } else {
+      const colonIndex = hostAndPort.indexOf(':');
+      host = colonIndex === -1 ? hostAndPort : hostAndPort.slice(0, colonIndex);
+    }
+    if (userinfo !== undefined) {
+      checkComponent(userinfo);
+    }
+    checkComponent(host);
   }
   return trimmed;
 }
@@ -326,8 +372,13 @@ export class GitCli {
   private readonly hooksDir: string;
   private readonly runner: Runner;
   private readonly extraEnv: NodeJS.ProcessEnv;
-  /** Memoised `git config --get core.sshCommand` lookup; `undefined` covers "unset" too. */
-  private sshCommandConfig: Promise<string | undefined> | undefined;
+  /**
+   * Memoised `git config --get core.sshCommand` lookups, one per distinct `cwd` a caller has
+   * `run()` with (the `cwd`-less key included) — a repository-local `core.sshCommand` only
+   * applies inside that repository, and a cwd-less run must never pick up a *different*
+   * repository's local config. `undefined` (the resolved value) covers "unset" too.
+   */
+  private readonly sshCommandConfigByCwd = new Map<string | undefined, Promise<string | undefined>>();
 
   constructor(location: GitLocation, options: { hooksDir: string; run?: Runner; env?: NodeJS.ProcessEnv }) {
     this.path = location.path;
@@ -338,15 +389,20 @@ export class GitCli {
   }
 
   /**
-   * Reads `core.sshCommand` once per instance (cached, including a cached "unset"), via the
-   * same runner every other invocation uses — never a shell, no `cwd` (a global/user-level
-   * config lookup, not tied to any one tree). Exit code 1 (and any other failure) means unset.
+   * Reads `core.sshCommand` for `cwd` once (cached per `cwd`, including a cached "unset"), via
+   * the same runner every other invocation uses. Exit code 1 (and any other failure) means
+   * unset.
    */
-  private queryCoreSshCommand(): Promise<string | undefined> {
-    this.sshCommandConfig ??= (async () => {
+  private queryCoreSshCommand(cwd: string | undefined): Promise<string | undefined> {
+    const cached = this.sshCommandConfigByCwd.get(cwd);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const lookup = (async () => {
       try {
         const env: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv, GIT_TERMINAL_PROMPT: '0' };
         const result = await this.runner(this.path, ['config', '--get', 'core.sshCommand'], {
+          ...(cwd !== undefined ? { cwd } : {}),
           env,
           timeoutMs: DEFAULT_TIMEOUT_MS,
         });
@@ -359,7 +415,8 @@ export class GitCli {
         return undefined;
       }
     })();
-    return this.sshCommandConfig;
+    this.sshCommandConfigByCwd.set(cwd, lookup);
+    return lookup;
   }
 
   async run(
@@ -380,10 +437,12 @@ export class GitCli {
     // The `ssh -o BatchMode=yes` default only applies when nothing else already names an SSH
     // transport: an explicit `GIT_SSH_COMMAND`/`GIT_SSH` (from the process or this instance's
     // own `env`) is left exactly as `mergedEnv` already carries it, and `core.sshCommand` is
-    // consulted (once, cached) only when neither env var is set.
+    // consulted (once per `cwd`, cached) only when neither env var is set — read with this same
+    // `cwd` so a repository-local value in the tree being operated on is honoured, and a
+    // cwd-less run never picks up some other repository's local config.
     let sshCommandDefault: string | undefined;
     if (mergedEnv['GIT_SSH_COMMAND'] === undefined && mergedEnv['GIT_SSH'] === undefined) {
-      const configured = await this.queryCoreSshCommand();
+      const configured = await this.queryCoreSshCommand(cwd);
       if (configured === undefined) {
         sshCommandDefault = DEFAULT_GIT_SSH_COMMAND;
       }

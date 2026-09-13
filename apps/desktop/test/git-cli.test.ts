@@ -264,7 +264,7 @@ describe('GitCli.run', () => {
       expect(configCalls()).toBe(1);
     });
 
-    it('runs the config lookup once across several run() calls', async () => {
+    it('runs the config lookup once across several run() calls with the same cwd', async () => {
       const { run, configCalls } = configAwareRunner(undefined);
       const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
 
@@ -273,6 +273,60 @@ describe('GitCli.run', () => {
       await cli.run('/tree', ['diff']);
 
       expect(configCalls()).toBe(1);
+    });
+
+    /**
+     * `core.sshCommand` is a config value that can be set per repository, so the lookup is
+     * cached per `cwd` rather than once for the whole `GitCli` instance: a cwd-less run must
+     * never reuse (or poison the cache for) a run against one particular tree, and vice versa.
+     */
+    describe('cached per cwd', () => {
+      /** A fake `Runner` that answers `core.sshCommand`, per its own `cwd`, and records calls. */
+      function configAwareRunnerByCwd(configValueByCwd: Record<string, string | undefined>): {
+        run: Runner;
+        configCallCwds: () => (string | undefined)[];
+        seenEnvByCwd: () => Map<string | undefined, NodeJS.ProcessEnv>;
+      } {
+        const configCallCwds: (string | undefined)[] = [];
+        const seenEnvByCwd = new Map<string | undefined, NodeJS.ProcessEnv>();
+        const run: Runner = (_file, args, options) => {
+          if (args[0] === 'config' && args[1] === '--get' && args[2] === 'core.sshCommand') {
+            configCallCwds.push(options.cwd);
+            const configValue = options.cwd !== undefined ? configValueByCwd[options.cwd] : undefined;
+            return configValue === undefined
+              ? Promise.resolve({ stdout: '', stderr: '', exitCode: 1 })
+              : Promise.resolve({ stdout: `${configValue}\n`, stderr: '', exitCode: 0 });
+          }
+          if (options.cwd !== undefined) {
+            seenEnvByCwd.set(options.cwd, options.env);
+          }
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        };
+        return { run, configCallCwds: () => configCallCwds, seenEnvByCwd: () => seenEnvByCwd };
+      }
+
+      it('looks up core.sshCommand once per distinct cwd, each with that cwd', async () => {
+        const { run, configCallCwds } = configAwareRunnerByCwd({});
+        const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+        await cli.run('/tree-a', ['status']);
+        await cli.run('/tree-a', ['fetch']);
+        await cli.run('/tree-b', ['status']);
+        await cli.run('/tree-b', ['fetch']);
+
+        expect(configCallCwds()).toEqual(['/tree-a', '/tree-b']);
+      });
+
+      it('applies the BatchMode default only to the cwd with no repository-local core.sshCommand', async () => {
+        const { run, seenEnvByCwd } = configAwareRunnerByCwd({ '/tree-configured': 'ssh -F /custom/config' });
+        const cli = new GitCli({ path: '/usr/bin/git', version: '2.40.0' }, { hooksDir, run });
+
+        await cli.run('/tree-configured', ['status']);
+        await cli.run('/tree-plain', ['status']);
+
+        expect(seenEnvByCwd().get('/tree-configured')?.['GIT_SSH_COMMAND']).toBeUndefined();
+        expect(seenEnvByCwd().get('/tree-plain')?.['GIT_SSH_COMMAND']).toBe('ssh -o BatchMode=yes');
+      });
     });
   });
 
@@ -393,13 +447,20 @@ describe('GitCli.run', () => {
 });
 
 describe('assertRemoteUrl', () => {
-  it.each(['https://x/y.git', 'ssh://git@x/y', 'git@x:y/z.git', 'file:///tmp/r'])(
-    'accepts %s and returns the trimmed value',
-    (url) => {
-      expect(assertRemoteUrl(url)).toBe(url);
-      expect(assertRemoteUrl(`  ${url}  `)).toBe(url);
-    },
-  );
+  it.each([
+    'https://x/y.git',
+    'ssh://git@x/y',
+    'git@x:y/z.git',
+    'file:///tmp/r',
+    // A bracketed IPv6 host, an explicit port, and an empty `file://` authority all still parse
+    // to an allowed (or absent) host.
+    'ssh://[::1]:22/x',
+    'ssh://git@host:2222/x',
+    'file:///C:/repo',
+  ])('accepts %s and returns the trimmed value', (url) => {
+    expect(assertRemoteUrl(url)).toBe(url);
+    expect(assertRemoteUrl(`  ${url}  `)).toBe(url);
+  });
 
   it.each([
     '',
@@ -415,6 +476,13 @@ describe('assertRemoteUrl', () => {
     'ssh:-oProxyCommand=evil',
     'https://x/y\nrm -rf /',
     'https://x/y\t/etc',
+    // A leading `-` hidden behind `user@`, inside `[brackets]`, or behind a `%` escape that
+    // git itself decodes — a check on the whole string (or only its very start) misses all four.
+    'ssh://git@-oProxyCommand=x/y',
+    'ssh://[-oProxyCommand=x]/y',
+    'ssh://%2doProxyCommand=x/y',
+    'https://user@-host/y',
+    'ssh://git@%2dx/y',
   ])('refuses %s', (url) => {
     expect(() => assertRemoteUrl(url)).toThrow(WirebenchError);
     try {
