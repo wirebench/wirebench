@@ -14,9 +14,10 @@ import {
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { Cookie, ProxyOptions, TlsOptions, PropertyScopes } from '@wirebench/engine';
+import type { Cookie, OAuth2Auth, ProxyOptions, TlsOptions, PropertyScopes } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
 import type { HistoryService } from '../history-service.js';
+import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
@@ -118,6 +119,18 @@ export interface RequestChannelDeps {
    * folder. Omitted in tests, which then get no exemptions at all.
    */
   readonly dialogPicks?: DumpFilePicks;
+  /**
+   * The app's OAuth2 token service, for a REST request whose credentials are an OAuth2
+   * configuration. Omitted in tests that never send one, which then send no token at all rather
+   * than quietly obtaining one.
+   */
+  readonly oauth2?: Pick<OAuth2Service, 'accessToken'>;
+  /**
+   * Resolves one keychain reference, for the client secret and the remembered refresh token an
+   * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
+   * only for the material the token request consumes before a send exists.
+   */
+  readonly getSecret?: (ref: string) => Promise<string | undefined>;
 }
 
 /**
@@ -502,6 +515,18 @@ async function sendRestRequest(
   // wherever it is logged even when the key is called something this build has never heard of.
   const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
 
+  // The token is obtained here rather than inside the engine service: it needs a browser, a
+  // loopback listener and a cache, none of which the engine may own. A grant that would have to
+  // open a window refuses instead, and the user presses *Get new token*.
+  const accessToken =
+    resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+      ? await deps.oauth2.accessToken(resolved.auth, {
+          credentials: await oauth2Credentials(deps, resolved.auth),
+          ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
+          ...(proxy !== undefined ? { proxy } : {}),
+        })
+      : undefined;
+
   const startedAt = Date.now();
   try {
     const summary = await service.sendRestRequest(
@@ -509,6 +534,7 @@ async function sendRestRequest(
       {
         showSecrets: deps.showSecrets?.get() ?? false,
         auth: resolved.auth,
+        ...(accessToken !== undefined ? { accessToken } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
       },
     );
@@ -557,6 +583,21 @@ async function recordRest(
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);
   }
+}
+
+/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
+async function oauth2Credentials(
+  deps: RequestChannelDeps,
+  config: OAuth2Auth,
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+  const read = async (ref: string | undefined): Promise<string | undefined> =>
+    ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
+  const clientSecret = await read(config.clientSecretRef);
+  const refreshToken = await read(config.refreshTokenRef);
+  return {
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
+    ...(refreshToken !== undefined ? { refreshToken } : {}),
+  };
 }
 
 /**

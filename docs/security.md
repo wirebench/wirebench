@@ -116,6 +116,35 @@ in a `.p12` loads its certificate but is never paired with it, so the alias repo
 key and signing with it fails — rather than silently pairing a certificate with the wrong key.
 Signing and TLS client authentication with non-RSA keystores are not supported yet.
 
+## The OAuth2 callback listens on loopback only
+
+A REST request whose credentials are an OAuth2 configuration is signed with an access token main
+obtains itself. Two parts of that are security-relevant: a port, and a token.
+
+The authorization-code grant answers to a URL, so main opens an HTTP listener for it. It binds
+`127.0.0.1` and nothing else — a listener on a routable address is a way to hand somebody else's
+authorization code to this app (RFC 8252 §8.3). It takes a random free port unless the user pinned
+one in Preferences, because some providers insist on an exact registered redirect URI. It accepts
+exactly one callback and then closes, requires the `state` value it generated (a callback carrying
+any other `state` is answered but neither accepted nor allowed to end the flow), and gives up after
+five minutes. Only one sign-in may be pending at a time, and the user can cancel it. PKCE
+(RFC 7636, S256) is on by default. The authorization URL is opened through the same http(s)-only
+check every other outbound link goes through.
+
+Access tokens live in main's memory, keyed by a hash of the configuration that produced them, and
+are never written to disk. A refresh token is written to the keychain only when the configuration
+carries a reference to put it behind — the user asking for it to be remembered — and otherwise
+lasts the session. `oauth2.status` never returns the token itself unless the session's show-secrets
+flag is on.
+
+Every `oauth2.*` call names an *owner*: an API, a folder or a request. Main reads the configuration
+from the project model, because a channel that accepted one would be a channel for pointing the app
+at an attacker's token endpoint with the user's client secret.
+
+Sending a request never opens a browser. An authorization-code configuration whose token has
+expired and cannot be refreshed fails the send with `oauth2-sign-in-required`, and the user presses
+*Get new token*.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

@@ -86,6 +86,9 @@ export interface ProjectRouter {
   /** The TLS material a REST send needs: anchors, client identity, its own trust decision. */
   restTlsFor(...args: Parameters<ProjectHost['restTlsFor']>): ReturnType<ProjectHost['restTlsFor']>;
 
+  /** The credentials configured on one API, folder or REST request — its own, not its chain's. */
+  restAuthOf(...args: Parameters<ProjectHost['restAuthOf']>): ReturnType<ProjectHost['restAuthOf']>;
+
   /** What History names a REST send by: the request, its API, and its folder path. */
   restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
 

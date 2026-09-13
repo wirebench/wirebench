@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import {
+  oauth2OwnerRequestSchema,
+  oauth2StatusSchema,
   requestPreflightRestRequestSchema,
   requestSendRestRequestSchema,
   restExchangeSummarySchema,
@@ -300,6 +302,17 @@ export const channels = {
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
     curl: defineChannel('request.curl', requestCurlRequestSchema, requestCurlResponseSchema),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
+  },
+  /**
+   * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
+   * configuration itself: the client secret is a keychain reference main resolves, and the access
+   * token comes back only as a status unless the session shows secrets.
+   */
+  oauth2: {
+    fetchToken: defineChannel('oauth2.fetchToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    status: defineChannel('oauth2.status', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    clearToken: defineChannel('oauth2.clearToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    cancel: defineChannel('oauth2.cancel', oauth2OwnerRequestSchema.partial(), requestCancelResponseSchema),
   },
   // A workspace owns its projects: creating, opening and closing one is a `workspace.*` call,
   // not a `project.*` one. What is left here addresses *one* project of the open workspace,

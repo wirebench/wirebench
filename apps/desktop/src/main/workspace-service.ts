@@ -1472,6 +1472,11 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  restAuthOf(...args: Parameters<ProjectRouter['restAuthOf']>): ReturnType<ProjectRouter['restAuthOf']> {
+    return this.hostOfEntity(args[0]).restAuthOf(...args);
+  }
+
+  /** @inheritdoc */
   restMeta(...args: Parameters<ProjectRouter['restMeta']>): ReturnType<ProjectRouter['restMeta']> {
     return this.hostOfEntity(args[0]).restMeta(...args);
   }

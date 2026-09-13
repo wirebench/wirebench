@@ -51,6 +51,7 @@ import {
   writeDefinitionCache,
 } from '@wirebench/engine';
 import type {
+  AuthConfig,
   RestFolder,
   RestRequestDef,
   Cookie,
@@ -127,7 +128,7 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestRequest } from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest } from './project-rest-mutations.js';
 import { resolveRestSend } from './rest-send.js';
 import type { RestSendResolution } from './rest-send.js';
 import type { SecretStore } from './secrets.js';
@@ -1283,6 +1284,28 @@ export class ProjectHost {
             }),
       ...(this.restCookiesFor(requestId) !== undefined ? { cookies: this.restCookiesFor(requestId)! } : {}),
     });
+  }
+
+  /**
+   * The credentials configured on one API, folder or REST request — its own, not its chain's.
+   *
+   * What the Auth inspector edits and what the OAuth2 channels read: a token is obtained for the
+   * entity that configures it, not for whatever request happened to ask.
+   */
+  restAuthOf(ownerId: string): AuthConfig | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const api = project.apis.find((candidate) => candidate.id === ownerId);
+    if (api !== undefined) {
+      return api.auth;
+    }
+    const folder = findRestFolder(project, ownerId);
+    if (folder !== undefined) {
+      return folder.auth;
+    }
+    return findRestRequest(project, ownerId)?.auth;
   }
 
   /**

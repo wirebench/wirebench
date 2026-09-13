@@ -476,6 +476,27 @@ export type ResolvedSendInputWire = Omit<SoapSendInputWire, 'tls'> & { readonly 
 /** A {@link RequestSendRequest} whose input has been through that same resolution. */
 export type ResolvedSendRequest = Omit<RequestSendRequest, 'input'> & { readonly input: ResolvedSendInputWire };
 
+/**
+ * What the renderer is told about an OAuth2 token. Never the token itself unless the session's
+ * show-secrets flag is on, and never a refresh token or a client secret at all.
+ */
+export const oauth2StatusSchema = z.object({
+  state: z.enum(['none', 'valid', 'expired', 'pending']),
+  expiresAt: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  token: z.string().optional(),
+  /** The loopback URI the provider must have registered, for the inspector to show. */
+  redirectUri: z.string(),
+});
+export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
+
+/**
+ * Request payload for every `oauth2.*` call: the entity whose configuration to use — an API, a
+ * folder or a request. Main reads the configuration from the model; the renderer never sends one,
+ * because it would then be sending a client secret's reference around.
+ */
+export const oauth2OwnerRequestSchema = z.object({ ownerId: z.string() });
+
 /** Request payload for `request.recreate` — "Recreate Request", applied to a saved request. */
 export const requestRecreateRequestSchema = z.object({
   requestId: z.string(),

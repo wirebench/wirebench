@@ -1,10 +1,10 @@
 import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
-import { enabledProperties } from '@wirebench/engine';
+import { WirebenchError, enabledProperties } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
-import { APP_SCHEME, APP_SCHEME_PRIVILEGES } from './security.js';
+import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
 import { saveOverride } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
@@ -34,6 +34,8 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
 import { registerRequestChannels } from './ipc/request.js';
+import { registerOAuth2Channels } from './ipc/oauth2.js';
+import { OAuth2Service } from './oauth2.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
@@ -66,6 +68,21 @@ const showSecretsFlag = new ShowSecretsFlag();
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService((ref) => secretStore.get(ref));
+/**
+ * OAuth2 tokens for the session, and the one loopback listener a browser sign-in answers to.
+ *
+ * The callback port comes from preferences because some providers insist on an exact redirect URI;
+ * with none set the listener takes a random free port, which is what RFC 8252 prefers.
+ */
+const oauth2Service = new OAuth2Service({
+  openExternal: async (url) => {
+    if (!isExternalUrlAllowed(url)) {
+      throw new WirebenchError('external-url-refused', 'That authorization URL is not an http(s) address');
+    }
+    await shell.openExternal(url);
+  },
+  callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
+});
 
 /** Sends one event to every open window: project state is global, not per-invocation. */
 function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
@@ -191,6 +208,19 @@ void app.whenReady().then(() => {
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     preferences: preferencesService,
     dialogPicks,
+    oauth2: oauth2Service,
+    getSecret: (ref) => secretStore.get(ref),
+  });
+  registerOAuth2Channels({
+    oauth2: oauth2Service,
+    project: workspaceService,
+    getSecret: (ref) => secretStore.get(ref),
+    // A refresh token replaces the value the configuration's own reference already names; a new
+    // reference is never minted here, because the project file would then have to change to match.
+    setSecret: async (ref, value) => {
+      await secretStore.replace(ref, value);
+    },
+    showSecrets: showSecretsFlag,
   });
   registerHistoryChannels(engineService, historyService, {
     project: workspaceService,
