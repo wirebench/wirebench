@@ -28,6 +28,19 @@ afterEach(() => {
   }
 });
 
+/**
+ * Invokes `ProjectWatcher`'s private event handler directly — the exact code path a real
+ * `fs.watch` callback takes (see `record()`) — so a test can drive delivery deterministically
+ * instead of depending on real disk timing. Real platforms routinely emit more than one raw
+ * event per write (macOS FSEvents, Windows' `ReadDirectoryChangesW`); a test that also needs a
+ * specific clock value in effect *at the moment the event arrives* (an expired TTL, say) cannot
+ * reliably control which of those real events lands when, so it drives `record()` itself here
+ * instead.
+ */
+function simulateEvent(target: ProjectWatcher, filename: string): void {
+  (target as unknown as { record(filename: string | Buffer | null): void }).record(filename);
+}
+
 /** Collects the batches `onChange` reports, and lets a test await the next one. */
 class Collector {
   readonly batches: string[][] = [];
@@ -179,35 +192,33 @@ describe('ProjectWatcher', () => {
     expect(await seen.next(500)).toBeUndefined();
   });
 
-  it(
-    'an announcement whose TTL expires delivers the event normally, and release() does not double-deliver it',
-    SLOW,
-    async () => {
-      dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
-      let now = 1_000;
-      const seen = new Collector();
-      watcher = new ProjectWatcher({
-        dir,
-        debounceMs: DEBOUNCE_MS,
-        selfWriteTtlMs: 50,
-        now: () => now,
-        onChange: seen.push,
-      });
-      watcher.start();
-      await settle();
+  it('an announcement whose TTL expires delivers the event normally, and release() does not double-deliver it', async () => {
+    // No `start()`/real `fs.watch` here — see `simulateEvent`: this test needs the injected clock
+    // already past the TTL at the exact moment "the event" is recorded, which a real disk write
+    // cannot guarantee (a platform's own duplicate notification for one write, or the event
+    // simply arriving later than expected under load, previously made this test flake).
+    dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+    let now = 1_000;
+    const seen = new Collector();
+    watcher = new ProjectWatcher({
+      dir,
+      debounceMs: DEBOUNCE_MS,
+      selfWriteTtlMs: 50,
+      now: () => now,
+      onChange: seen.push,
+    });
 
-      const token = watcher.announce(['wirebench.yaml']);
-      now += 100; // past the 50ms TTL: the mark (and its `announce()` ownership) has lapsed.
-      await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
-      const batch = await seen.next(10_000);
-      expect(batch).toEqual(['wirebench.yaml']);
+    const token = watcher.announce(['wirebench.yaml']);
+    now += 100; // past the 50ms TTL: the mark (and its `announce()` ownership) has lapsed.
+    simulateEvent(watcher, 'wirebench.yaml');
+    const batch = await seen.next(10_000);
+    expect(batch).toEqual(['wirebench.yaml']);
 
-      // The event already arrived through the normal path (TTL expiry, not a drop); releasing the
-      // announcement afterwards must not deliver it a second time.
-      watcher.release(token, []);
-      expect(await seen.next(400)).toBeUndefined();
-    },
-  );
+    // The event already arrived through the normal path (TTL expiry, not a drop); releasing the
+    // announcement afterwards must not deliver it a second time.
+    watcher.release(token, []);
+    expect(await seen.next(400)).toBeUndefined();
+  });
 
   it('accepts a custom `isManaged` predicate in place of isManagedPath', SLOW, async () => {
     dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
