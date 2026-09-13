@@ -134,6 +134,8 @@ import {
 import type { InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher } from './project-watch.js';
+import { mergeUnsaved, overlayFs } from './unsaved-store.js';
+import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { renameWithRetry } from './rename-dir.js';
 
 /**
@@ -170,8 +172,19 @@ interface OpenProject {
   problems: ProjectProblemWire[];
   readonly runtime: Map<string, InterfaceRuntime>;
   lastWritten: ProjectFiles | undefined;
+  /**
+   * The project's files as they are on disk when the model was last in sync with them: at open,
+   * or after a save. What an unsaved-changes record is merged against when it is restored.
+   */
+  baseline: ProjectFiles;
   readonly watcher: ProjectWatcher;
 }
+
+/** What {@link ProjectHost.openProject} did with an unsaved-changes record it was handed. */
+export type UnsavedRestoreOutcome =
+  | { readonly status: 'restored'; readonly conflicts: readonly string[]; readonly dropped: readonly string[] }
+  | { readonly status: 'unchanged' }
+  | { readonly status: 'failed'; readonly message: string };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -279,6 +292,8 @@ export class ProjectHost {
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
+  /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
+  private restore: UnsavedRestoreOutcome | undefined;
   /**
    * Serialises {@link save}: every save chains off this promise, so a manual save and the
    * before-quit save can never have their write+prune phases interleave. Never rejects — a
@@ -822,18 +837,63 @@ export class ProjectHost {
     return this.snapshot() as ProjectWire;
   }
 
-  /** Opens an existing project folder, then hydrates its definitions in the background. */
-  async openProject(dir: string): Promise<ProjectWire> {
-    const { project, problems } = await loadProject(dir);
+  /**
+   * Opens an existing project folder, then hydrates its definitions in the background.
+   *
+   * With `unsaved`, the unsaved changes a previous session left behind are laid back over the
+   * folder (see `mergeUnsaved`) before the project is adopted, and the project opens dirty —
+   * nothing is written. When the merged files will not load, the folder opens as it is on disk
+   * and the outcome says why. {@link lastRestore} reports what happened.
+   */
+  async openProject(dir: string, options: { unsaved?: UnsavedProjectFiles } = {}): Promise<ProjectWire> {
+    const loaded = await loadProject(dir);
+    let { project, problems } = loaded;
+    const disk = projectFiles(loaded.project);
+    let restore: UnsavedRestoreOutcome | undefined;
+    if (options.unsaved !== undefined) {
+      const merge = mergeUnsaved(options.unsaved.baseline, disk, options.unsaved.unsaved);
+      if (!merge.changed) {
+        restore = { status: 'unchanged' };
+      } else {
+        try {
+          ({ project, problems } = await loadProject(dir, { fs: overlayFs(dir, merge.files, disk.keys()) }));
+          restore = { status: 'restored', conflicts: merge.conflicts, dropped: merge.dropped };
+        } catch (error) {
+          restore = { status: 'failed', message: errorMessage(error) };
+        }
+      }
+    }
     await this.closeInternal();
     this.adopt(
       project,
       dir,
       problems.map((problem) => ({ code: problem.code, message: problem.message, file: problem.file })),
+      disk,
     );
+    this.restore = restore;
+    if (restore?.status === 'restored') {
+      this.markDirty();
+    }
     this.emitChanged();
     this.hydrating = this.hydrateAll();
     return this.snapshot() as ProjectWire;
+  }
+
+  /** What the last {@link openProject} did with the unsaved record it was given, if any. */
+  lastRestore(): UnsavedRestoreOutcome | undefined {
+    return this.restore;
+  }
+
+  /**
+   * The open project's unsaved changes as a record a later session can restore — both sides of
+   * the merge — or `undefined` when there is nothing unsaved.
+   */
+  unsavedFiles(): UnsavedProjectFiles | undefined {
+    const open = this.open;
+    if (open === undefined || !open.dirty) {
+      return undefined;
+    }
+    return { baseline: open.baseline, unsaved: projectFiles(open.project) };
   }
 
   /** Re-reads the folder from disk, discarding any unsaved in-memory changes. */
@@ -848,9 +908,12 @@ export class ProjectHost {
     return this.openProject(open.dir);
   }
 
-  /** Saves (when dirty) and closes the open project. */
-  async close(): Promise<null> {
-    await this.closeInternal();
+  /**
+   * Closes the open project. By default a dirty project is saved first; with `keepUnsaved` it is
+   * not — the caller has already taken {@link unsavedFiles} and keeps them for a later session.
+   */
+  async close(options: { keepUnsaved?: boolean } = {}): Promise<null> {
+    await this.closeInternal(options);
     this.emitChanged();
     return null;
   }
@@ -860,7 +923,7 @@ export class ProjectHost {
     await this.hydrating;
   }
 
-  private adopt(project: Project, dir: string, problems: ProjectProblemWire[]): void {
+  private adopt(project: Project, dir: string, problems: ProjectProblemWire[], baseline?: ProjectFiles): void {
     const watcher = new ProjectWatcher({
       dir,
       onChange: (paths) => this.hooks.onChangedOnDisk?.(paths),
@@ -873,12 +936,13 @@ export class ProjectHost {
       problems,
       runtime: new Map(project.interfaces.map((iface) => [iface.id, { hydration: 'pending' as const }])),
       lastWritten: undefined,
+      baseline: baseline ?? projectFiles(project),
       watcher,
     };
     watcher.start();
   }
 
-  private async closeInternal(): Promise<void> {
+  private async closeInternal(options: { keepUnsaved?: boolean } = {}): Promise<void> {
     if (this.autosave !== undefined) {
       clearTimeout(this.autosave);
       this.autosave = undefined;
@@ -886,7 +950,7 @@ export class ProjectHost {
     if (this.open === undefined) {
       return;
     }
-    if (this.open.dirty) {
+    if (this.open.dirty && options.keepUnsaved !== true) {
       await this.save({ reason: 'close' });
     }
     this.open.watcher.stop();
@@ -946,6 +1010,7 @@ export class ProjectHost {
     });
     open.watcher.expect([...result.written, ...result.removed]);
     open.lastWritten = projectFiles(model, { writer: `wirebench (${options.reason})` });
+    open.baseline = open.lastWritten;
     if (open.project === model) {
       open.dirty = false;
     } else {

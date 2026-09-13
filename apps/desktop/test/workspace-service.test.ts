@@ -6,13 +6,12 @@ import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   loadWorkspace,
-  nodeFs,
   saveWorkspace,
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { FsLike, WorkspaceProjectRef } from '@wirebench/engine';
+import type { WorkspaceProjectRef } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
@@ -22,32 +21,6 @@ import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 
 let server: TestSoapServer | undefined;
 let root: string;
-
-/**
- * Wraps {@link nodeFs} so `writeFile` blocks on a gate that starts open and can be closed
- * (`arm()`) / reopened (`release()`) around the write under test — the same helper
- * `project-host.test.ts` uses to simulate a slow disk exactly where a test needs one.
- */
-function deferredWriteFs(): { fs: FsLike; arm: () => void; release: () => void } {
-  let gate: Promise<void> = Promise.resolve();
-  let unblock: (() => void) | undefined;
-  const fs: FsLike = {
-    ...nodeFs,
-    async writeFile(path, data) {
-      await gate;
-      await nodeFs.writeFile(path, data);
-    },
-  };
-  return {
-    fs,
-    arm: () => {
-      gate = new Promise((resolve) => {
-        unblock = resolve;
-      });
-    },
-    release: () => unblock?.(),
-  };
-}
 
 /** A service over the temp `userData`, with a real engine and its own history files. */
 function newService(overrides: Partial<WorkspaceServiceDeps> = {}): WorkspaceService {
@@ -509,7 +482,7 @@ describe('WorkspaceService routing of addInterface and reload', () => {
 });
 
 describe('WorkspaceService saving', () => {
-  it('saves a dirty host on close, waiting for the write to land', async () => {
+  it('keeps a dirty host unsaved on close, and restores it unsaved on the next open', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Saving');
     await bootstrap.close();
@@ -517,33 +490,136 @@ describe('WorkspaceService saving', () => {
     const dir = workspaceDir(root, created.id);
     const project = await seedProject(dir, 'dirty', 'Dirty');
     await registerProjects(dir, [project]);
+    const projectYamlPath = join(workspaceProjectDir(dir, 'dirty'), 'wirebench.yaml');
+    const before = await readFile(projectYamlPath, 'utf8');
 
-    const { fs, arm, release } = deferredWriteFs();
-    const service = newService({ fs });
+    const service = newService();
     await service.open(created.id);
-
     await service.projectMutate(project.id, { kind: 'rename-project', name: 'Renamed before close' });
     expect(service.projectSnapshot(project.id)?.dirty).toBe(true);
+    await service.close();
 
-    arm();
-    let closed = false;
-    const closing = service.close().then(() => {
-      closed = true;
+    // Nothing reached the project folder; the unsaved state is kept with the workspace instead.
+    expect(await readFile(projectYamlPath, 'utf8')).toBe(before);
+    expect(existsSync(join(dir, 'unsaved', `${project.id}.json`))).toBe(true);
+
+    const reopened = newService();
+    await reopened.open(created.id);
+    expect(reopened.projectSnapshot(project.id)).toMatchObject({ name: 'Renamed before close', dirty: true });
+    expect(reopened.takeRestored().notices).toEqual([
+      { projectId: project.id, projectName: 'Renamed before close', status: 'restored', conflicts: [], dropped: [] },
+    ]);
+    // Handed over once.
+    expect(reopened.takeRestored().notices).toEqual([]);
+    await reopened.close();
+    expect(await readFile(projectYamlPath, 'utf8')).toBe(before);
+  }, 60_000);
+
+  it('restores unsaved changes on top of a file that changed on disk, and says so', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Conflict');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'shared', 'Shared');
+    await registerProjects(dir, [project]);
+    const projectYamlPath = join(workspaceProjectDir(dir, 'shared'), 'wirebench.yaml');
+
+    const service = newService();
+    await service.open(created.id);
+    await service.projectMutate(project.id, { kind: 'rename-project', name: 'Mine' });
+    await service.close();
+
+    // Edited outside the app while the workspace was closed.
+    const onDisk = await readFile(projectYamlPath, 'utf8');
+    await writeFile(projectYamlPath, onDisk.replace('name: Shared', 'name: Theirs'));
+
+    const reopened = newService();
+    await reopened.open(created.id);
+    expect(reopened.projectSnapshot(project.id)).toMatchObject({ name: 'Mine', dirty: true });
+    expect(reopened.takeRestored().notices).toMatchObject([{ status: 'restored', conflicts: ['wirebench.yaml'] }]);
+    await reopened.close();
+  }, 60_000);
+
+  it('leaves nothing to restore once the project is saved', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Saved');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'saved', 'Saved');
+    await registerProjects(dir, [project]);
+
+    const service = newService();
+    await service.open(created.id);
+    await service.projectMutate(project.id, { kind: 'rename-project', name: 'Saved name' });
+    await service.saveAll('manual');
+    await service.close();
+    expect(existsSync(join(dir, 'unsaved', `${project.id}.json`))).toBe(false);
+
+    const reopened = newService();
+    await reopened.open(created.id);
+    expect(reopened.projectSnapshot(project.id)).toMatchObject({ name: 'Saved name', dirty: false });
+    expect(reopened.takeRestored().notices).toEqual([]);
+    await reopened.close();
+  }, 60_000);
+
+  it('keeps stashed request drafts for the workspace they were stashed for', async () => {
+    const service = newService();
+    const first = await service.create('Drafts');
+    await service.stashDrafts(first.id, { r1: { envelopeXml: '<unsaved/>' } });
+    await service.stashDrafts('some-other-workspace', { r2: { envelopeXml: '<ignored/>' } });
+    await service.close();
+
+    await service.open(first.id);
+    expect(service.takeRestored()).toMatchObject({
+      workspaceId: first.id,
+      drafts: { r1: { envelopeXml: '<unsaved/>' } },
     });
-    // The close is blocked on the save's write, which is the point: a close that resolved here
-    // would have dropped the edit. Several macrotask turns, so this is not just a microtask race.
-    for (let turn = 0; turn < 5; turn += 1) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    expect(closed).toBe(false);
+    await service.close();
+  }, 60_000);
 
-    release();
-    await closing;
+  it('restores unsaved changes after a crash, from the record kept current while running', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Crash');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'crashy', 'Crashy');
+    await registerProjects(dir, [project]);
 
-    const onDisk = await loadWorkspace(dir);
-    expect(onDisk.workspace.projects).toHaveLength(1);
-    const projectYaml = await readFile(join(workspaceProjectDir(dir, 'dirty'), 'wirebench.yaml'), 'utf8');
-    expect(projectYaml).toContain('Renamed before close');
+    const crashed = newService();
+    await crashed.open(created.id);
+    await crashed.projectMutate(project.id, { kind: 'rename-project', name: 'Before the crash' });
+    // No close: the process "dies" once the debounced record write has landed.
+    await expect
+      .poll(() => existsSync(join(dir, 'unsaved', `${project.id}.json`)), { timeout: 10_000, interval: 100 })
+      .toBe(true);
+
+    const relaunched = newService();
+    await relaunched.open(created.id);
+    expect(relaunched.projectSnapshot(project.id)).toMatchObject({ name: 'Before the crash', dirty: true });
+    await relaunched.close();
+  }, 60_000);
+
+  it('opens normally past a corrupt record, and drops a removed project’s record', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Corrupt');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const project = await seedProject(dir, 'plain', 'Plain');
+    await registerProjects(dir, [project]);
+    await mkdir(join(dir, 'unsaved'), { recursive: true });
+    await writeFile(join(dir, 'unsaved', `${project.id}.json`), '{ not json');
+
+    const service = newService();
+    await service.open(created.id);
+    expect(service.projectSnapshot(project.id)).toMatchObject({ name: 'Plain', dirty: false });
+
+    await service.projectMutate(project.id, { kind: 'rename-project', name: 'About to go' });
+    await service.close();
+    expect(existsSync(join(dir, 'unsaved', `${project.id}.json`))).toBe(true);
+    await service.open(created.id);
+    await service.removeProject(project.id, { deleteFiles: false });
+    expect(existsSync(join(dir, 'unsaved', `${project.id}.json`))).toBe(false);
+    await service.close();
   }, 60_000);
 
   it('keeps no secret material anywhere in the workspace folder', async () => {

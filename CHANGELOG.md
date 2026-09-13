@@ -22,6 +22,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Unsaved changes are never written behind your back, and never lost.** Quitting, or
+  switching to another workspace, no longer saves your projects. Everything unsaved — request
+  edits in tabs as well as properties, auth, endpoints, settings and renames — is kept with the
+  workspace and comes back, still marked unsaved, the next time it opens; it is kept current while
+  the app runs, so it also survives a crash or a force-quit. If a project changed on disk in the
+  meantime, your unsaved changes are restored on top and a notice names the files that changed
+  (or were deleted and so dropped). Only Save, Save All or autosave write a project.
 - The explorer tree now starts collapsed below the project level, so a newly imported WSDL
   arrives as a single folded interface row; its project is unfolded so the row is visible.
 - The request pane's right-click menu is shorter. *Validate request* stays on the toolbar and

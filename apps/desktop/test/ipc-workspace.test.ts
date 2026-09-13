@@ -104,6 +104,12 @@ function fakeService() {
     mutate: vi.fn().mockResolvedValue({ workspace: WORKSPACE, createdEnvironmentId: 'e1' }),
     importKnownProjectFolder: vi.fn().mockResolvedValue(WORKSPACE),
     lastError: vi.fn<() => string | undefined>().mockReturnValue(undefined),
+    stashDrafts: vi.fn().mockResolvedValue(undefined),
+    takeRestored: vi.fn().mockReturnValue({
+      workspaceId: 'w1',
+      drafts: { r1: { envelopeXml: '<kept/>' } },
+      notices: [{ projectId: 'p1', projectName: 'P', status: 'restored', conflicts: [], dropped: [] }],
+    }),
   };
 }
 
@@ -120,10 +126,25 @@ beforeEach(() => {
 });
 
 describe('workspace.* channels', () => {
+  it('workspace.stashDrafts hands the drafts, and the workspace they belong to, to the service', async () => {
+    await expect(
+      invoke('workspace.stashDrafts', { workspaceId: 'w1', requests: { r1: { envelopeXml: '<a/>' } } }),
+    ).resolves.toEqual({ ok: true, value: {} });
+    expect(service.stashDrafts).toHaveBeenCalledWith('w1', { r1: { envelopeXml: '<a/>' } });
+  });
+
+  it('workspace.takeRestored answers with what the last open restored', async () => {
+    const result = await invoke('workspace.takeRestored');
+    expect(result).toMatchObject({
+      ok: true,
+      value: { workspaceId: 'w1', drafts: { r1: { envelopeXml: '<kept/>' } }, notices: [{ status: 'restored' }] },
+    });
+  });
+
   it('registers every channel the contract declares', () => {
     const declared = Object.values(channels.workspace).map((channel) => channel.name);
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(18);
+    expect(declared).toHaveLength(20);
   });
 
   it('none of them accepts a filesystem path from the renderer', () => {

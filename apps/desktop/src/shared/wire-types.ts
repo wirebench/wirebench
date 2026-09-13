@@ -2638,3 +2638,42 @@ export type WorkspaceMutateResponse = z.infer<typeof workspaceMutateResponseSche
 /** Payload for the `workspace.changed` event: the renderer replaces its mirror wholesale. */
 export const workspaceChangedEventSchema = z.object({ workspace: workspaceWireSchema.nullable() });
 export type WorkspaceChangedEvent = z.infer<typeof workspaceChangedEventSchema>;
+
+/**
+ * Request for `workspace.stashDrafts`: every request edit the renderer holds unsaved for the named
+ * workspace, replacing whatever was stashed before. Main ignores a stash for a workspace that is
+ * no longer the open one, so a late write can never land in the next workspace.
+ */
+export const workspaceStashDraftsRequestSchema = z.object({
+  workspaceId: z.string(),
+  requests: z.record(z.string(), requestPatchSchema),
+});
+export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
+
+/** One project whose unsaved changes a previous session left behind, and what became of them. */
+export const unsavedRestoreNoticeSchema = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  status: z.enum(['restored', 'failed']),
+  /** Changed on disk too; the unsaved version was kept (project-relative file paths). */
+  conflicts: z.array(z.string()),
+  /** Deleted on disk; the unsaved change was dropped (project-relative file paths). */
+  dropped: z.array(z.string()),
+  /** Why a `failed` restore failed. */
+  message: z.string().optional(),
+});
+export type UnsavedRestoreNoticeWire = z.infer<typeof unsavedRestoreNoticeSchema>;
+
+/**
+ * Response for `workspace.takeRestored`: the request drafts and per-project notices the last open
+ * restored, handed over once. `workspaceId` is `null` when nothing is open.
+ */
+export const workspaceRestoredResponseSchema = z.object({
+  workspaceId: z.string().nullable(),
+  drafts: z.record(z.string(), requestPatchSchema),
+  notices: z.array(unsavedRestoreNoticeSchema),
+});
+export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;
+
+/** Payload for `workspace.flushDrafts`: main is about to close; stash drafts now. */
+export const workspaceFlushDraftsEventSchema = z.object({});

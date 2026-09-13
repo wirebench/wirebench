@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInterfaceEditorStore } from '../../src/renderer/features/interface-editor/interface-editor-state.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -53,6 +54,7 @@ const PROJECT_WITH_REQUEST: ProjectWire = {
 
 function resetStores(): void {
   useWorkspaceStore.setState({ workspace: null, workspaces: [], suggestions: [], status: 'idle', error: undefined });
+  useDraftsStore.getState().reset();
   useProjectStore.getState().reset();
   useEditorsStore.getState().reset();
   useExchangesStore.getState().reset();
@@ -242,6 +244,41 @@ describe('useWorkspaceStore', () => {
     await Promise.resolve();
 
     expect(useProjectStore.getState().projects).toEqual({});
+  });
+
+  it("hands the open workspace's unsaved drafts to main before switching, then forgets them", async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<unsaved/>' });
+    const order: string[] = [];
+    const stashDrafts = vi.fn().mockImplementation(() => {
+      order.push('stash');
+      return Promise.resolve({ ok: true, value: {} });
+    });
+    const open = vi.fn().mockImplementation(() => {
+      order.push('open');
+      return Promise.resolve({ ok: true, value: { workspace: { ...workspaceWire(), id: 'w2', name: 'Other' } } });
+    });
+    installWirebenchApi({ workspace: { stashDrafts, open } });
+
+    await useWorkspaceStore.getState().open('w2');
+
+    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { envelopeXml: '<unsaved/>' } } });
+    expect(order).toEqual(['stash', 'open']);
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
+  });
+
+  it('hands drafts over before closing, too', async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    useDraftsStore.getState().stageRequest('r1', { name: 'Renamed' });
+    const stashDrafts = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    installWirebenchApi({
+      workspace: { stashDrafts, close: vi.fn().mockResolvedValue({ ok: true, value: { workspace: null } }) },
+    });
+
+    await useWorkspaceStore.getState().close();
+
+    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { name: 'Renamed' } } });
+    expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
 
   it('close applies the empty snapshot, resetting the project mirror', async () => {
