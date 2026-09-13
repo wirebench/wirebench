@@ -60,7 +60,7 @@ test:perf` is left to CI.
 | W1 engine | 3–7 | done |
 | W2 main | 8–10 | done |
 | W3 renderer | 11–17 | done |
-| W4 openapi | 18–21 | next |
+| W4 openapi | 18–21 | 18, 19, 20 done; 21 next |
 | W5–W6 | 22–26 | not started |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
@@ -100,6 +100,26 @@ task's commit message.
   `history.resend` rebuilds a SOAP send from a recorded entry, and no task in this plan teaches it the REST shape. It
   needs a task of its own (main: dispatch `history.resend` on `HistoryEntry.kind` and rebuild a `RestSendInput` from
   the recorded method, URL, headers and body). The plan is otherwise complete on this wave.
+
+- **T19** — the sample generator reads 3.1's `examples` array as well as `example`, since that is the only spelling a
+  3.1 document has, and `sampleXml` is written in `sample.ts` rather than through `xml/serialize.ts`: the shape comes
+  from JSON Schema and OpenAPI's own `xml` object, not from an XSD, so there is no schema set to serialise against.
+  A `$ref` the resolver left in place (a cut cycle) generates `null`, the same answer the depth cap gives.
+- **T20** — the mapping lives in its own `rest/openapi/map.ts` instead of inside `import.ts`: it is pure (no fetch, no
+  clock, no file system), which is what lets a golden test state a whole imported tree, and `importOpenApi` is then the
+  thin composition of parse and map. `assignFileNames` became generic over the document type so the API definition
+  cache uses the same naming rules as the WSDL one, and the API cache has its own manifest schema
+  (`apiDefinitionCacheManifestSchema`) because a JSON or YAML document has no `kind`, `namespace` or `importedBy` to
+  record. The `Deprecated` folder rule reads as: a tag files an operation even when it is deprecated (the author put it
+  with its live siblings), and only an *untagged* deprecated operation goes to `Deprecated`. Header parameters OpenAPI
+  itself says to ignore (`Accept`, `Content-Type`, `Authorization`) are skipped and counted. There is no provisional
+  folder to rename as a WSDL import has: the cache is written after the slug is settled, so a cancelled import has
+  written nothing.
+- **T20, not done and not silently skipped** — the two public OpenAPI fixtures (`fixtures/openapi/public/`, its
+  `SOURCES.md`, and the `pnpm fixtures:refresh` wiring) are outstanding: this environment's network policy denies both
+  candidate sources (`petstore3.swagger.io` is refused at the proxy, and `raw.githubusercontent.com` answers 404 for a
+  repository outside the session's scope), so nothing could be vendored or verified. The crafted fixtures carry the
+  import goldens in the meantime, one per construct in §12.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -467,7 +487,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
 
 ### W4 — OpenAPI
 
-- [ ] **18. OpenAPI model, parser, `$ref` resolution**
+- [x] **18. OpenAPI model, parser, `$ref` resolution**
   - `rest/openapi/model.ts` (the consumed subset of 3.0.x/3.1.x as readonly types: info, servers with variables,
     paths, operations, parameters, requestBody, media types with example/examples/schema, components, security
     schemes, security requirements, tags, deprecated; unknown keys preserved on a `extensions` bag and counted);
@@ -483,7 +503,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/openapi/parse packages/engine/test/unit/rest/openapi/refs`
   - Files: packages/engine/src/rest/openapi/{model,parse,refs,import}.ts, packages/engine/src/wsdl/ref-policy.ts, packages/engine/test/unit/rest/openapi/{parse,refs}.test.ts, fixtures/openapi/crafted/\*\*, fixtures/openapi/SOURCES.md
 
-- [ ] **19. JSON Schema samples**
+- [x] **19. JSON Schema samples**
   - `rest/openapi/sample.ts` per §3.6: `sampleFromSchema(schema, { includeOptional, sampleValues, resolve })` with
     the precedence `example` > `default` > first `enum` > type default; required always, optional per preference;
     `allOf` merged, `oneOf`/`anyOf` first branch; depth cap 8 with `null`; `format` placeholders only with
@@ -493,7 +513,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/openapi/sample`
   - Files: packages/engine/src/rest/openapi/sample.ts, packages/engine/test/unit/rest/openapi/sample.test.ts, packages/engine/test/fixtures/openapi-samples/\*\*
 
-- [ ] **20. Import, definition cache, `api.*` channels**
+- [x] **20. Import, definition cache, `api.*` channels**
   - `rest/openapi/import.ts`: `importOpenApi(source, options)` → `{ api: RestApi, definition: CachedDefinition, summary }`
     applying the §3.6 mapping (title → name, servers → base URL and list, folders by first tag else first path
     segment, request naming, parameter tables with enabled per `required`, header parameters as disabled headers,
