@@ -212,11 +212,13 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
             closeDialog();
           }
         }}
-        operation={{
+        target={{
+          kind: 'soap',
           interfaceId: draft.interfaceId,
           bindingName: draft.bindingName,
           operationName: draft.operationName,
         }}
+        targetLabel={`the ${draft.operationName} operation`}
       />
       <WssUsernameTokenDialog
         open={dialog === 'wss-username-token'}

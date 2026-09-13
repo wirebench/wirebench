@@ -404,8 +404,13 @@ function draftPatchOf(requestId: string): RequestPatchWire | undefined {
   return useDraftsStore.getState().peekRequest(requestId);
 }
 
-/** One REST request's staged-but-unsaved patch, or `undefined` when it is clean. */
-function restDraftPatchOf(requestId: string): RestRequestPatchWire | undefined {
+/**
+ * One REST request's staged-but-unsaved patch, or `undefined` when it is clean.
+ *
+ * Exported because anything that asks main to *describe* a request — a send, a preflight, a cURL
+ * export — has to carry the same edits the editor is showing, or it describes something else.
+ */
+export function restDraftPatch(requestId: string): RestRequestPatchWire | undefined {
   return useDraftsStore.getState().peekRestRequest(requestId);
 }
 
@@ -494,7 +499,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       projectOf[folder.id] = project.id;
     }
     for (const request of project.restRequests) {
-      restRequests[request.id] = layerRestEdits(request, restDraftPatchOf(request.id));
+      restRequests[request.id] = layerRestEdits(request, restDraftPatch(request.id));
       projectOf[request.id] = project.id;
     }
     rest[project.id] = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toCurl, fromCurl } from '../../../src/http/curl.js';
+import { soapToCurl, fromCurl } from '../../../src/http/curl.js';
 import type { SoapSendInput } from '../../../src/types.js';
 
 const INPUT: SoapSendInput = {
@@ -13,7 +13,7 @@ const INPUT: SoapSendInput = {
 
 describe('toCurl', () => {
   it('builds a POSIX curl command with heredoc body', () => {
-    const cmd = toCurl(INPUT);
+    const cmd = soapToCurl(INPUT);
     expect(cmd).toContain("curl --request POST 'https://example.com/calc?wsdl'");
     expect(cmd).toContain("--header 'Content-Type: text/xml;charset=UTF-8'");
     expect(cmd).toContain(`--header 'SOAPAction: "http://tempuri.org/Add"'`);
@@ -24,12 +24,12 @@ describe('toCurl', () => {
   });
 
   it('escapes single quotes for posix shell', () => {
-    const cmd = toCurl({ ...INPUT, endpoint: "https://example.com/it's" });
+    const cmd = soapToCurl({ ...INPUT, endpoint: "https://example.com/it's" });
     expect(cmd).toContain("https://example.com/it'\\''s");
   });
 
   it('builds a PowerShell variant with here-string', () => {
-    const cmd = toCurl(INPUT, { shell: 'powershell' });
+    const cmd = soapToCurl(INPUT, { shell: 'powershell' });
     expect(cmd).toContain('curl.exe --request POST');
     expect(cmd).toContain('`');
     expect(cmd).toContain("@'");
@@ -37,7 +37,7 @@ describe('toCurl', () => {
   });
 
   it('uses SOAP 1.2 content type action param, no SOAPAction header', () => {
-    const cmd = toCurl({ ...INPUT, soapVersion: '1.2' });
+    const cmd = soapToCurl({ ...INPUT, soapVersion: '1.2' });
     expect(cmd).toContain('application/soap+xml;charset=UTF-8;action="http://tempuri.org/Add"');
     expect(cmd).not.toContain('SOAPAction');
   });
@@ -45,7 +45,7 @@ describe('toCurl', () => {
 
 describe('fromCurl', () => {
   it('round-trips endpoint/envelope/headers/soapAction through toCurl', () => {
-    const cmd = toCurl(INPUT);
+    const cmd = soapToCurl(INPUT);
     const { input, problems } = fromCurl(cmd);
     expect(input.endpoint).toBe(INPUT.endpoint);
     expect(input.envelopeXml).toBe(INPUT.envelopeXml);

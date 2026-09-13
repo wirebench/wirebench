@@ -159,13 +159,27 @@ describe('explorerMenuItems on a REST row', () => {
   it('offers an API its containers and its own lifecycle', () => {
     const items = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'New folder',
+      'New request',
+      'Import cURL…',
+      'Rename…',
+      'Delete',
+    ]);
   });
 
   it('offers a folder the two creators, a rename, its credentials and a delete', () => {
     const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual([
+      'New folder',
+      'New request',
+      'Import cURL…',
+      'Rename…',
+      'Auth…',
+      'Delete',
+    ]);
   });
 
   it('Auth… opens the folder credentials dialog, which is a folder’s only editable field', () => {
@@ -196,5 +210,15 @@ describe('explorerMenuItems on a REST row', () => {
     expect(explorerMenuItems(node({ kind: 'api' }))).toEqual([]);
     expect(explorerMenuItems(node({ kind: 'folder', apiId: 'a1' }))).toEqual([]);
     expect(explorerMenuItems(node({ kind: 'rest-request', apiId: 'a1' }))).toEqual([]);
+  });
+
+  it('Import cURL… on an API points the dialog at it, and on a folder at the folder', () => {
+    const api = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
+    api.find((item) => item.label === 'Import cURL…')?.run();
+    expect(useUiStore.getState().importCurlTarget).toEqual({ kind: 'rest', apiId: 'a1' });
+
+    const folder = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+    folder.find((item) => item.label === 'Import cURL…')?.run();
+    expect(useUiStore.getState().importCurlTarget).toEqual({ kind: 'rest', apiId: 'a1', folderId: 'f1' });
   });
 });

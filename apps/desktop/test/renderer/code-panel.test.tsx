@@ -216,8 +216,8 @@ describe('CodePanel with a REST request', () => {
     cleanup();
   });
 
-  it('says a REST cURL command is not built yet, and asks main for nothing', () => {
-    const curl = vi.fn();
+  it('asks main for the active REST request’s command, by its own id', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: "curl --request GET 'https://api.test'" } });
     installWirebenchApi({ request: { curl } });
     useEditorsStore.setState({
       tabs: [{ id: 'rest:rest-1', kind: 'rest-request', title: 'Get pet', restRequestId: 'rest-1' }],
@@ -226,17 +226,25 @@ describe('CodePanel with a REST request', () => {
 
     render(<CodePanel />);
 
-    expect(screen.getByTestId('code-panel-rest-pending')).toBeTruthy();
-    expect(curl).not.toHaveBeenCalled();
+    // One channel for both protocols: main dispatches on what the id names.
+    await waitFor(() => {
+      expect(curl).toHaveBeenCalledWith({ requestId: 'rest-1', shell: 'posix' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toContain('--request GET');
+    });
   });
 
-  it('follows a REST request selected in the explorer, with no tab open', () => {
-    installWirebenchApi();
+  it('follows a REST request selected in the explorer, with no tab open', async () => {
+    const curl = vi.fn().mockResolvedValue({ ok: true, value: { command: 'curl x' } });
+    installWirebenchApi({ request: { curl } });
     useUiStore.setState({ selection: { kind: 'rest-request', id: 'rest:rest-1', requestId: 'rest-1' } });
 
     render(<CodePanel />);
 
-    expect(screen.getByTestId('code-panel-rest-pending')).toBeTruthy();
+    await waitFor(() => {
+      expect(curl).toHaveBeenCalledWith({ requestId: 'rest-1', shell: 'posix' });
+    });
   });
 
   it("still shows a SOAP request's command when one is active", async () => {

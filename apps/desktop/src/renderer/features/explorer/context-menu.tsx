@@ -193,6 +193,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
+        { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
       ],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
@@ -205,6 +206,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
       [
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId, folderId) },
+        { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId, folderId) },
       ],
       [
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },

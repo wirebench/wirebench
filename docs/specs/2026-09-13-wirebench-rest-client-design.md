@@ -811,6 +811,14 @@ untouched).
     import dialog is cheap if wanted.
 11. Should SOAP endpoints gain `bearer`/`api-key`/`oauth2` in this spec (through the shared inspector) or in a
     later one: **now**, since the model and inspector are shared and the cost is tests only.
+    — _Amended during implementation (W5):_ the cost is not tests only. `AuthConfig` and the inspector are indeed
+    shared, but the project **format** persists a SOAP interface, endpoint and request under `endpointAuthSchema`
+    (`none`/`basic`/`ntlm`), and the SOAP send path applies only the two schemes the transport owns. Offering the
+    others to SOAP owners needs the schema widened at three sites, the engine's auth types widened with it, a
+    SOAP-side `applyAuth` for the header and query schemes, and main resolving the new references — a format change
+    that deserves its own review rather than a corner of the auth-UI task. **Deferred** to the roadmap entry the
+    §3.5 parenthetical already pointed at; the shared form offers SOAP owners only what the format can store
+    (`SOAP_AUTH_TYPES`), so nothing silently drops a token in the meantime.
 
 ## 16. Risks
 

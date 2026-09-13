@@ -7,7 +7,8 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 
-const OPERATION = {
+const SOAP_TARGET = {
+  kind: 'soap' as const,
   interfaceId: 'if-1',
   bindingName: '{http://tempuri.org/}CalculatorSoap',
   operationName: 'Add',
@@ -36,7 +37,7 @@ describe('ImportCurlDialog', () => {
 
   it('previews the parsed endpoint, SOAPAction, header names and problems', async () => {
     installWirebenchApi();
-    render(<ImportCurlDialog open onOpenChange={vi.fn()} operation={OPERATION} />);
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={SOAP_TARGET} />);
 
     await userEvent.click(screen.getByLabelText('cURL command'));
     await userEvent.paste(COMMAND);
@@ -57,20 +58,20 @@ describe('ImportCurlDialog', () => {
     // `refresh()` reloads from main; the mirror below stands in for the snapshot it would apply.
     useProjectStore.setState({ requests: { 'req-2': makeDraft({ id: 'req-2', name: 'Imported' }) } });
     const onOpenChange = vi.fn();
-    render(<ImportCurlDialog open onOpenChange={onOpenChange} operation={OPERATION} />);
+    render(<ImportCurlDialog open onOpenChange={onOpenChange} target={SOAP_TARGET} />);
 
     await userEvent.click(screen.getByLabelText('cURL command'));
     await userEvent.paste(COMMAND);
     await userEvent.click(screen.getByTestId('import-curl-submit'));
 
-    expect(importCurl).toHaveBeenCalledWith({ command: COMMAND, ...OPERATION });
+    expect(importCurl).toHaveBeenCalledWith({ command: COMMAND, target: SOAP_TARGET });
     expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['request:req-2']);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('cannot be submitted with an empty command', () => {
     installWirebenchApi();
-    render(<ImportCurlDialog open onOpenChange={vi.fn()} operation={OPERATION} />);
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={SOAP_TARGET} />);
 
     expect(screen.getByTestId('import-curl-submit').hasAttribute('disabled')).toBe(true);
   });

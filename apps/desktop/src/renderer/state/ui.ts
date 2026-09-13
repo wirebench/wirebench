@@ -10,7 +10,7 @@ import type {
   ThemePreference,
   UiSnapshot,
 } from './ui-state.js';
-import type { PreferencesSectionWire } from '../../shared/wire-types.js';
+import type { PreferencesSectionWire, RequestImportCurlTarget } from '../../shared/wire-types.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
 /** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
@@ -56,6 +56,13 @@ export interface UiStore extends UiSnapshot {
   readonly importOpenApiDialogOpen: boolean;
   /** The folder whose credentials dialog is open, if any. A folder has no tab to put them on. */
   readonly folderAuthId: string | undefined;
+  /**
+   * Where an Import cURL… opened from the palette or the explorer should land, if it is open.
+   *
+   * Held here rather than in the dialog because the two entry points that are *not* an editor tab —
+   * the palette and an explorer row — have nowhere else to put it.
+   */
+  readonly importCurlTarget: RequestImportCurlTarget | undefined;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
@@ -80,6 +87,7 @@ export interface UiStore extends UiSnapshot {
   readonly openImportDialog: () => void;
   readonly setImportOpenApiDialogOpen: (open: boolean) => void;
   readonly setFolderAuthId: (folderId: string | undefined) => void;
+  readonly setImportCurlTarget: (target: RequestImportCurlTarget | undefined) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
@@ -164,6 +172,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     importDialogOpen: false,
     importOpenApiDialogOpen: false,
     folderAuthId: undefined,
+    importCurlTarget: undefined,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
@@ -186,6 +195,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setFolderAuthId: (folderId) => {
       set({ folderAuthId: folderId });
+    },
+    setImportCurlTarget: (target) => {
+      set({ importCurlTarget: target });
     },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });

@@ -340,9 +340,12 @@ describe('request.recreate / curl / importCurl', () => {
     const result = unwrap<{ requestId: string; problems: string[] }>(
       await invoke('request.importCurl', {
         command,
-        interfaceId: project.interfaceId,
-        bindingName: `{${TEM}}CalculatorSoap`,
-        operationName: 'Add',
+        target: {
+          kind: 'soap',
+          interfaceId: project.interfaceId,
+          bindingName: `{${TEM}}CalculatorSoap`,
+          operationName: 'Add',
+        },
       }),
     );
 

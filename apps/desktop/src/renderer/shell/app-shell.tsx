@@ -32,6 +32,7 @@ import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
 import { ImportOpenApiDialog } from '../features/explorer/import-openapi-dialog.js';
 import { FolderAuthDialog } from '../features/rest-api/folder-auth-dialog.js';
+import { ImportCurlFromTarget } from '../features/request-editor/import-curl-from-target.js';
 import { PanelHandle } from './panel-handle.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
@@ -405,6 +406,7 @@ export function AppShell() {
         open={importOpenApiDialogOpen}
         onOpenChange={(next) => useUiStore.getState().setImportOpenApiDialogOpen(next)}
       />
+      <ImportCurlFromTarget />
       <FolderAuthDialog />
       <NewProjectDialog />
       <CreateWorkspaceDialog />

@@ -518,33 +518,34 @@ export const requestRecreateResponseSchema = z.object({
 });
 export type RequestRecreateResponse = z.infer<typeof requestRecreateResponseSchema>;
 
-/** Request payload for `request.curl`: which saved request, and which shell's quoting. */
-export const requestCurlRequestSchema = z.object({
-  requestId: z.string(),
-  shell: z.enum(['posix', 'powershell']),
-});
-export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+/**
+ * Where an imported cURL command lands: a SOAP operation, or a REST API and optionally a folder in it.
+ *
+ * A discriminated union rather than two channels, because the parse and the "what was dropped" report
+ * are the same work either way — only the entity created at the end differs.
+ */
+export const requestImportCurlTargetSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('soap'),
+    interfaceId: z.string(),
+    /** Clark-notation binding QName: `{namespaceUri}localName`. */
+    bindingName: z.string(),
+    operationName: z.string(),
+  }),
+  z.object({ kind: z.literal('rest'), apiId: z.string(), folderId: z.string().optional() }),
+]);
+export type RequestImportCurlTarget = z.infer<typeof requestImportCurlTargetSchema>;
 
-/** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
-export const requestCurlResponseSchema = z.object({
-  command: z.string(),
-  /**
-   * One-line notes about what the command does *not* carry — WS-Security (needs secrets and a
-   * keystore the export never touches) and/or attachments (never ride on this wire shape) —
-   * present only for the layers this particular request actually has.
-   */
-  notes: z.array(z.string()).optional(),
-});
-export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
-
-/** Request payload for `request.importCurl`: a pasted command, and the operation to hang it off. */
+/** Request payload for `request.importCurl`: a pasted command, and where to put what it describes. */
 export const requestImportCurlRequestSchema = z.object({
   command: z.string(),
-  interfaceId: z.string(),
-  /** Clark-notation binding QName: `{namespaceUri}localName`. */
-  bindingName: z.string(),
-  operationName: z.string(),
+  target: requestImportCurlTargetSchema,
   name: z.string().optional(),
+  /**
+   * A keychain reference for a `-u` password the renderer already stored. The value itself never
+   * crosses this wire: the dialog stores it through `secrets.set` and sends the reference (ADR-0004).
+   */
+  passwordRef: z.string().optional(),
 });
 export type RequestImportCurlRequest = z.infer<typeof requestImportCurlRequestSchema>;
 
@@ -552,6 +553,11 @@ export type RequestImportCurlRequest = z.infer<typeof requestImportCurlRequestSc
 export const requestImportCurlResponseSchema = z.object({
   requestId: z.string(),
   problems: z.array(z.string()),
+  /**
+   * The username a `-u` flag carried, when it had one. The dialog shows it so the user can see which
+   * credential the request now expects, and knows to supply the password if they did not paste one.
+   */
+  basicUsername: z.string().optional(),
 });
 export type RequestImportCurlResponse = z.infer<typeof requestImportCurlResponseSchema>;
 
@@ -1477,6 +1483,33 @@ export const requestPreflightRestRequestSchema = z.object({
   requestId: z.string(),
   draft: restRequestPatchSchema.optional(),
 });
+
+/** Request payload for `request.curl`: which saved request, and which shell's quoting. */
+export const requestCurlRequestSchema = z.object({
+  requestId: z.string(),
+  shell: z.enum(['posix', 'powershell']),
+  /**
+   * The editor's unsaved edits, applied to this export only — the same draft a send carries.
+   *
+   * Without it the command would describe what is *saved* rather than what the user is looking at,
+   * which is the one thing a "copy this request as curl" must never do. REST only: a SOAP draft
+   * already reaches main through its own staged-edit path.
+   */
+  draft: restRequestPatchSchema.optional(),
+});
+export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+
+/** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
+export const requestCurlResponseSchema = z.object({
+  command: z.string(),
+  /**
+   * One-line notes about what the command does *not* carry — WS-Security (needs secrets and a
+   * keystore the export never touches) and/or attachments (never ride on this wire shape) —
+   * present only for the layers this particular request actually has.
+   */
+  notes: z.array(z.string()).optional(),
+});
+export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
 export const projectWireSchema = z.object({
   id: z.string(),

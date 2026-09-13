@@ -10,7 +10,6 @@ import { validateAndReport } from '../features/request-editor/validate-actions.j
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { checkWsiForRequest, lastSendId } from '../features/request-editor/wsi-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
-import { showToast } from '../components/toast.js';
 import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
@@ -204,26 +203,22 @@ export function registerRequestCommands(): void {
       openRequestDialog('import-curl', requestId);
     }),
   });
-  /*
-   * The REST actions whose *handlers* belong to later tasks: exporting and importing a cURL command
-   * (the engine has to learn both shapes first), getting an OAuth2 token from the inspector, and
-   * importing an OpenAPI document.
-   *
-   * They are registered now, with the shortcut the design fixes, so the palette, the generated menu
-   * and the keymap editor carry them from the moment the REST editor exists — a command that
-   * appears later would move every shortcut around it. Each says what it is waiting for rather than
-   * doing nothing silently.
-   */
-  const notYet = (what: string) => (): void => {
-    showToast(`${what} is not built yet.`);
-  };
+  // The REST counterparts of the SOAP cURL, token and import actions. Each goes through the same
+  // channel its SOAP sibling does, so the palette and the panel can never mean different things.
   registerCommand({
     id: 'rest.copyAsCurl',
     label: 'REST: Copy as cURL',
     category: 'Request',
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
-    run: notYet('Copying a REST request as cURL'),
+    // The same `request.curl` the SOAP command uses, and the same shell the Code panel remembers:
+    // the palette and the panel must never hand out two different commands for one request.
+    run: () => {
+      const requestId = activeRestRequestId();
+      if (requestId !== undefined) {
+        void copyAsCurl(requestId, ui().slideOver.codeShell);
+      }
+    },
   });
   registerCommand({
     id: 'rest.importCurl',
@@ -231,7 +226,17 @@ export function registerRequestCommands(): void {
     category: 'Request',
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
-    run: notYet('Importing a cURL command as a REST request'),
+    run: () => {
+      const requestId = activeRestRequestId();
+      const request = requestId === undefined ? undefined : useProjectStore.getState().restRequests[requestId];
+      if (request !== undefined) {
+        ui().setImportCurlTarget({
+          kind: 'rest',
+          apiId: request.apiId,
+          ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+        });
+      }
+    },
   });
   registerCommand({
     id: 'rest.getToken',

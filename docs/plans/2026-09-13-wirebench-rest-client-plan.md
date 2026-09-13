@@ -62,7 +62,7 @@ test:perf` is left to CI.
 | W3 renderer | 11–17 | done |
 | W4 openapi | 18–21 | done |
 | W5 auth ui | 22 | done |
-| W6 round-out | 23–26 | next |
+| W6 round-out | 23–26 | 23 done; 24 next |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -151,6 +151,16 @@ task's commit message.
   main resolving the new refs — engine and format work that T22's own file list does not include. Until then the two
   SOAP call sites pass `SOAP_AUTH_TYPES`, so the form offers only what it can actually save: `auth.spec.ts` therefore
   has no SOAP Bearer case, which is the one acceptance criterion of this task left unmet.
+
+- **T23** — `toCurl` now takes a `CurlCommand` (a method, a URL, headers and one of the body shapes `curl` has a flag
+  for) and knows nothing about either protocol; `soapToCurl` and `restToCurl` build that description from their own
+  send inputs, so the quoting, the continuations and the two shells have one implementation. `request.importCurl` takes
+  a discriminated `target` rather than flat SOAP fields, and `request.curl` gained the optional REST `draft` a send
+  already carries — without it the command described what was *saved* rather than what the user was looking at, which
+  the e2e spec caught. A `-u` password never crosses either channel: the dialog stores it and sends a reference. With
+  show-secrets off no secret is read at all — a stand-in gives the command the credential's shape, which is all it
+  needs. The redaction marker is substituted into a URL *after* composing, since `composeUrl` would otherwise
+  percent-encode its angle brackets into `%3Credacted%3E`.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -601,7 +611,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
 
 ### W6 — Round-out
 
-- [ ] **23. cURL both ways**
+- [x] **23. cURL both ways**
   - `http/curl.ts` generalised to `toCurl(input: HttpSendInput, options)` (method, URL, headers, body as raw
     heredoc, `--data-urlencode` per form field, `-F` per multipart part with `@file` for files, `--data-binary @file`
     for binary, `-u`/`-H Authorization` per auth with redaction when asked, `-k` for `trustInvalid`, `-L` when

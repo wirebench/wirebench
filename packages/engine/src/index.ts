@@ -166,7 +166,8 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
-export { fromCurl, toCurl } from './http/curl.js';
+export { fromCurl, soapToCurl, toCurl } from './http/curl.js';
+export type { CurlBody, CurlCommand, CurlHeader, CurlPart } from './http/curl.js';
 export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
@@ -333,6 +334,8 @@ export type {
   TokenResponseInput,
   TokenSet,
 } from './rest/oauth2.js';
+export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
+export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';

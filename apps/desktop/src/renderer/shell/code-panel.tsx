@@ -12,7 +12,7 @@ import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.
 import { useEditorsStore } from '../state/editors.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
-import { useProjectStore } from '../state/project.js';
+import { restDraftPatch, useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { highlightCurl, type CurlTokenKind } from './curl-highlight.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
@@ -57,9 +57,8 @@ function useCodePanelRequestId(): string | undefined {
 /**
  * The REST request the panel would describe, when that is what is in front of the user.
  *
- * Kept apart from the SOAP id because the command for a REST request is built from a different
- * model, and `request.curl` — which only knows SOAP requests — would answer `unknown-request` for
- * one. Until the cURL task teaches it both, the panel says so rather than showing an error.
+ * Kept apart from the SOAP id only so the panel knows which model an edit should re-trigger on;
+ * `request.curl` itself takes either, and dispatches on what the id names.
  */
 function useCodePanelRestRequestId(): string | undefined {
   const selected = useUiStore((state) =>
@@ -124,24 +123,58 @@ export function CodePanel() {
     globalProperties,
   ]);
 
+  // The same, for a REST request: its own fields plus the API's base URL, which the command resolves.
+  const restDraft = useProjectStore((state) =>
+    restRequestId === undefined ? undefined : state.restRequests[restRequestId],
+  );
+  const restApiBaseUrl = useProjectStore((state) =>
+    restDraft === undefined ? undefined : state.apis[restDraft.apiId]?.baseUrl,
+  );
+  const restApiName = useProjectStore((state) =>
+    restDraft === undefined ? undefined : state.apis[restDraft.apiId]?.name,
+  );
+  const restDraftKey = JSON.stringify([
+    restDraft?.method,
+    restDraft?.url,
+    restDraft?.pathParams,
+    restDraft?.query,
+    restDraft?.headers,
+    restDraft?.body,
+    restDraft?.auth,
+    restDraft?.settings,
+    restApiBaseUrl,
+    activeEnvironmentId,
+    environments,
+  ]);
+
   // Answers can land out of order (a slow first call, a fast second); only the newest may win.
   const sequence = useRef(0);
   // The request the panel last generated for, so switching requests shows a command at once
   // rather than after the edit debounce.
   const generatedFor = useRef<string | undefined>(undefined);
 
+  // Either protocol's id, whichever the user is looking at: `request.curl` takes both.
+  const subject = requestId ?? restRequestId;
+
   useEffect(() => {
-    if (requestId === undefined) {
+    if (subject === undefined) {
       setGenerated(undefined);
       generatedFor.current = undefined;
       return;
     }
-    const immediate = generatedFor.current !== requestId;
-    generatedFor.current = requestId;
+    const immediate = generatedFor.current !== subject;
+    generatedFor.current = subject;
     const token = (sequence.current += 1);
 
     const generate = async (): Promise<void> => {
-      const result = await ipc().request.curl({ requestId, shell });
+      // A REST request's staged edits travel with the call, so the command describes what is on
+      // screen rather than what was last written. A SOAP draft reaches main through its own path.
+      const draft = restRequestId === undefined ? undefined : restDraftPatch(restRequestId);
+      const result = await ipc().request.curl({
+        requestId: subject,
+        shell,
+        ...(draft !== undefined ? { draft } : {}),
+      });
       if (token !== sequence.current) {
         return;
       }
@@ -165,22 +198,9 @@ export function CodePanel() {
     return () => {
       clearTimeout(timer);
     };
-  }, [requestId, shell, draftKey, showSecrets]);
+  }, [subject, shell, draftKey, restDraftKey, showSecrets]);
 
-  if (requestId === undefined && restRequestId !== undefined) {
-    // The command for a REST request is built from a different model; `request.curl` knows only
-    // SOAP requests, so saying so beats showing its `unknown-request` error.
-    return (
-      <div data-testid="code-panel">
-        <p data-testid="code-panel-rest-pending" className="text-md text-fg-muted">
-          A cURL command for a REST request is not built yet.
-        </p>
-        <p className="mt-1 text-sm text-fg-subtle">Exporting and importing one arrives with the cURL task.</p>
-      </div>
-    );
-  }
-
-  if (requestId === undefined) {
+  if (subject === undefined) {
     return (
       <div data-testid="code-panel">
         <p className="text-md text-fg-muted">Open a request to see its cURL command</p>
@@ -285,15 +305,31 @@ export function CodePanel() {
         </Button>
       </div>
 
+      {/* The import lands wherever the panel is pointed: the SOAP operation in front of the user, or
+          the API the REST request in front of them belongs to. */}
       {draft !== undefined && (
         <ImportCurlDialog
           open={importOpen}
           onOpenChange={setImportOpen}
-          operation={{
+          target={{
+            kind: 'soap',
             interfaceId: draft.interfaceId,
             bindingName: draft.bindingName,
             operationName: draft.operationName,
           }}
+          targetLabel={`the ${draft.operationName} operation`}
+        />
+      )}
+      {draft === undefined && restDraft !== undefined && (
+        <ImportCurlDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          target={{
+            kind: 'rest',
+            apiId: restDraft.apiId,
+            ...(restDraft.folderId !== undefined ? { folderId: restDraft.folderId } : {}),
+          }}
+          targetLabel={restApiName === undefined ? 'this API' : `the API “${restApiName}”`}
         />
       )}
     </div>

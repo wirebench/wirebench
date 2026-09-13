@@ -117,7 +117,12 @@ enabled checkbox, and the `disabled` list format bump
 - **Kerberos/SPNEGO.** Requires the native `kerberos` module as an optional dependency, which the v1
   boundaries make an ask-first decision.
 - **SAML tokens.** Form and XML variants in outgoing WS-Security.
-- **OAuth2 and Bearer.** Arrive with the REST client and are reusable by SOAP requests.
+- **OAuth2 and Bearer.** Arrived with the REST client, for REST owners. Reusing them from a SOAP
+  interface, endpoint or request is still open: the auth model and the inspector are already shared, but
+  the project format persists SOAP owners under the narrower `endpointAuthSchema`, and the SOAP send path
+  applies only the schemes the transport owns (Basic, NTLM). Widening it means the schema at three sites,
+  the engine's `Interface`/`Endpoint`/`RequestDef` auth types, a SOAP-side `applyAuth` for the header and
+  query schemes, and main resolving the new references — see §15.11 of the REST client design.
 
 ### Automation and CI
 

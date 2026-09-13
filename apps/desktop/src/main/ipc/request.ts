@@ -3,19 +3,32 @@ import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import {
   composeUrl,
+  CURL_REDACTED,
   fromCurl,
+  fromRestCurl,
   isWirebenchError,
   prettyPrint,
   ProjectError,
   recreateRequest,
-  toCurl,
+  restToCurl,
+  soapToCurl,
   WirebenchError,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { Cookie, OAuth2Auth, ProxyOptions, TlsOptions, PropertyScopes } from '@wirebench/engine';
+import type {
+  AuthConfig,
+  Cookie,
+  OAuth2Auth,
+  ProxyOptions,
+  RestBody,
+  SendAuth,
+  TlsOptions,
+  PropertyScopes,
+} from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
+import { resolveAuthConfig } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
@@ -37,6 +50,7 @@ import type {
   RequestCurlRequest,
   RequestCurlResponse,
   RequestImportCurlRequest,
+  RequestImportCurlTarget,
   RequestImportCurlResponse,
   RequestPatchWire,
   RequestRecreateRequest,
@@ -73,6 +87,8 @@ export type RequestChannelProject = Pick<
       // The REST half, optional for the same reason: a stub that never sends a REST request needs
       // none of it.
       | 'restSend'
+      // Read to split an imported cURL URL against the API's own base URL.
+      | 'projectSnapshot'
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
@@ -340,11 +356,89 @@ async function recreate(
  * secret-bearing headers masked unless the session's show-secrets flag is on, since the
  * command is about to land on a clipboard.
  */
+/**
+ * A credential's shape with no value in it, for an export that will redact it anyway.
+ *
+ * Every arm carries the marker rather than a secret, so the command shows *which* credential a
+ * request sends and where it goes without the keychain being touched.
+ */
+function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
+  switch (auth.type) {
+    case 'basic':
+      return {
+        type: 'basic',
+        username: auth.username ?? '',
+        password: CURL_REDACTED,
+        preemptive: auth.preemptive ?? true,
+      };
+    case 'ntlm':
+      return {
+        type: 'ntlm',
+        username: auth.username ?? '',
+        password: CURL_REDACTED,
+        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
+      };
+    case 'bearer':
+      return { type: 'bearer', token: CURL_REDACTED, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
+    case 'api-key':
+      return { type: 'api-key', name: auth.name, value: CURL_REDACTED, in: auth.in };
+    default:
+      // `none`, `inherit` and `oauth2`: nothing to put on the command (the last is noted instead).
+      return undefined;
+  }
+}
+
+/**
+ * One REST request as a `curl` command.
+ *
+ * Exports what the send path would actually do — the same resolved input, credentials applied — so a
+ * user comparing the two is comparing like with like. Secrets are masked unless the session's
+ * show-secrets switch is on, and an unresolved property is a note rather than a refusal: the command
+ * is a thing to read and edit, not a send.
+ */
+async function restCurl(
+  deps: RequestChannelDeps,
+  request: RequestCurlRequest,
+  resolved: NonNullable<ReturnType<NonNullable<RequestChannelProject['restSend']>>>,
+): Promise<RequestCurlResponse> {
+  const show = deps.showSecrets?.get() ?? false;
+  // With show-secrets off no secret is read at all: the command needs the *shape* of the credential,
+  // not its value, so a stand-in is both sufficient and the safer thing to ask the keychain for.
+  const auth = show
+    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+    : placeholderAuth(resolved.auth);
+  const command = restToCurl(
+    { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
+    { shell: request.shell, redactSecrets: !show },
+  );
+  const notes: string[] = [];
+  if (resolved.unresolved.length > 0) {
+    notes.push(
+      `Unresolved propert${resolved.unresolved.length === 1 ? 'y' : 'ies'}: ${resolved.unresolved
+        .map((reference) => reference.expr)
+        .join(', ')}.`,
+    );
+  }
+  if (resolved.auth.type === 'oauth2') {
+    // The access token lives in main's memory for the session and is never written into a command:
+    // one pasted with a live token would keep working long after the user forgot they shared it.
+    notes.push('The OAuth2 access token is not included; the command carries the configuration only.');
+  }
+  return { command, ...(notes.length > 0 ? { notes } : {}) };
+}
+
 async function curl(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
 ): Promise<RequestCurlResponse> {
+  // Dispatch on what the id names rather than on a flag the renderer sends: the Code panel asks about
+  // whatever request is in front of the user, and only the model knows which protocol that is.
+  const rest = deps.project.restSend?.(request.requestId, request.draft);
+  if (rest !== undefined) {
+    return await restCurl(deps, request, rest);
+  }
   const live = deps.project.buildLiveSendInput(request.requestId);
   if (live === undefined) {
     throw unknownRequest(request.requestId);
@@ -357,7 +451,7 @@ async function curl(
   const show = deps.showSecrets?.get() ?? false;
   const headers = redactHeaders(effective.headers ?? {}, { show });
   const envelopeXml = redactXml(effective.envelopeXml, { show });
-  const command = toCurl(
+  const command = soapToCurl(
     {
       endpoint: effective.endpoint,
       envelopeXml,
@@ -368,7 +462,7 @@ async function curl(
     },
     { shell: request.shell },
   );
-  // `toCurl` builds a single-part request and gains no multipart support here, so a request
+  // `soapToCurl` builds a single-part request and gains no multipart support here, so a request
   // with attachments would otherwise be silently exported as one without them. Saying so in a
   // leading comment keeps the command paste-able while making the difference impossible to miss.
   const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
@@ -450,12 +544,23 @@ async function importCurl(
   project: RequestChannelProject,
   request: RequestImportCurlRequest,
 ): Promise<RequestImportCurlResponse> {
+  return request.target.kind === 'rest'
+    ? await importCurlAsRest(project, request, request.target)
+    : await importCurlAsSoap(project, request, request.target);
+}
+
+/** The SOAP half: a new request under an operation, with the envelope the command carried. */
+async function importCurlAsSoap(
+  project: RequestChannelProject,
+  request: RequestImportCurlRequest,
+  target: Extract<RequestImportCurlTarget, { kind: 'soap' }>,
+): Promise<RequestImportCurlResponse> {
   const parsed = fromCurl(request.command);
-  const created = await project.projectMutate(ownerOf(project, request.interfaceId), {
+  const created = await project.projectMutate(ownerOf(project, target.interfaceId), {
     kind: 'add-request',
-    interfaceId: request.interfaceId,
-    bindingName: request.bindingName,
-    operationName: request.operationName,
+    interfaceId: target.interfaceId,
+    bindingName: target.bindingName,
+    operationName: target.operationName,
   });
   const requestId = created.createdRequestId;
   if (requestId === undefined) {
@@ -471,6 +576,88 @@ async function importCurl(
   };
   await project.projectMutate(ownerOf(project, requestId), { kind: 'update-request', requestId, patch });
   return { requestId, problems: [...parsed.problems] };
+}
+
+/** The engine's body as the wire spells it: the same shape, with its arrays no longer readonly. */
+function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
+  switch (body.kind) {
+    case 'raw':
+      return {
+        kind: 'raw',
+        language: body.language,
+        ...(body.contentType !== undefined ? { contentType: body.contentType } : {}),
+        text: body.text,
+      };
+    case 'form':
+      return { kind: 'form', fields: body.fields.map((field) => ({ ...field })) };
+    case 'multipart':
+      return { kind: 'multipart', parts: body.parts.map((part) => ({ ...part })) };
+    case 'binary':
+      return { kind: 'binary', source: { ...body.source }, contentType: body.contentType };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/**
+ * The REST half: a new request in an API (or a folder of it), then one patch with everything the
+ * command described.
+ *
+ * The URL is split against the API's own base URL, so an imported request keeps a relative path and
+ * follows the API's environment overrides like every other request in it. A `-u` password is not in
+ * the command as far as this channel is concerned: the dialog stores it and sends a reference.
+ */
+async function importCurlAsRest(
+  project: RequestChannelProject,
+  request: RequestImportCurlRequest,
+  target: Extract<RequestImportCurlTarget, { kind: 'rest' }>,
+): Promise<RequestImportCurlResponse> {
+  const owner = ownerOf(project, target.apiId);
+  const api = project.projectSnapshot?.(owner)?.apis.find((candidate) => candidate.id === target.apiId);
+
+  const parsed = fromRestCurl(request.command, api?.baseUrl !== undefined ? { baseUrl: api.baseUrl } : {});
+
+  const created = await project.projectMutate(owner, {
+    kind: 'add-rest-request',
+    apiId: target.apiId,
+    ...(target.folderId !== undefined ? { parentId: target.folderId } : {}),
+    ...(request.name !== undefined ? { name: request.name } : {}),
+  });
+  const requestId = created.createdId;
+  if (requestId === undefined) {
+    throw new ProjectError('add-request-failed', 'The new REST request was not created');
+  }
+
+  const { method, url, pathParams, query, headers, body, settings } = parsed.request;
+  const auth =
+    parsed.basic === undefined
+      ? undefined
+      : {
+          type: 'basic' as const,
+          username: parsed.basic.username,
+          ...(request.passwordRef !== undefined ? { passwordRef: request.passwordRef } : {}),
+          preemptive: true,
+        };
+  await project.projectMutate(owner, {
+    kind: 'update-rest-request',
+    requestId,
+    patch: {
+      ...(method !== undefined ? { method } : {}),
+      ...(url !== undefined ? { url } : {}),
+      ...(pathParams !== undefined ? { pathParams: [...pathParams] } : {}),
+      ...(query !== undefined ? { query: [...query] } : {}),
+      ...(headers !== undefined ? { headers: [...headers] } : {}),
+      ...(body !== undefined ? { body: bodyToWire(body) } : {}),
+      ...(settings !== undefined ? { settings } : {}),
+      ...(auth !== undefined ? { auth } : {}),
+    },
+  });
+
+  return {
+    requestId,
+    problems: [...parsed.problems],
+    ...(parsed.basic !== undefined ? { basicUsername: parsed.basic.username } : {}),
+  };
 }
 
 /**

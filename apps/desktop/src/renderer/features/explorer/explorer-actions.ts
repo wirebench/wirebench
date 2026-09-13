@@ -247,6 +247,18 @@ export const explorerActions = {
     }
   },
 
+  /** Opens Import cURL… pointed at this API, or at a folder inside it. */
+  importCurlInto(apiId: string | undefined, folderId?: string): void {
+    if (apiId === undefined) {
+      return;
+    }
+    useUiStore.getState().setImportCurlTarget({
+      kind: 'rest',
+      apiId,
+      ...(folderId !== undefined ? { folderId } : {}),
+    });
+  },
+
   /** Opens a folder's credentials dialog, which is where a folder's one editable field lives. */
   editFolderAuth(folderId: string | undefined): void {
     if (folderId !== undefined) {
