@@ -230,7 +230,7 @@ describe('move-node', () => {
 
   it('refuses to move across APIs, which would separate a request from its definition', () => {
     const two = addApi(seeded(), { name: 'Orders', baseUrl: 'x' });
-    expect(() => moveNode(two.project, { nodeId: 'req-root', apiId: two.createdId, index: 0 })).toThrow(/another API/);
+    expect(() => moveNode(two.project, { nodeId: 'req-root', apiId: two.createdId!, index: 0 })).toThrow(/another API/);
   });
 
   it('gives a moved node a unique slug in its new home', () => {
