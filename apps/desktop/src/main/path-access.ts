@@ -35,8 +35,9 @@ export async function allowsReadPath(
 }
 
 /**
- * The import-side use of {@link allowsReadPath}, shared by `definition.import` and
- * `project.addInterface`: a `file` source is a read at a renderer-named path, so it is allowed
+ * The import-side use of {@link allowsReadPath}, shared by `definition.import`,
+ * `project.addInterface` and `api.importOpenApi`: a `file` source is a read at a renderer-named
+ * path (WSDL or OpenAPI — the rule is about the path, not the format), so it is allowed
  * only inside one of `roots` (every open project folder) or when the user drove the "Browse…"
  * Open dialog to it this session. Nothing else — not a drag-and-drop, not a typed-in path — is
  * evidence; the import dialog's drop zone therefore reads the file in the renderer and imports
@@ -57,7 +58,7 @@ export async function checkedImportSource(
   if (!(await allowsReadPath(roots, picks, resolved))) {
     throw new WirebenchError(
       'import-path-refused',
-      `Wirebench will not read "${source.path}": use Browse… to pick a WSDL outside the project folder`,
+      `Wirebench will not read "${source.path}": use Browse… to pick a definition outside the project folder`,
       { details: { path: source.path } },
     );
   }

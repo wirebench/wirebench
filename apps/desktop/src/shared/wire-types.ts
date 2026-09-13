@@ -1783,6 +1783,113 @@ export const projectAddInterfaceResponseSchema = z.object({
 });
 export type ProjectAddInterfaceResponse = z.infer<typeof projectAddInterfaceResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// OpenAPI import (`api.*`): one API made from a described document, and the
+// cached definition it can be read back and exported from.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an OpenAPI document comes from. The same three arms a WSDL import has, and the same rule:
+ * passing this schema does not authorize a `file` path — main additionally requires it to be inside
+ * an open project folder or to have been picked through a dialog this session.
+ */
+export const openApiSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string(),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
+]);
+export type OpenApiSourceWire = z.infer<typeof openApiSourceSchema>;
+
+/** One thing the import could not use, and where it was. */
+export const openApiSkippedSchema = z.object({
+  kind: z.string(),
+  where: z.string(),
+  reason: z.string(),
+});
+export type OpenApiSkippedWire = z.infer<typeof openApiSkippedSchema>;
+
+/** What an import made, for the summary the dialog shows when it finishes. */
+export const openApiImportSummarySchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  /** The `openapi` string the document declared. */
+  declaredVersion: z.string(),
+  /** `info.version` — the version of the API, not of the specification. */
+  apiVersion: z.string().optional(),
+  baseUrl: z.string(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })),
+  folders: z.number(),
+  requests: z.number(),
+  deprecated: z.number(),
+  auth: z.string().optional(),
+  skipped: z.array(openApiSkippedSchema),
+});
+export type OpenApiImportSummaryWire = z.infer<typeof openApiImportSummarySchema>;
+
+/** Request/response for `api.importOpenApi`. The target is the same union a WSDL import takes. */
+export const apiImportOpenApiRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: openApiSourceSchema,
+  /** Overrides `info.title` as the API's name; the dialog offers it for editing. */
+  name: z.string().max(200).optional(),
+  /** Overrides the first server's URL as the base URL. */
+  baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  /** The security scheme, by its name in the document, to use as the API's own credentials. */
+  securityScheme: z.string().max(200).optional(),
+  /** Write the definition cache. Defaults to the definition-caching preference. */
+  cache: z.boolean().optional(),
+  /** Echoed back on `engine.progress` events raised while this import is in flight. */
+  token: z.string().optional(),
+});
+export type ApiImportOpenApiRequest = z.infer<typeof apiImportOpenApiRequestSchema>;
+
+export const apiImportOpenApiResponseSchema = z.object({
+  /** The project the API landed in — the one that was created, for a `newProjectName`. */
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: openApiImportSummarySchema,
+});
+export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
+
+/** Request/response for `api.cancelImport`, by the token the import was started with. */
+export const apiCancelImportRequestSchema = z.object({ token: z.string() });
+export const apiCancelImportResponseSchema = z.object({ cancelled: z.boolean() });
+
+/** Request payload for the channels that address one API's cached definition. */
+export const apiIdRequestSchema = z.object({ apiId: z.string() });
+
+/** Response for `api.definitionDocuments`: identity and size only, never text. */
+export const apiDefinitionDocumentsResponseSchema = z.object({
+  documents: z.array(z.object({ location: z.string(), size: z.number() })),
+  rootLocation: z.string(),
+  fetchedAt: z.string(),
+  declaredVersion: z.string().optional(),
+});
+export type ApiDefinitionDocumentsResponse = z.infer<typeof apiDefinitionDocumentsResponseSchema>;
+
+/**
+ * Request payload for `api.definitionText`. `location` is never a path the renderer made up: main
+ * matches it against the manifest's own locations and rejects anything else.
+ */
+export const apiDefinitionTextRequestSchema = z.object({
+  apiId: z.string(),
+  location: z.string().max(4096),
+});
+export const apiDefinitionTextResponseSchema = z.object({ text: z.string() });
+
+/** Response for `api.exportDefinition`: main runs the folder dialog and writes the bytes. */
+export const apiExportDefinitionResponseSchema = z.object({
+  dir: z.string().optional(),
+  files: z.array(z.string()).default([]),
+  cancelled: z.boolean(),
+});
+export type ApiExportDefinitionResponse = z.infer<typeof apiExportDefinitionResponseSchema>;
+
 /** Payload for the `project.changed` event: the renderer replaces its mirror wholesale. */
 export const projectChangedEventSchema = z.object({
   projectId: z.string(),

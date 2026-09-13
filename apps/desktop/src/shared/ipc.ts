@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import {
+  apiCancelImportRequestSchema,
+  apiCancelImportResponseSchema,
+  apiDefinitionDocumentsResponseSchema,
+  apiDefinitionTextRequestSchema,
+  apiDefinitionTextResponseSchema,
+  apiExportDefinitionResponseSchema,
+  apiIdRequestSchema,
+  apiImportOpenApiRequestSchema,
+  apiImportOpenApiResponseSchema,
   oauth2OwnerRequestSchema,
   oauth2StatusSchema,
   requestPreflightRestRequestSchema,
@@ -315,6 +324,24 @@ export const channels = {
     status: defineChannel('oauth2.status', oauth2OwnerRequestSchema, oauth2StatusSchema),
     clearToken: defineChannel('oauth2.clearToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
     cancel: defineChannel('oauth2.cancel', oauth2OwnerRequestSchema.partial(), requestCancelResponseSchema),
+  },
+  // An API and the definition it was imported from. Separate from `definition.*` because the two
+  // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
+  // definition is read back from its cache on demand — and nothing here addresses an interface.
+  api: {
+    importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
+    cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
+    definitionDocuments: defineChannel(
+      'api.definitionDocuments',
+      apiIdRequestSchema,
+      apiDefinitionDocumentsResponseSchema,
+    ),
+    definitionText: defineChannel(
+      'api.definitionText',
+      apiDefinitionTextRequestSchema,
+      apiDefinitionTextResponseSchema,
+    ),
+    exportDefinition: defineChannel('api.exportDefinition', apiIdRequestSchema, apiExportDefinitionResponseSchema),
   },
   // A workspace owns its projects: creating, opening and closing one is a `workspace.*` call,
   // not a `project.*` one. What is left here addresses *one* project of the open workspace,

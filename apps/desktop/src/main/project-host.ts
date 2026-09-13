@@ -13,15 +13,16 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
-import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
+import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import {
   resolveApiBaseUrl,
   resolveWorkspaceApiBaseUrl,
+  apiDefinitionDir,
   createInterface,
   applyUpdate,
   createProject,
@@ -47,11 +48,15 @@ import {
   projectFiles,
   saveProject,
   toSendInput,
+  readApiDefinitionCache,
   uniqueSlug,
+  writeApiDefinitionCache,
   writeDefinitionCache,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  ResolvedDocument,
+  RestApi,
   RestFolder,
   RestRequestDef,
   Cookie,
@@ -2056,6 +2061,120 @@ export class ProjectHost {
       // `applyUpdate` requested — see `save.ts`'s timestamped-backup policy.
       backups: [...(saveResult.backups ?? [])],
     };
+  }
+
+  /**
+   * Places an imported API in the project, caching the documents it was made of.
+   *
+   * The API arrives fully mapped (`importOpenApi` in the engine) and is placed here, because only
+   * the project knows which slugs are taken and where the cache goes. The cache is written under
+   * the API's own folder *after* the slug is settled, so unlike a WSDL import there is no
+   * provisional folder to rename — and a cancelled import has therefore written nothing at all.
+   *
+   * Saves immediately, as a WSDL import does: an import is never lost to a crash.
+   */
+  async addApi(input: {
+    readonly api: RestApi;
+    readonly documents: readonly ResolvedDocument[];
+    /** Where the user pointed at, recorded on the API as its definition's source. */
+    readonly source: string;
+    /** The `openapi` string the document declared. */
+    readonly declaredVersion: string;
+    /** Write the definition cache. Defaults to the WSDL caching preference, as an import does. */
+    readonly cache?: boolean;
+  }): Promise<{ project: ProjectWire; apiId: string }> {
+    const open = this.require();
+    const taken = new Set([
+      ...open.project.apis.map((api) => api.slug),
+      ...open.project.interfaces.map((iface) => iface.slug),
+    ]);
+    const slug = uniqueSlug(input.api.name, taken);
+    const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
+
+    if (cache) {
+      await writeApiDefinitionCache(input.documents, apiDefinitionDir(open.dir, slug), {
+        declaredVersion: input.declaredVersion,
+      });
+    }
+
+    const api: RestApi = {
+      ...input.api,
+      slug,
+      order: open.project.interfaces.length + open.project.apis.length,
+      definition: { source: input.source, cache, version: input.declaredVersion },
+    };
+    open.project = { ...open.project, apis: [...open.project.apis, api] };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return { project: this.snapshot() as ProjectWire, apiId: api.id };
+  }
+
+  /** The open project's API with `apiId`, or a `not-found` error. */
+  private requireApi(apiId: string): RestApi {
+    const api = this.require().project.apis.find((candidate) => candidate.id === apiId);
+    if (api === undefined) {
+      throw new ProjectError('not-found', `No API with id "${apiId}"`, { details: { id: apiId } });
+    }
+    return api;
+  }
+
+  /**
+   * The documents cached for `apiId`, read from its own folder.
+   *
+   * Nothing is re-fetched to answer this: an API whose definition was not cached has no documents
+   * to show, and says so with `definition-cache-missing` rather than reaching the network behind
+   * the user's back.
+   */
+  async apiDefinitionDocuments(apiId: string): Promise<{
+    readonly documents: readonly { location: string; size: number }[];
+    readonly rootLocation: string;
+    readonly fetchedAt: string;
+    readonly declaredVersion?: string;
+  }> {
+    const api = this.requireApi(apiId);
+    const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    return {
+      documents: cached.manifest.documents.map((document) => ({ location: document.location, size: document.bytes })),
+      rootLocation: cached.manifest.rootLocation,
+      fetchedAt: cached.manifest.fetchedAt,
+      ...(cached.manifest.declaredVersion !== undefined ? { declaredVersion: cached.manifest.declaredVersion } : {}),
+    };
+  }
+
+  /**
+   * One cached document's text, matched by the location the manifest records.
+   *
+   * The renderer names a location, never a path: a document the manifest does not list is an
+   * `unknown-document` error, so this can never be turned into a read of an arbitrary file.
+   */
+  async apiDefinitionText(apiId: string, location: string): Promise<string> {
+    const api = this.requireApi(apiId);
+    const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const document = cached.documents.find((candidate) => candidate.location === location);
+    if (document === undefined) {
+      throw new ProjectError('not-found', `No document "${location}" in this API's definition`, {
+        details: { apiId, location },
+      });
+    }
+    return document.text;
+  }
+
+  /** Writes every cached document of `apiId` into `dir`, byte for byte, returning the file names. */
+  async exportApiDefinitionTo(apiId: string, dir: string): Promise<string[]> {
+    const api = this.requireApi(apiId);
+    const cacheDir = apiDefinitionDir(this.require().dir, api.slug);
+    const cached = await readApiDefinitionCache(cacheDir);
+    await mkdir(dir, { recursive: true });
+    const written: string[] = [];
+    for (const entry of cached.manifest.documents) {
+      const document = cached.documents.find((candidate) => candidate.location === entry.location);
+      if (document === undefined) {
+        continue;
+      }
+      await writeFile(join(dir, entry.file), Buffer.from(document.bytes));
+      written.push(entry.file);
+    }
+    return written;
   }
 
   /** Writes the definition bundle of `interfaceId` into `dir`, returning the file names written. */

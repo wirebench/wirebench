@@ -51,6 +51,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['addInterface']>
   ): ReturnType<ProjectHost['addInterface']>;
+  /**
+   * Places an imported OpenAPI-described API in the addressed project, caching its documents.
+   * `api.importOpenApi` carries the same target union `project.addInterface` does.
+   */
+  addApi(projectId: string, ...args: Parameters<ProjectHost['addApi']>): ReturnType<ProjectHost['addApi']>;
   /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */
   reload(projectId: string): ReturnType<ProjectHost['reload']>;
 
@@ -131,6 +136,18 @@ export interface ProjectRouter {
     ...args: Parameters<ProjectHost['exportDefinitionTo']>
   ): ReturnType<ProjectHost['exportDefinitionTo']>;
   definitionDocs(...args: Parameters<ProjectHost['definitionDocs']>): ReturnType<ProjectHost['definitionDocs']>;
+
+  // — an API's cached definition, routed by api id ——————————————————————————————————————————
+
+  apiDefinitionDocuments(
+    ...args: Parameters<ProjectHost['apiDefinitionDocuments']>
+  ): ReturnType<ProjectHost['apiDefinitionDocuments']>;
+  apiDefinitionText(
+    ...args: Parameters<ProjectHost['apiDefinitionText']>
+  ): ReturnType<ProjectHost['apiDefinitionText']>;
+  exportApiDefinitionTo(
+    ...args: Parameters<ProjectHost['exportApiDefinitionTo']>
+  ): ReturnType<ProjectHost['exportApiDefinitionTo']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

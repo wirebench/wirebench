@@ -1431,6 +1431,10 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostFor(projectId).addInterface(input);
   }
 
+  addApi(...[projectId, input]: Parameters<ProjectRouter['addApi']>): ReturnType<ProjectRouter['addApi']> {
+    return this.hostFor(projectId).addApi(input);
+  }
+
   /** @inheritdoc */
   reload(...[projectId]: Parameters<ProjectRouter['reload']>): ReturnType<ProjectRouter['reload']> {
     return this.hostFor(projectId).reload();
@@ -1600,6 +1604,24 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['exportDefinitionTo']>
   ): ReturnType<ProjectRouter['exportDefinitionTo']> {
     return this.hostOfEntity(args[0]).exportDefinitionTo(...args);
+  }
+
+  apiDefinitionDocuments(
+    ...args: Parameters<ProjectRouter['apiDefinitionDocuments']>
+  ): ReturnType<ProjectRouter['apiDefinitionDocuments']> {
+    return this.hostOfEntity(args[0]).apiDefinitionDocuments(...args);
+  }
+
+  apiDefinitionText(
+    ...args: Parameters<ProjectRouter['apiDefinitionText']>
+  ): ReturnType<ProjectRouter['apiDefinitionText']> {
+    return this.hostOfEntity(args[0]).apiDefinitionText(...args);
+  }
+
+  exportApiDefinitionTo(
+    ...args: Parameters<ProjectRouter['exportApiDefinitionTo']>
+  ): ReturnType<ProjectRouter['exportApiDefinitionTo']> {
+    return this.hostOfEntity(args[0]).exportApiDefinitionTo(...args);
   }
 
   /** @inheritdoc */
