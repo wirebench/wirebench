@@ -379,6 +379,17 @@ export class WorkspaceService implements ProjectRouter {
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
   private stashWaiters: (() => void)[] = [];
+  /**
+   * Serialises every operation that reads or rewrites `open.entries`/the project-ref manifest
+   * from more than one caller: a workspace-level reload (the watcher) and the project-set
+   * mutations below (`addProject`, `removeProject`, `linkProject`, `importProjectFolder`,
+   * `importKnownProjectFolder`, `locateProject`) all go through {@link enqueueWorkspaceOp}, so
+   * two of them can never interleave and corrupt `entries` or race two manifest saves. `mutate`,
+   * `setActiveEnvironment` and `rename` touch the manifest too but never `entries`, so they stay
+   * outside this chain. Reset on `close()`, so a closed workspace's still-pending op cannot delay
+   * (or reach into) the next one opened.
+   */
+  private workspaceOps: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: WorkspaceServiceDeps) {
     this.state = new WorkspaceState(deps.userDataDir);
@@ -539,7 +550,7 @@ export class WorkspaceService implements ProjectRouter {
         isManaged: isWorkspaceManagedPath,
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
         onChange: (paths) => {
-          void this.reloadWorkspaceFromDisk(open, paths);
+          void this.enqueueWorkspaceOp(() => this.reloadWorkspaceFromDisk(open, paths));
         },
       });
       open.watcher.start();
@@ -753,6 +764,11 @@ export class WorkspaceService implements ProjectRouter {
     this.deps.history.closeAll();
     this.index.clear();
     this.current = undefined;
+    // A pending reload (or a project-set mutation) still queued behind `workspaceOps` must not
+    // delay — or, worse, reach into — whatever opens next; each already re-checks `this.current`
+    // against its own captured `open` and will no-op once it runs, but there is no reason to make
+    // the next workspace's first queued op wait behind it.
+    this.workspaceOps = Promise.resolve();
     this.deps.hooks?.onChanged?.(null);
     return null;
   }
@@ -767,6 +783,22 @@ export class WorkspaceService implements ProjectRouter {
   // replaces the model, unlike a project's watcher-driven prompt.
 
   /**
+   * Runs `op` after every previously enqueued workspace operation has settled (successfully or
+   * not), so a workspace-level reload and a project-set mutation (`addProject`, `removeProject`,
+   * `linkProject`, `importProjectFolder`, `importKnownProjectFolder`, `locateProject`) can never
+   * interleave their reads and writes of `open.entries`/the manifest. `op`'s rejection propagates
+   * to *this* call's caller — it does not break the chain for whatever is enqueued next.
+   */
+  private enqueueWorkspaceOp<T>(op: () => Promise<T>): Promise<T> {
+    const result = this.workspaceOps.then(op, op);
+    this.workspaceOps = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  /**
    * Reloads the manifest and environments after {@link OpenWorkspace.watcher} reports a change.
    * Never calls `saveManifest` (the change already happened on disk) and never trashes anything,
    * however large the diff — this only ever mirrors disk into memory.
@@ -775,15 +807,22 @@ export class WorkspaceService implements ProjectRouter {
    * untouched and is reported through `onWorkspaceChangedOnDisk` instead of `onChanged`.
    */
   private async reloadWorkspaceFromDisk(open: OpenWorkspace, paths: readonly string[]): Promise<void> {
+    // Re-checked after every `await` below (not just here): `enqueueWorkspaceOp` only keeps this
+    // from interleaving with another queued op, but `close()` is deliberately *not* queued (a
+    // shutdown must not wait behind a stuck reload), so the workspace can still close mid-reload.
     if (this.current !== open) {
-      // This workspace has since closed (or a new one opened); the event is stale.
       return;
     }
     let loaded: Workspace;
     try {
       ({ workspace: loaded } = await loadWorkspace(open.tree, this.fsOption()));
     } catch (error) {
-      this.deps.hooks?.onWorkspaceChangedOnDisk?.(paths, errorMessage(error));
+      if (this.current === open) {
+        this.deps.hooks?.onWorkspaceChangedOnDisk?.(paths, errorMessage(error));
+      }
+      return;
+    }
+    if (this.current !== open) {
       return;
     }
 
@@ -798,32 +837,53 @@ export class WorkspaceService implements ProjectRouter {
     open.workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
 
     // Re-derive the project entries: a ref gone from the reloaded manifest (or one whose slug or
-    // path changed — a rename pulled from a teammate) is released; anything new is opened.
+    // path changed — a rename pulled from a teammate) is released; anything new is opened. A
+    // relocation's release keeps the unsaved-changes record (`discardUnsaved: false`) — the same
+    // id is about to be re-added by `addEntryForRef` below, and `openEntry` restores from it; only
+    // a ref genuinely gone from the manifest (`nextRef === undefined`) has that record discarded.
     const nextRefs = new Map(loaded.projects.map((ref) => [ref.id, ref] as const));
     for (const entry of [...open.entries]) {
+      if (this.current !== open) {
+        return;
+      }
       const nextRef = nextRefs.get(entry.ref.id);
       if (nextRef === undefined || !refsEqual(nextRef, entry.ref)) {
-        await this.releaseEntry(open, entry);
+        await this.releaseEntry(open, entry, { discardUnsaved: nextRef === undefined });
       }
     }
     for (const ref of loaded.projects) {
+      if (this.current !== open) {
+        return;
+      }
       if (!open.entries.some((entry) => entry.ref.id === ref.id)) {
         await this.addEntryForRef(open, ref);
       }
+    }
+    if (this.current !== open) {
+      return;
     }
     this.reindex();
     this.deps.hooks?.onChanged?.(this.snapshot());
   }
 
   /**
-   * Closes one entry's host and releases its history file and unsaved-changes record — the same
-   * release sequence {@link removeProject} uses, minus the manifest save and the trash, since the
-   * removal here already happened on disk.
+   * Closes one entry's host and releases its history file, and — unless `discardUnsaved` is
+   * `false` — its unsaved-changes record. `removeProject` always discards (the project is truly
+   * gone); the workspace-level reload's relocation case (a slug or path change with the same ref
+   * id) passes `discardUnsaved: false`, because the very next step re-adds the same id and
+   * `openEntry` restores from that record — deleting it here would silently drop the local user's
+   * uncommitted work on a routine pulled rename.
    */
-  private async releaseEntry(open: OpenWorkspace, entry: OpenProjectEntry): Promise<void> {
+  private async releaseEntry(
+    open: OpenWorkspace,
+    entry: OpenProjectEntry,
+    options: { discardUnsaved: boolean },
+  ): Promise<void> {
     this.cancelUnsavedWrite(entry.ref.id);
     await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
-    await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
+    if (options.discardUnsaved) {
+      await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
+    }
     this.deps.history.close(entry.projectId);
     const index = open.entries.indexOf(entry);
     if (index !== -1) {
@@ -886,14 +946,16 @@ export class WorkspaceService implements ProjectRouter {
    * Two projects may share a display name; only the slug (and the ULID) has to be unique.
    */
   async addProject(name: string): Promise<{ workspace: WorkspaceWire; projectId: string }> {
-    const open = this.requireOpen();
-    const slug = uniqueSlug(name, this.takenSlugs());
-    const project = createProject(name);
-    const dir = workspaceProjectDir(open.tree, slug);
-    await mkdir(dir, { recursive: true });
-    await saveProject(project, dir, this.fsOption());
-    await this.adoptProject(open, { id: project.id, slug, source: 'internal' }, dir);
-    return { workspace: this.requireSnapshot(), projectId: project.id };
+    return await this.enqueueWorkspaceOp(async () => {
+      const open = this.requireOpen();
+      const slug = uniqueSlug(name, this.takenSlugs());
+      const project = createProject(name);
+      const dir = workspaceProjectDir(open.tree, slug);
+      await mkdir(dir, { recursive: true });
+      await saveProject(project, dir, this.fsOption());
+      await this.adoptProject(open, { id: project.id, slug, source: 'internal' }, dir);
+      return { workspace: this.requireSnapshot(), projectId: project.id };
+    });
   }
 
   /**
@@ -909,14 +971,17 @@ export class WorkspaceService implements ProjectRouter {
    * @throws WorkspaceError `project-not-in-workspace` when no reference has that id.
    */
   async removeProject(projectId: string, options: { deleteFiles: boolean }): Promise<WorkspaceWire> {
+    return await this.enqueueWorkspaceOp(() => this.removeProjectNow(projectId, options));
+  }
+
+  private async removeProjectNow(projectId: string, options: { deleteFiles: boolean }): Promise<WorkspaceWire> {
     const open = this.requireOpen();
-    const index = open.entries.findIndex((candidate) => candidate.projectId === projectId);
-    if (index === -1) {
+    const entry = open.entries.find((candidate) => candidate.projectId === projectId);
+    if (entry === undefined) {
       throw new WorkspaceError('project-not-in-workspace', `No project with id "${projectId}" in this workspace.`, {
         details: { projectId },
       });
     }
-    const entry = open.entries[index] as OpenProjectEntry;
     const trashFolder = options.deleteFiles && entry.ref.source === 'internal';
     const trash = this.deps.trash;
     // Resolved before anything is closed: refusing outright beats removing the project and then
@@ -926,12 +991,8 @@ export class WorkspaceService implements ProjectRouter {
         details: { projectId },
       });
     }
-    this.cancelUnsavedWrite(entry.ref.id);
     // Removing a project discards its unsaved changes: there is no project left to restore into.
-    await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
-    await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
-    this.deps.history.close(entry.projectId);
-    open.entries.splice(index, 1);
+    await this.releaseEntry(open, entry, { discardUnsaved: true });
     this.reindex();
     await this.saveManifest(open);
     if (trashFolder && trash !== undefined) {
@@ -956,24 +1017,26 @@ export class WorkspaceService implements ProjectRouter {
    * `project-already-in-workspace` (with `details.projectId`) when it is already here.
    */
   async linkProject(sender: WebContents): Promise<WorkspaceWire | null> {
-    const open = this.requireOpen();
-    const picked = await pickFolder(sender, { title: 'Link project folder' }, this.requirePicks());
-    if (picked === undefined) {
-      return null;
-    }
-    const dir = await realpath(picked);
-    const project = await loadPickedProject(dir);
-    if (open.entries.some((entry) => entry.ref.id === project.id || entry.projectId === project.id)) {
-      throw new WorkspaceError('project-already-in-workspace', `"${project.name}" is already in this workspace.`, {
-        details: { projectId: project.id },
-      });
-    }
-    await this.adoptProject(
-      open,
-      { id: project.id, slug: uniqueSlug(project.name, this.takenSlugs()), source: 'linked', path: dir },
-      dir,
-    );
-    return this.requireSnapshot();
+    return await this.enqueueWorkspaceOp(async () => {
+      const open = this.requireOpen();
+      const picked = await pickFolder(sender, { title: 'Link project folder' }, this.requirePicks());
+      if (picked === undefined) {
+        return null;
+      }
+      const dir = await realpath(picked);
+      const project = await loadPickedProject(dir);
+      if (open.entries.some((entry) => entry.ref.id === project.id || entry.projectId === project.id)) {
+        throw new WorkspaceError('project-already-in-workspace', `"${project.name}" is already in this workspace.`, {
+          details: { projectId: project.id },
+        });
+      }
+      await this.adoptProject(
+        open,
+        { id: project.id, slug: uniqueSlug(project.name, this.takenSlugs()), source: 'linked', path: dir },
+        dir,
+      );
+      return this.requireSnapshot();
+    });
   }
 
   /**
@@ -991,11 +1054,13 @@ export class WorkspaceService implements ProjectRouter {
    * @returns the workspace, or `null` when the user cancelled the dialog.
    */
   async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
-    const picked = await pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
-    if (picked === undefined) {
-      return null;
-    }
-    return await this.importFrom(picked);
+    return await this.enqueueWorkspaceOp(async () => {
+      const picked = await pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
+      if (picked === undefined) {
+        return null;
+      }
+      return await this.importFrom(picked);
+    });
   }
 
   /**
@@ -1004,7 +1069,7 @@ export class WorkspaceService implements ProjectRouter {
    * dialog. The caller resolves the suggestion; no renderer-supplied path ever reaches here.
    */
   async importKnownProjectFolder(folder: string): Promise<WorkspaceWire> {
-    return await this.importFrom(folder);
+    return await this.enqueueWorkspaceOp(() => this.importFrom(folder));
   }
 
   private async importFrom(picked: string): Promise<WorkspaceWire> {
@@ -1063,36 +1128,38 @@ export class WorkspaceService implements ProjectRouter {
    * @throws WorkspaceError `project-folder-mismatch` when the folder holds a different project.
    */
   async locateProject(projectId: string, sender: WebContents): Promise<WorkspaceWire | null> {
-    const open = this.requireOpen();
-    const entry = this.requireEntry(projectId);
-    if (entry.ref.source !== 'linked' || entry.status !== 'missing') {
-      throw new WirebenchError(
-        'project-not-relocatable',
-        'Only a linked project whose folder is gone can be located.',
-        {
-          details: { projectId, source: entry.ref.source, status: entry.status },
-        },
-      );
-    }
-    const picked = await pickFolder(sender, { title: 'Locate project folder' }, this.requirePicks());
-    if (picked === undefined) {
-      return null;
-    }
-    const dir = await realpath(picked);
-    const project = await loadPickedProject(dir);
-    if (project.id !== entry.ref.id) {
-      throw new WorkspaceError('project-folder-mismatch', `"${dir}" holds a different project.`, {
-        details: { projectId: entry.ref.id, foundProjectId: project.id, dir },
-      });
-    }
-    entry.ref = { ...entry.ref, path: dir };
-    entry.dir = dir;
-    entry.status = 'loading';
-    entry.message = undefined;
-    await this.openEntry(entry);
-    await this.saveManifest(open);
-    this.deps.hooks?.onChanged?.(this.snapshot());
-    return this.requireSnapshot();
+    return await this.enqueueWorkspaceOp(async () => {
+      const open = this.requireOpen();
+      const entry = this.requireEntry(projectId);
+      if (entry.ref.source !== 'linked' || entry.status !== 'missing') {
+        throw new WirebenchError(
+          'project-not-relocatable',
+          'Only a linked project whose folder is gone can be located.',
+          {
+            details: { projectId, source: entry.ref.source, status: entry.status },
+          },
+        );
+      }
+      const picked = await pickFolder(sender, { title: 'Locate project folder' }, this.requirePicks());
+      if (picked === undefined) {
+        return null;
+      }
+      const dir = await realpath(picked);
+      const project = await loadPickedProject(dir);
+      if (project.id !== entry.ref.id) {
+        throw new WorkspaceError('project-folder-mismatch', `"${dir}" holds a different project.`, {
+          details: { projectId: entry.ref.id, foundProjectId: project.id, dir },
+        });
+      }
+      entry.ref = { ...entry.ref, path: dir };
+      entry.dir = dir;
+      entry.status = 'loading';
+      entry.message = undefined;
+      await this.openEntry(entry);
+      await this.saveManifest(open);
+      this.deps.hooks?.onChanged?.(this.snapshot());
+      return this.requireSnapshot();
+    });
   }
 
   /** Appends one reference, brings its host up, writes the manifest and raises `onChanged`. */

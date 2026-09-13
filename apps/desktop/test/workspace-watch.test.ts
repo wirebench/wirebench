@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +9,7 @@ import {
   createProject,
   createWorkspace,
   createWorkspaceEnvironment,
+  loadWorkspace,
   saveProject,
   saveWorkspace,
   workspaceDir,
@@ -213,6 +215,105 @@ describe('WorkspaceService — workspace-level watcher', () => {
 
     await service.close();
   });
+
+  it('reopens a project at its new folder when its ref is renamed on disk, keeping its unsaved edit', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const { service } = newService();
+    await service.open(workspace.id);
+    await settle();
+
+    const alphaId = workspace.projects[0]!.id;
+    await service.projectMutate(alphaId, { kind: 'rename-project', name: 'Edited while open' });
+    expect(service.projectSnapshot(alphaId)?.dirty).toBe(true);
+
+    // The unsaved record has to be on disk (not just in memory) before the relocation, since it
+    // is what `openEntry` restores from when the reload re-adds this project id at its new dir.
+    const unsavedRecordPath = join(root, 'workspaces', workspace.id, 'unsaved', `${alphaId}.json`);
+    await expect.poll(() => existsSync(unsavedRecordPath), { timeout: 5_000, interval: 50 }).toBe(true);
+
+    // A teammate's rename, pulled via `git`: the project folder moves and the manifest ref's
+    // slug changes to match it — never through the service, so nothing here calls `expect()`.
+    await rename(join(tree, 'projects', 'alpha'), join(tree, 'projects', 'alpha-renamed'));
+    const renamed: Workspace = {
+      ...workspace,
+      projects: workspace.projects.map((ref) => (ref.id === alphaId ? { ...ref, slug: 'alpha-renamed' } : ref)),
+    };
+    await saveWorkspace(renamed, tree);
+
+    await vi.waitFor(() => {
+      const row = service.snapshot()?.projects.find((p) => p.id === alphaId);
+      expect(row?.slug).toBe('alpha-renamed');
+      expect(row?.status).toBe('ready');
+    }, WAIT_OPTIONS);
+
+    // The edit made before the rename survived the release-and-reopen: still dirty, still the
+    // edited name — not silently discarded the way a `removeProject`-style release would.
+    expect(service.projectSnapshot(alphaId)).toMatchObject({ name: 'Edited while open', dirty: true });
+
+    await service.close();
+  }, 20_000);
+
+  it('serialises a watcher-driven reload behind an in-flight removeProject, leaving entries and the manifest consistent', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const second = createProject('Beta');
+    await saveProject(second, workspaceProjectDir(tree, 'beta'));
+    const seeded: Workspace = {
+      ...workspace,
+      projects: [...workspace.projects, { id: second.id, slug: 'beta', source: 'internal' }],
+    };
+    await saveWorkspace(seeded, tree);
+
+    // `removeProject`'s own sequence saves the manifest *before* trashing the folder; gating the
+    // trash call is what lets a reload's watcher event land while `removeProject`'s operation is
+    // still in flight (queued behind it, per `enqueueWorkspaceOp`), without needing real timing
+    // luck to hit that window.
+    let releaseTrash: (() => void) | undefined;
+    const trashGate = new Promise<void>((resolve) => {
+      releaseTrash = resolve;
+    });
+    const { service } = newService({
+      trash: async () => {
+        await trashGate;
+      },
+    });
+    await service.open(workspace.id);
+    await settle();
+
+    const alphaId = seeded.projects[0]!.id;
+    const removePromise = service.removeProject(alphaId, { deleteFiles: true });
+
+    // Give `removeProject` time to reach (and block on) the gated trash call — its manifest save
+    // has already landed on disk by then, per its own sequence.
+    await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+
+    // An outside edit that only touches `environments/` — built from what is *currently* on
+    // disk, the way a text editor opened after the removal already landed would see it, so this
+    // does not itself race the removal.
+    const { workspace: onDiskDuringRemoval } = await loadWorkspace(tree);
+    const withEnv: Workspace = {
+      ...onDiskDuringRemoval,
+      environments: [createWorkspaceEnvironment('Dev', new Set())],
+    };
+    await saveWorkspace(withEnv, tree);
+
+    releaseTrash?.();
+    await removePromise;
+
+    await vi.waitFor(() => {
+      expect(service.snapshot()?.environments.map((e) => e.name)).toEqual(['Dev']);
+    }, WAIT_OPTIONS);
+
+    const finalSlugs = service.snapshot()?.projects.map((p) => p.slug) ?? [];
+    expect(finalSlugs).toEqual(['beta']);
+    expect(new Set(finalSlugs).size).toBe(finalSlugs.length);
+
+    // The manifest on disk agrees with the in-memory model: the queued reload never saw (and
+    // never wrote through) a half-updated `entries` array.
+    const { workspace: onDiskFinal } = await loadWorkspace(tree);
+    expect(onDiskFinal.projects.map((ref) => ref.slug)).toEqual(['beta']);
+
+    await service.close();
+  }, 20_000);
 
   it('stops the watcher on close(): no callbacks arrive afterwards', async () => {
     const { workspace, tree } = await seedWorkspace('Team');
