@@ -27,6 +27,7 @@ function mount(exchange?: RestExchangeSummary, extra: Record<string, unknown> = 
   render(
     <TooltipPrimitive.Provider>
       <RestResponsePane
+        requestId="rest-1"
         state={exchange === undefined ? undefined : { status: 'done', sendId: 'send-1', exchange, ...extra }}
       />
     </TooltipPrimitive.Provider>,
@@ -72,7 +73,10 @@ describe('RestResponsePane', () => {
   it('shows a send failure instead of a status', () => {
     render(
       <TooltipPrimitive.Provider>
-        <RestResponsePane state={{ status: 'error', sendId: 's1', error: { code: 'dns', message: 'not found' } }} />
+        <RestResponsePane
+          requestId="rest-1"
+          state={{ status: 'error', sendId: 's1', error: { code: 'dns', message: 'not found' } }}
+        />
       </TooltipPrimitive.Provider>,
     );
 

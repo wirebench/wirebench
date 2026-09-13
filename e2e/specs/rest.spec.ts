@@ -87,6 +87,16 @@ test.describe('REST: make an API, send a request, read the response', () => {
 
     await openResponseTab(page, 'Raw');
     await expect(page.getByTestId('rest-response-raw-exchange')).toContainText('GET /echo?x=1');
+
+    // The Query tab runs XPath 3.1 over the JSON body itself — maps, arrays and `?` lookup, no
+    // second query language and no extra dependency (§3.10).
+    await openResponseTab(page, 'Query');
+    const query = page.getByTestId('rest-response-query');
+    await expect(query).toBeVisible();
+    await expect(query.getByText(/is the context item/)).toBeVisible();
+    await query.getByLabel('Query expression').fill('?query?x');
+    await query.getByTestId('query-run').click();
+    await expect(query.getByTestId('query-results')).toContainText('1', { timeout: 20_000 });
   });
 
   test('shows the cookies a response set and the redirects it followed', async () => {

@@ -90,11 +90,31 @@ function toRows(
   }));
 }
 
+/**
+ * The example expression the box shows, per language and document kind.
+ *
+ * A placeholder is the only documentation most users will read for this view, so each one is a
+ * working expression for the shape of document actually in front of them.
+ */
+export function placeholderFor(language: 'xpath' | 'xquery', documentKind: 'xml' | 'json'): string {
+  if (documentKind === 'json') {
+    return language === 'xpath' ? '?items?*[?status = "open"]?id' : 'for $i in ?items?* return $i?id';
+  }
+  return language === 'xpath' ? '//tem:AddResult/text()' : 'for $x in //* return name($x)';
+}
+
 export interface QueryViewProps {
   /** Keys the in-memory expression history and the seeded namespace table to this request draft. */
   readonly requestId: string;
-  /** The response envelope XML to query. */
+  /** The response document to query: an envelope, or a JSON body. */
   readonly xml: string;
+  /**
+   * What `xml` is. Defaults to `xml`.
+   *
+   * JSON gets the same two languages — XPath 3.1 has maps, arrays and `?` lookup — and loses only the
+   * namespace table, because JSON has no names to qualify.
+   */
+  readonly documentKind?: 'xml' | 'json';
   /** Fired when "Reveal" is pressed on a node result: the XML view should select this range. */
   readonly onReveal?: (range: TextRange) => void;
   /** `xpath.*` by default; injectable for tests. */
@@ -102,8 +122,9 @@ export interface QueryViewProps {
 }
 
 /** The Query view: expression textarea, language toggle, namespace table, and results. */
-export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) {
+export function QueryView({ requestId, xml, documentKind = 'xml', onReveal, source }: QueryViewProps) {
   const api = useMemo<QuerySource>(() => source ?? ipc().xpath, [source]);
+  const isJson = documentKind === 'json';
 
   const [language, setLanguage] = useState<'xpath' | 'xquery'>('xpath');
   const [expression, setExpression] = useState('');
@@ -116,6 +137,10 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
   // After that, the user's own edits to the table are theirs — this effect only reruns when
   // `xml` itself changes, not on every render.
   useEffect(() => {
+    if (isJson) {
+      // Nothing to seed: a JSON document binds no namespaces, so the table is not shown at all.
+      return;
+    }
     let cancelled = false;
     void api.namespaces({ xml }).then((res) => {
       if (!cancelled && res.ok) {
@@ -125,7 +150,7 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
     return () => {
       cancelled = true;
     };
-  }, [api, xml]);
+  }, [api, xml, isJson]);
 
   const run = useCallback(
     (expr: string) => {
@@ -138,14 +163,14 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
         rows.filter((row) => row.prefix !== '' && row.uri !== '').map((row) => [row.prefix, row.uri]),
       );
       void api
-        .evaluate({ xml, expression: trimmed, language, namespaces })
+        .evaluate({ xml, expression: trimmed, language, namespaces, ...(isJson ? { kind: 'json' as const } : {}) })
         .then((res) => {
           setResult(res.ok ? res.value : { kind: 'error', message: res.error?.message ?? 'Query failed' });
           setHistory(recordHistory(requestId, trimmed));
         })
         .finally(() => setRunning(false));
     },
-    [api, xml, language, rows, requestId],
+    [api, xml, language, rows, requestId, isJson],
   );
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -204,62 +229,71 @@ export function QueryView({ requestId, xml, onReveal, source }: QueryViewProps) 
           onKeyDown={handleKeyDown}
           rows={3}
           spellCheck={false}
-          placeholder={language === 'xpath' ? '//tem:AddResult/text()' : 'for $x in //* return name($x)'}
+          placeholder={placeholderFor(language, documentKind)}
           className="w-full resize-none rounded-md border border-hairline-strong bg-surface-raised p-2 font-mono text-sm text-fg-default"
         />
 
-        <table className="mt-2 w-full text-xs">
-          <caption className="sr-only">Namespace bindings</caption>
-          <thead>
-            <tr className="text-left text-fg-muted">
-              <th scope="col" className="w-24 font-normal">
-                Prefix
-              </th>
-              <th scope="col" className="font-normal">
-                Namespace URI
-              </th>
-              <th scope="col" className="w-8" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td className="pr-1 py-0.5">
-                  <input
-                    aria-label="Namespace prefix"
-                    value={row.prefix}
-                    onChange={(event) => setRow(row.id, { prefix: event.target.value })}
-                    className="w-full rounded-sm border border-hairline-strong bg-surface-raised px-1 font-mono"
-                  />
-                </td>
-                <td className="pr-1 py-0.5">
-                  <input
-                    aria-label="Namespace URI"
-                    value={row.uri}
-                    onChange={(event) => setRow(row.id, { uri: event.target.value })}
-                    className="w-full rounded-sm border border-hairline-strong bg-surface-raised px-1 font-mono"
-                  />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    aria-label="Remove namespace binding"
-                    onClick={() => removeRow(row.id)}
-                    className="text-fg-subtle hover:text-fg-default"
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button type="button" onClick={addRow} className="mt-1 text-xs text-accent hover:underline">
-          + Add namespace
-        </button>
-        {rows.some((row) => row.prefix === '' && row.uri !== '') && (
+        {!isJson && (
+          <>
+            <table className="mt-2 w-full text-xs">
+              <caption className="sr-only">Namespace bindings</caption>
+              <thead>
+                <tr className="text-left text-fg-muted">
+                  <th scope="col" className="w-24 font-normal">
+                    Prefix
+                  </th>
+                  <th scope="col" className="font-normal">
+                    Namespace URI
+                  </th>
+                  <th scope="col" className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="pr-1 py-0.5">
+                      <input
+                        aria-label="Namespace prefix"
+                        value={row.prefix}
+                        onChange={(event) => setRow(row.id, { prefix: event.target.value })}
+                        className="w-full rounded-sm border border-hairline-strong bg-surface-raised px-1 font-mono"
+                      />
+                    </td>
+                    <td className="pr-1 py-0.5">
+                      <input
+                        aria-label="Namespace URI"
+                        value={row.uri}
+                        onChange={(event) => setRow(row.id, { uri: event.target.value })}
+                        className="w-full rounded-sm border border-hairline-strong bg-surface-raised px-1 font-mono"
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        aria-label="Remove namespace binding"
+                        onClick={() => removeRow(row.id)}
+                        className="text-fg-subtle hover:text-fg-default"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button type="button" onClick={addRow} className="mt-1 text-xs text-accent hover:underline">
+              + Add namespace
+            </button>
+          </>
+        )}
+        {!isJson && rows.some((row) => row.prefix === '' && row.uri !== '') && (
           <p className="mt-1 text-xs text-status-warning" role="status">
             Rows with no prefix can&apos;t be referenced in an expression — add one to query this namespace.
+          </p>
+        )}
+        {isJson && (
+          <p className="mt-1 text-xs text-fg-subtle">
+            The response is the context item: <code>?field</code> reads a key, <code>?*</code> every member of an array.
           </p>
         )}
 

@@ -62,7 +62,7 @@ test:perf` is left to CI.
 | W3 renderer | 11–17 | done |
 | W4 openapi | 18–21 | done |
 | W5 auth ui | 22 | done |
-| W6 round-out | 23–26 | 23 done; 24 next |
+| W6 round-out | 23–26 | 23, 24 done; 25 next |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -161,6 +161,14 @@ task's commit message.
   show-secrets off no secret is read at all — a stand-in gives the command the credential's shape, which is all it
   needs. The redaction marker is substituted into a URL *after* composing, since `composeUrl` would otherwise
   percent-encode its angle brackets into `%3Credacted%3E`.
+
+- **T24** — the JSON evaluator is `evaluateJson` beside `evaluate` in `xpath/evaluate.ts`, with the parsed document as
+  the context item: `?items?*[?status = "open"]?id` — the design's own example — works with no new dependency, and the
+  worker, the timeout and the result shape are shared, so a JSON query gets the same runaway-expression protection.
+  `QueryView` takes a `documentKind` and drops only the namespace table for JSON (there are no names to qualify),
+  replacing it with a line saying where an expression starts. **JSONPath is not added**: the plan gates it on approval
+  of the `jsonpath-plus` dependency, which has not been given, and XPath 3.1 covers the spec's §3.10 example without
+  it. Adding the mode later is additive — a third entry in the language radio and a `rest/jsonpath.ts` wrapper.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -627,7 +635,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run packages/engine/test/unit/http/curl packages/engine/test/unit/rest/curl apps/desktop/test/ipc-request-actions`; `pnpm build && pnpm test:e2e -- --grep "curl"`
   - Files: packages/engine/src/http/curl.ts, packages/engine/src/rest/curl.ts, packages/engine/src/soap/\*\* (delegation only), apps/desktop/src/main/ipc/request.ts, apps/desktop/src/renderer/features/request-editor/import-curl-dialog.tsx, apps/desktop/src/renderer/features/rest-editor/rest-actions.ts, apps/desktop/src/renderer/shell/code-panel.tsx, packages/engine/test/unit/{http/curl,rest/curl}.test.ts, apps/desktop/test/ipc-request-actions.test.ts, e2e/specs/curl.spec.ts
 
-- [ ] **24. Query view over JSON**
+- [x] **24. Query view over JSON**
   - `xpath/evaluate.ts` accepts a JSON document (`parse-json()` of the response text as the context item; the
     existing worker path); `rest-response-query` tab reusing `query-view.tsx` with the language switch _XPath 3.1_ /
     _XQuery 3.1_ / _JSONPath_ (the last only when `jsonpath-plus` is approved: `rest/jsonpath.ts` wrapping it with a

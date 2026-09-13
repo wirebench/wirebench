@@ -178,7 +178,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
     </div>
   );
 
-  const responsePane = <RestResponsePane state={exchange} />;
+  const responsePane = <RestResponsePane state={exchange} requestId={requestId} />;
 
   return (
     <section aria-label={`Request ${request.name}`} data-testid="rest-editor" className="flex h-full min-h-0 flex-col">

@@ -2455,10 +2455,18 @@ export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.st
 
 /** Request payload for `xpath.evaluate`. Mirrors the engine's `EvaluateOptions`. */
 export const xpathEvaluateRequestSchema = z.object({
+  /** The document text. Named `xml` since that is what it was; a JSON body travels here too. */
   xml: z.string(),
   expression: z.string(),
   language: z.enum(['xpath', 'xquery']),
   namespaces: z.record(z.string(), z.string()).optional(),
+  /**
+   * Which document `xml` is. Defaults to `xml`.
+   *
+   * XPath 3.1's maps, arrays and `?` lookup query JSON directly, so a JSON body is the same two
+   * languages against a different context item — not a third language, and not a new dependency.
+   */
+  kind: z.enum(['xml', 'json']).optional(),
 });
 
 /** One node-shaped result item; mirrors the engine's `QueryNodeItem`. */

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryView } from '../../src/renderer/features/request-editor/views/query-view.js';
+import { placeholderFor, QueryView } from '../../src/renderer/features/request-editor/views/query-view.js';
 import type { QuerySource } from '../../src/renderer/features/request-editor/views/query-view.js';
 
 const XML = '<a xmlns:tem="http://tempuri.org/"><tem:AddResult>3</tem:AddResult></a>';
@@ -199,5 +199,84 @@ describe('QueryView', () => {
       render(<QueryView requestId="r4" xml={XML} source={stubSource().source} />);
     });
     expect(await screen.findByTitle('count(//*)')).toBeDefined();
+  });
+});
+
+describe('QueryView over a JSON response', () => {
+  const JSON_BODY = '{"items":[{"id":1,"status":"open"}]}';
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('asks main to evaluate against JSON, and never asks about namespaces', async () => {
+    const { source, namespaces, evaluate } = stubSource({
+      evaluate: { ok: true, value: { kind: 'values', items: [{ text: '1', type: 'xs:integer' }], truncated: false } },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('?items?*?id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith({
+        xml: JSON_BODY,
+        expression: '?items?*?id',
+        language: 'xpath',
+        namespaces: {},
+        kind: 'json',
+      });
+    });
+    // JSON binds no namespaces, so there is nothing to seed and nothing to ask.
+    expect(namespaces).not.toHaveBeenCalled();
+  });
+
+  it('hides the namespace table and says where an expression starts instead', () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.queryByLabelText('Namespace prefix')).toBeNull();
+    expect(screen.queryByText('+ Add namespace')).toBeNull();
+    expect(screen.getByText(/is the context item/)).toBeDefined();
+  });
+
+  it('keeps both languages: XQuery over JSON is a FLWOR over its arrays', async () => {
+    const { source, evaluate } = stubSource({
+      evaluate: { ok: true, value: { kind: 'values', items: [{ text: '1', type: 'xs:integer' }], truncated: false } },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: 'XQuery 3.1' }));
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('for $i in ?items?* return $i?id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith(expect.objectContaining({ language: 'xquery', kind: 'json' }));
+    });
+  });
+
+  it('still sends no kind for an XML document, so the channel default stands', async () => {
+    const { source, evaluate } = stubSource();
+    render(<QueryView requestId="r1" xml={XML} source={source} />);
+
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('//a');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalled();
+    });
+    expect(evaluate.mock.calls[0]?.[0]).not.toHaveProperty('kind');
+  });
+});
+
+describe('placeholderFor', () => {
+  it('offers a working expression for the document actually on screen', () => {
+    expect(placeholderFor('xpath', 'xml')).toBe('//tem:AddResult/text()');
+    expect(placeholderFor('xquery', 'xml')).toContain('for $x in');
+    expect(placeholderFor('xpath', 'json')).toBe('?items?*[?status = "open"]?id');
+    expect(placeholderFor('xquery', 'json')).toContain('for $i in ?items?*');
   });
 });

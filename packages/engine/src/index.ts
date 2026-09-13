@@ -21,7 +21,7 @@ export type { NamespaceUri } from './xml/namespaces.js';
 export { LineIndex } from './xml/positions.js';
 export type { LinePosition } from './xml/positions.js';
 
-export { evaluate } from './xpath/evaluate.js';
+export { evaluate, evaluateJson } from './xpath/evaluate.js';
 export type { EvaluateOptions, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
 export { evaluateWithTimeout } from './xpath/evaluate-async.js';
 export type { EvaluateWithTimeoutOptions } from './xpath/evaluate-async.js';

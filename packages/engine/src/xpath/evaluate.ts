@@ -1,7 +1,12 @@
 /**
- * XPath 3.1 / XQuery 3.1 evaluation against a response document, for the response Query
- * scratchpad. Where classic SOAP workbenches limit querying to XPath 2.0 inside assertions,
- * this runs both languages over the actual bytes the server returned, ahead of any assertion.
+ * XPath 3.1 / XQuery 3.1 evaluation against a response, for the response Query scratchpad. Where
+ * classic SOAP workbenches limit querying to XPath 2.0 inside assertions, this runs both languages
+ * over the actual bytes the server returned, ahead of any assertion.
+ *
+ * A JSON response is queried by the same two languages ({@link evaluateJson}) rather than by a third
+ * one: XPath 3.1 has maps, arrays and the `?` lookup operator, so `?items?*[?status = "open"]?id`
+ * needs no new dependency and no second expression syntax for users to learn. The context item is
+ * the parsed document itself.
  */
 
 import fontoxpathModule from 'fontoxpath';
@@ -344,6 +349,56 @@ export function evaluate(xml: string, expression: string, options: EvaluateOptio
     };
   }
 
+  return {
+    kind: 'values',
+    items: capped.map((item) => ({ text: toValueText(item), type: typeOf(item) })),
+    truncated,
+  };
+}
+
+/**
+ * Evaluates `expression` against a JSON document.
+ *
+ * The parsed JSON *is* the context item, so a lookup starts at `?`: `?name` reads a field of a
+ * top-level object, `?*` every member of an array, and `?items?*[?status = "open"]?id` filters and
+ * projects in one expression. Results are always values — JSON has no nodes — so nothing here needs
+ * the document's text, and a result carries no source range.
+ *
+ * @param json the response body as text
+ * @param expression the XPath or XQuery source
+ * @param options language (namespaces are accepted and unused: JSON has no names to qualify)
+ */
+export function evaluateJson(json: string, expression: string, options: EvaluateOptions): QueryResult {
+  let context: unknown;
+  try {
+    context = JSON.parse(json);
+  } catch (error) {
+    // The same shape a malformed XML document produces, so one caller handles both.
+    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
+  }
+
+  let raw: unknown[];
+  try {
+    raw = evaluateXPath(expression, context, null, null, evaluateXPath.ALL_RESULTS_TYPE, {
+      language: options.language === 'xquery' ? Language.XQUERY_3_1_LANGUAGE : Language.XPATH_3_1_LANGUAGE,
+    }) as unknown[];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = codeOf(message);
+    const position = positionOf(error);
+    return {
+      kind: 'error',
+      message,
+      ...(code !== undefined ? { code } : {}),
+      ...(position !== undefined ? { position } : {}),
+    };
+  }
+
+  if (raw.length === 0) {
+    return { kind: 'empty' };
+  }
+  const truncated = raw.length > RESULT_CAP;
+  const capped = raw.slice(0, RESULT_CAP);
   return {
     kind: 'values',
     items: capped.map((item) => ({ text: toValueText(item), type: typeOf(item) })),

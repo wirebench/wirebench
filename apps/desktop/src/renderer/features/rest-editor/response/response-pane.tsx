@@ -8,13 +8,14 @@
  * *Save response* goes through a channel that takes only the send id: the bytes stay in main and the
  * file is chosen by the user in a native dialog, exactly as a SOAP attachment's save does.
  */
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
 import { Tabs } from '../../../components/tabs.js';
 import { ipc } from '../../../state/ipc-client.js';
 import type { RestExchangeState } from '../../../state/exchanges.js';
 import { SslInspector } from '../../request-editor/inspectors/ssl-inspector.js';
+import { QueryView } from '../../request-editor/views/lazy-views.js';
 import { TimingsBar } from '../../console/timings-bar.js';
 import { BodyView } from './body-view.js';
 import { CookiesView } from './cookies-view.js';
@@ -38,10 +39,12 @@ type TabId = (typeof TABS)[number]['id'];
 
 export interface RestResponsePaneProps {
   readonly state: RestExchangeState | undefined;
+  /** The request this response belongs to, which keys the Query view's own expression history. */
+  readonly requestId: string;
 }
 
 /** The response pane. */
-export function RestResponsePane({ state }: RestResponsePaneProps) {
+export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('body');
   const exchange = state?.exchange;
   const sending = state?.status === 'sending';
@@ -114,9 +117,24 @@ export function RestResponsePane({ state }: RestResponsePaneProps) {
             )}
             {tab === 'raw' && <RawExchange exchange={exchange} />}
             {tab === 'query' && (
-              <p data-testid="rest-response-query" className="p-3 text-sm text-fg-subtle">
-                Querying a response with JSONPath or XPath arrives with the round-out task.
-              </p>
+              <div data-testid="rest-response-query" className="min-h-0 flex-1">
+                {/* The same view the SOAP response uses, over whichever document this response is:
+                    XPath 3.1 covers JSON through its maps, arrays and `?` lookup, so a JSON body
+                    needs no second query language. A body with no text form has nothing to query. */}
+                {exchange.text === '' ? (
+                  <p className="p-3 text-sm text-fg-subtle">
+                    This response has no text to query ({exchange.language}).
+                  </p>
+                ) : (
+                  <Suspense fallback={<p className="p-3 text-sm text-fg-subtle">Loading…</p>}>
+                    <QueryView
+                      requestId={requestId}
+                      xml={exchange.text}
+                      documentKind={exchange.language === 'xml' || exchange.language === 'html' ? 'xml' : 'json'}
+                    />
+                  </Suspense>
+                )}
+              </div>
             )}
           </div>
         </>
