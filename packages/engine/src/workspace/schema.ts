@@ -51,10 +51,7 @@ export const workspaceManifestSchema = z.looseObject({
   properties: propertyMapSchema,
   /** Names of `properties` entries switched off; absent means none. See `model.ts`. */
   disabled: z.array(z.string()).optional(),
-  activeEnvironmentId: z.string().optional(),
   projects: z.array(workspaceProjectRefSchema),
-  /** Name of the Wirebench build that last wrote this manifest; informational only. */
-  writtenBy: z.string().optional(),
 });
 
 /** `environments/<slug>.yaml`. */
@@ -67,6 +64,46 @@ export const workspaceEnvironmentFileSchema = z.looseObject({
   /** Names of `properties` entries switched off; absent means none. */
   disabled: z.array(z.string()).optional(),
 });
+
+/** `local.yaml`: machine-local state, never part of the shared tree. See `local-state.ts`. */
+export const workspaceLocalStateSchema = z.object({
+  version: z.literal(1),
+  activeEnvironmentId: z.string().optional(),
+});
+
+/** `share.yaml`'s `git` block: settings for a git-backed share. See `share.ts`. */
+const gitShareSettingsSchema = z.object({
+  remote: z.string().optional(),
+  branch: nonEmpty,
+  autoFetchSeconds: z.number().int().min(0),
+  commitOnSave: z.boolean(),
+  pushOnSave: z.boolean(),
+});
+
+/**
+ * `share.yaml`: absent means a local workspace. `path`, when set, must be absolute — it is only
+ * ever written from a native folder picker. `kind: 'git'` requires `git`; `kind: 'server'`
+ * requires `server`.
+ */
+export const workspaceShareSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.enum(['folder', 'git', 'server']),
+    path: z
+      .string()
+      .optional()
+      .refine((value) => value === undefined || isAbsolute(value), { message: 'path must be absolute' }),
+    git: gitShareSettingsSchema.optional(),
+    server: z.object({ url: nonEmpty, workspaceId: nonEmpty }).optional(),
+  })
+  .refine((value) => value.kind !== 'git' || value.git !== undefined, {
+    message: 'kind: git requires a git block',
+    path: ['git'],
+  })
+  .refine((value) => value.kind !== 'server' || value.server !== undefined, {
+    message: 'kind: server requires a server block',
+    path: ['server'],
+  });
 
 /** The manifest document as persisted. */
 export type WorkspaceManifestFile = z.infer<typeof workspaceManifestSchema>;

@@ -29,19 +29,21 @@ async function readAllText(dir: string, prefix = ''): Promise<Map<string, string
 }
 
 describe('loading a version-1 workspace folder', () => {
-  it('loads with every disabled list empty, and no problems', async () => {
-    const { workspace, problems } = await loadWorkspace(FIXTURE_DIR);
+  it('loads with every disabled list empty, its activeEnvironmentId lifted into legacy, and no problems', async () => {
+    const { workspace, problems, legacy } = await loadWorkspace(FIXTURE_DIR);
 
     expect(problems).toEqual([]);
-    expect(workspace.formatVersion).toBe(2);
+    expect(workspace.formatVersion).toBe(3);
     expect(workspace.disabledProperties).toEqual([]);
+    expect(workspace.activeEnvironmentId).toBeUndefined();
+    expect(legacy).toEqual({ activeEnvironmentId: 'ID0003' });
     expect(workspace.environments.length).toBeGreaterThan(0);
     for (const environment of workspace.environments) {
       expect(environment.disabledProperties).toEqual([]);
     }
   });
 
-  it('is rewritten at version 2 with nothing else changed: the diff is the formatVersion line', async () => {
+  it('is rewritten at version 3 with activeEnvironmentId and writtenBy dropped, nothing else in the manifest changed', async () => {
     const dir = await tempWorkspaceDir();
     await cp(FIXTURE_DIR, dir, { recursive: true });
     const before = await readAllText(dir);
@@ -55,7 +57,11 @@ describe('loading a version-1 workspace folder', () => {
       const afterText = after.get(file)!;
       if (file === 'workspace.yaml') {
         expect(beforeText).toContain('formatVersion: 1');
-        expect(afterText).toBe(beforeText.replace('formatVersion: 1', 'formatVersion: 2'));
+        const expected = beforeText
+          .replace('formatVersion: 1', 'formatVersion: 3')
+          .replace('activeEnvironmentId: ID0003\n', '')
+          .replace('writtenBy: wirebench\n', '');
+        expect(afterText).toBe(expected);
       } else {
         expect(afterText).toBe(beforeText);
       }

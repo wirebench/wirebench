@@ -8,6 +8,7 @@
 
 import { join } from 'node:path';
 import { WorkspaceError } from '../errors.js';
+import type { WorkspaceShare } from './share.js';
 
 /** Device names Windows refuses to use as a file name, with or without an extension. */
 const RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
@@ -49,6 +50,15 @@ export const WORKSPACE_ENVIRONMENTS_DIR = 'environments';
 export const WORKSPACE_PROJECTS_DIR = 'projects';
 /** File name of the (non-managed-format) file recording desktop UI state, e.g. the last opened workspace. */
 export const WORKSPACE_STATE_FILE = 'workspace-state.json';
+/** Directory (under a workspace's app-data folder) holding a managed git/folder share's clone. */
+export const WORKSPACE_TREE_DIR = 'tree';
+/** Directory a clone is checked out into while `join` is still in progress, before it is renamed into place. */
+export const WORKSPACE_JOINING_DIR = '.joining';
+/** File name of the tree's own `.gitattributes`, written on share and on join if missing. */
+export const GIT_ATTRIBUTES_FILE = '.gitattributes';
+/** Contents of {@link GIT_ATTRIBUTES_FILE}: normalises line endings and keeps attachments binary. */
+export const GIT_ATTRIBUTES =
+  '* text=auto eol=lf\n*.yaml text\n*.xml text\n*.wsdl text\n*.xsd text\nprojects/*/attachments/** -text\n';
 
 /** Absolute path of a workspace's own directory, given the app's user-data root and the workspace id. */
 export function workspaceDir(userDataDir: string, workspaceId: string): string {
@@ -78,4 +88,17 @@ export function workspaceEnvironmentFile(dir: string, slug: string): string {
 export function workspaceProjectDir(dir: string, slug: string): string {
   assertPathSegment(slug);
   return join(dir, WORKSPACE_PROJECTS_DIR, slug);
+}
+
+/**
+ * The root of a workspace's tree — where `workspace.yaml`, `environments/` and `projects/`
+ * actually live. For a `local` workspace (`share === undefined`) that is `dir` itself; for a
+ * shared workspace it is `share.path` when the tree lives outside `dir` (an external git clone
+ * or synced folder), or the managed `<dir>/tree` clone otherwise.
+ */
+export function workspaceTreeDir(dir: string, share: WorkspaceShare | undefined): string {
+  if (share === undefined) {
+    return dir;
+  }
+  return share.path ?? join(dir, WORKSPACE_TREE_DIR);
 }

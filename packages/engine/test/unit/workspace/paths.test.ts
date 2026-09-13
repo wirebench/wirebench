@@ -7,7 +7,9 @@ import {
   workspaceEnvironmentFile,
   workspaceManifestFile,
   workspaceProjectDir,
+  workspaceTreeDir,
 } from '../../../src/workspace/paths.js';
+import { DEFAULT_GIT_SHARE_SETTINGS } from '../../../src/workspace/share.js';
 
 describe('path builders', () => {
   it('workspaceDir joins the user-data root, WORKSPACES_DIR, and the workspace id', () => {
@@ -49,6 +51,20 @@ describe('path builders', () => {
       expect(error).toBeInstanceOf(WorkspaceError);
       expect((error as WorkspaceError).code).toBe('workspace-path-invalid');
     }
+  });
+
+  it('workspaceTreeDir is the workspace dir itself when there is no share', () => {
+    expect(workspaceTreeDir('/data/workspaces/W1', undefined)).toBe('/data/workspaces/W1');
+  });
+
+  it('workspaceTreeDir is the managed tree/ when the share has no explicit path', () => {
+    expect(workspaceTreeDir('/data/workspaces/W1', { version: 1, kind: 'git', git: DEFAULT_GIT_SHARE_SETTINGS })).toBe(
+      join('/data/workspaces/W1', 'tree'),
+    );
+  });
+
+  it('workspaceTreeDir is the share path when one is set', () => {
+    expect(workspaceTreeDir('/data/workspaces/W1', { version: 1, kind: 'folder', path: '/x' })).toBe('/x');
   });
 });
 

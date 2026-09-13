@@ -36,12 +36,11 @@ describe('saveWorkspace', () => {
     await saveWorkspace(sampleWorkspace(), dir);
 
     expect((await readBytes(dir, 'workspace.yaml')).toString('utf8')).toMatchInlineSnapshot(`
-      "activeEnvironmentId: ID0003
-      createdAt: 2026-01-01T00:00:00.000Z
+      "createdAt: 2026-01-01T00:00:00.000Z
       description: Round-trip fixture
       disabled:
         - tier
-      formatVersion: 2
+      formatVersion: 3
       id: ID0005
       name: Demo Workspace
       projects:
@@ -55,7 +54,6 @@ describe('saveWorkspace', () => {
       properties:
         region: eu-west-1
         tier: gold
-      writtenBy: wirebench
       "
     `);
     expect((await readBytes(dir, 'environments/dev.yaml')).toString('utf8')).toMatchInlineSnapshot(`
@@ -196,14 +194,16 @@ describe('saveWorkspace', () => {
 });
 
 describe('loadWorkspace', () => {
-  it('round-trips a workspace to a deep-equal model', async () => {
+  it('round-trips a workspace to a deep-equal model, activeEnvironmentId aside (it is never saved)', async () => {
     const dir = await tempWorkspaceDir();
     const workspace = sampleWorkspace();
     await saveWorkspace(workspace, dir);
 
-    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    const { workspace: loaded, problems, legacy } = await loadWorkspace(dir);
     expect(problems).toEqual([]);
-    expect(loaded).toEqual(workspace);
+    expect(loaded).toEqual(withoutFields(workspace, 'activeEnvironmentId'));
+    expect(loaded.activeEnvironmentId).toBeUndefined();
+    expect(legacy).toEqual({});
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -262,11 +262,11 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 2', 'formatVersion: 3'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 3', 'formatVersion: 4'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 3, supported: 2 });
+    expect(error.details).toMatchObject({ formatVersion: 4, supported: 3 });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -275,7 +275,7 @@ describe('loadWorkspace', () => {
     const dir = await tempWorkspaceDir();
     await saveWorkspace(sampleWorkspace(), dir);
     const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
-    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 2', 'formatVersion: "1"'));
+    await writeFile(join(dir, 'workspace.yaml'), text.replace('formatVersion: 3', 'formatVersion: "1"'));
 
     const error = (await loadWorkspace(dir).catch((e: unknown) => e)) as WorkspaceError;
     expect(error.code).toBe('workspace-file-invalid');
@@ -292,7 +292,7 @@ describe('loadWorkspace', () => {
     await writeFile(join(dir, 'workspace.yaml'), `${text}surprise: yes\n`);
 
     const { workspace: loaded } = await loadWorkspace(dir);
-    expect(loaded).toEqual(workspace);
+    expect(loaded).toEqual(withoutFields(workspace, 'activeEnvironmentId'));
     expect(Object.keys(loaded)).not.toContain('surprise');
 
     await rm(dir, { recursive: true, force: true });
@@ -358,24 +358,17 @@ describe('loadWorkspace', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('leaves an activeEnvironmentId that names no environment as-is', async () => {
+  it('never persists activeEnvironmentId, and always loads it as undefined', async () => {
     const dir = await tempWorkspaceDir();
     const workspace = { ...sampleWorkspace(), activeEnvironmentId: 'GHOST' };
     await saveWorkspace(workspace, dir);
 
-    const { workspace: loaded } = await loadWorkspace(dir);
-    expect(loaded.activeEnvironmentId).toBe('GHOST');
+    const text = (await readBytes(dir, 'workspace.yaml')).toString('utf8');
+    expect(text).not.toContain('activeEnvironmentId');
 
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it('omits activeEnvironmentId entirely when unset', async () => {
-    const dir = await tempWorkspaceDir();
-    const workspace = withoutFields(sampleWorkspace(), 'activeEnvironmentId');
-    await saveWorkspace(workspace, dir);
-
-    const { workspace: loaded } = await loadWorkspace(dir);
+    const { workspace: loaded, legacy } = await loadWorkspace(dir);
     expect(loaded.activeEnvironmentId).toBeUndefined();
+    expect(legacy).toEqual({});
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -400,6 +393,64 @@ describe('loadWorkspace', () => {
     const { workspace: loaded, problems } = await loadWorkspace(dir);
     expect(problems).toEqual([]);
     expect(loaded.environments.map((e) => e.slug)).toEqual(['dev', 'prod']);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('lifts a v2 activeEnvironmentId into legacy, and drops writtenBy, on load', async () => {
+    const dir = await tempWorkspaceDir();
+    await writeFile(
+      join(dir, 'workspace.yaml'),
+      [
+        'formatVersion: 2',
+        'id: W1',
+        'name: Legacy',
+        'createdAt: 2026-01-01T00:00:00.000Z',
+        'properties: {}',
+        'activeEnvironmentId: ID0003',
+        'projects: []',
+        'writtenBy: wirebench',
+        '',
+      ].join('\n'),
+    );
+
+    const { workspace: loaded, legacy } = await loadWorkspace(dir);
+    expect(legacy).toEqual({ activeEnvironmentId: 'ID0003' });
+    expect(loaded.activeEnvironmentId).toBeUndefined();
+    expect(loaded.formatVersion).toBe(3);
+
+    const files = workspaceFiles(loaded);
+    const manifest = files.get('workspace.yaml') ?? '';
+    expect(manifest).not.toContain('activeEnvironmentId');
+    expect(manifest).not.toContain('writtenBy');
+    expect(manifest.startsWith('createdAt:') || manifest.includes('formatVersion: 3')).toBe(true);
+    expect(manifest).toContain('formatVersion: 3');
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('still parses a v3 manifest carrying a linked project ref (the share refusal is main’s job)', async () => {
+    const dir = await tempWorkspaceDir();
+    await writeFile(
+      join(dir, 'workspace.yaml'),
+      [
+        'formatVersion: 3',
+        'id: W1',
+        'name: Shared',
+        'createdAt: 2026-01-01T00:00:00.000Z',
+        'properties: {}',
+        'projects:',
+        '  - id: P1',
+        '    slug: demo',
+        '    source: linked',
+        '    path: /srv/demo',
+        '',
+      ].join('\n'),
+    );
+
+    const { workspace: loaded, problems } = await loadWorkspace(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.projects).toEqual([{ id: 'P1', slug: 'demo', source: 'linked', path: '/srv/demo' }]);
 
     await rm(dir, { recursive: true, force: true });
   });
