@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info:
+  title: Shared parameters
+  version: 1.0.0
+paths: {}
+components:
+  parameters:
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, default: 25 }

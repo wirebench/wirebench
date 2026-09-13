@@ -8,6 +8,7 @@ export {
   ProjectError,
   ValidationError,
   WorkspaceError,
+  OpenApiError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -337,6 +338,34 @@ export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
+// OpenAPI: reading a description into the model an import maps onto an API.
+export { parseOpenApi } from './rest/openapi/import.js';
+export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/openapi/import.js';
+export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
+export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
+export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
+export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
+export type {
+  JsonSchema,
+  JsonValue,
+  OpenApiDocument,
+  OpenApiExample,
+  OpenApiInfo,
+  OpenApiMediaType,
+  OpenApiOAuthFlow,
+  OpenApiOperation,
+  OpenApiParameter,
+  OpenApiRequestBody,
+  OpenApiSecurityRequirement,
+  OpenApiSecurityScheme,
+  OpenApiServer,
+  OpenApiServerVariable,
+  OpenApiSkipped,
+  OpenApiTag,
+  OpenApiVersion,
+  OpenApiXml,
+  ParameterLocation,
+} from './rest/openapi/model.js';
 export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
 export type {
   CreateApiInput,

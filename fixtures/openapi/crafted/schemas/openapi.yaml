@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Schemas
+  version: 1.0.0
+servers:
+  - url: https://schemas.test
+paths:
+  /all-of:
+    post:
+      operationId: postAllOf
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [id]
+                  properties:
+                    id: { type: integer }
+                - type: object
+                  properties:
+                    name: { type: string }
+  /one-of:
+    post:
+      operationId: postOneOf
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    cat: { type: string, default: whiskers }
+                - type: object
+                  properties:
+                    dog: { type: string }
+  /formats:
+    post:
+      operationId: postFormats
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [when, id, email, home]
+              properties:
+                when: { type: string, format: date-time }
+                id: { type: string, format: uuid }
+                email: { type: string, format: email }
+                home: { type: string, format: uri }
+  /nested:
+    post:
+      operationId: postNested
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tags, pet]
+              properties:
+                tags:
+                  type: array
+                  items: { type: string, enum: [red, green] }
+                pet:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: { type: string }
+                    age: { type: integer }
+                    good: { type: boolean }

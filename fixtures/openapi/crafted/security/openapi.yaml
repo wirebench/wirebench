@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Security
+  version: 1.0.0
+servers:
+  - url: https://secure.test
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    basicAuth:
+      type: http
+      scheme: basic
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    apiKeyQuery:
+      type: apiKey
+      in: query
+      name: api_key
+    apiKeyCookie:
+      type: apiKey
+      in: cookie
+      name: session
+    oauthClient:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://secure.test/oauth/token
+          scopes:
+            read: Read everything
+    oauthCode:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://secure.test/oauth/authorize
+          tokenUrl: https://secure.test/oauth/token
+          scopes:
+            read: Read everything
+            write: Write everything
+    openId:
+      type: openIdConnect
+      openIdConnectUrl: https://secure.test/.well-known/openid-configuration
+paths:
+  /inherits:
+    get:
+      operationId: getInherits
+      responses: { '200': { description: ok } }
+  /basic:
+    get:
+      operationId: getBasic
+      security:
+        - basicAuth: []
+      responses: { '200': { description: ok } }
+  /api-key:
+    get:
+      operationId: getApiKey
+      security:
+        - apiKeyQuery: []
+      responses: { '200': { description: ok } }
+  /open:
+    get:
+      operationId: getOpen
+      security: []
+      responses: { '200': { description: ok } }

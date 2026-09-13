@@ -1,0 +1,94 @@
+openapi: 3.0.3
+info:
+  title: Bodies
+  version: 1.0.0
+servers:
+  - url: https://bodies.test
+paths:
+  /json:
+    post:
+      operationId: postJson
+      summary: JSON with an example
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+            example: { name: Fido }
+  /json-examples:
+    post:
+      operationId: postJsonExamples
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+            examples:
+              first:
+                value: { pick: me }
+              second:
+                value: { not: me }
+  /json-sample:
+    post:
+      operationId: postJsonSample
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: integer }
+                note: { type: string }
+  /xml:
+    post:
+      operationId: postXml
+      requestBody:
+        content:
+          application/xml:
+            schema:
+              type: object
+              xml: { name: pet }
+              properties:
+                name: { type: string, example: Fido }
+  /form:
+    post:
+      operationId: postForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type: { type: string, default: password }
+                username: { type: string }
+  /multipart:
+    post:
+      operationId: postMultipart
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+                file: { type: string, format: binary }
+  /binary:
+    put:
+      operationId: putBinary
+      requestBody:
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+  /prefers-json:
+    post:
+      operationId: postPrefersJson
+      summary: Offers several media types at once
+      requestBody:
+        content:
+          text/plain:
+            schema: { type: string }
+          application/json:
+            schema: { type: object }
