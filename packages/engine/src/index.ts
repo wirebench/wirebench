@@ -306,6 +306,34 @@ export {
   entry,
   folderRequests,
 } from './rest/model.js';
+export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
+export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
+export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
+export type { AppliedAuth } from './rest/auth.js';
+export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
+export type { CookieMatchOptions } from './rest/cookies.js';
+export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
+export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
+export {
+  TOKEN_REFRESH_MARGIN_MS,
+  authorizationUrl,
+  buildTokenRequest,
+  needsRefresh,
+  newState,
+  parseTokenResponse,
+  pkce,
+} from './rest/oauth2.js';
+export type {
+  AuthorizationUrlInput,
+  OAuth2Secrets,
+  PkcePair,
+  TokenGrantInput,
+  TokenRequestOptions,
+  TokenResponseInput,
+  TokenSet,
+} from './rest/oauth2.js';
+export { decodeRestResponse, sendRest } from './rest/send.js';
+export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
 export type {
@@ -403,10 +431,17 @@ export type {
   UiPreferences,
   UpdatePreferences,
   WsdlPreferences,
+  RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toSendInput } from './send-options.js';
-export type { AttachmentResolvers, SendRequestInput, ToSendInputArgs } from './send-options.js';
+export { toRestSendInput, toSendInput } from './send-options.js';
+export type {
+  AttachmentResolvers,
+  RestSendRequestInput,
+  SendRequestInput,
+  ToRestSendInputArgs,
+  ToSendInputArgs,
+} from './send-options.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';

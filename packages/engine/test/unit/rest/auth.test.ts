@@ -4,38 +4,38 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AuthConfig } from '../../../src/project/model.js';
-import { applyAuth, effectiveAuth, effectiveAuthIndex, missingSecretRef } from '../../../src/rest/auth.js';
+import { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from '../../../src/rest/auth.js';
 
 const inherit: AuthConfig = { type: 'inherit' };
 const none: AuthConfig = { type: 'none' };
 const bearer: AuthConfig = { type: 'bearer', tokenRef: 'sec_t' };
 const apiKey: AuthConfig = { type: 'api-key', name: 'X-Key', in: 'header', valueRef: 'sec_k' };
 
-describe('effectiveAuth', () => {
+describe('resolveAuthChain', () => {
   it('takes the request own configuration when it has one', () => {
-    expect(effectiveAuth([bearer, apiKey, none])).toBe(bearer);
+    expect(resolveAuthChain([bearer, apiKey, none])).toBe(bearer);
   });
 
   it('walks outwards past every inherit', () => {
-    expect(effectiveAuth([inherit, inherit, apiKey])).toBe(apiKey);
+    expect(resolveAuthChain([inherit, inherit, apiKey])).toBe(apiKey);
   });
 
   it('treats a folder or API that configures nothing as inherit', () => {
-    expect(effectiveAuth([inherit, undefined, apiKey])).toBe(apiKey);
+    expect(resolveAuthChain([inherit, undefined, apiKey])).toBe(apiKey);
   });
 
   it('stops at an explicit none, which switches authentication off', () => {
-    expect(effectiveAuth([inherit, none, bearer])).toBe(none);
+    expect(resolveAuthChain([inherit, none, bearer])).toBe(none);
   });
 
   it('is none when the whole chain inherits', () => {
-    expect(effectiveAuth([inherit, inherit, inherit])).toEqual({ type: 'none' });
-    expect(effectiveAuth([])).toEqual({ type: 'none' });
+    expect(resolveAuthChain([inherit, inherit, inherit])).toEqual({ type: 'none' });
+    expect(resolveAuthChain([])).toEqual({ type: 'none' });
   });
 
   it('says which link decided, so the editor can name it', () => {
-    expect(effectiveAuthIndex([inherit, inherit, apiKey])).toBe(2);
-    expect(effectiveAuthIndex([inherit])).toBe(-1);
+    expect(resolveAuthChainIndex([inherit, inherit, apiKey])).toBe(2);
+    expect(resolveAuthChainIndex([inherit])).toBe(-1);
   });
 });
 

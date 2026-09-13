@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import type { RequestProperties } from '../../src/project/model.js';
 import { DEFAULT_PREFERENCES, mergePreferences } from '../../src/project/preferences.js';
-import { toSendInput } from '../../src/send-options.js';
+import { toRestSendInput, toSendInput } from '../../src/send-options.js';
 import type { SendRequestInput, ToSendInputArgs } from '../../src/send-options.js';
 
 const ENVELOPE =
@@ -279,5 +279,78 @@ describe('toSendInput: TLS and HTTP/2 preferences', () => {
   it('leaves HTTP/2 unoffered by default and offers it when the preference is on', () => {
     expect(build().allowH2).toBeUndefined();
     expect(build({ preferences: mergePreferences({ http: { allowH2: true } }) }).allowH2).toBe(true);
+  });
+});
+
+describe('toRestSendInput', () => {
+  const request = {
+    method: 'GET' as const,
+    url: '/pet',
+    pathParams: [],
+    query: [],
+    headers: [],
+    body: { kind: 'none' } as const,
+    settings: {},
+  };
+
+  it('climbs request, API, project, preference for the timeout', () => {
+    const args = { request, baseUrl: 'https://h' };
+    expect(toRestSendInput(args).settings.timeoutMs).toBe(DEFAULT_PREFERENCES.http.socketTimeoutMs);
+    expect(toRestSendInput({ ...args, projectSettings: { defaultTimeoutMs: 40_000 } }).settings.timeoutMs).toBe(40_000);
+    expect(
+      toRestSendInput({ ...args, apiSettings: { timeoutMs: 20_000 }, projectSettings: { defaultTimeoutMs: 40_000 } })
+        .settings.timeoutMs,
+    ).toBe(20_000);
+    expect(
+      toRestSendInput({
+        ...args,
+        request: { ...request, settings: { timeoutMs: 1_000 } },
+        apiSettings: { timeoutMs: 20_000 },
+        projectSettings: { defaultTimeoutMs: 40_000 },
+      }).settings.timeoutMs,
+    ).toBe(1_000);
+  });
+
+  it('treats a false a request sets as a decision, not as absent', () => {
+    const settings = toRestSendInput({
+      request: { ...request, settings: { followRedirects: false } },
+      baseUrl: 'https://h',
+      apiSettings: { followRedirects: true },
+    }).settings;
+    expect(settings.followRedirects).toBe(false);
+  });
+
+  it('follows redirects by default, unlike a SOAP send', () => {
+    expect(toRestSendInput({ request, baseUrl: 'https://h' }).settings.followRedirects).toBe(true);
+  });
+
+  it('adds the host headers a request did not set, and no Accept by default', () => {
+    const headers = toRestSendInput({ request, baseUrl: 'https://h' }).defaultHeaders ?? {};
+    expect(headers['User-Agent']).toBe(DEFAULT_PREFERENCES.http.userAgent);
+    expect(headers['Accept-Encoding']).toBe('gzip, deflate, br');
+    expect(headers.Accept).toBeUndefined();
+  });
+
+  it('adds a default Accept when the preference names one', () => {
+    const preferences = mergePreferences({ rest: { defaultAccept: 'application/json' } });
+    expect((toRestSendInput({ request, baseUrl: 'https://h', preferences }).defaultHeaders ?? {}).Accept).toBe(
+      'application/json',
+    );
+  });
+
+  it('passes the TLS floor through and merges the host TLS onto it', () => {
+    const input = toRestSendInput({ request, baseUrl: 'https://h', tls: { rejectUnauthorized: false } });
+    expect(input.tls).toEqual({ minVersion: DEFAULT_PREFERENCES.ssl.minVersion, rejectUnauthorized: false });
+  });
+
+  it('carries a bind address only when it is not empty', () => {
+    expect(
+      toRestSendInput({ request: { ...request, settings: { bindAddress: '' } }, baseUrl: 'https://h' }).settings
+        .localAddress,
+    ).toBeUndefined();
+    expect(
+      toRestSendInput({ request: { ...request, settings: { bindAddress: '10.0.0.2' } }, baseUrl: 'https://h' }).settings
+        .localAddress,
+    ).toBe('10.0.0.2');
   });
 });

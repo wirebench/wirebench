@@ -15,6 +15,13 @@ export {
   type TestSoapServerTls,
   type RecordedRequest,
 } from './test-soap-server.js';
+export {
+  startTestRestServer,
+  type TestRestServer,
+  type TestRestServerOptions,
+  type TestRestServerTls,
+  type RecordedRestRequest,
+} from './test-rest-server.js';
 export { startTestProxy, type ProxiedRequest, type TestProxy, type TestProxyOptions } from './test-proxy.js';
 export { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 export {

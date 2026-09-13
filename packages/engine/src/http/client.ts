@@ -392,9 +392,14 @@ export async function sendHttp(
         await drainBody(response.body).catch(() => undefined);
 
         const nextUrl = new URL(headers['location'] ?? '', currentUrl);
+        // 303 always becomes a GET - that is what the status means. 301 and 302 do so only for a
+        // POST, which is the historical browser (and curl) behaviour RFC 9110 §15.4.3 records; a
+        // PUT or DELETE keeps its method, and `preserveMethodOnRedirect` keeps even a POST's.
         const downgrade =
           response.statusCode === 303 ||
-          ((response.statusCode === 301 || response.statusCode === 302) && currentMethod === 'POST');
+          ((response.statusCode === 301 || response.statusCode === 302) &&
+            currentMethod === 'POST' &&
+            req.preserveMethodOnRedirect !== true);
         if (downgrade) {
           currentMethod = 'GET';
           currentBody = undefined;

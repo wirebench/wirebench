@@ -1,7 +1,7 @@
 /**
  * Working out which credentials a REST request uses, and turning them into what goes on the wire.
  *
- * Two halves, both pure. {@link effectiveAuth} walks the inheritance chain — request, then each
+ * Two halves, both pure. {@link resolveAuthChain} walks the inheritance chain — request, then each
  * folder outwards, then the API — and answers with the first configuration that is not `inherit`.
  * {@link applyAuth} takes credentials the host has already resolved (values, not `secretRef`s) and
  * says what to add to the headers or the query string.
@@ -25,7 +25,7 @@ const NO_AUTH: AuthConfig = { type: 'none' };
  * nothing — is the same thing. Running out of chain means `none`: an API with no credentials
  * authenticates its requests with none, rather than with whatever a sibling API happens to use.
  */
-export function effectiveAuth(chain: readonly (AuthConfig | undefined)[]): AuthConfig {
+export function resolveAuthChain(chain: readonly (AuthConfig | undefined)[]): AuthConfig {
   for (const link of chain) {
     if (link !== undefined && link.type !== 'inherit') {
       return link;
@@ -35,7 +35,7 @@ export function effectiveAuth(chain: readonly (AuthConfig | undefined)[]): AuthC
 }
 
 /** Which link of a chain supplied the effective credentials, for the editor to explain. */
-export function effectiveAuthIndex(chain: readonly (AuthConfig | undefined)[]): number {
+export function resolveAuthChainIndex(chain: readonly (AuthConfig | undefined)[]): number {
   return chain.findIndex((link) => link !== undefined && link.type !== 'inherit');
 }
 
