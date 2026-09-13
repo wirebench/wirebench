@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { setMonacoText } from '../helpers/editor.js';
-import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
+import { killApp, launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProjectWithCalculator,
   createWorkspace,
@@ -127,8 +127,9 @@ test.describe('unsaved changes across sessions', () => {
     // Past the renderer's hand-over delay, then no clean exit at all.
     const unsavedDir = join(userDataDir, 'workspaces');
     await expect.poll(() => anyFileContains(unsavedDir, MARKER), { timeout: 15_000, intervals: [250] }).toBe(true);
-    launched.app.process().kill('SIGKILL');
+    const crashed = launched.app;
     launched = undefined;
+    await killApp(crashed);
 
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     await expectEditRestoredUnsaved(launched.window, userDataDir);

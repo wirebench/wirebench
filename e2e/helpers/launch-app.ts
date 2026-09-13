@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -31,6 +31,31 @@ export const PACKAGED_APP = process.env['WIREBENCH_PACKAGED_APP'];
  */
 export function removeDirSync(dir: string): void {
   rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+}
+
+/**
+ * Kills a launched app with no clean exit — a crash, as far as the app can tell — and waits
+ * until it is gone.
+ *
+ * A plain `SIGKILL` is not enough on win32: it ends only the main process, and the orphaned
+ * GPU/renderer/utility processes keep the `userData` directory locked, so removing it afterwards
+ * fails with `EPERM`. `taskkill /T` takes the whole tree down instead.
+ */
+export async function killApp(app: ElectronApplication): Promise<void> {
+  const child = app.process();
+  const exited = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+    } else {
+      child.once('exit', () => resolve());
+    }
+  });
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    child.kill('SIGKILL');
+  }
+  await exited;
 }
 
 /**
