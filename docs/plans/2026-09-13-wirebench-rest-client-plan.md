@@ -48,18 +48,20 @@ if still approved then.
 
 ## Progress (updated 2026-09-13)
 
-W0, W1, W2 and tasks 11–15 of W3 are done, each as its own commit on `claude/rest-support-spec-pgogjv` with
-`pnpm check` green before it. `WIREBENCH_SKIP_PERF=1` is set for those runs: the XPath 1 MB budget fails on the
-development machine even on an unmodified tree, so `pnpm test:perf` is run on CI rather than locally.
+W0 through W3 are done — the hand-built REST path works end to end — each task as its own commit on
+`claude/rest-support-spec-pgogjv` with `pnpm check` green before it. The full Playwright suite is green too (92
+tests, including the new `rest.spec.ts`), run under `xvfb-run` on this machine. `WIREBENCH_SKIP_PERF=1` is set for
+the unit gate: the XPath 1 MB budget fails on the development machine even on an unmodified tree, so `pnpm
+test:perf` is left to CI.
 
 | Wave | Tasks | State |
 | --- | --- | --- |
 | W0 format | 1, 2 | done |
 | W1 engine | 3–7 | done |
 | W2 main | 8–10 | done |
-| W3 renderer | 11–15 | done |
-| W3 renderer | 16, 17 | next |
-| W4–W6 | 18–26 | not started |
+| W3 renderer | 11–17 | done |
+| W4 openapi | 18–21 | next |
+| W5–W6 | 22–26 | not started |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -90,6 +92,21 @@ task's commit message.
   would carry server-sent bytes across the bridge and let the renderer name the target file.
 - **T15** — _View document_ and _Export…_ on the definition card are rendered disabled with a title naming the task
   that fills them in (T20), so the card's shape does not change under the user later.
+- **T16** — `rest.copyAsCurl`, `rest.importCurl`, `rest.getToken` and `rest.importOpenApi` are registered with their
+  final ids and shortcut, each reporting which task fills it in, so no shortcut moves under the user when those tasks
+  land. `EffectiveEndpointSource` gains an `api` member: an API's own base URL is the same rung an interface's declared
+  address is, named apart so the endpoints table can say which kind of row it is.
+- **T17** — the spec covers everything §14 asks of the hand-built path except a REST **resend and diff** from history:
+  `history.resend` rebuilds a SOAP send from a recorded entry, and no task in this plan teaches it the REST shape. It
+  needs a task of its own (main: dispatch `history.resend` on `HistoryEntry.kind` and rebuild a `RestSendInput` from
+  the recorded method, URL, headers and body). The plan is otherwise complete on this wave.
+
+**Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
+suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
+failed `unknown-entity`); a REST tab sized its panel from its content, collapsing the body editor to five pixels;
+`Mod+Enter` did nothing with the caret in Monaco; an unsaved REST edit did not survive a relaunch, because the drafts
+stash carried only SOAP patches; and `Mod+S` after a rename wrote nothing, on **both** protocols, because the rename
+reaches main unstaged and a clean request stopped the save there.
 
 ## Order & rationale
 
@@ -416,7 +433,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- api-tab method-badge`; `pnpm contrast:check`
   - Files: apps/desktop/src/renderer/features/rest-api/{api-tab,method-badge,api-actions}.tsx, apps/desktop/src/renderer/state/{editors,workspace-tabs}.ts, apps/desktop/src/renderer/shell/editor-area.tsx, apps/desktop/src/renderer/styles/tokens.css, apps/desktop/test/renderer/{api-tab,method-badge}.test.tsx
 
-- [ ] **16. History, search, environments rows, code slide-over, preferences, commands**
+- [x] **16. History, search, environments rows, code slide-over, preferences, commands**
   - `history-view.tsx` method-badge column for `kind: rest` rows and the SOAP version for others; `history-entry-view`
     opens the response pane read-only; `diff-view` pretty-prints both sides when both are JSON or XML; search results
     with a badge; `endpoints-table.tsx` gains API rows under each project (§3.8) using the same `environment-endpoint`
@@ -431,7 +448,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run --project desktop -- history-view diff-view endpoints-table endpoint-override code-panel preferences-editor commands keybindings`
   - Files: apps/desktop/src/renderer/features/history/{history-view,history-entry-view,diff-view}.tsx, apps/desktop/src/renderer/features/search/\*\*, apps/desktop/src/renderer/features/environments/endpoints-table.tsx, apps/desktop/src/renderer/state/{endpoint-override,preferences-defaults,preferences}.ts, apps/desktop/src/renderer/shell/code-panel.tsx, apps/desktop/src/renderer/features/preferences/\*\*, apps/desktop/src/shared/commands.ts, apps/desktop/src/renderer/commands/{register-request-commands,register-explorer-commands,register-history-commands}.ts, apps/desktop/test/renderer/{history-view,diff-view,endpoints-table,endpoint-override,code-panel,preferences-editor,commands,keybindings}.test.ts(x)
 
-- [ ] **17. e2e `rest.spec.ts`**
+- [x] **17. e2e `rest.spec.ts`**
   - `e2e/helpers/rest.ts` (names block) and `e2e/helpers/test-server.ts` re-exporting `startTestRestServer`;
     `rest.spec.ts`: new API with the test server as base URL → new request `GET /echo?x=1` with a header → send →
     status 200, pretty JSON containing the header and query → Headers, Cookies (after `/cookies/set`), Redirects
