@@ -583,6 +583,35 @@ export const definitionCacheManifestSchema = z.looseObject({
   documents: z.array(definitionCacheDocumentSchema),
 });
 
+/** One entry of `apis/<slug>/definition/manifest.yaml`. */
+const apiDefinitionCacheDocumentSchema = z.looseObject({
+  file: nonEmpty,
+  location: nonEmpty,
+  requestedLocation: z.string().optional(),
+  sha256: nonEmpty,
+  bytes: z.number().int().nonnegative(),
+});
+
+/**
+ * `apis/<slug>/definition/manifest.yaml`. Its own schema rather than the WSDL one because an
+ * OpenAPI document has no `kind`, `namespace` or `importedBy` to record — a JSON or YAML file
+ * references its siblings by location and nothing else.
+ */
+export const apiDefinitionCacheManifestSchema = z.looseObject({
+  formatVersion: z.literal(1),
+  rootLocation: nonEmpty,
+  fetchedAt: nonEmpty,
+  /** The `openapi` string the root document declared, so the API tab can show it without parsing. */
+  declaredVersion: z.string().optional(),
+  documents: z.array(apiDefinitionCacheDocumentSchema),
+});
+
+/** The API definition cache manifest as persisted. */
+export type ApiDefinitionCacheManifest = z.infer<typeof apiDefinitionCacheManifestSchema>;
+
+/** One document of an API definition cache, as the manifest records it. */
+export type ApiDefinitionCacheDocument = z.infer<typeof apiDefinitionCacheDocumentSchema>;
+
 /** The definition cache manifest as persisted. */
 export type DefinitionCacheManifest = z.infer<typeof definitionCacheManifestSchema>;
 /** One document entry inside a definition cache manifest. */

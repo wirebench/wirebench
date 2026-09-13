@@ -1,14 +1,17 @@
 /**
- * Reading an OpenAPI document from wherever the user pointed at, resolved and parsed.
+ * Reading an OpenAPI document from wherever the user pointed at, and turning it into an API.
  *
- * The mapping onto an API, its folders and its requests is a separate step (the import task), so
- * this module's job ends at "a document this client understands, plus every file it was made of".
- * Those files are what the definition cache stores, byte for byte, which is what lets the API tab
- * export exactly what was imported.
+ * Two steps, kept apart on purpose. {@link parseOpenApi} answers "a document this client
+ * understands, plus every file it was made of" — those files are what the definition cache stores,
+ * byte for byte, which is what lets the API tab export exactly what was imported. {@link
+ * importOpenApi} then adds the mapping from `map.ts`, so a caller that already has the text (a
+ * re-import from the cache, a test) can do either half on its own.
  */
 
 import { OpenApiError } from '../../errors.js';
 import type { FetchDocument } from '../../wsdl/resolver.js';
+import type { MapApiOptions, MappedApi } from './map.js';
+import { apiFromDocument } from './map.js';
 import type { OpenApiDocument } from './model.js';
 import { parseOpenApiDocument } from './parse.js';
 import { resolveRefs, type RefProblem, type ResolvedDocument } from './refs.js';
@@ -90,5 +93,46 @@ export async function parseOpenApi(source: OpenApiSource, options: ParseOpenApiO
     document: parseOpenApiDocument(resolved.document),
     documents: resolved.documents,
     refProblems: resolved.problems,
+  };
+}
+
+/** Options for {@link importOpenApi}: how to fetch, and how to map what was fetched. */
+export interface ImportOpenApiOptions extends ParseOpenApiOptions, MapApiOptions {}
+
+/** An imported API, every document it was made of, and what the mapping could not use. */
+export interface ImportedOpenApi extends MappedApi {
+  /** Every file fetched, root first — what the definition cache stores. */
+  readonly documents: readonly ResolvedDocument[];
+  /** References that could not be followed. They appear in the summary as skipped items too. */
+  readonly refProblems: readonly RefProblem[];
+  /** The document itself, for a caller that wants to offer a choice and map again. */
+  readonly document: OpenApiDocument;
+}
+
+/**
+ * Fetches, resolves, parses and maps one OpenAPI document into an API.
+ *
+ * A reference that could not be followed is reported, never fatal: the import produces the API the
+ * document does describe, and the summary says what was missing from it.
+ *
+ * @throws OpenApiError the codes {@link parseOpenApi} throws; an `AbortError` when the signal fires
+ */
+export async function importOpenApi(source: OpenApiSource, options: ImportOpenApiOptions): Promise<ImportedOpenApi> {
+  const parsed = await parseOpenApi(source, options);
+  const mapped = apiFromDocument(parsed.document, options);
+  const skipped = [
+    ...mapped.summary.skipped,
+    ...parsed.refProblems.map((problem) => ({
+      kind: 'reference',
+      where: problem.at,
+      reason: `${problem.ref}: ${problem.reason}`,
+    })),
+  ];
+  return {
+    api: mapped.api,
+    summary: { ...mapped.summary, skipped },
+    documents: parsed.documents,
+    refProblems: parsed.refProblems,
+    document: parsed.document,
   };
 }

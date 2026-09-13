@@ -339,7 +339,16 @@ export { decodeRestResponse, sendRest } from './rest/send.js';
 export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
-export { parseOpenApi } from './rest/openapi/import.js';
+export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
+export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
+export { apiFromDocument, authFromScheme } from './rest/openapi/map.js';
+export type { MapApiOptions, MappedApi, OpenApiImportSummary } from './rest/openapi/map.js';
+export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
+export type {
+  ApiDefinitionCacheOptions,
+  CachedApiDefinition,
+  WriteApiDefinitionCacheOptions,
+} from './rest/openapi/cache.js';
 export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/openapi/import.js';
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
@@ -433,6 +442,7 @@ export {
   parseFile,
   requestFileSchema,
   restBodySchema,
+  apiDefinitionCacheManifestSchema,
   restFolderFileSchema,
   restRequestFileSchema,
   wssIncomingFileSchema,
@@ -440,6 +450,8 @@ export {
   wssOutgoingFileSchema,
 } from './project/schema.js';
 export type {
+  ApiDefinitionCacheDocument,
+  ApiDefinitionCacheManifest,
   ApiFile,
   DefinitionCacheDocument,
   DefinitionCacheManifest,

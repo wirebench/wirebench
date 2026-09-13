@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
+import { importOpenApi, parseOpenApi } from '../../../../src/rest/openapi/import.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));
@@ -123,5 +123,41 @@ describe('parseOpenApi', () => {
         { fetchDocument: fetch, signal: controller.signal },
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('importOpenApi', () => {
+  it('hands back the API, every document it was made of, and what it could not use', async () => {
+    const fetch = fileFetcher();
+
+    const imported = await importOpenApi(
+      { kind: 'file', path: pathToFileURL(`${craftedDir}refs/openapi.yaml`).href },
+      { fetchDocument: fetch, name: 'Refs API' },
+    );
+
+    expect(imported.api.name).toBe('Refs API');
+    expect(imported.documents).toHaveLength(3);
+    // A reference that could not be followed is reported, never fatal: the import is the API the
+    // document does describe.
+    expect(imported.summary.skipped).toContainEqual({
+      kind: 'reference',
+      where: '/paths/~1broken/get/parameters/0',
+      reason: '#/components/parameters/DoesNotExist: nothing at that location',
+    });
+    expect(imported.summary.requests).toBe(2);
+  });
+
+  it('maps a referenced body and parameter as if they had been written inline', async () => {
+    const imported = await importOpenApi(
+      { kind: 'file', path: pathToFileURL(`${craftedDir}refs/openapi.yaml`).href },
+      { fetchDocument: fileFetcher() },
+    );
+
+    const request = imported.api.folders
+      .flatMap((folder) => folder.requests)
+      .find((candidate) => candidate.name === 'createPet');
+    expect(request?.headers).toEqual([{ name: 'X-Trace', value: 'local-ref', enabled: false }]);
+    expect(request?.query.map((row) => row.name)).toEqual(['pageSize']);
+    expect(request?.body.kind).toBe('raw');
   });
 });
