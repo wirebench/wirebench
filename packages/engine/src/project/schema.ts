@@ -47,6 +47,86 @@ export const endpointAuthSchema = z
     path: ['password'],
   });
 
+/**
+ * Keys that would hold a credential *value* rather than a reference to one. A project file must
+ * never carry one, in any authentication scheme, so they are rejected outright rather than
+ * ignored — the same rule `endpointAuthSchema` applies to `password`, stated once for the
+ * schemes added with the REST client (ADR-0004).
+ */
+const PLAINTEXT_SECRET_KEYS = [
+  'password',
+  'token',
+  'secret',
+  'clientSecret',
+  'client_secret',
+  'apiKey',
+  'refreshToken',
+];
+
+/** Adds the {@link PLAINTEXT_SECRET_KEYS} rejection to one authentication schema. */
+function refuseSecretValues<T extends z.ZodType<Record<string, unknown>>>(schema: T) {
+  return schema.superRefine((value, ctx) => {
+    for (const key of PLAINTEXT_SECRET_KEYS) {
+      if (key in value) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `auth must not contain a plaintext "${key}" field; use a secretRef`,
+        });
+      }
+    }
+  });
+}
+
+const inheritAuthSchema = z.looseObject({ type: z.literal('inherit') });
+
+const bearerAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('bearer'),
+    tokenRef: z.string().optional(),
+    scheme: z.string().optional(),
+  }),
+);
+
+const apiKeyAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('api-key'),
+    name: z.string(),
+    valueRef: z.string().optional(),
+    in: z.enum(['header', 'query']),
+  }),
+);
+
+const oauth2AuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('oauth2'),
+    grant: z.enum(['client-credentials', 'authorization-code']),
+    tokenUrl: z.string(),
+    authorizationUrl: z.string().optional(),
+    clientId: z.string(),
+    clientSecretRef: z.string().optional(),
+    scopes: z.array(z.string()).default([]),
+    audience: z.string().optional(),
+    clientAuth: z.enum(['basic', 'body']).default('basic'),
+    pkce: z.boolean().default(true),
+    refreshTokenRef: z.string().optional(),
+  }),
+);
+
+/**
+ * Authentication as persisted anywhere a project configures it. `endpointAuthSchema` is one arm,
+ * so a file written before the REST client — which only ever held `none`/`basic`/`ntlm` — parses
+ * unchanged. `inherit` is accepted here and rejected by the SOAP schemas that reuse
+ * `endpointAuthSchema` instead, since an interface has nothing to inherit from.
+ */
+export const authConfigSchema = z.union([
+  endpointAuthSchema,
+  inheritAuthSchema,
+  bearerAuthSchema,
+  apiKeyAuthSchema,
+  oauth2AuthSchema,
+]);
+
 const endpointSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),

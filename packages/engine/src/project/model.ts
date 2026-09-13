@@ -24,6 +24,15 @@ export const FORMAT_VERSION = 2;
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
 
+/**
+ * Every authentication scheme a request, endpoint, interface, API or folder can carry.
+ *
+ * `inherit` is valid only where there is something to inherit from — a REST request or folder,
+ * which walks its folder chain up to its API. A SOAP interface, endpoint or request uses
+ * {@link EndpointAuth}, the subset without it.
+ */
+export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2';
+
 /** How a request or endpoint authenticates. Passwords are always `secretRef`s, never values. */
 export interface EndpointAuth {
   readonly type: 'none' | 'basic' | 'ntlm';
@@ -37,6 +46,82 @@ export interface EndpointAuth {
   /** Send the Authorization header without waiting for a 401 challenge. */
   readonly preemptive?: boolean;
 }
+
+/**
+ * "Whatever the thing above me uses." Only a REST request or folder may say this; resolution
+ * walks request → folder chain → API and takes the first configuration that is not `inherit`
+ * (see `rest/auth.ts`).
+ */
+export interface InheritAuth {
+  readonly type: 'inherit';
+}
+
+/** A token sent as `Authorization: <scheme> <token>`. The token itself is always a `secretRef`. */
+export interface BearerAuth {
+  readonly type: 'bearer';
+  /** Opaque reference into the OS-keychain-backed secret store. Never a token value. */
+  readonly tokenRef?: string;
+  /** Authentication scheme placed before the token. Defaults to `Bearer`. */
+  readonly scheme?: string;
+}
+
+/** A key sent as one header or one query parameter. The value is always a `secretRef`. */
+export interface ApiKeyAuth {
+  readonly type: 'api-key';
+  /** Header or query-parameter name, e.g. `X-Api-Key`. */
+  readonly name: string;
+  /** Opaque reference into the OS-keychain-backed secret store. Never a key value. */
+  readonly valueRef?: string;
+  readonly in: 'header' | 'query';
+}
+
+/**
+ * OAuth2, as much of it as a client needs to obtain a token: the two grants that suit a desktop
+ * tool (client credentials for machine-to-machine, authorization code with PKCE for a user
+ * sign-in). Access tokens are never persisted — they live in the host's memory for the session —
+ * so the only secrets here are the client secret and, if the user opts in, a refresh token.
+ */
+export interface OAuth2Auth {
+  readonly type: 'oauth2';
+  readonly grant: 'client-credentials' | 'authorization-code';
+  /** Token endpoint. Property expansion applies. */
+  readonly tokenUrl: string;
+  /** Authorization endpoint; required for, and only used by, the authorization-code grant. */
+  readonly authorizationUrl?: string;
+  readonly clientId: string;
+  /** Opaque reference into the OS-keychain-backed secret store. Never a secret value. */
+  readonly clientSecretRef?: string;
+  readonly scopes: readonly string[];
+  readonly audience?: string;
+  /** Whether the client credentials go in an `Authorization: Basic` header or the request body. */
+  readonly clientAuth: 'basic' | 'body';
+  /** Proof Key for Code Exchange (RFC 7636); authorization-code only, on by default. */
+  readonly pkce: boolean;
+  /**
+   * Set only when the user asked for the refresh token to be remembered: like every other
+   * credential it is then a keychain reference, never a value (ADR-0004).
+   */
+  readonly refreshTokenRef?: string;
+}
+
+/**
+ * Authentication as configured anywhere in a project. A discriminated union on `type`, of which
+ * {@link EndpointAuth} — the `none`/`basic`/`ntlm` member SOAP has always had — is one arm, so a
+ * SOAP endpoint's credentials are already an `AuthConfig` and the same editor serves both
+ * protocols.
+ */
+export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth;
+
+/** The OAuth2 fields a freshly configured entry starts with. */
+export const DEFAULT_OAUTH2_AUTH: OAuth2Auth = Object.freeze({
+  type: 'oauth2',
+  grant: 'client-credentials',
+  tokenUrl: '',
+  clientId: '',
+  scopes: Object.freeze([]),
+  clientAuth: 'basic',
+  pkce: true,
+});
 
 /** One addressable endpoint (URL + optional credentials) of an interface. */
 export interface Endpoint {

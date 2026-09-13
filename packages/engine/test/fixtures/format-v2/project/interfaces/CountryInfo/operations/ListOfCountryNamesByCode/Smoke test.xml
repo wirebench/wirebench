@@ -1,0 +1,5 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <tns:Ping xmlns:tns="urn:demo">1</tns:Ping> 
+  </soapenv:Body>
+</soapenv:Envelope>

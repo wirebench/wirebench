@@ -1,0 +1,34 @@
+auth:
+  domain: CORP
+  passwordRef: secret://orders/ntlm
+  type: ntlm
+  username: corp-svc
+cacheDefinition: false
+defaultEndpointId: EP-orders
+definitionUrl: https://example.test/orders?wsdl
+endpoints:
+  - auth:
+      passwordRef: secret://orders/staging
+      preemptive: true
+      type: basic
+      username: svc
+    authMode: override
+    id: EP-orders
+    name: staging
+    url: https://staging.example.test/orders
+id: ID0006
+kind: soap
+name: "Orders: v2/legacy?"
+operations:
+  - bindingName: "{urn:orders}OrdersSoap12"
+    name: PlaceOrder
+    order: 0
+    slug: PlaceOrder
+order: 1
+wsa:
+  addDefaultAction: true
+  addDefaultTo: true
+  enabled: true
+  generateMessageId: true
+  mustUnderstand: none
+  version: 2004/08

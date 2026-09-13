@@ -6,7 +6,7 @@
  * touching a file system.
  */
 
-import type { Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
+import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
 import {
   assertPathSegment,
   assertWssRelativePath,
@@ -39,6 +39,18 @@ function disabledList(disabled: readonly string[], properties: PropertyMap): rea
   return kept.length > 0 ? kept : undefined;
 }
 
+/**
+ * One authentication configuration as written: its own fields only, in the schema's spelling,
+ * with absent optionals and an empty scope list dropped. Every scheme's secret is a reference,
+ * so there is nothing here to redact — the values live in the keychain (ADR-0004).
+ */
+export function authDocument(auth: AuthConfig): Record<string, unknown> {
+  if (auth.type === 'oauth2') {
+    return compact({ ...auth, scopes: auth.scopes.length > 0 ? [...auth.scopes] : undefined });
+  }
+  return compact({ ...auth });
+}
+
 function requestDocument(request: RequestDef): Record<string, unknown> {
   return compact({
     kind: request.kind,
@@ -52,7 +64,7 @@ function requestDocument(request: RequestDef): Record<string, unknown> {
     soapAction: request.soapAction,
     headers: request.headers.map((h) => ({ name: h.name, value: h.value })),
     attachments: request.attachments.map((a) => compact({ ...a })),
-    auth: request.auth === undefined ? undefined : compact({ ...request.auth }),
+    auth: request.auth === undefined ? undefined : authDocument(request.auth),
     wsa: request.wsa === undefined ? undefined : compact({ ...request.wsa }),
     wssOutgoingRef: request.wssOutgoingRef,
     wssIncomingRef: request.wssIncomingRef,
@@ -71,11 +83,11 @@ function interfaceDocument(iface: Interface): Record<string, unknown> {
     cacheDefinition: iface.cacheDefinition,
     targetNamespace: iface.targetNamespace,
     endpoints: iface.endpoints.map((e) =>
-      compact({ ...e, auth: e.auth === undefined ? undefined : compact({ ...e.auth }) }),
+      compact({ ...e, auth: e.auth === undefined ? undefined : authDocument(e.auth) }),
     ),
     defaultEndpointId: iface.defaultEndpointId,
     wsa: compact({ ...iface.wsa }),
-    auth: iface.auth === undefined ? undefined : compact({ ...iface.auth }),
+    auth: iface.auth === undefined ? undefined : authDocument(iface.auth),
     operations: iface.operations.map((op) => ({
       name: op.name,
       bindingName: op.bindingName,
