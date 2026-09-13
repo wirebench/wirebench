@@ -6,4 +6,4 @@
  * desktop app itself.
  */
 export { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
-export { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
+export { startTestRestServer, type TestRestServer, type TestRestServerDocument } from '@wirebench/engine/test-helpers';

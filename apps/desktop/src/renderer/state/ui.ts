@@ -52,6 +52,8 @@ export interface UiStore extends UiSnapshot {
   readonly selection: Selection | undefined;
   /** Whether the Import WSDL dialog is open. Transient — never persisted. */
   readonly importDialogOpen: boolean;
+  /** Whether the Import OpenAPI dialog is open. Its own flag: the two dialogs share no state. */
+  readonly importOpenApiDialogOpen: boolean;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
@@ -74,6 +76,7 @@ export interface UiStore extends UiSnapshot {
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
+  readonly setImportOpenApiDialogOpen: (open: boolean) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
@@ -156,6 +159,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     ...DEFAULT_UI_STATE,
     selection: undefined,
     importDialogOpen: false,
+    importOpenApiDialogOpen: false,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
@@ -172,6 +176,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     openImportDialog: () => {
       set({ importDialogOpen: true });
+    },
+    setImportOpenApiDialogOpen: (open) => {
+      set({ importOpenApiDialogOpen: open });
     },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });

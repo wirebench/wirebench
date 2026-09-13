@@ -60,8 +60,9 @@ test:perf` is left to CI.
 | W1 engine | 3–7 | done |
 | W2 main | 8–10 | done |
 | W3 renderer | 11–17 | done |
-| W4 openapi | 18–21 | 18, 19, 20 done; 21 next |
-| W5–W6 | 22–26 | not started |
+| W4 openapi | 18–21 | done |
+| W5 auth ui | 22 | next |
+| W6 round-out | 23–26 | not started |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -124,6 +125,17 @@ task's commit message.
   security scheme type (MIT). `train-travel` was passed over as CC BY-NC-SA and `star-trek` as unlicensed. The goldens
   in `public.test.ts` caught one real-document behaviour the crafted set could not: a scheme this client cannot map is
   met once per operation naming it, so the summary now dedupes its notes.
+
+- **T21** — the security-scheme choice is on the import summary rather than before the import, and that is the one real
+  departure from §3.6. Which schemes a document declares is only known once it has been read, so offering the choice up
+  front needs either a second fetch of the whole document or a stateful two-phase channel; instead the import applies
+  the document's own default (a single global `security` requirement), and the summary lists every scheme with what
+  picking it would set — computed by the engine (`mapScheme`), so switching is an ordinary `update-api` edit and the
+  renderer never has to know how a scheme becomes credentials. `authFromScheme` was split from `mapScheme` for this:
+  asking what a scheme would become must not record it as skipped. The API tab's definition card reads only the cache
+  main wrote, never the network: an API imported without caching says so instead of offering a button that would go
+  fetch. The test REST server gained a static-`documents` route (read live, so a document can name the very port it is
+  served from), which is what lets an e2e import fetch over HTTP like any other client.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -534,7 +546,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run packages/engine/test/unit/rest/openapi/import apps/desktop/test/ipc-api`
   - Files: packages/engine/src/rest/openapi/{import,cache}.ts, packages/engine/src/index.ts, apps/desktop/src/main/ipc/{api,register}.ts, apps/desktop/src/main/{project-host,project-router,workspace-service}.ts, packages/engine/test/unit/rest/openapi/import.test.ts, apps/desktop/test/ipc-api.test.ts, fixtures/openapi/public/\*\*, scripts/fixtures-refresh.ts
 
-- [ ] **21. Import dialog, definition viewer, e2e**
+- [x] **21. Import dialog, definition viewer, e2e**
   - `features/explorer/import-openapi-dialog.tsx` (`import-openapi-dialog`: URL or file — the file through
     `dialogs.openFile` — target project, name, cache checkbox, the security scheme choice when the document offers
     several, progress and cancel, then `import-openapi-summary` listing created folders/requests and skipped items);

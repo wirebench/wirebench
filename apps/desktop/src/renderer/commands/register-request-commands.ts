@@ -14,6 +14,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
+import { useUiStore } from '../state/ui.js';
 import { activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
 
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
@@ -244,7 +245,9 @@ export function registerRequestCommands(): void {
     label: 'REST: Import OpenAPI…',
     category: 'Definition',
     shortcut: 'Mod+Shift+I',
-    run: notYet('Importing an OpenAPI document'),
+    run: () => {
+      useUiStore.getState().setImportOpenApiDialogOpen(true);
+    },
   });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.

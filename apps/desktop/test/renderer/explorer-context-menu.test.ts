@@ -24,6 +24,7 @@ describe('explorerMenuItems', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'Import OpenAPI…',
       'New API…',
       'Settings…',
       REVEAL,
@@ -41,6 +42,7 @@ describe('explorerMenuItems', () => {
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'Import OpenAPI…',
       'New API…',
       'Settings…',
       'Project environments (linked project)',
@@ -113,7 +115,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api'],
+      ['import', 'import-openapi', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
       ['rename', 'remove'],
@@ -128,6 +130,16 @@ describe('explorerMenuItems', () => {
 
     expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
     expect(useUiStore.getState().importDialogOpen).toBe(true);
+  });
+
+  it('Import OpenAPI… does the same for its own dialog', () => {
+    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    items.find((item) => item.label === 'Import OpenAPI…')?.run();
+
+    expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
+    expect(useUiStore.getState().importOpenApiDialogOpen).toBe(true);
+    // The two dialogs are independent: opening one must not open the other.
+    expect(useUiStore.getState().importDialogOpen).toBe(false);
   });
 
   it('Remove from workspace only opens the confirmation', () => {

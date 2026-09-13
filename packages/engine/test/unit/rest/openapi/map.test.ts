@@ -265,4 +265,44 @@ describe('apiFromDocument', () => {
     // `includeOptional` reaches the generated body: the optional `note` is there to be edited.
     expect(sample?.body).toEqual({ kind: 'raw', language: 'json', text: '{\n  "id": 0,\n  "note": ""\n}' });
   });
+
+  it('lists every scheme the document declares as a candidate, mappable or not', async () => {
+    const { summary } = await mapped('security');
+
+    const byName = new Map(summary.securitySchemes.map((scheme) => [scheme.name, scheme]));
+    expect([...byName.keys()]).toEqual([
+      'bearerAuth',
+      'basicAuth',
+      'apiKeyHeader',
+      'apiKeyQuery',
+      'apiKeyCookie',
+      'oauthClient',
+      'oauthCode',
+      'openId',
+    ]);
+    // The one the import applied is marked, so the dialog can show what is already in force.
+    expect(byName.get('bearerAuth')).toEqual({
+      name: 'bearerAuth',
+      type: 'http',
+      auth: { type: 'bearer' },
+      applied: true,
+    });
+    expect(byName.get('apiKeyHeader')?.auth).toEqual({ type: 'api-key', name: 'X-Api-Key', in: 'header' });
+    expect(byName.get('oauthCode')?.auth).toMatchObject({ type: 'oauth2', grant: 'authorization-code' });
+    // A scheme with no equivalent is listed with its reason rather than left out unexplained.
+    expect(byName.get('apiKeyCookie')).toEqual({
+      name: 'apiKeyCookie',
+      type: 'apiKey',
+      reason: 'An API key in a cookie is not supported',
+      applied: false,
+    });
+    expect(byName.get('openId')?.reason).toBe('Security scheme type "openIdConnect" is not supported');
+  });
+
+  it('asking what a scheme would become never records it as skipped', async () => {
+    // Only a scheme the import actually needed is a skipped item; the candidate list is a question.
+    const { summary } = await mapped('security');
+
+    expect(summary.skipped.filter((entry) => entry.kind === 'security-scheme')).toEqual([]);
+  });
 });

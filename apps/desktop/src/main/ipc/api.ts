@@ -17,6 +17,7 @@ import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import { checkedImportSource } from '../path-access.js';
+import { toAuthConfigWire } from '../project-wire.js';
 import type { ProjectRouter } from '../project-router.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
@@ -85,6 +86,16 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     const summary = {
       ...imported.summary,
       servers: imported.summary.servers.map((server) => ({ ...server })),
+      securitySchemes: imported.summary.securitySchemes.map((scheme) => ({
+        name: scheme.name,
+        type: scheme.type,
+        applied: scheme.applied,
+        ...(scheme.description !== undefined ? { description: scheme.description } : {}),
+        ...(scheme.reason !== undefined ? { reason: scheme.reason } : {}),
+        // Flattened here rather than spread with the rest, so the field carries the wire shape
+        // alone: a spread would leave the engine's own union in the type beside it.
+        ...(scheme.auth !== undefined ? { auth: toAuthConfigWire(scheme.auth) } : {}),
+      })),
       skipped: imported.summary.skipped.map((entry) => ({ ...entry })),
     };
     const place = {

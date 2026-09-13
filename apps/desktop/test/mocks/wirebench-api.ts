@@ -30,6 +30,13 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
   const defaults: Record<string, unknown> = {
     app: { version: fail('app.version'), registerMenu: vi.fn().mockResolvedValue({ ok: true, value: { items: 0 } }) },
     search: { query: vi.fn().mockResolvedValue({ ok: true, value: { matches: [], truncated: false } }) },
+    api: {
+      importOpenApi: fail('api.importOpenApi'),
+      cancelImport: fail('api.cancelImport'),
+      definitionDocuments: fail('api.definitionDocuments'),
+      definitionText: fail('api.definitionText'),
+      exportDefinition: fail('api.exportDefinition'),
+    },
     definition: {
       import: fail('definition.import'),
       close: fail('definition.close'),

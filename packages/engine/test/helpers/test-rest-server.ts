@@ -30,9 +30,28 @@ export interface TestRestServerTls {
   readonly requestCert?: boolean;
 }
 
+/** One document the server serves verbatim at a path of its own. */
+export interface TestRestServerDocument {
+  readonly body: string;
+  /** Defaults to `application/octet-stream`, so a served document is never sniffed by accident. */
+  readonly contentType?: string;
+}
+
 /** Options for {@link startTestRestServer}. */
 export interface TestRestServerOptions {
   readonly tls?: TestRestServerTls;
+  /**
+   * Static documents by pathname, e.g. `{ '/openapi.yaml': { body, contentType: 'application/yaml' } }`.
+   *
+   * Served before every built-in route, so a document may take any path. Here because an OpenAPI
+   * import has to fetch a document over HTTP like any other client, and a fixture on disk cannot
+   * answer that; the alternative would be a second server in every spec that needs one.
+   *
+   * Read on every request rather than copied at startup, so a caller may pass an object it fills in
+   * afterwards. That is what lets a document name the very server serving it: start the server, then
+   * add the document with the URL it just learned.
+   */
+  readonly documents?: Record<string, TestRestServerDocument>;
   /** Credentials `/auth/basic` accepts. Default `u` / `p`. */
   readonly basic?: { readonly username: string; readonly password: string };
   /** Token `/auth/bearer` accepts. Default `good-token`. */
@@ -121,6 +140,17 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
 
       const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
       const path = url.pathname;
+
+      const document = options.documents?.[path];
+      if (document !== undefined) {
+        const bytes = Buffer.from(document.body, 'utf8');
+        response.writeHead(200, {
+          'content-type': document.contentType ?? 'application/octet-stream',
+          'content-length': String(bytes.byteLength),
+        });
+        response.end(bytes);
+        return;
+      }
 
       if (path === '/echo') {
         sendJson(response, 200, {

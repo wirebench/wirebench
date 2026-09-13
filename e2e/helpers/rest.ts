@@ -110,3 +110,47 @@ export async function openResponseTab(page: Page, tab: string): Promise<void> {
 export async function saveRequest(page: Page): Promise<void> {
   await page.keyboard.press(`${MOD}+s`);
 }
+
+/**
+ * Opens the Import OpenAPI dialog from the selected project's context menu, so the import lands in
+ * that project rather than in one the dialog invented.
+ */
+export async function openImportOpenApi(page: Page): Promise<void> {
+  const projectRow = page.getByTestId('explorer-project-row').first();
+  await expect(projectRow).toBeVisible({ timeout: 20_000 });
+  await projectRow.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Import OpenAPI…' }).click();
+  await expect(page.getByTestId('import-openapi-dialog')).toBeVisible({ timeout: 20_000 });
+}
+
+/** Imports a document by URL and dismisses the summary, leaving the new API in the explorer. */
+export async function importOpenApiByUrl(page: Page, url: string): Promise<void> {
+  await openImportOpenApi(page);
+  await page.getByTestId('import-openapi-url').fill(url);
+  await page.getByTestId('import-openapi-submit').click();
+  await expect(page.getByTestId('import-openapi-summary')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('import-openapi-done').click();
+  await expect(page.getByTestId('import-openapi-dialog')).toBeHidden();
+}
+
+/**
+ * A row whose name is exactly `name`, not merely contains it.
+ *
+ * An imported tree has folders called `json`, `json-sample` and `prefers-json` at once, so a
+ * substring match resolves to four rows. The row's own text is no help either — a request row reads
+ * `POSTJSON with an example`, badge and label run together — so the match is made against the label
+ * element itself, whose text is the name and nothing else.
+ */
+function rowNamed(page: Page, testId: string, name: string): Locator {
+  return page.getByTestId(testId).filter({ has: page.getByText(name, { exact: true }) });
+}
+
+/** The explorer row for one folder, by its exact name. */
+export function folderRow(page: Page, name: string): Locator {
+  return rowNamed(page, 'folder-row', name);
+}
+
+/** The explorer row for one imported REST request, by its exact name. */
+export function restRequestRow(page: Page, name: string): Locator {
+  return rowNamed(page, 'rest-request-row', name);
+}

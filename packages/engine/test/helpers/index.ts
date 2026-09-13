@@ -18,6 +18,7 @@ export {
 export {
   startTestRestServer,
   type TestRestServer,
+  type TestRestServerDocument,
   type TestRestServerOptions,
   type TestRestServerTls,
   type RecordedRestRequest,

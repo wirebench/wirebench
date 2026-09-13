@@ -341,8 +341,8 @@ export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuer
 // OpenAPI: reading a description into the model an import maps onto an API.
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { apiFromDocument, authFromScheme } from './rest/openapi/map.js';
-export type { MapApiOptions, MappedApi, OpenApiImportSummary } from './rest/openapi/map.js';
+export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
+export type { MapApiOptions, MappedApi, OpenApiImportSummary, OpenApiSchemeCandidate } from './rest/openapi/map.js';
 export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
 export type {
   ApiDefinitionCacheOptions,

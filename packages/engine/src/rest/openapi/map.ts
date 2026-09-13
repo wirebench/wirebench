@@ -64,6 +64,24 @@ export interface MapApiOptions {
   readonly definition?: RestDefinitionRef;
 }
 
+/**
+ * One security scheme the document declares, as a candidate for the API's own credentials.
+ *
+ * Every scheme is listed, mappable or not, because the import dialog offers the choice and a
+ * scheme it cannot use has to say so rather than be missing from the list without explanation.
+ */
+export interface OpenApiSchemeCandidate {
+  readonly name: string;
+  readonly type: OpenApiSecurityScheme['type'];
+  readonly description?: string;
+  /** What picking it would set. Absent when this client has no equivalent for it. */
+  readonly auth?: AuthConfig;
+  /** Why it cannot be used, when {@link auth} is absent. */
+  readonly reason?: string;
+  /** True for the scheme the import already applied to the API. */
+  readonly applied: boolean;
+}
+
 /** What an import did, for the summary the dialog shows when it finishes. */
 export interface OpenApiImportSummary {
   /** The API's name, after {@link MapApiOptions.name} had its say. */
@@ -80,6 +98,8 @@ export interface OpenApiImportSummary {
   readonly deprecated: number;
   /** The auth the API ended up with, by type, when it got any. */
   readonly auth?: AuthConfig['type'];
+  /** Every scheme the document declares, so the dialog can offer a different one. */
+  readonly securitySchemes: readonly OpenApiSchemeCandidate[];
   /** Everything the parser and the mapping could not use, in the order it was met. */
   readonly skipped: readonly OpenApiSkipped[];
 }
@@ -301,49 +321,67 @@ function bodyOf(operation: OpenApiOperation, options: MapApiOptions, skipped: Op
   };
 }
 
-/** The credentials one security scheme maps to, or `undefined` with a note when none does. */
-export function authFromScheme(scheme: OpenApiSecurityScheme, skipped: OpenApiSkipped[]): AuthConfig | undefined {
-  const note = (reason: string): undefined => {
-    skipped.push({ kind: 'security-scheme', where: scheme.name, reason });
-    return undefined;
-  };
+/**
+ * The credentials one security scheme maps to, or the reason none does.
+ *
+ * Separate from {@link authFromScheme} because the summary lists *every* scheme the document
+ * declares as a candidate the user may pick, and asking "what would this one become?" must not
+ * itself record that something was skipped — only a scheme the import actually needed does that.
+ */
+export function mapScheme(scheme: OpenApiSecurityScheme): { auth?: AuthConfig; reason?: string } {
   switch (scheme.type) {
     case 'http':
       if (scheme.scheme === 'basic') {
         // Secrets are never invented: the fields are the user's to fill in (ADR-0004).
-        return { type: 'basic' };
+        return { auth: { type: 'basic' } };
       }
       if (scheme.scheme === 'bearer') {
-        return { type: 'bearer' };
+        return { auth: { type: 'bearer' } };
       }
-      return note(`HTTP scheme "${scheme.scheme ?? 'unnamed'}" is not supported`);
+      return { reason: `HTTP scheme "${scheme.scheme ?? 'unnamed'}" is not supported` };
     case 'apiKey':
       if (scheme.in === 'header' || scheme.in === 'query') {
-        return { type: 'api-key', name: scheme.keyName ?? '', in: scheme.in };
+        return { auth: { type: 'api-key', name: scheme.keyName ?? '', in: scheme.in } };
       }
-      return note('An API key in a cookie is not supported');
+      return { reason: 'An API key in a cookie is not supported' };
     case 'oauth2': {
       const clientCredentials = scheme.flows?.clientCredentials;
       const authorizationCode = scheme.flows?.authorizationCode;
       const flow = clientCredentials ?? authorizationCode;
       if (flow === undefined) {
-        return note('Only the client-credentials and authorization-code flows are supported');
+        return { reason: 'Only the client-credentials and authorization-code flows are supported' };
       }
-      const scopes = Object.keys(flow.scopes ?? {});
       return {
-        type: 'oauth2',
-        grant: clientCredentials !== undefined ? 'client-credentials' : 'authorization-code',
-        tokenUrl: flow.tokenUrl ?? '',
-        ...(flow.authorizationUrl !== undefined ? { authorizationUrl: flow.authorizationUrl } : {}),
-        clientId: '',
-        scopes,
-        clientAuth: 'basic',
-        pkce: clientCredentials === undefined,
+        auth: {
+          type: 'oauth2',
+          grant: clientCredentials !== undefined ? 'client-credentials' : 'authorization-code',
+          tokenUrl: flow.tokenUrl ?? '',
+          ...(flow.authorizationUrl !== undefined ? { authorizationUrl: flow.authorizationUrl } : {}),
+          clientId: '',
+          scopes: Object.keys(flow.scopes ?? {}),
+          clientAuth: 'basic',
+          // PKCE is what makes an authorization-code flow safe in a public client; a
+          // client-credentials flow has no authorization request to protect.
+          pkce: clientCredentials === undefined,
+        },
       };
     }
     default:
-      return note(`Security scheme type "${scheme.type}" is not supported`);
+      return { reason: `Security scheme type "${scheme.type}" is not supported` };
   }
+}
+
+/** {@link mapScheme}, recording in `skipped` when the scheme the import needed has no equivalent. */
+export function authFromScheme(scheme: OpenApiSecurityScheme, skipped: OpenApiSkipped[]): AuthConfig | undefined {
+  const mapped = mapScheme(scheme);
+  if (mapped.auth === undefined) {
+    skipped.push({
+      kind: 'security-scheme',
+      where: scheme.name,
+      reason: mapped.reason ?? 'Not supported',
+    });
+  }
+  return mapped.auth;
 }
 
 /** The scheme a requirement names, when it names exactly one this client can use. */
@@ -554,6 +592,17 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       requests,
       deprecated,
       ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
+      securitySchemes: document.securitySchemes.map((scheme) => {
+        const mapped = mapScheme(scheme);
+        return {
+          name: scheme.name,
+          type: scheme.type,
+          ...(scheme.description !== undefined ? { description: scheme.description } : {}),
+          ...(mapped.auth !== undefined ? { auth: mapped.auth } : {}),
+          ...(mapped.reason !== undefined ? { reason: mapped.reason } : {}),
+          applied: scheme.name === chosenScheme?.name,
+        };
+      }),
       skipped: uniqueSkipped(skipped),
     },
   };

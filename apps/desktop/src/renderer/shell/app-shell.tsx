@@ -30,6 +30,7 @@ import type { PaletteMode } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
 import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
+import { ImportOpenApiDialog } from '../features/explorer/import-openapi-dialog.js';
 import { PanelHandle } from './panel-handle.js';
 import { RightRail } from './right-rail.js';
 import { Sidebar } from './sidebar.js';
@@ -87,6 +88,7 @@ export function AppShell() {
   const toggleCode = useUiStore((state) => state.toggleCode);
   const closeCode = useUiStore((state) => state.closeCode);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
+  const importOpenApiDialogOpen = useUiStore((state) => state.importOpenApiDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -397,6 +399,10 @@ export function AppShell() {
       <ImportDialog
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
+      />
+      <ImportOpenApiDialog
+        open={importOpenApiDialogOpen}
+        onOpenChange={(next) => useUiStore.getState().setImportOpenApiDialogOpen(next)}
       />
       <NewProjectDialog />
       <CreateWorkspaceDialog />

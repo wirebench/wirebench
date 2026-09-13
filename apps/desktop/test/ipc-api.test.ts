@@ -89,6 +89,9 @@ function imported(): unknown {
       folders: 1,
       requests: 2,
       deprecated: 0,
+      securitySchemes: [
+        { name: 'api_key', type: 'apiKey', auth: { type: 'api-key', name: 'api_key', in: 'header' }, applied: false },
+      ],
       skipped: [],
     },
   };

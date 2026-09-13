@@ -1812,6 +1812,23 @@ export const openApiSkippedSchema = z.object({
 });
 export type OpenApiSkippedWire = z.infer<typeof openApiSkippedSchema>;
 
+/**
+ * One security scheme the document declares, as a candidate for the API's credentials.
+ *
+ * Every scheme is listed, usable or not: the dialog offers the choice, and one this client cannot
+ * use has to say why rather than be missing from the list. `auth` is exactly what picking it sets,
+ * computed by the engine so the renderer never has to know how a scheme becomes credentials.
+ */
+export const openApiSchemeCandidateSchema = z.object({
+  name: z.string(),
+  type: z.enum(['http', 'apiKey', 'oauth2', 'openIdConnect', 'mutualTLS']),
+  description: z.string().optional(),
+  auth: authConfigWireSchema.optional(),
+  reason: z.string().optional(),
+  applied: z.boolean(),
+});
+export type OpenApiSchemeCandidateWire = z.infer<typeof openApiSchemeCandidateSchema>;
+
 /** What an import made, for the summary the dialog shows when it finishes. */
 export const openApiImportSummarySchema = z.object({
   name: z.string(),
@@ -1826,6 +1843,7 @@ export const openApiImportSummarySchema = z.object({
   requests: z.number(),
   deprecated: z.number(),
   auth: z.string().optional(),
+  securitySchemes: z.array(openApiSchemeCandidateSchema),
   skipped: z.array(openApiSkippedSchema),
 });
 export type OpenApiImportSummaryWire = z.infer<typeof openApiImportSummarySchema>;

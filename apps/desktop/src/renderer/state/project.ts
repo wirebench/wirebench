@@ -4,8 +4,10 @@ import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
+  ApiImportOpenApiRequest,
   AttachmentPatchWire,
   EndpointAuthWire,
+  OpenApiImportSummaryWire,
   EnvironmentPatchWire,
   EnvironmentWire,
   ImportSourceWire,
@@ -174,6 +176,13 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeRequest: (requestId: string) => Promise<void>;
   /** Adds a REST API to one project and returns its id. */
   readonly addApi: (projectId: string, name: string, baseUrl?: string) => Promise<string>;
+  /**
+   * Imports an OpenAPI document as a new API. Unlike {@link addApi} this is not a mutation: main
+   * fetches, maps, caches and saves in one call, so the mirror takes the project it answers with.
+   */
+  readonly importOpenApi: (
+    request: ApiImportOpenApiRequest,
+  ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: OpenApiImportSummaryWire }>;
   readonly updateApi: (apiId: string, patch: ApiPatchWire) => Promise<void>;
   /** Deletes an API with everything inside it, and closes the tabs that named any of it. */
   readonly removeApi: (apiId: string) => Promise<void>;
@@ -1003,6 +1012,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useDraftsStore.getState().discardRequest(requestId);
       useEditorsStore.getState().close(`request:${requestId}`);
       useExchangesStore.getState().clearRequest(requestId);
+    },
+
+    importOpenApi: async (request) => {
+      const result = await ipc().api.importOpenApi(request);
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      apply(result.value.projectId, result.value.project);
+      return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
     },
 
     addApi: async (projectId, name, baseUrl = '') => {

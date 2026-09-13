@@ -344,7 +344,7 @@ function toApiWire(api: RestApi): RestApiWire {
 }
 
 /** Authentication as the renderer sees it: the engine's union flattened into one optional-field row. */
-function toAuthConfigWire(auth: AuthConfig): AuthConfigWire {
+export function toAuthConfigWire(auth: AuthConfig): AuthConfigWire {
   return { ...auth } as AuthConfigWire;
 }
 

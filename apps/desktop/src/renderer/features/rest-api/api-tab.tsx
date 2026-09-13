@@ -10,8 +10,8 @@
  * suggestion from the definition, and a user may point an API anywhere.
  */
 import { AuthFields } from '../../components/auth-fields.js';
-import { Button } from '../../components/button.js';
-import { ReadOnlySetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { ApiDefinitionCard } from './api-definition-card.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { AuthConfigWire, EndpointAuthWire, RestApiWire } from '../../../shared/wire-types.js';
@@ -156,26 +156,7 @@ export function ApiTab({ apiId }: ApiTabProps) {
 
       {api.definition !== undefined && (
         <SettingsGroup title="Definition">
-          <div data-testid="api-definition-card" className="flex flex-col gap-1">
-            <ReadOnlySetting label="Source" value={api.definition.source} testId="api-definition-source" />
-            <ReadOnlySetting label="Version" value={api.definition.version} />
-            <ReadOnlySetting label="Cached" value={api.definition.cache ? 'yes' : 'no'} />
-            <div className="flex gap-2 pt-1">
-              {/* Both land with the OpenAPI import task, which is what produces a definition at
-                  all; they are here, disabled, so the card's shape does not change under the user
-                  once it can do something. */}
-              <Button variant="secondary" disabled title="Viewing an imported definition arrives with the import task.">
-                View document
-              </Button>
-              <Button
-                variant="secondary"
-                disabled
-                title="Exporting an imported definition arrives with the import task."
-              >
-                Export…
-              </Button>
-            </div>
-          </div>
+          <ApiDefinitionCard apiId={apiId} definition={api.definition} />
         </SettingsGroup>
       )}
     </section>
