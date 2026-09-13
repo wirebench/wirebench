@@ -626,6 +626,68 @@ describe('WorkspaceService — workspace-level watcher', () => {
     await service.close();
   }, 20_000);
 
+  it('two back-to-back mutates each fire exactly one onChanged, with no reload-driven onChanged from either', async () => {
+    const { workspace } = await seedWorkspace('Team');
+    const { service, recorded } = newService();
+    await service.open(workspace.id);
+    await settle();
+    const before = recorded.changed.length;
+
+    // A stale drop left behind by the first mutate's own announcement (e.g. `environments/
+    // dev.yaml`, never un-marked by the old `unexpect`-based fix) would otherwise resurface here,
+    // once the second mutate's `release()` touches the same path again.
+    await service.mutate({ kind: 'add-workspace-environment', name: 'Dev' });
+    await service.mutate({ kind: 'set-workspace-property', name: 'baseUrl', value: 'https://example.com' });
+
+    // Long enough for any stray `fs.watch` event from either write's atomic renames to arrive
+    // and for the watcher's debounce window to run its course.
+    await new Promise((resolve) => setTimeout(resolve, WATCH_DEBOUNCE_MS + 300));
+    expect(recorded.changed.length).toBe(before + 2);
+
+    await service.close();
+  });
+
+  it('a mutate whose save fails still releases its announcement, so a later outside edit is not lost', async () => {
+    const { workspace, tree } = await seedWorkspace('Team');
+    const prodEnv = createWorkspaceEnvironment('Prod', new Set());
+    await saveWorkspace({ ...workspace, environments: [prodEnv] }, tree);
+    const workspaceYamlPath = join(tree, 'workspace.yaml');
+    const prodEnvPath = join(tree, 'environments', `${prodEnv.slug}.yaml`);
+
+    const gatedFs: FsLike = {
+      ...nodeFs,
+      rename: async (from: string, to: string) => {
+        if (to === workspaceYamlPath) {
+          throw new Error('disk full');
+        }
+        return nodeFs.rename(from, to);
+      },
+    };
+
+    const { service } = newService({ fs: gatedFs });
+    await service.open(workspace.id);
+    await settle();
+
+    // `rename-workspace` only ever changes `workspace.yaml`, but `candidateWorkspacePaths` also
+    // announces `prod`'s file (it exists in both the before and after model); the write fails
+    // before ever reaching `prod.yaml`, so this is purely about whether the *announcement* — not
+    // just the failed write — gets released.
+    await expect(service.mutate({ kind: 'rename-workspace', name: 'Renamed' })).rejects.toThrow('disk full');
+
+    // A later, genuine outside edit to `prod`'s file must not still be suppressed by the earlier
+    // announcement — proof the `finally` released it rather than leaving it marked for the TTL.
+    const { workspace: onDiskNow } = await loadWorkspace(tree);
+    await saveWorkspace({ ...onDiskNow, environments: [{ ...prodEnv, name: 'Prod (edited externally)' }] }, tree);
+
+    await vi.waitFor(() => {
+      const row = service.snapshot()?.environments.find((environment) => environment.id === prodEnv.id);
+      expect(row?.name).toBe('Prod (edited externally)');
+    }, WAIT_OPTIONS);
+
+    expect(existsSync(prodEnvPath)).toBe(true);
+    await service.close();
+  }, 20_000);
+
   it('stops the watcher on close(): no callbacks arrive afterwards', async () => {
     const { workspace, tree } = await seedWorkspace('Team');
     const { service, recorded } = newService();

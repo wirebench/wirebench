@@ -381,24 +381,36 @@ function candidateWorkspacePaths(...workspaces: readonly Workspace[]): string[] 
 }
 
 /**
- * Reconciles a pre-announced candidate superset (see {@link candidateWorkspacePaths}) against
- * what a write actually touched: the touched paths are (re-)marked self-write, exactly as if
- * `expect()` alone had been called with them, and every candidate that turned out untouched is
- * un-marked via {@link ProjectWatcher.unexpect} — so a genuine outside edit to one of them, made
- * during the write's own window, is not suppressed for the rest of `selfWriteTtlMs` just because
- * it briefly looked like something this write might change.
+ * Saves `workspace` into `tree`, pre-announcing `candidates` (see {@link candidateWorkspacePaths})
+ * on `watcher` beforehand — `saveWorkspace`'s several atomic renames are each individually
+ * visible to `fs.watch` before this call returns, so a path only marked self-write afterwards can
+ * already have been queued by the watcher as an outside edit — and releasing that announcement
+ * once the write settles, successfully or not (`finally`, so a failed save still releases). Paths
+ * the write actually touched (`result.written ∪ result.removed`) are kept marked self-write;
+ * every other announced candidate is restored to whatever it was before this call, and a genuine
+ * outside edit to one of them made during the write's own window is re-delivered rather than
+ * suppressed for the rest of `selfWriteTtlMs` — see {@link ProjectWatcher.announce}/`release`.
  */
-function reconcileWatcherExpectations(
+async function saveWorkspaceAnnounced(
   watcher: ProjectWatcher | undefined,
+  workspace: Workspace,
+  tree: string,
   candidates: readonly string[],
-  result: SaveResult,
-): void {
-  if (watcher === undefined) {
-    return;
+  options?: { fs: FsLike },
+): Promise<SaveResult> {
+  const token = watcher?.announce(candidates);
+  let result: SaveResult | undefined;
+  try {
+    result = await saveWorkspace(workspace, tree, options);
+    return result;
+  } finally {
+    // Runs whether the save succeeded or threw: a failed write must not leave every candidate
+    // suppressed for the rest of `selfWriteTtlMs` — `release()` with nothing in `keep` restores
+    // each announced path to whatever it was before this call ever announced it.
+    if (token !== undefined) {
+      watcher?.release(token, result !== undefined ? [...result.written, ...result.removed] : []);
+    }
   }
-  const touched = new Set([...result.written, ...result.removed]);
-  watcher.expect([...touched]);
-  watcher.unexpect(candidates.filter((path) => !touched.has(path)));
 }
 
 /** `workspace` with no active environment — the field dropped, not set to `undefined`. */
@@ -996,12 +1008,10 @@ export class WorkspaceService implements ProjectRouter {
         const previousWorkspace = open.workspace;
         open.workspace = { ...open.workspace, name };
         const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
-        open.watcher?.expect(candidates);
-        const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+        await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
         if (this.stale(open)) {
           return;
         }
-        reconcileWatcherExpectations(open.watcher, candidates, result);
         this.deps.hooks?.onChanged?.(this.snapshot());
       });
     } else {
@@ -1581,14 +1591,12 @@ export class WorkspaceService implements ProjectRouter {
       // Pre-announced before the write (not just after, with the actual written/removed lists):
       // `saveWorkspace`'s several atomic renames are each individually visible to `fs.watch`
       // before this call returns, and a path only marked self-write afterwards can already have
-      // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`.
+      // been queued by the watcher as an outside edit — see `candidateWorkspacePaths`. Released
+      // once the write settles (`saveWorkspaceAnnounced`'s `finally`), whether it succeeded or
+      // threw, so a failed save never leaves every candidate suppressed for the rest of the TTL.
       const candidates = candidateWorkspacePaths(previousWorkspace, open.workspace);
-      open.watcher?.expect(candidates);
-      const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+      await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
       this.requireStillOpen(open);
-      // Keeps every touched path marked, and un-marks whatever candidate this write turned out
-      // not to touch — see `reconcileWatcherExpectations`.
-      reconcileWatcherExpectations(open.watcher, candidates, result);
       this.deps.hooks?.onChanged?.(this.snapshot());
       return {
         workspace: this.requireSnapshot(),

@@ -105,44 +105,7 @@ describe('ProjectWatcher', () => {
     expect(await seen.next(400)).toBeUndefined();
   });
 
-  it(
-    'unexpect() re-delivers an event dropped while its path was still expected, leaving a still-expected one suppressed',
-    SLOW,
-    async () => {
-      dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
-      await mkdir(join(dir, 'environments'), { recursive: true });
-      const seen = new Collector();
-      watcher = new ProjectWatcher({
-        dir,
-        debounceMs: DEBOUNCE_MS,
-        onChange: seen.push,
-      });
-      watcher.start();
-      await settle();
-
-      // A conservative superset announced before a write touches only one of the two — exactly
-      // `candidateWorkspacePaths` in `WorkspaceService`. Both paths' events arrive while marked
-      // self-write, so `record()` drops both.
-      watcher.expect(['wirebench.yaml', 'environments/Local.yaml']);
-      await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
-      await writeFile(join(dir, 'environments', 'Local.yaml'), 'name: Local\n', 'utf8');
-      // Every chance for both events to arrive (and be dropped) before either is un-marked.
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      expect(seen.batches).toHaveLength(0);
-
-      // `environments/Local.yaml` turned out untouched by the write after all: un-marking it
-      // re-delivers the outside edit it had swallowed.
-      watcher.unexpect(['environments/Local.yaml']);
-      const batch = await seen.next(10_000);
-      expect(batch).toEqual(['environments/Local.yaml']);
-
-      // `wirebench.yaml` was never unexpected — its dropped event stays dropped, not delivered by
-      // some other mechanism once the batch above fires.
-      expect(await seen.next(500)).toBeUndefined();
-    },
-  );
-
-  it('unexpect() of a path with no dropped event delivers nothing', async () => {
+  it('release() does not re-deliver a drop that predates its own announcement', SLOW, async () => {
     dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
     const seen = new Collector();
     watcher = new ProjectWatcher({
@@ -153,10 +116,98 @@ describe('ProjectWatcher', () => {
     watcher.start();
     await settle();
 
+    // A plain `expect()` (not an announcement) suppresses this write; the drop it causes belongs
+    // to no announcement at all.
     watcher.expect(['wirebench.yaml']);
-    watcher.unexpect(['wirebench.yaml']);
+    await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    // Announcing and releasing the same path afterwards must not resurrect that older, unrelated
+    // drop — only a drop that happens *during* this announcement belongs to it.
+    const token = watcher.announce(['wirebench.yaml']);
+    watcher.release(token, []);
     expect(await seen.next(400)).toBeUndefined();
   });
+
+  it('release() re-delivers a drop from its own announcement, for a path not kept', SLOW, async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+    await mkdir(join(dir, 'environments'), { recursive: true });
+    const seen = new Collector();
+    watcher = new ProjectWatcher({
+      dir,
+      debounceMs: DEBOUNCE_MS,
+      onChange: seen.push,
+    });
+    watcher.start();
+    await settle();
+
+    // A conservative superset announced before a write that only ever touches one of the two —
+    // exactly `candidateWorkspacePaths` in `WorkspaceService`.
+    const token = watcher.announce(['wirebench.yaml', 'environments/Local.yaml']);
+    await writeFile(join(dir, 'environments', 'Local.yaml'), 'name: Local\n', 'utf8');
+    // Every chance for the event to arrive (and be dropped, since it is still announced) first.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(seen.batches).toHaveLength(0);
+
+    // `environments/Local.yaml` turned out untouched by the write after all (kept = `wirebench.yaml`
+    // only): releasing it re-delivers the outside edit it had provisionally swallowed.
+    watcher.release(token, ['wirebench.yaml']);
+    const batch = await seen.next(10_000);
+    expect(batch).toEqual(['environments/Local.yaml']);
+  });
+
+  it('release() restores a path’s prior mark instead of clearing it outright', SLOW, async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+    const seen = new Collector();
+    watcher = new ProjectWatcher({
+      dir,
+      debounceMs: DEBOUNCE_MS,
+      onChange: seen.push,
+    });
+    watcher.start();
+    await settle();
+
+    // Already self-write marked (2s TTL, the default) from an earlier, unrelated `expect()` call
+    // before this announcement even starts.
+    watcher.expect(['wirebench.yaml']);
+    const token = watcher.announce(['wirebench.yaml']);
+    watcher.release(token, []);
+
+    // Releasing with `keep: []` must restore that prior mark, not clear it: a fresh write within
+    // the prior mark's remaining TTL is still suppressed.
+    await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
+    expect(await seen.next(500)).toBeUndefined();
+  });
+
+  it(
+    'an announcement whose TTL expires delivers the event normally, and release() does not double-deliver it',
+    SLOW,
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+      let now = 1_000;
+      const seen = new Collector();
+      watcher = new ProjectWatcher({
+        dir,
+        debounceMs: DEBOUNCE_MS,
+        selfWriteTtlMs: 50,
+        now: () => now,
+        onChange: seen.push,
+      });
+      watcher.start();
+      await settle();
+
+      const token = watcher.announce(['wirebench.yaml']);
+      now += 100; // past the 50ms TTL: the mark (and its `announce()` ownership) has lapsed.
+      await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
+      const batch = await seen.next(10_000);
+      expect(batch).toEqual(['wirebench.yaml']);
+
+      // The event already arrived through the normal path (TTL expiry, not a drop); releasing the
+      // announcement afterwards must not deliver it a second time.
+      watcher.release(token, []);
+      expect(await seen.next(400)).toBeUndefined();
+    },
+  );
 
   it('accepts a custom `isManaged` predicate in place of isManagedPath', SLOW, async () => {
     dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
