@@ -137,6 +137,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
         sendShortcut={shortcutFor('request.send', platform)}
         onValidate={onValidate}
         validateShortcut={shortcutFor('request.validate', platform)}
+        layoutModeShortcut={shortcutFor('editor.toggleLayoutMode', platform)}
       />
 
       {layout.mode === 'tabs' ? (

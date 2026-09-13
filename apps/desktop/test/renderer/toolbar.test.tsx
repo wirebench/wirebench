@@ -301,4 +301,60 @@ describe('RequestToolbar actions', () => {
 
     expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
+
+  describe('tooltips and state icons', () => {
+    function renderWithShortcuts() {
+      useEditorsStore.setState({ editorLayouts: {} });
+      useUiStore.setState({ editorLayout: DEFAULT_UI_STATE.editorLayout });
+      return render(
+        <RequestToolbar
+          draft={makeDraft()}
+          summary={makeInterface()}
+          endpoint="https://example.test/calc.asmx"
+          sending={false}
+          onSend={noop}
+          onCancel={noop}
+          onEndpointChange={noop}
+          onValidate={noop}
+          layoutModeShortcut={'⌘\\'}
+        />,
+      );
+    }
+
+    it('names what each layout button does on hover, with the shortcut where there is one', async () => {
+      installWirebenchApi();
+      renderWithShortcuts();
+
+      expect(screen.getByTestId('layout-orientation').getAttribute('title')).toBe('Stack panes vertically');
+      expect(screen.getByTestId('layout-mode').getAttribute('title')).toBe('Show one pane at a time (⌘\\)');
+
+      await userEvent.click(screen.getByTestId('layout-orientation'));
+      await userEvent.click(screen.getByTestId('layout-mode'));
+
+      expect(screen.getByTestId('layout-orientation').getAttribute('title')).toBe('Place panes side by side');
+      expect(screen.getByTestId('layout-mode').getAttribute('title')).toBe('Show both panes (⌘\\)');
+    });
+
+    it('names the endpoint menu on hover', () => {
+      installWirebenchApi();
+      renderWithShortcuts();
+
+      expect(screen.getByTestId('request-endpoint-menu').getAttribute('title')).toBe('Choose an endpoint');
+    });
+
+    // Like the orientation button, the mode button draws the layout you are in, so split and
+    // tabs must not look the same.
+    it('draws a different icon for split and tabs', async () => {
+      installWirebenchApi();
+      renderWithShortcuts();
+      const icon = (): string => screen.getByTestId('layout-mode').querySelector('svg')?.getAttribute('class') ?? '';
+
+      const splitIcon = icon();
+      await userEvent.click(screen.getByTestId('layout-mode'));
+      const tabsIcon = icon();
+
+      expect(splitIcon).toContain('lucide-square-split-horizontal');
+      expect(tabsIcon).toContain('lucide-panel-top');
+    });
+  });
 });
