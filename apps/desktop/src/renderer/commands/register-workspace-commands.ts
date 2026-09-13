@@ -10,8 +10,14 @@ function selectedProjectId(): string | undefined {
   return selection?.kind === 'project' ? selection.id : undefined;
 }
 
-function workspaceIsOpen(): boolean {
+export function workspaceIsOpen(): boolean {
   return useWorkspaceStore.getState().workspace !== null;
+}
+
+/** Whether the open workspace is shared — the `when` gate for every `sync.*` command. */
+export function workspaceIsShared(): boolean {
+  const workspace = useWorkspaceStore.getState().workspace;
+  return workspace !== null && workspace.share !== undefined;
 }
 
 /**

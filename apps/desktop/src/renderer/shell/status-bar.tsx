@@ -6,6 +6,7 @@ import { updateStatusLabel, useUpdateStatus } from '../lib/update-status.js';
 import { formatBytes, formatDuration } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
 import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
+import { SyncBadge } from '../features/sync/sync-badge.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
@@ -161,6 +162,14 @@ export function StatusBar() {
               ·
             </span>
             <TrustInvalidBadge testId="status-bar-trust-invalid" />
+          </>
+        )}
+        {workspace?.share !== undefined && (
+          <>
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+            <SyncBadge />
           </>
         )}
         <span aria-hidden="true" className="text-fg-faint">

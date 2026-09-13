@@ -161,4 +161,64 @@ export const workspaceActions = {
       return undefined;
     }
   },
+
+  /** Shares the open local workspace as a git repository. `false` when main refused. */
+  async share(remote?: string, branch?: string): Promise<boolean> {
+    try {
+      await useWorkspaceStore.getState().share(remote, branch);
+      return true;
+    } catch (error) {
+      report(error, 'Could not share the workspace');
+      return false;
+    }
+  },
+
+  /** Shares the open local workspace to a folder the user picks. `false` when cancelled/refused. */
+  async shareToFolder(): Promise<boolean> {
+    try {
+      return await useWorkspaceStore.getState().shareToFolder();
+    } catch (error) {
+      report(error, 'Could not share the workspace to a folder');
+      return false;
+    }
+  },
+
+  /** Clones a shared workspace from `remote` and opens it. `false` when main refused. */
+  async join(remote: string, branch?: string): Promise<boolean> {
+    try {
+      await useWorkspaceStore.getState().join(remote, branch);
+      return true;
+    } catch (error) {
+      report(error, 'Could not join the shared workspace');
+      return false;
+    }
+  },
+
+  /** Joins a shared workspace from an existing clone/folder the user picks. `false` when cancelled/refused. */
+  async joinFromFolder(): Promise<boolean> {
+    try {
+      return await useWorkspaceStore.getState().joinFromFolder();
+    } catch (error) {
+      report(error, 'Could not join the shared workspace');
+      return false;
+    }
+  },
+
+  /** Makes the open shared workspace local again. */
+  async stopSharing(): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().stopSharing();
+    } catch (error) {
+      report(error, 'Could not stop sharing the workspace');
+    }
+  },
+
+  /** Moves a project from the open workspace into another one, closed or not. */
+  async moveProject(projectId: string, workspaceId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().moveProject(projectId, workspaceId);
+    } catch (error) {
+      report(error, 'Could not move the project');
+    }
+  },
 };

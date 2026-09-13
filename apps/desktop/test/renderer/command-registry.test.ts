@@ -44,6 +44,7 @@ const CATEGORIES: readonly CommandCategory[] = [
   'Secrets',
   'Editor',
   'History',
+  'Sync',
 ];
 
 /**

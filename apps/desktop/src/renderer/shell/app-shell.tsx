@@ -16,6 +16,7 @@ import { subscribeToHistory } from '../state/history.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
+import { subscribeToSync } from '../state/sync.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
@@ -239,6 +240,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => subscribeToWorkspace(), []);
+  useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToPreferences(), []);
