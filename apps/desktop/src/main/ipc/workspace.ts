@@ -28,6 +28,12 @@ export type WorkspaceChannelService = Pick<
   | 'lastError'
   | 'stashDrafts'
   | 'takeRestored'
+  | 'share'
+  | 'shareToFolder'
+  | 'join'
+  | 'joinFromFolder'
+  | 'stopSharing'
+  | 'moveProjectToWorkspace'
 >;
 
 /** What `workspace.*` needs beyond the service itself. */
@@ -173,4 +179,32 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   }));
 
   registerHandler(channels.workspace.mutate, async (request) => await service.mutate(request.change));
+
+  registerHandler(channels.workspace.share, async (request) => ({
+    workspace: await service.share({
+      ...(request.remote !== undefined ? { remote: request.remote } : {}),
+      ...(request.branch !== undefined ? { branch: request.branch } : {}),
+    }),
+  }));
+
+  registerHandler(channels.workspace.shareToFolder, async (_request, sender) => ({
+    workspace: await service.shareToFolder(sender),
+  }));
+
+  registerHandler(channels.workspace.join, async (request) => ({
+    workspace: await service.join({
+      remote: request.remote,
+      ...(request.branch !== undefined ? { branch: request.branch } : {}),
+    }),
+  }));
+
+  registerHandler(channels.workspace.joinFromFolder, async (_request, sender) => ({
+    workspace: await service.joinFromFolder(sender),
+  }));
+
+  registerHandler(channels.workspace.stopSharing, async () => ({ workspace: await service.stopSharing() }));
+
+  registerHandler(channels.project.moveToWorkspace, async (request) => ({
+    workspace: await service.moveProjectToWorkspace(request.projectId, request.workspaceId),
+  }));
 }

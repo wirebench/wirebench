@@ -33,6 +33,7 @@ import {
   reidentifyProject,
   saveLocalState,
   saveProject,
+  saveShare,
   saveWorkspace,
   uniqueSlug,
   WirebenchError,
@@ -69,6 +70,7 @@ import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretStore } from './secrets.js';
 import { createSyncBackend } from './sync/create-backend.js';
+import { assertBranchName, assertRemoteUrl } from './sync/git-cli.js';
 import type { GitCli } from './sync/git-cli.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
@@ -98,9 +100,11 @@ import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
   EngineProgressEvent,
   ProjectWire,
+  SyncSettingsPatchWire,
   WorkspaceChange,
   WorkspaceEnvironmentWire,
   WorkspaceProjectWire,
+  WorkspaceShareWire,
   WorkspaceSummaryWire,
   WorkspaceWire,
 } from '../shared/wire-types.js';
@@ -224,8 +228,11 @@ interface OpenWorkspace {
   /** Where the shared files (`workspace.yaml`, `environments/`, `projects/`) actually live:
    * `dir` itself for a local workspace, or wherever `share` points once sharing exists. */
   readonly tree: string;
-  /** `undefined` for a local workspace (tree === dir); set once `share.yaml` exists. */
-  readonly share: WorkspaceShare | undefined;
+  /**
+   * `undefined` for a local workspace (tree === dir); set once `share.yaml` exists. Mutable:
+   * `updateSyncSettings` patches its `.git` settings in place after persisting them.
+   */
+  share: WorkspaceShare | undefined;
   readonly entries: OpenProjectEntry[];
   /**
    * Watches `tree` for `workspace.yaml`/`environments/*.yaml` edits made outside the app.
@@ -382,6 +389,23 @@ function withoutActiveEnvironment(workspace: Workspace): Workspace {
   return copy;
 }
 
+/**
+ * `WorkspaceWire.share`/`WorkspaceSummaryWire.share` from `resolveTree`'s result. `managed` is
+ * true when the tree lives inside app data — a git share never sets `share.path` (its tree is
+ * the managed `<dir>/tree` clone); a folder share always does (an external, user-picked folder).
+ */
+function shareWire(share: WorkspaceShare | undefined): WorkspaceShareWire | undefined {
+  if (share === undefined) {
+    return undefined;
+  }
+  return {
+    kind: share.kind,
+    managed: share.path === undefined,
+    ...(share.git?.remote !== undefined ? { remote: share.git.remote } : {}),
+    ...(share.git?.branch !== undefined ? { branch: share.git.branch } : {}),
+  };
+}
+
 export class WorkspaceService implements ProjectRouter {
   /** The open workspace, or `undefined` when the user is at the picker. */
   private current: OpenWorkspace | undefined;
@@ -468,7 +492,7 @@ export class WorkspaceService implements ProjectRouter {
       }
       const stamp = lastOpenedAt[name];
       try {
-        const { tree } = await this.resolveTree(dir);
+        const { share, tree } = await this.resolveTree(dir);
         const { workspace } = await loadWorkspace(tree, this.fsOption());
         rows.push({
           id: workspace.id,
@@ -478,6 +502,7 @@ export class WorkspaceService implements ProjectRouter {
           internalProjectCount: workspace.projects.filter((ref) => ref.source === 'internal').length,
           createdAt: workspace.createdAt,
           ...(stamp !== undefined ? { lastOpenedAt: stamp } : {}),
+          ...(shareWire(share) !== undefined ? { share: shareWire(share) } : {}),
         });
       } catch {
         rows.push({
@@ -1019,6 +1044,57 @@ export class WorkspaceService implements ProjectRouter {
   /** The open workspace's sync service; `undefined` for a local workspace, or until it has been built. */
   sync(): SyncService | undefined {
     return this.current?.sync;
+  }
+
+  /**
+   * `sync.status` for the open workspace. A shared workspace answers through its `SyncService`;
+   * a local one answers with a synthetic status instead of throwing, so the badge never needs a
+   * special case for "not shared". `gitAvailable` has no cheap cache to read for a local
+   * workspace (nothing has probed git yet), so it defaults to `true` — `git.detect` is the
+   * source of truth once the user actually shares.
+   *
+   * @throws WorkspaceError `workspace-not-found` when no workspace is open.
+   */
+  syncStatus(): SyncStatusWire {
+    const sync = this.requireOpen().sync;
+    if (sync !== undefined) {
+      return sync.status();
+    }
+    return { kind: 'local', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 };
+  }
+
+  /** The open workspace's tree root: `sync.revealTree` joins its (tree-relative) path against this. */
+  treeDir(): string {
+    return this.requireOpen().tree;
+  }
+
+  /**
+   * Patches the open workspace's git share settings (`branch`/`remote` validated and trimmed
+   * first) and applies them to the running `SyncService` (picks up a new `autoFetchSeconds`).
+   *
+   * @throws WirebenchError `sync-not-supported` when the workspace is not a git share.
+   */
+  async updateSyncSettings(patch: SyncSettingsPatchWire): Promise<SyncStatusWire> {
+    const open = this.requireOpen();
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      if (open.share === undefined || open.share.kind !== 'git') {
+        throw new WirebenchError('sync-not-supported', 'This workspace is not shared as a git repository.');
+      }
+      const current = open.share.git ?? DEFAULT_GIT_SHARE_SETTINGS;
+      const next: GitShareSettings = {
+        ...current,
+        ...(patch.autoFetchSeconds !== undefined ? { autoFetchSeconds: patch.autoFetchSeconds } : {}),
+        ...(patch.commitOnSave !== undefined ? { commitOnSave: patch.commitOnSave } : {}),
+        ...(patch.pushOnSave !== undefined ? { pushOnSave: patch.pushOnSave } : {}),
+        ...(patch.branch !== undefined ? { branch: assertBranchName(patch.branch) } : {}),
+        ...(patch.remote !== undefined ? { remote: assertRemoteUrl(patch.remote) } : {}),
+      };
+      open.share = { ...open.share, git: next };
+      await saveShare(open.dir, open.share, this.fsOption());
+      open.sync?.applySettings();
+      return this.syncStatus();
+    });
   }
 
   /** Builds the share's backend and starts syncing. Never throws: failures end up in the status. */
@@ -1989,6 +2065,7 @@ export class WorkspaceService implements ProjectRouter {
           ...(entry.message !== undefined ? { message: entry.message } : {}),
         };
       }),
+      ...(shareWire(open.share) !== undefined ? { share: shareWire(open.share) } : {}),
     };
   }
 

@@ -1,49 +1,14 @@
 /**
- * Wire-shaped sync types, defined here for now (plain TypeScript, no zod) because `SyncBackend`
- * and its implementations need them before the IPC layer (T9) exists. T9 moves these three types
- * verbatim into `apps/desktop/src/shared/wire-types.ts` as zod schemas and re-exports them from
- * here — keep the field names and shapes exactly as below so that move stays mechanical.
+ * Wire-shaped sync types. Task 9 moved the definitions themselves into
+ * `apps/desktop/src/shared/wire-types.ts` as zod schemas (`syncStatusWireSchema`, …); this module
+ * now just re-exports the inferred types under their original names so no main-process import
+ * needed to change.
  */
 
-/** Where a workspace's sync currently stands relative to its remote (or synced folder). */
-export type SyncState = 'clean' | 'ahead' | 'behind' | 'diverged' | 'conflict' | 'syncing' | 'offline' | 'error';
-
-/** A backend's current status, as reported to the renderer's status-bar badge and Sync panel. */
-export interface SyncStatusWire {
-  readonly kind: 'local' | 'folder' | 'git' | 'server';
-  readonly gitAvailable: boolean;
-  readonly state: SyncState;
-  readonly ahead: number;
-  readonly behind: number;
-  readonly uncommitted: number;
-  readonly remote?: string;
-  readonly branch?: string;
-  readonly lastSyncAt?: string;
-  readonly error?: { readonly code: string; readonly message: string };
-}
-
-/** One unresolved conflict, as the conflict resolver lists it. `projectId` is filled in by main (T7). */
-export interface SyncConflictWire {
-  readonly path: string;
-  readonly projectId?: string;
-  readonly entity?: { readonly kind: string; readonly name: string };
-}
-
-/** One entry of a backend's commit history, newest first. */
-export interface SyncLogEntryWire {
-  readonly id: string;
-  readonly subject: string;
-  readonly author: string;
-  readonly at: string;
-}
-
-/** Raised after a pull (or a finished merge) has been applied to the open workspace. */
-export interface SyncPulledEvent {
-  readonly workspaceId: string;
-  /** Projects whose files the pull changed (reloaded, or told their files changed on disk). */
-  readonly projectIds: readonly string[];
-  /** Whether `workspace.yaml` or an `environments/*.yaml` file changed. */
-  readonly workspaceChanged: boolean;
-  /** Distinct entities changed (a request's `.request.yaml` and `.xml` count once). */
-  readonly entityCount: number;
-}
+export type {
+  SyncState,
+  SyncStatusWire,
+  SyncConflictWire,
+  SyncLogEntryWire,
+  SyncPulledEvent,
+} from '../../shared/wire-types.js';

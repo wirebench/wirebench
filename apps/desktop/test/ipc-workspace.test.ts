@@ -112,6 +112,12 @@ function fakeService() {
       restDrafts: {},
       notices: [{ projectId: 'p1', projectName: 'P', status: 'restored', conflicts: [], dropped: [] }],
     }),
+    share: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'git', managed: true } }),
+    shareToFolder: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'folder', managed: false } }),
+    join: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'git', managed: true } }),
+    joinFromFolder: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'folder', managed: false } }),
+    stopSharing: vi.fn().mockResolvedValue(WORKSPACE),
+    moveProjectToWorkspace: vi.fn().mockResolvedValue(WORKSPACE),
   };
 }
 
@@ -150,9 +156,51 @@ describe('workspace.* channels', () => {
   });
 
   it('registers every channel the contract declares', () => {
-    const declared = Object.values(channels.workspace).map((channel) => channel.name);
+    // `registerWorkspaceChannels` also registers `project.moveToWorkspace` — a project is
+    // addressed by id, but moving it between workspaces is a workspace-shaped operation.
+    const declared = [
+      ...Object.values(channels.workspace).map((channel) => channel.name),
+      channels.project.moveToWorkspace.name,
+    ];
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(20);
+    expect(declared).toHaveLength(26);
+  });
+
+  it('share/shareToFolder/join/joinFromFolder/stopSharing route to the service', async () => {
+    await expect(invoke('workspace.share', { remote: 'https://example.test/repo.git' })).resolves.toEqual({
+      ok: true,
+      value: { workspace: { ...WORKSPACE, share: { kind: 'git', managed: true } } },
+    });
+    expect(service.share).toHaveBeenCalledWith({ remote: 'https://example.test/repo.git' });
+
+    await expect(invoke('workspace.shareToFolder')).resolves.toEqual({
+      ok: true,
+      value: { workspace: { ...WORKSPACE, share: { kind: 'folder', managed: false } } },
+    });
+    expect(service.shareToFolder).toHaveBeenCalledWith(SENDER);
+
+    await expect(invoke('workspace.join', { remote: 'https://example.test/repo.git' })).resolves.toEqual({
+      ok: true,
+      value: { workspace: { ...WORKSPACE, share: { kind: 'git', managed: true } } },
+    });
+    expect(service.join).toHaveBeenCalledWith({ remote: 'https://example.test/repo.git' });
+
+    await expect(invoke('workspace.joinFromFolder')).resolves.toEqual({
+      ok: true,
+      value: { workspace: { ...WORKSPACE, share: { kind: 'folder', managed: false } } },
+    });
+    expect(service.joinFromFolder).toHaveBeenCalledWith(SENDER);
+
+    await expect(invoke('workspace.stopSharing')).resolves.toEqual({ ok: true, value: { workspace: WORKSPACE } });
+    expect(service.stopSharing).toHaveBeenCalled();
+  });
+
+  it('project.moveToWorkspace routes projectId and workspaceId to the service', async () => {
+    await expect(invoke('project.moveToWorkspace', { projectId: 'p1', workspaceId: 'w2' })).resolves.toEqual({
+      ok: true,
+      value: { workspace: WORKSPACE },
+    });
+    expect(service.moveProjectToWorkspace).toHaveBeenCalledWith('p1', 'w2');
   });
 
   it('none of them accepts a filesystem path from the renderer', () => {
@@ -367,7 +415,14 @@ describe('project.* channels', () => {
 
   it('create, open, close and recent are gone from the contract', () => {
     const { router } = registerProject();
-    expect(Object.keys(channels.project).sort()).toEqual(['addInterface', 'mutate', 'reload', 'save', 'snapshot']);
+    expect(Object.keys(channels.project).sort()).toEqual([
+      'addInterface',
+      'moveToWorkspace',
+      'mutate',
+      'reload',
+      'save',
+      'snapshot',
+    ]);
     expect(handlers.has('project.open')).toBe(false);
     expect(router).toBeDefined();
   });

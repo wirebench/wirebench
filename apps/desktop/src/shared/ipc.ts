@@ -59,6 +59,25 @@ import {
   gitLocateResponseSchema,
   gitClearPathRequestSchema,
   gitClearPathResponseSchema,
+  gitIdentityNeededEventSchema,
+  syncStatusWireSchema,
+  syncCommitRequestSchema,
+  syncConflictsResponseSchema,
+  syncResolveRequestSchema,
+  syncLogRequestSchema,
+  syncLogResponseSchema,
+  syncSettingsPatchWireSchema,
+  syncSetIdentityRequestSchema,
+  syncSetIdentityResponseSchema,
+  syncRevealTreeRequestSchema,
+  syncRevealTreeResponseSchema,
+  syncStatusChangedEventSchema,
+  syncConflictEventSchema,
+  syncPulledEventSchema,
+  workspaceShareRequestSchema,
+  workspaceJoinRequestSchema,
+  workspaceChangedOnDiskEventSchema,
+  projectMoveToWorkspaceRequestSchema,
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
@@ -361,6 +380,11 @@ export const channels = {
       projectAddInterfaceRequestSchema,
       projectAddInterfaceResponseSchema,
     ),
+    moveToWorkspace: defineChannel(
+      'project.moveToWorkspace',
+      projectMoveToWorkspaceRequestSchema,
+      workspaceResponseSchema,
+    ),
     reload: defineChannel('project.reload', projectIdRequestSchema, projectSnapshotResponseSchema),
   },
   // The workspace itself: the picker, the open workspace's manifest, and the project
@@ -425,6 +449,13 @@ export const channels = {
       workspaceResponseSchema,
     ),
     mutate: defineChannel('workspace.mutate', workspaceMutateRequestSchema, workspaceMutateResponseSchema),
+    // Share/join/stop: none of these takes a filesystem path either — `shareToFolder` and
+    // `joinFromFolder` run their own native dialog in main, exactly like `linkProject`.
+    share: defineChannel('workspace.share', workspaceShareRequestSchema, workspaceResponseSchema),
+    shareToFolder: defineChannel('workspace.shareToFolder', z.undefined(), workspaceSnapshotResponseSchema),
+    join: defineChannel('workspace.join', workspaceJoinRequestSchema, workspaceResponseSchema),
+    joinFromFolder: defineChannel('workspace.joinFromFolder', z.undefined(), workspaceSnapshotResponseSchema),
+    stopSharing: defineChannel('workspace.stopSharing', z.undefined(), workspaceResponseSchema),
   },
   globals: {
     get: defineChannel('globals.get', z.undefined(), globalsStateSchema),
@@ -459,6 +490,26 @@ export const channels = {
     detect: defineChannel('git.detect', gitDetectRequestSchema, gitDetectResponseSchema),
     locate: defineChannel('git.locate', gitLocateRequestSchema, gitLocateResponseSchema),
     clearPath: defineChannel('git.clearPath', gitClearPathRequestSchema, gitClearPathResponseSchema),
+  },
+  // Drives the open workspace's `SyncService`. Every handler either routes to `WorkspaceService.sync()`
+  // or throws `sync-not-supported` for a local (unshared) workspace — `sync.status` is the one
+  // exception, answering with a synthetic `kind: 'local'` status instead so the badge never needs
+  // a special case. `revealTree`'s `path`, when present, is tree-relative and produced by main
+  // itself (a conflict entry) — it is joined to the tree and containment-checked before main
+  // shows it in the file manager, never a filesystem path the renderer made up.
+  sync: {
+    status: defineChannel('sync.status', z.undefined(), syncStatusWireSchema),
+    fetch: defineChannel('sync.fetch', z.undefined(), syncStatusWireSchema),
+    pull: defineChannel('sync.pull', z.undefined(), syncStatusWireSchema),
+    push: defineChannel('sync.push', z.undefined(), syncStatusWireSchema),
+    commit: defineChannel('sync.commit', syncCommitRequestSchema, syncStatusWireSchema),
+    conflicts: defineChannel('sync.conflicts', z.undefined(), syncConflictsResponseSchema),
+    resolve: defineChannel('sync.resolve', syncResolveRequestSchema, syncStatusWireSchema),
+    abortMerge: defineChannel('sync.abortMerge', z.undefined(), syncStatusWireSchema),
+    log: defineChannel('sync.log', syncLogRequestSchema, syncLogResponseSchema),
+    updateSettings: defineChannel('sync.updateSettings', syncSettingsPatchWireSchema, syncStatusWireSchema),
+    setIdentity: defineChannel('sync.setIdentity', syncSetIdentityRequestSchema, syncSetIdentityResponseSchema),
+    revealTree: defineChannel('sync.revealTree', syncRevealTreeRequestSchema, syncRevealTreeResponseSchema),
   },
   // No `secrets.get`: the renderer may create/replace/check/delete/list secret refs, but can
   // never read a value back — resolution happens only in main, at send/import time.
@@ -607,6 +658,8 @@ export const events = {
     changed: defineEvent('workspace.changed', workspaceChangedEventSchema),
     /** Main is about to close the workspace (quit): answer with `workspace.stashDrafts`. */
     flushDrafts: defineEvent('workspace.flushDrafts', workspaceFlushDraftsEventSchema),
+    /** A T4 reload found `workspace.yaml`/`environments/*.yaml` unreadable; `changed` was not fired. */
+    changedOnDisk: defineEvent('workspace.changedOnDisk', workspaceChangedOnDiskEventSchema),
   },
   project: {
     changed: defineEvent('project.changed', projectChangedEventSchema),
@@ -615,5 +668,14 @@ export const events = {
   },
   history: {
     appended: defineEvent('history.appended', historyAppendedEventSchema),
+  },
+  git: {
+    /** The open workspace's sync needs `user.name`/`user.email` before it can commit. */
+    identityNeeded: defineEvent('git.identityNeeded', gitIdentityNeededEventSchema),
+  },
+  sync: {
+    statusChanged: defineEvent('sync.statusChanged', syncStatusChangedEventSchema),
+    pulled: defineEvent('sync.pulled', syncPulledEventSchema),
+    conflict: defineEvent('sync.conflict', syncConflictEventSchema),
   },
 } as const;

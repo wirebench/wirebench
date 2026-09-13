@@ -50,6 +50,7 @@ import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
+import { registerSyncChannels } from './ipc/sync.js';
 import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
 import { createUpdateController } from './update-service.js';
@@ -204,6 +205,24 @@ const workspaceService = new WorkspaceService({
     onProgress: (progress) => {
       broadcast(events.engine.progress, progress);
     },
+    onWorkspaceChangedOnDisk: (paths, message) => {
+      const workspaceId = workspaceService.snapshot()?.id;
+      if (workspaceId !== undefined) {
+        broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
+      }
+    },
+    onSyncStatus: (workspaceId, status) => {
+      broadcast(events.sync.statusChanged, { workspaceId, status });
+    },
+    onSyncPulled: (event) => {
+      broadcast(events.sync.pulled, event);
+    },
+    onSyncConflict: (workspaceId, conflicts) => {
+      broadcast(events.sync.conflict, { workspaceId, conflicts: [...conflicts] });
+    },
+    onGitIdentityNeeded: (workspaceId) => {
+      broadcast(events.git.identityNeeded, { workspaceId });
+    },
   },
 });
 
@@ -333,6 +352,12 @@ void app.whenReady().then(() => {
     findGit: (options) => (options.configuredPath !== undefined ? findGit(options) : gitLocator()),
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
+    },
+  });
+  registerSyncChannels({
+    service: workspaceService,
+    reveal: (path) => {
+      shell.showItemInFolder(path);
     },
   });
   registerThemeChannels((payload) => {
