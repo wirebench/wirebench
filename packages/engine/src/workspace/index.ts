@@ -63,3 +63,6 @@ export {
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
 } from './environments.js';
+
+export { commitMessage, describeTreePath } from './commit-message.js';
+export type { TreeChange, TreeEntity, TreeEntityKind } from './commit-message.js';
