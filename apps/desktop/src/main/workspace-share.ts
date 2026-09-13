@@ -1,7 +1,7 @@
 /**
  * The operations that change *where a workspace's tree lives* or *which workspace a project
- * belongs to*: share as a git repository, share to a synced folder, and join from a remote or an
- * existing folder.
+ * belongs to*: share as a git repository, share to a synced folder, join from a remote or an
+ * existing folder, stop sharing, and copy a project into another (closed) workspace.
  *
  * Each is a plain function over an explicit {@link ShareDeps} handed in by `WorkspaceService`,
  * which keeps only the thin, serialised entry points (every one of these runs inside its
@@ -17,15 +17,21 @@
  */
 
 import { existsSync } from 'node:fs';
-import { cp as nodeCp, mkdir, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
+import { cp as nodeCp, mkdir, readdir, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import {
   DEFAULT_GIT_SHARE_SETTINGS,
   deleteShare,
   generateId,
   GIT_ATTRIBUTES_FILE,
+  loadLocalState,
   loadWorkspace,
+  reidentifyProject,
+  saveLocalState,
+  saveProject,
   saveShare,
+  saveWorkspace,
+  uniqueSlug,
   WirebenchError,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_JOINING_DIR,
@@ -34,14 +40,15 @@ import {
   WORKSPACE_TREE_DIR,
   WORKSPACES_DIR,
   workspaceDir,
+  workspaceProjectDir,
 } from '@wirebench/engine';
-import type { FsLike, Workspace, WorkspaceShare } from '@wirebench/engine';
+import type { FsLike, Project, Workspace, WorkspaceShare } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 import { GIT_NOT_FOUND_ERROR } from './sync/create-backend.js';
 import { GitBackend } from './sync/git-backend.js';
 import { assertBranchName, assertRemoteUrl, type GitCli } from './sync/git-cli.js';
-import { isEmptyDir, requireWorkspaceId } from './workspace-files.js';
+import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
 import type { WorkspaceWire } from '../shared/wire-types.js';
 
 /** The folder pickers these operations run (`native-dialogs.ts` in the app; injected in tests). */
@@ -456,4 +463,108 @@ export async function joinFromFolder(
     throw error;
   }
   return await deps.open(id);
+}
+
+// ——— stop sharing ———————————————————————————————————————————————————————————————————————
+
+/**
+ * Makes the open shared workspace local again. A managed tree (`<dir>/tree`) moves back up to
+ * `<dir>`, leaving `tree/.git` for the user to delete; an external tree is *copied* back and the
+ * external folder (and its `.git`) is left exactly as it was. `share.yaml` is deleted last, and
+ * everything before that is undone on failure.
+ */
+export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Promise<WorkspaceWire> {
+  const { share, dir, tree } = info;
+  const { id } = info.workspace;
+  if (share === undefined) {
+    throw new WirebenchError('workspace-not-shared', `"${info.workspace.name}" is not shared.`, {
+      details: { workspaceId: id },
+    });
+  }
+  const present = TREE_ITEMS.filter((name) => existsSync(join(tree, name)));
+  if (present.some((name) => existsSync(join(dir, name)))) {
+    throw new WirebenchError(
+      'folder-not-empty',
+      'The workspace’s own folder already holds workspace files, so the shared files cannot be brought back.',
+      { details: { workspaceId: id } },
+    );
+  }
+  const external = share.path !== undefined;
+  await deps.close();
+  const brought: string[] = [];
+  try {
+    for (const name of present) {
+      if (external) {
+        await deps.files.cp(join(tree, name), join(dir, name), { recursive: true });
+      } else {
+        await moveEntry(deps.files, join(tree, name), join(dir, name));
+      }
+      brought.push(name);
+    }
+    await deleteShare(dir, deps.fsOption);
+  } catch (error) {
+    for (const name of brought.reverse()) {
+      const undo = external
+        ? deps.files.rm(join(dir, name), { recursive: true, force: true })
+        : moveEntry(deps.files, join(dir, name), join(tree, name));
+      await undo.catch(() => undefined);
+    }
+    await deps.open(id).catch(() => undefined);
+    throw error;
+  }
+  return await deps.open(id);
+}
+
+// ——— move project to workspace ——————————————————————————————————————————————————————————
+
+/**
+ * Writes `model` (with the attachment and definition-cache bytes from `sourceDir`) into the
+ * closed workspace `targetId` as a new internal project, and appends its reference to that
+ * workspace's manifest. Ids are kept unless the target already references this project id, in
+ * which case the copy is re-identified. The caller removes the source afterwards.
+ */
+export async function copyProjectIntoWorkspace(
+  deps: ShareDeps,
+  source: { readonly model: Project; readonly dir: string },
+  targetId: string,
+): Promise<{ readonly projectId: string }> {
+  const targetDir = workspaceDir(deps.userDataDir, requireWorkspaceId(targetId));
+  const { tree } = await resolveWorkspaceTree(targetDir, deps.fsOption);
+  const { workspace, legacy } = await loadWorkspace(tree, deps.fsOption);
+  const copy = workspace.projects.some((ref) => ref.id === source.model.id)
+    ? reidentifyProject(source.model)
+    : source.model;
+  const taken = new Set(workspace.projects.map((ref) => ref.slug));
+  // A stray folder under projects/ that no reference names must not be written into either.
+  const onDisk = await readdir(join(tree, WORKSPACE_PROJECTS_DIR)).catch(() => []);
+  for (const name of onDisk) {
+    taken.add(name);
+  }
+  const slug = uniqueSlug(copy.name, taken);
+  const projectDir = workspaceProjectDir(tree, slug);
+  try {
+    await mkdir(projectDir, { recursive: true });
+    await saveProject(copy, projectDir, deps.fsOption);
+    await copyProjectPayload(source.dir, projectDir);
+    // Rewriting a v2 manifest drops its active environment; keep it in local.yaml as `open` does.
+    if (legacy.activeEnvironmentId !== undefined) {
+      const local = await loadLocalState(targetDir, deps.fsOption);
+      if (
+        local.activeEnvironmentId === undefined &&
+        workspace.environments.some((environment) => environment.id === legacy.activeEnvironmentId)
+      ) {
+        await saveLocalState(targetDir, { version: 1, activeEnvironmentId: legacy.activeEnvironmentId }, deps.fsOption);
+      }
+    }
+    await saveWorkspace(
+      { ...workspace, projects: [...workspace.projects, { id: copy.id, slug, source: 'internal' }] },
+      tree,
+      deps.fsOption,
+    );
+  } catch (error) {
+    // `projectDir` was not taken by any reference or folder a moment ago: it is this call's.
+    await deps.files.rm(projectDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  return { projectId: copy.id };
 }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Share and join over a temp `userData` and real git (a temp bare
+ * Share, join, stop sharing and move-to-workspace over a temp `userData` and real git (a temp bare
  * remote). Dialogs are injected through `WorkspaceServiceDeps.dialogs`; git runs hermetically
  * (see `sync/git-fixture.ts`). Skipped loudly without git.
  */
@@ -9,7 +9,15 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { createProject, loadShare, saveProject, WirebenchError, workspaceDir } from '@wirebench/engine';
+import {
+  createProject,
+  loadShare,
+  loadWorkspace,
+  saveProject,
+  WirebenchError,
+  workspaceDir,
+  workspaceProjectDir,
+} from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -403,7 +411,48 @@ describeGit('WorkspaceService — join', () => {
   });
 });
 
-describeGit('WorkspaceService — shared workspace rules', () => {
+describeGit('WorkspaceService — stop sharing', () => {
+  it('moves a managed tree back to <dir>, keeps tree/.git, deletes share.yaml and opens as local', async () => {
+    const { root, service } = await newService('a');
+    const { dir, projectId } = await seedLocal(service, root);
+    await service.share({});
+    const before = await snapshotFiles(join(dir, 'tree', 'projects'));
+
+    const wire = await service.stopSharing();
+
+    expect(wire.projects.map((project) => project.id)).toEqual([projectId]);
+    expect(existsSync(join(dir, 'workspace.yaml'))).toBe(true);
+    expect(existsSync(join(dir, '.gitattributes'))).toBe(true);
+    expect(await snapshotFiles(join(dir, 'projects'))).toEqual(before);
+    expect(existsSync(join(dir, 'tree', '.git'))).toBe(true);
+    expect(existsSync(join(dir, 'tree', 'workspace.yaml'))).toBe(false);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.sync()).toBeUndefined();
+    await expect(service.stopSharing()).rejects.toBeInstanceOf(WirebenchError);
+  });
+
+  it('copies an external tree back and leaves the external folder untouched', async () => {
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const { root, service } = await newService('a', { dialogs: dialogsPicking(target) });
+    const { dir } = await seedLocal(service, root);
+    await service.shareToFolder(sender);
+    const external = await snapshotFiles(target);
+
+    await service.stopSharing();
+
+    expect(await snapshotFiles(target)).toEqual(external);
+    expect(existsSync(join(dir, 'workspace.yaml'))).toBe(true);
+    expect(await snapshotFiles(join(dir, 'projects'))).toEqual(
+      Object.fromEntries(
+        Object.entries(external)
+          .filter(([path]) => path.startsWith('projects'))
+          .map(([path, bytes]) => [relative('projects', path), bytes]),
+      ),
+    );
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+  });
+
   it('refuses linkProject in a shared workspace', async () => {
     const outside = join(base, 'linked');
     await saveProject(createProject('Outside'), outside);
@@ -414,7 +463,63 @@ describeGit('WorkspaceService — shared workspace rules', () => {
   });
 });
 
-describeGit('WorkspaceService — delete a shared workspace', () => {
+describeGit('WorkspaceService — move project to workspace, delete', () => {
+  it('copies into a closed git workspace keeping ids, appends the ref and removes the source', async () => {
+    const { root, service, trashed } = await newService('a');
+    const target = await seedLocal(service, root);
+    await service.share({});
+    const targetTree = join(target.dir, 'tree');
+    const source = await service.create('Source');
+    const { projectId } = await service.addProject('Payments');
+    const sourceDir = workspaceProjectDir(workspaceDir(root, source.id), 'Payments');
+
+    const wire = await service.moveProjectToWorkspace(projectId, target.id);
+
+    expect(wire.id).toBe(source.id);
+    expect(wire.projects).toEqual([]);
+    expect(trashed).toContain(sourceDir);
+    const { workspace } = await loadWorkspace(targetTree);
+    expect(workspace.projects.map((ref) => ref.id)).toEqual([target.projectId, projectId]);
+    expect(existsSync(join(targetTree, 'projects', 'Payments', 'wirebench.yaml'))).toBe(true);
+
+    await service.open(target.id);
+    expect(service.snapshot()?.projects.map((project) => project.id)).toEqual([target.projectId, projectId]);
+  });
+
+  it('re-identifies the copy when the target already has the id, and refuses the open workspace as target', async () => {
+    const { root, service } = await newService('a');
+    const first = await seedLocal(service, root);
+    await service.close();
+    const { cp } = await import('node:fs/promises');
+    const second = await service.create('Second');
+    // The same project (same id) copied by hand into the second workspace.
+    await cp(join(first.dir, 'projects', 'Calc'), join(workspaceDir(root, second.id), 'projects', 'Calc'), {
+      recursive: true,
+    });
+    await service.close();
+    const secondManifest = (await loadWorkspace(workspaceDir(root, second.id))).workspace;
+    const { saveWorkspace } = await import('@wirebench/engine');
+    await saveWorkspace(
+      { ...secondManifest, projects: [{ id: first.projectId, slug: 'Calc', source: 'internal' }] },
+      workspaceDir(root, second.id),
+    );
+    await service.open(second.id);
+
+    await expect(service.moveProjectToWorkspace(first.projectId, second.id)).rejects.toMatchObject({
+      code: 'workspace-move-same',
+    });
+
+    await service.moveProjectToWorkspace(first.projectId, first.id);
+
+    const { workspace } = await loadWorkspace(first.dir);
+    expect(workspace.projects).toHaveLength(2);
+    const [kept, copied] = workspace.projects;
+    expect(kept?.id).toBe(first.projectId);
+    expect(copied?.id).not.toBe(first.projectId);
+    expect(copied?.slug).not.toBe(kept?.slug);
+    expect(existsSync(join(workspaceProjectDir(first.dir, copied?.slug ?? ''), 'attachments', 'blob.bin'))).toBe(true);
+  });
+
   it('delete trashes a managed git workspace dir whole, and only <id> for an external folder', async () => {
     const managed = await newService('a');
     const m = await seedLocal(managed.service, managed.root);

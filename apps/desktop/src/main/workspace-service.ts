@@ -83,7 +83,15 @@ import {
   requireWorkspaceId,
   resolveWorkspaceTree,
 } from './workspace-files.js';
-import { joinFromFolder, joinRemote, nodeFileOps, shareAsGit, shareToFolder } from './workspace-share.js';
+import {
+  copyProjectIntoWorkspace,
+  joinFromFolder,
+  joinRemote,
+  nodeFileOps,
+  shareAsGit,
+  shareToFolder,
+  stopSharing,
+} from './workspace-share.js';
 import type { ShareDeps, WorkspaceDialogs, WorkspaceFileOps } from './workspace-share.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
@@ -1211,10 +1219,10 @@ export class WorkspaceService implements ProjectRouter {
     return await this.list();
   }
 
-  // ——— share, join ——————————————————————————————————————————————————————————————————————————
+  // ——— share, join, stop sharing, move ———————————————————————————————————————————————————
   //
   // Thin, serialised entry points over `workspace-share.ts`. Each runs inside the workspace
-  // operation chain (it closes and reopens a workspace), and nothing
+  // operation chain (it closes and reopens a workspace, or rewrites a project set), and nothing
   // inside the chain awaits a `SyncService` operation: those wait on reloads queued on the same
   // chain. The first commit of a git share is queued by `startSync`; its push is started here,
   // after the queued operation has resolved.
@@ -1267,6 +1275,51 @@ export class WorkspaceService implements ProjectRouter {
         this.dialogs().pickFolder(sender, { title: 'Open shared workspace folder' }, picks),
       ),
     );
+  }
+
+  /** Makes the open shared workspace local again (see `workspace-share.ts` `stopSharing`). */
+  async stopSharing(): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      return await stopSharing(this.shareDeps(), open);
+    });
+  }
+
+  /**
+   * Copies an open project (its current model, unsaved edits included, plus attachments and
+   * definition caches) into the closed workspace `targetWorkspaceId`, then removes it from this
+   * one — trashing its folder when it was internal. Ids are kept unless the target already has
+   * the project id.
+   *
+   * @throws WirebenchError `workspace-move-same` when the target is the open workspace.
+   */
+  async moveProjectToWorkspace(projectId: string, targetWorkspaceId: string): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    requireWorkspaceId(targetWorkspaceId);
+    if (targetWorkspaceId === open.workspace.id) {
+      throw new WirebenchError('workspace-move-same', 'The project is already in this workspace.', {
+        details: { projectId, workspaceId: targetWorkspaceId },
+      });
+    }
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      const entry = this.requireEntry(projectId);
+      const model = entry.host?.model();
+      if (model === undefined) {
+        throw new WirebenchError('unknown-project', `Project "${projectId}" is not open.`, { details: { projectId } });
+      }
+      const deleteFiles = entry.ref.source === 'internal';
+      // Checked before the copy: a move whose source cannot then be removed would leave two.
+      if (deleteFiles && this.deps.trash === undefined) {
+        throw new WirebenchError('trash-unavailable', 'Deleting a project folder needs a trash implementation.', {
+          details: { projectId },
+        });
+      }
+      await copyProjectIntoWorkspace(this.shareDeps(), { model, dir: entry.dir }, targetWorkspaceId);
+      this.requireStillOpen(open);
+      return await this.removeProjectNow(projectId, { deleteFiles });
+    });
   }
 
   private shareDeps(): ShareDeps {
