@@ -16,22 +16,18 @@
  */
 
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readdir, readFile, realpath } from 'node:fs/promises';
-import { basename, isAbsolute, join } from 'node:path';
+import { mkdir, readdir, readFile, realpath } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 import {
   assertPathSegment,
-  attachmentsDir,
   createProject,
   createWorkspace,
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
-  definitionCacheDir,
   EMPTY_LOCAL_STATE,
-  INTERFACES_DIR,
   loadLocalState,
   loadProject,
-  loadShare,
   loadWorkspace,
   ProjectError,
   reidentifyProject,
@@ -49,7 +45,6 @@ import {
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
-  workspaceTreeDir,
 } from '@wirebench/engine';
 import type {
   FsLike,
@@ -79,6 +74,14 @@ import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
 import { SyncService } from './sync/sync-service.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
+import {
+  copyProjectPayload,
+  errorMessage,
+  isEmptyDir,
+  requireAbsolute,
+  requireWorkspaceId,
+  resolveWorkspaceTree,
+} from './workspace-files.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
@@ -226,93 +229,6 @@ interface OpenWorkspace {
   sync: SyncService | undefined;
   /** Outside-edit notifications held while sync runs an operation or sits in a conflict (see the sync region). */
   readonly held: HeldChanges;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Workspace ids are ULIDs, and a workspace id is also a *folder name* — so anything that is
- * not one is refused before it can reach `join`. The id is the one workspace value that comes
- * straight from the renderer (the picker sends back a row's id), which is exactly why it is
- * checked here rather than trusted: `../../etc` must never become a path.
- */
-const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
-
-/**
- * Returns `id` when it is usable as a single folder name.
- *
- * @throws WorkspaceError `workspace-path-invalid` otherwise.
- */
-function requireWorkspaceId(id: string): string {
-  if (!WORKSPACE_ID.test(id)) {
-    throw new WorkspaceError('workspace-path-invalid', `Not a workspace id: ${JSON.stringify(id)}`, {
-      details: { workspaceId: id },
-    });
-  }
-  return id;
-}
-
-/** Throws unless `path` is an absolute filesystem path — a relative linked ref is a corrupt ref. */
-function requireAbsolute(path: string | undefined, slug: string): string {
-  if (path === undefined || !isAbsolute(path)) {
-    throw new WorkspaceError('workspace-path-invalid', `Linked project "${slug}" has no absolute path.`, {
-      details: { slug, path },
-    });
-  }
-  return path;
-}
-
-/** Copies a directory tree verbatim when it is there, and does nothing when it is not. */
-async function copyTreeIfPresent(source: string, target: string): Promise<void> {
-  if (!existsSync(source)) {
-    return;
-  }
-  await cp(source, target, { recursive: true });
-}
-
-/**
- * Copies the parts of a project folder that `projectFiles` does not describe: the attachment
- * blobs and every interface's `definition/` cache.
- *
- * `saveProject` writes the *model* — the YAML the project is defined by. The bytes the user
- * attached and the WSDL/XSD documents the definition cache holds are not in that model, so a
- * copy made with `saveProject` alone would open with every interface un-hydrated and every
- * attachment gone. They are copied byte-for-byte rather than re-fetched: an export must not
- * depend on the original service still being reachable.
- */
-async function copyProjectPayload(source: string, target: string): Promise<void> {
-  await copyTreeIfPresent(attachmentsDir(source), attachmentsDir(target));
-  let interfaces: string[];
-  try {
-    interfaces = (await readdir(join(source, INTERFACES_DIR), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return;
-  }
-  for (const slug of interfaces) {
-    await copyTreeIfPresent(definitionCacheDir(source, slug), definitionCacheDir(target, slug));
-  }
-}
-
-/**
- * Whether `dir` holds nothing (a folder that does not exist counts as empty).
- *
- * Only `ENOENT` is "empty". Any other `readdir` failure — a folder the app may not read, an I/O
- * error — is raised: an export target that cannot be listed is not known to be empty, and
- * treating it as empty is how export would write a project over files it never saw.
- */
-async function isEmptyDir(dir: string): Promise<boolean> {
-  try {
-    return (await readdir(dir)).length === 0;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return true;
-    }
-    throw error;
-  }
 }
 
 /**
@@ -520,8 +436,7 @@ export class WorkspaceService implements ProjectRouter {
       }
       const stamp = lastOpenedAt[name];
       try {
-        const share = await loadShare(dir, this.fsOption());
-        const tree = workspaceTreeDir(dir, share);
+        const { tree } = await this.resolveTree(dir);
         const { workspace } = await loadWorkspace(tree, this.fsOption());
         rows.push({
           id: workspace.id,
@@ -561,6 +476,11 @@ export class WorkspaceService implements ProjectRouter {
     return this.failure;
   }
 
+  /** `dir`'s `share.yaml` (or `undefined` for a local workspace) and the tree root it points at. */
+  private async resolveTree(dir: string): Promise<{ share: WorkspaceShare | undefined; tree: string }> {
+    return await resolveWorkspaceTree(dir, this.fsOption());
+  }
+
   // ——— lifecycle ——————————————————————————————————————————————————————————————————————————
 
   /** Creates a workspace folder (named by its ULID, never by the display name) and opens it. */
@@ -586,8 +506,7 @@ export class WorkspaceService implements ProjectRouter {
   async open(id: string): Promise<WorkspaceWire> {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-    const share = await loadShare(dir, this.fsOption());
-    const tree = workspaceTreeDir(dir, share);
+    const { share, tree } = await this.resolveTree(dir);
     const { workspace: loaded, legacy } = await loadWorkspace(tree, this.fsOption());
     // A workspace whose manifest is still v1/v2 carries a stale activeEnvironmentId that
     // `loadWorkspace` already stripped from the in-memory model (into `legacy`, not the
@@ -1224,8 +1143,7 @@ export class WorkspaceService implements ProjectRouter {
       });
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-      const share = await loadShare(dir, this.fsOption());
-      const tree = workspaceTreeDir(dir, share);
+      const { tree } = await this.resolveTree(dir);
       const { workspace } = await loadWorkspace(tree, this.fsOption());
       await saveWorkspace({ ...workspace, name }, tree, this.fsOption());
     }
@@ -2275,8 +2193,7 @@ async function existingWorkspaceProjectDirs(userDataDir: string): Promise<Set<st
     let workspace: Workspace;
     let tree: string;
     try {
-      const share = await loadShare(dir);
-      tree = workspaceTreeDir(dir, share);
+      ({ tree } = await resolveWorkspaceTree(dir));
       ({ workspace } = await loadWorkspace(tree));
     } catch {
       continue;
