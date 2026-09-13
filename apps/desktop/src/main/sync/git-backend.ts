@@ -333,8 +333,13 @@ export class GitBackend implements SyncBackend {
     const hasRemote = (await this.getRemoteUrl()) !== undefined;
     if (hasRemote) {
       // A refspec, never a bare branch name, so the argument can never be read as a flag even if
-      // `assertBranchName` somehow let one slip through.
-      await this.git.run(this.tree, ['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`], {
+      // `assertBranchName` somehow let one slip through. The leading `+` forces the update of
+      // `refs/remotes/origin/<branch>` even when the remote's history was rewritten (e.g. a
+      // force-push) — without it this is a fast-forward-only update, so a rewritten remote branch
+      // would make every subsequent fetch fail with "non-fast-forward" and leave the tracking ref
+      // stuck forever (the plain `fetch origin <branch>` this replaced updated it through the
+      // remote's own configured `+refs/heads/*:refs/remotes/origin/*` fetch refspec instead).
+      await this.git.run(this.tree, ['fetch', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], {
         timeoutMs: 600_000,
       });
     }

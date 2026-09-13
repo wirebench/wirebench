@@ -441,4 +441,56 @@ describeGit('GitBackend (real git)', () => {
 
     await expect(a.commit('Should not be blocked by the hook')).resolves.toEqual({ committed: true });
   });
+
+  it("fetch's forced refspec keeps working after the remote branch is rewritten (force-pushed)", async () => {
+    root = await mkTempDir();
+    const remoteDir = join(root, 'remote.git');
+    const treeA = join(root, 'a');
+    const treeB = join(root, 'b');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+
+    const bare = await createBareRemote(git, remoteDir);
+    await GitBackend.init(git, treeA, 'main');
+    await git.run(treeA, ['remote', 'add', 'origin', bare.url]);
+    const settings: GitShareSettings = { ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' };
+    const a = new GitBackend({ git, tree: treeA, settings: () => settings });
+    await a.setIdentity('Alice', 'alice@example.com');
+    await mkdir(join(treeA, 'environments'), { recursive: true });
+    await writeFile(join(treeA, 'environments', 'qa.yaml'), 'name: QA\n', 'utf8');
+    await a.commit('Initial commit');
+    await a.push();
+
+    await GitBackend.clone(git, bare.url, 'main', treeB);
+    const b = new GitBackend({ git, tree: treeB, settings: () => settings });
+    await b.setIdentity('Bob', 'bob@example.com');
+
+    // B is in sync right after cloning.
+    await b.fetch();
+    expect(await b.probe()).toMatchObject({ state: 'clean', ahead: 0, behind: 0 });
+
+    // A rewrites its own history (an amend) and force-pushes — a real rewrite, not a fast-
+    // forward. The force-push itself goes through a direct `git` call, not `GitBackend.push`,
+    // which never gains a force option.
+    await writeFile(join(treeA, 'environments', 'qa.yaml'), 'name: QA (amended)\n', 'utf8');
+    await git.run(treeA, ['add', '-A', '--', '.']);
+    await git.run(treeA, ['commit', '--amend', '-m', 'Initial commit (amended)']);
+    await git.run(treeA, ['push', '--force', 'origin', 'HEAD:refs/heads/main']);
+
+    // Before the `+` fix, this fetch would fail outright ("non-fast-forward") and every fetch
+    // after it would keep failing the same way, leaving the workspace stuck offline for good —
+    // a plain `await` here is the assertion: an unhandled rejection fails the test.
+    await b.fetch();
+
+    // B's local `origin/main` now really did move to A's rewritten commit …
+    const remoteHead = (await git.run(treeB, ['rev-parse', 'origin/main'])).stdout.trim();
+    const aHead = (await git.run(treeA, ['rev-parse', 'HEAD'])).stdout.trim();
+    expect(remoteHead).toBe(aHead);
+
+    // … while B's own HEAD is still the pre-rewrite commit — a real divergence (two unrelated
+    // commits since the rewrite), correctly reported rather than thrown.
+    expect(await b.probe()).toMatchObject({ state: 'diverged', ahead: 1, behind: 1 });
+  });
 });
