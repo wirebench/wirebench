@@ -306,6 +306,8 @@ export {
   entry,
   folderRequests,
 } from './rest/model.js';
+export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
+export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
 export type {
   CreateApiInput,
   CreateFolderInput,
