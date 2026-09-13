@@ -115,11 +115,15 @@ task's commit message.
   itself says to ignore (`Accept`, `Content-Type`, `Authorization`) are skipped and counted. There is no provisional
   folder to rename as a WSDL import has: the cache is written after the slug is settled, so a cancelled import has
   written nothing.
-- **T20, not done and not silently skipped** — the two public OpenAPI fixtures (`fixtures/openapi/public/`, its
-  `SOURCES.md`, and the `pnpm fixtures:refresh` wiring) are outstanding: this environment's network policy denies both
-  candidate sources (`petstore3.swagger.io` is refused at the proxy, and `raw.githubusercontent.com` answers 404 for a
-  repository outside the session's scope), so nothing could be vendored or verified. The crafted fixtures carry the
-  import goldens in the meantime, one per construct in §12.
+- **T20, public fixtures** — the two public OpenAPI fixtures come from the npm registry rather than a project's own
+  website: this environment's network policy refuses `petstore3.swagger.io` and serves nothing from GitHub outside the
+  session's repository, but `registry.npmjs.org` is reachable, and a published package version is the better source
+  anyway — immutable, hash-addressed, and licence-covered. `pnpm fixtures:refresh openapi` fetches the tarball of
+  `@readme/oas-examples@8.2.2` once and lifts two documents out of it (a dependency-free ustar reader in
+  `scripts/lib/tar.ts`): the canonical Swagger Petstore (3.0, Apache-2.0) and ReadMe's 3.1 document exercising every
+  security scheme type (MIT). `train-travel` was passed over as CC BY-NC-SA and `star-trek` as unlicensed. The goldens
+  in `public.test.ts` caught one real-document behaviour the crafted set could not: a scheme this client cannot map is
+  met once per operation naming it, so the summary now dedupes its notes.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send

@@ -1,0 +1,19 @@
+{
+  "name": "petstore-3.0",
+  "package": "@readme/oas-examples",
+  "version": "8.2.2",
+  "tarball": "https://registry.npmjs.org/@readme/oas-examples/-/oas-examples-8.2.2.tgz",
+  "tarballSha256": "df951ee87b5b069c86148bf5bbf3923d6cfd27fb95a45aacb95f06b31f604241",
+  "file": "3.0/json/petstore.json",
+  "license": "Apache-2.0",
+  "attribution": "Swagger Petstore, swagger.io (info.license: Apache 2.0)",
+  "fetchedAt": "2026-09-13T19:03:21.224Z",
+  "files": [
+    {
+      "file": "openapi.json",
+      "url": "https://registry.npmjs.org/@readme/oas-examples/-/oas-examples-8.2.2.tgz#package/3.0/json/petstore.json",
+      "sha256": "5532c559311fb75a0f31982a21e171eaaa552ff3251c3e49580a76eb2421a5ff",
+      "bytes": 25723
+    }
+  ]
+}

@@ -554,7 +554,24 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       requests,
       deprecated,
       ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
-      skipped,
+      skipped: uniqueSkipped(skipped),
     },
   };
+}
+
+/**
+ * The skipped list without repeats. A scheme this client cannot map is met once per operation
+ * that names it — twenty operations behind one implicit flow would otherwise say the same thing
+ * twenty times, and the summary is for reading.
+ */
+function uniqueSkipped(skipped: readonly OpenApiSkipped[]): OpenApiSkipped[] {
+  const seen = new Set<string>();
+  return skipped.filter((entry) => {
+    const key = `${entry.kind}\u0000${entry.where}\u0000${entry.reason}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
