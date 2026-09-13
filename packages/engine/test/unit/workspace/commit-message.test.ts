@@ -131,6 +131,22 @@ describe('commitMessage', () => {
     expect(commitMessage(changes).split('\n\n')[0]).toBe('Add request GetWeather in w');
   });
 
+  it('describes a request with mixed added/modified statuses as Update', () => {
+    const changes: TreeChange[] = [
+      { path: 'projects/w/interfaces/i/operations/o/GetWeather.request.yaml', status: 'added' },
+      { path: 'projects/w/interfaces/i/operations/o/GetWeather.xml', status: 'modified' },
+    ];
+    expect(commitMessage(changes).split('\n\n')[0]).toBe('Update request GetWeather in w');
+  });
+
+  it('describes a request with mixed added/deleted statuses as Update', () => {
+    const changes: TreeChange[] = [
+      { path: 'projects/w/interfaces/i/operations/o/GetWeather.request.yaml', status: 'added' },
+      { path: 'projects/w/interfaces/i/operations/o/GetWeather.xml', status: 'deleted' },
+    ];
+    expect(commitMessage(changes).split('\n\n')[0]).toBe('Update request GetWeather in w');
+  });
+
   it('describes a single deleted environment', () => {
     const changes: TreeChange[] = [{ path: 'environments/qa.yaml', status: 'deleted' }];
     expect(commitMessage(changes).split('\n\n')[0]).toBe('Delete environment qa');
