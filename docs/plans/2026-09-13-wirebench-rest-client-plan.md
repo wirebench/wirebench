@@ -62,7 +62,7 @@ test:perf` is left to CI.
 | W3 renderer | 11–17 | done |
 | W4 openapi | 18–21 | done |
 | W5 auth ui | 22 | done |
-| W6 round-out | 23–26 | 23, 24 done; 25 next |
+| W6 round-out | 23–26 | 23–25 done; 26 next |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -169,6 +169,23 @@ task's commit message.
   replacing it with a line saying where an expression starts. **JSONPath is not added**: the plan gates it on approval
   of the `jsonpath-plus` dependency, which has not been given, and XPath 3.1 covers the spec's §3.10 example without
   it. Adding the mode later is additive — a third entry in the language radio and a `rest/jsonpath.ts` wrapper.
+
+- **T25** — the budgets found three separate exponential blow-ups in the OpenAPI import, all from treating a
+  `$ref`-resolved description as a tree when it is a **graph**: `resolveRefs` re-expanded each target once per
+  reference, `parseSchema` rebuilt each resolved node once per path to it, and `sampleFromSchema`/`sampleXml` walked
+  the shared graph with only a depth cap. A realistic 300-operation document never finished importing at all; it now
+  takes 91 ms. The fixes are a per-target memo in the resolver, a `WeakMap` memo keyed on node identity in the parser,
+  and an exact node budget (`MAX_SAMPLE_NODES`) in the generators — every emitted value costs one, so the bound holds
+  whatever shape the graph has, and required properties are emitted first so a truncated sample keeps what a request
+  cannot go without. `graph.test.ts` pins all three by *completion* on a densely cross-referenced document rather than
+  by a duration, which on a shared runner would only be a flake.
+  The `openapi-samples` budget is measured over the generated document rather than the crafted fixtures (which measure
+  nothing at 0.2 ms) and is set at 1500 ms: it is dominated by the `includeOptional` and XML variants an import does
+  not run by default. The 5 MB REST scroll is held to the same per-platform frame budget every other scroll is, for
+  the reason the perf spec already documents; it measures 16.7 ms (60 fps), so the plan's ≥ 50 fps holds in practice.
+- **T25, a second defect the e2e suite found** — *Remember the refresh token* only flipped after an IPC round trip and
+  a project edit, so a click appeared to do nothing for a moment. It now tracks intent locally and reconciles with the
+  stored reference, which is both what a user expects and what makes the assertion deterministic.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -647,7 +664,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm vitest run packages/engine/test/unit/xpath packages/engine/test/unit/rest/jsonpath`; `pnpm licenses:third-party --check`; `pnpm build && pnpm test:e2e -- --grep "rest"`
   - Files: packages/engine/src/xpath/{evaluate,evaluate-async}.ts, packages/engine/src/rest/jsonpath.ts, packages/engine/package.json, THIRD-PARTY-LICENSES.md, apps/desktop/src/renderer/features/request-editor/views/query-view.tsx, apps/desktop/src/renderer/features/rest-editor/response/response-pane.tsx, packages/engine/test/unit/{xpath/json,rest/jsonpath}.test.ts, apps/desktop/test/renderer/query-view.test.tsx, e2e/specs/rest.spec.ts
 
-- [ ] **25. Performance budgets**
+- [x] **25. Performance budgets**
   - `test/bench/budgets.ts` + `scenarios.ts`: `openapi-import-1mb` (a generated 300-operation document under
     `fixtures/openapi/crafted/large.json`, < 1 s), `openapi-samples` (< 200 ms for the fixture set),
     `rest-pretty-5mb` (< 500 ms), `rest-send-overhead` (< 20 ms, engine only, against the in-process server);

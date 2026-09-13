@@ -15,7 +15,7 @@
  * these forms can be on screen at once and two identical accessible names would be ambiguous.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SecretField } from './secret-field.js';
 import { ipc } from '../state/ipc-client.js';
 import type { AuthConfigWire, EndpointAuthWire } from '../../shared/wire-types.js';
@@ -93,6 +93,17 @@ export function AuthFields({ scope, auth, inheritable = false, types, onChange, 
   const authRef = useRef(auth);
   authRef.current = auth;
   const flushes = useRef(new Map<SecretSlot, () => Promise<string | undefined>>());
+  // *Remember the refresh token* reserves a keychain slot, which is an IPC round trip and a project
+  // edit away. The box tracks the user's intent so it answers the click at once and reconciles with
+  // the stored reference afterwards — a checkbox that lags a click reads as broken.
+  const [remember, setRemember] = useState(auth?.refreshTokenRef !== undefined);
+  const storedRemember = auth?.refreshTokenRef !== undefined;
+  const lastStored = useRef(storedRemember);
+  if (lastStored.current !== storedRemember) {
+    // The model changed underneath (a different owner, an undo, a reload): follow it.
+    lastStored.current = storedRemember;
+    setRemember(storedRemember);
+  }
 
   useEffect(
     () => () => {
@@ -334,9 +345,11 @@ export function AuthFields({ scope, auth, inheritable = false, types, onChange, 
               type="checkbox"
               aria-label={`${scope} remember refresh token`}
               data-testid="auth-remember-refresh"
-              checked={auth.refreshTokenRef !== undefined}
+              checked={remember}
               onChange={(event) => {
-                void rememberRefreshToken(event.target.checked, auth, onChange);
+                const next = event.target.checked;
+                setRemember(next);
+                void rememberRefreshToken(next, auth, onChange);
               }}
             />
             Remember the refresh token, so a new session does not sign in again

@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTarGz } from './lib/tar.ts';
 import { deriveFilename, extractReferences, resolveReferenceUrl } from './lib/wsdl-references.ts';
+import { writeLargeOpenApiFixture } from '../packages/engine/test/helpers/large-openapi.ts';
 import { writeLargeSchemaFixture } from '../packages/engine/test/helpers/large-schema.ts';
 
 const USER_AGENT = 'wirebench-fixtures/0.1';
@@ -360,6 +361,7 @@ async function main(): Promise<void> {
     await refreshWsdl();
   }
   if (only !== 'wsdl') {
+    await refreshLargeOpenApi();
     const { manifests, anyEmpty } = await downloadOpenApiFixtures();
     await writeOpenApiSourcesIndex(manifests);
     if (anyEmpty) {
@@ -412,6 +414,19 @@ async function refreshWsdl(): Promise<void> {
     console.error('One or more fixtures have no files at all; failing.');
     process.exitCode = 1;
   }
+}
+
+/**
+ * Regenerates the `crafted/large.json` OpenAPI performance fixture.
+ *
+ * ~1 MB of JSON, generated from a committed seed rather than committed itself, exactly as the
+ * `large-schema` WSDL fixture is. The perf suite writes its own copy into a temp directory and does
+ * not depend on this one.
+ */
+async function refreshLargeOpenApi(): Promise<void> {
+  const dir = join(repoRoot, 'fixtures', 'openapi', 'crafted');
+  const written = await writeLargeOpenApiFixture(dir);
+  console.log(`[large-openapi] generated ${(written.bytes / 1024 / 1024).toFixed(2)} MB into ${written.file}`);
 }
 
 /**

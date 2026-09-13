@@ -23,6 +23,20 @@ import type { JsonSchema, JsonValue, OpenApiXml } from './model.js';
 /** How deep generation goes before it stops and emits `null`. */
 export const MAX_SAMPLE_DEPTH = 8;
 
+/**
+ * How many values one sample may contain before generation stops adding to it.
+ *
+ * The depth cap alone is not a bound: a resolved description is a *graph*, not a tree — a `$ref` to a
+ * shared schema is one object reachable from many places — so a document whose schemas reference each
+ * other reaches `breadth ^ depth` nodes, which for a realistic 20-property schema is billions at
+ * depth 8. A total budget makes generation linear in the size of what it produces, whatever shape the
+ * schema graph has. Required properties are still emitted first, so what a truncated sample keeps is
+ * the part a request cannot go without.
+ */
+export const MAX_SAMPLE_NODES = 2_000;
+
+/* Every value a sample holds costs one node, so this is an exact upper bound on its size. */
+
 export interface SampleOptions {
   /** Emit properties the schema does not require. Mirrors the WSDL generator's preference. */
   readonly includeOptional?: boolean;
@@ -33,6 +47,13 @@ export interface SampleOptions {
   readonly sampleValues?: boolean;
   /** Where to stop. Defaults to {@link MAX_SAMPLE_DEPTH}. */
   readonly maxDepth?: number;
+  /** How many values the sample may hold. Defaults to {@link MAX_SAMPLE_NODES}. */
+  readonly maxNodes?: number;
+}
+
+/** The generation budget, shared by every node of one sample so the total is what is bounded. */
+interface Budget {
+  remaining: number;
 }
 
 /** The placeholder values a `format` maps to, used only when `sampleValues` is on. */
@@ -160,16 +181,25 @@ function firstBranch(schema: JsonSchema): JsonSchema {
  * @returns a JSON value — `null` where generation had to stop
  */
 export function sampleFromSchema(schema: JsonSchema, options: SampleOptions = {}): JsonValue {
-  return generate(schema, options, options.maxDepth ?? MAX_SAMPLE_DEPTH);
+  return generate(schema, options, options.maxDepth ?? MAX_SAMPLE_DEPTH, {
+    remaining: options.maxNodes ?? MAX_SAMPLE_NODES,
+  });
 }
 
-function generate(input: JsonSchema, options: SampleOptions, budget: number): JsonValue {
+function generate(input: JsonSchema, options: SampleOptions, depth: number, nodes: Budget): JsonValue {
   // A reference the resolver could not follow, or cut as a cycle: there is nothing to generate from,
   // and `null` is the honest answer. The same answer the depth cap gives, for the same reason.
   if (input.$ref !== undefined && input.type === undefined && input.properties === undefined) {
     return null;
   }
-  if (budget <= 0) {
+  if (nodes.remaining <= 0) {
+    return null;
+  }
+  // Charged before the depth check as well, so *every* value this function returns costs exactly one
+  // — including the `null` the depth cap emits. That is what makes the budget an exact bound on the
+  // size of the sample rather than a bound on its objects alone.
+  nodes.remaining -= 1;
+  if (depth <= 0) {
     return null;
   }
 
@@ -181,9 +211,9 @@ function generate(input: JsonSchema, options: SampleOptions, budget: number): Js
 
   switch (effectiveType(schema)) {
     case 'object':
-      return generateObject(schema, options, budget);
+      return generateObject(schema, options, depth, nodes);
     case 'array':
-      return generateArray(schema, options, budget);
+      return generateArray(schema, options, depth, nodes);
     case 'string':
       return generateString(schema, options);
     case 'integer':
@@ -200,10 +230,19 @@ function generate(input: JsonSchema, options: SampleOptions, budget: number): Js
   }
 }
 
-function generateObject(schema: JsonSchema, options: SampleOptions, budget: number): JsonValue {
+function generateObject(schema: JsonSchema, options: SampleOptions, depth: number, nodes: Budget): JsonValue {
   const required = new Set(schema.required ?? []);
   const out: Record<string, JsonValue> = {};
-  for (const [name, property] of Object.entries(schema.properties ?? {})) {
+  // Required properties first, so a sample cut short by the budget still carries what a request
+  // cannot be sent without.
+  const names = Object.keys(schema.properties ?? {}).sort(
+    (left, right) => Number(required.has(right)) - Number(required.has(left)),
+  );
+  for (const name of names) {
+    const property = schema.properties?.[name];
+    if (property === undefined) {
+      continue;
+    }
     // A read-only property is one the server sends back, never one the client sends, so a generated
     // request body leaves it out even when the schema requires it in a response.
     if (property.readOnly === true) {
@@ -212,19 +251,22 @@ function generateObject(schema: JsonSchema, options: SampleOptions, budget: numb
     if (!required.has(name) && options.includeOptional !== true) {
       continue;
     }
-    out[name] = generate(property, options, budget - 1);
+    if (nodes.remaining <= 0) {
+      break;
+    }
+    out[name] = generate(property, options, depth - 1, nodes);
   }
   // A free-form object (`additionalProperties` with no `properties`) has nothing nameable in it, so
   // it stays empty rather than inventing a key.
   return out;
 }
 
-function generateArray(schema: JsonSchema, options: SampleOptions, budget: number): JsonValue {
+function generateArray(schema: JsonSchema, options: SampleOptions, depth: number, nodes: Budget): JsonValue {
   if (schema.items === undefined) {
     return [];
   }
   // One item: enough to show the shape, few enough to edit. More would only be guessing.
-  return [generate(schema.items, options, budget - 1)];
+  return [generate(schema.items, options, depth - 1, nodes)];
 }
 
 function generateString(schema: JsonSchema, options: SampleOptions): JsonValue {
@@ -253,7 +295,8 @@ export function sampleXml(schema: JsonSchema, options: SampleXmlOptions = {}): s
   const indent = options.indent ?? '  ';
   const merged = firstBranch(mergeAllOf(schema));
   const name = merged.xml?.name ?? options.rootName ?? 'root';
-  return renderElement(merged, name, options, options.maxDepth ?? MAX_SAMPLE_DEPTH, indent, 0).join('\n');
+  const nodes: Budget = { remaining: options.maxNodes ?? MAX_SAMPLE_NODES };
+  return renderElement(merged, name, options, options.maxDepth ?? MAX_SAMPLE_DEPTH, indent, 0, nodes).join('\n');
 }
 
 /** The tag name for an element, with its `xml.prefix` when it has one. */
@@ -281,16 +324,20 @@ function renderElement(
   input: JsonSchema,
   name: string,
   options: SampleXmlOptions,
-  budget: number,
+  remainingDepth: number,
   indent: string,
   depth: number,
+  nodes: Budget,
 ): string[] {
   const pad = indent.repeat(depth);
   const schema = firstBranch(mergeAllOf(input));
   const tag = tagOf(schema, name);
-  if (budget <= 0) {
+  // The same two bounds the JSON generator has, and for the same reason: a resolved description is a
+  // graph, so depth alone does not bound the work.
+  if (remainingDepth <= 0 || nodes.remaining <= 0) {
     return [`${pad}<${tag}/>`];
   }
+  nodes.remaining -= 1;
 
   const type = effectiveType(schema);
   if (type === 'object') {
@@ -310,7 +357,10 @@ function renderElement(
         attributes.push(`${attributeName}="${escape(scalarText(propertySchema, options))}"`);
         continue;
       }
-      children.push(...renderProperty(propertySchema, property, options, budget - 1, indent, depth + 1));
+      if (nodes.remaining <= 0) {
+        break;
+      }
+      children.push(...renderProperty(propertySchema, property, options, remainingDepth - 1, indent, depth + 1, nodes));
     }
     const open = `<${tag}${namespaceAttribute(schema.xml)}${attributes.length > 0 ? ` ${attributes.join(' ')}` : ''}`;
     if (children.length === 0) {
@@ -320,7 +370,7 @@ function renderElement(
   }
 
   if (type === 'array') {
-    return renderProperty(schema, name, options, budget, indent, depth);
+    return renderProperty(schema, name, options, remainingDepth, indent, depth, nodes);
   }
 
   return [`${pad}<${tag}${namespaceAttribute(schema.xml)}>${escape(scalarText(schema, options))}</${tag}>`];
@@ -331,12 +381,13 @@ function renderProperty(
   schema: JsonSchema,
   name: string,
   options: SampleXmlOptions,
-  budget: number,
+  remainingDepth: number,
   indent: string,
   depth: number,
+  nodes: Budget,
 ): string[] {
   if (effectiveType(schema) !== 'array' || schema.items === undefined) {
-    return renderElement(schema, name, options, budget, indent, depth);
+    return renderElement(schema, name, options, remainingDepth, indent, depth, nodes);
   }
   // `wrapped` puts the items inside an element named for the property; without it they repeat in
   // place under the item's own name, which is XML's own default for a list.
@@ -345,9 +396,10 @@ function renderProperty(
     schema.items,
     itemName,
     options,
-    budget - 1,
+    remainingDepth - 1,
     indent,
     schema.xml?.wrapped === true ? depth + 1 : depth,
+    nodes,
   );
   if (schema.xml?.wrapped !== true) {
     return item;
@@ -359,7 +411,7 @@ function renderProperty(
 
 /** The text a scalar schema renders as — the same precedence `sampleFromSchema` uses. */
 function scalarText(schema: JsonSchema, options: SampleOptions): string {
-  const value = generate(schema, options, 1);
+  const value = generate(schema, options, 1, { remaining: 1 });
   if (value === null) {
     return '';
   }

@@ -116,6 +116,7 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/latin1` — `café` as ISO-8859-1, declared
  * - `/cookies/set` — two `Set-Cookie` headers
  * - `/cookies/read` — the `Cookie` header it received, as JSON
+ * - `/big-json/<megabytes>` — a well-formed JSON body of about that size
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
  */
@@ -134,6 +135,9 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
   let counter = 0;
 
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
+    // Stamped the moment the request reaches the handler, so `/echo` can report how much of a
+    // client-side round trip was this server's own doing — see `x-server-ms` below.
+    const receivedAt = performance.now();
     void (async () => {
       const body = await readBody(request);
       requests.push({ method: request.method ?? '', url: request.url ?? '', headers: request.headers, body });
@@ -153,6 +157,9 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
       }
 
       if (path === '/echo') {
+        // The send-overhead budget subtracts this from its own wall-clock time, so what it gates on
+        // is the engine's own cost rather than however fast this fixture happens to be.
+        response.setHeader('x-server-ms', (performance.now() - receivedAt).toFixed(3));
         sendJson(response, 200, {
           method: request.method,
           path,
@@ -161,6 +168,24 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
           body: body.toString('utf8'),
           contentType: request.headers['content-type'] ?? null,
         });
+        return;
+      }
+
+      // `/big-json/<megabytes>` answers with a well-formed JSON body of about that size, for the
+      // budgets that measure what a large response costs the renderer rather than the engine.
+      const big = /^\/big-json\/(\d{1,2})$/.exec(path);
+      if (big !== null) {
+        const megabytes = Number(big[1]);
+        const rows: string[] = [];
+        let size = 0;
+        for (let index = 0; size < megabytes * 1024 * 1024; index += 1) {
+          const row = `{"id":${String(index)},"name":"row-${String(index)}","note":"a row of roughly known size, repeated"}`;
+          rows.push(row);
+          size += row.length + 1;
+        }
+        const body = `{"rows":[${rows.join(',')}]}`;
+        response.writeHead(200, { 'content-type': JSON_TYPE, 'content-length': String(Buffer.byteLength(body)) });
+        response.end(body);
         return;
       }
 

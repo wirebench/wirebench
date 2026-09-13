@@ -405,7 +405,32 @@ function parseRequestBody(value: unknown, where: string, skipped: OpenApiSkipped
 }
 
 /** Reads a schema, keeping only what a sample generator needs. Recursive, and structure-only. */
+/**
+ * One parsed schema per resolved node, keyed by the node itself.
+ *
+ * A `$ref`-resolved description is a *graph*: `refs.ts` hands back one object per reference target,
+ * shared by every place that referenced it. Rebuilding that graph as a tree — which is what a plain
+ * recursive parse does — revisits a shared node once per path to it, so a document whose schemas
+ * reference each other costs `breadth ^ depth`. Keyed on identity because that is exactly the
+ * question being asked: "have I already parsed *this* node?". A `WeakMap` so a parsed document does
+ * not pin the resolved one in memory after the import is over.
+ */
+const parsedSchemas = new WeakMap<Record_, JsonSchema>();
+
 export function parseSchema(value: Record_): JsonSchema {
+  const already = parsedSchemas.get(value);
+  if (already !== undefined) {
+    return already;
+  }
+  // Placed before the recursion so a self-referencing node — one the resolver left cyclic — resolves
+  // to the same object rather than recursing forever. The placeholder is filled in below.
+  const schema = parseSchemaFields(value);
+  parsedSchemas.set(value, schema);
+  return schema;
+}
+
+/** The body of {@link parseSchema}, without the memo. */
+function parseSchemaFields(value: Record_): JsonSchema {
   const properties = isRecord(value['properties'])
     ? Object.fromEntries(
         Object.entries(value['properties'])

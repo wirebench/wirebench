@@ -21,7 +21,14 @@ import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { seedWorkspace } from '../helpers/seed-workspace.js';
-import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { createProject, createWorkspace } from '../helpers/project.js';
+import { createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  startTestRestServer,
+  startTestSoapServer,
+  type TestRestServer,
+  type TestSoapServer,
+} from '../helpers/test-server.js';
 
 /** Per-platform budgets in milliseconds. */
 interface PlatformBudgets {
@@ -151,6 +158,7 @@ test.describe('performance budgets', () => {
 
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
+  let restServer: TestRestServer | undefined;
   const tempDirs: string[] = [];
 
   test.afterEach(async () => {
@@ -162,6 +170,8 @@ test.describe('performance budgets', () => {
       await server.close();
       server = undefined;
     }
+    await restServer?.close();
+    restServer = undefined;
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -417,5 +427,58 @@ test.describe('performance budgets', () => {
     expect(switchMs, `samples: ${samples.map((sample) => sample.toFixed(0)).join(', ')} ms`).toBeLessThan(
       BUDGETS.workspaceSwitchMs,
     );
+  });
+
+  test(`a 5 MB REST response scrolls at ${(1000 / BUDGETS.frameMs).toFixed(0)} fps`, async () => {
+    // The REST counterpart of the 1 MB envelope scroll above. The Raw view virtualises its lines, so
+    // what is budgeted is that a five-megabyte body costs only what is on screen — the failure this
+    // catches is a view that renders every line and freezes the renderer.
+    restServer = await startTestRestServer();
+    const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    tempDirs.push(userDataDir);
+
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+    await createWorkspace(page, 'Perf');
+    await createProject(page, 'Big');
+    await createApi(page, 'Big', restServer.url);
+    await createRestRequest(page, 'Big', 'Big body');
+    await setMethodAndUrl(page, 'GET', '/big-json/5');
+    await sendRest(page);
+
+    await expect(responseStatus(page)).toContainText('200', { timeout: 60_000 });
+    await page.getByTestId('rest-response-view-raw').click();
+    const raw = page.getByTestId('rest-response-raw');
+    await expect(raw).toBeVisible({ timeout: 30_000 });
+
+    const frameTimes: number[] = await page.evaluate(async () => {
+      const browser = globalThis as unknown as {
+        document: { querySelector(selector: string): { scrollTop: number } | null };
+        requestAnimationFrame(callback: (now: number) => void): number;
+      };
+      const target = browser.document.querySelector('[data-testid="rest-response-raw"]');
+      if (target === null) {
+        throw new Error('no scrollable raw view');
+      }
+      const nextFrame = async (): Promise<number> =>
+        new Promise<number>((resolve) => browser.requestAnimationFrame(resolve));
+
+      const frames: number[] = [];
+      let previous = await nextFrame();
+      for (let step = 0; step < 60; step += 1) {
+        target.scrollTop += 600;
+        const now = await nextFrame();
+        frames.push(now - previous);
+        previous = now;
+      }
+      return frames;
+    });
+
+    const frameMedian = median(frameTimes);
+    console.info(
+      `[perf] rest raw scroll: median frame ${frameMedian.toFixed(1)} ms over ${frameTimes.length} frames ` +
+        `(budget ${BUDGETS.frameMs} ms = ${(1000 / BUDGETS.frameMs).toFixed(0)} fps)`,
+    );
+    expect(frameMedian).toBeLessThan(BUDGETS.frameMs);
   });
 });
