@@ -154,3 +154,41 @@ export function folderRow(page: Page, name: string): Locator {
 export function restRequestRow(page: Page, name: string): Locator {
   return rowNamed(page, 'rest-request-row', name);
 }
+
+/** Opens the API tab for `name` by double-clicking its explorer row. */
+export async function openApiTab(page: Page, name: string): Promise<void> {
+  await apiRow(page, name).dblclick();
+  await expect(page.getByTestId('api-tab')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * Configures OAuth2 client credentials on the open API tab against a stub issuer.
+ *
+ * The client secret goes through the SecretField's own Set…/Save gesture, which is the only way a
+ * value reaches the keychain — there is no channel that would accept it any other way.
+ */
+export async function setApiOAuth2ClientCredentials(
+  page: Page,
+  options: {
+    readonly tokenUrl: string;
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly scopes?: string;
+  },
+): Promise<void> {
+  await page.getByLabel('API authentication type').selectOption('oauth2');
+  await page.getByLabel('API token url').fill(options.tokenUrl);
+  await page.getByLabel('API client id').fill(options.clientId);
+  if (options.scopes !== undefined) {
+    await page.getByLabel('API scopes').fill(options.scopes);
+  }
+  await page.getByRole('button', { name: 'Set…' }).click();
+  await page.getByLabel('API client secret').fill(options.clientSecret);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('oauth2-status')).toBeVisible({ timeout: 20_000 });
+}
+
+/** The OAuth2 panel's state line. */
+export function oauth2State(page: Page): Locator {
+  return page.getByTestId('oauth2-state');
+}

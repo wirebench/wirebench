@@ -206,7 +206,11 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
         { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId, folderId) },
       ],
-      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) }],
+      [
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
+        // A folder has no editor tab, so its one other field gets a dialog of its own.
+        { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
+      ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
     );
   }

@@ -61,8 +61,8 @@ test:perf` is left to CI.
 | W2 main | 8–10 | done |
 | W3 renderer | 11–17 | done |
 | W4 openapi | 18–21 | done |
-| W5 auth ui | 22 | next |
-| W6 round-out | 23–26 | not started |
+| W5 auth ui | 22 | done |
+| W6 round-out | 23–26 | next |
 
 **Deliberate deviations from this plan, and why.** Each was taken in the task that hit it and is described in that
 task's commit message.
@@ -136,6 +136,21 @@ task's commit message.
   main wrote, never the network: an API imported without caching says so instead of offering a button that would go
   fetch. The test REST server gained a static-`documents` route (read live, so a document can name the very port it is
   served from), which is what lets an e2e import fetch over HTTP like any other client.
+
+- **T22** — the security-scheme choice belongs to whoever owns the configuration, so the OAuth2 token panel is rendered
+  by `AuthFields` through an `oauth2Status` slot rather than built into it: the panel needs an *owner id*, which only the
+  caller knows. *Remember the refresh token* reserves an empty keychain slot up front (`secrets.set` with an empty
+  value), because main replaces that value when a grant returns a token and the project file must not have to change at
+  that moment. The redirect URI with no fixed callback port configured is a template (`<random port>`), so the panel says
+  where to pin it rather than showing something a provider would reject.
+- **T22, the SOAP half of §3.5 is not done** — the design says a SOAP interface, endpoint and request "may now use
+  `bearer`, `api-key` and `oauth2` too, through the same inspector". The shared form can render them, but the project
+  format persists SOAP owners under `endpointAuthSchema` (`none`/`basic`/`ntlm` only), and the SOAP send path applies
+  only the two schemes the transport owns. Making the claim true needs the schema widened at three sites, the engine's
+  `Interface`/`Endpoint`/`RequestDef` auth types widened, a SOAP-side `applyAuth` for the header and query schemes, and
+  main resolving the new refs — engine and format work that T22's own file list does not include. Until then the two
+  SOAP call sites pass `SOAP_AUTH_TYPES`, so the form offers only what it can actually save: `auth.spec.ts` therefore
+  has no SOAP Bearer case, which is the one acceptance criterion of this task left unmet.
 
 **Defects the e2e spec found, all fixed in T17.** Worth recording because four of the five were invisible to the unit
 suite: the workspace's entity routing table never learned about APIs, folders or REST requests (so every REST send
@@ -563,7 +578,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
 
 ### W5 — Auth UI
 
-- [ ] **22. Auth inspector for both kinds, OAuth2 UI, secrets proof**
+- [x] **22. Auth inspector for both kinds, OAuth2 UI, secrets proof**
   - `components/auth-fields.tsx` gains the `bearer` (token as `SecretField`, scheme), `api-key` (name, value as
     `SecretField`, in), `oauth2` (grant, URLs, client id, client secret as `SecretField`, scopes, audience, client
     auth, PKCE, fixed port hint showing the redirect URI, _Remember refresh token_) forms and, for REST owners,

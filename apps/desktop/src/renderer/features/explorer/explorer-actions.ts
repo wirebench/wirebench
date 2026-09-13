@@ -247,6 +247,13 @@ export const explorerActions = {
     }
   },
 
+  /** Opens a folder's credentials dialog, which is where a folder's one editable field lives. */
+  editFolderAuth(folderId: string | undefined): void {
+    if (folderId !== undefined) {
+      useUiStore.getState().setFolderAuthId(folderId);
+    }
+  },
+
   /**
    * Deletes an API and everything in it. Always confirmed when it holds requests, whatever the
    * delete preference says: this is the one explorer action that can throw away a morning's work.

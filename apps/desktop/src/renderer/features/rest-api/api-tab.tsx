@@ -11,10 +11,11 @@
  */
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
+import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { AuthConfigWire, EndpointAuthWire, RestApiWire } from '../../../shared/wire-types.js';
+import type { AuthConfigWire, RestApiWire } from '../../../shared/wire-types.js';
 
 /** Where the base URL a request actually uses comes from. Mirrors the engine's `BaseUrlSource`. */
 export type BaseUrlSource = 'api' | 'environment' | 'workspace-environment';
@@ -147,10 +148,13 @@ export function ApiTab({ apiId }: ApiTabProps) {
       >
         <AuthFields
           scope="API"
-          auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : (api.auth as EndpointAuthWire)}
+          auth={api.auth === undefined || api.auth.type === 'inherit' ? undefined : api.auth}
           onChange={(auth: AuthConfigWire | null) => {
             patch({ auth });
           }}
+          oauth2Status={
+            api.auth?.type === 'oauth2' ? <OAuth2StatusPanel ownerId={apiId} grant={api.auth.grant} /> : undefined
+          }
         />
       </SettingsGroup>
 

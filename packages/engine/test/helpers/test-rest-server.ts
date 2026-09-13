@@ -192,7 +192,10 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
       if (path === '/auth/bearer') {
         const header = request.headers.authorization ?? '';
         const [scheme, token] = header.split(' ');
-        if (scheme !== 'Bearer' || token !== bearerToken) {
+        // Either the static token a spec configured, or any token this server's own stub issuer has
+        // handed out — which is what lets an OAuth2 flow be verified end to end against this route.
+        const accepted = token !== undefined && (token === bearerToken || issuedTokens.includes(token));
+        if (scheme !== 'Bearer' || !accepted) {
           response.writeHead(401, { 'www-authenticate': 'Bearer', 'content-length': '0' });
           response.end();
           return;

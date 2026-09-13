@@ -5,21 +5,13 @@
  * up to the API — because "inherit" with nothing behind it means the request goes out unauthenticated
  * and the user should be able to see that without opening three other tabs.
  *
- * Only the four schemes the shared form already covers are editable here: `inherit`, `none`, `basic`
- * and `ntlm`. Bearer, API key and OAuth2 are shown read-only, naming the level that configures them,
- * until the auth-UI task adds their forms — a half-built form that silently dropped a token would be
- * worse than one that says where to go.
+ * Every scheme is editable here, through the same {@link AuthFields} an API, a folder and a SOAP
+ * endpoint use. OAuth2 additionally gets its token panel, which needs the request's own id: main
+ * reads the configuration from the model by owner, so the panel names the owner and nothing else.
  */
 import { AuthFields } from '../../components/auth-fields.js';
-import type { AuthConfigWire, EndpointAuthWire } from '../../../shared/wire-types.js';
-
-/** The four types this form can edit. */
-const EDITABLE = ['inherit', 'none', 'basic', 'ntlm'] as const;
-
-/** Whether the shared form can edit this configuration. */
-export function isEditableHere(auth: AuthConfigWire | undefined): boolean {
-  return auth === undefined || (EDITABLE as readonly string[]).includes(auth.type);
-}
+import { OAuth2StatusPanel } from './oauth2-status.js';
+import type { AuthConfigWire } from '../../../shared/wire-types.js';
 
 /** How each scheme reads in the source line. */
 const TYPE_LABEL: Readonly<Record<string, string>> = {
@@ -32,7 +24,14 @@ const TYPE_LABEL: Readonly<Record<string, string>> = {
   oauth2: 'OAuth2',
 };
 
+/** How one scheme reads wherever a source line names it. */
+export function authTypeLabel(type: string): string {
+  return TYPE_LABEL[type] ?? type;
+}
+
 export interface RestAuthTabProps {
+  /** The request this tab edits, for the OAuth2 panel's owner. */
+  readonly requestId: string;
   readonly auth: AuthConfigWire;
   /**
    * Where the credentials actually come from when this request inherits: the nearest folder or the
@@ -43,49 +42,26 @@ export interface RestAuthTabProps {
 }
 
 /** The Auth tab. */
-export function RestAuthTab({ auth, inheritedFrom, onChange }: RestAuthTabProps) {
-  const editable = isEditableHere(auth);
-
+export function RestAuthTab({ requestId, auth, inheritedFrom, onChange }: RestAuthTabProps) {
   return (
     <div data-testid="rest-auth" className="flex flex-col gap-3 overflow-auto p-3">
       <p data-testid="rest-auth-source" className="text-sm text-fg-muted">
         {auth.type !== 'inherit'
-          ? `Set on this request · ${TYPE_LABEL[auth.type] ?? auth.type}`
+          ? `Set on this request · ${authTypeLabel(auth.type)}`
           : inheritedFrom === undefined
             ? 'Inherited · nothing above this request configures credentials'
-            : `Inherited from ${inheritedFrom.label} · ${TYPE_LABEL[inheritedFrom.type] ?? inheritedFrom.type}`}
+            : `Inherited from ${inheritedFrom.label} · ${authTypeLabel(inheritedFrom.type)}`}
       </p>
 
-      {editable ? (
-        <AuthFields
-          scope="Request"
-          auth={auth.type === 'inherit' ? undefined : (auth as EndpointAuthWire)}
-          onChange={(next) => {
-            onChange(next === null ? { type: 'inherit' } : next);
-          }}
-        />
-      ) : (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm text-fg-default">
-            This request uses {TYPE_LABEL[auth.type] ?? auth.type}, which is configured on the API.
-          </p>
-          <p className="text-sm text-fg-subtle">
-            Its fields are not editable from here yet. Clearing them back to inherited is, so nothing is trapped.
-          </p>
-          <div>
-            <button
-              type="button"
-              data-testid="rest-auth-clear"
-              className="rounded-md border border-hairline-strong px-2 py-1 text-sm text-fg-default hover:bg-surface-hover"
-              onClick={() => {
-                onChange({ type: 'inherit' });
-              }}
-            >
-              Inherit instead
-            </button>
-          </div>
-        </div>
-      )}
+      <AuthFields
+        scope="Request"
+        inheritable
+        auth={auth.type === 'inherit' ? undefined : auth}
+        onChange={(next) => {
+          onChange(next ?? { type: 'inherit' });
+        }}
+        oauth2Status={auth.type === 'oauth2' ? <OAuth2StatusPanel ownerId={requestId} grant={auth.grant} /> : undefined}
+      />
     </div>
   );
 }

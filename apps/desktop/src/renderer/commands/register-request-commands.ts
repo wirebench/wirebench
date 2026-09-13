@@ -4,6 +4,7 @@ import {
   removeSelectedAttachment,
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
+import { getOAuth2Token } from '../features/rest-editor/rest-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { validateAndReport } from '../features/request-editor/validate-actions.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
@@ -238,7 +239,9 @@ export function registerRequestCommands(): void {
     category: 'Request',
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
-    run: notYet('Getting an OAuth2 token from the editor'),
+    run: () => {
+      void getOAuth2Token(activeRestRequestId());
+    },
   });
   registerCommand({
     id: 'rest.importOpenApi',

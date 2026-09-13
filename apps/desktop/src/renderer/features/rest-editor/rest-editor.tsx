@@ -153,6 +153,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         )}
         {tab === 'auth' && (
           <RestAuthTab
+            requestId={requestId}
             auth={request.auth}
             inheritedFrom={inheritedFrom}
             onChange={(auth: AuthConfigWire) => {

@@ -4,7 +4,23 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, expandExplorer, saveAll, workspaceProjectDir } from '../helpers/project.js';
-import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import {
+  apiRow,
+  createApi,
+  createRestRequest,
+  folderRow,
+  openApiTab,
+  openRequestTab,
+  saveRequest,
+  setApiOAuth2ClientCredentials,
+  setMethodAndUrl,
+} from '../helpers/rest.js';
+import {
+  startTestRestServer,
+  startTestSoapServer,
+  type TestRestServer,
+  type TestSoapServer,
+} from '../helpers/test-server.js';
 
 const PASSWORD = 's3cret!';
 
@@ -26,6 +42,7 @@ function listFiles(dir: string): string[] {
 test.describe('secrets', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
+  let restServer: TestRestServer | undefined;
   let userDataDir: string | undefined;
 
   test.afterEach(async () => {
@@ -37,6 +54,8 @@ test.describe('secrets', () => {
       await server.close();
       server = undefined;
     }
+    await restServer?.close();
+    restServer = undefined;
     for (const dir of [userDataDir]) {
       if (dir !== undefined) {
         rmSync(dir, { recursive: true, force: true });
@@ -151,5 +170,86 @@ test.describe('secrets', () => {
     await page.getByRole('option').filter({ hasText: 'Show Secrets' }).first().click();
 
     await expect(rawRequest).toContainText('Authorization: Basic ', { timeout: 10_000 });
+  });
+
+  test('every REST credential a project holds is a reference, not a value', async () => {
+    // One of each scheme, on the three levels that can hold one, so a single grep proves the rule
+    // for all of them: an API with OAuth2, a folder with a Bearer token, a request with an API key.
+    const TOKEN = 'folder-bearer-token-value';
+    const KEY = 'request-api-key-value';
+    const CLIENT_SECRET = 'api-client-secret-value';
+
+    restServer = await startTestRestServer();
+    userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-profile-'));
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+
+    await createWorkspace(page);
+    await createProject(page, 'Secrets');
+    await createApi(page, 'Secure', restServer.url);
+
+    // The API: OAuth2, whose client secret is the secret under test.
+    await openApiTab(page, 'Secure');
+    await setApiOAuth2ClientCredentials(page, {
+      tokenUrl: `${restServer.url}/oauth2/token`,
+      clientId: 'app',
+      clientSecret: CLIENT_SECRET,
+    });
+    // And a remembered refresh token, which reserves a keychain slot of its own.
+    await page.getByTestId('auth-remember-refresh').check();
+
+    // A folder: a Bearer token.
+    await apiRow(page, 'Secure').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'New folder' }).click();
+    // A new folder lands in inline rename mode; Escape keeps the name it was given. The API row is
+    // still folded shut, so the folder has to be revealed before it can be right-clicked.
+    await page.keyboard.press('Escape');
+    await apiRow(page, 'Secure').click();
+    await folderRow(page, 'Folder 1').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Auth…' }).click();
+    const dialog = page.getByTestId('folder-auth-dialog');
+    await expect(dialog).toBeVisible({ timeout: 20_000 });
+    await page.getByLabel('Folder authentication type').selectOption('bearer');
+    await dialog.getByRole('button', { name: 'Set…' }).click();
+    await page.getByLabel('Folder token').fill(TOKEN);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await page.getByTestId('folder-auth-done').click();
+
+    // A request: an API key.
+    await createRestRequest(page, 'Secure', 'Keyed');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await openRequestTab(page, 'Auth');
+    await page.getByLabel('Request authentication type').selectOption('api-key');
+    await page.getByLabel('Request name').fill('X-Api-Key');
+    await page.getByRole('button', { name: 'Set…' }).click();
+    await page.getByLabel('Request value').fill(KEY);
+    await page.getByRole('button', { name: 'Save' }).click();
+    // An edit made in an editor tab is staged until the request itself is saved — the API and the
+    // folder were written straight through, this one needs its own Mod+S.
+    await saveRequest(page);
+
+    await saveAll(page);
+
+    // Not one of the three values may appear anywhere in the saved project.
+    for (const file of listFiles(workspaceProjectDir(userDataDir))) {
+      const text = readFileSync(file, 'utf8');
+      for (const secret of [TOKEN, KEY, CLIENT_SECRET]) {
+        expect(text, `${file} must not contain a credential value`).not.toContain(secret);
+      }
+    }
+    // What the files *do* hold is references, which is what makes the project shareable.
+    const project = listFiles(workspaceProjectDir(userDataDir))
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
+    expect(project).toContain('tokenRef');
+    expect(project).toContain('valueRef');
+    expect(project).toContain('clientSecretRef');
+    expect(project).toContain('refreshTokenRef');
+
+    // And the keychain file holds them encrypted (or at least never as the literal string).
+    const secretsText = readFileSync(join(userDataDir, 'secrets.json'), 'utf8');
+    for (const secret of [TOKEN, KEY, CLIENT_SECRET]) {
+      expect(secretsText).not.toContain(secret);
+    }
   });
 });

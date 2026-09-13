@@ -162,10 +162,17 @@ describe('explorerMenuItems on a REST row', () => {
     expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
   });
 
-  it('offers a folder the two creators, a rename and a delete', () => {
+  it('offers a folder the two creators, a rename, its credentials and a delete', () => {
     const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
 
-    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Delete']);
+    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+  });
+
+  it('Auth… opens the folder credentials dialog, which is a folder’s only editable field', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+    items.find((item) => item.label === 'Auth…')?.run();
+
+    expect(useUiStore.getState().folderAuthId).toBe('f1');
   });
 
   it('offers a REST request duplicate, rename and delete, and no Open', () => {

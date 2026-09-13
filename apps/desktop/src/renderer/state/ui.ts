@@ -54,6 +54,8 @@ export interface UiStore extends UiSnapshot {
   readonly importDialogOpen: boolean;
   /** Whether the Import OpenAPI dialog is open. Its own flag: the two dialogs share no state. */
   readonly importOpenApiDialogOpen: boolean;
+  /** The folder whose credentials dialog is open, if any. A folder has no tab to put them on. */
+  readonly folderAuthId: string | undefined;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
@@ -77,6 +79,7 @@ export interface UiStore extends UiSnapshot {
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
   readonly setImportOpenApiDialogOpen: (open: boolean) => void;
+  readonly setFolderAuthId: (folderId: string | undefined) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
@@ -160,6 +163,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     selection: undefined,
     importDialogOpen: false,
     importOpenApiDialogOpen: false,
+    folderAuthId: undefined,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
@@ -179,6 +183,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setImportOpenApiDialogOpen: (open) => {
       set({ importOpenApiDialogOpen: open });
+    },
+    setFolderAuthId: (folderId) => {
+      set({ folderAuthId: folderId });
     },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });
