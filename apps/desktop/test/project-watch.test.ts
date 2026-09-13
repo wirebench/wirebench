@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProjectWatcher } from '../src/main/project-watch.js';
+import { isWorkspaceManagedPath, ProjectWatcher } from '../src/main/project-watch.js';
 
 const DEBOUNCE_MS = 30;
 /**
@@ -103,5 +103,45 @@ describe('ProjectWatcher', () => {
 
     await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
     expect(await seen.next(400)).toBeUndefined();
+  });
+
+  it('accepts a custom `isManaged` predicate in place of isManagedPath', SLOW, async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wirebench-watch-'));
+    const seen = new Collector();
+    watcher = new ProjectWatcher({
+      dir,
+      debounceMs: DEBOUNCE_MS,
+      // Only a top-level `only-this.yaml` is managed — `wirebench.yaml` (managed by the
+      // default predicate) must be ignored here.
+      isManaged: (path) => path === 'only-this.yaml',
+      onChange: seen.push,
+    });
+    watcher.start();
+    await settle();
+
+    await writeFile(join(dir, 'wirebench.yaml'), 'name: Demo\n', 'utf8');
+    expect(await seen.next(400)).toBeUndefined();
+
+    await writeFile(join(dir, 'only-this.yaml'), 'name: Demo\n', 'utf8');
+    const batch = await seen.next(10_000);
+    expect(batch).toContain('only-this.yaml');
+  });
+});
+
+describe('isWorkspaceManagedPath', () => {
+  it.each([
+    ['workspace.yaml', true],
+    ['environments/dev.yaml', true],
+    ['environments/My Env.yaml', true],
+    ['environments/dev.yml', false],
+    ['environments/nested/dev.yaml', false],
+    ['environments', false],
+    ['projects/foo/workspace.yaml', false],
+    ['projects/foo/environments/dev.yaml', false],
+    ['local.yaml', false],
+    ['share.yaml', false],
+    ['wirebench.yaml', false],
+  ])('%s -> %s', (path, expected) => {
+    expect(isWorkspaceManagedPath(path)).toBe(expected);
   });
 });

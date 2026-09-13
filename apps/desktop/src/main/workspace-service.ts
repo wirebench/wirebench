@@ -63,6 +63,7 @@ import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
+import { isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretStore } from './secrets.js';
@@ -102,6 +103,12 @@ export interface WorkspaceHooks {
   readonly onProjectChanged?: (projectId: string, project: ProjectWire | null) => void;
   /** Files under one project's folder changed outside the app. */
   readonly onProjectChangedOnDisk?: (projectId: string, paths: readonly string[]) => void;
+  /**
+   * The workspace-level reload triggered by an outside edit to `workspace.yaml` or
+   * `environments/*.yaml` failed to load (most often unparsable YAML mid-write); the in-memory
+   * model was left untouched. `paths` is the batch that triggered the attempt.
+   */
+  readonly onWorkspaceChangedOnDisk?: (paths: readonly string[], message: string) => void;
   /** One interface of one project finished (or failed) re-importing. */
   readonly onHydration?: (
     projectId: string,
@@ -143,6 +150,11 @@ export interface WorkspaceServiceDeps {
   readonly fs?: FsLike;
   /** Clock, injectable so tests can pin `createdAt`/`lastOpenedAt`. */
   readonly now?: () => Date;
+  /**
+   * Debounce for the workspace-level watcher (see the "workspace-level watcher" region below).
+   * Test-only; defaults to {@link DEFAULT_DEBOUNCE_MS}.
+   */
+  readonly watchDebounceMs?: number;
 }
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
@@ -169,6 +181,12 @@ interface OpenWorkspace {
   /** `undefined` for a local workspace (tree === dir); set once `share.yaml` exists. */
   readonly share: WorkspaceShare | undefined;
   readonly entries: OpenProjectEntry[];
+  /**
+   * Watches `tree` for `workspace.yaml`/`environments/*.yaml` edits made outside the app.
+   * `undefined` only for the brief window in `open()` before hosts have finished coming up (see
+   * the "workspace-level watcher" region).
+   */
+  watcher: ProjectWatcher | undefined;
 }
 
 function errorMessage(error: unknown): string {
@@ -323,6 +341,16 @@ function requireEnvironment(workspace: Workspace, environmentId: string): Worksp
   return environment;
 }
 
+/**
+ * Whether two references still name the same project *placement* — same slug, same source, and
+ * (for a linked ref) the same folder. Used only by the workspace-level reload: a ref whose id
+ * survived but whose slug or path changed on disk (a rename pulled from a teammate) has to be
+ * released and reopened at the new folder, not left pointing at the old one.
+ */
+function refsEqual(a: WorkspaceProjectRef, b: WorkspaceProjectRef): boolean {
+  return a.slug === b.slug && a.source === b.source && a.path === b.path;
+}
+
 /** `workspace` with no active environment — the field dropped, not set to `undefined`. */
 function withoutActiveEnvironment(workspace: Workspace): Workspace {
   const copy: Omit<Workspace, 'activeEnvironmentId'> & { activeEnvironmentId?: string } = { ...workspace };
@@ -475,6 +503,8 @@ export class WorkspaceService implements ProjectRouter {
         local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
         await saveLocalState(dir, local, this.fsOption());
       }
+      // No `watcher.expect()` needed here: the workspace-level watcher below is not created
+      // until every project host has come up, and this re-save runs well before that.
       await saveWorkspace(loaded, tree, this.fsOption());
     }
     // Only ever applied when it still names a real environment — a deleted one, or one from a
@@ -485,7 +515,7 @@ export class WorkspaceService implements ProjectRouter {
         ? local.activeEnvironmentId
         : undefined;
     const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
-    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [] };
+    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [], watcher: undefined };
     this.current = open;
     this.failure = undefined;
     this.unsaved = new UnsavedStore(dir);
@@ -498,34 +528,21 @@ export class WorkspaceService implements ProjectRouter {
     // still throws has to put it back at the picker rather than leave it half-open.
     try {
       for (const ref of workspace.projects) {
-        let projectDir: string;
-        try {
-          projectDir =
-            ref.source === 'internal' ? workspaceProjectDir(tree, ref.slug) : requireAbsolute(ref.path, ref.slug);
-        } catch (error) {
-          // A corrupt reference (a linked ref with no absolute path) is a broken *project*, not a
-          // broken workspace: it becomes an `error` row like any other one that will not open.
-          open.entries.push({
-            ref,
-            dir: ref.path ?? '',
-            host: undefined,
-            projectId: ref.id,
-            status: 'error',
-            message: errorMessage(error),
-          });
-          continue;
-        }
-        const entry: OpenProjectEntry = {
-          ref,
-          dir: projectDir,
-          host: undefined,
-          projectId: ref.id,
-          status: 'loading',
-          message: undefined,
-        };
-        open.entries.push(entry);
-        await this.openEntry(entry, notices);
+        await this.addEntryForRef(open, ref, notices);
       }
+
+      // Only once every host from the manifest has had its chance to come up: an event the
+      // watcher reports before this point would race a half-built `entries` array (see the
+      // "workspace-level watcher" region below).
+      open.watcher = new ProjectWatcher({
+        dir: tree,
+        isManaged: isWorkspaceManagedPath,
+        ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
+        onChange: (paths) => {
+          void this.reloadWorkspaceFromDisk(open, paths);
+        },
+      });
+      open.watcher.start();
 
       // Kept as the workspace's drafts until the renderer stashes its own, so a close before the
       // renderer has taken them still carries them forward.
@@ -546,6 +563,45 @@ export class WorkspaceService implements ProjectRouter {
       await this.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * Resolves `ref`'s folder, appends its entry and brings up its host — the shared shape between
+   * the initial scan in {@link open} and the workspace-level reload below, so a ref added either
+   * way ends up open the same way.
+   */
+  private async addEntryForRef(
+    open: OpenWorkspace,
+    ref: WorkspaceProjectRef,
+    notices?: UnsavedRestoreNoticeWire[],
+  ): Promise<void> {
+    let projectDir: string;
+    try {
+      projectDir =
+        ref.source === 'internal' ? workspaceProjectDir(open.tree, ref.slug) : requireAbsolute(ref.path, ref.slug);
+    } catch (error) {
+      // A corrupt reference (a linked ref with no absolute path) is a broken *project*, not a
+      // broken workspace: it becomes an `error` row like any other one that will not open.
+      open.entries.push({
+        ref,
+        dir: ref.path ?? '',
+        host: undefined,
+        projectId: ref.id,
+        status: 'error',
+        message: errorMessage(error),
+      });
+      return;
+    }
+    const entry: OpenProjectEntry = {
+      ref,
+      dir: projectDir,
+      host: undefined,
+      projectId: ref.id,
+      status: 'loading',
+      message: undefined,
+    };
+    open.entries.push(entry);
+    await this.openEntry(entry, notices);
   }
 
   /** Brings up one project's host, recording the outcome on `entry` rather than throwing. */
@@ -675,6 +731,9 @@ export class WorkspaceService implements ProjectRouter {
     if (open === undefined) {
       return null;
     }
+    // Stopped before anything else: a late event during close must never reload a record that
+    // is about to be torn down.
+    open.watcher?.stop();
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
       // the next time this workspace opens (see `unsaved-store.ts`).
@@ -698,6 +757,80 @@ export class WorkspaceService implements ProjectRouter {
     return null;
   }
 
+  // ——— workspace-level watcher ————————————————————————————————————————————————————————————
+  //
+  // `open.watcher` watches the tree root for edits made outside the app — a `git pull`, a sync
+  // client, a hand edit — to `workspace.yaml` or `environments/*.yaml` (see
+  // `isWorkspaceManagedPath`; everything under `projects/**` is filtered out even though a
+  // recursive watch on the tree root also sees those events). Every workspace-level mutation
+  // here saves immediately, so there is no "dirty workspace" state to protect: a reload always
+  // replaces the model, unlike a project's watcher-driven prompt.
+
+  /**
+   * Reloads the manifest and environments after {@link OpenWorkspace.watcher} reports a change.
+   * Never calls `saveManifest` (the change already happened on disk) and never trashes anything,
+   * however large the diff — this only ever mirrors disk into memory.
+   *
+   * A load failure (most often unparsable YAML caught mid-write) leaves `open.workspace`
+   * untouched and is reported through `onWorkspaceChangedOnDisk` instead of `onChanged`.
+   */
+  private async reloadWorkspaceFromDisk(open: OpenWorkspace, paths: readonly string[]): Promise<void> {
+    if (this.current !== open) {
+      // This workspace has since closed (or a new one opened); the event is stale.
+      return;
+    }
+    let loaded: Workspace;
+    try {
+      ({ workspace: loaded } = await loadWorkspace(open.tree, this.fsOption()));
+    } catch (error) {
+      this.deps.hooks?.onWorkspaceChangedOnDisk?.(paths, errorMessage(error));
+      return;
+    }
+
+    // The active environment is machine-local (see `local-state.ts`) and never touched by this
+    // reload — carried forward from the in-memory model, dropped only if the environment it
+    // named is gone from the reloaded one.
+    const activeEnvironmentId =
+      open.workspace.activeEnvironmentId !== undefined &&
+      loaded.environments.some((environment) => environment.id === open.workspace.activeEnvironmentId)
+        ? open.workspace.activeEnvironmentId
+        : undefined;
+    open.workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
+
+    // Re-derive the project entries: a ref gone from the reloaded manifest (or one whose slug or
+    // path changed — a rename pulled from a teammate) is released; anything new is opened.
+    const nextRefs = new Map(loaded.projects.map((ref) => [ref.id, ref] as const));
+    for (const entry of [...open.entries]) {
+      const nextRef = nextRefs.get(entry.ref.id);
+      if (nextRef === undefined || !refsEqual(nextRef, entry.ref)) {
+        await this.releaseEntry(open, entry);
+      }
+    }
+    for (const ref of loaded.projects) {
+      if (!open.entries.some((entry) => entry.ref.id === ref.id)) {
+        await this.addEntryForRef(open, ref);
+      }
+    }
+    this.reindex();
+    this.deps.hooks?.onChanged?.(this.snapshot());
+  }
+
+  /**
+   * Closes one entry's host and releases its history file and unsaved-changes record — the same
+   * release sequence {@link removeProject} uses, minus the manifest save and the trash, since the
+   * removal here already happened on disk.
+   */
+  private async releaseEntry(open: OpenWorkspace, entry: OpenProjectEntry): Promise<void> {
+    this.cancelUnsavedWrite(entry.ref.id);
+    await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
+    await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
+    this.deps.history.close(entry.projectId);
+    const index = open.entries.indexOf(entry);
+    if (index !== -1) {
+      open.entries.splice(index, 1);
+    }
+  }
+
   // ——— manifest ———————————————————————————————————————————————————————————————————————————
 
   /** Renames a workspace — the open one, or any other on disk — and returns the fresh list. */
@@ -705,7 +838,8 @@ export class WorkspaceService implements ProjectRouter {
     const open = this.current;
     if (open !== undefined && open.workspace.id === id) {
       open.workspace = { ...open.workspace, name };
-      await saveWorkspace(open.workspace, open.tree, this.fsOption());
+      const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+      open.watcher?.expect([...result.written, ...result.removed]);
       this.deps.hooks?.onChanged?.(this.snapshot());
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
@@ -1131,7 +1265,10 @@ export class WorkspaceService implements ProjectRouter {
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */
   private async saveManifest(open: OpenWorkspace): Promise<void> {
     open.workspace = { ...open.workspace, projects: open.entries.map((entry) => entry.ref) };
-    await saveWorkspace(open.workspace, open.tree, this.fsOption());
+    const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+    // The write this call just made would otherwise come back through the watcher as if a
+    // teammate had made it, triggering a redundant reload of the record this call just built.
+    open.watcher?.expect([...result.written, ...result.removed]);
   }
 
   /** Every slug already used in the open workspace — what `uniqueSlug` is asked to avoid. */
@@ -1262,7 +1399,8 @@ export class WorkspaceService implements ProjectRouter {
       }
     }
 
-    await saveWorkspace(open.workspace, open.tree, this.fsOption());
+    const result = await saveWorkspace(open.workspace, open.tree, this.fsOption());
+    open.watcher?.expect([...result.written, ...result.removed]);
     this.deps.hooks?.onChanged?.(this.snapshot());
     return {
       workspace: this.requireSnapshot(),

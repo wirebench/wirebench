@@ -32,6 +32,12 @@ export interface ProjectWatcherOptions {
   readonly selfWriteTtlMs?: number;
   /** Injectable clock, so tests can drive the self-write TTL deterministically. */
   readonly now?: () => number;
+  /**
+   * Which paths under `dir` are worth reporting. Defaults to {@link isManagedPath} (a project
+   * folder); the workspace-level watcher passes {@link isWorkspaceManagedPath} instead, since it
+   * watches the tree root and must ignore everything under `projects/**`.
+   */
+  readonly isManaged?: (path: string) => boolean;
 }
 
 /**
@@ -85,6 +91,19 @@ export function isManagedPath(path: string): boolean {
 }
 
 /**
+ * True when `path` is one of the files the workspace format itself owns at the tree root:
+ * `workspace.yaml`, or one `environments/<name>.yaml` file (one path segment, so a project's own
+ * `projects/<slug>/environments/<name>.yaml` — which shares the same suffix — does not match).
+ */
+export function isWorkspaceManagedPath(path: string): boolean {
+  if (path === 'workspace.yaml') {
+    return true;
+  }
+  const parts = path.split('/');
+  return parts.length === 2 && parts[0] === 'environments' && parts[1] !== undefined && parts[1].endsWith('.yaml');
+}
+
+/**
  * The path to hand `fs.watch`, resolved with the OS's own idea of the name. On Windows the
  * path the app was given may be a short (8.3) or differently-cased form of the directory
  * libuv later reports events under, which trips an assertion inside libuv's `fs-event.c`
@@ -115,6 +134,7 @@ export class ProjectWatcher {
       debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       selfWriteTtlMs: options.selfWriteTtlMs ?? SELF_WRITE_TTL_MS,
       now: options.now ?? Date.now,
+      isManaged: options.isManaged ?? isManagedPath,
     };
   }
 
@@ -191,7 +211,7 @@ export class ProjectWatcher {
       return;
     }
     const path = this.normalise(typeof filename === 'string' ? filename : filename.toString('utf8'));
-    if (!isManagedPath(path) || this.isSelfWrite(path)) {
+    if (!this.options.isManaged(path) || this.isSelfWrite(path)) {
       return;
     }
     this.pending.add(path);
