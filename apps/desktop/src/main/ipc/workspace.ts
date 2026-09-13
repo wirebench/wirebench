@@ -123,7 +123,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   registerHandler(channels.workspace.close, async () => ({ workspace: await service.close() }));
 
   registerHandler(channels.workspace.stashDrafts, async (request) => {
-    await service.stashDrafts(request.workspaceId, request.requests);
+    await service.stashDrafts(request.workspaceId, request.requests, request.restRequests ?? {});
     return {};
   });
 

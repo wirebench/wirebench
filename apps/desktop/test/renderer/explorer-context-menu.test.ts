@@ -24,6 +24,7 @@ describe('explorerMenuItems', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'New API…',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -40,6 +41,7 @@ describe('explorerMenuItems', () => {
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'New API…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -111,7 +113,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import'],
+      ['import', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
       ['rename', 'remove'],

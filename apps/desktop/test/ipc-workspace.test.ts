@@ -109,6 +109,7 @@ function fakeService() {
     takeRestored: vi.fn().mockReturnValue({
       workspaceId: 'w1',
       drafts: { r1: { envelopeXml: '<kept/>' } },
+      restDrafts: {},
       notices: [{ projectId: 'p1', projectName: 'P', status: 'restored', conflicts: [], dropped: [] }],
     }),
   };
@@ -131,14 +132,20 @@ describe('workspace.* channels', () => {
     await expect(
       invoke('workspace.stashDrafts', { workspaceId: 'w1', requests: { r1: { envelopeXml: '<a/>' } } }),
     ).resolves.toEqual({ ok: true, value: {} });
-    expect(service.stashDrafts).toHaveBeenCalledWith('w1', { r1: { envelopeXml: '<a/>' } });
+    // Both protocols' drafts travel together; a payload with no REST drafts arrives as an empty map.
+    expect(service.stashDrafts).toHaveBeenCalledWith('w1', { r1: { envelopeXml: '<a/>' } }, {});
   });
 
   it('workspace.takeRestored answers with what the last open restored', async () => {
     const result = await invoke('workspace.takeRestored');
     expect(result).toMatchObject({
       ok: true,
-      value: { workspaceId: 'w1', drafts: { r1: { envelopeXml: '<kept/>' } }, notices: [{ status: 'restored' }] },
+      value: {
+        workspaceId: 'w1',
+        drafts: { r1: { envelopeXml: '<kept/>' } },
+        restDrafts: {},
+        notices: [{ status: 'restored' }],
+      },
     });
   });
 

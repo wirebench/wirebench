@@ -18,8 +18,8 @@ import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { MANIFEST_PATH, nodeFs } from '@wirebench/engine';
 import type { DirEntry, FileStat, FsLike, ProjectFiles } from '@wirebench/engine';
-import { requestPatchSchema } from '../shared/wire-types.js';
-import type { RequestPatchWire } from '../shared/wire-types.js';
+import { requestPatchSchema, restRequestPatchSchema } from '../shared/wire-types.js';
+import type { RequestPatchWire, RestRequestPatchWire } from '../shared/wire-types.js';
 
 /** Folder, inside a workspace's own folder, that holds its recovery records. */
 export const UNSAVED_DIR = 'unsaved';
@@ -43,6 +43,8 @@ const projectRecordSchema = z.object({
 const draftsRecordSchema = z.object({
   version: z.literal(UNSAVED_RECORD_VERSION),
   requests: z.record(z.string(), requestPatchSchema),
+  /** Absent in a file written before REST existed, which is read as "no REST drafts". */
+  restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
 });
 
 /** One project's recovery record, as stored. */
@@ -352,19 +354,27 @@ export class UnsavedStore {
     });
   }
 
-  async readDrafts(): Promise<Record<string, RequestPatchWire>> {
+  /** Both protocols' stored drafts. A file from before REST existed reads as no REST drafts. */
+  async readDrafts(): Promise<{
+    readonly requests: Record<string, RequestPatchWire>;
+    readonly restRequests: Record<string, RestRequestPatchWire>;
+  }> {
     const path = join(this.dir, DRAFTS_FILE);
     await this.queues.get(path);
-    return (await readJson(path, draftsRecordSchema))?.requests ?? {};
+    const record = await readJson(path, draftsRecordSchema);
+    return { requests: record?.requests ?? {}, restRequests: record?.restRequests ?? {} };
   }
 
-  /** Replaces the stored drafts; an empty map removes the file. */
-  writeDrafts(requests: Readonly<Record<string, RequestPatchWire>>): Promise<void> {
+  /** Replaces the stored drafts; an empty pair of maps removes the file. */
+  writeDrafts(
+    requests: Readonly<Record<string, RequestPatchWire>>,
+    restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
+  ): Promise<void> {
     const path = join(this.dir, DRAFTS_FILE);
-    if (Object.keys(requests).length === 0) {
+    if (Object.keys(requests).length === 0 && Object.keys(restRequests).length === 0) {
       return this.enqueue(path, () => rm(path, { force: true }));
     }
-    const record = { version: UNSAVED_RECORD_VERSION, requests };
+    const record = { version: UNSAVED_RECORD_VERSION, requests, restRequests };
     return this.enqueue(path, () => writeAtomic(path, JSON.stringify(record)));
   }
 }

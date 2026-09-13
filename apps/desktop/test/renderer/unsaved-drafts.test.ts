@@ -25,15 +25,17 @@ describe('unsaved request drafts across sessions', () => {
     vi.useRealTimers();
   });
 
-  it('stashDrafts hands every current draft to main for the named workspace', async () => {
+  it('stashDrafts hands every current draft, of either protocol, to main for the named workspace', async () => {
     const api = installWirebenchApi();
     useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<unsaved/>' });
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
 
     await stashDrafts('w1');
 
     expect(api.workspace.stashDrafts).toHaveBeenCalledWith({
       workspaceId: 'w1',
       requests: { r1: { envelopeXml: '<unsaved/>' } },
+      restRequests: { 'rest-1': { url: '/pets' } },
     });
   });
 
@@ -52,6 +54,7 @@ describe('unsaved request drafts across sessions', () => {
     expect(api.workspace.stashDrafts).toHaveBeenLastCalledWith({
       workspaceId: 'w1',
       requests: { r1: { envelopeXml: '<ab/>' } },
+      restRequests: {},
     });
 
     const flush = (on.mock.calls as [string, (payload: unknown) => void][]).find(
@@ -82,6 +85,7 @@ describe('unsaved request drafts across sessions', () => {
     applyRestored('w1', {
       workspaceId: 'w1',
       drafts: { r1: { envelopeXml: '<restored/>' }, gone: { envelopeXml: '<orphan/>' } },
+      restDrafts: {},
       notices: [],
     });
 
@@ -93,7 +97,12 @@ describe('unsaved request drafts across sessions', () => {
   });
 
   it('ignores what was restored for a different workspace', () => {
-    applyRestored('w2', { workspaceId: 'w1', drafts: { r1: { envelopeXml: '<restored/>' } }, notices: [] });
+    applyRestored('w2', {
+      workspaceId: 'w1',
+      drafts: { r1: { envelopeXml: '<restored/>' } },
+      restDrafts: {},
+      notices: [],
+    });
 
     expect(useDraftsStore.getState().isRequestDirty('r1')).toBe(false);
     expect(showToast).not.toHaveBeenCalled();
@@ -103,6 +112,7 @@ describe('unsaved request drafts across sessions', () => {
     applyRestored('w1', {
       workspaceId: 'w1',
       drafts: {},
+      restDrafts: {},
       notices: [
         {
           projectId: 'p1',

@@ -129,14 +129,28 @@ export function RestEditor({ requestId }: RestEditorProps) {
         : undefined;
 
   const requestTabs = (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // `h-full`, not `flex-1`: the panel this sits in is a plain block, so a flex child of it would
+    // size to its content and the raw body's editor would collapse to nothing.
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <Tabs label="Request tabs" items={TABS} active={tab} onSelect={setTab} />
-      <div className="min-h-0 flex-1 overflow-hidden">
+      {/* A flex column, so a tab that fills the pane (the raw body's editor) is given a height
+          rather than collapsing to its content. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === 'params' && (
           <ParamsTab url={request.url} pathParams={request.pathParams} query={request.query} onChange={stage} />
         )}
         {tab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
-        {tab === 'body' && <BodyTab body={request.body} settings={request.settings} onChange={stage} />}
+        {tab === 'body' && (
+          <BodyTab
+            body={request.body}
+            settings={request.settings}
+            onChange={stage}
+            onSend={onSend}
+            onSave={() => {
+              void useProjectStore.getState().saveRestRequest(requestId);
+            }}
+          />
+        )}
         {tab === 'auth' && (
           <RestAuthTab
             auth={request.auth}

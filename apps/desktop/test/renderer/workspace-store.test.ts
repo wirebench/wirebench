@@ -264,7 +264,11 @@ describe('useWorkspaceStore', () => {
 
     await useWorkspaceStore.getState().open('w2');
 
-    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { envelopeXml: '<unsaved/>' } } });
+    expect(stashDrafts).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      requests: { r1: { envelopeXml: '<unsaved/>' } },
+      restRequests: {},
+    });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
@@ -279,7 +283,11 @@ describe('useWorkspaceStore', () => {
 
     await useWorkspaceStore.getState().close();
 
-    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { name: 'Renamed' } } });
+    expect(stashDrafts).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      requests: { r1: { name: 'Renamed' } },
+      restRequests: {},
+    });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
 

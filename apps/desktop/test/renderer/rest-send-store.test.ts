@@ -188,13 +188,22 @@ describe('the REST save path', () => {
     expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(true);
   });
 
-  it('is a no-op for a clean request', async () => {
+  it('commits nothing for a clean request, and writes the project only when it is dirty', async () => {
     const mutate = vi.fn();
-    installWirebenchApi({ project: { mutate } });
+    const save = vi.fn().mockResolvedValue({ ok: true, value: { saved: true, written: 1, removed: 0 } });
+    installWirebenchApi({ project: { mutate, save } });
+    // A clean request in a clean project: nothing to do at all.
+    useProjectStore.setState({ projects: { p1: { id: 'p1', dirty: false } as never } });
 
     await expect(useProjectStore.getState().commitRestRequest('rest-1')).resolves.toBe(true);
     await useProjectStore.getState().saveRestRequest('rest-1');
 
     expect(mutate).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+
+    // A rename reaches main unstaged, so a clean request can still sit in a dirty project.
+    useProjectStore.setState({ projects: { p1: { id: 'p1', dirty: true } as never } });
+    await useProjectStore.getState().saveRestRequest('rest-1');
+    expect(save).toHaveBeenCalledWith({ projectId: 'p1' });
   });
 });

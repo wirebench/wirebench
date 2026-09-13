@@ -104,32 +104,36 @@ export function BodyView({ exchange, onCopyPath }: BodyViewProps) {
 
   return (
     <div data-testid="rest-response-body" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-row shrink-0 items-center gap-1 px-2" role="tablist" aria-label="Response body view">
-        {(['pretty', 'raw', 'preview'] as const).map((candidate) => {
-          const disabled = candidate === 'pretty' && tooLargeToPretty;
-          return (
-            <button
-              key={candidate}
-              type="button"
-              role="tab"
-              data-testid={`rest-response-view-${candidate}`}
-              aria-selected={mode === candidate}
-              aria-disabled={disabled}
-              disabled={disabled}
-              {...(disabled
-                ? { title: `This body is larger than ${formatBytes(maxPretty)}, so it is not reformatted.` }
-                : {})}
-              onClick={() => {
-                setMode(candidate);
-              }}
-              className={`rounded-sm px-2 text-xs capitalize ${
-                mode === candidate ? 'bg-surface-active text-fg-default' : 'text-fg-subtle'
-              } ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-surface-hover'}`}
-            >
-              {candidate}
-            </button>
-          );
-        })}
+      <div className="flex h-row shrink-0 items-center gap-1 px-2">
+        {/* The three views are a tablist of their own: the copy actions beside them are buttons, and
+            a `tablist` may only own tabs. */}
+        <div role="tablist" aria-label="Response body view" className="flex items-center gap-1">
+          {(['pretty', 'raw', 'preview'] as const).map((candidate) => {
+            const disabled = candidate === 'pretty' && tooLargeToPretty;
+            return (
+              <button
+                key={candidate}
+                type="button"
+                role="tab"
+                data-testid={`rest-response-view-${candidate}`}
+                aria-selected={mode === candidate}
+                aria-disabled={disabled}
+                disabled={disabled}
+                {...(disabled
+                  ? { title: `This body is larger than ${formatBytes(maxPretty)}, so it is not reformatted.` }
+                  : {})}
+                onClick={() => {
+                  setMode(candidate);
+                }}
+                className={`rounded-sm px-2 text-xs capitalize ${
+                  mode === candidate ? 'bg-surface-active text-fg-default' : 'text-fg-subtle'
+                } ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-surface-hover'}`}
+              >
+                {candidate}
+              </button>
+            );
+          })}
+        </div>
         <span className="flex-1" />
         {exchange.language === 'json' && (
           <Button

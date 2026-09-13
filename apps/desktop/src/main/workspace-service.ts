@@ -67,6 +67,7 @@ import type {
 import type {
   HydrationStatus,
   RequestPatchWire,
+  RestRequestPatchWire,
   UnsavedRestoreNoticeWire,
   WorkspaceRestoredResponse,
 } from '../shared/wire-types.js';
@@ -325,6 +326,8 @@ export class WorkspaceService implements ProjectRouter {
   private readonly unsavedTimers = new Map<string, NodeJS.Timeout>();
   /** The renderer's staged request edits for the open workspace, as last stashed. */
   private drafts: Record<string, RequestPatchWire> = {};
+  /** The REST editor's unsaved edits, kept beside {@link drafts} for the same reason. */
+  private restDrafts: Record<string, RestRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -433,6 +436,7 @@ export class WorkspaceService implements ProjectRouter {
     this.failure = undefined;
     this.unsaved = new UnsavedStore(dir);
     this.drafts = {};
+    this.restDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -471,8 +475,15 @@ export class WorkspaceService implements ProjectRouter {
 
       // Kept as the workspace's drafts until the renderer stashes its own, so a close before the
       // renderer has taken them still carries them forward.
-      this.drafts = await this.unsaved.readDrafts();
-      this.restored = { workspaceId: workspace.id, drafts: { ...this.drafts }, notices };
+      const stashed = await this.unsaved.readDrafts();
+      this.drafts = stashed.requests;
+      this.restDrafts = stashed.restRequests;
+      this.restored = {
+        workspaceId: workspace.id,
+        drafts: { ...this.drafts },
+        restDrafts: { ...this.restDrafts },
+        notices,
+      };
 
       await this.state.remember(id, this.now().toISOString());
       this.deps.hooks?.onChanged?.(this.snapshot());
@@ -624,6 +635,7 @@ export class WorkspaceService implements ProjectRouter {
     }
     this.unsaved = undefined;
     this.drafts = {};
+    this.restDrafts = {};
     this.restored = undefined;
     this.deps.history.closeAll();
     this.index.clear();
@@ -970,7 +982,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts);
+    await store.writeDrafts(this.drafts, this.restDrafts);
     await store.idle();
   }
 
@@ -1017,7 +1029,11 @@ export class WorkspaceService implements ProjectRouter {
    * Replaces the open workspace's stashed request drafts. A stash naming another workspace is
    * ignored: it was sent for one that has since closed.
    */
-  async stashDrafts(workspaceId: string, requests: Readonly<Record<string, RequestPatchWire>>): Promise<void> {
+  async stashDrafts(
+    workspaceId: string,
+    requests: Readonly<Record<string, RequestPatchWire>>,
+    restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
+  ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
     try {
@@ -1025,7 +1041,8 @@ export class WorkspaceService implements ProjectRouter {
         return;
       }
       this.drafts = { ...requests };
-      await this.unsaved.writeDrafts(this.drafts);
+      this.restDrafts = { ...restRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -1052,7 +1069,7 @@ export class WorkspaceService implements ProjectRouter {
   takeRestored(): WorkspaceRestoredResponse {
     const restored = this.restored;
     this.restored = undefined;
-    return restored ?? { workspaceId: this.current?.workspace.id ?? null, drafts: {}, notices: [] };
+    return restored ?? { workspaceId: this.current?.workspace.id ?? null, drafts: {}, restDrafts: {}, notices: [] };
   }
 
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */
@@ -1292,8 +1309,8 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
-   * The host owning `entityId` — a project, interface, request, environment, keystore or
-   * WS-Security configuration id. This is how every entity-addressed IPC channel finds its
+   * The host owning `entityId` — a project, interface, request of either protocol, API, folder,
+   * environment, keystore or WS-Security configuration id. This is how every entity-addressed IPC channel finds its
    * project without the renderer having to say which one.
    *
    * @throws WirebenchError `unknown-entity` when no open project holds it.
@@ -1335,6 +1352,18 @@ export class WorkspaceService implements ProjectRouter {
         add(iface.id);
       }
       for (const request of project.requests) {
+        add(request.id);
+      }
+      // The REST half: every channel addressed at an API, a folder or a REST request routes through
+      // this table too, so all three have to be in it — without them a REST send resolves no host
+      // and fails with `unknown-entity`.
+      for (const api of project.apis) {
+        add(api.id);
+      }
+      for (const folder of project.folders) {
+        add(folder.id);
+      }
+      for (const request of project.restRequests) {
         add(request.id);
       }
       for (const environment of project.environments) {

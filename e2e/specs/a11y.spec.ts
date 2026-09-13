@@ -4,8 +4,14 @@ import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
-import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
+import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  startTestRestServer,
+  startTestSoapServer,
+  type TestRestServer,
+  type TestSoapServer,
+} from '../helpers/test-server.js';
 
 /**
  * Accessibility and theming coverage.
@@ -127,6 +133,7 @@ async function resizeWindow(launched: LaunchedApp): Promise<void> {
 test.describe('accessibility and theming', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
+  let restServer: TestRestServer | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -136,6 +143,10 @@ test.describe('accessibility and theming', () => {
     if (server) {
       await server.close();
       server = undefined;
+    }
+    if (restServer) {
+      await restServer.close();
+      restServer = undefined;
     }
   });
 
@@ -205,6 +216,23 @@ test.describe('accessibility and theming', () => {
 
       await setTheme(window, theme);
       await expectNoSeriousViolations(window, `request editor (${theme})`);
+    });
+
+    test(`a11y: the REST editor with a response has no serious violations (${theme})`, async () => {
+      restServer = await startTestRestServer();
+      launched = await launchApp();
+      const { window } = launched;
+
+      await createWorkspace(window, 'REST');
+      await createProject(window, 'Pets');
+      await createApi(window, 'Petstore', restServer.url);
+      await createRestRequest(window, 'Petstore', 'Echo');
+      await setMethodAndUrl(window, 'GET', '/echo?x=1');
+      await sendRest(window);
+      await expect(window.getByTestId('rest-response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
+
+      await setTheme(window, theme);
+      await expectNoSeriousViolations(window, `REST editor (${theme})`);
     });
 
     test(`a11y: the interface viewer has no serious violations (${theme})`, async () => {

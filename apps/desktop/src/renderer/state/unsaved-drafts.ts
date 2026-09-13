@@ -33,8 +33,12 @@ function cancelPending(): void {
 /** Hands every current draft to main for `workspaceId` now, replacing what it held. */
 export async function stashDrafts(workspaceId: string): Promise<void> {
   cancelPending();
-  const requests = useDraftsStore.getState().requests;
-  await ipc().workspace.stashDrafts({ workspaceId, requests: { ...requests } });
+  const { requests, restRequests } = useDraftsStore.getState();
+  await ipc().workspace.stashDrafts({
+    workspaceId,
+    requests: { ...requests },
+    restRequests: { ...restRequests },
+  });
 }
 
 /**
@@ -50,7 +54,7 @@ export function subscribeToDraftStash(workspaceId: () => string | undefined): ()
     }
   };
   const offStore = useDraftsStore.subscribe((state, previous) => {
-    if (state.requests === previous.requests) {
+    if (state.requests === previous.requests && state.restRequests === previous.restRequests) {
       return;
     }
     cancelPending();
@@ -118,6 +122,16 @@ export function applyRestored(workspaceId: string, restored: WorkspaceRestoredRe
       continue;
     }
     projects.editRequest(requestId, patch);
+    restoredDrafts += 1;
+  }
+  // The REST half, counted into the same totals: to the user these are one kind of thing — the
+  // edits they had not saved — and one notice for all of them is what they expect to read.
+  for (const [requestId, patch] of Object.entries(restored.restDrafts)) {
+    if (projects.restRequests[requestId] === undefined) {
+      droppedDrafts += 1;
+      continue;
+    }
+    projects.editRestRequest(requestId, patch);
     restoredDrafts += 1;
   }
   for (const notice of restored.notices) {

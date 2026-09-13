@@ -114,7 +114,24 @@ describe('item.save, invoked the way the application menu invokes it', () => {
     });
   });
 
-  it('is a harmless no-op when the tab has nothing staged', async () => {
+  it('writes the project when nothing is staged but the project is dirty', async () => {
+    // A rename from the tree or the breadcrumb reaches main without being staged here, so the
+    // project is dirty while the tab is clean. "Save" then means "write what is pending".
+    render(<RequestEditor requestId="req-1" />);
+    await screen.findByLabelText('Request envelope XML');
+
+    await expect(runCommand('item.save', context)).resolves.toBe(true);
+
+    expect(mutate).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(save).toHaveBeenCalled();
+    });
+  });
+
+  it('is a harmless no-op when nothing is staged and the project is clean', async () => {
+    useProjectStore.setState((state) => ({
+      projects: { p1: { ...state.projects['p1']!, dirty: false } },
+    }));
     render(<RequestEditor requestId="req-1" />);
     await screen.findByLabelText('Request envelope XML');
 

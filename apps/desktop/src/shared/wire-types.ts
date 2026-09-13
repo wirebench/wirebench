@@ -2992,6 +2992,11 @@ export type WorkspaceChangedEvent = z.infer<typeof workspaceChangedEventSchema>;
 export const workspaceStashDraftsRequestSchema = z.object({
   workspaceId: z.string(),
   requests: z.record(z.string(), requestPatchSchema),
+  /**
+   * The REST editor's unsaved edits, by REST request id. Optional so a stash written by an older
+   * build still loads: absent means the session had none.
+   */
+  restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 
@@ -3016,6 +3021,8 @@ export type UnsavedRestoreNoticeWire = z.infer<typeof unsavedRestoreNoticeSchema
 export const workspaceRestoredResponseSchema = z.object({
   workspaceId: z.string().nullable(),
   drafts: z.record(z.string(), requestPatchSchema),
+  /** The REST drafts the last session left unsaved, by REST request id. */
+  restDrafts: z.record(z.string(), restRequestPatchSchema),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

@@ -902,10 +902,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     saveRequest: async (requestId) => {
+      const projectId = ownerOf(requestId);
       if (useDraftsStore.getState().peekRequest(requestId) === undefined) {
+        // Nothing staged, but the project may still be dirty from a write-through edit — a rename
+        // from the breadcrumb or the tree. "Save" means "write what is pending", so it writes.
+        if (get().projects[projectId]?.dirty === true) {
+          await saveOne(projectId);
+        }
         return;
       }
-      const projectId = ownerOf(requestId);
       if (!(await get().commitRequest(requestId))) {
         return;
       }
@@ -1108,10 +1113,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     saveRestRequest: async (requestId) => {
+      const projectId = ownerOf(requestId);
       if (useDraftsStore.getState().peekRestRequest(requestId) === undefined) {
+        // As on the SOAP side: a rename reaches main without being staged here, so a clean request
+        // in a dirty project still has something to write.
+        if (get().projects[projectId]?.dirty === true) {
+          await saveOne(projectId);
+        }
         return;
       }
-      const projectId = ownerOf(requestId);
       if (!(await get().commitRestRequest(requestId))) {
         return;
       }

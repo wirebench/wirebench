@@ -15,6 +15,7 @@ import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
+import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import type { KeyValueWire, RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/wire-types.js';
@@ -82,10 +83,17 @@ export interface BodyTabProps {
   readonly body: RestBodyWire;
   readonly settings: RestSettingsWire;
   readonly onChange: (patch: RestRequestPatchWire) => void;
+  /**
+   * Sends the request. Bound inside the raw editor as well as on the toolbar: with the caret in
+   * Monaco it consumes the keystroke, so the window-level `Mod+Enter` never sees it.
+   */
+  readonly onSend?: () => void;
+  /** Saves the request, bound inside the editor for the same reason. */
+  readonly onSave?: () => void;
 }
 
 /** The Body tab. */
-export function BodyTab({ body, settings, onChange }: BodyTabProps) {
+export function BodyTab({ body, settings, onChange, onSend, onSave }: BodyTabProps) {
   // One remembered draft per kind, seeded with the saved body's own kind.
   const [drafts, setDrafts] = useState<Partial<Record<BodyKind, RestBodyWire>>>({ [body.kind]: body });
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
@@ -103,7 +111,7 @@ export function BodyTab({ body, settings, onChange }: BodyTabProps) {
   };
 
   return (
-    <div data-testid="rest-body" className="flex min-h-0 flex-col gap-2 p-3">
+    <div data-testid="rest-body" className="flex h-full min-h-0 flex-col gap-2 p-3">
       <div className="flex shrink-0 items-center gap-2">
         <select
           aria-label="Body kind"
@@ -177,6 +185,14 @@ export function BodyTab({ body, settings, onChange }: BodyTabProps) {
             ariaLabel="Request body"
             onChange={(text) => {
               set({ ...body, text });
+            }}
+            onMount={(editor) => {
+              editor.addCommand(SEND_KEYBINDING, () => {
+                onSend?.();
+              });
+              editor.addCommand(SAVE_KEYBINDING, () => {
+                onSave?.();
+              });
             }}
           />
         </div>
