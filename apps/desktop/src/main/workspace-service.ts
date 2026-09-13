@@ -38,6 +38,7 @@ import {
   WirebenchError,
   WorkspaceError,
   WORKSPACE_ENVIRONMENTS_DIR,
+  WORKSPACE_JOINING_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
   WORKSPACE_SHARE_FILE,
@@ -82,6 +83,8 @@ import {
   requireWorkspaceId,
   resolveWorkspaceTree,
 } from './workspace-files.js';
+import { joinFromFolder, joinRemote, nodeFileOps, shareAsGit, shareToFolder } from './workspace-share.js';
+import type { ShareDeps, WorkspaceDialogs, WorkspaceFileOps } from './workspace-share.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
@@ -186,6 +189,10 @@ export interface WorkspaceServiceDeps {
   readonly git?: () => Promise<GitCli | undefined>;
   /** The empty `core.hooksPath` directory every `GitCli` is built with (clones and inits need it). */
   readonly hooksDir?: string;
+  /** The folder pickers share and join run; the native ones unless a test injects its own. */
+  readonly dialogs?: WorkspaceDialogs;
+  /** rename/cp/rm for moving a tree between folders; `node:fs` unless a test injects its own. */
+  readonly files?: WorkspaceFileOps;
 }
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
@@ -229,6 +236,8 @@ interface OpenWorkspace {
   sync: SyncService | undefined;
   /** Outside-edit notifications held while sync runs an operation or sits in a conflict (see the sync region). */
   readonly held: HeldChanges;
+  /** Settles once `startSync` has built and started the sync service (at once for a local workspace). Never rejects. */
+  syncReady: Promise<void>;
 }
 
 /**
@@ -400,10 +409,25 @@ export class WorkspaceService implements ProjectRouter {
    * reach into) the next one opened.
    */
   private workspaceOps: Promise<void> = Promise.resolve();
+  /** Launch-time removal of `<workspaces>/.joining/` (clones a crash left half-made); join waits for it. */
+  private readonly startup: Promise<void>;
 
   constructor(private readonly deps: WorkspaceServiceDeps) {
     this.state = new WorkspaceState(deps.userDataDir);
     this.now = deps.now ?? ((): Date => new Date());
+    this.startup = this.clearJoining();
+  }
+
+  /** Empties `.joining/` once per service; a failure is kept for {@link lastError}, never thrown. */
+  private async clearJoining(): Promise<void> {
+    try {
+      await (this.deps.files ?? nodeFileOps).rm(join(this.deps.userDataDir, WORKSPACES_DIR, WORKSPACE_JOINING_DIR), {
+        recursive: true,
+        force: true,
+      });
+    } catch (error) {
+      this.failure = errorMessage(error);
+    }
   }
 
   // ——— listing ————————————————————————————————————————————————————————————————————————————
@@ -504,6 +528,14 @@ export class WorkspaceService implements ProjectRouter {
    * status: a broken project can never cost the user their workspace.
    */
   async open(id: string): Promise<WorkspaceWire> {
+    return await this.openWorkspace(id, {});
+  }
+
+  /**
+   * {@link open}, plus an `initialCommitMessage` a new git share commits its tree under before
+   * sync's own start-up commit could take it with a generated message.
+   */
+  private async openWorkspace(id: string, options: { readonly initialCommitMessage?: string }): Promise<WorkspaceWire> {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { share, tree } = await this.resolveTree(dir);
@@ -549,6 +581,7 @@ export class WorkspaceService implements ProjectRouter {
       closing: false,
       sync: undefined,
       held: new HeldChanges(),
+      syncReady: Promise.resolve(),
     };
     this.current = open;
     this.failure = undefined;
@@ -597,7 +630,7 @@ export class WorkspaceService implements ProjectRouter {
       this.deps.hooks?.onChanged?.(this.snapshot());
       // Never awaited: a shared workspace opens on its files alone, and git (a missing
       // executable, a slow remote) only ever shows up in the sync status.
-      void this.startSync(open);
+      open.syncReady = this.startSync(open, options.initialCommitMessage).catch(() => undefined);
       return this.requireSnapshot();
     } catch (error) {
       await this.close().catch(() => undefined);
@@ -981,7 +1014,7 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** Builds the share's backend and starts syncing. Never throws: failures end up in the status. */
-  private async startSync(open: OpenWorkspace): Promise<void> {
+  private async startSync(open: OpenWorkspace, initialCommitMessage?: string): Promise<void> {
     const share = open.share;
     if (share === undefined) {
       return;
@@ -1013,6 +1046,12 @@ export class WorkspaceService implements ProjectRouter {
       },
     });
     open.sync = sync;
+    if (initialCommitMessage !== undefined) {
+      // Queued ahead of `start()`, whose "commit what changed while closed" would otherwise take
+      // the freshly shared tree under a generated message. A failure (no identity yet) is in the
+      // status, and setting the identity retries this commit with this message.
+      void sync.commit(initialCommitMessage).catch(() => undefined);
+    }
     await sync.start();
   }
 
@@ -1172,6 +1211,81 @@ export class WorkspaceService implements ProjectRouter {
     return await this.list();
   }
 
+  // ——— share, join ——————————————————————————————————————————————————————————————————————————
+  //
+  // Thin, serialised entry points over `workspace-share.ts`. Each runs inside the workspace
+  // operation chain (it closes and reopens a workspace), and nothing
+  // inside the chain awaits a `SyncService` operation: those wait on reloads queued on the same
+  // chain. The first commit of a git share is queued by `startSync`; its push is started here,
+  // after the queued operation has resolved.
+
+  /**
+   * Shares the open local workspace as a git repository (`<dir>/tree`), optionally with a remote
+   * (validated, trimmed) and a branch (default `main`). Resolves once the first commit — and,
+   * with a remote, the first push — has been attempted; their failures are in the sync status.
+   */
+  async share(options: { remote?: string; branch?: string }): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    const wire = await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      return await shareAsGit(this.shareDeps(), open, options);
+    });
+    const reopened = this.current;
+    if (reopened === undefined) {
+      return wire;
+    }
+    await reopened.syncReady;
+    if (options.remote !== undefined && options.remote.trim().length > 0 && !this.stale(reopened)) {
+      // A rejection — including `sync-stopped` when a close raced this — is already in the status.
+      await reopened.sync?.push().catch(() => undefined);
+    }
+    return this.snapshot() ?? wire;
+  }
+
+  /** Shares the open local workspace to an empty folder the user picks; `null` on cancel. */
+  async shareToFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+    const open = this.requireOpen();
+    const picks = this.requirePicks();
+    return await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      return await shareToFolder(this.shareDeps(), open, () =>
+        this.dialogs().pickFolderToWrite(sender, picks, { title: 'Share to folder' }),
+      );
+    });
+  }
+
+  /** Clones a shared workspace from `remote` and opens it. */
+  async join(options: { remote: string; branch?: string }): Promise<WorkspaceWire> {
+    return await this.enqueueWorkspaceOp(() => joinRemote(this.shareDeps(), options));
+  }
+
+  /** Joins a shared workspace from an existing clone or synced folder the user picks; `null` on cancel. */
+  async joinFromFolder(sender: WebContents): Promise<WorkspaceWire | null> {
+    const picks = this.requirePicks();
+    return await this.enqueueWorkspaceOp(() =>
+      joinFromFolder(this.shareDeps(), () =>
+        this.dialogs().pickFolder(sender, { title: 'Open shared workspace folder' }, picks),
+      ),
+    );
+  }
+
+  private shareDeps(): ShareDeps {
+    const git = this.deps.git;
+    return {
+      userDataDir: this.deps.userDataDir,
+      files: this.deps.files ?? nodeFileOps,
+      fsOption: this.fsOption(),
+      git: async () => (git === undefined ? undefined : await git()),
+      ready: this.startup,
+      close: () => this.close(),
+      open: (id, options) => this.openWorkspace(id, options ?? {}),
+    };
+  }
+
+  private dialogs(): WorkspaceDialogs {
+    return this.deps.dialogs ?? { pickFolder, pickFolderToWrite };
+  }
+
   // ——— projects ———————————————————————————————————————————————————————————————————————————
   //
   // Not one of these takes a path. `addProject` and `removeProject` are named by id alone;
@@ -1258,7 +1372,14 @@ export class WorkspaceService implements ProjectRouter {
   async linkProject(sender: WebContents): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
       const open = this.requireOpen();
-      const picked = await pickFolder(sender, { title: 'Link project folder' }, this.requirePicks());
+      if (open.share !== undefined) {
+        throw new WirebenchError(
+          'share-linked-project-refused',
+          'Shared workspaces hold their projects inside the workspace; use Move to workspace… to copy it in.',
+          { details: { workspaceId: open.workspace.id } },
+        );
+      }
+      const picked = await this.dialogs().pickFolder(sender, { title: 'Link project folder' }, this.requirePicks());
       if (picked === undefined) {
         return null;
       }
@@ -1294,7 +1415,7 @@ export class WorkspaceService implements ProjectRouter {
    */
   async importProjectFolder(sender: WebContents): Promise<WorkspaceWire | null> {
     return await this.enqueueWorkspaceOp(async () => {
-      const picked = await pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
+      const picked = await this.dialogs().pickFolder(sender, { title: 'Import project folder' }, this.requirePicks());
       if (picked === undefined) {
         return null;
       }
@@ -1343,7 +1464,9 @@ export class WorkspaceService implements ProjectRouter {
     if (model === undefined) {
       throw new WirebenchError('unknown-project', `Project "${projectId}" is not open.`, { details: { projectId } });
     }
-    const picked = await pickFolderToWrite(sender, this.requirePicks(), { title: 'Export project to folder' });
+    const picked = await this.dialogs().pickFolderToWrite(sender, this.requirePicks(), {
+      title: 'Export project to folder',
+    });
     if (picked === undefined) {
       return null;
     }
@@ -1379,7 +1502,7 @@ export class WorkspaceService implements ProjectRouter {
           },
         );
       }
-      const picked = await pickFolder(sender, { title: 'Locate project folder' }, this.requirePicks());
+      const picked = await this.dialogs().pickFolder(sender, { title: 'Locate project folder' }, this.requirePicks());
       if (picked === undefined) {
         return null;
       }
