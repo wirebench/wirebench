@@ -17,7 +17,7 @@ describe('RequestToolbar', () => {
     cleanup();
   });
 
-  it('shows the operation and SOAP version, with the SOAPAction in the badge title', () => {
+  it('leaves the operation and its SOAP version to the request path above it', () => {
     render(
       <RequestToolbar
         draft={makeDraft()}
@@ -31,10 +31,8 @@ describe('RequestToolbar', () => {
       />,
     );
 
-    const badge = screen.getByTestId('request-operation');
-    expect(badge.textContent).toContain('Add');
-    expect(badge.textContent).toContain('SOAP 1.1');
-    expect(badge.getAttribute('title')).toContain('http://tempuri.org/Add');
+    // The operation's name and SOAP version both live in the request path (the breadcrumb) now.
+    expect(screen.queryByTestId('request-operation')).toBeNull();
   });
 
   it('shows the whole endpoint URL in an always-visible field', () => {
@@ -294,11 +292,59 @@ describe('RequestToolbar actions', () => {
     expect(useUiStore.getState().editorLayout.mode).toBe('tabs');
   });
 
-  it('Show code opens the Code slide-over', async () => {
-    renderToolbar();
+  describe('tooltips and state icons', () => {
+    function renderWithShortcuts() {
+      useEditorsStore.setState({ editorLayouts: {} });
+      useUiStore.setState({ editorLayout: DEFAULT_UI_STATE.editorLayout });
+      return render(
+        <RequestToolbar
+          draft={makeDraft()}
+          summary={makeInterface()}
+          endpoint="https://example.test/calc.asmx"
+          sending={false}
+          onSend={noop}
+          onCancel={noop}
+          onEndpointChange={noop}
+          onValidate={noop}
+          layoutModeShortcut={'⌘\\'}
+        />,
+      );
+    }
 
-    await userEvent.click(screen.getByTestId('request-code'));
+    it('names what each layout button does on hover, with the shortcut where there is one', async () => {
+      installWirebenchApi();
+      renderWithShortcuts();
 
-    expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
+      expect(screen.getByTestId('layout-orientation').getAttribute('title')).toBe('Stack panes vertically');
+      expect(screen.getByTestId('layout-mode').getAttribute('title')).toBe('Show one pane at a time (⌘\\)');
+
+      await userEvent.click(screen.getByTestId('layout-orientation'));
+      await userEvent.click(screen.getByTestId('layout-mode'));
+
+      expect(screen.getByTestId('layout-orientation').getAttribute('title')).toBe('Place panes side by side');
+      expect(screen.getByTestId('layout-mode').getAttribute('title')).toBe('Show both panes (⌘\\)');
+    });
+
+    it('names the endpoint menu on hover', () => {
+      installWirebenchApi();
+      renderWithShortcuts();
+
+      expect(screen.getByTestId('request-endpoint-menu').getAttribute('title')).toBe('Choose an endpoint');
+    });
+
+    // Like the orientation button, the mode button draws the layout you are in, so split and
+    // tabs must not look the same.
+    it('draws a different icon for split and tabs', async () => {
+      installWirebenchApi();
+      renderWithShortcuts();
+      const icon = (): string => screen.getByTestId('layout-mode').querySelector('svg')?.getAttribute('class') ?? '';
+
+      const splitIcon = icon();
+      await userEvent.click(screen.getByTestId('layout-mode'));
+      const tabsIcon = icon();
+
+      expect(splitIcon).toContain('lucide-square-split-horizontal');
+      expect(tabsIcon).toContain('lucide-panel-top');
+    });
   });
 });

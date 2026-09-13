@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { runCommand } from '../helpers/palette.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -88,9 +89,8 @@ test.describe('request properties and preferences', () => {
 
     // --- back to the request, and recreate it with the new indent -------------
     await page.getByRole('tab', { name: 'Request 1' }).click();
-    // Recreate lives in the request pane's context menu since Task 32b.
-    await page.getByTestId('request-pane-surface').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Recreate request (keep values)' }).click();
+    // Recreate is not in the request pane's right-click menu; the palette reaches it.
+    await runCommand(page, 'Request: Recreate (keep values)');
 
     await expect
       .poll(

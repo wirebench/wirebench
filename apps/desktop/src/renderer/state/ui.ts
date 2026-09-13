@@ -89,7 +89,7 @@ export interface UiStore extends UiSnapshot {
   readonly toggleConsole: () => void;
   /** Flips the Code slide-over open or closed — what the right rail's icon does. */
   readonly toggleCode: () => void;
-  /** Opens the Code slide-over unconditionally — what "Show code" (toolbar, context menu) does. */
+  /** Opens the Code slide-over unconditionally — what the "Show code" command does. */
   readonly openCode: () => void;
   /** Closes the Code slide-over unconditionally — the close icon and Escape. */
   readonly closeCode: () => void;

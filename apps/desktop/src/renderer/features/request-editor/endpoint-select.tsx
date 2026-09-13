@@ -75,6 +75,7 @@ export function EndpointSelect({ summary, bindingName, value, onChange, onEditEn
             type="button"
             aria-label="Endpoint options"
             data-testid="request-endpoint-menu"
+            title="Choose an endpoint"
             className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-1 text-fg-subtle hover:bg-surface-hover hover:text-fg-default"
           >
             <ChevronDown size={12} aria-hidden="true" />

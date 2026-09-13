@@ -1,17 +1,17 @@
 /**
- * The request pane's right-click menu: everything that used to crowd the toolbar (Recreate,
- * Clone, cURL) plus the two editor actions the overflow menu also offers. Monaco's own context
- * menu is disabled for the request editor (`contextMenu={false}` in `request-pane.tsx`) so this
- * one reaches the user wherever they click inside the pane.
+ * The request pane's right-click menu, kept short on purpose. Actions with a home elsewhere stay
+ * out of it: Validate request is a toolbar button, Show code is the right rail's Code panel, and
+ * Recreate, Create Empty Envelope, Clone and Copy as cURL are in the explorer's request menu and
+ * the command palette. Monaco's own context menu is disabled for the request editor
+ * (`contextMenu={false}` in `request-pane.tsx`) so this one reaches the user wherever they click
+ * inside the pane.
  */
 
 import type { ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { getActiveRequestEditor, getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 import { gotoLine } from '../../editor/xml-language.js';
-import { useUiStore } from '../../state/ui.js';
 import type { RequestDraft } from '../../state/project.js';
-import { copyAsCurl, recreateRequest } from './request-actions.js';
 import { openRequestDialog } from './request-dialogs.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from './wsa-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from './wss-actions.js';
@@ -19,7 +19,6 @@ import { goToSchemaDefinitionAtCursor } from './schema-navigation.js';
 import { validateAndReport } from './validate-actions.js';
 import { checkWsiForRequest, lastSendId } from './wsi-actions.js';
 import { useExchangesStore } from '../../state/exchanges.js';
-import { useProjectStore } from '../../state/project.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -59,15 +58,6 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
         <ContextMenu.Content className="min-w-56 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
           <ContextMenu.Item
             className={ITEM_CLASS}
-            onSelect={() => {
-              getActiveRequestPaneHandle()?.flush();
-              void validateAndReport(draft.id, 'request', useProjectStore.getState().requests[draft.id]?.envelopeXml);
-            }}
-          >
-            Validate request
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
             disabled={responseEnvelopeXml(draft.id) === undefined}
             onSelect={() => {
               const envelopeXml = responseEnvelopeXml(draft.id);
@@ -100,70 +90,10 @@ export function RequestContextMenu({ draft, children }: RequestContextMenuProps)
           <ContextMenu.Item
             className={ITEM_CLASS}
             onSelect={() => {
-              void recreateRequest(draft.id, 'keep-values');
-            }}
-          >
-            Recreate request (keep values)
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void recreateRequest(draft.id, 'discard-values');
-            }}
-          >
-            Recreate (discard values)
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void recreateRequest(draft.id, 'empty');
-            }}
-          >
-            Create empty
-          </ContextMenu.Item>
-
-          <ContextMenu.Separator className={SEPARATOR_CLASS} />
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              openRequestDialog('clone', draft.id);
-            }}
-          >
-            Clone…
-          </ContextMenu.Item>
-
-          <ContextMenu.Separator className={SEPARATOR_CLASS} />
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void copyAsCurl(draft.id, 'posix');
-            }}
-          >
-            Copy as cURL
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              void copyAsCurl(draft.id, 'powershell');
-            }}
-          >
-            Copy as cURL (PowerShell)
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
               openRequestDialog('import-curl', draft.id);
             }}
           >
             Import cURL…
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            className={ITEM_CLASS}
-            onSelect={() => {
-              useUiStore.getState().openCode();
-            }}
-          >
-            Show code
           </ContextMenu.Item>
 
           <ContextMenu.Separator className={SEPARATOR_CLASS} />

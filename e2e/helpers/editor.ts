@@ -166,26 +166,33 @@ export async function modClickToken(page: Page, label: string, token: string): P
   const line = editor.locator('.view-line').filter({ hasText: token }).first();
   await expect(line).toBeVisible({ timeout: 20_000 });
 
+  // The editor may still be settling (a panel group measuring itself, a strip or breadcrumb above
+  // it finishing layout), so keep measuring until the token's centre sits inside the editor's
+  // own box. A token scrolled out of that viewport would be clicked through whatever covers it,
+  // which is exactly the silent mis-aim this helper exists to rule out.
   let target: Point | null = null;
+  let outside = false;
   await expect
     .poll(
       async () => {
-        target = await tokenCentre(line, token);
+        const point = await tokenCentre(line, token);
+        const box = await editor.boundingBox();
+        outside = point !== null && (box === null || point.x < box.x || point.x > box.x + box.width);
+        target = point !== null && !outside ? point : null;
         return target;
       },
       { timeout: 20_000 },
     )
-    .not.toBeNull();
+    .not.toBeNull()
+    .catch((error: unknown) => {
+      if (outside) {
+        throw new Error(`"${token}" is outside the visible area of the "${label}" editor`);
+      }
+      throw error;
+    });
   const point = target as Point | null;
   if (point === null) {
     throw new Error(`No "${token}" characters are rendered in the "${label}" editor`);
-  }
-
-  // A token scrolled out of the editor's own viewport would be clicked through whatever covers
-  // it, which is exactly the silent mis-aim this helper exists to rule out.
-  const box = await editor.boundingBox();
-  if (box === null || point.x < box.x || point.x > box.x + box.width) {
-    throw new Error(`"${token}" is outside the visible area of the "${label}" editor`);
   }
 
   await page.keyboard.down(MOD);
