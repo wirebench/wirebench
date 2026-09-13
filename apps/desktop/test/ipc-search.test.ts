@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PROJECT_SETTINGS, REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS, REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -29,6 +29,7 @@ function invoke(payload: unknown): Promise<unknown> {
 
 function project(id = 'p1', name = 'Demo'): ProjectWire {
   return {
+    ...NO_REST,
     id,
     name,
     dir: '/tmp/demo',

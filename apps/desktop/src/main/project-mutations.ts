@@ -48,6 +48,19 @@ import {
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
 import {
+  addApi,
+  addFolder,
+  addRestRequest,
+  cloneRestRequest,
+  moveNode,
+  removeApi,
+  removeFolder,
+  removeRestRequest,
+  updateApi,
+  updateFolder,
+  updateRestRequest,
+} from './project-rest-mutations.js';
+import {
   addWssIncoming,
   addWssOutgoing,
   removeWssIncoming,
@@ -712,6 +725,51 @@ export async function applyChange(
       );
       return { project: replaceInterface(project, { ...iface, endpoints }) };
     }
+
+    case 'add-api':
+      return addApi(project, { name: change.name, baseUrl: change.baseUrl });
+
+    case 'update-api':
+      return updateApi(project, change.apiId, change.patch);
+
+    case 'remove-api':
+      return removeApi(project, change.apiId);
+
+    case 'add-folder':
+      return addFolder(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        name: change.name,
+      });
+
+    case 'update-folder':
+      return updateFolder(project, change.folderId, change.patch);
+
+    case 'remove-folder':
+      return removeFolder(project, change.folderId);
+
+    case 'add-rest-request':
+      return addRestRequest(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+      });
+
+    case 'update-rest-request':
+      return updateRestRequest(project, change.requestId, change.patch);
+
+    case 'remove-rest-request':
+      return removeRestRequest(project, change.requestId);
+
+    case 'clone-rest-request':
+      return cloneRestRequest(project, change.requestId);
+
+    case 'move-node':
+      return moveNode(project, {
+        nodeId: change.nodeId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        index: change.index,
+      });
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);

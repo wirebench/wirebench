@@ -732,7 +732,7 @@ export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSc
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
@@ -1211,6 +1211,187 @@ export const keystoreWireSchema = z.object({
 });
 export type KeystoreWire = z.infer<typeof keystoreWireSchema>;
 
+/**
+ * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
+ * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
+ * renderer can configure a token it can never read back.
+ */
+export const authConfigWireSchema = z.object({
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  username: z.string().optional(),
+  passwordRef: z.string().optional(),
+  domain: z.string().optional(),
+  workstation: z.string().optional(),
+  preemptive: z.boolean().optional(),
+  tokenRef: z.string().optional(),
+  scheme: z.string().optional(),
+  name: z.string().optional(),
+  valueRef: z.string().optional(),
+  in: z.enum(['header', 'query']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  tokenUrl: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecretRef: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  audience: z.string().optional(),
+  clientAuth: z.enum(['basic', 'body']).optional(),
+  pkce: z.boolean().optional(),
+  refreshTokenRef: z.string().optional(),
+});
+export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
+
+/** One params, query, header or form row. */
+export const keyValueWireSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  enabled: z.boolean(),
+  description: z.string().optional(),
+});
+export type KeyValueWire = z.infer<typeof keyValueWireSchema>;
+
+/**
+ * A request body on the wire. A raw body carries its `text` here, unlike on disk where it lives in
+ * a sibling file: the renderer edits the text, and main decides where it is written.
+ */
+export const restBodyWireSchema = z.union([
+  z.object({ kind: z.literal('none') }),
+  z.object({
+    kind: z.literal('raw'),
+    language: z.enum(['json', 'xml', 'text', 'html', 'javascript']),
+    contentType: z.string().optional(),
+    text: z.string(),
+  }),
+  z.object({ kind: z.literal('form'), fields: z.array(keyValueWireSchema) }),
+  z.object({
+    kind: z.literal('multipart'),
+    parts: z.array(
+      z.union([
+        z.object({
+          kind: z.literal('text'),
+          name: z.string(),
+          value: z.string(),
+          enabled: z.boolean(),
+          contentType: z.string().optional(),
+        }),
+        z.object({
+          kind: z.literal('file'),
+          name: z.string(),
+          source: attachmentSourceWireSchema,
+          enabled: z.boolean(),
+          fileName: z.string().optional(),
+          contentType: z.string().optional(),
+        }),
+      ]),
+    ),
+  }),
+  z.object({ kind: z.literal('binary'), source: attachmentSourceWireSchema, contentType: z.string() }),
+]);
+export type RestBodyWire = z.infer<typeof restBodyWireSchema>;
+
+/** Per-request transport settings; an absent field means *inherit*, never *off*. */
+export const restSettingsWireSchema = z.object({
+  timeoutMs: z.number().int().nonnegative().optional(),
+  followRedirects: z.boolean().optional(),
+  maxRedirects: z.number().int().nonnegative().optional(),
+  keepBodyOnRedirect: z.boolean().optional(),
+  encodeUrl: z.boolean().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  sendCookies: z.boolean().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+export type RestSettingsWire = z.infer<typeof restSettingsWireSchema>;
+
+/** One REST request as the renderer sees it. */
+export const restRequestWireSchema = z.object({
+  kind: z.literal('rest'),
+  id: z.string(),
+  apiId: z.string(),
+  /** Id of the folder it sits in, absent at the API's root. */
+  folderId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  method: z.string(),
+  url: z.string(),
+  pathParams: z.array(keyValueWireSchema),
+  query: z.array(keyValueWireSchema),
+  headers: z.array(keyValueWireSchema),
+  body: restBodyWireSchema,
+  auth: authConfigWireSchema,
+  settings: restSettingsWireSchema,
+  orphaned: z.boolean().optional(),
+});
+export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
+
+/** One folder as the renderer sees it; its children arrive as flat lists keyed by `parentId`. */
+export const restFolderWireSchema = z.object({
+  id: z.string(),
+  apiId: z.string(),
+  parentId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  auth: authConfigWireSchema.optional(),
+});
+export type RestFolderWire = z.infer<typeof restFolderWireSchema>;
+
+/** One API as the renderer sees it. Its folders and requests are separate flat lists. */
+export const restApiWireSchema = z.object({
+  kind: z.literal('rest'),
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  baseUrl: z.string(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })),
+  auth: authConfigWireSchema.optional(),
+  definition: z.object({ source: z.string(), cache: z.boolean(), version: z.string() }).optional(),
+});
+export type RestApiWire = z.infer<typeof restApiWireSchema>;
+
+/** The fields of an API the renderer may patch; `null` clears an optional one. */
+export const apiPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  baseUrl: z.string().optional(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })).optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type ApiPatchWire = z.infer<typeof apiPatchSchema>;
+
+/** The fields of a folder the renderer may patch. */
+export const restFolderPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type RestFolderPatchWire = z.infer<typeof restFolderPatchSchema>;
+
+/**
+ * The fields of a REST request the renderer may patch. Tables and settings are replaced wholesale
+ * rather than merged: an absent setting means *inherit*, so a merge could never turn one back off.
+ */
+export const restRequestPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  method: z.string().optional(),
+  url: z.string().optional(),
+  pathParams: z.array(keyValueWireSchema).optional(),
+  query: z.array(keyValueWireSchema).optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  body: restBodyWireSchema.optional(),
+  auth: authConfigWireSchema.optional(),
+  settings: restSettingsWireSchema.optional(),
+});
+export type RestRequestPatchWire = z.infer<typeof restRequestPatchSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -1219,6 +1400,12 @@ export const projectWireSchema = z.object({
   lastSavedAt: z.string().optional(),
   interfaces: z.array(interfaceWireSchema),
   requests: z.array(requestWireSchema),
+  /** The project's REST APIs; `order` is shared with `interfaces`, so the two interleave. */
+  apis: z.array(restApiWireSchema),
+  /** Every folder of every API, flat; `parentId` gives the tree. */
+  folders: z.array(restFolderWireSchema),
+  /** Every REST request of every API, flat; `apiId`/`folderId` give its place. */
+  restRequests: z.array(restRequestWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -1330,6 +1517,34 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     interfaceId: z.string(),
     endpointId: z.string(),
     auth: endpointAuthSchema.nullable(),
+  }),
+  z.object({ kind: z.literal('add-api'), name: z.string(), baseUrl: z.string() }),
+  z.object({ kind: z.literal('update-api'), apiId: z.string(), patch: apiPatchSchema }),
+  z.object({ kind: z.literal('remove-api'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-folder'),
+    apiId: z.string(),
+    /** Absent adds the folder at the API's root. */
+    parentId: z.string().optional(),
+    name: z.string(),
+  }),
+  z.object({ kind: z.literal('update-folder'), folderId: z.string(), patch: restFolderPatchSchema }),
+  z.object({ kind: z.literal('remove-folder'), folderId: z.string() }),
+  z.object({
+    kind: z.literal('add-rest-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-rest-request'), requestId: z.string(), patch: restRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-rest-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-rest-request'), requestId: z.string() }),
+  z.object({
+    kind: z.literal('move-node'),
+    nodeId: z.string(),
+    /** Absent moves the node to the API's root. */
+    parentId: z.string().optional(),
+    index: z.number().int().nonnegative(),
   }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
@@ -2168,6 +2383,13 @@ export const preferencesWireSchema = z.object({
     nameWithBinding: z.boolean(),
   }),
   wsi: z.object({ verbose: z.boolean(), profile: z.literal('BP1.1') }),
+  rest: z.object({
+    followRedirects: z.boolean(),
+    maxRedirects: z.number(),
+    prettyPrintMaxBytes: z.number(),
+    defaultAccept: z.string(),
+    oauth2CallbackPort: z.number().optional(),
+  }),
   editor: z.object({
     fontFamily: z.string().optional(),
     fontSize: z.number(),
@@ -2217,6 +2439,7 @@ export const preferencesPatchWireSchema = z.object({
   ssl: z.record(z.string(), z.unknown()).optional(),
   wsdl: z.record(z.string(), z.unknown()).optional(),
   wsi: z.record(z.string(), z.unknown()).optional(),
+  rest: z.record(z.string(), z.unknown()).optional(),
   editor: z.record(z.string(), z.unknown()).optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
   updates: z.record(z.string(), z.unknown()).optional(),

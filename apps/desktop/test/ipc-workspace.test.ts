@@ -14,7 +14,7 @@ import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { registerWorkspaceChannels } from '../src/main/ipc/workspace.js';
 import { channels } from '../src/shared/ipc.js';
 import type { ProjectWire, WorkspaceSummaryWire, WorkspaceWire } from '../src/shared/wire-types.js';
-import { PROJECT_SETTINGS } from './helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -68,6 +68,7 @@ const SUMMARY: WorkspaceSummaryWire = {
 };
 
 const PROJECT: ProjectWire = {
+  ...NO_REST,
   settings: PROJECT_SETTINGS,
   id: 'p1',
   name: 'Calculator',

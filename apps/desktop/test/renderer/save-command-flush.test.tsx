@@ -13,7 +13,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { makeDraft, makeInterface } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -23,6 +23,7 @@ const context = { platform: 'mac', ui: () => DEFAULT_UI_STATE, selection: undefi
 /** A project wire complete enough for the mirror to index it. */
 function projectWire() {
   return {
+    ...NO_REST,
     id: 'p1',
     name: 'P',
     dir: '/tmp/p',

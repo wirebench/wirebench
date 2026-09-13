@@ -5,12 +5,13 @@ import { selectEnvironment, selectProjectEnvironments, useProjectStore } from '.
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { PROJECT_SETTINGS, REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS, REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const BINDING = '{tns}CalculatorSoap';
 
 function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
   return {
+    ...NO_REST,
     settings: PROJECT_SETTINGS,
     id: 'proj-1',
     name: 'Demo',

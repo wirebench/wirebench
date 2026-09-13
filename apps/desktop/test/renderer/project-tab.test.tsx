@@ -7,10 +7,12 @@ import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { NO_REST } from '../helpers/wire-defaults.js';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 
 function project(patch: Partial<ProjectWire> = {}): ProjectWire {
   return {
+    ...NO_REST,
     id: 'p1',
     name: 'Demo',
     dir: '/tmp/workspaces/w1/projects/Demo',
