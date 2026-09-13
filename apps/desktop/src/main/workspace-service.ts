@@ -1234,20 +1234,26 @@ export class WorkspaceService implements ProjectRouter {
    */
   async share(options: { remote?: string; branch?: string }): Promise<WorkspaceWire> {
     const open = this.requireOpen();
+    const sharedId = open.workspace.id;
     const wire = await this.enqueueWorkspaceOp(async () => {
       this.requireStillOpen(open);
       return await shareAsGit(this.shareDeps(), open, options);
     });
+    // Another queued op (a join, an import into a new workspace) may have opened a different
+    // workspace by now: its sync is not this share's, so nothing is pushed for it.
     const reopened = this.current;
-    if (reopened === undefined) {
+    if (reopened === undefined || reopened.workspace.id !== sharedId) {
       return wire;
     }
     await reopened.syncReady;
-    if (options.remote !== undefined && options.remote.trim().length > 0 && !this.stale(reopened)) {
+    if (this.stale(reopened) || reopened.workspace.id !== sharedId) {
+      return wire;
+    }
+    if (options.remote !== undefined && options.remote.trim().length > 0) {
       // A rejection — including `sync-stopped` when a close raced this — is already in the status.
       await reopened.sync?.push().catch(() => undefined);
     }
-    return this.snapshot() ?? wire;
+    return this.current === reopened ? (this.snapshot() ?? wire) : wire;
   }
 
   /** Shares the open local workspace to an empty folder the user picks; `null` on cancel. */

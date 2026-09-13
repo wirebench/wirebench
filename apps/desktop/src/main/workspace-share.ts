@@ -23,6 +23,7 @@ import {
   DEFAULT_GIT_SHARE_SETTINGS,
   deleteShare,
   generateId,
+  isWirebenchError,
   GIT_ATTRIBUTES_FILE,
   loadLocalState,
   loadWorkspace,
@@ -112,9 +113,29 @@ const TREE_ITEMS = [
 // ——— small helpers ——————————————————————————————————————————————————————————————————————
 
 /**
+ * Thrown by {@link moveEntry} when a cross-volume copy completed but removing the source failed
+ * part-way (a file lock, an antivirus scan): the destination is the only complete copy, and the
+ * source may be partly gone. Rollbacks treat the item as moved and copy it back over the source.
+ */
+export class IncompleteMoveError extends WirebenchError {
+  readonly copied = true;
+  readonly sourceRemoved = false;
+
+  constructor(cause: unknown) {
+    super('workspace-move-incomplete', 'The files were copied, but the originals could not all be removed.', {
+      cause,
+      details: { copied: true, sourceRemoved: false },
+    });
+    this.name = 'IncompleteMoveError';
+  }
+}
+
+/**
  * Renames `from` to `to`; when they sit on different filesystems (`EXDEV` — an external folder on
  * another volume) copies instead and removes the source only once the copy is complete. A copy
  * that fails part-way is removed again, leaving the source as it was.
+ *
+ * @throws IncompleteMoveError when the copy landed but the source could not be fully removed.
  */
 export async function moveEntry(files: WorkspaceFileOps, from: string, to: string): Promise<void> {
   try {
@@ -131,21 +152,49 @@ export async function moveEntry(files: WorkspaceFileOps, from: string, to: strin
     await files.rm(to, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
-  await files.rm(from, { recursive: true, force: true });
+  try {
+    await files.rm(from, { recursive: true, force: true });
+  } catch (error) {
+    throw new IncompleteMoveError(error);
+  }
 }
 
-/** Moves every tree item present in `from` into `to`, recording each one in `moved` as it lands. */
+/**
+ * Puts one moved item back from `current` to `original`. When something is still at `original`
+ * (the partial source an {@link IncompleteMoveError} left) the complete copy is copied back over
+ * it before the copy is removed; otherwise it is simply moved back.
+ */
+async function restoreEntry(files: WorkspaceFileOps, current: string, original: string): Promise<void> {
+  if (existsSync(original)) {
+    await files.cp(current, original, { recursive: true });
+    await files.rm(current, { recursive: true, force: true });
+    return;
+  }
+  await moveEntry(files, current, original);
+}
+
+/**
+ * Moves every tree item present in `from` into `to`, recording each one in `moved` as it lands —
+ * including one whose copy landed but whose source could not be fully removed.
+ */
 async function moveTreeItems(files: WorkspaceFileOps, from: string, to: string, moved: string[]): Promise<void> {
   for (const name of TREE_ITEMS) {
     if (!existsSync(join(from, name))) {
       continue;
     }
-    await moveEntry(files, join(from, name), join(to, name));
+    try {
+      await moveEntry(files, join(from, name), join(to, name));
+    } catch (error) {
+      if (error instanceof IncompleteMoveError) {
+        moved.push(name);
+      }
+      throw error;
+    }
     moved.push(name);
   }
 }
 
-/** Undoes {@link moveTreeItems}: moves each recorded item back, last first. */
+/** Undoes {@link moveTreeItems}: puts each recorded item back, last first. */
 async function moveTreeItemsBack(
   files: WorkspaceFileOps,
   from: string,
@@ -153,7 +202,7 @@ async function moveTreeItemsBack(
   moved: readonly string[],
 ): Promise<void> {
   for (const name of [...moved].reverse()) {
-    await moveEntry(files, join(to, name), join(from, name));
+    await restoreEntry(files, join(to, name), join(from, name));
   }
 }
 
@@ -219,20 +268,36 @@ async function readHeadBranch(git: GitCli, tree: string): Promise<string> {
   }
   if (branch === 'HEAD') {
     throw new WirebenchError(
-      'git-failed',
+      'git-branch-refused',
       'The repository is on a detached HEAD, not a branch. Check out a branch, then try again.',
     );
   }
   return assertBranchName(branch);
 }
 
-/** `origin`'s URL when there is one git and this app both accept; `undefined` otherwise. */
+/**
+ * `origin`'s URL, validated, or `undefined` when the clone has no `origin` (`remote get-url` exits 2).
+ *
+ * @throws WirebenchError `git-remote-refused` when `origin` is not a URL this app accepts (never
+ * echoing it) — most often a plain folder path, whose `file://` form works.
+ */
 async function readOrigin(git: GitCli, tree: string): Promise<string | undefined> {
+  let stdout: string;
   try {
-    const { stdout } = await git.run(tree, ['remote', 'get-url', 'origin']);
+    ({ stdout } = await git.run(tree, ['remote', 'get-url', 'origin']));
+  } catch (error) {
+    if (isWirebenchError(error) && error.details?.['exitCode'] === 2) {
+      return undefined;
+    }
+    throw error;
+  }
+  try {
     return assertRemoteUrl(stdout);
   } catch {
-    return undefined;
+    throw new WirebenchError(
+      'git-remote-refused',
+      "This clone's origin is not an https://, ssh:// or file:// URL. For a folder on this machine, set origin to its file:// form, then try again.",
+    );
   }
 }
 
@@ -262,9 +327,16 @@ export async function shareAsGit(
   const { dir } = info;
   const { id, name } = info.workspace;
   const tree = join(dir, WORKSPACE_TREE_DIR);
-  // A tree/ can already exist: stopping a share leaves `tree/.git` behind for the user.
+  // Stopping a share leaves `tree/.git` behind for the user. Sharing on top of it would inherit
+  // that repository's branch, origin and history, so it is refused while nothing has moved yet.
+  if (existsSync(join(tree, '.git'))) {
+    throw new WirebenchError(
+      'workspace-git-leftover',
+      'This workspace still has the git folder from when it was last shared. Delete tree/.git to share it again.',
+      { details: { workspaceId: id } },
+    );
+  }
   const treeExisted = existsSync(tree);
-  const gitExisted = existsSync(join(tree, '.git'));
   const attributesExisted = existsSync(join(tree, GIT_ATTRIBUTES_FILE));
 
   await deps.close();
@@ -274,11 +346,7 @@ export async function shareAsGit(
     await moveTreeItems(deps.files, dir, tree, moved);
     await GitBackend.init(git, tree, branch);
     if (remote !== undefined) {
-      const existing = await readOrigin(git, tree);
-      await git.run(
-        tree,
-        existing === undefined ? ['remote', 'add', 'origin', remote] : ['remote', 'set-url', 'origin', remote],
-      );
+      await git.run(tree, ['remote', 'add', 'origin', remote]);
     }
     await saveShare(
       dir,
@@ -290,7 +358,7 @@ export async function shareAsGit(
       deps.fsOption,
     );
   } catch (error) {
-    await rollBackShare(deps, { dir, tree, moved, treeExisted, gitExisted, attributesExisted }).catch(() => undefined);
+    await rollBackShare(deps, { dir, tree, moved, treeExisted, attributesExisted }).catch(() => undefined);
     await deps.open(id).catch(() => undefined);
     throw error;
   }
@@ -304,7 +372,6 @@ async function rollBackShare(
     readonly tree: string;
     readonly moved: readonly string[];
     readonly treeExisted: boolean;
-    readonly gitExisted: boolean;
     readonly attributesExisted: boolean;
   },
 ): Promise<void> {
@@ -315,9 +382,8 @@ async function rollBackShare(
     await deps.files.rm(tree, { recursive: true, force: true });
     return;
   }
-  if (!state.gitExisted) {
-    await deps.files.rm(join(tree, '.git'), { recursive: true, force: true });
-  }
+  // A pre-existing `.git` is refused before anything moves, so any `.git` here is this call's.
+  await deps.files.rm(join(tree, '.git'), { recursive: true, force: true });
   if (!state.attributesExisted) {
     await deps.files.rm(join(tree, GIT_ATTRIBUTES_FILE), { recursive: true, force: true });
   }
@@ -481,6 +547,13 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
       details: { workspaceId: id },
     });
   }
+  if (!existsSync(join(tree, WORKSPACE_MANIFEST))) {
+    throw new WirebenchError(
+      'workspace-tree-missing',
+      'The shared folder or its workspace.yaml is missing, so sharing cannot be stopped safely.',
+      { details: { workspaceId: id } },
+    );
+  }
   const present = TREE_ITEMS.filter((name) => existsSync(join(tree, name)));
   if (present.some((name) => existsSync(join(dir, name)))) {
     throw new WirebenchError(
@@ -492,27 +565,49 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
   const external = share.path !== undefined;
   await deps.close();
   const brought: string[] = [];
+  let shareDeleted = false;
   try {
     for (const name of present) {
       if (external) {
+        // Recorded before the copy: nothing was at `<dir>/<name>` (checked above), so a copy that
+        // fails part-way is this call's to remove.
+        brought.push(name);
         await deps.files.cp(join(tree, name), join(dir, name), { recursive: true });
       } else {
-        await moveEntry(deps.files, join(tree, name), join(dir, name));
+        try {
+          await moveEntry(deps.files, join(tree, name), join(dir, name));
+        } catch (error) {
+          if (error instanceof IncompleteMoveError) {
+            brought.push(name);
+          }
+          throw error;
+        }
+        brought.push(name);
       }
-      brought.push(name);
     }
     await deleteShare(dir, deps.fsOption);
+    shareDeleted = true;
+    return await deps.open(id);
   } catch (error) {
-    for (const name of brought.reverse()) {
-      const undo = external
-        ? deps.files.rm(join(dir, name), { recursive: true, force: true })
-        : moveEntry(deps.files, join(dir, name), join(tree, name));
-      await undo.catch(() => undefined);
+    // Without `share.yaml` and with the manifest gone back, `<id>` would vanish from the list and
+    // block a re-join; put the share back first, and only then undo what was brought back.
+    const shareRestored = shareDeleted
+      ? await saveShare(dir, share, deps.fsOption).then(
+          () => true,
+          () => false,
+        )
+      : true;
+    if (shareRestored) {
+      for (const name of [...brought].reverse()) {
+        const undo = external
+          ? deps.files.rm(join(dir, name), { recursive: true, force: true })
+          : restoreEntry(deps.files, join(dir, name), join(tree, name));
+        await undo.catch(() => undefined);
+      }
     }
     await deps.open(id).catch(() => undefined);
     throw error;
   }
-  return await deps.open(id);
 }
 
 // ——— move project to workspace ——————————————————————————————————————————————————————————

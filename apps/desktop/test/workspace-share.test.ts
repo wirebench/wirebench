@@ -6,7 +6,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rm as removeFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
@@ -25,6 +25,7 @@ import { HistoryService } from '../src/main/history-service.js';
 import type { GitCli } from '../src/main/sync/git-cli.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import { nodeFileOps } from '../src/main/workspace-share.js';
 import {
   createBareRemote,
   describeGit,
@@ -105,6 +106,28 @@ async function seedLocal(
 
 async function gitLog(tree: string, cwdGit = git): Promise<string> {
   return (await cwdGit.run(tree, ['log', '--format=%s'])).stdout;
+}
+
+/** Adds a workspace environment and makes it the active one; returns its id. */
+async function activateEnvironment(service: WorkspaceService): Promise<string> {
+  const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+  await service.setActiveEnvironment(createdEnvironmentId as string);
+  return createdEnvironmentId as string;
+}
+
+/** The test git, except that `subcommand` always fails. */
+function gitFailingOn(subcommand: string): GitCli {
+  return {
+    version: git.version,
+    run: (cwd: string | undefined, args: readonly string[]) =>
+      args[0] === subcommand
+        ? Promise.reject(new WirebenchError('git-failed', `${subcommand} failed`))
+        : git.run(cwd, args),
+  } as unknown as GitCli;
+}
+
+function errnoError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code });
 }
 
 beforeEach(async () => {
@@ -191,14 +214,10 @@ describeGit('WorkspaceService — share as git', () => {
     expect(service.snapshot()?.name).toBe('Team');
   });
 
-  it('rolls back when git fails before share.yaml is written', async () => {
-    const failing = {
-      version: git.version,
-      run: (cwd: string | undefined, args: readonly string[]) =>
-        args[0] === 'init' ? Promise.reject(new WirebenchError('git-failed', 'init failed')) : git.run(cwd, args),
-    } as unknown as GitCli;
-    const { root, service } = await newService('a', { git: () => Promise.resolve(failing) });
+  it('rolls back when git init fails before share.yaml is written, keeping the active environment', async () => {
+    const { root, service } = await newService('a', { git: () => Promise.resolve(gitFailingOn('init')) });
     const { dir, projectId } = await seedLocal(service, root);
+    const environmentId = await activateEnvironment(service);
     const before = await snapshotFiles(dir);
 
     await expect(service.share({})).rejects.toMatchObject({ code: 'git-failed' });
@@ -208,7 +227,101 @@ describeGit('WorkspaceService — share as git', () => {
     expect(existsSync(join(dir, '.git'))).toBe(false);
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
     expect(service.snapshot()?.projects.map((project) => project.id)).toEqual([projectId]);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
     expect(service.sync()).toBeUndefined();
+  });
+
+  it('rolls back a move that fails part-way through the tree items', async () => {
+    let failInto = '';
+    const { root, service } = await newService('a', {
+      files: {
+        ...nodeFileOps,
+        rename: (from: string, to: string) =>
+          to === failInto ? Promise.reject(errnoError('EPERM')) : nodeFileOps.rename(from, to),
+      },
+    });
+    const { dir, projectId } = await seedLocal(service, root);
+    const environmentId = await activateEnvironment(service);
+    failInto = join(dir, 'tree', 'projects');
+    const before = await snapshotFiles(dir);
+
+    await expect(service.share({})).rejects.toMatchObject({ code: 'EPERM' });
+
+    expect(await snapshotFiles(dir)).toEqual(before);
+    expect(existsSync(join(dir, 'tree'))).toBe(false);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.snapshot()?.projects.map((project) => project.id)).toEqual([projectId]);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+  });
+
+  it('rolls back when adding the remote fails', async () => {
+    const { root, service } = await newService('a', { git: () => Promise.resolve(gitFailingOn('remote')) });
+    const { dir } = await seedLocal(service, root);
+    const environmentId = await activateEnvironment(service);
+    const before = await snapshotFiles(dir);
+
+    await expect(service.share({ remote: remote.url })).rejects.toMatchObject({ code: 'git-failed' });
+
+    expect(await snapshotFiles(dir)).toEqual(before);
+    expect(existsSync(join(dir, 'tree'))).toBe(false);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+  });
+
+  it('refuses to share again over the git folder a stopped share left behind', async () => {
+    const { root, service } = await newService('a');
+    const { dir } = await seedLocal(service, root);
+    await service.share({});
+    await service.stopSharing();
+    const before = await snapshotFiles(dir);
+
+    const error = await service.share({}).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'workspace-git-leftover' });
+    expect((error as WirebenchError).message).toContain('tree/.git');
+    expect(await snapshotFiles(dir)).toEqual(before);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.snapshot()?.name).toBe('Team');
+    expect(service.sync()).toBeUndefined();
+  });
+
+  it('skips the first push when another workspace opened while sync was starting', async () => {
+    const other = await newService('o');
+    const seeded = await seedLocal(other.service, other.root);
+    await other.service.close();
+    const copy = join(base, 'other-copy');
+    const { cp } = await import('node:fs/promises');
+    await cp(seeded.dir, copy, { recursive: true });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const { root, service } = await newService('a', {
+      dialogs: dialogsPicking(copy),
+      git: async () => {
+        calls += 1;
+        // The first call is share's own; the second is the reopened workspace's sync start-up.
+        if (calls > 1) {
+          await gate;
+        }
+        return git;
+      },
+    });
+    const { id } = await seedLocal(service, root);
+
+    const sharing = service.share({ remote: remote.url });
+    const joining = service.joinFromFolder(sender);
+    await vi.waitFor(() => expect(service.snapshot()?.id).toBe(seeded.id), WAIT);
+    release();
+    const wire = await sharing;
+    await joining;
+
+    expect(wire.id).toBe(id);
+    expect(service.snapshot()?.id).toBe(seeded.id);
+    await expect(git.run(remote.dir, ['rev-parse', '--verify', '--quiet', 'refs/heads/main'])).rejects.toBeInstanceOf(
+      WirebenchError,
+    );
   });
 
   it('keeps the share when the first push fails after share.yaml is written, reporting it through sync status', async () => {
@@ -306,6 +419,69 @@ describeGit('WorkspaceService — share to folder', () => {
     expect(existsSync(join(dir, 'workspace.yaml'))).toBe(false);
     expect(service.snapshot()?.projects).toHaveLength(1);
   });
+
+  it('rolls back a move into the folder that fails part-way', async () => {
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const { root, service } = await newService('a', {
+      dialogs: dialogsPicking(target),
+      files: {
+        ...nodeFileOps,
+        rename: (from: string, to: string) =>
+          to === join(target, 'projects') ? Promise.reject(errnoError('EACCES')) : nodeFileOps.rename(from, to),
+      },
+    });
+    const { dir } = await seedLocal(service, root);
+    const environmentId = await activateEnvironment(service);
+    const before = await snapshotFiles(dir);
+
+    await expect(service.shareToFolder(sender)).rejects.toMatchObject({ code: 'EACCES' });
+
+    expect(await snapshotFiles(dir)).toEqual(before);
+    expect(await readdir(target)).toEqual([]);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+  });
+
+  it('restores complete projects when an EXDEV move copied but could not remove its source', async () => {
+    const target = join(base, 'other-volume');
+    await mkdir(target);
+    let sourceProjects = '';
+    let failed = false;
+    const { root, service } = await newService('a', {
+      dialogs: dialogsPicking(target),
+      files: {
+        ...nodeFileOps,
+        rename: (from: string, to: string) =>
+          to.startsWith(target) ? Promise.reject(errnoError('EXDEV')) : nodeFileOps.rename(from, to),
+        rm: async (path: string, options: { readonly recursive: true; readonly force: true }) => {
+          if (path === sourceProjects && !failed) {
+            // A lock part-way through removing the source: some of it is already gone.
+            failed = true;
+            await nodeFileOps.rm(join(path, 'Calc', 'attachments'), options);
+            throw errnoError('EBUSY');
+          }
+          await nodeFileOps.rm(path, options);
+        },
+      },
+    });
+    const { dir } = await seedLocal(service, root);
+    const environmentId = await activateEnvironment(service);
+    sourceProjects = join(dir, 'projects');
+    const before = await snapshotFiles(dir);
+
+    await expect(service.shareToFolder(sender)).rejects.toMatchObject({
+      code: 'workspace-move-incomplete',
+      details: { copied: true, sourceRemoved: false },
+    });
+
+    expect(failed).toBe(true);
+    expect(await snapshotFiles(dir)).toEqual(before);
+    expect(await readdir(target)).toEqual([]);
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+    expect(service.snapshot()?.projects).toHaveLength(1);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(environmentId);
+  });
 });
 
 describeGit('WorkspaceService — join', () => {
@@ -382,7 +558,23 @@ describeGit('WorkspaceService — join', () => {
     await git.run(undefined, ['clone', '--', remote.url, clone]);
     await git.run(clone, ['checkout', '--detach']);
     const { service } = await newService('b', { dialogs: dialogsPicking(clone) });
-    await expect(service.joinFromFolder(sender)).rejects.toThrow(/detached/i);
+    const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'git-branch-refused' });
+    expect((error as WirebenchError).message).toMatch(/detached/i);
+  });
+
+  it('refuses a clone whose origin is a plain local path, suggesting its file:// form', async () => {
+    await sharedOnA();
+    const clone = join(base, 'path-clone');
+    await git.run(undefined, ['clone', '--', remote.dir, clone]);
+    const { service } = await newService('b', { dialogs: dialogsPicking(clone) });
+
+    const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'git-remote-refused' });
+    expect((error as WirebenchError).message).toContain('file://');
+    expect((error as WirebenchError).message).not.toContain(remote.dir);
+    expect(await service.list()).toEqual([]);
   });
 
   it('joins a plain folder copy as kind folder; refuses duplicates, folders inside userData and folders without a manifest', async () => {
@@ -451,6 +643,39 @@ describeGit('WorkspaceService — stop sharing', () => {
       ),
     );
     expect(existsSync(join(dir, 'share.yaml'))).toBe(false);
+  });
+
+  it('refuses to stop sharing when the shared folder lost its workspace.yaml', async () => {
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const { root, service } = await newService('a', { dialogs: dialogsPicking(target) });
+    const { dir } = await seedLocal(service, root);
+    await service.shareToFolder(sender);
+    await removeFile(join(target, 'workspace.yaml'));
+
+    const error = await service.stopSharing().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'workspace-tree-missing' });
+    expect(existsSync(join(dir, 'share.yaml'))).toBe(true);
+    expect(existsSync(join(dir, 'projects'))).toBe(false);
+    expect(existsSync(join(target, 'projects'))).toBe(true);
+    expect(service.snapshot()).not.toBeNull();
+  });
+
+  it('restores share.yaml when reopening fails after it was deleted', async () => {
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const { root, service } = await newService('a', { dialogs: dialogsPicking(target) });
+    const { id, dir } = await seedLocal(service, root);
+    await service.shareToFolder(sender);
+    await writeFile(join(target, 'workspace.yaml'), 'id: [unclosed\n', 'utf8');
+
+    await expect(service.stopSharing()).rejects.toBeInstanceOf(Error);
+
+    expect(await loadShare(dir)).toEqual({ version: 1, kind: 'folder', path: target });
+    expect(existsSync(join(dir, 'workspace.yaml'))).toBe(false);
+    expect(existsSync(join(dir, 'projects'))).toBe(false);
+    expect((await service.list()).map((row) => row.id)).toContain(id);
   });
 
   it('refuses linkProject in a shared workspace', async () => {
