@@ -10,7 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
-import { assertRemoteUrl, findGit, GIT_SUBCOMMANDS, GitCli, parseGitVersion } from '../src/main/sync/git-cli.js';
+import {
+  assertBranchName,
+  assertRemoteUrl,
+  findGit,
+  GIT_SUBCOMMANDS,
+  GitCli,
+  parseGitVersion,
+} from '../src/main/sync/git-cli.js';
 import type { Runner } from '../src/main/sync/git-cli.js';
 
 describe('parseGitVersion', () => {
@@ -516,6 +523,26 @@ describe('assertRemoteUrl', () => {
       expect((error as WirebenchError).details).toEqual({ scheme: 'scp-like' });
     }
   });
+});
+
+describe('assertBranchName', () => {
+  it.each(['main', 'feature/sync-v2', 'release-1.2'])('accepts %s', (name) => {
+    expect(assertBranchName(name)).toBe(name);
+  });
+
+  it.each(['', '--upload-pack=x', '-b', 'a b', 'a..b', 'refs/../x', 'x.lock', '.x', 'x/', '@'])(
+    'refuses %s without spawning anything',
+    (name) => {
+      let threw = false;
+      try {
+        assertBranchName(name);
+      } catch (error) {
+        threw = true;
+        expect((error as WirebenchError).code).toBe('git-branch-refused');
+      }
+      expect(threw).toBe(true);
+    },
+  );
 });
 
 describe('GIT_SUBCOMMANDS', () => {

@@ -38,6 +38,7 @@ export const GIT_SUBCOMMANDS = [
   'config',
   'symbolic-ref',
   'var',
+  'rm',
 ] as const;
 
 /** One of the subcommands {@link GIT_SUBCOMMANDS} allows. */
@@ -339,6 +340,42 @@ export function assertRemoteUrl(url: string): string {
     checkComponent(host);
   }
   return trimmed;
+}
+
+/** Any character `assertBranchName` refuses outright, wherever it appears in the name. */
+const BRANCH_FORBIDDEN_CHARS = /[\s\x00-\x1f\x7f~^:?*[\\]/;
+
+/**
+ * Refuses a branch name that could be read as a flag by `git` (a leading `-`) or that git itself
+ * would refuse as a ref name, and returns it otherwise. In particular refuses: empty; a leading
+ * `-`; whitespace or control characters; `~^:?*[` or a backslash anywhere; `..` or `@{` anywhere
+ * (git's own ref-name restrictions); a leading, trailing, or doubled `/`; a trailing `.lock` or
+ * `.`; any `/`-separated component starting with `.`; and the bare name `@`.
+ *
+ * Every `GitBackend` method that builds a git argument or ref expression from a (renderer-
+ * settable) branch name calls this first — see git-backend.ts.
+ */
+export function assertBranchName(name: string): string {
+  const fail = (): never => {
+    throw new WirebenchError('git-branch-refused', 'This branch name is not allowed.', { details: {} });
+  };
+  if (
+    name.length === 0 ||
+    name.startsWith('-') ||
+    BRANCH_FORBIDDEN_CHARS.test(name) ||
+    name.includes('..') ||
+    name.includes('@{') ||
+    name.startsWith('/') ||
+    name.endsWith('/') ||
+    name.includes('//') ||
+    name.endsWith('.lock') ||
+    name.endsWith('.') ||
+    name === '@' ||
+    name.split('/').some((part) => part.startsWith('.'))
+  ) {
+    fail();
+  }
+  return name;
 }
 
 /** Regexes classifying git's stderr for `run`'s error mapping. */

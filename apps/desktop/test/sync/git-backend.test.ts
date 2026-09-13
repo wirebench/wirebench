@@ -59,14 +59,18 @@ describe('GitBackend (mocked runner)', () => {
     await rm(tree, { recursive: true, force: true });
   });
 
-  it('parses status --porcelain=v2, including a rename and a conflict', async () => {
+  it('parses status --porcelain=v2 -z, including a rename, a non-ASCII path, a spaced path, and a conflict', async () => {
+    // `-z` NUL-terminates every record and NUL-separates a rename's original path into its own
+    // token — never C-quoted, so `café.yaml` and `new file.yaml` round-trip as raw bytes.
     const statusOutput = [
       '1 M. N... 100644 100644 100644 aaaaaaa bbbbbbb environments/qa.yaml',
-      '2 R. N... 100644 100644 100644 aaaaaaa bbbbbbb R100 projects/api/wirebench.yaml\tprojects/old/wirebench.yaml',
+      '2 R. N... 100644 100644 100644 aaaaaaa bbbbbbb R100 projects/api/wirebench.yaml',
+      'projects/old/wirebench.yaml',
       'u UU N... 100644 100644 100644 100644 aaaaaaa bbbbbbb cccccc environments/staging.yaml',
-      '? environments/new.yaml',
+      '? environments/café.yaml',
+      '? environments/new file.yaml',
       '',
-    ].join('\n');
+    ].join('\x00');
     const runner = mockRunner((args) => {
       if (args[0] === 'status') {
         return { stdout: statusOutput };
@@ -81,7 +85,8 @@ describe('GitBackend (mocked runner)', () => {
       { path: 'environments/qa.yaml', status: 'modified' },
       { path: 'projects/api/wirebench.yaml', status: 'modified' },
       { path: 'environments/staging.yaml', status: 'modified' },
-      { path: 'environments/new.yaml', status: 'added' },
+      { path: 'environments/café.yaml', status: 'added' },
+      { path: 'environments/new file.yaml', status: 'added' },
     ]);
   });
 
@@ -188,7 +193,7 @@ describe('GitBackend (mocked runner)', () => {
 
     const runnerWithout = mockRunner((args) => {
       if (args[0] === 'var') {
-        return { stdout: '', stderr: 'fatal: no name is set', exitCode: 128 };
+        return { stdout: '', stderr: 'fatal: empty ident name (for <user@host>) not allowed', exitCode: 128 };
       }
       throw new Error(`unexpected args ${JSON.stringify(args)}`);
     });
@@ -200,7 +205,8 @@ describe('GitBackend (mocked runner)', () => {
   it('merge() is a no-op when origin/<branch> does not resolve', async () => {
     const runner = mockRunner((args) => {
       if (args[0] === 'rev-parse' && args.includes('--verify')) {
-        return { stdout: '', stderr: 'fatal: needed a single revision', exitCode: 128 };
+        // `--verify --quiet` on a ref that doesn't exist exits 1 with empty stderr.
+        return { stdout: '', stderr: '', exitCode: 1 };
       }
       throw new Error(`unexpected args ${JSON.stringify(args)}`);
     });
@@ -221,6 +227,66 @@ describe('GitBackend (mocked runner)', () => {
     const backend = new GitBackend({ git: cli, tree, settings });
 
     await expect(backend.push()).rejects.toMatchObject({ code: 'sync-no-remote' });
+  });
+
+  it('propagates an unexpected git-offline failure instead of treating it as "no remote"', async () => {
+    const runner = mockRunner((args) => {
+      if (args[0] === 'rev-parse' && args.includes('--is-inside-work-tree')) {
+        return { stdout: 'true\n' };
+      }
+      if (args[0] === 'status') {
+        return { stdout: '' };
+      }
+      if (args[0] === 'remote') {
+        return { stdout: '', stderr: 'fatal: Could not resolve host: example.com', exitCode: 128 };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+    const backend = new GitBackend({ git: cli, tree, settings });
+
+    await expect(backend.probe()).rejects.toMatchObject({ code: 'git-offline' });
+  });
+
+  it('propagates an unexpected timeout instead of treating identity as absent', async () => {
+    const runner: Runner = (_file, fullArgs) => {
+      const args = realArgs(fullArgs);
+      if (args[0] === 'config' && args.includes('core.sshCommand')) {
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
+      }
+      if (args[0] === 'var') {
+        const error = new Error('timed out') as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
+        error.killed = true;
+        throw error;
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    };
+    const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+    const backend = new GitBackend({ git: cli, tree, settings });
+
+    await expect(backend.identity()).rejects.toMatchObject({ code: 'git-failed', details: { timedOut: true } });
+  });
+
+  it('refuses an injected branch name before spawning anything (init/clone/fetch/merge/push)', async () => {
+    const evilBranch = '--upload-pack=touch pwned';
+    const spawnedCalls: string[][] = [];
+    const runner: Runner = (_file, fullArgs) => {
+      spawnedCalls.push(realArgs(fullArgs));
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    };
+    const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+    const evilSettings = (): GitShareSettings => ({ ...DEFAULT_GIT_SHARE_SETTINGS, branch: evilBranch });
+    const backend = new GitBackend({ git: cli, tree, settings: evilSettings });
+
+    await expect(GitBackend.init(cli, tree, evilBranch)).rejects.toMatchObject({ code: 'git-branch-refused' });
+    await expect(GitBackend.clone(cli, 'https://example.com/x.git', evilBranch, tree)).rejects.toMatchObject({
+      code: 'git-branch-refused',
+    });
+    await expect(backend.fetch()).rejects.toMatchObject({ code: 'git-branch-refused' });
+    await expect(backend.merge()).rejects.toMatchObject({ code: 'git-branch-refused' });
+    await expect(backend.push()).rejects.toMatchObject({ code: 'git-branch-refused' });
+
+    expect(spawnedCalls).toEqual([]);
   });
 
   it('init() uses `init -b <branch>` on git >= 2.28 and writes .gitattributes', async () => {
@@ -277,7 +343,20 @@ describeGit('GitBackend (real git)', () => {
     await removeTempDir(root);
   });
 
-  it('writes .gitattributes on a real init, and clone adds it back only when missing', async () => {
+  it('writes .gitattributes on a real init', async () => {
+    root = await mkTempDir();
+    const treeA = join(root, 'a');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+
+    await GitBackend.init(git, treeA, 'main');
+    const attrsAfterInit = await readFile(join(treeA, '.gitattributes'), 'utf8');
+    expect(attrsAfterInit.length).toBeGreaterThan(0);
+  });
+
+  it('clone leaves a committed .gitattributes alone', async () => {
     root = await mkTempDir();
     const remoteDir = join(root, 'remote.git');
     const treeA = join(root, 'a');
@@ -289,8 +368,12 @@ describeGit('GitBackend (real git)', () => {
 
     const bare = await createBareRemote(git, remoteDir);
     await GitBackend.init(git, treeA, 'main');
-    const attrsAfterInit = await readFile(join(treeA, '.gitattributes'), 'utf8');
-    expect(attrsAfterInit.length).toBeGreaterThan(0);
+    // Overwrite what `init` wrote with custom content *before* the first commit, so the
+    // committed (and therefore cloned) tree genuinely differs from `GIT_ATTRIBUTES` — a test
+    // where the clone's content already equals what `ensureGitAttributes` would write can't
+    // distinguish "left alone" from "overwritten with the same bytes".
+    const customContent = 'custom\n';
+    await writeFile(join(treeA, '.gitattributes'), customContent, 'utf8');
 
     await git.run(treeA, ['remote', 'add', 'origin', bare.url]);
     const settingsA: GitShareSettings = { ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' };
@@ -299,10 +382,38 @@ describeGit('GitBackend (real git)', () => {
     await a.commit('Initial commit');
     await a.push();
 
-    // The clone already carries the committed .gitattributes — `clone` must leave it alone.
     await GitBackend.clone(git, bare.url, 'main', treeB);
     const attrsAfterClone = await readFile(join(treeB, '.gitattributes'), 'utf8');
-    expect(attrsAfterClone).toBe(attrsAfterInit);
+    expect(attrsAfterClone).toBe(customContent);
+  });
+
+  it('clone writes .gitattributes when the cloned tree lacks one', async () => {
+    root = await mkTempDir();
+    const remoteDir = join(root, 'remote.git');
+    const treeA = join(root, 'a');
+    const treeB = join(root, 'b');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+
+    const bare = await createBareRemote(git, remoteDir);
+    await GitBackend.init(git, treeA, 'main');
+    // Remove what `init` wrote before the first commit, so the pushed remote's tree genuinely
+    // has no `.gitattributes` at all.
+    await rm(join(treeA, '.gitattributes'));
+
+    await git.run(treeA, ['remote', 'add', 'origin', bare.url]);
+    const settingsA: GitShareSettings = { ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' };
+    const a = new GitBackend({ git, tree: treeA, settings: () => settingsA });
+    await a.setIdentity('Alice', 'alice@example.com');
+    await writeFile(join(treeA, 'workspace.yaml'), 'name: Test\n', 'utf8');
+    await a.commit('Initial commit without .gitattributes');
+    await a.push();
+
+    await GitBackend.clone(git, bare.url, 'main', treeB);
+    const attrsAfterClone = await readFile(join(treeB, '.gitattributes'), 'utf8');
+    expect(attrsAfterClone).toContain('* text=auto eol=lf');
   });
 
   it('never runs a hook, even a pre-commit that would exit 1', async () => {

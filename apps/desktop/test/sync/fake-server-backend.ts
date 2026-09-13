@@ -13,7 +13,7 @@
  */
 
 import type { TreeChange } from '@wirebench/engine';
-import { describeTreePath } from '@wirebench/engine';
+import { WirebenchError, describeTreePath } from '@wirebench/engine';
 import type { SyncBackend } from '../../src/main/sync/backend.js';
 import { mergeUnsaved } from '../../src/main/unsaved-store.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from '../../src/main/sync/types.js';
@@ -106,6 +106,11 @@ export class FakeServerBackend implements SyncBackend {
     this.files.set(path, content);
   }
 
+  /** Test-only hook: deletes one file from this client's working tree, uncommitted. */
+  delete(path: string): void {
+    this.files.delete(path);
+  }
+
   private remoteFilesAt(version: number): FileMap {
     if (version === 0) {
       return new Map();
@@ -117,6 +122,24 @@ export class FakeServerBackend implements SyncBackend {
   private lastCommittedFiles(): FileMap {
     const top = this.pending[this.pending.length - 1];
     return top !== undefined ? top.files : this.remoteFilesAt(this.baseVersion);
+  }
+
+  /**
+   * Records the current working tree as a new local (unpushed) commit — what a real non-fast-
+   * forward `git merge`/`commit --no-edit` does when it creates a merge commit. Called only when
+   * there was something local to merge with (`pending` non-empty, or a conflict was just
+   * resolved) — a plain fast-forward merge needs no synthetic commit, `lastCommittedFiles()`
+   * already equals the merged tree via the advanced `baseVersion`.
+   */
+  private recordMergeCommit(): void {
+    nextCommitId += 1;
+    this.pending.push({
+      id: `local-${nextCommitId}`,
+      files: new Map(this.files),
+      subject: 'Merge',
+      author: this.identityValue !== undefined ? `${this.identityValue.name} <${this.identityValue.email}>` : 'unknown',
+      at: new Date().toISOString(),
+    });
   }
 
   probe(): Promise<SyncStatusWire> {
@@ -146,20 +169,41 @@ export class FakeServerBackend implements SyncBackend {
     if (this.knownRemoteVersion <= this.baseVersion) {
       return Promise.resolve({ conflicts: [], changedPaths: [] });
     }
+    // Mirrors real git refusing to merge over uncommitted changes: this fake only ever applies a
+    // merge on top of a client's last *committed* snapshot, never on top of dirty `write()`s.
+    if (countDiff(this.files, this.lastCommittedFiles()) > 0) {
+      return Promise.reject(
+        new WirebenchError('sync-uncommitted', 'Commit or discard your local changes before pulling.'),
+      );
+    }
     const baseline = this.remoteFilesAt(this.baseVersion);
     const theirs = this.remoteFilesAt(this.knownRemoteVersion);
     const mine = this.files;
     const merged = mergeUnsaved(baseline, theirs, mine);
 
-    if (merged.conflicts.length > 0) {
+    // `mergeUnsaved` was designed for "unsaved local edits vs. disk", where a path deleted on
+    // disk silently drops a stale unsaved edit to it (`merged.dropped`) — right for that case,
+    // wrong for ours: real git treats "I modified it, they deleted it" as a genuine conflict
+    // (`UD`), not a silent loss of my change. Folding `dropped` into `conflicts` here, keeping
+    // "mine" in the working tree until resolved, is what makes this agree with `GitBackend` on a
+    // modify/delete conflict in either direction.
+    const conflictPaths = [...merged.conflicts, ...merged.dropped];
+    if (conflictPaths.length > 0) {
       this.mergeState = {
-        conflicts: new Set(merged.conflicts),
+        conflicts: new Set(conflictPaths),
         mine: new Map(mine),
         theirs: new Map(theirs),
         preMergeFiles: new Map(mine),
       };
-      this.files = new Map(merged.files);
-      const conflicts = merged.conflicts.map((path) => {
+      const files = new Map(merged.files);
+      for (const path of merged.dropped) {
+        const mineValue = mine.get(path);
+        if (mineValue !== undefined) {
+          files.set(path, mineValue);
+        }
+      }
+      this.files = files;
+      const conflicts = conflictPaths.map((path) => {
         const entity = describeTreePath(path);
         return { path, entity: { kind: entity.kind, name: entity.name } };
       });
@@ -167,8 +211,12 @@ export class FakeServerBackend implements SyncBackend {
     }
 
     const before = new Map(this.files);
+    const hadPendingCommits = this.pending.length > 0;
     this.files = new Map(merged.files);
     this.baseVersion = this.knownRemoteVersion;
+    if (hadPendingCommits) {
+      this.recordMergeCommit();
+    }
     return Promise.resolve({ conflicts: [], changedPaths: diffPaths(before, this.files) });
   }
 
@@ -230,14 +278,7 @@ export class FakeServerBackend implements SyncBackend {
     // Mirrors a real `git commit --no-edit` after resolving conflicts: the resolved working
     // tree becomes a new (unpushed) commit, so a `commit()` right afterwards correctly sees
     // nothing left to commit.
-    nextCommitId += 1;
-    this.pending.push({
-      id: `local-${nextCommitId}`,
-      files: new Map(this.files),
-      subject: 'Merge',
-      author: this.identityValue !== undefined ? `${this.identityValue.name} <${this.identityValue.email}>` : 'unknown',
-      at: new Date().toISOString(),
-    });
+    this.recordMergeCommit();
     this.baseVersion = this.knownRemoteVersion;
     this.mergeState = undefined;
     return Promise.resolve();
