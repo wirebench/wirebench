@@ -39,8 +39,12 @@ export function resolveEndpointOverride(input: {
   return undefined;
 }
 
-/** Where the URL a request would actually be sent to comes from, for one interface + environment. */
-export type EffectiveEndpointSource = 'project' | 'workspace' | 'interface' | 'none';
+/**
+ * Where the URL a request would actually be sent to comes from, for one interface or API under one
+ * environment. `interface` and `api` are the same rung — the entity's own declared address — named
+ * apart so the table can say which kind of entity the row is about.
+ */
+export type EffectiveEndpointSource = 'project' | 'workspace' | 'interface' | 'api' | 'none';
 
 /**
  * Which layer wins for one interface under one environment, as a label rather than a URL.
@@ -50,11 +54,17 @@ export type EffectiveEndpointSource = 'project' | 'workspace' | 'interface' | 'n
 export function effectiveEndpointSource(input: {
   readonly projectOverride?: string;
   readonly workspaceOverride?: string;
+  /** The entity's own address: an interface's endpoint, or an API's base URL. */
   readonly interfaceDefault?: string;
+  /** Which kind of entity the row is about; decides how the fallback rung is named. */
+  readonly entity?: 'interface' | 'api';
 }): EffectiveEndpointSource {
   const override = resolveEndpointOverride(input);
   if (override !== undefined) {
     return override.source;
   }
-  return input.interfaceDefault !== undefined ? 'interface' : 'none';
+  if (input.interfaceDefault === undefined || input.interfaceDefault === '') {
+    return 'none';
+  }
+  return input.entity === 'api' ? 'api' : 'interface';
 }

@@ -199,3 +199,60 @@ describe('CodePanel', () => {
     });
   });
 });
+
+/**
+ * A REST request in front of the user. `request.curl` knows only SOAP requests, so the panel says
+ * what it is waiting for rather than showing that channel's `unknown-request` error as a command.
+ */
+describe('CodePanel with a REST request', () => {
+  beforeEach(() => {
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+    useUiStore.setState({ selection: undefined });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useProjectStore.setState({ requests: {}, restRequests: {} });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('says a REST cURL command is not built yet, and asks main for nothing', () => {
+    const curl = vi.fn();
+    installWirebenchApi({ request: { curl } });
+    useEditorsStore.setState({
+      tabs: [{ id: 'rest:rest-1', kind: 'rest-request', title: 'Get pet', restRequestId: 'rest-1' }],
+      activeId: 'rest:rest-1',
+    });
+
+    render(<CodePanel />);
+
+    expect(screen.getByTestId('code-panel-rest-pending')).toBeTruthy();
+    expect(curl).not.toHaveBeenCalled();
+  });
+
+  it('follows a REST request selected in the explorer, with no tab open', () => {
+    installWirebenchApi();
+    useUiStore.setState({ selection: { kind: 'rest-request', id: 'rest:rest-1', requestId: 'rest-1' } });
+
+    render(<CodePanel />);
+
+    expect(screen.getByTestId('code-panel-rest-pending')).toBeTruthy();
+  });
+
+  it("still shows a SOAP request's command when one is active", async () => {
+    installWirebenchApi({
+      request: { curl: vi.fn().mockResolvedValue({ ok: true, value: { command: COMMAND } }) },
+    });
+    useProjectStore.setState({ requests: { 'req-1': makeDraft() } });
+    useEditorsStore.setState({
+      tabs: [{ id: 'request:req-1', kind: 'request', title: 'Request 1', requestId: 'req-1' }],
+      activeId: 'request:req-1',
+    });
+
+    render(<CodePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('code-panel-preview').textContent).toContain('curl');
+    });
+  });
+});

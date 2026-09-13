@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { MethodBadge } from '../rest-api/method-badge.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatClockTime } from '../../lib/format-size.js';
@@ -89,6 +90,15 @@ function Row({
           {projectName !== undefined && (
             <span className="w-24 shrink-0 truncate text-fg-faint" title={projectName}>
               {projectName}
+            </span>
+          )}
+          {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
+              says what kind of send this was, so the column is never empty. */}
+          {entry.kind === 'rest' && entry.method !== undefined ? (
+            <MethodBadge method={entry.method} title={`${entry.method} ${entry.requestName}`} />
+          ) : (
+            <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
+              {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
             </span>
           )}
           <span className="min-w-0 flex-1 truncate">

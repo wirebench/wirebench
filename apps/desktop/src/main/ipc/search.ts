@@ -61,6 +61,7 @@ function collectFrom(
     if (scopes.requestBodies) {
       documents.push({
         kind: 'request-body',
+        protocol: 'soap',
         text: request.envelopeXml,
         projectId,
         projectName,
@@ -73,6 +74,7 @@ function collectFrom(
     if (scopes.headers && request.headers.length > 0) {
       documents.push({
         kind: 'request-header',
+        protocol: 'soap',
         // One header per line, so a match's line number points at the header that matched.
         text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
         projectId,
@@ -105,6 +107,7 @@ function collectFrom(
       }
       documents.push({
         kind: 'request-body',
+        protocol: 'rest',
         text: lines.join('\n'),
         projectId,
         projectName,
@@ -117,6 +120,7 @@ function collectFrom(
     if (scopes.headers && request.headers.length > 0) {
       documents.push({
         kind: 'request-header',
+        protocol: 'rest',
         text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
         projectId,
         projectName,

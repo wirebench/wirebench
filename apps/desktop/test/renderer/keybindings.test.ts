@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Registering the commands reaches the Monaco-backed editor commands, which jsdom cannot load.
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
+
 import {
   chordRecordingError,
   formatKeybinding,
   matchesEvent,
   parseKeybinding,
 } from '../../src/renderer/lib/keybindings.js';
+import { COMMAND_IDS, whenScopesOverlap } from '../../src/shared/commands.js';
+import { getCommand } from '../../src/renderer/lib/commands.js';
+import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
 
 describe('parseKeybinding', () => {
   it('parses a bare key', () => {
@@ -110,5 +117,32 @@ describe('chordRecordingError', () => {
 
   it('refuses a chord that does not parse', () => {
     expect(chordRecordingError('Mod+')).toBeDefined();
+  });
+});
+
+/**
+ * `Mod+Shift+I` for _Import OpenAPI…_, the one shortcut this round adds. It is registered now so the
+ * chord is reserved and the keymap editor lists it from the moment REST exists, even though the
+ * import itself arrives later.
+ */
+describe('the REST shortcuts', () => {
+  it('parses Mod+Shift+I the way the design writes it', () => {
+    expect(parseKeybinding('Mod+Shift+I')).toEqual({ key: 'i', mod: true, shift: true, alt: false });
+  });
+
+  it('is the registered default for rest.importOpenApi, and for nothing else', () => {
+    registerShellCommands(() => undefined);
+
+    expect(getCommand('rest.importOpenApi')?.shortcut).toBe('Mod+Shift+I');
+    const sharing = COMMAND_IDS.filter((id) => getCommand(id)?.shortcut === 'Mod+Shift+I');
+    expect(sharing).toEqual(['rest.importOpenApi']);
+  });
+
+  it('gives rest.send the same chord as request.send, which it can never be live with', () => {
+    registerShellCommands(() => undefined);
+
+    expect(getCommand('rest.send')?.shortcut).toBe('Mod+Enter');
+    expect(getCommand('request.send')?.shortcut).toBe('Mod+Enter');
+    expect(whenScopesOverlap(getCommand('rest.send')?.whenScope, getCommand('request.send')?.whenScope)).toBe(false);
   });
 });

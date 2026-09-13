@@ -54,6 +54,21 @@ function useCodePanelRequestId(): string | undefined {
   return selected ?? active;
 }
 
+/**
+ * The REST request the panel would describe, when that is what is in front of the user.
+ *
+ * Kept apart from the SOAP id because the command for a REST request is built from a different
+ * model, and `request.curl` — which only knows SOAP requests — would answer `unknown-request` for
+ * one. Until the cURL task teaches it both, the panel says so rather than showing an error.
+ */
+function useCodePanelRestRequestId(): string | undefined {
+  const selected = useUiStore((state) =>
+    state.selection?.kind === 'rest-request' ? state.selection.requestId : undefined,
+  );
+  const active = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.restRequestId);
+  return selected ?? active;
+}
+
 /** What the last `request.curl` call produced: the command, or the failure to show in its place. */
 interface Generated {
   readonly command: string;
@@ -64,6 +79,7 @@ interface Generated {
 
 export function CodePanel() {
   const requestId = useCodePanelRequestId();
+  const restRequestId = useCodePanelRestRequestId();
   // Persisted on `slideOver.codeShell`: the slide-over hosts only the Code panel, so its shell
   // choice is remembered there rather than in a per-tab slot.
   const shell = useUiStore((state) => state.slideOver.codeShell);
@@ -150,6 +166,19 @@ export function CodePanel() {
       clearTimeout(timer);
     };
   }, [requestId, shell, draftKey, showSecrets]);
+
+  if (requestId === undefined && restRequestId !== undefined) {
+    // The command for a REST request is built from a different model; `request.curl` knows only
+    // SOAP requests, so saying so beats showing its `unknown-request` error.
+    return (
+      <div data-testid="code-panel">
+        <p data-testid="code-panel-rest-pending" className="text-md text-fg-muted">
+          A cURL command for a REST request is not built yet.
+        </p>
+        <p className="mt-1 text-sm text-fg-subtle">Exporting and importing one arrives with the cURL task.</p>
+      </div>
+    );
+  }
 
   if (requestId === undefined) {
     return (

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import type { InterfaceWire, ProjectWire, WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
+import type { InterfaceWire, ProjectWire, RestApiWire, WorkspaceEnvironmentWire } from '../../../shared/wire-types.js';
 import { queueEndpointOverride } from './environment-queue.js';
 import type { EffectiveEndpointSource } from '../../state/endpoint-override.js';
 import { effectiveEndpointSource } from '../../state/endpoint-override.js';
@@ -17,19 +17,76 @@ const SOURCE_LABEL: Record<EffectiveEndpointSource, { readonly short: string; re
   project: { short: 'project', title: "The linked project's own environment overrides this interface — it wins." },
   workspace: { short: 'workspace', title: "This environment's override is what the request is sent to." },
   interface: { short: 'interface', title: 'No override: the request uses the interface address.' },
-  none: { short: 'not set', title: 'No override and no interface address — the request has nowhere to go.' },
+  api: { short: 'API', title: "No override: requests use the API's own base URL." },
+  none: { short: 'not set', title: 'No override and no address of its own — the request has nowhere to go.' },
 };
 
-/** One row: an interface, the key its override is stored under, and (for a workspace
- * environment) which layer currently wins. */
+/**
+ * One row: an interface or an API, the key its override is stored under, and (for a workspace
+ * environment) which layer currently wins.
+ *
+ * Both kinds share the row because both are "a thing requests are sent to, under a key an
+ * environment stores an override for" — the only differences are the label and the addresses offered
+ * as suggestions.
+ */
 interface Row {
+  /** Distinguishes the two kinds for the label and the group's ordering. */
+  readonly entity: 'interface' | 'api';
+  readonly id: string;
+  readonly name: string;
+  readonly projectName: string;
+  readonly key: string;
+  readonly override: string | undefined;
+  /** The addresses the entity declares, offered under the field. */
+  readonly suggestions: readonly string[];
+  /** Present only when this row belongs to a workspace environment — a project environment has
+   * nothing else contending for the same entity, so there is no precedence to show. */
+  readonly source?: EffectiveEndpointSource;
+}
+
+/** The row one interface contributes. */
+function interfaceRow(input: {
   readonly iface: InterfaceWire;
   readonly projectName: string;
   readonly key: string;
   readonly override: string | undefined;
-  /** Present only when this row belongs to a workspace environment — a project environment has
-   * nothing else contending for the same interface, so there is no precedence to show. */
   readonly source?: EffectiveEndpointSource;
+}): Row {
+  return {
+    entity: 'interface',
+    id: input.iface.id,
+    name: input.iface.name,
+    projectName: input.projectName,
+    key: input.key,
+    override: input.override,
+    suggestions: input.iface.endpoints.map((endpoint) => endpoint.url),
+    ...(input.source !== undefined ? { source: input.source } : {}),
+  };
+}
+
+/** The row one API contributes. Its suggestions are the servers a definition recorded. */
+function apiRow(input: {
+  readonly api: RestApiWire;
+  readonly projectName: string;
+  readonly key: string;
+  readonly override: string | undefined;
+  readonly source?: EffectiveEndpointSource;
+}): Row {
+  return {
+    entity: 'api',
+    id: input.api.id,
+    name: input.api.name,
+    projectName: input.projectName,
+    key: input.key,
+    override: input.override,
+    suggestions: [input.api.baseUrl, ...input.api.servers.map((server) => server.url)].filter((url) => url !== ''),
+    ...(input.source !== undefined ? { source: input.source } : {}),
+  };
+}
+
+/** The address an interface would be sent to with no override: its default endpoint, else its first. */
+function interfaceAddress(iface: InterfaceWire): string | undefined {
+  return (iface.endpoints.find((endpoint) => endpoint.id === iface.defaultEndpointId) ?? iface.endpoints[0])?.url;
 }
 
 interface EndpointRowProps {
@@ -48,27 +105,35 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
 
   // The project is the group header now, not part of the row; the field's accessible name keeps
   // both, so an interface of the same name in two projects stays distinguishable out of context.
-  const label = `Endpoint override for ${row.projectName} › ${row.iface.name}`;
+  const label = `Endpoint override for ${row.projectName} › ${row.name}`;
 
   return (
     <tr
       data-testid="env-endpoint-row"
       data-endpoint-key={row.key}
       {...(row.source !== undefined ? { 'data-source': row.source } : {})}
+      data-entity={row.entity}
       className="border-b border-hairline hover:bg-surface-hover"
     >
       {/* Blank spacer cell — lines this row's Interface column up under the variables table's
           Variable column, both starting after the same-width leading column. */}
       <td className="px-2 py-1" />
       <th scope="row" className="px-2 py-1 text-left text-sm font-normal text-fg-default">
-        {row.iface.name}
+        {row.name}
+        {row.entity === 'api' && (
+          <span data-testid="env-endpoint-api-badge" className="ml-1.5 text-xs text-fg-subtle">
+            REST
+          </span>
+        )}
       </th>
       <td className="px-2 py-1">
         <input
           aria-label={label}
           data-testid="environment-endpoint"
           list={listId}
-          placeholder="No override — use the interface's endpoint"
+          placeholder={
+            row.entity === 'api' ? "No override — use the API's base URL" : "No override — use the interface's endpoint"
+          }
           className={`${INPUT_CLASS} font-mono`}
           value={draft}
           onChange={(event) => {
@@ -87,8 +152,8 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
           }}
         />
         <datalist id={listId}>
-          {row.iface.endpoints.map((endpoint) => (
-            <option key={endpoint.id} value={endpoint.url} />
+          {row.suggestions.map((url) => (
+            <option key={url} value={url} />
           ))}
         </datalist>
       </td>
@@ -110,9 +175,11 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
   );
 }
 
-/** Every interface of every open project, in the workspace's project order, for a workspace
- * environment: `key` is `<projectSlug>/<interfaceSlug>`, the map a workspace environment stores
- * its overrides under. */
+/**
+ * Every interface *and API* of every open project, in the workspace's project order, for a workspace
+ * environment: `key` is `<projectSlug>/<entitySlug>`, the map a workspace environment stores its
+ * overrides under. An API's rows follow its project's interfaces, as they do in the explorer.
+ */
 function workspaceRows(
   environment: WorkspaceEnvironmentWire,
   order: readonly { readonly projectId: string; readonly interfaceIds: readonly string[] }[],
@@ -123,33 +190,55 @@ function workspaceRows(
   const rows: Row[] = [];
   for (const project of workspaceProjectOrder) {
     const group = order.find((candidate) => candidate.projectId === project.id);
-    if (group === undefined) {
+    const mirrored = projects[project.id];
+    if (group === undefined && mirrored === undefined) {
       continue;
     }
-    const mirrored = projects[project.id];
-    for (const interfaceId of group.interfaceIds) {
+    const projectName = mirrored?.name ?? project.slug;
+    const ownEnvironment = mirrored?.environments.find((candidate) => candidate.slug === environment.slug);
+
+    for (const interfaceId of group?.interfaceIds ?? []) {
       const iface = interfaces[interfaceId];
       if (iface === undefined) {
         continue;
       }
       const key = `${project.slug}/${iface.slug}`;
       const override = environment.endpoints[key];
-      const projectOverride = mirrored?.environments.find((candidate) => candidate.slug === environment.slug)
-        ?.endpoints[iface.slug];
-      const interfaceDefault = (
-        iface.endpoints.find((endpoint) => endpoint.id === iface.defaultEndpointId) ?? iface.endpoints[0]
-      )?.url;
-      rows.push({
-        iface,
-        projectName: mirrored?.name ?? project.slug,
-        key,
-        override,
-        source: effectiveEndpointSource({
-          ...(projectOverride !== undefined ? { projectOverride } : {}),
-          ...(override !== undefined ? { workspaceOverride: override } : {}),
-          ...(interfaceDefault !== undefined ? { interfaceDefault } : {}),
+      const projectOverride = ownEnvironment?.endpoints[iface.slug];
+      const interfaceDefault = interfaceAddress(iface);
+      rows.push(
+        interfaceRow({
+          iface,
+          projectName,
+          key,
+          override,
+          source: effectiveEndpointSource({
+            ...(projectOverride !== undefined ? { projectOverride } : {}),
+            ...(override !== undefined ? { workspaceOverride: override } : {}),
+            ...(interfaceDefault !== undefined ? { interfaceDefault } : {}),
+          }),
         }),
-      });
+      );
+    }
+
+    for (const api of [...(mirrored?.apis ?? [])].sort((a, b) => a.order - b.order)) {
+      const key = `${project.slug}/${api.slug}`;
+      const override = environment.endpoints[key];
+      const projectOverride = ownEnvironment?.endpoints[api.slug];
+      rows.push(
+        apiRow({
+          api,
+          projectName,
+          key,
+          override,
+          source: effectiveEndpointSource({
+            entity: 'api',
+            ...(projectOverride !== undefined ? { projectOverride } : {}),
+            ...(override !== undefined ? { workspaceOverride: override } : {}),
+            ...(api.baseUrl !== '' ? { interfaceDefault: api.baseUrl } : {}),
+          }),
+        }),
+      );
     }
   }
   return rows;
@@ -198,15 +287,23 @@ export function EndpointsTable({ environmentId }: EndpointsTableProps) {
 
   if (projectEnvironment !== undefined && ownerProjectId !== undefined) {
     const ifaceIds = order.filter((group) => group.projectId === ownerProjectId).flatMap((group) => group.interfaceIds);
-    const rows: Row[] = ifaceIds
-      .map((id) => interfaces[id])
-      .filter((iface): iface is InterfaceWire => iface !== undefined)
-      .map((iface) => ({
-        iface,
-        projectName: projects[ownerProjectId]?.name ?? 'this project',
-        key: iface.slug,
-        override: projectEnvironment.endpoints[iface.slug],
-      }));
+    const projectName = projects[ownerProjectId]?.name ?? 'this project';
+    const rows: Row[] = [
+      ...ifaceIds
+        .map((id) => interfaces[id])
+        .filter((iface): iface is InterfaceWire => iface !== undefined)
+        .map((iface) =>
+          interfaceRow({
+            iface,
+            projectName,
+            key: iface.slug,
+            override: projectEnvironment.endpoints[iface.slug],
+          }),
+        ),
+      ...[...(projects[ownerProjectId]?.apis ?? [])]
+        .sort((a, b) => a.order - b.order)
+        .map((api) => apiRow({ api, projectName, key: api.slug, override: projectEnvironment.endpoints[api.slug] })),
+    ];
     const updateEnvironment = useProjectStore.getState().updateEnvironment;
     return (
       <EndpointsTableView
@@ -243,7 +340,7 @@ function EndpointsTableView({
   readonly onCommit: (key: string, url: string) => void;
 }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-fg-subtle">Import a WSDL to override its endpoint here.</p>;
+    return <p className="text-sm text-fg-subtle">Import a WSDL, or add an API, to override where it points here.</p>;
   }
   const hasSource = rows.some((row) => row.source !== undefined);
   // Leading and trailing blank spacer columns, matching the variables table's On and
@@ -267,7 +364,7 @@ function EndpointsTableView({
         <thead>
           <tr className="border-b border-hairline text-left text-xs tracking-wider text-fg-subtle uppercase">
             <th className="px-2 py-1.5" />
-            <th className="px-2 py-1.5 font-medium">Interface</th>
+            <th className="px-2 py-1.5 font-medium">Interface or API</th>
             <th className="px-2 py-1.5 font-medium">Override URL</th>
             {hasSource && <th className="px-2 py-1.5 font-medium">Source</th>}
             <th className="px-2 py-1.5" />
@@ -289,7 +386,7 @@ function EndpointsTableView({
               </th>
             </tr>
             {group.rows.map((row) => (
-              <EndpointRow key={row.iface.id} row={row} onCommit={onCommit} />
+              <EndpointRow key={`${row.entity}:${row.id}`} row={row} onCommit={onCommit} />
             ))}
           </tbody>
         ))}

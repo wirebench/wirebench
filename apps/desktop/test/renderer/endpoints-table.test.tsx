@@ -10,6 +10,7 @@ import type {
   WorkspaceEnvironmentWire,
 } from '../../src/shared/wire-types.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
+import { restApiWire } from '../helpers/wire-defaults.js';
 
 const iface: InterfaceWire = {
   id: 'iface-1',
@@ -150,5 +151,77 @@ describe('EndpointsTable — project environment', () => {
     fireEvent.change(input, { target: { value: 'http://three.test/soap' } });
     fireEvent.blur(input);
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', { endpoints: { calculator: 'http://three.test/soap' } });
+  });
+});
+
+/**
+ * API rows. An API points somewhere just as an interface does, so an environment overrides it the
+ * same way — under the API's slug, in the same table, with the same control.
+ */
+describe('EndpointsTable — APIs', () => {
+  const environment: WorkspaceEnvironmentWire = {
+    id: 'e1',
+    name: 'uat',
+    slug: 'uat',
+    order: 0,
+    endpoints: {},
+    properties: {},
+    disabled: [],
+  };
+
+  function setUp(env: WorkspaceEnvironmentWire = environment) {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [env],
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'internal', dir: '/tmp/demo', status: 'ready' }],
+      }),
+      mutate: vi.fn().mockResolvedValue({}) as unknown as ReturnType<typeof useWorkspaceStore.getState>['mutate'],
+    });
+    useProjectStore.setState({
+      projects: {
+        p1: {
+          id: 'p1',
+          name: 'Demo',
+          environments: [],
+          apis: [restApiWire({ servers: [{ url: 'https://sandbox.test' }] })],
+        } as unknown as ProjectWire,
+      },
+      interfaces: { 'iface-1': iface },
+      order: [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+    });
+    render(<EndpointsTable environmentId={env.id} />);
+  }
+
+  it("lists an API after the project's interfaces, badged, in the same group", () => {
+    setUp();
+
+    const rows = screen.getAllByTestId('env-endpoint-row');
+    expect(rows.map((row) => row.getAttribute('data-entity'))).toEqual(['interface', 'api']);
+    expect(rows.map((row) => row.getAttribute('data-endpoint-key'))).toEqual(['demo/calculator', 'demo/petstore']);
+    expect(screen.getByTestId('env-endpoint-api-badge').textContent).toBe('REST');
+  });
+
+  it("offers the API's base URL and its recorded servers as suggestions", () => {
+    setUp();
+
+    const values = screen.getAllByRole('option', { hidden: true }).map((option) => option.getAttribute('value'));
+    expect(values).toContain('https://api.test');
+    expect(values).toContain('https://sandbox.test');
+  });
+
+  it("says the API's own base URL is what wins until an environment overrides it", () => {
+    setUp();
+    expect(screen.getAllByTestId('workspace-env-source')[1]?.textContent).toBe('API');
+
+    cleanup();
+    setUp({ ...environment, endpoints: { 'demo/petstore': 'https://uat.test' } });
+    expect(screen.getAllByTestId('workspace-env-source')[1]?.textContent).toBe('workspace');
+  });
+
+  it('offers its own placeholder, because an API has a base URL rather than an endpoint', () => {
+    setUp();
+
+    const field = screen.getByLabelText('Endpoint override for Demo › Petstore');
+    expect(field.getAttribute('placeholder')).toBe("No override — use the API's base URL");
   });
 });

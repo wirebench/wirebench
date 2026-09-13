@@ -42,7 +42,7 @@ describe('PreferencesEditor', () => {
 
   it('lists every section', () => {
     render(<PreferencesEditor />);
-    for (const label of ['HTTP', 'Proxy', 'SSL', 'WSDL', 'WS-I', 'Editor', 'UI', 'Shortcuts']) {
+    for (const label of ['HTTP', 'Proxy', 'SSL', 'REST', 'WSDL', 'WS-I', 'Editor', 'UI', 'Shortcuts']) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
   });
@@ -116,5 +116,75 @@ describe('PreferencesEditor', () => {
     expect(screen.getByTestId('shortcuts-table')).toBeTruthy();
     expect(screen.getByText('Show All Commands')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Shortcut for Send Request' })).toBeTruthy();
+  });
+});
+
+/**
+ * The REST section. Every value is what a request *inherits*, so the tests pin the two conversions
+ * that could silently mislead: the pretty-print threshold is entered in MiB and stored in bytes, and
+ * an empty OAuth2 port means "take a free one", not port zero.
+ */
+describe('PreferencesEditor — REST', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    usePreferencesStore.setState({ preferences: DEFAULTS, loaded: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function openRest(update = stubUpdate()): ReturnType<typeof stubUpdate> {
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor initialSection="rest" />);
+    return update;
+  }
+
+  it('shows the defaults a request inherits', () => {
+    openRest();
+
+    expect(screen.getByTestId<HTMLInputElement>('rest-pref-max-redirects').value).toBe('5');
+    expect(screen.getByTestId<HTMLInputElement>('rest-pref-pretty-max').value).toBe('5');
+    expect(screen.getByTestId<HTMLInputElement>('rest-pref-default-accept').value).toBe('');
+  });
+
+  it('stores the pretty-print threshold in bytes, entered in MiB', () => {
+    const update = openRest();
+
+    const field = screen.getByTestId('rest-pref-pretty-max');
+    fireEvent.change(field, { target: { value: '2' } });
+    fireEvent.blur(field);
+
+    expect(update).toHaveBeenCalledWith({ patch: { rest: { prettyPrintMaxBytes: 2 * 1024 * 1024 } } });
+  });
+
+  it('sends one field per edit', () => {
+    const update = openRest();
+
+    fireEvent.click(screen.getByLabelText('Follow redirects'));
+    expect(update).toHaveBeenCalledWith({ patch: { rest: { followRedirects: false } } });
+
+    const accept = screen.getByTestId('rest-pref-default-accept');
+    fireEvent.change(accept, { target: { value: 'application/json' } });
+    fireEvent.blur(accept);
+    expect(update).toHaveBeenLastCalledWith({ patch: { rest: { defaultAccept: 'application/json' } } });
+  });
+
+  it('treats an empty or zero OAuth2 port as "take a free one"', () => {
+    const update = openRest();
+
+    const port = screen.getByTestId('rest-pref-oauth2-port');
+    fireEvent.change(port, { target: { value: '8123' } });
+    fireEvent.blur(port);
+    expect(update).toHaveBeenCalledWith({ patch: { rest: { oauth2CallbackPort: 8123 } } });
+
+    fireEvent.change(port, { target: { value: '' } });
+    fireEvent.blur(port);
+    expect(update).toHaveBeenLastCalledWith({ patch: { rest: { oauth2CallbackPort: undefined } } });
+  });
+
+  it('says the loopback listener is the only thing the port changes', () => {
+    openRest();
+    expect(screen.getByText(/127\.0\.0\.1/)).toBeTruthy();
   });
 });

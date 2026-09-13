@@ -241,3 +241,58 @@ describe('SearchView', () => {
     expect(useEditorsStore.getState().tabs.map((tab) => tab.requestId)).toEqual(['req-2']);
   });
 });
+
+/**
+ * REST matches. A match has to say which protocol it came from: the id it carries names a request of
+ * exactly one kind, and opening it in the other editor would show an empty tab.
+ */
+describe('SearchView with REST matches', () => {
+  const REST_MATCH: SearchMatchWire = {
+    ...BODY_MATCH,
+    protocol: 'rest',
+    requestId: 'rest-1',
+    requestName: 'Get pet',
+    interfaceName: 'Petstore',
+    snippet: 'GET /pet/{petId}',
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    installWirebenchApi();
+    openProject();
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useProjectStore.setState({ restRequests: { 'rest-1': { name: 'Get pet' } as never } });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  async function typeQuery(matches: readonly SearchMatchWire[]): Promise<void> {
+    installWirebenchApi({ search: { query: stubQuery(matches) } });
+    render(<SearchView />);
+    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'pet' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+  }
+
+  it('badges a REST group and leaves a SOAP group unbadged', async () => {
+    await typeQuery([REST_MATCH, BODY_MATCH]);
+
+    expect(screen.getAllByTestId('search-result-badge')).toHaveLength(1);
+    expect(screen.getAllByTestId('search-group')).toHaveLength(2);
+  });
+
+  it('opens the REST editor for a REST match, not the SOAP one', async () => {
+    await typeQuery([REST_MATCH]);
+
+    fireEvent.click(screen.getByTestId('search-result'));
+
+    expect(useEditorsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'rest:rest-1', kind: 'rest-request', restRequestId: 'rest-1' }),
+    ]);
+  });
+});

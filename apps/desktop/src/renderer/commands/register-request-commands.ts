@@ -9,6 +9,7 @@ import { validateAndReport } from '../features/request-editor/validate-actions.j
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { checkWsiForRequest, lastSendId } from '../features/request-editor/wsi-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
+import { showToast } from '../components/toast.js';
 import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
@@ -200,6 +201,50 @@ export function registerRequestCommands(): void {
     run: onActiveRequest((requestId) => {
       openRequestDialog('import-curl', requestId);
     }),
+  });
+  /*
+   * The REST actions whose *handlers* belong to later tasks: exporting and importing a cURL command
+   * (the engine has to learn both shapes first), getting an OAuth2 token from the inspector, and
+   * importing an OpenAPI document.
+   *
+   * They are registered now, with the shortcut the design fixes, so the palette, the generated menu
+   * and the keymap editor carry them from the moment the REST editor exists — a command that
+   * appears later would move every shortcut around it. Each says what it is waiting for rather than
+   * doing nothing silently.
+   */
+  const notYet = (what: string) => (): void => {
+    showToast(`${what} is not built yet.`);
+  };
+  registerCommand({
+    id: 'rest.copyAsCurl',
+    label: 'REST: Copy as cURL',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: notYet('Copying a REST request as cURL'),
+  });
+  registerCommand({
+    id: 'rest.importCurl',
+    label: 'REST: Import cURL…',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: notYet('Importing a cURL command as a REST request'),
+  });
+  registerCommand({
+    id: 'rest.getToken',
+    label: 'REST: Get OAuth2 Token',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: notYet('Getting an OAuth2 token from the editor'),
+  });
+  registerCommand({
+    id: 'rest.importOpenApi',
+    label: 'REST: Import OpenAPI…',
+    category: 'Definition',
+    shortcut: 'Mod+Shift+I',
+    run: notYet('Importing an OpenAPI document'),
   });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.

@@ -7,6 +7,7 @@ import type { PreferencesSectionWire } from '../../../shared/wire-types.js';
 import { HttpSection } from './sections/http-section.js';
 import { WsiSection } from './sections/connection-sections.js';
 import { ProxySection, SslSection } from './network-section.js';
+import { RestSection } from './sections/rest-section.js';
 import { WsdlSection } from './sections/wsdl-section.js';
 import { EditorSection, UiSection } from './sections/editor-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
@@ -24,6 +25,7 @@ const SECTIONS: readonly SectionEntry[] = [
   { id: 'http', label: 'HTTP' },
   { id: 'proxy', label: 'Proxy' },
   { id: 'ssl', label: 'SSL' },
+  { id: 'rest', label: 'REST' },
   { id: 'wsdl', label: 'WSDL' },
   { id: 'wsi', label: 'WS-I' },
   { id: 'editor', label: 'Editor' },
@@ -103,6 +105,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
         {active === 'http' && <HttpSection {...sectionProps} />}
         {active === 'proxy' && <ProxySection {...sectionProps} />}
         {active === 'ssl' && <SslSection {...sectionProps} />}
+        {active === 'rest' && <RestSection {...sectionProps} />}
         {active === 'wsdl' && <WsdlSection {...sectionProps} />}
         {active === 'wsi' && <WsiSection {...sectionProps} />}
         {active === 'editor' && <EditorSection {...sectionProps} />}

@@ -2534,6 +2534,7 @@ export const preferencesSectionSchema = z.enum([
   'http',
   'proxy',
   'ssl',
+  'rest',
   'wsdl',
   'wsi',
   'editor',
@@ -2727,6 +2728,12 @@ export type SearchQueryRequest = z.infer<typeof searchQueryRequestSchema>;
  */
 export const searchMatchSchema = z.object({
   kind: z.enum(['request-body', 'request-header', 'document']),
+  /**
+   * Which protocol's request matched. Absent means SOAP, so an entry recorded before REST existed
+   * reads as what it was. It decides both the badge in the results list and which editor a click
+   * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
+   */
+  protocol: z.enum(['soap', 'rest']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.

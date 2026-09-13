@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DiffXmlEditor } from '../../editor/diff-xml-editor.js';
-import { prettyPrintXml } from '../../editor/xml-language.js';
+import { prettyPrintBody } from './history-format.js';
 
 export interface DiffViewProps {
   readonly leftLabel: string;
@@ -10,9 +10,13 @@ export interface DiffViewProps {
 }
 
 /**
- * A read-only diff tab (`editors.ts` `kind: 'diff'`): two envelopes, pretty-printed, side by
+ * A read-only diff tab (`editors.ts` `kind: 'diff'`): two recorded bodies, pretty-printed, side by
  * side in Monaco's `DiffEditor`, with a header naming both sides and toggles for layout and
  * whitespace.
+ *
+ * Both sides are formatted as whatever they turn out to be — two JSON bodies are reformatted as
+ * JSON, two envelopes as XML — because a diff of two differently-formatted copies of the same
+ * content is all noise. A side that does not parse is shown as it was recorded.
  */
 export function DiffView({ leftLabel, rightLabel, leftXml, rightXml }: DiffViewProps) {
   const [sideBySide, setSideBySide] = useState(true);
@@ -53,8 +57,8 @@ export function DiffView({ leftLabel, rightLabel, leftXml, rightXml }: DiffViewP
       </div>
       <div className="min-h-0 flex-1">
         <DiffXmlEditor
-          original={prettyPrintXml(leftXml)}
-          modified={prettyPrintXml(rightXml)}
+          original={prettyPrintBody(leftXml)}
+          modified={prettyPrintBody(rightXml)}
           renderSideBySide={sideBySide}
           ignoreTrimWhitespace={ignoreWhitespace}
         />
