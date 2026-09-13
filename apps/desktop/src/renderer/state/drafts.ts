@@ -16,7 +16,7 @@
  * anything about drafts. This store answers one question: what has not been written yet.
  */
 import { create } from 'zustand';
-import type { RequestPatchWire } from '../../shared/wire-types.js';
+import type { RequestPatchWire, RestRequestPatchWire } from '../../shared/wire-types.js';
 
 interface DraftsState {
   /** Pending patch per request id. A request with no entry has nothing unsaved. */
@@ -36,6 +36,18 @@ interface DraftsState {
   readonly isRequestDirty: (requestId: string) => boolean;
   readonly dirtyRequestIds: () => readonly string[];
   /**
+   * Pending patch per REST request id. Kept apart from {@link requests} because the two patch
+   * shapes have nothing in common: one carries an envelope, the other a URL and a body.
+   */
+  readonly restRequests: Readonly<Record<string, RestRequestPatchWire>>;
+  /** Records a REST edit, merging it over whatever is already pending for that request. */
+  readonly stageRestRequest: (requestId: string, patch: RestRequestPatchWire) => void;
+  readonly peekRestRequest: (requestId: string) => RestRequestPatchWire | undefined;
+  readonly clearRestRequestIfUnchanged: (requestId: string, committed: RestRequestPatchWire | undefined) => void;
+  readonly discardRestRequest: (requestId: string) => void;
+  readonly isRestRequestDirty: (requestId: string) => boolean;
+  readonly dirtyRestRequestIds: () => readonly string[];
+  /**
    * Forgets every draft. Called when a workspace is left: its drafts have already been handed to
    * main, which keeps them with that workspace, and they name requests the next one does not have.
    */
@@ -44,6 +56,7 @@ interface DraftsState {
 
 export const useDraftsStore = create<DraftsState>((set, get) => ({
   requests: {},
+  restRequests: {},
 
   stageRequest: (requestId, patch) => {
     set((state) => ({
@@ -78,7 +91,40 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
 
   dirtyRequestIds: () => Object.keys(get().requests),
 
+  stageRestRequest: (requestId, patch) => {
+    set((state) => ({
+      restRequests: { ...state.restRequests, [requestId]: { ...state.restRequests[requestId], ...patch } },
+    }));
+  },
+
+  peekRestRequest: (requestId) => get().restRequests[requestId],
+
+  clearRestRequestIfUnchanged: (requestId, committed) => {
+    const pending = get().restRequests[requestId];
+    // By value, for the same reason as the SOAP side: `stageRestRequest` builds a fresh object
+    // every time, so a reference check would never match and a saved draft would never clear.
+    if (pending === undefined || JSON.stringify(pending) !== JSON.stringify(committed)) {
+      return;
+    }
+    get().discardRestRequest(requestId);
+  },
+
+  discardRestRequest: (requestId) => {
+    set((state) => {
+      if (!(requestId in state.restRequests)) {
+        return state;
+      }
+      const restRequests = { ...state.restRequests };
+      delete restRequests[requestId];
+      return { restRequests };
+    });
+  },
+
+  isRestRequestDirty: (requestId) => get().restRequests[requestId] !== undefined,
+
+  dirtyRestRequestIds: () => Object.keys(get().restRequests),
+
   reset: () => {
-    set({ requests: {} });
+    set({ requests: {}, restRequests: {} });
   },
 }));

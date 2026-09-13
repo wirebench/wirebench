@@ -1725,6 +1725,11 @@ export const projectMutateResponseSchema = z.object({
   project: projectWireSchema,
   /** Set by `add-request` and `clone-request`: the id of the request that was created. */
   createdRequestId: z.string().optional(),
+  /**
+   * Set by every REST change that creates something — `add-api`, `add-folder`, `add-rest-request`
+   * and `clone-rest-request`: the id of the entity created, so the renderer can select or open it.
+   */
+  createdId: z.string().optional(),
   /** Set by `add-environment`: the id of the environment that was created. */
   createdEnvironmentId: z.string().optional(),
   /** Set by `add-attachment`: the id of the attachment that was created. */

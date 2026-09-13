@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { InterfaceSummary } from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
-import { buildExplorerTree } from '../../src/renderer/features/explorer/tree-nodes.js';
-import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { buildExplorerTree, nodeProjectId, restEntityId } from '../../src/renderer/features/explorer/tree-nodes.js';
+import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 
 function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
   return {
@@ -233,5 +233,144 @@ describe('buildExplorerTree', () => {
 
     const again = interfacesOf([summary], []);
     expect(again[0]?.id).toBe(tree[0]?.id);
+  });
+});
+
+/**
+ * The REST half of the tree. What matters here is the ordering: an interface and an API share one
+ * `order` space, and a folder and a request inside a container share another, so the user's
+ * arrangement survives a reload rather than the tree grouping by kind.
+ */
+describe('buildExplorerTree with APIs', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal' as const, dir: '/ws/demo', status: 'ready' as const };
+
+  function treeWith(rest: {
+    apis?: readonly ReturnType<typeof restApiWire>[];
+    folders?: readonly ReturnType<typeof restFolderWire>[];
+    requests?: readonly ReturnType<typeof restRequestWire>[];
+    interfaces?: readonly InterfaceSummary[];
+  }): ExplorerNode[] {
+    const summaries = rest.interfaces ?? [];
+    return (
+      buildExplorerTree(
+        [project],
+        [{ projectId: 'p1', interfaceIds: summaries.map((summary) => summary.id) }],
+        Object.fromEntries(summaries.map((summary) => [summary.id, summary])),
+        [],
+        { p1: { apis: rest.apis ?? [], folders: rest.folders ?? [], requests: rest.requests ?? [] } },
+      )[0]?.children ?? []
+    );
+  }
+
+  it('puts an API under its project, with a REST request and its method', () => {
+    const children = treeWith({ apis: [restApiWire()], requests: [restRequestWire({ method: 'DELETE' })] });
+
+    expect(children).toHaveLength(1);
+    const [api] = children;
+    expect(api).toMatchObject({ id: 'api:api-1', kind: 'api', label: 'Petstore', apiId: 'api-1' });
+    expect(api?.children).toHaveLength(1);
+    expect(api?.children?.[0]).toMatchObject({
+      id: 'rest:rest-1',
+      kind: 'rest-request',
+      label: 'Get pet',
+      requestId: 'rest-1',
+      apiId: 'api-1',
+      method: 'DELETE',
+    });
+  });
+
+  it('nests folders, and a request inside one is not also at the root', () => {
+    const children = treeWith({
+      apis: [restApiWire()],
+      folders: [restFolderWire(), restFolderWire({ id: 'folder-2', parentId: 'folder-1', name: 'Admin', order: 0 })],
+      requests: [
+        restRequestWire({ id: 'rest-root', name: 'At root', order: 1 }),
+        restRequestWire({ id: 'rest-deep', name: 'Deep', folderId: 'folder-2', order: 0 }),
+      ],
+    });
+
+    const api = children[0];
+    expect(api?.children?.map((node) => node.label)).toEqual(['Pets', 'At root']);
+    const folder = api?.children?.[0];
+    expect(folder).toMatchObject({ kind: 'folder', folderId: 'folder-1', apiId: 'api-1' });
+    expect(folder?.children?.[0]).toMatchObject({ kind: 'folder', folderId: 'folder-2' });
+    expect(folder?.children?.[0]?.children?.[0]).toMatchObject({ requestId: 'rest-deep', folderId: 'folder-2' });
+  });
+
+  it('interleaves folders and requests by order, rather than grouping by kind', () => {
+    const children = treeWith({
+      apis: [restApiWire()],
+      folders: [restFolderWire({ name: 'Second', order: 1 })],
+      requests: [
+        restRequestWire({ id: 'r-first', name: 'First', order: 0 }),
+        restRequestWire({ id: 'r-third', name: 'Third', order: 2 }),
+      ],
+    });
+
+    expect(children[0]?.children?.map((node) => node.label)).toEqual(['First', 'Second', 'Third']);
+  });
+
+  it('interleaves interfaces and APIs by order under the project', () => {
+    const children = treeWith({
+      interfaces: [iface(), iface({ id: 'iface-2', name: 'Second' })],
+      apis: [
+        restApiWire({ id: 'api-early', name: 'Early', order: 1 }),
+        restApiWire({ id: 'api-late', name: 'Late', order: 5 }),
+      ],
+    });
+
+    // Two interfaces at 0 and 1, an API claiming 1 lands after them (a stable sort keeps
+    // interfaces first), and the API at 5 last.
+    expect(children.map((node) => node.label)).toEqual(['Calculator', 'Second', 'Early', 'Late']);
+  });
+
+  it('badges a REST request whose operation an import dropped', () => {
+    const children = treeWith({ apis: [restApiWire()], requests: [restRequestWire({ orphaned: true })] });
+    expect(children[0]?.children?.[0]?.orphaned).toBe(true);
+  });
+
+  it('shows an API with nothing in it as an empty container rather than a leaf', () => {
+    const children = treeWith({ apis: [restApiWire()] });
+    expect(children[0]?.children).toEqual([]);
+  });
+
+  it('leaves a project with no REST data exactly as it was before APIs existed', () => {
+    const withKey = treeWith({ interfaces: [iface()] });
+    const without =
+      buildExplorerTree([project], [{ projectId: 'p1', interfaceIds: ['iface-1'] }], { 'iface-1': iface() }, [])[0]
+        ?.children ?? [];
+
+    expect(withKey).toEqual(without);
+  });
+});
+
+/** What a drag-and-drop is allowed to commit, and what it addresses. */
+describe('restEntityId and nodeProjectId', () => {
+  const projectOf = { 'api-1': 'p1', 'folder-1': 'p1', 'rest-1': 'p1', 'iface-1': 'p1', 'api-2': 'p2' };
+
+  it('names the entity a move addresses, per REST kind', () => {
+    expect(restEntityId({ id: 'api:api-1', kind: 'api', label: 'a', apiId: 'api-1' })).toBe('api-1');
+    expect(
+      restEntityId({ id: 'folder:folder-1', kind: 'folder', label: 'f', apiId: 'api-1', folderId: 'folder-1' }),
+    ).toBe('folder-1');
+    expect(restEntityId({ id: 'rest:rest-1', kind: 'rest-request', label: 'r', requestId: 'rest-1' })).toBe('rest-1');
+  });
+
+  it('refuses to move anything that is not a REST node', () => {
+    expect(
+      restEntityId({ id: 'iface:iface-1', kind: 'interface', label: 'i', interfaceId: 'iface-1' }),
+    ).toBeUndefined();
+    expect(restEntityId({ id: 'req:req-1', kind: 'request', label: 'q', requestId: 'req-1' })).toBeUndefined();
+    expect(restEntityId({ id: 'proj:p1', kind: 'project', label: 'p', projectId: 'p1' })).toBeUndefined();
+    expect(restEntityId(undefined)).toBeUndefined();
+  });
+
+  it('resolves a row to its project, from the row itself or from the index', () => {
+    expect(nodeProjectId({ id: 'proj:p1', kind: 'project', label: 'p', projectId: 'p1' }, projectOf)).toBe('p1');
+    expect(nodeProjectId({ id: 'rest:rest-1', kind: 'rest-request', label: 'r', requestId: 'rest-1' }, projectOf)).toBe(
+      'p1',
+    );
+    expect(nodeProjectId({ id: 'api:api-2', kind: 'api', label: 'a', apiId: 'api-2' }, projectOf)).toBe('p2');
+    expect(nodeProjectId({ id: 'operations:x', kind: 'operations', label: 'Operations' }, projectOf)).toBeUndefined();
   });
 });

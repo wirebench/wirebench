@@ -1091,6 +1091,7 @@ export class ProjectHost {
   /** Applies one change to the model, marks the project dirty and schedules an autosave. */
   async mutate(change: ProjectChange): Promise<{
     project: ProjectWire;
+    createdId?: string;
     createdRequestId?: string;
     createdEnvironmentId?: string;
     createdAttachmentId?: string;
@@ -1135,6 +1136,7 @@ export class ProjectHost {
     this.emitChanged();
     return {
       project: this.snapshot() as ProjectWire,
+      ...(result.createdId !== undefined ? { createdId: result.createdId } : {}),
       ...(result.createdRequestId !== undefined ? { createdRequestId: result.createdRequestId } : {}),
       ...(result.createdEnvironmentId !== undefined ? { createdEnvironmentId: result.createdEnvironmentId } : {}),
       ...(result.createdAttachmentId !== undefined ? { createdAttachmentId: result.createdAttachmentId } : {}),

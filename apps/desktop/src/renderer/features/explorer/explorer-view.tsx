@@ -6,6 +6,7 @@ import {
   Box,
   FileDown,
   Folder,
+  Globe,
   FolderPlus,
   Link2,
   Loader2,
@@ -16,18 +17,20 @@ import {
   UnfoldVertical,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { showToast } from '../../components/toast.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import { MethodBadge } from '../rest-api/method-badge.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
-import { buildExplorerTree } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId, restEntityId } from './tree-nodes.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -61,6 +64,8 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   endpoints: Folder,
   operations: Folder,
   binding: Network,
+  api: Globe,
+  folder: Folder,
 };
 
 /**
@@ -83,6 +88,9 @@ const FocusableListOuter = forwardRef<HTMLDivElement, React.ComponentProps<typeo
 const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   project: 'explorer-project-row',
   'project-missing': 'explorer-project-missing',
+  api: 'api-row',
+  folder: 'folder-row',
+  'rest-request': 'rest-request-row',
 };
 
 const INLINE_BUTTON_CLASS =
@@ -109,8 +117,13 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         onClick={(e) => {
           e.stopPropagation();
           node.select();
-          if (node.data.kind === 'request') {
+          if (node.data.kind === 'request' || node.data.kind === 'rest-request') {
             node.activate();
+          } else if (node.data.kind === 'api') {
+            // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
+            // and credentials live, and the row is also the container the user is about to expand.
+            node.activate();
+            node.toggle();
           } else if (node.isInternal && node.data.kind !== 'project') {
             // A project row opens its tab from `onSelect` (see below) and must not also fold
             // itself shut under the very click that opened it.
@@ -139,6 +152,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           </span>
         )}
         {Icon !== undefined && <Icon size={13} />}
+        {node.data.kind === 'rest-request' && node.data.method !== undefined && (
+          <MethodBadge method={node.data.method} title={`${node.data.method} ${node.data.label}`} />
+        )}
         {node.isEditing ? (
           <input
             autoFocus
@@ -179,6 +195,14 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             >
               Remove
             </button>
+          </span>
+        )}
+        {node.data.kind === 'api' && (
+          <span
+            data-testid="explorer-api-badge"
+            className="shrink-0 rounded-full bg-surface-base px-1.5 text-xs text-fg-subtle"
+          >
+            REST
           </span>
         )}
         {node.data.kind === 'project' && node.data.linked === true && (
@@ -225,6 +249,7 @@ export function ExplorerView() {
   const interfaces = useProjectStore((state) => state.interfaces);
   const order = useProjectStore((state) => state.order);
   const requests = useProjectStore((state) => state.requests);
+  const rest = useProjectStore((state) => state.rest);
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
@@ -235,6 +260,8 @@ export function ExplorerView() {
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
   const confirmDeleteRequestId = useUiStore((state) => state.confirmDeleteRequestId);
+  const confirmDeleteNode = useUiStore((state) => state.confirmDeleteNode);
+  const requestDeleteNode = useUiStore((state) => state.requestDeleteNode);
   const requestRemoveInterface = useUiStore((state) => state.requestRemoveInterface);
   const requestDeleteRequest = useUiStore((state) => state.requestDeleteRequest);
 
@@ -252,7 +279,7 @@ export function ExplorerView() {
     status: project.status,
     ...(project.message !== undefined ? { message: project.message } : {}),
   }));
-  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests));
+  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest);
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -347,7 +374,34 @@ export function ExplorerView() {
                   setExplorerOpen(workspaceId, id, tree.isOpen(id));
                 }
               }}
-              disableEdit={(node) => node.kind !== 'request' && node.kind !== 'project'}
+              disableEdit={(node) =>
+                node.kind !== 'request' &&
+                node.kind !== 'project' &&
+                node.kind !== 'api' &&
+                node.kind !== 'folder' &&
+                node.kind !== 'rest-request'
+              }
+              // Reordering and moving happen inside one project: a request belongs to the API it
+              // was made in, and dragging it into another project would mean moving it between two
+              // folders on disk, which `move-node` deliberately does not do.
+              disableDrop={({ parentNode, dragNodes }) => !sameProject(parentNode.data, dragNodes[0]?.data)}
+              onMove={({ dragIds, parentNode, index }) => {
+                const nodes = data.flatMap(flatten);
+                for (const dragId of dragIds) {
+                  const node = nodes.find((candidate) => candidate.id === dragId);
+                  const entityId = restEntityId(node);
+                  if (entityId === undefined) {
+                    continue;
+                  }
+                  const parent = parentNode?.data;
+                  void useProjectStore
+                    .getState()
+                    .moveNode(entityId, parent?.kind === 'folder' ? parent.folderId : undefined, index)
+                    .catch((error: unknown) => {
+                      showToast(error instanceof Error ? error.message : 'Could not move it');
+                    });
+                }
+              }}
               aria-label="Explorer"
               onActivate={(node: NodeApi<ExplorerNode>) => {
                 // Reached by a click on a request row, a double-click on anything, and Enter.
@@ -359,6 +413,14 @@ export function ExplorerView() {
                 }
                 if (node.data.kind === 'interface') {
                   explorerActions.showInterface(node.data.interfaceId);
+                  return;
+                }
+                if (node.data.kind === 'api') {
+                  explorerActions.openApi(node.data.apiId);
+                  return;
+                }
+                if (node.data.kind === 'rest-request') {
+                  explorerActions.openRestRequest(node.data.requestId);
                   return;
                 }
                 explorerActions.openRequest(node.data.requestId);
@@ -389,6 +451,8 @@ export function ExplorerView() {
                   ...(node.operationName !== undefined ? { operationName: node.operationName } : {}),
                   ...(node.soapAction !== undefined ? { soapAction: node.soapAction } : {}),
                   ...(node.requestId !== undefined ? { requestId: node.requestId } : {}),
+                  ...(node.apiId !== undefined ? { apiId: node.apiId } : {}),
+                  ...(node.folderId !== undefined ? { folderId: node.folderId } : {}),
                   ...(node.address !== undefined ? { address: node.address } : {}),
                 });
               }}
@@ -400,6 +464,18 @@ export function ExplorerView() {
                 if (node?.kind === 'project' && node.projectId !== undefined) {
                   projectRowActions.commitRename(node.projectId, name);
                 }
+                if (node?.kind === 'api' && node.apiId !== undefined) {
+                  void useProjectStore.getState().updateApi(node.apiId, { name }).catch(reportRenameFailure);
+                }
+                if (node?.kind === 'folder' && node.folderId !== undefined) {
+                  void useProjectStore.getState().updateFolder(node.folderId, { name }).catch(reportRenameFailure);
+                }
+                if (node?.kind === 'rest-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateRestRequest(node.requestId, { name })
+                    .catch(reportRenameFailure);
+                }
               }}
               onDelete={({ nodes }) => {
                 for (const node of nodes) {
@@ -409,6 +485,12 @@ export function ExplorerView() {
                     requestRemoveInterface(node.data.interfaceId);
                   } else if (node.data.kind === 'request') {
                     requestDeleteRequest(node.data.requestId);
+                  } else if (node.data.kind === 'api') {
+                    explorerActions.removeApi(node.data.apiId);
+                  } else if (node.data.kind === 'folder') {
+                    explorerActions.removeFolder(node.data.folderId);
+                  } else if (node.data.kind === 'rest-request') {
+                    explorerActions.deleteRestRequest(node.data.requestId);
                   }
                 }
               }}
@@ -434,6 +516,49 @@ export function ExplorerView() {
           if (confirmRemoveInterfaceId !== undefined) {
             void removeInterface(confirmRemoveInterfaceId);
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteNode !== undefined}
+        onOpenChange={(open) => {
+          if (!open) {
+            requestDeleteNode(undefined);
+          }
+        }}
+        title={
+          confirmDeleteNode?.kind === 'api'
+            ? 'Delete API?'
+            : confirmDeleteNode?.kind === 'folder'
+              ? 'Delete folder?'
+              : 'Delete request?'
+        }
+        description={
+          confirmDeleteNode === undefined
+            ? 'This cannot be undone.'
+            : `"${confirmDeleteNode.name}"${
+                confirmDeleteNode.requestCount > 0
+                  ? ` and the ${String(confirmDeleteNode.requestCount)} request(s) inside it`
+                  : ''
+              } will be deleted. This cannot be undone.`
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          if (confirmDeleteNode === undefined) {
+            return;
+          }
+          const store = useProjectStore.getState();
+          const { kind, id } = confirmDeleteNode;
+          const done =
+            kind === 'api'
+              ? store.removeApi(id)
+              : kind === 'folder'
+                ? store.removeFolder(id)
+                : store.removeRestRequest(id);
+          void done.catch((error: unknown) => {
+            showToast(error instanceof Error ? error.message : 'Delete failed');
+          });
         }}
       />
 
@@ -464,4 +589,16 @@ export function ExplorerView() {
 
 function flatten(node: ExplorerNode): ExplorerNode[] {
   return [node, ...(node.children ?? []).flatMap(flatten)];
+}
+
+/** Whether a drop target and the node being dragged live in the same project. */
+function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
+  const projectOf = useProjectStore.getState().projectOf;
+  const into = nodeProjectId(target, projectOf);
+  const from = nodeProjectId(dragged, projectOf);
+  return into !== undefined && into === from;
+}
+
+function reportRenameFailure(error: unknown): void {
+  showToast(error instanceof Error ? error.message : 'Could not rename it');
 }

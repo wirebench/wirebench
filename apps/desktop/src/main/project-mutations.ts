@@ -107,6 +107,12 @@ export interface MutationDeps {
 /** The outcome of one change: the next model, plus any entity the change created. */
 export interface MutationResult {
   readonly project: Project;
+  /**
+   * The REST entity a change created — an API, a folder or a request. One field for all three
+   * because the caller already knows which change it sent, and the renderer only ever needs "the
+   * thing I just made" to select or open it.
+   */
+  readonly createdId?: string;
   readonly createdRequestId?: string;
   readonly createdEnvironmentId?: string;
   readonly createdAttachmentId?: string;

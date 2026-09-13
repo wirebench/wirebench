@@ -28,6 +28,22 @@ export interface Selection {
   readonly requestId?: string;
   /** Set when `kind` is `endpoint`: the port's address. */
   readonly address?: string;
+  /** Set on an `api`, `folder` or `rest-request` selection: the API it belongs to. */
+  readonly apiId?: string;
+  /** Set on a `folder` selection (the folder itself) and on a `rest-request` inside one. */
+  readonly folderId?: string;
+}
+
+/**
+ * A REST node the user asked to delete, held until they confirm. One shape for all three kinds
+ * because the dialog only needs to name the thing and say how much goes with it.
+ */
+export interface PendingNodeDeletion {
+  readonly kind: 'api' | 'folder' | 'rest-request';
+  readonly id: string;
+  readonly name: string;
+  /** How many requests are inside it; `0` for an empty folder or API, and for a request. */
+  readonly requestCount: number;
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
@@ -42,6 +58,8 @@ export interface UiStore extends UiSnapshot {
   readonly confirmRemoveInterfaceId: string | undefined;
   /** Request id pending a delete confirmation, from either the context menu or a command. */
   readonly confirmDeleteRequestId: string | undefined;
+  /** The API, folder or REST request pending a delete confirmation. Transient. */
+  readonly confirmDeleteNode: PendingNodeDeletion | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
   /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
@@ -60,6 +78,8 @@ export interface UiStore extends UiSnapshot {
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
+  /** Asks for a REST node's deletion to be confirmed; `undefined` dismisses the dialog. */
+  readonly requestDeleteNode: (pending: PendingNodeDeletion | undefined) => void;
   readonly setEnvSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
@@ -139,6 +159,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
+    confirmDeleteNode: undefined,
     envSwitcherOpen: false,
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
@@ -163,6 +184,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     requestDeleteRequest: (requestId) => {
       set({ confirmDeleteRequestId: requestId });
+    },
+    requestDeleteNode: (pending) => {
+      set({ confirmDeleteNode: pending });
     },
     setEnvSwitcherOpen: (open) => {
       set({ envSwitcherOpen: open });

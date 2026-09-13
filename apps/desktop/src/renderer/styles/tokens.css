@@ -57,6 +57,17 @@
   --wb-status-danger: #e0685f;
   --wb-status-info: #7fa6dd;
 
+  /* HTTP method badges. A filled chip carrying `--wb-fg-on-accent`, like the orphaned badge, so
+     each colour answers for one contrast pair rather than one per row surface. Read-only methods
+     are calm, writes are warm, a delete is the danger red, and anything else is grey: the colour
+     is there to say how much a request changes, not to decorate the tree. */
+  --wb-method-get: #6fbf8f;
+  --wb-method-post: #d9a441;
+  --wb-method-put: #7fa6dd;
+  --wb-method-patch: #b79ae0;
+  --wb-method-delete: #e0685f;
+  --wb-method-other: #a49d93;
+
   /* Spacing: a 2px-rooted scale; IDE chrome lives in the first four steps. */
   --wb-space-1: 2px;
   --wb-space-2: 4px;
@@ -119,6 +130,13 @@
   --wb-status-warning: #8b6010;
   --wb-status-danger: #b23b33;
   --wb-status-info: #3d6ba8;
+
+  --wb-method-get: #2b7550;
+  --wb-method-post: #8b6010;
+  --wb-method-put: #3d6ba8;
+  --wb-method-patch: #6b4aa0;
+  --wb-method-delete: #b23b33;
+  --wb-method-other: #5c564e;
 
   --wb-shadow-overlay: 0 16px 48px rgb(40 30 20 / 18%);
 }

@@ -12,6 +12,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWsiStore } from '../../src/renderer/state/wsi.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { NO_REST } from '../helpers/wire-defaults.js';
 import { makeInterface } from '../mocks/exchange-fixtures.js';
 import { revealedLines } from '../mocks/monaco-editor-react.js';
 
@@ -280,6 +281,7 @@ describe('InterfaceEditor', () => {
             name: 'P',
             dir: '/tmp/p',
             dirty: false,
+            ...NO_REST,
             interfaces: [makeInterface({ auth: { type: 'basic' } })],
             requests: [],
             properties: {},
@@ -315,6 +317,7 @@ describe('InterfaceEditor', () => {
             name: 'P',
             dir: '/tmp/p',
             dirty: false,
+            ...NO_REST,
             interfaces: [makeInterface({ wsaConfig: { enabled: true } })],
             requests: [],
             properties: {},

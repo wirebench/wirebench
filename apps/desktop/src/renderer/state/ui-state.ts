@@ -16,10 +16,20 @@ export interface EditorLayoutSnapshot {
  * thing the next session can reopen.
  */
 export interface PersistedTab {
-  readonly kind: 'request' | 'interface' | 'environment' | 'project';
-  /** The entity id — the request, interface, environment or project the tab edits. */
+  readonly kind: 'request' | 'interface' | 'environment' | 'project' | 'rest-request' | 'api';
+  /** The entity id — the request, interface, API, environment or project the tab edits. */
   readonly id: string;
 }
+
+/** Every tab kind that survives a workspace switch, in one place so the reader can check against it. */
+const PERSISTED_TAB_KINDS: readonly PersistedTab['kind'][] = [
+  'request',
+  'interface',
+  'environment',
+  'project',
+  'rest-request',
+  'api',
+];
 
 /** What one workspace leaves behind when it is closed, so reopening it looks the same. */
 export interface PersistedWorkspaceUi {
@@ -189,8 +199,8 @@ function readTab(value: unknown): PersistedTab | undefined {
   if (typeof id !== 'string' || id.length === 0) {
     return undefined;
   }
-  return kind === 'request' || kind === 'interface' || kind === 'environment' || kind === 'project'
-    ? { kind, id }
+  return PERSISTED_TAB_KINDS.includes(kind as PersistedTab['kind'])
+    ? { kind: kind as PersistedTab['kind'], id }
     : undefined;
 }
 

@@ -23,6 +23,11 @@ export function startRenamingRequest(requestId: string): void {
   startRenaming(`req:${requestId}`);
 }
 
+/** Enters inline edit mode for an API, folder or REST request row. */
+export function startRenamingNode(kind: 'api' | 'folder' | 'rest-request', id: string): void {
+  startRenaming(`${kind === 'rest-request' ? 'rest' : kind}:${id}`);
+}
+
 /** Enters inline edit mode for a project root, if the tree is mounted and the node exists. */
 export function startRenamingProject(projectId: string): void {
   startRenaming(`proj:${projectId}`);

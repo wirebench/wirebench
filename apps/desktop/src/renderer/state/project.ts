@@ -27,7 +27,14 @@ import type {
   RequestPatchWire,
   RequestPropertiesPatchWire,
   RequestWire,
+  ApiPatchWire,
+  RestApiWire,
+  RestFolderPatchWire,
+  RestFolderWire,
+  RestRequestPatchWire,
+  RestRequestWire,
 } from '../../shared/wire-types.js';
+import type { ExplorerRestData } from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
@@ -61,6 +68,17 @@ export interface ProjectSnapshot {
   readonly interfaces: Record<string, InterfaceWire>;
   /** Requests by id, flattened across every open project. */
   readonly requests: Record<string, RequestDraft>;
+  /** REST APIs by id, flattened across every open project. */
+  readonly apis: Record<string, RestApiWire>;
+  /** REST folders by id, flattened across every open project. */
+  readonly folders: Record<string, RestFolderWire>;
+  /** REST requests by id, flattened across every open project. */
+  readonly restRequests: Record<string, RestRequestWire>;
+  /**
+   * Each project's REST lists, kept per project because that is how the explorer reads them: one
+   * root's children come from exactly one project.
+   */
+  readonly rest: Readonly<Record<string, ExplorerRestData>>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -154,6 +172,30 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly cloneRequest: (requestId: string) => Promise<string>;
   /** Deletes a request and closes its open editor tab, if any. */
   readonly removeRequest: (requestId: string) => Promise<void>;
+  /** Adds a REST API to one project and returns its id. */
+  readonly addApi: (projectId: string, name: string, baseUrl?: string) => Promise<string>;
+  readonly updateApi: (apiId: string, patch: ApiPatchWire) => Promise<void>;
+  /** Deletes an API with everything inside it, and closes the tabs that named any of it. */
+  readonly removeApi: (apiId: string) => Promise<void>;
+  /** Adds a folder at an API's root, or inside `parentId`. Returns the new folder's id. */
+  readonly addFolder: (apiId: string, parentId: string | undefined, name: string) => Promise<string>;
+  readonly updateFolder: (folderId: string, patch: RestFolderPatchWire) => Promise<void>;
+  readonly removeFolder: (folderId: string) => Promise<void>;
+  /** Adds a REST request to an API or one of its folders. Returns the new request's id. */
+  readonly addRestRequest: (apiId: string, parentId?: string, name?: string) => Promise<string>;
+  /**
+   * Writes one REST request's edit straight through to main, which autosaves it. For edits made
+   * outside an editor tab — renaming from the tree, naming a request as it is created.
+   */
+  readonly updateRestRequest: (requestId: string, patch: RestRequestPatchWire) => Promise<void>;
+  readonly removeRestRequest: (requestId: string) => Promise<void>;
+  /** Copies a REST request beside the original; returns the copy's id. */
+  readonly cloneRestRequest: (requestId: string) => Promise<string>;
+  /**
+   * Moves an API, a folder or a REST request to `index` inside `parentId` (the API's root when
+   * absent). What a drag-and-drop in the explorer commits.
+   */
+  readonly moveNode: (nodeId: string, parentId: string | undefined, index: number) => Promise<void>;
   /** Appends an empty environment to one project and returns its id. */
   readonly addEnvironment: (projectId: string, name: string) => Promise<string>;
   /**
@@ -315,7 +357,17 @@ function withAttachmentPatch(request: RequestDraft, attachmentId: string, patch:
 /** Every index {@link ProjectSnapshot} exposes, rebuilt from the whole project map. */
 type Indexes = Pick<
   ProjectSnapshot,
-  'interfaces' | 'requests' | 'order' | 'projectOf' | 'keystores' | 'wssOutgoing' | 'wssIncoming'
+  | 'interfaces'
+  | 'requests'
+  | 'apis'
+  | 'folders'
+  | 'restRequests'
+  | 'rest'
+  | 'order'
+  | 'projectOf'
+  | 'keystores'
+  | 'wssOutgoing'
+  | 'wssIncoming'
 >;
 
 /**
@@ -328,6 +380,41 @@ type Indexes = Pick<
 /** One request's staged-but-unsaved patch, or `undefined` when the request is clean. */
 function draftPatchOf(requestId: string): RequestPatchWire | undefined {
   return useDraftsStore.getState().peekRequest(requestId);
+}
+
+/** One REST request's staged-but-unsaved patch, or `undefined` when it is clean. */
+function restDraftPatchOf(requestId: string): RestRequestPatchWire | undefined {
+  return useDraftsStore.getState().peekRestRequest(requestId);
+}
+
+/**
+ * A mirrored REST request with its staged edit laid over it, for the same reason its SOAP
+ * counterpart gets one: a snapshot from main reflects only what has been written, and replacing
+ * the mirror wholesale would throw away what the user has typed and not yet saved.
+ *
+ * Tables, the body and the settings are replaced rather than merged — an absent setting means
+ * *inherit*, so merging could never turn one back off.
+ */
+export function layerRestEdits(
+  request: RestRequestWire,
+  draftPatch: RestRequestPatchWire | undefined,
+): RestRequestWire {
+  if (draftPatch === undefined) {
+    return request;
+  }
+  return {
+    ...request,
+    ...(draftPatch.name !== undefined ? { name: draftPatch.name } : {}),
+    ...(draftPatch.description !== undefined ? { description: draftPatch.description ?? undefined } : {}),
+    ...(draftPatch.method !== undefined ? { method: draftPatch.method } : {}),
+    ...(draftPatch.url !== undefined ? { url: draftPatch.url } : {}),
+    ...(draftPatch.pathParams !== undefined ? { pathParams: draftPatch.pathParams } : {}),
+    ...(draftPatch.query !== undefined ? { query: draftPatch.query } : {}),
+    ...(draftPatch.headers !== undefined ? { headers: draftPatch.headers } : {}),
+    ...(draftPatch.body !== undefined ? { body: draftPatch.body } : {}),
+    ...(draftPatch.auth !== undefined ? { auth: draftPatch.auth } : {}),
+    ...(draftPatch.settings !== undefined ? { settings: draftPatch.settings } : {}),
+  };
 }
 
 /**
@@ -356,6 +443,10 @@ export function layerEdits(
 function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const interfaces: Record<string, InterfaceWire> = {};
   const requests: Record<string, RequestDraft> = {};
+  const apis: Record<string, RestApiWire> = {};
+  const folders: Record<string, RestFolderWire> = {};
+  const restRequests: Record<string, RestRequestWire> = {};
+  const rest: Record<string, ExplorerRestData> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -372,6 +463,23 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       requests[request.id] = layerEdits(request, pending.get(request.id), draftPatchOf(request.id));
       projectOf[request.id] = project.id;
     }
+    for (const api of project.apis) {
+      apis[api.id] = api;
+      projectOf[api.id] = project.id;
+    }
+    for (const folder of project.folders) {
+      folders[folder.id] = folder;
+      projectOf[folder.id] = project.id;
+    }
+    for (const request of project.restRequests) {
+      restRequests[request.id] = layerRestEdits(request, restDraftPatchOf(request.id));
+      projectOf[request.id] = project.id;
+    }
+    rest[project.id] = {
+      apis: project.apis,
+      folders: project.folders,
+      requests: project.restRequests.map((request) => restRequests[request.id] ?? request),
+    };
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -392,7 +500,19 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   // Projects are ordered by name so the explorer's tree does not reshuffle on every snapshot
   // (object key order follows insertion, which follows whichever project replied last).
   order.sort((a, b) => (projects[a.projectId]?.name ?? '').localeCompare(projects[b.projectId]?.name ?? ''));
-  return { interfaces, requests, order, projectOf, keystores, wssOutgoing, wssIncoming };
+  return {
+    interfaces,
+    requests,
+    apis,
+    folders,
+    restRequests,
+    rest,
+    order,
+    projectOf,
+    keystores,
+    wssOutgoing,
+    wssIncoming,
+  };
 }
 
 /**
@@ -440,10 +560,46 @@ export function selectProjectEnvironments(state: ProjectSnapshot, projectId: str
   return (state.projects[projectId]?.environments ?? []).map(withPendingPatch).sort((a, b) => a.order - b.order);
 }
 
+/** One REST request by id, with its staged edit applied. */
+export function selectRestRequest(state: ProjectSnapshot, requestId: string): RestRequestWire | undefined {
+  return state.restRequests[requestId];
+}
+
+/** The API a REST request, folder or API id belongs to. */
+export function selectApiOf(state: ProjectSnapshot, entityId: string): RestApiWire | undefined {
+  const apiId = state.apis[entityId]?.id ?? state.folders[entityId]?.apiId ?? state.restRequests[entityId]?.apiId;
+  return apiId === undefined ? undefined : state.apis[apiId];
+}
+
+/**
+ * The folders a REST request sits in, outermost first — what the breadcrumb shows and what the
+ * credentials chain climbs. Empty for a request at the API's root.
+ */
+export function selectFolderChain(state: ProjectSnapshot, requestId: string): readonly RestFolderWire[] {
+  const chain: RestFolderWire[] = [];
+  let folderId = state.restRequests[requestId]?.folderId;
+  // Bounded by the folder count: a cycle on disk would otherwise loop here forever.
+  const seen = new Set<string>();
+  while (folderId !== undefined && !seen.has(folderId)) {
+    seen.add(folderId);
+    const folder = state.folders[folderId];
+    if (folder === undefined) {
+      break;
+    }
+    chain.unshift(folder);
+    folderId = folder.parentId;
+  }
+  return chain;
+}
+
 const EMPTY: ProjectSnapshot = {
   projects: {},
   interfaces: {},
   requests: {},
+  apis: {},
+  folders: {},
+  restRequests: {},
+  rest: {},
   order: [],
   projectOf: {},
   keystores: [],
@@ -516,6 +672,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   /** `mutate`, for a change addressed at an entity rather than at a project. */
   const mutateEntity = async (entityId: string, change: ProjectChange): Promise<ProjectMutateResponse> =>
     await mutate(ownerOf(entityId), change);
+
+  /**
+   * Drops everything the renderer kept for a REST request that no longer exists: its tab, its
+   * unsaved draft and its cached response. A draft left behind would keep the workspace looking
+   * unsaved with nothing left to save.
+   */
+  const forgetRestRequest = (requestId: string): void => {
+    useDraftsStore.getState().discardRestRequest(requestId);
+    useEditorsStore.getState().close(`rest:${requestId}`);
+    useExchangesStore.getState().clearRequest(requestId);
+  };
 
   /** Saves one project, reporting its own status. */
   const saveOne = async (projectId: string): Promise<void> => {
@@ -807,6 +974,93 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       useDraftsStore.getState().discardRequest(requestId);
       useEditorsStore.getState().close(`request:${requestId}`);
       useExchangesStore.getState().clearRequest(requestId);
+    },
+
+    addApi: async (projectId, name, baseUrl = '') => {
+      const { createdId } = await mutate(projectId, { kind: 'add-api', name, baseUrl });
+      if (createdId === undefined) {
+        throw new Error('add-api did not return an API id');
+      }
+      return createdId;
+    },
+
+    updateApi: async (apiId, patch) => {
+      await mutateEntity(apiId, { kind: 'update-api', apiId, patch });
+    },
+
+    removeApi: async (apiId) => {
+      // Every request inside it goes too, so their tabs, drafts and cached responses go with them
+      // — a tab left open on a request that no longer exists is a tab that can never be saved.
+      const inside = Object.values(get().restRequests).filter((request) => request.apiId === apiId);
+      await mutateEntity(apiId, { kind: 'remove-api', apiId });
+      for (const request of inside) {
+        forgetRestRequest(request.id);
+      }
+      useEditorsStore.getState().close(`api:${apiId}`);
+    },
+
+    addFolder: async (apiId, parentId, name) => {
+      const { createdId } = await mutateEntity(apiId, {
+        kind: 'add-folder',
+        apiId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name,
+      });
+      if (createdId === undefined) {
+        throw new Error('add-folder did not return a folder id');
+      }
+      return createdId;
+    },
+
+    updateFolder: async (folderId, patch) => {
+      await mutateEntity(folderId, { kind: 'update-folder', folderId, patch });
+    },
+
+    removeFolder: async (folderId) => {
+      const inside = Object.values(get().restRequests).filter((request) => request.folderId === folderId);
+      await mutateEntity(folderId, { kind: 'remove-folder', folderId });
+      for (const request of inside) {
+        forgetRestRequest(request.id);
+      }
+    },
+
+    addRestRequest: async (apiId, parentId, name) => {
+      const { createdId } = await mutateEntity(apiId, {
+        kind: 'add-rest-request',
+        apiId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(name !== undefined ? { name } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-rest-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    updateRestRequest: async (requestId, patch) => {
+      await mutateEntity(requestId, { kind: 'update-rest-request', requestId, patch });
+    },
+
+    removeRestRequest: async (requestId) => {
+      await mutateEntity(requestId, { kind: 'remove-rest-request', requestId });
+      forgetRestRequest(requestId);
+    },
+
+    cloneRestRequest: async (requestId) => {
+      const { createdId } = await mutateEntity(requestId, { kind: 'clone-rest-request', requestId });
+      if (createdId === undefined) {
+        throw new Error('clone-rest-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    moveNode: async (nodeId, parentId, index) => {
+      await mutateEntity(nodeId, {
+        kind: 'move-node',
+        nodeId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        index,
+      });
     },
 
     addEnvironment: async (projectId, name) => {

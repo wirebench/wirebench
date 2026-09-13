@@ -176,6 +176,43 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
     );
   }
 
+  if (node.kind === 'api' && node.apiId !== undefined) {
+    const apiId = node.apiId;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
+    );
+  }
+
+  if (node.kind === 'folder' && node.apiId !== undefined && node.folderId !== undefined) {
+    const { apiId, folderId } = { apiId: node.apiId, folderId: node.folderId };
+    return groups(
+      [
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId, folderId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
+    );
+  }
+
+  if (node.kind === 'rest-request' && node.requestId !== undefined) {
+    const requestId = node.requestId;
+    // No *Open*, for the same reason a SOAP request row has none: a single click already opens it.
+    return groups(
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
+    );
+  }
+
   if (node.kind === 'endpoint') {
     return groups([
       {

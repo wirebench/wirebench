@@ -1,9 +1,9 @@
 /**
  * Per-workspace editor tabs: saved when a workspace closes, restored when it opens again.
  *
- * Only the three tab kinds that name a durable entity survive a switch — a request, an
- * imported interface, an environment. A diff, a history entry and the preferences tab all
- * describe a moment rather than a thing, so they are simply dropped.
+ * Only the tab kinds that name a durable entity survive a switch — a request of either protocol,
+ * an imported interface, an API, an environment, a project. A diff, a history entry and the
+ * preferences tab all describe a moment rather than a thing, so they are simply dropped.
  */
 
 import type { PersistedTab } from './ui-state.js';
@@ -28,6 +28,10 @@ function tabIdFor(tab: PersistedTab): string {
       return `env:${tab.id}`;
     case 'project':
       return `project:${tab.id}`;
+    case 'rest-request':
+      return `rest:${tab.id}`;
+    case 'api':
+      return `api:${tab.id}`;
   }
 }
 
@@ -44,6 +48,12 @@ function persist(tab: EditorTab): PersistedTab | undefined {
   }
   if (tab.kind === 'project' && tab.projectId !== undefined) {
     return { kind: 'project', id: tab.projectId };
+  }
+  if (tab.kind === 'rest-request' && tab.restRequestId !== undefined) {
+    return { kind: 'rest-request', id: tab.restRequestId };
+  }
+  if (tab.kind === 'api' && tab.apiId !== undefined) {
+    return { kind: 'api', id: tab.apiId };
   }
   return undefined;
 }
@@ -73,6 +83,10 @@ function titleFor(tab: PersistedTab): string | undefined {
     }
     case 'project':
       return projects.projects[tab.id]?.name;
+    case 'rest-request':
+      return projects.restRequests[tab.id]?.name;
+    case 'api':
+      return projects.apis[tab.id]?.name;
   }
 }
 
@@ -121,6 +135,8 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
       ...(tab.kind === 'interface' ? { interfaceId: tab.id } : {}),
       ...(tab.kind === 'environment' ? { environmentId: tab.id } : {}),
       ...(tab.kind === 'project' ? { projectId: tab.id } : {}),
+      ...(tab.kind === 'rest-request' ? { restRequestId: tab.id } : {}),
+      ...(tab.kind === 'api' ? { apiId: tab.id } : {}),
     });
     if (tab.id === entry.activeId) {
       activeTabId = id;

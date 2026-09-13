@@ -135,3 +135,45 @@ describe('explorerMenuItems', () => {
     expect(useUiStore.getState().confirmRemoveProjectId).toBe('p1');
   });
 });
+
+/**
+ * The REST rows. The point of each case is what the menu does *not* offer: an API row has no
+ * *Recreate* (there is no definition to recreate from), a folder has nothing to open, and a request
+ * row has no *Open* because a single click already opens it.
+ */
+describe('explorerMenuItems on a REST row', () => {
+  it('offers an API its containers and its own lifecycle', () => {
+    const items = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+  });
+
+  it('offers a folder the two creators, a rename and a delete', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Delete']);
+  });
+
+  it('offers a REST request duplicate, rename and delete, and no Open', () => {
+    const items = explorerMenuItems(node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+  });
+
+  it('keeps the destructive entry in a group of its own on all three', () => {
+    for (const kinds of [
+      node({ kind: 'api', id: 'api:a1', apiId: 'a1' }),
+      node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }),
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+    ]) {
+      const groups = explorerMenuGroups(kinds);
+      expect(groups.at(-1)?.map((item) => item.label)).toEqual(['Delete']);
+    }
+  });
+
+  it('offers nothing for a row whose ids are missing, rather than items that would no-op', () => {
+    expect(explorerMenuItems(node({ kind: 'api' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'folder', apiId: 'a1' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'rest-request', apiId: 'a1' }))).toEqual([]);
+  });
+});

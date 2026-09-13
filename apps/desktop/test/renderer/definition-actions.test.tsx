@@ -20,6 +20,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { makeInterface } from '../mocks/exchange-fixtures.js';
+import { NO_REST } from '../helpers/wire-defaults.js';
 
 const LOADED_AT = 1_700_000_000_000;
 
@@ -185,6 +186,7 @@ describe('UpdateDefinitionDialog', () => {
           name: 'P',
           dir: '/tmp/p',
           dirty: false,
+          ...NO_REST,
           interfaces: [],
           requests: [],
           properties: {},
