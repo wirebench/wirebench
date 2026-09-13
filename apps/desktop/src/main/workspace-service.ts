@@ -434,14 +434,26 @@ export class WorkspaceService implements ProjectRouter {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { workspace: loaded, legacy } = await loadWorkspace(dir, this.fsOption());
-    // A workspace opened for the first time since this build's local.yaml split: an older
-    // build's activeEnvironmentId (lifted out of the manifest by migrateWorkspace) is adopted
-    // as this machine's local state, but only once — a local.yaml that already has an opinion
-    // (including "none") is never overridden by a stale manifest value.
+    // A workspace whose manifest is still v1/v2 carries a stale activeEnvironmentId that
+    // `loadWorkspace` already stripped from the in-memory model (into `legacy`, not the
+    // manifest) but has not yet stripped from disk. `local.yaml` cannot represent "the user
+    // explicitly cleared it" separately from "nothing has ever been set here" — both read back
+    // as `EMPTY_LOCAL_STATE` — so leaving the stale manifest key around would let it resurrect a
+    // value the user cleared on a later open, once local.yaml goes missing again (e.g. after a
+    // `setActiveEnvironment(null)`). The fix is to finish the migration right here: adopt the
+    // legacy value into local.yaml only when there is not already one and it still names a real
+    // environment, then immediately resave the manifest at v3 so the stale key never lingers on
+    // disk past this open, regardless of whether it was adopted.
     let local = await loadLocalState(dir, this.fsOption());
-    if (legacy.activeEnvironmentId !== undefined && local.activeEnvironmentId === undefined) {
-      local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
-      await saveLocalState(dir, local, this.fsOption());
+    if (legacy.activeEnvironmentId !== undefined) {
+      if (
+        local.activeEnvironmentId === undefined &&
+        loaded.environments.some((environment) => environment.id === legacy.activeEnvironmentId)
+      ) {
+        local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
+        await saveLocalState(dir, local, this.fsOption());
+      }
+      await saveWorkspace(loaded, dir, this.fsOption());
     }
     // Only ever applied when it still names a real environment — a deleted one, or one from a
     // workspace local.yaml was copied from by hand, must not resurrect a dangling pointer.
