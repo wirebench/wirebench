@@ -26,11 +26,14 @@ import {
   createWorkspace,
   createWorkspaceEnvironment,
   definitionCacheDir,
+  EMPTY_LOCAL_STATE,
   INTERFACES_DIR,
+  loadLocalState,
   loadProject,
   loadWorkspace,
   ProjectError,
   reidentifyProject,
+  saveLocalState,
   saveProject,
   saveWorkspace,
   uniqueSlug,
@@ -430,7 +433,24 @@ export class WorkspaceService implements ProjectRouter {
   async open(id: string): Promise<WorkspaceWire> {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-    const { workspace } = await loadWorkspace(dir, this.fsOption());
+    const { workspace: loaded, legacy } = await loadWorkspace(dir, this.fsOption());
+    // A workspace opened for the first time since this build's local.yaml split: an older
+    // build's activeEnvironmentId (lifted out of the manifest by migrateWorkspace) is adopted
+    // as this machine's local state, but only once — a local.yaml that already has an opinion
+    // (including "none") is never overridden by a stale manifest value.
+    let local = await loadLocalState(dir, this.fsOption());
+    if (legacy.activeEnvironmentId !== undefined && local.activeEnvironmentId === undefined) {
+      local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
+      await saveLocalState(dir, local, this.fsOption());
+    }
+    // Only ever applied when it still names a real environment — a deleted one, or one from a
+    // workspace local.yaml was copied from by hand, must not resurrect a dangling pointer.
+    const activeEnvironmentId =
+      local.activeEnvironmentId !== undefined &&
+      loaded.environments.some((environment) => environment.id === local.activeEnvironmentId)
+        ? local.activeEnvironmentId
+        : undefined;
+    const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
     const open: OpenWorkspace = { workspace, dir, entries: [] };
     this.current = open;
     this.failure = undefined;
@@ -1231,7 +1251,12 @@ export class WorkspaceService implements ProjectRouter {
       requireEnvironment(open.workspace, environmentId);
       open.workspace = { ...open.workspace, activeEnvironmentId: environmentId };
     }
-    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+    // Machine-local: written to local.yaml, never to workspace.yaml (see local-state.ts).
+    await saveLocalState(
+      open.dir,
+      environmentId === null ? EMPTY_LOCAL_STATE : { version: 1, activeEnvironmentId: environmentId },
+      this.fsOption(),
+    );
     this.deps.hooks?.onChanged?.(this.snapshot());
     return this.requireSnapshot();
   }
