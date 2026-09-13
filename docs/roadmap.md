@@ -132,10 +132,16 @@ enabled checkbox, and the `disabled` list format bump
 
 ### REST client
 
-Collections and requests beside SOAP interfaces in the same project and environments; OpenAPI import;
-query, path, form, multipart and body editors; auth reuse; the test steps and assertions extend to REST
-with JSONPath and JSON Schema. The engine gains `rest/`, the renderer a REST request editor, and the
-reserved `kind: rest` discriminator activates.
+Designed: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (draft, awaiting the §15 decisions).
+APIs with folders and requests beside SOAP interfaces in the same project and environments; OpenAPI 3
+import cached like a WSDL; query, path, form, multipart, binary and raw body editors; Basic, NTLM,
+Bearer, API-key and OAuth2 auth shared with SOAP; cURL both ways; history, search and diff. The engine
+gains `rest/`, the renderer a REST request editor, `formatVersion` goes to 3, and the reserved
+`kind: rest` discriminator activates with `grpc` reserved next (the spec's §8 says what is fixed now so a
+gRPC client is an extension rather than a migration). The test steps and assertions extend to REST with
+JSONPath and JSON Schema in the functional-testing phase. Left for follow-ups by the spec: a persistent
+cookie jar, HTML response preview, OpenAPI 2.0, a preserving _Update Definition_ for OpenAPI, and
+response validation against the OpenAPI schema.
 
 ### Mock services
 
