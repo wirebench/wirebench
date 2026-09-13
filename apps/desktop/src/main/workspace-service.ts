@@ -30,6 +30,7 @@ import {
   INTERFACES_DIR,
   loadLocalState,
   loadProject,
+  loadShare,
   loadWorkspace,
   ProjectError,
   reidentifyProject,
@@ -40,12 +41,21 @@ import {
   WirebenchError,
   WorkspaceError,
   WORKSPACE_PROJECTS_DIR,
+  WORKSPACE_SHARE_FILE,
   WORKSPACES_DIR,
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
+  workspaceTreeDir,
 } from '@wirebench/engine';
-import type { FsLike, Project, Workspace, WorkspaceEnvironment, WorkspaceProjectRef } from '@wirebench/engine';
+import type {
+  FsLike,
+  Project,
+  Workspace,
+  WorkspaceEnvironment,
+  WorkspaceProjectRef,
+  WorkspaceShare,
+} from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
@@ -151,7 +161,13 @@ interface OpenProjectEntry {
 /** The open workspace: its manifest, its folder and its project entries in manifest order. */
 interface OpenWorkspace {
   workspace: Workspace;
+  /** The app-data directory: `<userData>/workspaces/<id>`. Never the tree — see `tree`. */
   readonly dir: string;
+  /** Where the shared files (`workspace.yaml`, `environments/`, `projects/`) actually live:
+   * `dir` itself for a local workspace, or wherever `share` points once sharing exists. */
+  readonly tree: string;
+  /** `undefined` for a local workspace (tree === dir); set once `share.yaml` exists. */
+  readonly share: WorkspaceShare | undefined;
   readonly entries: OpenProjectEntry[];
 }
 
@@ -364,12 +380,16 @@ export class WorkspaceService implements ProjectRouter {
     const rows: WorkspaceSummaryWire[] = [];
     for (const name of names) {
       const dir = join(root, name);
-      if (!existsSync(workspaceManifestFile(dir))) {
+      const hasManifest = existsSync(workspaceManifestFile(dir));
+      const hasShare = existsSync(join(dir, WORKSPACE_SHARE_FILE));
+      if (!hasManifest && !hasShare) {
         continue;
       }
       const stamp = lastOpenedAt[name];
       try {
-        const { workspace } = await loadWorkspace(dir, this.fsOption());
+        const share = await loadShare(dir, this.fsOption());
+        const tree = workspaceTreeDir(dir, share);
+        const { workspace } = await loadWorkspace(tree, this.fsOption());
         rows.push({
           id: workspace.id,
           name: workspace.name,
@@ -433,7 +453,9 @@ export class WorkspaceService implements ProjectRouter {
   async open(id: string): Promise<WorkspaceWire> {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-    const { workspace: loaded, legacy } = await loadWorkspace(dir, this.fsOption());
+    const share = await loadShare(dir, this.fsOption());
+    const tree = workspaceTreeDir(dir, share);
+    const { workspace: loaded, legacy } = await loadWorkspace(tree, this.fsOption());
     // A workspace whose manifest is still v1/v2 carries a stale activeEnvironmentId that
     // `loadWorkspace` already stripped from the in-memory model (into `legacy`, not the
     // manifest) but has not yet stripped from disk. `local.yaml` cannot represent "the user
@@ -453,7 +475,7 @@ export class WorkspaceService implements ProjectRouter {
         local = { version: 1, activeEnvironmentId: legacy.activeEnvironmentId };
         await saveLocalState(dir, local, this.fsOption());
       }
-      await saveWorkspace(loaded, dir, this.fsOption());
+      await saveWorkspace(loaded, tree, this.fsOption());
     }
     // Only ever applied when it still names a real environment — a deleted one, or one from a
     // workspace local.yaml was copied from by hand, must not resurrect a dangling pointer.
@@ -463,7 +485,7 @@ export class WorkspaceService implements ProjectRouter {
         ? local.activeEnvironmentId
         : undefined;
     const workspace: Workspace = activeEnvironmentId !== undefined ? { ...loaded, activeEnvironmentId } : loaded;
-    const open: OpenWorkspace = { workspace, dir, entries: [] };
+    const open: OpenWorkspace = { workspace, dir, tree, share, entries: [] };
     this.current = open;
     this.failure = undefined;
     this.unsaved = new UnsavedStore(dir);
@@ -479,7 +501,7 @@ export class WorkspaceService implements ProjectRouter {
         let projectDir: string;
         try {
           projectDir =
-            ref.source === 'internal' ? workspaceProjectDir(dir, ref.slug) : requireAbsolute(ref.path, ref.slug);
+            ref.source === 'internal' ? workspaceProjectDir(tree, ref.slug) : requireAbsolute(ref.path, ref.slug);
         } catch (error) {
           // A corrupt reference (a linked ref with no absolute path) is a broken *project*, not a
           // broken workspace: it becomes an `error` row like any other one that will not open.
@@ -683,12 +705,14 @@ export class WorkspaceService implements ProjectRouter {
     const open = this.current;
     if (open !== undefined && open.workspace.id === id) {
       open.workspace = { ...open.workspace, name };
-      await saveWorkspace(open.workspace, open.dir, this.fsOption());
+      await saveWorkspace(open.workspace, open.tree, this.fsOption());
       this.deps.hooks?.onChanged?.(this.snapshot());
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
-      const { workspace } = await loadWorkspace(dir, this.fsOption());
-      await saveWorkspace({ ...workspace, name }, dir, this.fsOption());
+      const share = await loadShare(dir, this.fsOption());
+      const tree = workspaceTreeDir(dir, share);
+      const { workspace } = await loadWorkspace(tree, this.fsOption());
+      await saveWorkspace({ ...workspace, name }, tree, this.fsOption());
     }
     return await this.list();
   }
@@ -731,7 +755,7 @@ export class WorkspaceService implements ProjectRouter {
     const open = this.requireOpen();
     const slug = uniqueSlug(name, this.takenSlugs());
     const project = createProject(name);
-    const dir = workspaceProjectDir(open.dir, slug);
+    const dir = workspaceProjectDir(open.tree, slug);
     await mkdir(dir, { recursive: true });
     await saveProject(project, dir, this.fsOption());
     await this.adoptProject(open, { id: project.id, slug, source: 'internal' }, dir);
@@ -857,7 +881,7 @@ export class WorkspaceService implements ProjectRouter {
     }
     const open = this.requireOpen();
     const slug = uniqueSlug(copy.name, this.takenSlugs());
-    const dir = workspaceProjectDir(open.dir, slug);
+    const dir = workspaceProjectDir(open.tree, slug);
     await mkdir(dir, { recursive: true });
     await saveProject(copy, dir, this.fsOption());
     await copyProjectPayload(source, dir);
@@ -1107,7 +1131,7 @@ export class WorkspaceService implements ProjectRouter {
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */
   private async saveManifest(open: OpenWorkspace): Promise<void> {
     open.workspace = { ...open.workspace, projects: open.entries.map((entry) => entry.ref) };
-    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+    await saveWorkspace(open.workspace, open.tree, this.fsOption());
   }
 
   /** Every slug already used in the open workspace — what `uniqueSlug` is asked to avoid. */
@@ -1238,7 +1262,7 @@ export class WorkspaceService implements ProjectRouter {
       }
     }
 
-    await saveWorkspace(open.workspace, open.dir, this.fsOption());
+    await saveWorkspace(open.workspace, open.tree, this.fsOption());
     this.deps.hooks?.onChanged?.(this.snapshot());
     return {
       workspace: this.requireSnapshot(),
@@ -1691,12 +1715,15 @@ async function existingWorkspaceProjectDirs(userDataDir: string): Promise<Set<st
   const dirs = new Set<string>();
   for (const name of names) {
     const dir = join(root, name);
-    if (!existsSync(workspaceManifestFile(dir))) {
+    if (!existsSync(workspaceManifestFile(dir)) && !existsSync(join(dir, WORKSPACE_SHARE_FILE))) {
       continue;
     }
     let workspace: Workspace;
+    let tree: string;
     try {
-      ({ workspace } = await loadWorkspace(dir));
+      const share = await loadShare(dir);
+      tree = workspaceTreeDir(dir, share);
+      ({ workspace } = await loadWorkspace(tree));
     } catch {
       continue;
     }
@@ -1704,7 +1731,7 @@ async function existingWorkspaceProjectDirs(userDataDir: string): Promise<Set<st
       let projectDir: string;
       try {
         projectDir =
-          ref.source === 'internal' ? workspaceProjectDir(dir, ref.slug) : requireAbsolute(ref.path, ref.slug);
+          ref.source === 'internal' ? workspaceProjectDir(tree, ref.slug) : requireAbsolute(ref.path, ref.slug);
       } catch {
         continue;
       }
