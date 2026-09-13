@@ -122,11 +122,21 @@ export type SendAuth =
       readonly password: string;
       readonly domain?: string;
       readonly workstation?: string;
-    };
+    }
+  /** A token in an `Authorization` header. `scheme` defaults to `Bearer`. */
+  | { readonly type: 'bearer'; readonly token: string; readonly scheme?: string }
+  /** A key in one header or one query parameter. */
+  | { readonly type: 'api-key'; readonly name: string; readonly value: string; readonly in: 'header' | 'query' }
+  /**
+   * An OAuth2 access token the host already obtained. The engine never runs a grant during a send:
+   * the token is fetched (and cached, and refreshed) by the host, so a send is one exchange and
+   * the browser is never opened behind it. On the wire it is a Bearer token.
+   */
+  | { readonly type: 'oauth2'; readonly accessToken: string };
 
 /** What authentication actually did during one send, for the UI to explain the exchange. */
 export interface AuthSummary {
-  readonly scheme: 'basic' | 'ntlm';
+  readonly scheme: SendAuth['type'];
   /** True when the server answered the first attempt with a 401 challenge. */
   readonly challenged: boolean;
   /**
