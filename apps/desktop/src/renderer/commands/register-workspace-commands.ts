@@ -91,7 +91,9 @@ export function registerWorkspaceCommands(): void {
     id: 'workspace.linkProject',
     label: 'Link Project Folder…',
     category: 'Workspace',
-    when: workspaceIsOpen,
+    // A shared workspace holds its projects inside the workspace's own tree — linking an
+    // external folder into it is refused before this ever reaches main. See `Move to workspace…`.
+    when: () => workspaceIsOpen() && !workspaceIsShared(),
     whenScope: 'workspace',
     run: () => {
       void workspaceActions.linkProject();
@@ -134,6 +136,52 @@ export function registerWorkspaceCommands(): void {
       const projectId = selectedProjectId();
       if (projectId !== undefined) {
         projectRowActions.remove(projectId);
+      }
+    },
+  });
+
+  registerCommand({
+    id: 'workspace.share',
+    label: 'Share Workspace…',
+    category: 'Workspace',
+    when: () => workspaceIsOpen() && !workspaceIsShared(),
+    whenScope: 'workspace',
+    run: () => {
+      useUiStore.getState().setShareDialogOpen(true);
+    },
+  });
+
+  registerCommand({
+    id: 'workspace.join',
+    label: 'Join Shared Workspace…',
+    category: 'Workspace',
+    run: () => {
+      useUiStore.getState().setJoinDialogOpen(true);
+    },
+  });
+
+  registerCommand({
+    id: 'workspace.stopSharing',
+    label: 'Stop Sharing',
+    category: 'Workspace',
+    when: workspaceIsShared,
+    whenScope: 'workspace.shared',
+    run: () => {
+      void workspaceActions.stopSharing();
+    },
+  });
+
+  registerCommand({
+    id: 'project.moveToWorkspace',
+    label: 'Move to Workspace…',
+    category: 'Project',
+    when: workspaceIsOpen,
+    whenScope: 'workspace',
+    // The palette has no project to act on; this is reached with the id as an argument from the
+    // explorer's context menu, the only place it is offered today.
+    run: (_context, arg) => {
+      if (typeof arg === 'string') {
+        projectRowActions.moveToWorkspace(arg);
       }
     },
   });

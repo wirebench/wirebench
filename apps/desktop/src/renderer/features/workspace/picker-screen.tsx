@@ -1,8 +1,30 @@
 import { useEffect, useState } from 'react';
-import { FolderInput, FolderPlus, FolderSearch } from 'lucide-react';
+import { Folder, FolderInput, FolderPlus, FolderSearch, GitBranch } from 'lucide-react';
 import { Button } from '../../components/button.js';
+import { remoteHost } from '../sync/remote-host.js';
+import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
+import type { WorkspaceShareWire } from '../../../shared/wire-types.js';
 import { workspaceActions } from './workspace-actions.js';
+
+/** The kind glyph plus the least a row may say about a share, never the full URL. */
+function ShareGlyph({ share }: { readonly share: WorkspaceShareWire }) {
+  if (share.kind === 'folder') {
+    return (
+      <span data-testid="workspace-picker-share" className="inline-flex items-center gap-1 text-xs text-fg-faint">
+        <Folder size={12} aria-hidden="true" />
+        Synced folder
+      </span>
+    );
+  }
+  const host = remoteHost(share.remote);
+  return (
+    <span data-testid="workspace-picker-share" className="inline-flex items-center gap-1 text-xs text-fg-faint">
+      <GitBranch size={12} aria-hidden="true" />
+      {host ?? 'Shared'}
+    </span>
+  );
+}
 
 /** `2026-09-10T08:30:00Z` as a short local date — precise enough to tell two sessions apart. */
 function formatOpenedAt(iso: string | undefined): string {
@@ -32,6 +54,7 @@ export function WorkspacePicker() {
   const error = useWorkspaceStore((state) => state.error);
   const lastError = useWorkspaceStore((state) => state.lastError);
   const list = useWorkspaceStore((state) => state.list);
+  const setJoinDialogOpen = useUiStore((state) => state.setJoinDialogOpen);
   const [name, setName] = useState('');
 
   useEffect(() => {
@@ -96,6 +119,15 @@ export function WorkspacePicker() {
             <FolderInput size={14} aria-hidden="true" />
             Import project folder…
           </Button>
+          <Button
+            data-testid="workspace-join"
+            onClick={() => {
+              setJoinDialogOpen(true);
+            }}
+          >
+            <GitBranch size={14} aria-hidden="true" />
+            Join shared workspace…
+          </Button>
         </div>
 
         <h2 className="mt-8 text-sm font-medium text-fg-muted">Workspaces</h2>
@@ -119,6 +151,7 @@ export function WorkspacePicker() {
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span className="shrink-0 text-sm text-fg-default">{workspace.name}</span>
+                    {workspace.share !== undefined && <ShareGlyph share={workspace.share} />}
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-subtle">{workspace.dir}</span>
                     <span className="shrink-0 text-xs text-fg-faint">
                       {unreadable

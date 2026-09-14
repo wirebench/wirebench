@@ -115,6 +115,10 @@ export const COMMAND_IDS = [
   'sync.resolveConflicts',
   'sync.openPanel',
   'sync.revealTree',
+  'workspace.share',
+  'workspace.join',
+  'workspace.stopSharing',
+  'project.moveToWorkspace',
 ] as const;
 
 /** Every addressable action. Derived from {@link COMMAND_IDS} so the two can never drift. */

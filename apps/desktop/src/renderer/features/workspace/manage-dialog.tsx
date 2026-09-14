@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Trash2 } from 'lucide-react';
+import { Share2, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useUiStore } from '../../state/ui.js';
@@ -23,7 +23,9 @@ export function WorkspaceManageDialog() {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const workspace = useWorkspaceStore((state) => state.workspace);
   const list = useWorkspaceStore((state) => state.list);
+  const setShareDialogOpen = useUiStore((state) => state.setShareDialogOpen);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceSummaryWire | undefined>(undefined);
+  const [pendingStopSharing, setPendingStopSharing] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -82,6 +84,33 @@ export function WorkspaceManageDialog() {
                       {row.dir}
                     </span>
                     <span className="shrink-0 text-xs text-fg-faint">{plural(row.projectCount, 'project')}</span>
+                    {row.id === workspace?.id &&
+                      (row.share === undefined ? (
+                        <button
+                          type="button"
+                          data-testid="workspace-share"
+                          data-workspace-id={row.id}
+                          onClick={() => {
+                            setShareDialogOpen(true);
+                          }}
+                          className="shrink-0 rounded border border-hairline-strong px-2 py-0.5 text-xs text-fg-default hover:bg-surface-hover"
+                        >
+                          <Share2 size={12} aria-hidden="true" className="mr-1 inline" />
+                          Share this workspace…
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid="workspace-stop-sharing"
+                          data-workspace-id={row.id}
+                          onClick={() => {
+                            setPendingStopSharing(true);
+                          }}
+                          className="shrink-0 rounded border border-hairline-strong px-2 py-0.5 text-xs text-fg-default hover:bg-surface-hover"
+                        >
+                          Stop sharing
+                        </button>
+                      ))}
                     <button
                       type="button"
                       data-testid="workspace-delete"
@@ -138,6 +167,20 @@ export function WorkspaceManageDialog() {
           }
           void workspaceActions.remove(pendingDelete.id);
           setPendingDelete(undefined);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingStopSharing}
+        onOpenChange={setPendingStopSharing}
+        title="Stop sharing?"
+        description="This workspace becomes local again. Its shared folder or git repository is left as it is, for you to delete."
+        confirmLabel="Stop sharing"
+        destructive
+        confirmTestId="workspace-stop-sharing-confirm"
+        onConfirm={() => {
+          void workspaceActions.stopSharing();
+          setPendingStopSharing(false);
         }}
       />
     </>

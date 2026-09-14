@@ -3,6 +3,7 @@ import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { SyncPulledEvent } from '../../../shared/wire-types.js';
+import { remoteHost } from './remote-host.js';
 
 /** How long the pulled notice stays up before it dismisses itself. */
 const PULLED_NOTICE_MS = 8_000;
@@ -14,28 +15,6 @@ const CONTAINER_CLASS =
 const PRIMARY_BUTTON_CLASS =
   'shrink-0 rounded border border-hairline-strong px-2 py-0.5 text-xs hover:bg-surface-raised';
 const SECONDARY_BUTTON_CLASS = 'shrink-0 rounded px-2 py-0.5 text-xs text-fg-subtle hover:bg-surface-raised';
-
-/**
- * The host part of a sync remote URL, for a notice that never shows the full URL: `https://` and
- * `ssh://` remotes are parsed with `URL`; a scp-like `git@host:path` remote is matched by hand,
- * since `URL` does not accept that syntax. Anything else (or no remote at all) yields `undefined`,
- * and the caller falls back to a host-less message.
- */
-function remoteHost(remote: string | undefined): string | undefined {
-  if (remote === undefined) {
-    return undefined;
-  }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(remote)) {
-    try {
-      const host = new URL(remote).host;
-      return host === '' ? undefined : host;
-    } catch {
-      return undefined;
-    }
-  }
-  const scpMatch = /^[^@/\s]+@([^:/\s]+):/.exec(remote);
-  return scpMatch?.[1];
-}
 
 /** One pulled notice's transient content — cleared 8s after it arrives, or on dismiss. */
 interface PulledNotice {

@@ -138,6 +138,41 @@ describe('WorkspaceManageDialog', () => {
 
     await waitFor(() => expect(useUiStore.getState().workspaceManageOpen).toBe(false));
   });
+
+  it('offers Share only on the open, local row, and opens the share dialog', async () => {
+    installWirebenchApi({ workspace: listStub() });
+    await openManageDialog();
+
+    // w1 is the open workspace in this suite's beforeEach and is local.
+    expect(screen.getByTestId('workspace-share')).toBeTruthy();
+    expect(screen.queryAllByTestId('workspace-stop-sharing')).toHaveLength(0);
+
+    await userEvent.click(screen.getByTestId('workspace-share'));
+
+    expect(useUiStore.getState().shareDialogOpen).toBe(true);
+    useUiStore.setState({ shareDialogOpen: false });
+  });
+
+  it('offers Stop sharing on the open row once it is shared, and asks first', async () => {
+    const sharedRows = [{ ...ROWS[0]!, share: { kind: 'git' as const, managed: true } }, ROWS[1]!];
+    const stopSharing = vi.fn().mockResolvedValue({ ok: true, value: { workspace: null } });
+    installWirebenchApi({
+      workspace: { list: vi.fn().mockResolvedValue({ ok: true, value: { workspaces: sharedRows } }), stopSharing },
+    });
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ id: 'w1', share: { kind: 'git', managed: true } }),
+      workspaces: sharedRows,
+    });
+    await openManageDialog();
+
+    expect(screen.queryAllByTestId('workspace-share')).toHaveLength(0);
+    await userEvent.click(screen.getByTestId('workspace-stop-sharing'));
+
+    expect(stopSharing).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('workspace-stop-sharing-confirm'));
+
+    await waitFor(() => expect(stopSharing).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe('CreateWorkspaceDialog', () => {

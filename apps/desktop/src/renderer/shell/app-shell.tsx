@@ -23,6 +23,9 @@ import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-di
 import { PreferencesDialog } from '../features/preferences/preferences-dialog.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
+import { ShareDialog } from '../features/workspace/share-dialog.js';
+import { JoinDialog } from '../features/workspace/join-dialog.js';
+import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
 import { ConflictResolver } from '../features/sync/conflict-resolver.js';
 import { IdentityDialog } from '../features/sync/identity-dialog.js';
@@ -418,6 +421,9 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <PreferencesDialog />
       <RemoveProjectDialog />
+      <ShareDialog />
+      <JoinDialog />
+      <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />
       <IdentityDialog />

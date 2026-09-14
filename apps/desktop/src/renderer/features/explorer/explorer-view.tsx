@@ -266,6 +266,7 @@ export function ExplorerView() {
   const projects = useProjectStore((state) => state.projects);
   const workspaceProjects = useWorkspaceStore((state) => state.workspace?.projects);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id);
+  const shared = useWorkspaceStore((state) => state.workspace?.share !== undefined);
   const setExplorerOpen = useUiStore((state) => state.setExplorerOpen);
   const openImportDialog = useUiStore((state) => state.openImportDialog);
   const confirmRemoveInterfaceId = useUiStore((state) => state.confirmRemoveInterfaceId);
@@ -336,6 +337,23 @@ export function ExplorerView() {
         </IconButton>
         <IconButton label="Import WSDL…" onClick={openImportDialog}>
           <FileDown size={14} aria-hidden="true" />
+        </IconButton>
+        <IconButton
+          data-testid="explorer-link-project"
+          label={
+            shared
+              ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…'
+              : 'Link Project Folder…'
+          }
+          title={
+            shared ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…' : undefined
+          }
+          disabled={shared}
+          onClick={() => {
+            void workspaceActions.linkProject();
+          }}
+        >
+          <Link2 size={14} aria-hidden="true" />
         </IconButton>
         <IconButton label="Expand all" onClick={() => treeRef?.openAll()}>
           <UnfoldVertical size={14} aria-hidden="true" />

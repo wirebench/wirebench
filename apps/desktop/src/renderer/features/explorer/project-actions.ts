@@ -118,4 +118,9 @@ export const projectRowActions = {
   locate(projectId: string): void {
     void workspaceActions.locateProject(projectId);
   },
+
+  /** Opens the Move to Workspace dialog; nothing happens until a target is chosen and confirmed. */
+  moveToWorkspace(projectId: string): void {
+    useUiStore.getState().setMoveProjectDialog(projectId);
+  },
 };
