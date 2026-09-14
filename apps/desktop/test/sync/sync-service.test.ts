@@ -302,6 +302,74 @@ describe('SyncService — start', () => {
     expect(backend.calls.indexOf('fetch')).toBeGreaterThan(backend.calls.indexOf('commit'));
   });
 
+  it('pushes the catch-up commit after fetching when pushOnSave is on', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0 });
+    backend.current = status({ uncommitted: 1 });
+    backend.changes = [requestChange];
+
+    await service.start();
+
+    expect(backend.calls.indexOf('push')).toBeGreaterThan(backend.calls.indexOf('fetch'));
+    expect(service.status()).toMatchObject({ ahead: 0, uncommitted: 0 });
+  });
+
+  it('pushes commits an earlier session left unpushed', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0 });
+    backend.current = status({ state: 'ahead', ahead: 2 });
+
+    await service.start();
+
+    expect(backend.calls).toContain('push');
+    expect(backend.calls).not.toContain('commit');
+    expect(service.status().ahead).toBe(0);
+  });
+
+  it('does not push on start when pushOnSave is off', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0, pushOnSave: false });
+    backend.current = status({ uncommitted: 1 });
+    backend.changes = [requestChange];
+
+    await service.start();
+
+    expect(backend.calls).toContain('commit');
+    expect(backend.calls).not.toContain('push');
+    expect(service.status().ahead).toBe(1);
+  });
+
+  it('neither pushes nor merges on start when the remote moved on too', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0 });
+    backend.current = status({ uncommitted: 1 });
+    backend.changes = [requestChange];
+    backend.fetchScript.push(() => {
+      backend.current = { ...backend.current, state: 'diverged', behind: 1 };
+      return Promise.resolve();
+    });
+
+    await service.start();
+
+    expect(backend.calls).not.toContain('push');
+    expect(backend.calls).not.toContain('merge');
+    expect(service.status()).toMatchObject({ ahead: 1, behind: 1 });
+  });
+
+  it('a push rejected on start keeps the commit ahead, without merging or an error', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0 });
+    backend.current = status({ state: 'ahead', ahead: 1 });
+    backend.pushScript.push(() =>
+      Promise.reject(
+        new WirebenchError('git-failed', 'git push failed.', {
+          details: { stderr: ' ! [rejected]        HEAD -> main (fetch first)' },
+        }),
+      ),
+    );
+
+    await service.start();
+
+    expect(backend.calls).not.toContain('merge');
+    expect(service.status().ahead).toBe(1);
+    expect(service.status().state).not.toBe('error');
+  });
+
   it('does not commit on start when commitOnSave is off, and skips fetch without a remote', async () => {
     const { backend, service } = harness({ autoFetchSeconds: 0, commitOnSave: false });
     backend.current = status({ uncommitted: 1, remote: undefined });

@@ -145,6 +145,7 @@ export class SyncService {
       }
       if (this.last.remote !== undefined) {
         await this.fetchNow();
+        await this.pushWaitingCommits();
       }
     }).catch(() => undefined);
     this.armFetchTimer();
@@ -333,6 +334,28 @@ export class SyncService {
     return this.setStatus(
       fetched.lastSyncAt !== undefined ? fetched : { ...fetched, lastSyncAt: this.now().toISOString() },
     );
+  }
+
+  /**
+   * On start, with `pushOnSave`: pushes commits that are only local (the catch-up commit, or a
+   * push an earlier session never made) when the fetch found nothing new on the remote. Unlike a
+   * save's push it never merges — a rejected push just stays ahead for the next pull or save —
+   * because start runs while the workspace is still opening, and a merge's reload would queue
+   * behind that very open.
+   */
+  private async pushWaitingCommits(): Promise<void> {
+    const { state, ahead, behind } = this.last;
+    if (!this.deps.settings().pushOnSave || state === 'conflict' || ahead === 0 || behind > 0) {
+      return;
+    }
+    try {
+      this.setStatus(await this.backend.push());
+    } catch (error) {
+      if (!isPushRejected(error)) {
+        throw error;
+      }
+      await this.probeNow();
+    }
   }
 
   /** Returns whether a commit was made. */

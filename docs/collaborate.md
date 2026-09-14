@@ -97,7 +97,9 @@ it off, saves stay uncommitted until you use **Commit** with your own message.
 
 **Push on save.** With it on (the default), every commit is pushed right away. A push rejected as
 non-fast-forward triggers one fetch + merge + retry automatically; if that merge conflicts, the
-conflict flow below takes over and the push waits.
+conflict flow below takes over and the push waits. Commits still waiting when a shared workspace
+opens — changes made while it was closed, or a push that failed last time — are pushed right after
+the opening fetch, unless the remote has new commits too; then the next pull or save merges first.
 
 **Fetch** runs on open, on demand, and on the auto-fetch interval. It never changes files, only the
 ahead/behind counts. A failed fetch marks the workspace *Offline* and backs the interval off to
