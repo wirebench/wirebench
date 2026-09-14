@@ -15,13 +15,13 @@ import {
   saveAll,
 } from '../helpers/project.js';
 import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import { joinSharedWorkspace, openConflictResolver, produceRequestConflict, shareWorkspace } from '../helpers/sync.js';
 import {
   startTestRestServer,
   startTestSoapServer,
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
-import { joinSharedWorkspace, openConflictResolver, produceRequestConflict, shareWorkspace } from '../helpers/sync.js';
 
 /**
  * Captures the README's screenshots into `docs/images/`.
@@ -100,8 +100,10 @@ function timingRegions(page: Page): Locator[] {
 function restTimingRegions(page: Page): Locator[] {
   return [page.getByTestId('rest-response-status'), page.locator('[data-testid="http-log-row"]')];
 }
+
 /** The remote the sync captures show: a realistic URL rather than the test remote's temp folder. */
 const SHOWN_REMOTE = 'https://git.example.com/team/wirebench-workspace.git';
+
 /**
  * Git config for a sync capture's profile: Ada's identity plus `url.<test remote>.insteadOf`, so
  * the app is genuinely configured with {@link SHOWN_REMOTE} while git itself talks to the local
@@ -116,6 +118,7 @@ function shownRemoteEnv(remoteUrl: string): Record<string, string> {
     'utf8',
   );
   return { GIT_CONFIG_GLOBAL: file, GIT_CONFIG_NOSYSTEM: '1' };
+}
 
 /** Shoots the whole window into `docs/images/<name>.png` and fails if it got too heavy. */
 async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
@@ -143,8 +146,8 @@ test.describe('README screenshots', () => {
   /** The second profile of the conflict capture, which needs someone to conflict with. */
   let second: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
-  let restServer: TestRestServer | undefined;
   let remoteDir: string | undefined;
+  let restServer: TestRestServer | undefined;
 
   test.afterEach(async () => {
     const failures: unknown[] = [];
@@ -166,8 +169,10 @@ test.describe('README screenshots', () => {
     if (remoteDir !== undefined) {
       removeDirSync(remoteDir);
       remoteDir = undefined;
+    }
     if (failures.length > 0) {
       throw failures[0];
+    }
   });
 
   test('workspace picker', async () => {
@@ -224,6 +229,7 @@ test.describe('README screenshots', () => {
 
     await capture(window, 'rest-response', { mask: restTimingRegions(window) });
   });
+
   test('sync panel', async () => {
     test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
     test.setTimeout(180_000);
@@ -231,6 +237,10 @@ test.describe('README screenshots', () => {
     const remote = await createBareRemote();
     remoteDir = remote.dir;
     launched = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'dark');
+
     await createProjectWithCalculator(window, server);
     await saveAll(window);
     await shareWorkspace(window, SHOWN_REMOTE);
@@ -238,23 +248,32 @@ test.describe('README screenshots', () => {
     await expect(window.getByTestId('sync-panel')).toBeVisible();
     await expect(window.getByTestId('sync-log-row').first()).toBeVisible({ timeout: 20_000 });
     await capture(window, 'sync-panel');
+  });
+
   test('conflict resolver', async () => {
     test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
     test.setTimeout(180_000);
     server = await startTestSoapServer({ fixture: 'calculator' });
     const remote = await createBareRemote();
     remoteDir = remote.dir;
+
     // Someone else shares the workspace and pushes an edit to the first request…
     second = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
     await createProjectWithCalculator(second.window, server);
     await saveAll(second.window);
     await shareWorkspace(second.window, SHOWN_REMOTE);
+
     // …while this profile, having joined, edits the same line.
     launched = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'dark');
     await joinSharedWorkspace(window, SHOWN_REMOTE);
     await produceRequestConflict(second.window, window, remote.dir);
+
     await openConflictResolver(window);
     await capture(window, 'conflict-resolver');
+  });
 
   test('the helpers used above still match the shared project flow', async () => {
     // `createProjectWithCalculator` is what every other spec uses; the two captures above

@@ -246,6 +246,7 @@ describe('buildExplorerTree', () => {
       [{ projectId: 'p1', interfaceIds: [summary.id] }],
       { [summary.id]: summary },
       [req1, req2],
+      {},
       { projectIds: new Set(['p1']), requestIds: new Set(['req-1']) },
     );
 

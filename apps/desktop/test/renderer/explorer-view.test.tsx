@@ -8,9 +8,9 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 import type { InterfaceWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjectWire {
