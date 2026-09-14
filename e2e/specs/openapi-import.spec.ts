@@ -139,9 +139,13 @@ test.describe('OpenAPI import', () => {
     await setMethodAndUrl(page, 'POST', '/echo');
     await sendRest(page);
 
-    // The test server echoes what it received: the generated body really went out.
+    // The test server echoes what it received: the generated body really went out. Asserted
+    // against the server's record rather than the response pane, which virtualises its lines —
+    // the echo puts `body` after the headers, past what a short CI window renders (see
+    // `curl.spec.ts` for the same fix and the failure it came from).
     await expect(responseStatus(page)).toContainText('200');
-    await expect(page.getByTestId('rest-response-body')).toContainText('Fido', { timeout: 20_000 });
+    await expect(page.getByTestId('rest-response-body')).toContainText('"method": "POST"', { timeout: 20_000 });
+    expect(server.requests.at(-1)?.body.toString('utf8')).toContain('Fido');
     await openResponseTab(page, 'Headers');
   });
 

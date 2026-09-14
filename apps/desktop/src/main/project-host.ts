@@ -13,45 +13,47 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
 import {
-  resolveApiBaseUrl,
-  resolveWorkspaceApiBaseUrl,
   apiDefinitionDir,
-  createInterface,
   applyUpdate,
+  attachmentFile,
+  attachmentsDir,
+  createFileAttachmentResolver,
+  createInterface,
   createProject,
+  DEFAULT_PREFERENCES,
   definitionCacheDir,
   enabledProperties,
   exportDefinition,
   generateDocs,
   generateId,
   interfaceDir,
-  attachmentFile,
-  attachmentsDir,
-  createFileAttachmentResolver,
   loadProject,
-  ProjectError,
+  nodeFs,
   planUpdate,
+  ProjectError,
+  projectFiles,
   putAttachment,
+  readApiDefinitionCache,
+  resolveApiBaseUrl,
   resolveAuthEndpoint,
   resolveEndpoint,
-  DEFAULT_PREFERENCES,
   resolveScopes,
+  resolveWorkspaceApiBaseUrl,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
-  projectFiles,
   saveProject,
   toSendInput,
-  readApiDefinitionCache,
   uniqueSlug,
   writeApiDefinitionCache,
   writeDefinitionCache,
+  writeFileAtomic,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
@@ -2171,7 +2173,10 @@ export class ProjectHost {
       if (document === undefined) {
         continue;
       }
-      await writeFile(join(dir, entry.file), Buffer.from(document.bytes));
+      // Atomic: a name appearing in the directory must mean the bytes are all there. Exporting
+      // non-atomically let a reader that waited for the *listing* — as `openapi-import.spec.ts`
+      // does — open a file that existed but was still empty.
+      await writeFileAtomic(nodeFs, join(dir, entry.file), Buffer.from(document.bytes));
       written.push(entry.file);
     }
     return written;

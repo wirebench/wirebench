@@ -1,18 +1,20 @@
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import {
   composeUrl,
   CURL_REDACTED,
   fromCurl,
   fromRestCurl,
   isWirebenchError,
+  nodeFs,
   prettyPrint,
   ProjectError,
   recreateRequest,
   restToCurl,
   soapToCurl,
   WirebenchError,
+  writeFileAtomic,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -287,7 +289,7 @@ async function writeDumpFile(
   }
   try {
     await mkdir(dirname(resolved.path), { recursive: true });
-    await writeFile(resolved.path, Buffer.from(summary.http.bodyBase64, 'base64'));
+    await writeFileAtomic(nodeFs, resolved.path, Buffer.from(summary.http.bodyBase64, 'base64'));
     return summary;
   } catch (error) {
     return {

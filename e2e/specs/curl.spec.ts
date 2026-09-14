@@ -100,11 +100,16 @@ test.describe('cURL', () => {
 
     await sendRest(page);
 
-    // The echo proves the body and the header the command carried actually went out.
     await expect(responseStatus(page)).toContainText('200');
-    const body = page.getByTestId('rest-response-body');
-    await expect(body).toContainText('Fido', { timeout: 20_000 });
-    await expect(body).toContainText('x-from');
+    // The echoed header sits near the top of the response, so it is reliably on screen.
+    await expect(page.getByTestId('rest-response-body')).toContainText('x-from', { timeout: 20_000 });
+    // The body is checked against the server's own record, not the response pane. That pane
+    // virtualises its lines, and the echo puts `body` *after* the header block: CI rendered 14
+    // lines and the body lands on line 16, so this assertion passed on Linux (a taller window)
+    // and failed on Windows and macOS. `requests` exists for exactly this — "assertions the
+    // response cannot carry" — and it proves the stronger thing anyway: the bytes reached the
+    // server, rather than merely being drawn back to us.
+    expect(server.requests.at(-1)?.body.toString('utf8')).toContain('Fido');
   });
 
   test('round-trips: copy a request as a command, paste it back, send the copy', async () => {
