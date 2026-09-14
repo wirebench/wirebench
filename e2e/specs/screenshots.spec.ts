@@ -2,8 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { setMonacoText } from '../helpers/editor.js';
-import { ADA, createBareRemote, gitConfigEnv, remoteContains } from '../helpers/git-remote.js';
+import { ADA, createBareRemote, gitConfigEnv } from '../helpers/git-remote.js';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { runCommand } from '../helpers/palette.js';
 import {
@@ -21,7 +20,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
-import { awaitConflict, calculatorEnvelope, joinWorkspace, shareWorkspace, waitForSync } from '../helpers/sync.js';
+import { joinSharedWorkspace, openConflictResolver, produceRequestConflict, shareWorkspace } from '../helpers/sync.js';
 
 /**
  * Captures the README's screenshots into `docs/images/`.
@@ -233,21 +232,9 @@ test.describe('README screenshots', () => {
     await shareWorkspace(second.window, remote.url);
     // …while this profile, having joined, edits the same line.
     launched = await launchApp({ extraEnv: gitConfigEnv(ADA) });
-    await joinWorkspace(window, remote.url);
-    await waitForSync(window, 'clean');
-    for (const page of [second.window, window]) {
-      await expandExplorer(page, 'Request 1');
-      await openFirstRequest(page);
-    }
-    await setMonacoText(window, 'Request envelope XML', calculatorEnvelope('2222'));
-    await setMonacoText(second.window, 'Request envelope XML', calculatorEnvelope('1111'));
-    await saveAll(second.window);
-    await expect.poll(() => remoteContains(remote.dir, '<tem:intA>1111</tem:intA>'), { timeout: 60_000 }).toBe(true);
-    await saveAll(window);
-    await awaitConflict(window);
-    await window.getByTestId('sync-banner-resolve').click();
-    await expect(window.getByTestId('conflict-resolver')).toBeVisible();
-    await expect(window.getByTestId('conflict-resolver-row').first()).toBeVisible({ timeout: 20_000 });
+    await joinSharedWorkspace(window, remote.url);
+    await produceRequestConflict(second.window, window, remote.dir);
+    await openConflictResolver(window);
     await capture(window, 'conflict-resolver');
 
   test('the helpers used above still match the shared project flow', async () => {

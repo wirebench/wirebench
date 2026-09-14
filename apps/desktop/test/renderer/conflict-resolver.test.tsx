@@ -56,9 +56,10 @@ describe('ConflictResolver', () => {
       expect(screen.getAllByTestId('conflict-resolver-row')).toHaveLength(2);
     });
     const rows = screen.getAllByTestId('conflict-resolver-row');
-    expect(within(rows[0] as HTMLElement).getByRole('button', { name: 'Keep mine' })).toBeTruthy();
-    expect(within(rows[0] as HTMLElement).getByRole('button', { name: 'Keep theirs' })).toBeTruthy();
-    expect(within(rows[0] as HTMLElement).getByRole('button', { name: 'Open file' })).toBeTruthy();
+    const row = within(rows[0] as HTMLElement);
+    expect(row.getByTestId('conflict-resolver-mine').textContent).toBe('Keep mine');
+    expect(row.getByTestId('conflict-resolver-theirs').textContent).toBe('Keep theirs');
+    expect(row.getByTestId('conflict-resolver-open').textContent).toBe('Open file');
   });
 
   it('Open file reveals the tree-relative path of that row', async () => {
@@ -78,7 +79,7 @@ describe('ConflictResolver', () => {
     });
 
     const rows = screen.getAllByTestId('conflict-resolver-row');
-    await userEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Open file' }));
+    await userEvent.click(within(rows[0] as HTMLElement).getByTestId('conflict-resolver-open'));
 
     expect(revealTree).toHaveBeenCalledWith({
       path: 'projects/Demo/interfaces/Calc/operations/Add/Request 1.request.yaml',
@@ -101,7 +102,7 @@ describe('ConflictResolver', () => {
     });
 
     const rows = screen.getAllByTestId('conflict-resolver-row');
-    await userEvent.click(within(rows[0] as HTMLElement).getByRole('button', { name: 'Keep mine' }));
+    await userEvent.click(within(rows[0] as HTMLElement).getByTestId('conflict-resolver-mine'));
 
     expect(resolve).toHaveBeenCalledWith({
       path: 'projects/Demo/interfaces/Calc/operations/Add/Request 1.request.yaml',
@@ -146,7 +147,7 @@ describe('ConflictResolver', () => {
     expect(useUiStore.getState().conflictResolverOpen).toBe(true);
 
     const row = screen.getByTestId('conflict-resolver-row');
-    await userEvent.click(within(row).getByRole('button', { name: 'Keep mine' }));
+    await userEvent.click(within(row).getByTestId('conflict-resolver-mine'));
 
     await waitFor(() => {
       expect(useUiStore.getState().conflictResolverOpen).toBe(false);

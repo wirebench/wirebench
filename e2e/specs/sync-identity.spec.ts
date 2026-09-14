@@ -1,14 +1,16 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { ADA, createBareRemote, gitConfigEnv, remoteLog, runGit, treeHead } from '../helpers/git-remote.js';
-import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
+import { ADA, createBareRemote, remoteLog, runGit, treeHead } from '../helpers/git-remote.js';
 import { createProjectWithCalculator, saveAll } from '../helpers/project.js';
-import { closeManageWorkspaces, pushNow, sharedTreeDir, shareWorkspace, waitForSync } from '../helpers/sync.js';
+import {
+  closeManageWorkspaces,
+  pushNow,
+  sharedTreeDir,
+  shareWorkspace,
+  SyncProfiles,
+  SYNC_TIMEOUT,
+  waitForSync,
+} from '../helpers/sync.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
-
-const SYNC_TIMEOUT = 60_000;
 
 /**
  * A machine with no git identity: the first commit a shared workspace makes — the share's own —
@@ -16,30 +18,28 @@ const SYNC_TIMEOUT = 60_000;
  * config, so the commit that asked (and every later one) is recorded under them.
  */
 test.describe('shared workspace identity', () => {
-  let launched: LaunchedApp | undefined;
+  let profiles = new SyncProfiles();
   let server: TestSoapServer | undefined;
-  let dirs: string[] = [];
 
   test.afterEach(async () => {
-    await launched?.close();
-    launched = undefined;
-    await server?.close();
-    server = undefined;
-    for (const dir of dirs) {
-      removeDirSync(dir);
+    const current = profiles;
+    profiles = new SyncProfiles();
+    try {
+      await current.dispose();
+    } finally {
+      await server?.close();
+      server = undefined;
     }
-    dirs = [];
   });
 
   test('the first commit asks for an identity, and the commit is pushed under it', async () => {
     test.setTimeout(180_000);
     server = await startTestSoapServer({ fixture: 'calculator' });
     const remote = await createBareRemote();
-    const userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-e2e-sync-identity-'));
-    dirs = [remote.dir, userDataDir];
+    profiles.track(remote.dir);
 
     // `null`: a global config with no identity, and no guessing one from the host name.
-    launched = await launchApp({ userDataDir, keepUserDataDir: true, extraEnv: gitConfigEnv(null) });
+    const launched = await profiles.launch({ identity: null });
     const page = launched.window;
     await createProjectWithCalculator(page, server);
     await saveAll(page);
@@ -57,7 +57,7 @@ test.describe('shared workspace identity', () => {
     await closeManageWorkspaces(page);
 
     // Setting the identity retried the share's commit, under the tree's own config.
-    const tree = sharedTreeDir(userDataDir);
+    const tree = sharedTreeDir(launched.userDataDir);
     await expect.poll(() => treeHead(tree), { timeout: SYNC_TIMEOUT }).not.toBeUndefined();
     expect(runGit(['-C', tree, 'config', '--local', 'user.name'], null).trim()).toBe(ADA.name);
     expect(runGit(['-C', tree, 'config', '--local', 'user.email'], null).trim()).toBe(ADA.email);

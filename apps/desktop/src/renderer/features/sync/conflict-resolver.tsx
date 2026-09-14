@@ -91,6 +91,7 @@ export function ConflictResolver() {
                   </span>
                   <div className="flex shrink-0 gap-1">
                     <Button
+                      data-testid="conflict-resolver-mine"
                       disabled={busyPath !== undefined}
                       onClick={() => {
                         keep(conflict.path, 'mine');
@@ -99,6 +100,7 @@ export function ConflictResolver() {
                       Keep mine
                     </Button>
                     <Button
+                      data-testid="conflict-resolver-theirs"
                       disabled={busyPath !== undefined}
                       onClick={() => {
                         keep(conflict.path, 'theirs');
@@ -107,6 +109,7 @@ export function ConflictResolver() {
                       Keep theirs
                     </Button>
                     <Button
+                      data-testid="conflict-resolver-open"
                       onClick={() => {
                         void revealTree(conflict.path);
                       }}
