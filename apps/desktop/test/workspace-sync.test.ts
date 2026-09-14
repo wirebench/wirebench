@@ -5,7 +5,7 @@
  * `WorkspaceService`. Real `fs.watch` and real git; skipped loudly without git (see git-fixture).
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
@@ -204,7 +204,74 @@ afterEach(async () => {
   await removeTempDir(base);
 });
 
+const LINKED_PROJECT_ID = 'proj-linked';
+
+/** A real project folder outside every tree, and a snapshot of its bytes to prove nothing wrote there. */
+async function linkedProjectFolder(): Promise<{ dir: string; contents: () => Promise<Record<string, string>> }> {
+  const dir = join(base, 'linked-elsewhere');
+  await saveProject({ ...createProject('Linked', { id: LINKED_PROJECT_ID }) }, dir);
+  const contents = async (): Promise<Record<string, string>> => {
+    const names = (await readdir(dir, { recursive: true })).map(String).sort();
+    const entries: Record<string, string> = {};
+    for (const name of names) {
+      entries[name] = await readFile(join(dir, name), 'utf8').catch(() => '<dir>');
+    }
+    return entries;
+  };
+  return { dir, contents };
+}
+
+function withLinkedRef(dir: string): Workspace {
+  return {
+    ...workspace,
+    projects: [...workspace.projects, { id: LINKED_PROJECT_ID, slug: 'linked', source: 'linked', path: dir }],
+  };
+}
+
+function linkedEntry(machine: Machine): { status: string; message?: string | undefined } | undefined {
+  return machine.service.snapshot()?.projects.find((project) => project.id === LINKED_PROJECT_ID);
+}
+
 describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
+  it('refuses a linked project named by a shared workspace.yaml on open: an error row, no host, nothing written', async () => {
+    const aRoot = await seedShared();
+    const linked = await linkedProjectFolder();
+    const before = await linked.contents();
+    const tree = join(workspaceDir(aRoot, workspace.id), 'tree');
+    await saveWorkspace(withLinkedRef(linked.dir), tree);
+
+    const a = await openMachine(aRoot);
+
+    expect(linkedEntry(a)).toMatchObject({
+      status: 'error',
+      message: expect.stringMatching(/Shared workspaces hold their projects inside the workspace/),
+    });
+    expect(() => a.service.hostFor(LINKED_PROJECT_ID)).toThrow();
+    expect(a.service.hostFor(PROJECT_ID)).toBeDefined();
+    await settle();
+    expect(await linked.contents()).toEqual(before);
+  });
+
+  it('refuses a linked project that arrives through a pull the same way', async () => {
+    const aRoot = await seedShared();
+    const linked = await linkedProjectFolder();
+    const before = await linked.contents();
+    const b = await openMachine(await cloneTo('b'));
+    const aTree = join(workspaceDir(aRoot, workspace.id), 'tree');
+    await saveWorkspace(withLinkedRef(linked.dir), aTree);
+    await git.run(aTree, ['add', '-A', '--', '.']);
+    await git.run(aTree, ['commit', '-m', 'Link a project']);
+    await git.run(aTree, ['push', 'origin', 'HEAD:refs/heads/main']);
+
+    await b.service.sync()?.pull();
+
+    await vi.waitFor(() => expect(linkedEntry(b)).toMatchObject({ status: 'error' }), WAIT);
+    expect(linkedEntry(b)?.message).toMatch(/Shared workspaces hold their projects inside the workspace/);
+    expect(() => b.service.hostFor(LINKED_PROJECT_ID)).toThrow();
+    await settle();
+    expect(await linked.contents()).toEqual(before);
+  });
+
   it('commits a saved request with a generated subject and pushes it', async () => {
     const a = await openMachine(await seedShared());
 

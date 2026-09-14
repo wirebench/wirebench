@@ -689,6 +689,24 @@ export class WorkspaceService implements ProjectRouter {
     ref: WorkspaceProjectRef,
     notices?: UnsavedRestoreNoticeWire[],
   ): Promise<void> {
+    if (open.share !== undefined && ref.source === 'linked') {
+      // A shared workspace.yaml (hand-edited, or pulled from a teammate) naming a folder outside
+      // the tree: never opened, watched or written — only shown as a row that will not open.
+      const refused = new WirebenchError(
+        'share-linked-project-refused',
+        'Shared workspaces hold their projects inside the workspace; this linked project folder is not opened here.',
+        { details: { workspaceId: open.workspace.id } },
+      );
+      open.entries.push({
+        ref,
+        dir: ref.path ?? '',
+        host: undefined,
+        projectId: ref.id,
+        status: 'error',
+        message: refused.message,
+      });
+      return;
+    }
     let projectDir: string;
     try {
       projectDir =
