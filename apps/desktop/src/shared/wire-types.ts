@@ -2721,6 +2721,7 @@ export const preferencesSectionSchema = z.enum([
   'proxy',
   'ssl',
   'rest',
+  'git',
   'wsdl',
   'wsi',
   'editor',

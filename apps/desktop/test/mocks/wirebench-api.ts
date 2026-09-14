@@ -125,6 +125,11 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       openFile: fail('dialogs.openFile'),
       saveFile: fail('dialogs.saveFile'),
     },
+    git: {
+      detect: fail('git.detect'),
+      locate: fail('git.locate'),
+      clearPath: fail('git.clearPath'),
+    },
     // Preferences resolve to the defaults rather than a failure: the shell loads them on mount,
     // so every renderer test would otherwise have to stub a channel it does not care about.
     preferences: {

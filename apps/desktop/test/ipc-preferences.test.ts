@@ -84,6 +84,23 @@ describe('preferences.* IPC', () => {
     expect(result.value.preferences.http.userAgent).toBe('Keep/1');
   });
 
+  it('resets the git section', async () => {
+    const preferences = new PreferencesService(dir);
+    registerPreferencesChannels(preferences);
+    // `git.path`/`pathPickedByMain` are main-only keys `preferences.update` refuses from the
+    // renderer (see `MAIN_ONLY_KEYS` below) — set directly through the service, exactly as
+    // `git.locate` would.
+    await preferences.update({ git: { path: '/opt/git', pathPickedByMain: true } });
+    await invoke('preferences.update', { patch: { http: { userAgent: 'Keep/1' } } });
+
+    const result = (await invoke('preferences.reset', { section: 'git' })) as {
+      value: { preferences: PreferencesWire };
+    };
+    expect(result.value.preferences.git.path).toBeUndefined();
+    expect(result.value.preferences.git.pathPickedByMain).toBeUndefined();
+    expect(result.value.preferences.http.userAgent).toBe('Keep/1');
+  });
+
   it('rejects an unknown section rather than resetting everything', async () => {
     registerPreferencesChannels(new PreferencesService(dir));
     expect(await invoke('preferences.reset', { section: 'nonsense' })).toMatchObject({
