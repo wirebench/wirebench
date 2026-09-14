@@ -23,6 +23,8 @@ import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-di
 import { PreferencesDialog } from '../features/preferences/preferences-dialog.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
+import { SyncPanel } from '../features/sync/sync-panel.js';
+import { IdentityDialog } from '../features/sync/identity-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CodePanel } from './code-panel.js';
@@ -415,6 +417,8 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <PreferencesDialog />
       <RemoveProjectDialog />
+      <SyncPanel />
+      <IdentityDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

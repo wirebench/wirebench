@@ -1,18 +1,19 @@
 import { useSyncStore } from '../state/sync.js';
+import { useUiStore } from '../state/ui.js';
 import { registerCommand } from '../lib/commands.js';
 import { workspaceIsShared } from './register-workspace-commands.js';
 
 /**
  * Registers the `sync.*` commands: pull, push, fetch, commit and revealing the shared tree, all
- * gated on the open workspace being shared. `sync.openPanel` and `sync.resolveConflicts` are
- * registered here (so the registry audit sees a handler for every declared id) but are no-ops
- * until the Sync panel (Task 10) and the conflict resolver (Task 11) exist to open.
+ * gated on the open workspace being shared. `sync.openPanel` opens the Sync panel (Task 10) and
+ * `sync.resolveConflicts` opens the conflict resolver flag (Task 11 mounts the component).
  */
 export function registerSyncCommands(): void {
   registerCommand({
     id: 'sync.pull',
     label: 'Sync: Pull',
     category: 'Sync',
+    shortcut: 'Mod+Alt+L',
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().pull(),
@@ -22,6 +23,7 @@ export function registerSyncCommands(): void {
     id: 'sync.push',
     label: 'Sync: Push',
     category: 'Sync',
+    shortcut: 'Mod+Alt+U',
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().push(),
@@ -51,8 +53,10 @@ export function registerSyncCommands(): void {
     category: 'Sync',
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
-    // Opens the conflict resolver — wired up once it exists (Task 11).
-    run: () => {},
+    // The resolver component itself is mounted against this flag in Task 11.
+    run: () => {
+      useUiStore.getState().setConflictResolverOpen(true);
+    },
   });
 
   registerCommand({
@@ -61,8 +65,9 @@ export function registerSyncCommands(): void {
     category: 'Sync',
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
-    // Opens the Sync panel — wired up once it exists (Task 10).
-    run: () => {},
+    run: () => {
+      useUiStore.getState().setSyncPanelOpen(true);
+    },
   });
 
   registerCommand({

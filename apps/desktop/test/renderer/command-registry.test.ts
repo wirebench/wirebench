@@ -30,6 +30,8 @@ const SPEC_DEFAULT_SHORTCUTS: Readonly<Record<string, string>> = {
   'editor.nextValue': 'Alt+Right',
   'editor.previousValue': 'Alt+Left',
   'editor.focusOtherPane': 'Shift+Tab',
+  'sync.pull': 'Mod+Alt+L',
+  'sync.push': 'Mod+Alt+U',
 };
 
 const CATEGORIES: readonly CommandCategory[] = [

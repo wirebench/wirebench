@@ -79,6 +79,10 @@ export interface UiStore extends UiSnapshot {
   readonly workspaceManageOpen: boolean;
   /** Whether the Create workspace dialog (a name, nothing else) is open. Transient. */
   readonly workspaceCreateOpen: boolean;
+  /** Whether the Sync panel is open. Transient — never persisted. */
+  readonly syncPanelOpen: boolean;
+  /** Whether the conflict resolver (Task 11) is open. Transient — never persisted. */
+  readonly conflictResolverOpen: boolean;
   /** Whether the Settings dialog is open, and which section it should land on. Transient. */
   readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
@@ -98,6 +102,8 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
+  readonly setSyncPanelOpen: (open: boolean) => void;
+  readonly setConflictResolverOpen: (open: boolean) => void;
   /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
   readonly openPreferences: (section?: PreferencesSectionWire) => void;
   readonly setPreferencesOpen: (open: boolean) => void;
@@ -182,6 +188,8 @@ export const useUiStore = create<UiStore>((set, get) => {
     workspaceManageOpen: false,
     preferences: { open: false, section: undefined },
     workspaceCreateOpen: false,
+    syncPanelOpen: false,
+    conflictResolverOpen: false,
     confirmRemoveProjectId: undefined,
 
     setSelection: (selection) => {
@@ -225,6 +233,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setWorkspaceCreateOpen: (open) => {
       set({ workspaceCreateOpen: open });
+    },
+    setSyncPanelOpen: (open) => {
+      set({ syncPanelOpen: open });
+    },
+    setConflictResolverOpen: (open) => {
+      set({ conflictResolverOpen: open });
     },
     openPreferences: (section) => {
       set({ preferences: { open: true, section } });
