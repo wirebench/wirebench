@@ -6,6 +6,7 @@
  * bottom run against a real git and are skipped (loudly) only when this machine has none.
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +18,7 @@ import { GitCli, type Runner } from '../../src/main/sync/git-cli.js';
 import {
   createBareRemote,
   describeGit,
+  gitLocation,
   hermeticGitEnv,
   makeTestGitCli,
   mkTempDir,
@@ -455,6 +457,17 @@ describeGit('GitBackend (real git)', () => {
     await a.setIdentity('Alice', 'alice@example.com');
 
     await expect(a.commit('Should not be blocked by the hook')).resolves.toEqual({ committed: true });
+
+    // Control: the same hook in the same repository *does* fire for a git run without the
+    // override, so the commit above passed because of `core.hooksPath`, not a hook git ignored.
+    await writeFile(join(treeA, 'environments.txt'), 'control\n', 'utf8');
+    const control = spawnSync(gitLocation?.path ?? 'git', ['commit', '-a', '--allow-empty', '-m', 'Blocked by the hook'], {
+      cwd: treeA,
+      env: { ...process.env, ...env, GIT_AUTHOR_NAME: 'Alice', GIT_AUTHOR_EMAIL: 'alice@example.com', GIT_COMMITTER_NAME: 'Alice', GIT_COMMITTER_EMAIL: 'alice@example.com' },
+      encoding: 'utf8',
+    });
+    expect(control.status).not.toBe(0);
+    expect(await a.log(5)).toHaveLength(1);
   });
 
   it("fetch's forced refspec keeps working after the remote branch is rewritten (force-pushed)", async () => {

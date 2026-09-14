@@ -5,6 +5,7 @@
  * `WorkspaceService`. Real `fs.watch` and real git; skipped loudly without git (see git-fixture).
  */
 
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -270,6 +271,23 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
     expect(() => b.service.hostFor(LINKED_PROJECT_ID)).toThrow();
     await settle();
     expect(await linked.contents()).toEqual(before);
+  });
+
+  it('restores an unsaved-changes record in a git-shared workspace after it is closed and reopened', async () => {
+    const aRoot = await seedShared();
+    const first = await openMachine(aRoot);
+    await editRequest(first, '<Add>unsaved</Add>', { save: false });
+    await first.service.close();
+    expect(existsSync(join(workspaceDir(aRoot, workspace.id), 'unsaved', `${PROJECT_ID}.json`))).toBe(true);
+
+    const again = await openMachine(aRoot);
+
+    expect(again.service.hostFor(PROJECT_ID).requestSource(REQUEST_ID)?.envelopeXml).toBe('<Add>unsaved</Add>');
+    expect(again.service.projectSnapshot(PROJECT_ID)?.dirty).toBe(true);
+    expect(again.service.takeRestored().notices).toMatchObject([{ projectId: PROJECT_ID, status: 'restored' }]);
+    // Unsaved means uncommitted: nothing was written into the shared tree for it.
+    const onDisk = await readFile(join(again.tree, 'projects', 'calc', 'interfaces', 'Calc', 'operations', 'Add', 'AddOne.request.yaml'), 'utf8').catch(() => '');
+    expect(onDisk).not.toContain('unsaved');
   });
 
   it('commits a saved request with a generated subject and pushes it', async () => {
