@@ -6,7 +6,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, realpath, rm as removeFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, realpath, rm as removeFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
@@ -137,13 +137,10 @@ beforeEach(async () => {
   base = await realpath(await mkTempDir('wirebench-workspace-share-'));
   const hooksDir = join(base, 'hooks');
   await mkdir(hooksDir, { recursive: true });
-  const env = {
-    ...(await hermeticGitEnv(base)),
-    GIT_AUTHOR_NAME: 'Test User',
-    GIT_AUTHOR_EMAIL: 'test@example.com',
-    GIT_COMMITTER_NAME: 'Test User',
-    GIT_COMMITTER_EMAIL: 'test@example.com',
-  };
+  const env = await hermeticGitEnv(base);
+  // In the (hermetic) global config, not `GIT_*` env vars: the app only counts a configured
+  // user.name/user.email as an identity, so a tree the app creates itself can still commit.
+  await appendFile(env['GIT_CONFIG_GLOBAL'] ?? '', '[user]\n\tname = Test User\n\temail = test@example.com\n', 'utf8');
   git = makeTestGitCli(hooksDir, env);
   remote = await createBareRemote(git, join(base, 'remote.git'));
 });
