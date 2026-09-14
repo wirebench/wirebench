@@ -209,13 +209,18 @@ export class GitBackend implements SyncBackend {
     return this.settingsFn();
   }
 
-  /** `origin`'s URL, or `undefined` when there is no such remote (`remote get-url` exits 2). */
+  /**
+   * `origin`'s URL as configured, or `undefined` when there is none (`config --get` exits 1).
+   * Read from config rather than `remote get-url`, which applies `url.<base>.insteadOf` rewrites:
+   * the status shows the remote the user set, not wherever (and with whatever credentials) a
+   * rewrite in their git config sends it — git itself still applies the rewrite on fetch and push.
+   */
   private async getRemoteUrl(): Promise<string | undefined> {
     try {
-      const { stdout } = await this.git.run(this.tree, ['remote', 'get-url', 'origin']);
+      const { stdout } = await this.git.run(this.tree, ['config', '--get', 'remote.origin.url']);
       return stdout.trim();
     } catch (error) {
-      if (isExpectedGitFailure(error, 2)) {
+      if (isExpectedGitFailure(error, 1)) {
         return undefined;
       }
       throw error;

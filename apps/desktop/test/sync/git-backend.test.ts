@@ -100,7 +100,7 @@ describe('GitBackend (mocked runner)', () => {
       if (args[0] === 'status') {
         return { stdout: '' };
       }
-      if (args[0] === 'remote') {
+      if (args[0] === 'config' && args[2] === 'remote.origin.url') {
         return { stdout: 'https://example.com/repo.git\n' };
       }
       if (args[0] === 'rev-parse' && args.includes('--abbrev-ref')) {
@@ -224,8 +224,8 @@ describe('GitBackend (mocked runner)', () => {
 
   it('push() throws sync-no-remote when there is no origin', async () => {
     const runner = mockRunner((args) => {
-      if (args[0] === 'remote') {
-        return { stdout: '', stderr: 'error: No such remote', exitCode: 2 };
+      if (args[0] === 'config' && args[2] === 'remote.origin.url') {
+        return { stdout: '', stderr: '', exitCode: 1 };
       }
       throw new Error(`unexpected args ${JSON.stringify(args)}`);
     });
@@ -243,7 +243,7 @@ describe('GitBackend (mocked runner)', () => {
       if (args[0] === 'status') {
         return { stdout: '' };
       }
-      if (args[0] === 'remote') {
+      if (args[0] === 'config' && args[2] === 'remote.origin.url') {
         return { stdout: '', stderr: 'fatal: Could not resolve host: example.com', exitCode: 128 };
       }
       throw new Error(`unexpected args ${JSON.stringify(args)}`);
@@ -408,6 +408,34 @@ describeGit('GitBackend (real git)', () => {
     await GitBackend.clone(git, bare.url, 'main', treeB);
     const attrsAfterClone = await readFile(join(treeB, '.gitattributes'), 'utf8');
     expect(attrsAfterClone).toBe(customContent);
+  });
+
+  it('reports the remote as configured, not as a url.insteadOf rewrite resolves it', async () => {
+    root = await mkTempDir();
+    const tree = join(root, 'a');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const bare = await createBareRemote(makeTestGitCli(hooksDir, env), join(root, 'remote.git'));
+    const configured = 'https://git.example.com/team/workspace.git';
+    const globalConfig = env['GIT_CONFIG_GLOBAL'] ?? '';
+    await writeFile(
+      globalConfig,
+      `${await readFile(globalConfig, 'utf8')}[url "${bare.url}"]\n\tinsteadOf = ${configured}\n`,
+      'utf8',
+    );
+    const git = makeTestGitCli(hooksDir, env);
+    await GitBackend.init(git, tree, 'main');
+    await git.run(tree, ['remote', 'add', 'origin', configured]);
+    const backend = new GitBackend({ git, tree, settings: () => ({ ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' }) });
+
+    expect((await backend.probe()).remote).toBe(configured);
+    // …while git still applies the rewrite: git.example.com does not exist, so this push can only
+    // succeed by reaching the local bare remote.
+    await backend.setIdentity('Alice', 'alice@example.com');
+    await writeFile(join(tree, 'workspace.yaml'), 'name: Test\n', 'utf8');
+    await backend.commit('Initial commit');
+    await expect(backend.push()).resolves.toMatchObject({ remote: configured, ahead: 0 });
   });
 
   it('keeps definition cache bytes exact through a clone, so their hashes still match', async () => {
