@@ -49,12 +49,15 @@ function toastUnlessExpected(error: IpcError): void {
 }
 
 /**
- * The state change for a status that is being applied: conflicts only mean something while the
- * workspace is in `conflict` (or `syncing` its way through one), so any other status — a merge
- * finished, cancelled here, or aborted outside the app — clears them.
+ * States that prove no merge is open (a merge finished, cancelled here, or aborted outside the app):
+ * only these clear the conflict list. `offline`, `error` and `syncing` say nothing about an open
+ * merge, and `conflict` is one.
  */
+const NO_MERGE_OPEN_STATES: ReadonlySet<SyncStatusWire['state']> = new Set(['clean', 'ahead', 'behind', 'diverged']);
+
+/** The state change for a status that is being applied. */
 function withStatus(status: SyncStatusWire): Partial<SyncSnapshot> {
-  return status.state === 'conflict' || status.state === 'syncing' ? { status } : { status, conflicts: [] };
+  return NO_MERGE_OPEN_STATES.has(status.state) ? { status, conflicts: [] } : { status };
 }
 
 /**
@@ -100,134 +103,146 @@ export interface SyncStore extends SyncSnapshot {
   readonly revealTree: (path?: string) => Promise<void>;
 }
 
-export const useSyncStore = create<SyncStore>((set, get) => ({
-  status: LOCAL_SYNC_STATUS,
-  conflicts: [],
-  identityNeeded: false,
-
-  applyStatus: (workspaceId, status) => {
-    if (workspaceId === useWorkspaceStore.getState().workspace?.id) {
-      toastNewStatusError(get().status, status);
-      set(withStatus(status));
+export const useSyncStore = create<SyncStore>((set, get) => {
+  /**
+   * Applies a status; a `conflict` arriving while the list is empty (a merge left open by an
+   * earlier session, the terminal, or a status that beat its `sync.conflict` event) loads it.
+   */
+  const applied = (status: SyncStatusWire): void => {
+    set(withStatus(status));
+    if (status.state === 'conflict' && get().conflicts.length === 0) {
+      void get().loadConflicts();
     }
-  },
+  };
 
-  reset: () => {
-    set({ status: LOCAL_SYNC_STATUS, conflicts: [], identityNeeded: false });
-  },
+  return {
+    status: LOCAL_SYNC_STATUS,
+    conflicts: [],
+    identityNeeded: false,
 
-  refresh: async () => {
-    const result = await ipc().sync.status(undefined);
-    if (result.ok) {
-      toastNewStatusError(get().status, result.value);
-      set(withStatus(result.value));
-      if (result.value.state === 'conflict') {
-        // A merge left open (by an earlier session, or the terminal): the resolver needs its list.
-        await get().loadConflicts();
+    applyStatus: (workspaceId, status) => {
+      if (workspaceId === useWorkspaceStore.getState().workspace?.id) {
+        toastNewStatusError(get().status, status);
+        applied(status);
       }
-    }
-    // A failure here is not toasted: it usually just means no workspace is open yet.
-  },
+    },
 
-  fetch: async () => {
-    const result = await ipc().sync.fetch(undefined);
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
+    reset: () => {
+      set({ status: LOCAL_SYNC_STATUS, conflicts: [], identityNeeded: false });
+    },
+
+    refresh: async () => {
+      const result = await ipc().sync.status(undefined);
+      if (result.ok) {
+        toastNewStatusError(get().status, result.value);
+        applied(result.value);
+      }
+      // A failure here is not toasted: it usually just means no workspace is open yet.
+    },
+
+    fetch: async () => {
+      const result = await ipc().sync.fetch(undefined);
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    pull: async () => {
+      const result = await ipc().sync.pull(undefined);
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    push: async () => {
+      const result = await ipc().sync.push(undefined);
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    commit: async (message) => {
+      const result = await ipc().sync.commit({ message });
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    loadConflicts: async () => {
+      const result = await ipc().sync.conflicts(undefined);
+      if (result.ok) {
+        set({ conflicts: result.value.conflicts });
+        return result.value.conflicts;
+      }
       toastUnlessExpected(result.error);
-    }
-  },
+      return get().conflicts;
+    },
 
-  pull: async () => {
-    const result = await ipc().sync.pull(undefined);
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
+    resolve: async (path, side) => {
+      const result = await ipc().sync.resolve({ path, side });
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    abortMerge: async () => {
+      const result = await ipc().sync.abortMerge(undefined);
+      if (result.ok) {
+        set({ ...withStatus(result.value), conflicts: [] });
+        if (result.value.state === 'conflict') {
+          void get().loadConflicts();
+        }
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
+
+    log: async (limit) => {
+      const result = await ipc().sync.log({ limit });
+      if (result.ok) {
+        return result.value.entries;
+      }
       toastUnlessExpected(result.error);
-    }
-  },
+      return [];
+    },
 
-  push: async () => {
-    const result = await ipc().sync.push(undefined);
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
+    updateSettings: async (patch) => {
+      const result = await ipc().sync.updateSettings(patch);
+      if (result.ok) {
+        applied(result.value);
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
 
-  commit: async (message) => {
-    const result = await ipc().sync.commit({ message });
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
+    setIdentity: async (name, email) => {
+      const result = await ipc().sync.setIdentity({ name, email });
+      if (result.ok) {
+        set({ identityNeeded: false });
+        await get().refresh();
+      } else {
+        toastUnlessExpected(result.error);
+      }
+    },
 
-  loadConflicts: async () => {
-    const result = await ipc().sync.conflicts(undefined);
-    if (result.ok) {
-      set({ conflicts: result.value.conflicts });
-      return result.value.conflicts;
-    }
-    toastUnlessExpected(result.error);
-    return get().conflicts;
-  },
-
-  resolve: async (path, side) => {
-    const result = await ipc().sync.resolve({ path, side });
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
-
-  abortMerge: async () => {
-    const result = await ipc().sync.abortMerge(undefined);
-    if (result.ok) {
-      set({ ...withStatus(result.value), conflicts: [] });
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
-
-  log: async (limit) => {
-    const result = await ipc().sync.log({ limit });
-    if (result.ok) {
-      return result.value.entries;
-    }
-    toastUnlessExpected(result.error);
-    return [];
-  },
-
-  updateSettings: async (patch) => {
-    const result = await ipc().sync.updateSettings(patch);
-    if (result.ok) {
-      set(withStatus(result.value));
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
-
-  setIdentity: async (name, email) => {
-    const result = await ipc().sync.setIdentity({ name, email });
-    if (result.ok) {
-      set({ identityNeeded: false });
-      await get().refresh();
-    } else {
-      toastUnlessExpected(result.error);
-    }
-  },
-
-  revealTree: async (path) => {
-    const result = await ipc().sync.revealTree({ path });
-    if (!result.ok) {
-      toastUnlessExpected(result.error);
-    }
-  },
-}));
+    revealTree: async (path) => {
+      const result = await ipc().sync.revealTree({ path });
+      if (!result.ok) {
+        toastUnlessExpected(result.error);
+      }
+    },
+  };
+});
 
 /**
  * Subscribes the mirror to the five sync-related events and resets it whenever the open

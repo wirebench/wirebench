@@ -308,14 +308,17 @@ export class SyncService {
   private recordError(error: unknown): void {
     const code = isWirebenchError(error) ? error.code : 'git-failed';
     const message = error instanceof Error ? error.message : String(error);
+    // An open merge stays `conflict` whatever failed meanwhile, as `setStatus` keeps it: going
+    // offline or hitting an error does not close the merge, and the resolver must stay reachable.
+    const inConflict = this.last.state === 'conflict';
     if (code === 'git-offline') {
       this.offline = true;
-      this.last = { ...this.last, state: 'offline', error: { code, message } };
+      this.last = { ...this.last, state: inConflict ? 'conflict' : 'offline', error: { code, message } };
       return;
     }
     this.last = {
       ...this.last,
-      state: STATE_KEEPING_CODES.has(code) ? this.last.state : 'error',
+      state: inConflict || STATE_KEEPING_CODES.has(code) ? this.last.state : 'error',
       error: { code, message },
     };
   }

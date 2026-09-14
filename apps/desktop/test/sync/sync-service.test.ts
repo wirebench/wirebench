@@ -477,6 +477,31 @@ describe('SyncService — afterSave', () => {
   });
 });
 
+describe('SyncService — errors during an open merge', () => {
+  it('an offline fetch, manual or automatic, and any other failure keep an open merge in conflict', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    h.backend.current = status({ state: 'conflict' });
+    await h.service.start();
+    expect(h.service.status().state).toBe('conflict');
+
+    h.backend.fetchScript.push(() => Promise.reject(offline()));
+    await rejectionOf(h.service.fetch());
+    expect(h.service.status()).toMatchObject({ state: 'conflict', error: { code: 'git-offline' } });
+
+    const fetchesBefore = h.backend.calls.filter((call) => call === 'fetch').length;
+    h.backend.fetchScript.push(() => Promise.reject(offline()));
+    await vi.advanceTimersByTimeAsync(300_000);
+    await h.service.log(1);
+    expect(h.backend.calls.filter((call) => call === 'fetch').length).toBeGreaterThan(fetchesBefore);
+    expect(h.service.status().state).toBe('conflict');
+
+    h.backend.fetchScript.push(() => Promise.reject(new WirebenchError('git-failed', 'git fetch failed.')));
+    await rejectionOf(h.service.fetch());
+    expect(h.service.status()).toMatchObject({ state: 'conflict', error: { code: 'git-failed' } });
+    h.service.stop();
+  });
+});
+
 describe('SyncService — commit and identity', () => {
   it('an explicit message wins over the generated one', async () => {
     const { backend, service } = harness({ autoFetchSeconds: 0 });

@@ -66,16 +66,39 @@ describe('useSyncStore', () => {
     expect(useSyncStore.getState().conflicts).toEqual([]);
   });
 
-  it('an applied status that is neither conflict nor syncing clears the conflicts; syncing keeps them', () => {
+  it.each(['offline', 'error', 'syncing', 'conflict'] as const)(
+    'an applied %s status keeps the conflicts of a merge that may still be open',
+    (state) => {
+      openWorkspace('w1');
+      useSyncStore.setState({ status: { ...GIT_STATUS, state: 'conflict' }, conflicts: [{ path: 'x' }] });
+      useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state });
+      expect(useSyncStore.getState().conflicts).toEqual([{ path: 'x' }]);
+    },
+  );
+
+  it.each(['clean', 'ahead', 'behind', 'diverged'] as const)(
+    'an applied %s status proves no merge is open and clears the conflicts',
+    (state) => {
+      openWorkspace('w1');
+      useSyncStore.setState({ status: { ...GIT_STATUS, state: 'conflict' }, conflicts: [{ path: 'x' }] });
+      // An abort from outside the app (the terminal) shows up only as a status change.
+      useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state });
+      expect(useSyncStore.getState().conflicts).toEqual([]);
+    },
+  );
+
+  it('loads the conflicts when a conflict status arrives while the list is empty, and not when it is already filled', async () => {
     openWorkspace('w1');
-    useSyncStore.setState({ status: { ...GIT_STATUS, state: 'conflict' }, conflicts: [{ path: 'x' }] });
+    const conflicts = vi.fn().mockResolvedValue({ ok: true, value: { conflicts: [{ path: 'projects/calc/x.yaml' }] } });
+    installWirebenchApi({ sync: { conflicts } });
 
-    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'syncing' });
-    expect(useSyncStore.getState().conflicts).toEqual([{ path: 'x' }]);
+    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'conflict' });
+    await vi.waitFor(() => expect(useSyncStore.getState().conflicts).toEqual([{ path: 'projects/calc/x.yaml' }]));
+    expect(conflicts).toHaveBeenCalledTimes(1);
 
-    // An abort from outside the app (the terminal) shows up only as a status change.
-    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'clean' });
-    expect(useSyncStore.getState().conflicts).toEqual([]);
+    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'conflict' });
+    await Promise.resolve();
+    expect(conflicts).toHaveBeenCalledTimes(1);
   });
 
   it('refresh() loads the conflicts when the status it reads is conflict', async () => {
