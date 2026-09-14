@@ -89,6 +89,21 @@ describe('useSyncStore', () => {
     expect(useSyncStore.getState().conflicts).toEqual([{ path: 'projects/calc/x.yaml' }]);
   });
 
+  it('toasts a git-config-refused status once, with its message', () => {
+    openWorkspace('w1');
+    const refused = {
+      ...GIT_STATUS,
+      state: 'error' as const,
+      error: { code: 'git-config-refused', message: "This repository's .git/config sets core.fsmonitor…" },
+    };
+
+    useSyncStore.getState().applyStatus('w1', refused);
+    useSyncStore.getState().applyStatus('w1', refused);
+
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith("This repository's .git/config sets core.fsmonitor…");
+  });
+
   it('reset() goes back to the synthetic local status with no conflicts', () => {
     useSyncStore.setState({ status: GIT_STATUS, conflicts: [{ path: 'x' }], identityNeeded: true });
     useSyncStore.getState().reset();

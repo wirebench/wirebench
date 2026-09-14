@@ -57,6 +57,20 @@ function withStatus(status: SyncStatusWire): Partial<SyncSnapshot> {
   return status.state === 'conflict' || status.state === 'syncing' ? { status } : { status, conflicts: [] };
 }
 
+/**
+ * Status errors whose message the user must read to act on — the badge alone only says *Error*.
+ * `git-config-refused` means nothing syncs until the repository's .git/config is fixed.
+ */
+const TOASTED_STATUS_ERROR_CODES: ReadonlySet<string> = new Set(['git-config-refused']);
+
+/** Toasts `next`'s error when it is one of {@link TOASTED_STATUS_ERROR_CODES} and `previous` did not already carry it. */
+function toastNewStatusError(previous: SyncStatusWire, next: SyncStatusWire): void {
+  const code = next.error?.code;
+  if (code !== undefined && TOASTED_STATUS_ERROR_CODES.has(code) && previous.error?.code !== code) {
+    showToast(next.error?.message ?? code);
+  }
+}
+
 /** The sync store's serialisable state. */
 export interface SyncSnapshot {
   readonly status: SyncStatusWire;
@@ -93,6 +107,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
   applyStatus: (workspaceId, status) => {
     if (workspaceId === useWorkspaceStore.getState().workspace?.id) {
+      toastNewStatusError(get().status, status);
       set(withStatus(status));
     }
   },
@@ -104,6 +119,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   refresh: async () => {
     const result = await ipc().sync.status(undefined);
     if (result.ok) {
+      toastNewStatusError(get().status, result.value);
       set(withStatus(result.value));
       if (result.value.state === 'conflict') {
         // A merge left open (by an earlier session, or the terminal): the resolver needs its list.
