@@ -205,11 +205,8 @@ const workspaceService = new WorkspaceService({
     onProgress: (progress) => {
       broadcast(events.engine.progress, progress);
     },
-    onWorkspaceChangedOnDisk: (paths, message) => {
-      const workspaceId = workspaceService.snapshot()?.id;
-      if (workspaceId !== undefined) {
-        broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
-      }
+    onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
+      broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
     },
     onSyncStatus: (workspaceId, status) => {
       broadcast(events.sync.statusChanged, { workspaceId, status });

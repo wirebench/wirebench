@@ -104,7 +104,8 @@ describe('useSyncStore', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
-  it('workspace.changedOnDisk toasts the T4 load-failure message', () => {
+  it('workspace.changedOnDisk toasts the T4 load-failure message for the open workspace', () => {
+    openWorkspace('w1');
     const listeners = new Map<string, (payload: unknown) => void>();
     installWirebenchApi({
       on: vi.fn().mockImplementation((name: string, listener: (payload: unknown) => void) => {
@@ -121,6 +122,27 @@ describe('useSyncStore', () => {
     });
 
     expect(showToast).toHaveBeenCalledWith('Workspace files changed on disk but could not be read: bad indentation');
+    unsubscribe();
+  });
+
+  it('ignores workspace.changedOnDisk for a workspace that is not open', () => {
+    openWorkspace('w1');
+    const listeners = new Map<string, (payload: unknown) => void>();
+    installWirebenchApi({
+      on: vi.fn().mockImplementation((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return vi.fn();
+      }),
+    });
+
+    const unsubscribe = subscribeToSync();
+    listeners.get('workspace.changedOnDisk')?.({
+      workspaceId: 'other',
+      paths: ['workspace.yaml'],
+      message: 'bad indentation',
+    });
+
+    expect(showToast).not.toHaveBeenCalled();
     unsubscribe();
   });
 
@@ -160,6 +182,39 @@ describe('useSyncStore', () => {
     listeners.get('workspace.changed')?.({ workspace: null });
 
     expect(useSyncStore.getState()).toMatchObject({ status: LOCAL_STATUS, conflicts: [], identityNeeded: false });
+    unsubscribe();
+  });
+
+  it('subscribeToSync keeps conflicts and identityNeeded across a workspace.changed for the same workspace', () => {
+    useSyncStore.setState({ status: GIT_STATUS, conflicts: [{ path: 'x' }], identityNeeded: true });
+    const listeners = new Map<string, (payload: unknown) => void>();
+    installWirebenchApi({
+      sync: { status: vi.fn().mockResolvedValue({ ok: true, value: GIT_STATUS }) },
+      on: vi.fn().mockImplementation((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return vi.fn();
+      }),
+    });
+
+    const unsubscribe = subscribeToSync();
+    const workspace: WorkspaceWire = {
+      id: 'w1',
+      name: 'W (renamed)',
+      dir: '/user-data/workspaces/w1',
+      properties: {},
+      disabled: [],
+      environments: [],
+      projects: [],
+      share: { kind: 'git', managed: true },
+    };
+    // First event establishes the baseline (this workspace, shared) — a real mount would have
+    // gotten here via `workspace.snapshot`/an earlier event; the second is the same workspace
+    // changing again (e.g. an environment edit), which must not touch the conflict list.
+    listeners.get('workspace.changed')?.({ workspace });
+    useSyncStore.setState({ conflicts: [{ path: 'x' }], identityNeeded: true });
+    listeners.get('workspace.changed')?.({ workspace: { ...workspace, name: 'W (renamed again)' } });
+
+    expect(useSyncStore.getState()).toMatchObject({ conflicts: [{ path: 'x' }], identityNeeded: true });
     unsubscribe();
   });
 

@@ -13,6 +13,7 @@ import {
   createProject,
   loadShare,
   loadWorkspace,
+  nodeFs,
   saveProject,
   WirebenchError,
   workspaceDir,
@@ -23,6 +24,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import type { GitCli } from '../src/main/sync/git-cli.js';
+import { SyncService } from '../src/main/sync/sync-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import { nodeFileOps } from '../src/main/workspace-share.js';
@@ -760,5 +762,108 @@ describeGit('WorkspaceService — move project to workspace, delete', () => {
     await folder.service.delete(f.id);
     expect(folder.trashed).toEqual([f.dir]);
     expect(existsSync(join(target, 'workspace.yaml'))).toBe(true);
+  });
+});
+
+describeGit('WorkspaceService — sync settings and status', () => {
+  it('validates branch/remote before saving, and refuses without touching share.yaml', async () => {
+    const { root, service } = await newService('a');
+    const { dir } = await seedLocal(service, root);
+    await service.share({ remote: remote.url, branch: 'main' });
+    const before = await loadShare(dir);
+
+    await expect(service.updateSyncSettings({ branch: '-evil' })).rejects.toBeInstanceOf(WirebenchError);
+    await expect(service.updateSyncSettings({ remote: '-oProxyCommand=evil host:repo' })).rejects.toBeInstanceOf(
+      WirebenchError,
+    );
+    expect(await loadShare(dir)).toEqual(before);
+  });
+
+  it('persists a trimmed remote to share.yaml and re-arms the sync service', async () => {
+    const { root, service } = await newService('a');
+    const { dir } = await seedLocal(service, root);
+    await service.share({ branch: 'main' });
+    const applySettings = vi.spyOn(SyncService.prototype, 'applySettings');
+
+    await service.updateSyncSettings({ remote: `  ${remote.url}  `, autoFetchSeconds: 120 });
+
+    expect(await loadShare(dir)).toMatchObject({
+      git: { remote: remote.url, autoFetchSeconds: 120, branch: 'main' },
+    });
+    expect(applySettings).toHaveBeenCalled();
+    applySettings.mockRestore();
+  });
+
+  it('leaves the live settings unchanged when the save fails', async () => {
+    // Armed only after the initial share has finished — `share()` writes `share.yaml` too, and
+    // that write must succeed for the test to have something to leave unchanged.
+    let armed = false;
+    const failingFs = {
+      ...nodeFs,
+      writeFile: (path: string, data: Buffer | string) =>
+        armed && path.includes('share.yaml') ? Promise.reject(new Error('EIO')) : nodeFs.writeFile(path, data),
+    };
+    const { root, service } = await newService('a', { fs: failingFs });
+    const { dir } = await seedLocal(service, root);
+    await service.share({ branch: 'main' });
+    const before = await loadShare(dir);
+    const statusBefore = service.sync()?.status();
+    armed = true;
+
+    await expect(service.updateSyncSettings({ remote: remote.url })).rejects.toThrow('EIO');
+
+    expect(await loadShare(dir)).toEqual(before);
+    expect(service.sync()?.status()).toEqual(statusBefore);
+  });
+
+  it('refuses settings on a folder share with sync-not-supported', async () => {
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const { root, service } = await newService('a', { dialogs: dialogsPicking(target) });
+    await seedLocal(service, root);
+    await service.shareToFolder(sender);
+
+    await expect(service.updateSyncSettings({ branch: 'main' })).rejects.toMatchObject({
+      code: 'sync-not-supported',
+    });
+  });
+
+  it('answers a synthetic local status for an unshared workspace', async () => {
+    const { root, service } = await newService('a');
+    await seedLocal(service, root);
+
+    expect(service.syncStatus()).toEqual({
+      kind: 'local',
+      gitAvailable: true,
+      state: 'clean',
+      ahead: 0,
+      behind: 0,
+      uncommitted: 0,
+    });
+  });
+
+  it('fills share on list()/snapshot() — managed for a git clone, unmanaged for an external folder', async () => {
+    const gitShare = await newService('a');
+    await seedLocal(gitShare.service, gitShare.root);
+    await gitShare.service.share({ remote: remote.url, branch: 'main' });
+
+    expect(gitShare.service.snapshot()?.share).toEqual({
+      kind: 'git',
+      managed: true,
+      remote: remote.url,
+      branch: 'main',
+    });
+    const gitRow = (await gitShare.service.list()).find((row) => row.id === gitShare.service.snapshot()?.id);
+    expect(gitRow?.share).toEqual({ kind: 'git', managed: true, remote: remote.url, branch: 'main' });
+
+    const target = join(base, 'synced');
+    await mkdir(target);
+    const folderShare = await newService('b', { dialogs: dialogsPicking(target) });
+    await seedLocal(folderShare.service, folderShare.root);
+    await folderShare.service.shareToFolder(sender);
+
+    expect(folderShare.service.snapshot()?.share).toEqual({ kind: 'folder', managed: false });
+    const folderRow = (await folderShare.service.list()).find((row) => row.id === folderShare.service.snapshot()?.id);
+    expect(folderRow?.share).toEqual({ kind: 'folder', managed: false });
   });
 });

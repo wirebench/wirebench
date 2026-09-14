@@ -230,15 +230,37 @@ export function subscribeToSync(): () => void {
   }) as (payload: unknown) => void);
 
   const offChangedOnDisk = window.wirebench.on('workspace.changedOnDisk', ((payload: WorkspaceChangedOnDiskEvent) => {
-    showToast(`Workspace files changed on disk but could not be read: ${payload.message}`);
-  }) as (payload: unknown) => void);
-
-  const offWorkspaceChanged = window.wirebench.on('workspace.changed', ((payload: WorkspaceChangedEvent) => {
-    useSyncStore.getState().reset();
-    if (payload.workspace?.share !== undefined) {
-      void useSyncStore.getState().refresh();
+    if (payload.workspaceId === useWorkspaceStore.getState().workspace?.id) {
+      showToast(`Workspace files changed on disk but could not be read: ${payload.message}`);
     }
   }) as (payload: unknown) => void);
+
+  // Tracked here (not read off the workspace store) so a `workspace.changed` for the *same*
+  // workspace — an environment edit, a rename, a pull-driven reload — never resets sync state
+  // that has nothing to do with it, while a real switch (or a local workspace turning shared in
+  // place) still does the right thing.
+  let lastWorkspaceId: string | null = null;
+  let lastShared = false;
+
+  const offWorkspaceChanged = window.wirebench.on('workspace.changed', ((payload: WorkspaceChangedEvent) => {
+    const nextId = payload.workspace?.id ?? null;
+    const nextShared = payload.workspace?.share !== undefined;
+    const switched = nextId !== lastWorkspaceId;
+    // "or becomes null": closing the workspace always resets, even if this subscription never
+    // saw the workspace that is now closing (a remount while one was already open).
+    if (switched || nextId === null) {
+      useSyncStore.getState().reset();
+    }
+    if (nextShared && (switched || !lastShared)) {
+      void useSyncStore.getState().refresh();
+    }
+    lastWorkspaceId = nextId;
+    lastShared = nextShared;
+  }) as (payload: unknown) => void);
+
+  // Best-effort initial load: a renderer mounted with a shared workspace already open (a page
+  // reload, a window reopened from the dock) sees no `workspace.changed` of its own to react to.
+  void useSyncStore.getState().refresh();
 
   return () => {
     offStatus();

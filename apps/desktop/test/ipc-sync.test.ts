@@ -150,6 +150,25 @@ describe('sync.* channels', () => {
     expect(sync?.log).toHaveBeenCalledWith(10);
   });
 
+  it('log rejects a limit that is negative, fractional, zero or over the 200 cap', async () => {
+    for (const limit of [-1, 0, 1.5, 201]) {
+      const result = await invoke('sync.log', { limit });
+      expect(result, `limit ${String(limit)}`).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
+    }
+    expect(sync?.log).not.toHaveBeenCalled();
+  });
+
+  it('updateSettings rejects a negative, fractional or oversized autoFetchSeconds', async () => {
+    for (const autoFetchSeconds of [-1, 0.5, 86_401]) {
+      const result = await invoke('sync.updateSettings', { autoFetchSeconds });
+      expect(result, `autoFetchSeconds ${String(autoFetchSeconds)}`).toMatchObject({
+        ok: false,
+        error: { code: 'ipc-invalid-request' },
+      });
+    }
+    expect(service.updateSyncSettings).not.toHaveBeenCalled();
+  });
+
   it('updateSettings routes the whole patch to the service (validation lives there)', async () => {
     await expect(
       invoke('sync.updateSettings', { branch: 'main', remote: 'https://example.test/repo.git' }),
@@ -183,6 +202,18 @@ describe('sync.* channels', () => {
       value: {},
     });
     expect(sync?.setIdentity).toHaveBeenCalledWith('Ada', 'ada@example.test');
+  });
+
+  it('setIdentity rejects an empty (or whitespace-only) name or email', async () => {
+    await expect(invoke('sync.setIdentity', { name: '  ', email: 'ada@example.test' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'ipc-invalid-request' },
+    });
+    await expect(invoke('sync.setIdentity', { name: 'Ada', email: '' })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'ipc-invalid-request' },
+    });
+    expect(sync?.setIdentity).not.toHaveBeenCalled();
   });
 
   it('revealTree joins a tree-relative path onto the tree root before revealing it', async () => {

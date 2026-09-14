@@ -138,7 +138,7 @@ export interface WorkspaceHooks {
    * `environments/*.yaml` failed to load (most often unparsable YAML mid-write); the in-memory
    * model was left untouched. `paths` is the batch that triggered the attempt.
    */
-  readonly onWorkspaceChangedOnDisk?: (paths: readonly string[], message: string) => void;
+  readonly onWorkspaceChangedOnDisk?: (workspaceId: string, paths: readonly string[], message: string) => void;
   /** One interface of one project finished (or failed) re-importing. */
   readonly onHydration?: (
     projectId: string,
@@ -932,7 +932,7 @@ export class WorkspaceService implements ProjectRouter {
       ({ workspace: loaded } = await loadWorkspace(open.tree, this.fsOption()));
     } catch (error) {
       if (!this.stale(open)) {
-        this.deps.hooks?.onWorkspaceChangedOnDisk?.(paths, errorMessage(error));
+        this.deps.hooks?.onWorkspaceChangedOnDisk?.(open.workspace.id, paths, errorMessage(error));
       }
       return;
     }
@@ -1090,8 +1090,11 @@ export class WorkspaceService implements ProjectRouter {
         ...(patch.branch !== undefined ? { branch: assertBranchName(patch.branch) } : {}),
         ...(patch.remote !== undefined ? { remote: assertRemoteUrl(patch.remote) } : {}),
       };
-      open.share = { ...open.share, git: next };
-      await saveShare(open.dir, open.share, this.fsOption());
+      const nextShare: WorkspaceShare = { ...open.share, git: next };
+      // Persisted before anything in memory changes: a failed write must leave the live
+      // settings (and what a concurrent read sees) exactly as they were.
+      await saveShare(open.dir, nextShare, this.fsOption());
+      open.share = nextShare;
       open.sync?.applySettings();
       return this.syncStatus();
     });

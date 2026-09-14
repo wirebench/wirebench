@@ -45,7 +45,7 @@ let root: string;
 
 interface Recorded {
   changed: (WorkspaceWire | null)[];
-  onDisk: { paths: readonly string[]; message: string }[];
+  onDisk: { workspaceId: string; paths: readonly string[]; message: string }[];
   /** Files-changed-on-disk events forwarded from an open project's own watcher — used only by
    * the close()-races-a-reload test, to detect a host that a reload opened but never closed. */
   projectOnDisk: { projectId: string; paths: readonly string[] }[];
@@ -60,7 +60,8 @@ function newService(overrides: Partial<WorkspaceServiceDeps> = {}): { service: W
     watchDebounceMs: WATCH_DEBOUNCE_MS,
     hooks: {
       onChanged: (workspace) => recorded.changed.push(workspace),
-      onWorkspaceChangedOnDisk: (paths, message) => recorded.onDisk.push({ paths: [...paths], message }),
+      onWorkspaceChangedOnDisk: (workspaceId, paths, message) =>
+        recorded.onDisk.push({ workspaceId, paths: [...paths], message }),
       onProjectChangedOnDisk: (projectId, paths) => recorded.projectOnDisk.push({ projectId, paths: [...paths] }),
     },
     ...overrides,
@@ -180,6 +181,7 @@ describe('WorkspaceService — workspace-level watcher', () => {
       expect(recorded.onDisk.length).toBeGreaterThan(0);
     }, WAIT_OPTIONS);
     expect(recorded.onDisk[0]?.message).toBeTruthy();
+    expect(recorded.onDisk[0]?.workspaceId).toBe(workspace.id);
     expect(recorded.onDisk[0]?.paths).toContain('workspace.yaml');
     // The model is left exactly as it was — no partial reload.
     expect(service.snapshot()?.name).toBe(nameBefore);

@@ -2853,7 +2853,9 @@ export type SyncLogEntryWire = z.infer<typeof syncLogEntryWireSchema>;
 
 /** A patch over a git share's settings; every field optional (only what the dialog changed). */
 export const syncSettingsPatchWireSchema = z.object({
-  autoFetchSeconds: z.number().optional(),
+  /** Bounded to a whole number of seconds, at most a day — a fractional or huge value would
+   * either busy-loop the fetch timer (`setTimeout` clamps to 1ms) or never fire in practice. */
+  autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
   commitOnSave: z.boolean().optional(),
   pushOnSave: z.boolean().optional(),
   remote: z.string().optional(),
@@ -2886,9 +2888,12 @@ export type SyncPulledEvent = z.infer<typeof syncPulledEventSchema>;
 export const syncCommitRequestSchema = z.object({ message: z.string().optional() });
 export const syncConflictsResponseSchema = z.object({ conflicts: z.array(syncConflictWireSchema) });
 export const syncResolveRequestSchema = z.object({ path: z.string(), side: z.enum(['mine', 'theirs']) });
-export const syncLogRequestSchema = z.object({ limit: z.number().int().positive() });
+export const syncLogRequestSchema = z.object({ limit: z.number().int().min(1).max(200) });
 export const syncLogResponseSchema = z.object({ entries: z.array(syncLogEntryWireSchema) });
-export const syncSetIdentityRequestSchema = z.object({ name: z.string(), email: z.string() });
+export const syncSetIdentityRequestSchema = z.object({
+  name: z.string().trim().min(1),
+  email: z.string().trim().min(1),
+});
 export const syncSetIdentityResponseSchema = z.object({});
 /** `path` is tree-relative and produced by main itself (a conflict entry); absent → the tree root. */
 export const syncRevealTreeRequestSchema = z.object({ path: z.string().optional() });
