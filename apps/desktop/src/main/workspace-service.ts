@@ -444,7 +444,7 @@ export class WorkspaceService implements ProjectRouter {
    * can never interleave. `mutate`/`setActiveEnvironment` used to run outside this chain on the
    * theory that they never touch `entries`; that missed that a watcher-driven reload replaces
    * `open.workspace` *wholesale* and can land between two such calls, silently reverting one of
-   * them (see the `task-4f1` fix). `close()` still never awaits this chain — see `open.closing`
+   * them. `close()` still never awaits this chain — see `open.closing`
    * and {@link stale} — and resets it, so a closed workspace's still-pending op cannot delay (or
    * reach into) the next one opened.
    */
