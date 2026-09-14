@@ -5,6 +5,7 @@ import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
 import { ProjectTab } from '../features/project/project-tab.js';
+import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
@@ -241,6 +242,7 @@ export function EditorArea() {
   return (
     <section data-testid="editor-area" aria-label="Editors" className="flex h-full min-h-0 flex-col bg-surface-base">
       <ChangedOnDiskBanner />
+      <SyncBanner />
       <div className="flex h-row shrink-0 border-b border-hairline">
         {overflow.left && (
           <button

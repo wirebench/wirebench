@@ -24,6 +24,7 @@ import { PreferencesDialog } from '../features/preferences/preferences-dialog.js
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
+import { ConflictResolver } from '../features/sync/conflict-resolver.js';
 import { IdentityDialog } from '../features/sync/identity-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
@@ -418,6 +419,7 @@ export function AppShell() {
       <PreferencesDialog />
       <RemoveProjectDialog />
       <SyncPanel />
+      <ConflictResolver />
       <IdentityDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>

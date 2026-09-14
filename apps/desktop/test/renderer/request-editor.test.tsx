@@ -5,6 +5,7 @@ import { RequestEditor } from '../../src/renderer/features/request-editor/reques
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { makeDraft, makeExchange, makeInterface } from '../mocks/exchange-fixtures.js';
@@ -47,6 +48,7 @@ describe('RequestEditor', () => {
     // The pane's selected view lives in the editors store now, so it outlives a `cleanup()`.
     useEditorsStore.setState({ requestViewTypes: {}, responseViewTypes: {}, responseViewPinned: {} });
     useRequestDialogsStore.getState().close();
+    useSyncStore.getState().reset();
   });
 
   afterEach(() => {
@@ -322,6 +324,31 @@ describe('RequestEditor', () => {
 
     expect(await screen.findByRole('dialog')).toBeDefined();
     expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'import-curl', requestId: 'req-1' });
+  });
+
+  it('goes read-only with a note while its request is conflicted', async () => {
+    useSyncStore.setState({
+      conflicts: [{ path: 'x', projectId: 'p1', entity: { kind: 'request', name: 'Request 1' } }],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    expect(screen.getByTestId('request-conflict-note').textContent).toBe('Read-only until the conflict is resolved');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Request envelope XML').readOnly).toBe(true);
+
+    const outlineTabs = screen.getAllByRole('tab', { name: 'Outline' });
+    await userEvent.click(outlineTabs[0] as HTMLElement);
+    const tree = screen.getByRole('tree');
+    expect(tree.querySelectorAll('input')).toHaveLength(0);
+  });
+
+  it('stays editable, with no conflict note, when its request has no conflict', () => {
+    useSyncStore.setState({
+      conflicts: [{ path: 'x', projectId: 'p1', entity: { kind: 'request', name: 'Some other request' } }],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    expect(screen.queryByTestId('request-conflict-note')).toBeNull();
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Request envelope XML').readOnly).toBe(false);
   });
 
   it('the response Outline renders no editable inputs', async () => {

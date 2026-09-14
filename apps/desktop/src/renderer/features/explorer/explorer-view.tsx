@@ -20,6 +20,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
+import { useConflictTargets } from '../sync/use-conflict-targets.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -230,6 +231,15 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             orphaned
           </span>
         )}
+        {node.data.conflicted === true && (
+          <span
+            data-testid="explorer-conflict-badge"
+            title="Has unresolved sync conflicts"
+            className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent"
+          >
+            conflict
+          </span>
+        )}
         {node.data.problemCount !== undefined && node.data.problemCount > 0 && (
           <span className="shrink-0 rounded-full bg-status-danger px-1.5 text-xs text-fg-on-accent">
             {node.data.problemCount}
@@ -279,7 +289,8 @@ export function ExplorerView() {
     status: project.status,
     ...(project.message !== undefined ? { message: project.message } : {}),
   }));
-  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest);
+  const conflicted = useConflictTargets();
+  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest, conflicted);
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
