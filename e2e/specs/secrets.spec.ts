@@ -11,7 +11,9 @@ import {
   folderRow,
   openApiTab,
   openRequestTab,
+  responseStatus,
   saveRequest,
+  sendRest,
   setApiOAuth2ClientCredentials,
   setMethodAndUrl,
 } from '../helpers/rest.js';
@@ -251,5 +253,16 @@ test.describe('secrets', () => {
     for (const secret of [TOKEN, KEY, CLIENT_SECRET]) {
       expect(secretsText).not.toContain(secret);
     }
+
+    // A REST send reaches the console's HTTP Log, whose detail pane shows the raw request bytes —
+    // so the same redaction the SOAP log gets has to hold here. It does because main redacts the
+    // summary before it is ever sent to the renderer, not because the log hides anything; this
+    // pins it, since routing REST into that log is what made the pane reachable for REST at all.
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText(/\d{3}/, { timeout: 20_000 });
+    await page.locator('[data-testid="http-log-row"]').first().click();
+    const rawRequest = page.getByLabel('Raw request');
+    await expect(rawRequest).toContainText('X-Api-Key: <redacted>');
+    await expect(rawRequest).not.toContainText(KEY);
   });
 });
