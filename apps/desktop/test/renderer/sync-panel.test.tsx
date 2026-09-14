@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SyncPanel } from '../../src/renderer/features/sync/sync-panel.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -122,6 +122,69 @@ describe('SyncPanel', () => {
     await userEvent.click(await screen.findByLabelText('Push on save'));
 
     await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ pushOnSave: false }));
+  });
+
+  it('initialises the settings controls from the persisted workspace.share, not from a default', async () => {
+    installWirebenchApi();
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        share: { kind: 'git', managed: true, autoFetchSeconds: 120, commitOnSave: true, pushOnSave: false },
+      }),
+    });
+    useSyncStore.setState({ status: STATUS, conflicts: [] });
+    render(<SyncPanel />);
+    useUiStore.getState().setSyncPanelOpen(true);
+
+    const autoFetch = await screen.findByLabelText<HTMLInputElement>('Auto-fetch every N seconds');
+    const pushOnSave = await screen.findByLabelText<HTMLInputElement>('Push on save');
+    expect(autoFetch.value).toBe('120');
+    expect(pushOnSave.checked).toBe(false);
+    // commit-on-save persisted true → the commit UI stays hidden.
+    expect(screen.queryByTestId('sync-commit')).toBeNull();
+  });
+
+  it('re-syncs the settings controls when the store gets a new workspace snapshot', async () => {
+    installWirebenchApi();
+    openShared();
+    render(<SyncPanel />);
+    useUiStore.getState().setSyncPanelOpen(true);
+
+    const autoFetch = await screen.findByLabelText<HTMLInputElement>('Auto-fetch every N seconds');
+    expect(autoFetch.value).toBe('60');
+
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({ share: { kind: 'git', managed: true, autoFetchSeconds: 45 } }),
+    });
+
+    await waitFor(() => expect(autoFetch.value).toBe('45'));
+  });
+
+  it('does not double-submit a commit while another sync action is busy', async () => {
+    let resolvePull: (value: { ok: true; value: SyncStatusWire }) => void = () => undefined;
+    const pull = vi.fn(
+      () =>
+        new Promise<{ ok: true; value: SyncStatusWire }>((resolve) => {
+          resolvePull = resolve;
+        }),
+    );
+    const commit = vi.fn().mockResolvedValue({ ok: true, value: STATUS });
+    installWirebenchApi({ sync: { pull, commit } });
+    openShared();
+    render(<SyncPanel />);
+    useUiStore.getState().setSyncPanelOpen(true);
+
+    await userEvent.click(await screen.findByLabelText('Commit on save'));
+    const pullButton = screen.getByTestId('sync-pull');
+    await userEvent.click(pullButton);
+    expect(pull).toHaveBeenCalled();
+
+    const messageField = screen.getByTestId('sync-commit-message');
+    expect(messageField.hasAttribute('disabled')).toBe(true);
+    fireEvent.keyDown(messageField, { key: 'Enter' });
+    expect(commit).not.toHaveBeenCalled();
+
+    resolvePull({ ok: true, value: STATUS });
+    await waitFor(() => expect(pullButton.hasAttribute('disabled')).toBe(false));
   });
 
   it('rejects an out-of-range auto-fetch value inline, without calling the channel', async () => {

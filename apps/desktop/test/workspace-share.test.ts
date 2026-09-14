@@ -27,6 +27,7 @@ import type { GitCli } from '../src/main/sync/git-cli.js';
 import { SyncService } from '../src/main/sync/sync-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import type { WorkspaceWire } from '../src/shared/wire-types.js';
 import { nodeFileOps } from '../src/main/workspace-share.js';
 import {
   createBareRemote,
@@ -822,6 +823,24 @@ describeGit('WorkspaceService — sync settings and status', () => {
     expect(service.snapshot()?.share?.branch).toBe(branchBefore);
   });
 
+  it('reflects persisted settings on snapshot().share and broadcasts onChanged', async () => {
+    const onChanged = vi.fn((workspace: WorkspaceWire | null): void => void workspace);
+    const { root, service } = await newService('a', { hooks: { onChanged } });
+    await seedLocal(service, root);
+    await service.share({ remote: remote.url, branch: 'main' });
+    onChanged.mockClear();
+
+    await service.updateSyncSettings({ autoFetchSeconds: 120, commitOnSave: false, pushOnSave: false });
+
+    expect(service.snapshot()?.share).toMatchObject({
+      autoFetchSeconds: 120,
+      commitOnSave: false,
+      pushOnSave: false,
+    });
+    const [broadcast] = onChanged.mock.calls.at(-1) ?? [];
+    expect(broadcast?.share).toMatchObject({ autoFetchSeconds: 120, commitOnSave: false, pushOnSave: false });
+  });
+
   it('refuses settings on a folder share with sync-not-supported', async () => {
     const target = join(base, 'synced');
     await mkdir(target);
@@ -858,9 +877,20 @@ describeGit('WorkspaceService — sync settings and status', () => {
       managed: true,
       remote: remote.url,
       branch: 'main',
+      autoFetchSeconds: 60,
+      commitOnSave: true,
+      pushOnSave: true,
     });
     const gitRow = (await gitShare.service.list()).find((row) => row.id === gitShare.service.snapshot()?.id);
-    expect(gitRow?.share).toEqual({ kind: 'git', managed: true, remote: remote.url, branch: 'main' });
+    expect(gitRow?.share).toEqual({
+      kind: 'git',
+      managed: true,
+      remote: remote.url,
+      branch: 'main',
+      autoFetchSeconds: 60,
+      commitOnSave: true,
+      pushOnSave: true,
+    });
 
     const target = join(base, 'synced');
     await mkdir(target);

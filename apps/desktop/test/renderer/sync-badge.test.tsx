@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SyncBadge, syncBadgeLabel } from '../../src/renderer/features/sync/sync-badge.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -57,6 +57,31 @@ describe('SyncBadge', () => {
     expect(badge.getAttribute('data-state')).toBe('ahead');
     expect(badge.textContent).toContain('4 to push');
     expect(badge.getAttribute('aria-label')).toContain('4 to push');
+  });
+
+  it('advances the relative last-sync time as the clock ticks, and clears its timer on unmount', () => {
+    vi.useFakeTimers();
+    try {
+      const start = new Date('2026-09-14T12:00:00Z');
+      vi.setSystemTime(start);
+      useWorkspaceStore.setState({ workspace: workspaceWire({ share: { kind: 'git', managed: true } }) });
+      useSyncStore.setState({ status: { ...BASE, lastSyncAt: start.toISOString() } });
+      const baseline = vi.getTimerCount();
+      const { unmount } = render(<SyncBadge />);
+
+      expect(screen.getByTestId('status-bar-sync').textContent).toContain('just now');
+
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(screen.getByTestId('status-bar-sync').textContent).toContain('1 min ago');
+
+      unmount();
+      expect(vi.getTimerCount()).toBe(baseline);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens the Sync panel when clicked', async () => {

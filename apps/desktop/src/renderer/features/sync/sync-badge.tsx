@@ -5,6 +5,10 @@ import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { formatRelative } from './relative-time.js';
+import { useNow } from './use-now.js';
+
+/** How often the badge's relative "3 min ago" is refreshed while it is on screen. */
+const RELATIVE_TIME_REFRESH_MS = 30_000;
 
 /** The kind glyph, shared with the Sync panel's header. `local` never renders (badge is hidden). */
 const KIND_ICON: Readonly<Record<SyncStatusWire['kind'], LucideIcon>> = {
@@ -54,6 +58,9 @@ export function SyncBadge() {
   const share = useWorkspaceStore((state) => state.workspace?.share);
   const status = useSyncStore((store) => store.status);
   const setSyncPanelOpen = useUiStore((state) => state.setSyncPanelOpen);
+  // Called unconditionally (the Rules of Hooks) even though the badge below renders nothing for
+  // an unshared workspace — the ticking clock only matters while it is on screen either way.
+  const now = useNow(RELATIVE_TIME_REFRESH_MS);
 
   if (share === undefined) {
     return null;
@@ -61,7 +68,7 @@ export function SyncBadge() {
 
   const Icon = KIND_ICON[status.kind];
   const label = syncBadgeLabel(status);
-  const relative = status.lastSyncAt === undefined ? undefined : formatRelative(status.lastSyncAt, new Date());
+  const relative = status.lastSyncAt === undefined ? undefined : formatRelative(status.lastSyncAt, now);
   const text = relative === undefined ? label : `${label} · ${relative}`;
 
   return (

@@ -6,10 +6,12 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useUiStore } from '../../state/ui.js';
-import type { SyncLogEntryWire } from '../../../shared/wire-types.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+import type { SyncLogEntryWire, WorkspaceShareWire } from '../../../shared/wire-types.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { formatRelative } from './relative-time.js';
 import { syncBadgeLabel } from './sync-badge.js';
+import { useNow } from './use-now.js';
 
 /**
  * The auto-fetch field's bounds — mirrors `syncSettingsPatchWireSchema.autoFetchSeconds`
@@ -22,12 +24,35 @@ const AUTO_FETCH_MAX = 86_400;
 /** How many commits the "recent commits" list asks main for. */
 const LOG_LIMIT = 20;
 
-/** These two settings are never sent back to the renderer (Task 9's wire has no field for
- * them) — the panel starts from the share defaults and reflects only what the user changes in
- * this session, rather than pretending to know a value main never told it. */
-const INITIAL_COMMIT_ON_SAVE = true;
-const INITIAL_PUSH_ON_SAVE = true;
-const INITIAL_AUTO_FETCH_SECONDS = 60;
+/** How often the log rows' relative times refresh while the panel is open. */
+const RELATIVE_TIME_REFRESH_MS = 30_000;
+
+/**
+ * Fallbacks for a `git` share whose `WorkspaceShareWire` predates these fields (or, in
+ * principle, omits them) — mirrors `DEFAULT_GIT_SHARE_SETTINGS` in `@wirebench/engine`. Real
+ * values always come from `workspace.share` once main fills them in; these are never shown in
+ * place of a persisted value, only in place of a genuinely missing one.
+ */
+const DEFAULT_COMMIT_ON_SAVE = true;
+const DEFAULT_PUSH_ON_SAVE = true;
+const DEFAULT_AUTO_FETCH_SECONDS = 60;
+
+/** Reads a `git` share's settings, falling back only for a field main genuinely never sent. */
+function settingsOf(share: WorkspaceShareWire | undefined): {
+  commitOnSave: boolean;
+  pushOnSave: boolean;
+  autoFetchSeconds: number;
+  remote: string;
+  branch: string;
+} {
+  return {
+    commitOnSave: share?.commitOnSave ?? DEFAULT_COMMIT_ON_SAVE,
+    pushOnSave: share?.pushOnSave ?? DEFAULT_PUSH_ON_SAVE,
+    autoFetchSeconds: share?.autoFetchSeconds ?? DEFAULT_AUTO_FETCH_SECONDS,
+    remote: share?.remote ?? '',
+    branch: share?.branch ?? '',
+  };
+}
 
 /**
  * The Sync panel: pull/push/fetch/commit, the unresolved conflicts, recent commits, the share's
@@ -39,6 +64,7 @@ export function SyncPanel() {
   const setOpen = useUiStore((state) => state.setSyncPanelOpen);
   const setConflictResolverOpen = useUiStore((state) => state.setConflictResolverOpen);
 
+  const share = useWorkspaceStore((state) => state.workspace?.share);
   const status = useSyncStore((state) => state.status);
   const conflicts = useSyncStore((state) => state.conflicts);
   const pull = useSyncStore((state) => state.pull);
@@ -49,17 +75,34 @@ export function SyncPanel() {
   const log = useSyncStore((state) => state.log);
   const updateSettings = useSyncStore((state) => state.updateSettings);
   const revealTree = useSyncStore((state) => state.revealTree);
+  // Ticks only while the panel is actually shown — `useNow` still has to be called
+  // unconditionally (the Rules of Hooks), so "off" is expressed as a non-positive interval.
+  const now = useNow(open ? RELATIVE_TIME_REFRESH_MS : 0);
 
   const [busy, setBusy] = useState<'pull' | 'push' | 'fetch' | 'commit' | undefined>(undefined);
   const [logEntries, setLogEntries] = useState<readonly SyncLogEntryWire[]>([]);
   const [commitMessage, setCommitMessage] = useState('');
-  const [commitOnSave, setCommitOnSave] = useState(INITIAL_COMMIT_ON_SAVE);
-  const [pushOnSave, setPushOnSave] = useState(INITIAL_PUSH_ON_SAVE);
-  const [remote, setRemote] = useState(status.remote ?? '');
-  const [branch, setBranch] = useState(status.branch ?? '');
-  const [autoFetchSeconds, setAutoFetchSeconds] = useState(String(INITIAL_AUTO_FETCH_SECONDS));
+  const initial = settingsOf(share);
+  const [commitOnSave, setCommitOnSave] = useState(initial.commitOnSave);
+  const [pushOnSave, setPushOnSave] = useState(initial.pushOnSave);
+  const [remote, setRemote] = useState(initial.remote);
+  const [branch, setBranch] = useState(initial.branch);
+  const [autoFetchSeconds, setAutoFetchSeconds] = useState(String(initial.autoFetchSeconds));
   const [autoFetchError, setAutoFetchError] = useState<string | undefined>(undefined);
   const [stopSharingOpen, setStopSharingOpen] = useState(false);
+
+  // Re-syncs the settings controls whenever a new workspace snapshot arrives (a settings save —
+  // this panel's own or another window's — always broadcasts one). Deliberately does *not*
+  // include `open`: a hardcoded reset on every open/close cycle would throw away a persisted
+  // value in favour of a made-up default, which is exactly last round's bug.
+  useEffect(() => {
+    const next = settingsOf(share);
+    setCommitOnSave(next.commitOnSave);
+    setPushOnSave(next.pushOnSave);
+    setRemote(next.remote);
+    setBranch(next.branch);
+    setAutoFetchSeconds(String(next.autoFetchSeconds));
+  }, [share]);
 
   useEffect(() => {
     if (!open) {
@@ -71,13 +114,9 @@ export function SyncPanel() {
     })();
     setCommitMessage('');
     setAutoFetchError(undefined);
-    setRemote(status.remote ?? '');
-    setBranch(status.branch ?? '');
-    setAutoFetchSeconds(String(INITIAL_AUTO_FETCH_SECONDS));
-    // Deliberately keyed on `open` alone: reloading the log/conflicts and resetting the drafts
-    // on every `sync.statusChanged` would spam main and clobber in-progress edits while the
-    // panel stays open.
-  }, [open]);
+    // Deliberately keyed on `open` alone: reloading the log/conflicts on every
+    // `sync.statusChanged` would spam main while the panel stays open for a while.
+  }, [open, loadConflicts, log]);
 
   const run = (which: 'pull' | 'push' | 'fetch', action: () => Promise<void>): void => {
     setBusy(which);
@@ -87,6 +126,12 @@ export function SyncPanel() {
   };
 
   const submitCommit = (): void => {
+    if (busy !== undefined) {
+      // A pull/push/fetch (or another commit) is already in flight — the message field stays
+      // disabled while that is true, but Enter races the state update in some event orders, so
+      // this is the actual guard against a second, concurrent `commit()`.
+      return;
+    }
     setBusy('commit');
     const trimmed = commitMessage.trim();
     void commit(trimmed.length === 0 ? undefined : trimmed).finally(() => {
@@ -158,6 +203,7 @@ export function SyncPanel() {
                     aria-label="Commit message"
                     placeholder="Commit message (optional)"
                     value={commitMessage}
+                    disabled={busy !== undefined}
                     onChange={(event) => {
                       setCommitMessage(event.target.value);
                     }}
@@ -166,7 +212,7 @@ export function SyncPanel() {
                         submitCommit();
                       }
                     }}
-                    className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-base px-2 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                    className="h-row min-w-0 flex-1 rounded-md border border-hairline-strong bg-surface-base px-2 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
                   />
                   <Button data-testid="sync-commit" disabled={busy !== undefined} onClick={submitCommit}>
                     Commit
@@ -210,7 +256,7 @@ export function SyncPanel() {
                       className="truncate text-sm text-fg-default"
                       title={entry.subject}
                     >
-                      {entry.subject} · {entry.author} · {formatRelative(entry.at, new Date())}
+                      {entry.subject} · {entry.author} · {formatRelative(entry.at, now)}
                     </li>
                   ))}
                 </ul>

@@ -49,4 +49,16 @@ describe('IdentityDialog', () => {
     await userEvent.click(submit);
     await waitFor(() => expect(setIdentity).toHaveBeenCalledWith({ name: 'Ada Lovelace', email: 'ada@example.test' }));
   });
+
+  it('submits on Enter in the name field too, once both fields are non-empty', async () => {
+    const setIdentity = vi.fn().mockResolvedValue({ ok: true, value: { status: undefined } });
+    installWirebenchApi({ sync: { setIdentity } });
+    useSyncStore.setState({ identityNeeded: true });
+    render(<IdentityDialog />);
+
+    await userEvent.type(screen.getByTestId('sync-identity-email'), 'ada@example.test');
+    await userEvent.type(screen.getByTestId('sync-identity-name'), 'Ada Lovelace{Enter}');
+
+    await waitFor(() => expect(setIdentity).toHaveBeenCalledWith({ name: 'Ada Lovelace', email: 'ada@example.test' }));
+  });
 });

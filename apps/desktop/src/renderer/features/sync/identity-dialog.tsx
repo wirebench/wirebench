@@ -59,6 +59,12 @@ export function IdentityDialog() {
             onChange={(event) => {
               setName(event.target.value);
             }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void submit();
+              }
+            }}
             className="mt-1 w-full rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
           />
 

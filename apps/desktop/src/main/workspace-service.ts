@@ -403,6 +403,13 @@ function shareWire(share: WorkspaceShare | undefined): WorkspaceShareWire | unde
     managed: share.path === undefined,
     ...(share.git?.remote !== undefined ? { remote: share.git.remote } : {}),
     ...(share.git?.branch !== undefined ? { branch: share.git.branch } : {}),
+    ...(share.git !== undefined
+      ? {
+          autoFetchSeconds: share.git.autoFetchSeconds,
+          commitOnSave: share.git.commitOnSave,
+          pushOnSave: share.git.pushOnSave,
+        }
+      : {}),
   };
 }
 
@@ -1096,6 +1103,10 @@ export class WorkspaceService implements ProjectRouter {
       await saveShare(open.dir, nextShare, this.fsOption());
       open.share = nextShare;
       open.sync?.applySettings();
+      // The Sync panel reads persisted settings off `workspace.share`, not off the returned
+      // status — without this, a settings change made from one window (or the panel itself,
+      // once re-opened) would never reach `useWorkspaceStore`.
+      this.deps.hooks?.onChanged?.(this.snapshot());
       return this.syncStatus();
     });
   }
