@@ -159,7 +159,14 @@ export async function resolveRefs(
     root,
     rootLocation,
     options,
-    byLocation: new Map([[rootLocation, root]]),
+    byLocation: new Map(
+      typeof (root as Record<string, unknown>)?.$self === 'string'
+        ? [
+            [rootLocation, root],
+            [(root as Record<string, unknown>).$self as string, root],
+          ]
+        : [[rootLocation, root]],
+    ),
     documents: [
       {
         location: rootLocation,

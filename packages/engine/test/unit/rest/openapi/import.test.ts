@@ -160,4 +160,61 @@ describe('importOpenApi', () => {
     expect(request?.query.map((row) => row.name)).toEqual(['pageSize']);
     expect(request?.body.kind).toBe('raw');
   });
+
+  it('imports an OpenAPI 3.2 document with additionalOperations and streaming media types', async () => {
+    const imported = await importOpenApi(
+      { kind: 'file', path: pathToFileURL(`${craftedDir}v32/openapi.yaml`).href },
+      { fetchDocument: fileFetcher() },
+    );
+
+    expect(imported.document.version).toBe('3.2');
+    expect(imported.summary.declaredVersion).toBe('3.2.0');
+    expect(imported.api.name).toBe('OAS 3.2 Features');
+
+    const searchFolder = imported.api.folders.find((folder) => folder.name === 'Search');
+    const queryReq = searchFolder?.requests.find((req) => req.name === 'Search pets via QUERY');
+    expect(queryReq).toBeDefined();
+    expect(queryReq?.method).toBe('QUERY');
+    expect(queryReq?.url).toBe('/search');
+    expect(queryReq?.body).toMatchObject({
+      kind: 'raw',
+      language: 'json',
+    });
+    expect((queryReq?.body as { text: string }).text).toContain('"term": "beagle"');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const streamReq = allRequests.find((req) => req.name === 'Send event stream');
+    expect(streamReq).toBeDefined();
+    expect(streamReq?.method).toBe('POST');
+    expect(streamReq?.url).toBe('/stream');
+  });
+
+  it('imports a document declaring swagger: 3.0.3', async () => {
+    const swaggerDoc = `
+swagger: 3.0.3
+info:
+  title: Swagger 3 Sample
+  version: 1.0.0
+servers:
+  - url: https://swagger3.test
+paths:
+  /items:
+    get:
+      summary: List Items
+      responses:
+        '200':
+          description: OK
+`;
+    const imported = await importOpenApi({ kind: 'text', text: swaggerDoc }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('3.0');
+    expect(imported.summary.declaredVersion).toBe('Swagger 3.0.3');
+    expect(imported.api.name).toBe('Swagger 3 Sample');
+    expect(imported.api.baseUrl).toBe('https://swagger3.test');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const itemsReq = allRequests.find((req) => req.name === 'List Items');
+    expect(itemsReq).toBeDefined();
+    expect(itemsReq?.method).toBe('GET');
+  });
 });

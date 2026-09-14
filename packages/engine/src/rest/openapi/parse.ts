@@ -105,9 +105,18 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
   }
   const swagger = asString(root['swagger']);
   if (swagger !== undefined) {
+    if (swagger.startsWith('3.0')) {
+      return { version: '3.0', declared: `Swagger ${swagger}` };
+    }
+    if (swagger.startsWith('3.1')) {
+      return { version: '3.1', declared: `Swagger ${swagger}` };
+    }
+    if (swagger.startsWith('3.2')) {
+      return { version: '3.2', declared: `Swagger ${swagger}` };
+    }
     throw new OpenApiError(
       'openapi-unsupported-version',
-      `This is a Swagger ${swagger} document. Wirebench imports OpenAPI 3.0 and 3.1; convert it first.`,
+      `This is a Swagger ${swagger} document. Wirebench imports OpenAPI 3.0, 3.1 and 3.2; convert it first.`,
       { details: { declared: swagger } },
     );
   }
@@ -124,9 +133,12 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
   if (declared.startsWith('3.1')) {
     return { version: '3.1', declared };
   }
+  if (declared.startsWith('3.2')) {
+    return { version: '3.2', declared };
+  }
   throw new OpenApiError(
     'openapi-unsupported-version',
-    `OpenAPI ${declared} is not supported. Wirebench imports OpenAPI 3.0 and 3.1.`,
+    `OpenAPI ${declared} is not supported. Wirebench imports OpenAPI 3.0, 3.1 and 3.2.`,
     { details: { declared } },
   );
 }
@@ -260,6 +272,15 @@ function parseOperations(value: unknown, skipped: OpenApiSkipped[]): readonly Op
       }
       operations.push(parseOperation(key.toLowerCase(), path, operation, shared, skipped));
     }
+    if (isRecord(item['additionalOperations'])) {
+      for (const [key, operation] of Object.entries(item['additionalOperations'])) {
+        if (!isRecord(operation)) {
+          skipped.push({ kind: 'operation', where: `${key.toUpperCase()} ${path}`, reason: 'not an object' });
+          continue;
+        }
+        operations.push(parseOperation(key.toLowerCase(), path, operation, shared, skipped));
+      }
+    }
   }
   return operations;
 }
@@ -361,8 +382,14 @@ function parseExamples(value: unknown): Readonly<Record<string, OpenApiExample>>
     if (!isRecord(entry)) {
       continue;
     }
+    const val = entry['value'] !== undefined ? asJson(entry['value']) : asJson(entry['dataValue']);
+    const dataValue = asJson(entry['dataValue']);
     examples[name] = {
-      ...(entry['value'] !== undefined ? { value: asJson(entry['value']) as JsonValue } : {}),
+      ...(val !== undefined ? { value: val } : {}),
+      ...(dataValue !== undefined ? { dataValue } : {}),
+      ...(asString(entry['serializedValue']) !== undefined
+        ? { serializedValue: asString(entry['serializedValue']) as string }
+        : {}),
       ...(asString(entry['summary']) !== undefined ? { summary: asString(entry['summary']) as string } : {}),
       ...(asString(entry['externalValue']) !== undefined
         ? { externalValue: asString(entry['externalValue']) as string }
@@ -389,8 +416,15 @@ function parseRequestBody(value: unknown, where: string, skipped: OpenApiSkipped
     if (!isRecord(entry)) {
       continue;
     }
+    const schema = isRecord(entry['schema'])
+      ? parseSchema(entry['schema'])
+      : isRecord(entry['itemSchema'])
+        ? parseSchema(entry['itemSchema'])
+        : undefined;
+    const itemSchema = isRecord(entry['itemSchema']) ? parseSchema(entry['itemSchema']) : undefined;
     content[mediaType] = {
-      ...(isRecord(entry['schema']) ? { schema: parseSchema(entry['schema']) } : {}),
+      ...(schema !== undefined ? { schema } : {}),
+      ...(itemSchema !== undefined ? { itemSchema } : {}),
       ...(entry['example'] !== undefined ? { example: asJson(entry['example']) as JsonValue } : {}),
       ...(parseExamples(entry['examples']) !== undefined
         ? { examples: parseExamples(entry['examples']) as Readonly<Record<string, OpenApiExample>> }

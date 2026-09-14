@@ -37,9 +37,18 @@ describe('parseDocumentText', () => {
 });
 
 describe('versionOf', () => {
-  it('accepts 3.0.x and 3.1.x, keeping what the document actually said', () => {
+  it('accepts 3.0.x, 3.1.x and 3.2.x, keeping what the document actually said', () => {
     expect(versionOf({ openapi: '3.0.3' })).toEqual({ version: '3.0', declared: '3.0.3' });
     expect(versionOf({ openapi: '3.1.0' })).toEqual({ version: '3.1', declared: '3.1.0' });
+    expect(versionOf({ openapi: '3.2.0' })).toEqual({ version: '3.2', declared: '3.2.0' });
+    expect(versionOf({ openapi: '3.2.1' })).toEqual({ version: '3.2', declared: '3.2.1' });
+  });
+
+  it('accepts documents declaring Swagger 3.0.x, 3.1.x and 3.2.0', () => {
+    expect(versionOf({ swagger: '3.0.0' })).toEqual({ version: '3.0', declared: 'Swagger 3.0.0' });
+    expect(versionOf({ swagger: '3.0.3' })).toEqual({ version: '3.0', declared: 'Swagger 3.0.3' });
+    expect(versionOf({ swagger: '3.1.0' })).toEqual({ version: '3.1', declared: 'Swagger 3.1.0' });
+    expect(versionOf({ swagger: '3.2.0' })).toEqual({ version: '3.2', declared: 'Swagger 3.2.0' });
   });
 
   it('refuses Swagger 2.0 by name, and says what to do about it', () => {
@@ -48,6 +57,7 @@ describe('versionOf', () => {
       versionOf({ swagger: '2.0' });
     } catch (error) {
       expect(error).toMatchObject({ code: 'openapi-unsupported-version' });
+      expect((error as Error).message).toContain('OpenAPI 3.0, 3.1 and 3.2');
     }
   });
 
@@ -250,6 +260,47 @@ describe('parsing the 3.1 fixture', () => {
     expect(webhook?.where).toBe('/webhooks/petCreated');
     // The two extensions: one at the root, one on the operation.
     expect(document.skipped.filter((entry) => entry.kind === 'extension')).toHaveLength(2);
+  });
+});
+
+describe('parsing the 3.2 fixture', () => {
+  const document = crafted('v32');
+
+  it('reads 3.2 document version', () => {
+    expect(document.version).toBe('3.2');
+    expect(document.declaredVersion).toBe('3.2.0');
+  });
+
+  it('reads additionalOperations, importing non-standard methods like QUERY', () => {
+    const queryOp = document.operations.find((op) => op.operationId === 'searchPets');
+    expect(queryOp).toBeDefined();
+    expect(queryOp).toMatchObject({
+      method: 'query',
+      path: '/search',
+      summary: 'Search pets via QUERY',
+      tags: ['Search'],
+    });
+  });
+
+  it('reads dataValue from 3.2 Example Object', () => {
+    const queryOp = document.operations.find((op) => op.operationId === 'searchPets');
+    const examples = queryOp?.requestBody?.content['application/json']?.examples;
+    expect(examples?.['sampleQuery']).toBeDefined();
+    expect(examples?.['sampleQuery']?.dataValue).toEqual({ term: 'beagle' });
+    expect(examples?.['sampleQuery']?.value).toEqual({ term: 'beagle' });
+  });
+
+  it('reads itemSchema on sequential/streaming media types when schema is absent', () => {
+    const streamOp = document.operations.find((op) => op.operationId === 'postStream');
+    const media = streamOp?.requestBody?.content['text/event-stream'];
+    expect(media?.itemSchema).toMatchObject({
+      type: 'object',
+      required: ['message'],
+    });
+    expect(media?.schema).toMatchObject({
+      type: 'object',
+      required: ['message'],
+    });
   });
 });
 

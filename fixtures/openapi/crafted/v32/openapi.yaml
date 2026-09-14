@@ -1,0 +1,40 @@
+openapi: 3.2.0
+$self: https://v32.test/openapi.yaml
+info:
+  title: OAS 3.2 Features
+  version: 1.0.0
+servers:
+  - url: https://v32.test
+tags:
+  - name: Search
+    summary: Search endpoints
+paths:
+  /search:
+    additionalOperations:
+      query:
+        operationId: searchPets
+        summary: Search pets via QUERY
+        tags: [Search]
+        requestBody:
+          content:
+            application/json:
+              examples:
+                sampleQuery:
+                  dataValue:
+                    term: beagle
+        responses: { '200': { description: ok } }
+  /stream:
+    post:
+      operationId: postStream
+      summary: Send event stream
+      requestBody:
+        content:
+          text/event-stream:
+            itemSchema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  example: hello
+        responses: { '200': { description: ok } }
