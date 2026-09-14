@@ -217,6 +217,9 @@ export async function saveAll(page: Page): Promise<void> {
   await page.keyboard.type('Save All');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('command-palette-input')).toHaveCount(0);
-  // The status strip is the one place that reports the write completing, for every open project.
-  await expect(page.getByTestId('status-bar-save')).toContainText('Saved', { timeout: 20_000 });
+  // Wait for nothing to be dirty any more, across every open project — not for the status strip
+  // to say "Saved". That label is `Saved <clock>` and survives until the next write, so after any
+  // earlier save it already matches and this assertion would pass before the Save All had
+  // finished, leaving a caller free to read a half-written project folder.
+  await expect(page.getByTestId('title-bar-dirty')).toHaveCount(0, { timeout: 20_000 });
 }

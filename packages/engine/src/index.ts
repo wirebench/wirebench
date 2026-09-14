@@ -512,7 +512,7 @@ export {
   readAttachment,
 } from './project/attachments-cache.js';
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
-export { nodeFs } from './project/fs.js';
+export { nodeFs, writeFileAtomic } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
 export type {

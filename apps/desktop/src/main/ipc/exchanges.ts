@@ -1,6 +1,5 @@
-import { writeFile } from 'node:fs/promises';
 import { BrowserWindow, dialog } from 'electron';
-import { WirebenchError } from '@wirebench/engine';
+import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { extensionForContentType } from './attachments.js';
 import { redactExchangeSummary } from '../engine-wire.js';
@@ -39,7 +38,9 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
     if (targetPath === undefined) {
       return { cancelled: true as const };
     }
-    await writeFile(targetPath, Buffer.from(bytes));
+    // Atomic (temp file plus rename), as `attachments.saveResponse` and every project write are:
+    // a crash mid-write leaves nothing truncated behind, and a watcher never sees a half file.
+    await writeFileAtomic(nodeFs, targetPath, Buffer.from(bytes));
     return { path: targetPath };
   });
 

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -111,6 +111,18 @@ describe('attachments.* IPC', () => {
     }>;
 
     expect(result).toMatchObject({ ok: true, value: { path: target } });
+    expect(new Uint8Array(await readFile(target))).toEqual(BYTES);
+  });
+
+  it('saveResponse writes atomically and leaves no temp file beside the target', async () => {
+    const target = join(dir, 'out.png');
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
+
+    await invoke('attachments.saveResponse', { sendId: 'send-1', index: 0 });
+
+    // Temp file plus rename: the target is whole the moment it exists — which is what the e2e
+    // suite relies on when it polls for the file and then reads it — and the sibling is gone.
+    expect((await readdir(dir)).filter((name) => name.includes('.tmp-'))).toEqual([]);
     expect(new Uint8Array(await readFile(target))).toEqual(BYTES);
   });
 

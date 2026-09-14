@@ -8,11 +8,11 @@
  * double-click-to-open and an Add-attachments picker.
  */
 
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BrowserWindow, dialog, shell } from 'electron';
 import type { WebContents } from 'electron';
-import { WirebenchError } from '@wirebench/engine';
+import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { MAX_DROPPED_BASE64_LENGTH } from '../../shared/wire-types.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
@@ -140,7 +140,10 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     if (targetPath === undefined) {
       return { cancelled: true };
     }
-    await writeFile(targetPath, Buffer.from(attachment.bytes));
+    // Temp file plus rename, like every other write the app makes: a crash mid-write must not leave
+    // a truncated file at the path the user chose, and nothing polling for the file can see it
+    // before its bytes are all there.
+    await writeFileAtomic(nodeFs, targetPath, Buffer.from(attachment.bytes));
     return { path: targetPath };
   });
 
@@ -155,7 +158,7 @@ export function registerAttachmentChannels(deps: AttachmentChannelDeps): void {
     await mkdir(dir, { recursive: true });
     const name = `${safeSegment(request.sendId)}-${String(request.index)}${extensionForContentType(attachment.contentType)}`;
     const path = join(dir, name);
-    await writeFile(path, Buffer.from(attachment.bytes));
+    await writeFileAtomic(nodeFs, path, Buffer.from(attachment.bytes));
     await openWithShell(path);
     return { path };
   });

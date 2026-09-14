@@ -54,6 +54,21 @@ describe('fs.* IPC', () => {
     expect(await readFile(target, 'utf-8')).toBe('<a/>');
   });
 
+  it('fs.saveText writes atomically: the target appears whole and no temp file is left beside it', async () => {
+    const target = join(dir, 'saved.xml');
+    process.env['WIREBENCH_E2E_SAVE_PATH'] = target;
+
+    await invoke('fs.saveText', { text: '<a/>' });
+
+    // The write goes to a `<name>.tmp-<hex>` sibling that is renamed over the target, so a reader
+    // that sees the target sees all of it; the sibling must be gone once the handler answers.
+    const left = (await import('node:fs/promises').then((m) => m.readdir(dir))).filter((name) =>
+      name.includes('.tmp-'),
+    );
+    expect(left).toEqual([]);
+    expect(await readFile(target, 'utf-8')).toBe('<a/>');
+  });
+
   it('fs.openText reads back the text from the e2e override path', async () => {
     const target = join(dir, 'loaded.xml');
     await import('node:fs/promises').then((m) => m.writeFile(target, '<b/>', 'utf-8'));

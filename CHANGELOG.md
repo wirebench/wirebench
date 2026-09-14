@@ -88,6 +88,10 @@ All notable changes to this project are documented here. The format follows
   on screen.
 - Durations read as `16 ms` rather than `15.645407999999861 ms` in the status bar, the HTTP Log, the
   response header line and History.
+- *Save attachment as…*, *Save response as…*, *Open attachment* and *Save as…* for text now write the
+  way every project file already did: to a temp file renamed into place. A crash mid-write no
+  longer leaves a truncated file at the path you chose, and nothing watching that path can see it
+  before it is whole.
 
 ### Dependencies
 

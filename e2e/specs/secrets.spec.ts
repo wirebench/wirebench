@@ -215,6 +215,8 @@ test.describe('secrets', () => {
     await dialog.getByRole('button', { name: 'Set…' }).click();
     await page.getByLabel('Folder token').fill(TOKEN);
     await dialog.getByRole('button', { name: 'Save' }).click();
+    // Same keychain round trip as below: let the field settle before closing the dialog.
+    await expect(page.getByLabel('Folder token')).toHaveText('••••••••');
     await page.getByTestId('folder-auth-done').click();
 
     // A request: an API key.
@@ -226,6 +228,11 @@ test.describe('secrets', () => {
     await page.getByRole('button', { name: 'Set…' }).click();
     await page.getByLabel('Request value').fill(KEY);
     await page.getByRole('button', { name: 'Save' }).click();
+    // Save is a keychain round trip; the reference is staged only when it comes back. Wait for the
+    // field to show it is set before saving, or `Mod+S` writes the auth *without* its `valueRef`
+    // and the late-staged reference is left unsaved — which is exactly how this test failed under
+    // load, with `name: X-Api-Key` on disk and no `valueRef` beside it.
+    await expect(page.getByLabel('Request value')).toHaveText('••••••••');
     // An edit made in an editor tab is staged until the request itself is saved — the API and the
     // folder were written straight through, this one needs its own Mod+S.
     await saveRequest(page);

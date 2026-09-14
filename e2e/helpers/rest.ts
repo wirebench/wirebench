@@ -109,6 +109,16 @@ export async function openResponseTab(page: Page, tab: string): Promise<void> {
 /** Saves the open request with `Mod+S`. */
 export async function saveRequest(page: Page): Promise<void> {
   await page.keyboard.press(`${MOD}+s`);
+  // `Mod+S` returns the moment the key is dispatched; the commit and the write go over IPC and
+  // land later. The title bar's dirty marker is the one signal that covers the whole chain — it
+  // shows while an edit is staged *and* while the project is dirty after the commit, and clears
+  // only when main reports the save done — so waiting on it means "saved", which is what every
+  // caller reading the project folder on its next line needs. (The status strip's `Saved <clock>`
+  // label is no good here: it persists from whichever save came before, so it matches at once.)
+  //
+  // What this cannot cover is an edit that is not staged *yet* — a SecretField whose Save is
+  // still round-tripping to the keychain. A caller must wait for that field to settle first.
+  await expect(page.getByTestId('title-bar-dirty')).toHaveCount(0, { timeout: 20_000 });
 }
 
 /**
@@ -185,6 +195,9 @@ export async function setApiOAuth2ClientCredentials(
   await page.getByRole('button', { name: 'Set…' }).click();
   await page.getByLabel('API client secret').fill(options.clientSecret);
   await page.getByRole('button', { name: 'Save' }).click();
+  // The reference reaches the model only when the keychain round trip returns; the field shows
+  // the masked value at that point and not before.
+  await expect(page.getByLabel('API client secret')).toHaveText('••••••••');
   await expect(page.getByTestId('oauth2-status')).toBeVisible({ timeout: 20_000 });
 }
 

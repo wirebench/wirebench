@@ -38,9 +38,21 @@ async function envelopeText(page: Page): Promise<string> {
   return lines.join('').replace(/\s| /g, '');
 }
 
-/** Whether any file under `dir` contains `needle`. */
+/**
+ * Whether any file under `dir` contains `needle`.
+ *
+ * A `<name>.tmp-<hex>` sibling is skipped: that is the temp file every atomic write in the app
+ * (project, workspace, and the unsaved store's own records) fills before renaming it over the
+ * target, and its bytes are not "on disk" until that rename. Reading it as if they were is how
+ * the crash test below used to kill the app between the write and the rename — the poll had seen
+ * the marker in the temp file, the real record never got it, and the relaunch had nothing to
+ * restore.
+ */
 function anyFileContains(dir: string, needle: string): boolean {
   for (const name of readdirSync(dir)) {
+    if (name.includes('.tmp-')) {
+      continue;
+    }
     const path = join(dir, name);
     if (statSync(path).isDirectory() ? anyFileContains(path, needle) : readFileSync(path, 'utf8').includes(needle)) {
       return true;
