@@ -807,13 +807,19 @@ describeGit('WorkspaceService — sync settings and status', () => {
     const { dir } = await seedLocal(service, root);
     await service.share({ branch: 'main' });
     const before = await loadShare(dir);
-    const statusBefore = service.sync()?.status();
+    // `SyncService.status()` only reflects the cached result of a `probe()`/`fetch()` — never
+    // `open.share` or `applySettings()` directly — so it cannot tell an in-memory-only mutation
+    // apart from a fully persisted one. `snapshot().share`, by contrast, is built straight from
+    // `open.share` (see `shareWire` in `workspace-service.ts`), so it is what actually observes
+    // whether the in-memory settings were mutated before or after the write settled.
+    const branchBefore = service.snapshot()?.share?.branch;
+    expect(branchBefore).toBe('main');
     armed = true;
 
-    await expect(service.updateSyncSettings({ remote: remote.url })).rejects.toThrow('EIO');
+    await expect(service.updateSyncSettings({ branch: 'other', autoFetchSeconds: 0 })).rejects.toThrow('EIO');
 
     expect(await loadShare(dir)).toEqual(before);
-    expect(service.sync()?.status()).toEqual(statusBefore);
+    expect(service.snapshot()?.share?.branch).toBe(branchBefore);
   });
 
   it('refuses settings on a folder share with sync-not-supported', async () => {

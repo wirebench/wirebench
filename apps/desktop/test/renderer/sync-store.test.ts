@@ -247,4 +247,34 @@ describe('useSyncStore', () => {
     expect(status).toHaveBeenCalled();
     unsubscribe();
   });
+
+  it('loads the real status on mount for a shared workspace already open, with no event fired', async () => {
+    // A renderer reload (or a window reopened from the dock) with a shared workspace already
+    // open in main: there is no `workspace.changed` for this mount to react to — the initial
+    // `sync.status` pull in `subscribeToSync` itself is what must load the real status.
+    openWorkspace('w1');
+    const diverged = {
+      kind: 'git' as const,
+      gitAvailable: true,
+      state: 'diverged' as const,
+      ahead: 1,
+      behind: 2,
+      uncommitted: 0,
+      remote: 'https://example.test/repo.git',
+      branch: 'main',
+    };
+    const status = vi.fn().mockResolvedValue({ ok: true, value: diverged });
+    installWirebenchApi({
+      sync: { status },
+      on: vi.fn().mockReturnValue(() => undefined),
+    });
+
+    const unsubscribe = subscribeToSync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(status).toHaveBeenCalledWith(undefined);
+    expect(useSyncStore.getState().status).toEqual(diverged);
+    unsubscribe();
+  });
 });
