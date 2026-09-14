@@ -180,26 +180,24 @@ describe('GitBackend (mocked runner)', () => {
     await expect(backend.log(5)).resolves.toEqual([]);
   });
 
-  it('parses identity from `git var GIT_COMMITTER_IDENT`, and reports undefined without one', async () => {
-    const runnerWithIdentity = mockRunner((args) => {
-      if (args[0] === 'var') {
-        return { stdout: 'Alice <alice@example.com> 1700000000 +0000\n' };
-      }
-      throw new Error(`unexpected args ${JSON.stringify(args)}`);
-    });
-    const cliWith = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runnerWithIdentity });
-    const backendWith = new GitBackend({ git: cliWith, tree, settings });
-    await expect(backendWith.identity()).resolves.toEqual({ name: 'Alice', email: 'alice@example.com' });
+  it('reads identity from `git config --get user.name`/`user.email`, and reports undefined when either is unset', async () => {
+    const answers = (values: Record<string, string | undefined>): Runner =>
+      mockRunner((args) => {
+        if (args[0] === 'config' && args[1] === '--get') {
+          const value = values[args[2] ?? ''];
+          return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
+        }
+        throw new Error(`unexpected args ${JSON.stringify(args)}`);
+      });
+    const backendFor = (runner: Runner): GitBackend =>
+      new GitBackend({ git: new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner }), tree, settings });
 
-    const runnerWithout = mockRunner((args) => {
-      if (args[0] === 'var') {
-        return { stdout: '', stderr: 'fatal: empty ident name (for <user@host>) not allowed', exitCode: 128 };
-      }
-      throw new Error(`unexpected args ${JSON.stringify(args)}`);
-    });
-    const cliWithout = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runnerWithout });
-    const backendWithout = new GitBackend({ git: cliWithout, tree, settings });
-    await expect(backendWithout.identity()).resolves.toBeUndefined();
+    await expect(
+      backendFor(answers({ 'user.name': 'Alice', 'user.email': 'alice@example.com' })).identity(),
+    ).resolves.toEqual({ name: 'Alice', email: 'alice@example.com' });
+    await expect(backendFor(answers({ 'user.name': 'Alice' })).identity()).resolves.toBeUndefined();
+    await expect(backendFor(answers({ 'user.email': 'alice@example.com' })).identity()).resolves.toBeUndefined();
+    await expect(backendFor(answers({ 'user.name': '  ', 'user.email': 'alice@example.com' })).identity()).resolves.toBeUndefined();
   });
 
   it('merge() is a no-op when origin/<branch> does not resolve', async () => {
@@ -254,7 +252,7 @@ describe('GitBackend (mocked runner)', () => {
       if (args[0] === 'config' && args.includes('core.sshCommand')) {
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
       }
-      if (args[0] === 'var') {
+      if (args[0] === 'config' && args.includes('user.name')) {
         const error = new Error('timed out') as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
         error.killed = true;
         throw error;
@@ -341,6 +339,23 @@ describeGit('GitBackend (real git)', () => {
 
   afterEach(async () => {
     await removeTempDir(root);
+  });
+
+  it('reports no identity when user.name/user.email are unset, even where git could guess one', async () => {
+    root = await mkTempDir();
+    const tree = join(root, 'a');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    // Hermetic: an empty global config, no system config, and no `user.useConfigOnly`, so git
+    // itself would fall back to a guessed `user@host` identity.
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+    await GitBackend.init(git, tree, 'main');
+    const backend = new GitBackend({ git, tree, settings });
+
+    await expect(backend.identity()).resolves.toBeUndefined();
+    await backend.setIdentity('Alice', 'alice@example.com');
+    await expect(backend.identity()).resolves.toEqual({ name: 'Alice', email: 'alice@example.com' });
   });
 
   it('writes .gitattributes on a real init', async () => {

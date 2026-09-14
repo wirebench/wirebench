@@ -488,16 +488,28 @@ export class GitBackend implements SyncBackend {
     return entries.map((entry) => ({ path: entry.path, status: entry.status }));
   }
 
+  /**
+   * The configured commit identity, or `undefined` unless both `user.name` and `user.email` are
+   * set (repo-local config counts: the tree is the cwd). Deliberately not `git var
+   * GIT_COMMITTER_IDENT`, which succeeds with an identity guessed from the account and host.
+   */
   async identity(): Promise<{ name: string; email: string } | undefined> {
+    const name = await this.configValue('user.name');
+    if (name === undefined) {
+      return undefined;
+    }
+    const email = await this.configValue('user.email');
+    return email === undefined ? undefined : { name, email };
+  }
+
+  /** `git config --get <key>`, trimmed; `undefined` when unset (exit 1) or blank. */
+  private async configValue(key: string): Promise<string | undefined> {
     try {
-      const { stdout } = await this.git.run(this.tree, ['var', 'GIT_COMMITTER_IDENT']);
-      const match = /^(.*) <([^>]*)> \d+ [+-]\d{4}$/.exec(stdout.trim());
-      if (match === null) {
-        return undefined;
-      }
-      return { name: match[1] ?? '', email: match[2] ?? '' };
+      const { stdout } = await this.git.run(this.tree, ['config', '--get', key]);
+      const value = stdout.trim();
+      return value.length > 0 ? value : undefined;
     } catch (error) {
-      if (isExpectedGitFailure(error, 128, /empty ident|identity unknown/i)) {
+      if (isExpectedGitFailure(error, 1)) {
         return undefined;
       }
       throw error;
