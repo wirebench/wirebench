@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
@@ -7,8 +8,9 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { InterfaceWire, WorkspaceProjectWire } from '../../src/shared/wire-types.js';
 import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
+import type { InterfaceWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjectWire {
@@ -24,8 +26,8 @@ function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjec
 }
 
 /** Puts `projects` in the open workspace, which is where the tree's roots come from. */
-function openWorkspace(projects: readonly WorkspaceProjectWire[]): void {
-  useWorkspaceStore.setState({ workspace: workspaceWire({ projects }) });
+function openWorkspace(projects: readonly WorkspaceProjectWire[], share?: NonNullable<WorkspaceWire['share']>): void {
+  useWorkspaceStore.setState({ workspace: workspaceWire(share === undefined ? { projects } : { projects, share }) });
 }
 
 const summary: InterfaceWire = {
@@ -77,6 +79,7 @@ class ManualResizeObserver {
 
 describe('ExplorerView', () => {
   beforeEach(() => {
+    installWirebenchApi();
     useProjectStore.setState({ projects: {}, interfaces: {}, requests: {}, order: [], projectOf: {} });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
     useUiStore.setState({ selection: undefined, workspaces: {} });
@@ -332,6 +335,42 @@ describe('ExplorerView', () => {
       </TooltipPrimitive.Provider>,
     );
     expect(screen.getByText('Operations')).toBeTruthy();
+  });
+
+  describe('Link Project Folder…', () => {
+    it('is enabled in a local workspace, and links a project folder when clicked', async () => {
+      const linkProject = vi
+        .fn()
+        .mockResolvedValue({ ok: true, value: { workspace: workspaceWire({ projects: [wireProject()] }) } });
+      installWirebenchApi({ workspace: { linkProject } });
+      render(
+        <TooltipPrimitive.Provider>
+          <ExplorerView />
+        </TooltipPrimitive.Provider>,
+      );
+
+      const button = screen.getByTestId('explorer-link-project');
+      expect(button.hasAttribute('disabled')).toBe(false);
+
+      await userEvent.click(button);
+
+      await waitFor(() => expect(linkProject).toHaveBeenCalledTimes(1));
+    });
+
+    it('is disabled in a shared workspace, with the explanation as its accessible name', () => {
+      openWorkspace([wireProject()], { kind: 'git', managed: true });
+      render(
+        <TooltipPrimitive.Provider>
+          <ExplorerView />
+        </TooltipPrimitive.Provider>,
+      );
+
+      const button = screen.getByTestId('explorer-link-project');
+      expect(button.hasAttribute('disabled')).toBe(true);
+      expect(button.getAttribute('aria-label')).toBe(
+        'Shared workspaces hold their projects inside the workspace; use Move to workspace…',
+      );
+    });
   });
 });
 

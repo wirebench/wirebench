@@ -345,9 +345,6 @@ export function ExplorerView() {
               ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…'
               : 'Link Project Folder…'
           }
-          title={
-            shared ? 'Shared workspaces hold their projects inside the workspace; use Move to workspace…' : undefined
-          }
           disabled={shared}
           onClick={() => {
             void workspaceActions.linkProject();
