@@ -1,6 +1,6 @@
 # Spec: Wirebench shared workspaces (git-native collaboration)
 
-- Status: approved 2026-09-13 with the §16 defaults; to be implemented by
+- Status: implemented, with the §16 defaults, by
   `docs/plans/2026-09-13-wirebench-shared-workspaces-plan.md`
 - Date: 2026-09-13
 - Builds on: `docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md` (§3 stack, §8 commands, §10

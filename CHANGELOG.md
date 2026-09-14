@@ -43,6 +43,19 @@ still read and rewritten in place.
   **JSONPath** over a JSON body (the parsed document is the context item for the first two; `$` for
   the third). A JSONPath result shows the path each match was found at. An XML response is
   unchanged — XPath and XQuery, with the namespace table.
+- **Shared workspaces.** A workspace can now be shared with a team: *Share this workspace…* turns
+  it into a git repository (remote optional, branch default `main`) or moves it into a synced
+  folder; *Join shared workspace…* clones one from a URL or opens an existing clone or synced
+  folder. Every save becomes a commit with a generated message; a status-bar Sync badge and panel
+  pull, push, fetch and show recent commits; a conflict resolver lists each conflicted entity with
+  *Keep mine* / *Keep theirs* / *Open file*. Environments now travel with the workspace like
+  everything else. See [`docs/collaborate.md`](docs/collaborate.md) and
+  [ADR-0007](docs/adr/0007-shared-workspaces-are-git-repositories.md).
+- **Not on this machine.** In a shared workspace, a request field whose secret ref has no value on
+  this machine shows *Not on this machine* with an *Enter…* button; the value you type is stored
+  locally under the same ref, so the shared files and your teammates' files never change.
+- **Git preferences.** Preferences → Git shows the git executable Wirebench will run and its
+  version, with *Locate…* to pick a specific binary and *Clear* to return to automatic discovery.
 - **Reorder editor tabs.** Drag a tab to a new place in the strip, or move the active tab with
   *Move Tab Left* / *Move Tab Right* (`Mod+Shift+PageUp` / `Mod+Shift+PageDown`, or
   `Mod+Shift+←` / `→` on a focused tab). The order is kept with the workspace's tabs.
@@ -63,6 +76,12 @@ still read and rewritten in place.
   open it** — it sees the newer version and refuses with "created by a newer version of Wirebench" —
   and that applies whether or not the project actually holds an API. Keep a copy if you need to go
   back.
+- **Workspace format `3`.** `activeEnvironmentId` moves out of `workspace.yaml` into a
+  machine-local `local.yaml` (it was never meant to be shared between members), and `writtenBy` is
+  dropped from the manifest entirely. A version-2 workspace still opens and lifts its active
+  environment on first open; a version-3 workspace is refused by a 1.1.0 build with the existing
+  "created by a newer version of Wirebench" error. A shared workspace also gains a machine-local
+  `share.yaml` (remote, branch and sync settings) alongside it, never written into the shared tree.
 - **Unsaved changes are never written behind your back, and never lost.** Quitting, or
   switching to another workspace, no longer saves your projects. Everything unsaved — request
   edits in tabs as well as properties, auth, endpoints, settings and renames — is kept with the
@@ -104,6 +123,20 @@ still read and rewritten in place.
 - Added `jsonpath-plus` (MIT), for the Query view's JSONPath language — with `jsep` and two of its
   plugins (all MIT) beneath it. It runs only in the main process; the renderer bundles neither it nor
   `fontoxpath`. Filter expressions are evaluated by `jsep`, never by the platform's `eval`.
+
+### Known limitations
+
+- **Line-level merges.** Two edits to the same request's envelope (or any other single file) can
+  still conflict at the line level even though one file is one entity; the conflict resolver
+  covers this today, a YAML-aware merge driver is a listed follow-up.
+- **No shared secret values.** Secret refs travel with a shared workspace; the values behind them
+  stay per member. Shared, encrypted secret values are a follow-up for Wirebench Server.
+- **Not every missing secret raises the named error.** A missing endpoint password or WSDL-import
+  password fails at send time with a message naming the field; a missing keystore passphrase,
+  proxy password, or WS-Security secret fails silently instead — check the field for *Not on this
+  machine*.
+- **Synced folders have no merge.** A `folder` share has no Sync control; two members saving the
+  same file race on whatever the folder's own sync tool does about it, usually last-write-wins.
 
 ## [1.1.0] - 2026-09-12
 
