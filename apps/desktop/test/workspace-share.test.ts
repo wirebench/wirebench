@@ -552,6 +552,47 @@ describeGit('WorkspaceService — join', () => {
     });
   });
 
+  it('refuses an existing clone whose .git/config sets a refused key, before running anything else in it', async () => {
+    await sharedOnA();
+    const clone = join(base, 'fsmonitor-clone');
+    await git.run(undefined, ['clone', '--', remote.url, clone]);
+    await git.run(clone, ['config', 'core.fsmonitor', 'touch pwned']);
+    const calls: string[][] = [];
+    const recording = {
+      version: git.version,
+      run: (cwd: string | undefined, args: readonly string[], options?: { timeoutMs?: number }) => {
+        calls.push([...args]);
+        return git.run(cwd, args, options);
+      },
+    } as unknown as GitCli;
+    const { service } = await newService('b', { dialogs: dialogsPicking(clone), git: () => Promise.resolve(recording) });
+
+    const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'git-config-refused', details: { keys: ['core.fsmonitor'] } });
+    expect(calls).toEqual([['config', '--local', '--list', '--name-only']]);
+    expect(existsSync(join(clone, 'pwned'))).toBe(false);
+    expect(await service.list()).toEqual([]);
+  });
+
+  it('checks the local config again at every open, reporting git-config-refused in the sync status', async () => {
+    const { id } = await sharedOnA();
+    const clone = join(base, 'later-hostile');
+    await git.run(undefined, ['clone', '--', remote.url, clone]);
+    const { service } = await newService('b', { dialogs: dialogsPicking(clone) });
+    expect((await service.joinFromFolder(sender))?.id).toBe(id);
+    await service.close();
+
+    await git.run(clone, ['config', 'core.fsmonitor', 'touch pwned']);
+    await service.open(id);
+
+    await vi.waitFor(
+      () => expect(service.sync()?.status()).toMatchObject({ state: 'error', error: { code: 'git-config-refused' } }),
+      WAIT,
+    );
+    expect(existsSync(join(clone, 'pwned'))).toBe(false);
+  });
+
   it('refuses a clone on a detached HEAD', async () => {
     await sharedOnA();
     const clone = join(base, 'detached');

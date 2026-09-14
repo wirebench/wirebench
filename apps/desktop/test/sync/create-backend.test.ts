@@ -6,8 +6,23 @@ import { createSyncBackend } from '../../src/main/sync/create-backend.js';
 import { FolderBackend } from '../../src/main/sync/folder-backend.js';
 import { GitBackend } from '../../src/main/sync/git-backend.js';
 import { GitCli } from '../../src/main/sync/git-cli.js';
+import type { Runner } from '../../src/main/sync/git-cli.js';
 
-const git = new GitCli({ path: '/usr/bin/git', version: '2.45.0' }, { hooksDir: '/nonexistent-hooks' });
+/** A `GitCli` whose `config --local --list --name-only` answers `names`; every other call is recorded and succeeds. */
+function gitWithLocalConfig(names: string, seen: string[][] = []): GitCli {
+  const run: Runner = (_file, fullArgs) => {
+    if (fullArgs.includes('core.sshCommand')) {
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
+    }
+    const args = fullArgs.slice(6);
+    seen.push([...args]);
+    const listing = args[0] === 'config' && args.includes('--local');
+    return Promise.resolve({ stdout: listing ? names : '', stderr: '', exitCode: 0 });
+  };
+  return new GitCli({ path: '/usr/bin/git', version: '2.45.0' }, { hooksDir: '/nonexistent-hooks', run });
+}
+
+const git = gitWithLocalConfig('core.bare\ncore.filemode\nremote.origin.url\n');
 const settings = (): typeof DEFAULT_GIT_SHARE_SETTINGS => DEFAULT_GIT_SHARE_SETTINGS;
 const gitShare: WorkspaceShare = { version: 1, kind: 'git', git: DEFAULT_GIT_SHARE_SETTINGS };
 const folderShare: WorkspaceShare = { version: 1, kind: 'folder', path: '/shared/team' };
@@ -59,6 +74,34 @@ describe('createSyncBackend', () => {
       exists: () => true,
     });
     expect(cloneWithoutGit).toBeInstanceOf(FolderBackend);
+  });
+
+  it('a git share whose .git/config sets a refused key reports git-config-refused, running nothing else', async () => {
+    const seen: string[][] = [];
+    const hostile = gitWithLocalConfig('core.bare\ncore.fsmonitor\n', seen);
+    const backend = await createSyncBackend({ share: gitShare, tree: '/t', git: () => Promise.resolve(hostile), settings });
+
+    expect(backend).toBeInstanceOf(FolderBackend);
+    await expect(backend.probe()).resolves.toMatchObject({
+      kind: 'git',
+      state: 'error',
+      error: { code: 'git-config-refused' },
+    });
+    expect(seen).toEqual([['config', '--local', '--list', '--name-only']]);
+  });
+
+  it('a folder share holding a repository with a refused key is not upgraded to git', async () => {
+    const hostile = gitWithLocalConfig('filter.x.smudge\n');
+    const backend = await createSyncBackend({
+      share: folderShare,
+      tree: '/t',
+      git: () => Promise.resolve(hostile),
+      settings,
+      exists: (path) => path.endsWith('.git'),
+    });
+
+    expect(backend).toBeInstanceOf(FolderBackend);
+    await expect(backend.probe()).resolves.toMatchObject({ state: 'error', error: { code: 'git-config-refused' } });
   });
 
   it('a server share is a FolderBackend placeholder reporting kind server', async () => {

@@ -537,3 +537,65 @@ export class GitCli {
     return { stdout: result.stdout, stderr: result.stderr };
   }
 }
+
+/**
+ * Local config keys that make git run a program, load more config, or rewrite file content, as
+ * lower-case patterns (`*` is one subsection, which may itself contain dots). A repository the app
+ * did not create itself can carry any of them in `.git/config`; the `-c` overrides `run` adds do
+ * not cover them, so such a repository is refused before git runs in it.
+ */
+const REFUSED_LOCAL_CONFIG_PATTERNS: readonly RegExp[] = [
+  'core.fsmonitor',
+  'core.sshcommand',
+  'core.askpass',
+  'core.editor',
+  'core.pager',
+  'core.hookspath',
+  'core.gitproxy',
+  'sequence.editor',
+  'gpg.program',
+  'gpg.*.program',
+  'credential.helper',
+  'credential.*.helper',
+  'filter.*.clean',
+  'filter.*.smudge',
+  'filter.*.process',
+  'diff.*.textconv',
+  'diff.*.command',
+  'diff.external',
+  'merge.*.driver',
+  'remote.*.uploadpack',
+  'remote.*.receivepack',
+  'remote.*.vcs',
+  'uploadpack.packobjectshook',
+  'include.path',
+  'includeif.*.path',
+].map((pattern) => new RegExp(`^${pattern.replaceAll('.', '\\.').replaceAll('*', '.+')}$`));
+
+/** The keys of `names` (git config key names) that {@link assertSafeLocalConfig} refuses, case-insensitively. */
+export function refusedLocalConfigKeys(names: readonly string[]): string[] {
+  return names.filter((name) => {
+    const key = name.trim().toLowerCase();
+    return REFUSED_LOCAL_CONFIG_PATTERNS.some((pattern) => pattern.test(key));
+  });
+}
+
+/**
+ * Refuses a repository whose `.git/config` sets a key from the refused list (see
+ * {@link refusedLocalConfigKeys}) with `git-config-refused`, `details.keys` naming them. Run
+ * before any other git command in a repository the app did not `clone` or `init` itself.
+ */
+export async function assertSafeLocalConfig(git: GitCli, cwd: string): Promise<void> {
+  const { stdout } = await git.run(cwd, ['config', '--local', '--list', '--name-only']);
+  const names = stdout.split('\n').filter((line) => line.trim().length > 0);
+  const keys = [...new Set(refusedLocalConfigKeys(names))];
+  if (keys.length > 0) {
+    throw new WirebenchError(
+      'git-config-refused',
+      `This repository's .git/config sets ${keys.join(', ')}, which could run programs on this machine. Remove ${
+        keys.length === 1 ? 'it' : 'them'
+      } from the repository's .git/config, or move ${keys.length === 1 ? 'it' : 'them'} to your global git config.`,
+      { details: { keys } },
+    );
+  }
+}

@@ -48,7 +48,7 @@ import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 import { GIT_NOT_FOUND_ERROR } from './sync/create-backend.js';
 import { GitBackend } from './sync/git-backend.js';
-import { assertBranchName, assertRemoteUrl, type GitCli } from './sync/git-cli.js';
+import { assertBranchName, assertRemoteUrl, assertSafeLocalConfig, type GitCli } from './sync/git-cli.js';
 import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
 import type { WorkspaceWire } from '../shared/wire-types.js';
 
@@ -510,6 +510,8 @@ export async function joinFromFolder(
   let share: WorkspaceShare;
   if (existsSync(join(path, '.git'))) {
     const git = await requireGit(deps);
+    // A repository the app did not create: its .git/config is checked before git runs in it.
+    await assertSafeLocalConfig(git, path);
     const branch = await readHeadBranch(git, path);
     const origin = await readOrigin(git, path);
     share = {

@@ -13,10 +13,12 @@ import { WirebenchError } from '@wirebench/engine';
 import {
   assertBranchName,
   assertRemoteUrl,
+  assertSafeLocalConfig,
   findGit,
   GIT_SUBCOMMANDS,
   GitCli,
   parseGitVersion,
+  refusedLocalConfigKeys,
 } from '../src/main/sync/git-cli.js';
 import type { Runner } from '../src/main/sync/git-cli.js';
 
@@ -522,6 +524,101 @@ describe('assertRemoteUrl', () => {
     } catch (error) {
       expect((error as WirebenchError).details).toEqual({ scheme: 'scp-like' });
     }
+  });
+});
+
+describe('refusedLocalConfigKeys', () => {
+  it.each([
+    'core.fsmonitor',
+    'core.sshCommand',
+    'CORE.ASKPASS',
+    'core.editor',
+    'core.pager',
+    'core.hooksPath',
+    'core.gitProxy',
+    'sequence.editor',
+    'gpg.program',
+    'gpg.ssh.program',
+    'credential.helper',
+    'credential.https://example.test.helper',
+    'filter.lfs.clean',
+    'filter.lfs.smudge',
+    'filter.lfs.process',
+    'diff.pdf.textconv',
+    'diff.tool.command',
+    'diff.external',
+    'merge.ours.driver',
+    'remote.origin.uploadpack',
+    'remote.origin.receivepack',
+    'remote.origin.vcs',
+    'uploadpack.packObjectsHook',
+    'include.path',
+    'includeIf.gitdir:~/work/.path',
+  ])('refuses %s', (key) => {
+    expect(refusedLocalConfigKeys([key])).toEqual([key]);
+  });
+
+  it.each([
+    'core.bare',
+    'core.repositoryformatversion',
+    'core.filemode',
+    'core.ignorecase',
+    'user.name',
+    'user.email',
+    'remote.origin.url',
+    'remote.origin.fetch',
+    'branch.main.remote',
+    'branch.main.merge',
+    'filter.lfs.required',
+    'diff.pdf.binary',
+    'merge.ours.name',
+    'gpg.format',
+    'credential.username',
+  ])('accepts %s', (key) => {
+    expect(refusedLocalConfigKeys([key])).toEqual([]);
+  });
+});
+
+describe('assertSafeLocalConfig', () => {
+  let hooksDir: string;
+  beforeEach(() => {
+    hooksDir = mkdtempSync(join(tmpdir(), 'wirebench-git-cli-config-'));
+  });
+  afterEach(() => {
+    rmSync(hooksDir, { recursive: true, force: true });
+  });
+
+  function cliListing(stdout: string, seen: string[][]): GitCli {
+    const runner: Runner = (_file, fullArgs) => {
+      // `run()`'s own `core.sshCommand` lookup carries no `-c` prefix: answer it "unset", unrecorded.
+      if (fullArgs.includes('core.sshCommand')) {
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
+      }
+      const args = fullArgs.slice(6);
+      seen.push([...args]);
+      return Promise.resolve({ stdout, stderr: '', exitCode: 0 });
+    };
+    return new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir, run: runner });
+  }
+
+  it('lists local config names only, and refuses with git-config-refused naming the keys', async () => {
+    const seen: string[][] = [];
+    const cli = cliListing('core.bare\ncore.fsmonitor\nremote.origin.url\nfilter.x.clean\n', seen);
+
+    const error = await assertSafeLocalConfig(cli, '/repo').catch((caught: unknown) => caught);
+
+    expect(seen).toEqual([['config', '--local', '--list', '--name-only']]);
+    expect(error).toBeInstanceOf(WirebenchError);
+    expect(error).toMatchObject({
+      code: 'git-config-refused',
+      details: { keys: ['core.fsmonitor', 'filter.x.clean'] },
+    });
+    expect((error as WirebenchError).message).toMatch(/\.git\/config/);
+  });
+
+  it('accepts a repository whose local config names nothing refused', async () => {
+    const cli = cliListing('core.bare\nremote.origin.url\nbranch.main.merge\n', []);
+    await expect(assertSafeLocalConfig(cli, '/repo')).resolves.toBeUndefined();
   });
 });
 
