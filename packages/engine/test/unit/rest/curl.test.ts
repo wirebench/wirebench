@@ -308,3 +308,23 @@ describe('fromRestCurl', () => {
     expect(parsed.request.body).toEqual({ kind: 'raw', language: 'json', text: '{"name":"Fido"}' });
   });
 });
+
+describe('heredoc scan', () => {
+  it('is linear, where the regex it replaces backtracked the body against the delimiter', () => {
+    const time = (n: number): number => {
+      // Many `<<` openers and no closing line: the old pattern retried the lazy body for each one.
+      const input = "curl https://api.test/p --data-binary @- <<'EOF'\n" + '<<a\n'.repeat(n);
+      const started = performance.now();
+      fromRestCurl(input, { baseUrl: 'https://api.test' });
+      return performance.now() - started;
+    };
+    time(10_000);
+    expect(time(100_000)).toBeLessThan(400);
+  });
+
+  it('reads a CRLF heredoc, and a heredoc whose delimiter is unquoted', () => {
+    const crlf = ['curl https://api.test/p --data-binary @- <<EOF', '{', '  "a": 1', '}', 'EOF'].join('\r\n');
+    const result = fromRestCurl(crlf, { baseUrl: 'https://api.test' });
+    expect(result.request.body).toMatchObject({ kind: 'raw', text: '{\r\n  "a": 1\r\n}' });
+  });
+});

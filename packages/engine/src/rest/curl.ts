@@ -421,19 +421,82 @@ function paramRows(path: string): KeyValueEntry[] {
  * Shared shape with the SOAP parser in `http/curl.ts`, but its own implementation: that one folds a
  * heredoc into `envelopeXml`, and the two would drift into one function with a mode flag.
  */
+/** A body found in `text` by {@link findHeredoc} or {@link findHereString}: what to keep, and where it sat. */
+interface EmbeddedBody {
+  readonly body: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Locates a POSIX heredoc — `<<EOF` or `<<'EOF'`, a newline, the body, a newline and `EOF` — by
+ * scanning rather than by regex. `/<<\s*'?(\w+)'?\r?\n([\s\S]*?)\r?\n\1/` was O(n²): the lazy body
+ * backtracks against the delimiter for every candidate `<<`, and a pasted command can be anything.
+ * The body is everything between the opening line and the first line that is exactly the delimiter.
+ */
+function findHeredoc(text: string): EmbeddedBody | undefined {
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('<<', from);
+    if (open === -1) {
+      return undefined;
+    }
+    let cursor = open + 2;
+    while (cursor < text.length && (text[cursor] === ' ' || text[cursor] === '\t')) {
+      cursor += 1;
+    }
+    const quoted = text[cursor] === "'";
+    if (quoted) {
+      cursor += 1;
+    }
+    const wordStart = cursor;
+    while (cursor < text.length && /\w/.test(text[cursor] as string)) {
+      cursor += 1;
+    }
+    const delimiter = text.slice(wordStart, cursor);
+    if (quoted && text[cursor] === "'") {
+      cursor += 1;
+    }
+    const lineEnd = text.startsWith('\r\n', cursor) ? cursor + 2 : text[cursor] === '\n' ? cursor + 1 : -1;
+    if (delimiter === '' || lineEnd === -1) {
+      from = open + 2;
+      continue;
+    }
+    const closeAt = text.indexOf(`\n${delimiter}`, lineEnd);
+    if (closeAt === -1) {
+      return undefined;
+    }
+    const bodyEnd = text[closeAt - 1] === '\r' ? closeAt - 1 : closeAt;
+    return { body: text.slice(lineEnd, bodyEnd), start: open, end: closeAt + 1 + delimiter.length };
+  }
+}
+
+/** Locates a PowerShell here-string — `@'`, a newline, the body, a newline and `'@` — by scanning. */
+function findHereString(text: string): EmbeddedBody | undefined {
+  const open = text.indexOf("@'");
+  if (open === -1) {
+    return undefined;
+  }
+  const afterOpen = open + 2;
+  const lineEnd = text.startsWith('\r\n', afterOpen) ? afterOpen + 2 : text[afterOpen] === '\n' ? afterOpen + 1 : -1;
+  if (lineEnd === -1) {
+    return undefined;
+  }
+  const closeAt = text.indexOf("\n'@", lineEnd);
+  if (closeAt === -1) {
+    return undefined;
+  }
+  const bodyEnd = text[closeAt - 1] === '\r' ? closeAt - 1 : closeAt;
+  return { body: text.slice(lineEnd, bodyEnd), start: open, end: closeAt + 3 };
+}
+
 function tokenizeCommand(text: string): { readonly tokens: readonly string[]; readonly heredoc: string | undefined } {
   let heredoc: string | undefined;
   let remainder = text;
-  const heredocMatch = /<<\s*'?(\w+)'?\r?\n([\s\S]*?)\r?\n\1/.exec(text);
-  if (heredocMatch !== null) {
-    heredoc = heredocMatch[2];
-    remainder = text.slice(0, heredocMatch.index) + text.slice(heredocMatch.index + heredocMatch[0].length);
-  } else {
-    const hereString = /@'\r?\n([\s\S]*?)\r?\n'@/.exec(text);
-    if (hereString !== null) {
-      heredoc = hereString[1];
-      remainder = text.slice(0, hereString.index) + text.slice(hereString.index + hereString[0].length);
-    }
+  const embedded = findHeredoc(text) ?? findHereString(text);
+  if (embedded !== undefined) {
+    heredoc = embedded.body;
+    remainder = text.slice(0, embedded.start) + text.slice(embedded.end);
   }
 
   const normalized = remainder

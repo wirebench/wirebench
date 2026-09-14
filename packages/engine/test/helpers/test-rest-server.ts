@@ -15,6 +15,36 @@ import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import type { Socket } from 'node:net';
 
 /** One request the server recorded, for assertions the response cannot carry. */
+/** Upper bound for `/slow?ms=`; the suite asks for hundreds of milliseconds at most. */
+const MAX_SLOW_MS = 10_000;
+
+/** Upper bound for `/large?bytes=`; the suite asks for a few megabytes at most. */
+const MAX_LARGE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The `Location` a `/redirect/<code>?to=` request may send the client to.
+ *
+ * A relative path stays on this server. An absolute URL is allowed only when its host is loopback —
+ * a second fixture started by the same test — and anything else (or anything unparseable) falls
+ * back to `/echo`, so the query string can never point the fixture at an outside host.
+ */
+function loopbackTarget(to: string | null): string {
+  if (to === null || to === '') {
+    return '/echo';
+  }
+  if (to.startsWith('/') && !to.startsWith('//')) {
+    return to;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(to);
+  } catch {
+    return '/echo';
+  }
+  const host = parsed.hostname;
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]' ? parsed.href : '/echo';
+}
+
 export interface RecordedRestRequest {
   readonly method: string;
   readonly url: string;
@@ -197,7 +227,10 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
 
       const redirect = /^\/redirect\/(\d{3})$/.exec(path);
       if (redirect !== null) {
-        response.writeHead(Number(redirect[1]), { location: url.searchParams.get('to') ?? '/echo' });
+        // The target is checked, not trusted: a redirect test points at this server or at a second
+        // one started by the same test, and both live on loopback. Anything else is refused, so the
+        // fixture can never be steered at a host outside the test process.
+        response.writeHead(Number(redirect[1]), { location: loopbackTarget(url.searchParams.get('to')) });
         response.end();
         return;
       }
@@ -255,6 +288,12 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
 
       if (path === '/slow') {
         const ms = Number(url.searchParams.get('ms') ?? '50');
+        // A test asks for hundreds of milliseconds; anything past ten seconds is a mistake, not a
+        // scenario, so it is answered as one instead of tying the process up.
+        if (!Number.isInteger(ms) || ms < 0 || ms > MAX_SLOW_MS) {
+          sendJson(response, 400, { error: `ms must be an integer between 0 and ${String(MAX_SLOW_MS)}` });
+          return;
+        }
         setTimeout(() => sendJson(response, 200, { slept: ms }), ms);
         return;
       }
@@ -281,6 +320,10 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
 
       if (path === '/large') {
         const size = Number(url.searchParams.get('bytes') ?? '1024');
+        if (!Number.isInteger(size) || size < 0 || size > MAX_LARGE_BYTES) {
+          sendJson(response, 400, { error: `bytes must be an integer between 0 and ${String(MAX_LARGE_BYTES)}` });
+          return;
+        }
         const payload = Buffer.alloc(size, 'a');
         response.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(size) });
         response.end(payload);
@@ -360,7 +403,9 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
             cert: options.tls.cert,
             key: options.tls.key,
             ...(options.tls.ca !== undefined ? { ca: options.tls.ca as string | string[] } : {}),
-            ...(options.tls.requestCert === true ? { requestCert: true, rejectUnauthorized: false } : {}),
+            // A server that asks for a client certificate verifies it against `ca`, as a real one
+            // would; a client presenting none, or an untrusted one, fails the handshake.
+            ...(options.tls.requestCert === true ? { requestCert: true, rejectUnauthorized: true } : {}),
           },
           handler,
         )

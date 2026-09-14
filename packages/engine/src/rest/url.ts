@@ -97,9 +97,28 @@ export function parseUrlParams(url: string): string[] {
   return names;
 }
 
-/** Every `${…}` reference left in `text`, which means the caller did not expand it. */
+/**
+ * Every `${…}` reference left in `text`, which means the caller did not expand it.
+ *
+ * An `indexOf` walk rather than `/\$\{([^}]*)\}/g`: with an unclosed `${` the regex rescans to
+ * the end of the string from every later start, which is O(n²) on pathological input. This finds
+ * each `${`, then the next `}`; if there is none, nothing after it can match either, so it stops.
+ */
 function unexpandedProperties(text: string): string[] {
-  return [...text.matchAll(/\$\{([^}]*)\}/g)].map((match) => match[1]!);
+  const names: string[] = [];
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('${', from);
+    if (open === -1) {
+      return names;
+    }
+    const close = text.indexOf('}', open + 2);
+    if (close === -1) {
+      return names;
+    }
+    names.push(text.slice(open + 2, close));
+    from = close + 1;
+  }
 }
 
 /**

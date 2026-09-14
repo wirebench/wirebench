@@ -201,3 +201,25 @@ describe('trimTrailingSlashes', () => {
     expect(time(160_000)).toBeLessThan(250);
   });
 });
+
+describe('unresolved-property scan', () => {
+  it('is linear, where the regex it replaces rescanned from every start on an unclosed reference', () => {
+    // `/\$\{([^}]*)\}/g` walks to the end of the string from each `${` that never closes: O(n²).
+    const time = (n: number): number => {
+      const input = 'https://h/' + '${'.repeat(n);
+      const started = performance.now();
+      composeUrl('', input, []);
+      return performance.now() - started;
+    };
+    time(20_000);
+    expect(time(200_000)).toBeLessThan(250);
+  });
+
+  it('still finds every closed reference, and only closed ones', () => {
+    const { problems } = composeUrl('', '/${a}/x/${b}/${unclosed', []);
+    expect(problems.filter((p) => p.code === 'unexpanded-property').map((p) => 'name' in p && p.name)).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+});
