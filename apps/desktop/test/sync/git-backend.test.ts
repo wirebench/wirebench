@@ -410,6 +410,39 @@ describeGit('GitBackend (real git)', () => {
     expect(attrsAfterClone).toBe(customContent);
   });
 
+  it('keeps definition cache bytes exact through a clone, so their hashes still match', async () => {
+    root = await mkTempDir();
+    const remoteDir = join(root, 'remote.git');
+    const treeA = join(root, 'a');
+    const treeB = join(root, 'b');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+
+    const bare = await createBareRemote(git, remoteDir);
+    await GitBackend.init(git, treeA, 'main');
+    await git.run(treeA, ['remote', 'add', 'origin', bare.url]);
+    const settingsA: GitShareSettings = { ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' };
+    const a = new GitBackend({ git, tree: treeA, settings: () => settingsA });
+    await a.setIdentity('Alice', 'alice@example.com');
+    // A definition served with CRLF line endings, cached as fetched (its manifest records the hash).
+    const definition = join('projects', 'Calc', 'interfaces', 'Calculator', 'definition');
+    const wsdl = Buffer.from('<?xml version="1.0"?>\r\n<definitions/>\r\n', 'utf8');
+    const xsd = Buffer.from('<schema>\r\n</schema>\r\n', 'utf8');
+    await mkdir(join(treeA, definition), { recursive: true });
+    await writeFile(join(treeA, definition, 'calculator.wsdl'), wsdl);
+    await writeFile(join(treeA, definition, 'types.xsd'), xsd);
+    await a.commit('Add Calculator');
+    await a.push();
+
+    await GitBackend.clone(git, bare.url, 'main', treeB);
+
+    expect(await readFile(join(treeB, definition, 'calculator.wsdl'))).toEqual(wsdl);
+    expect(await readFile(join(treeB, definition, 'types.xsd'))).toEqual(xsd);
+    expect((await git.run(treeB, ['status', '--porcelain'])).stdout).toBe('');
+  });
+
   it('clone writes .gitattributes when the cloned tree lacks one', async () => {
     root = await mkTempDir();
     const remoteDir = join(root, 'remote.git');

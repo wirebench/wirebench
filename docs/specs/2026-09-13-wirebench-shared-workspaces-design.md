@@ -242,6 +242,7 @@ paths.
 *.wsdl text
 *.xsd text
 projects/*/attachments/** -text
+projects/*/interfaces/*/definition/** -text
 ```
 
 No `.gitignore` is needed: nothing machine-local is inside the tree. Definition caches (`definition/`)
