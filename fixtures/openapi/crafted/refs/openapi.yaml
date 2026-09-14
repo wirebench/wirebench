@@ -1,0 +1,36 @@
+openapi: 3.0.3
+info:
+  title: Refs
+  version: 1.0.0
+servers:
+  - url: https://refs.test
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      parameters:
+        - $ref: '#/components/parameters/TraceHeader'
+        - $ref: 'shared/parameters.yaml#/components/parameters/PageSize'
+      requestBody:
+        $ref: '#/components/requestBodies/PetBody'
+      responses: { '200': { description: ok } }
+  /broken:
+    get:
+      operationId: broken
+      parameters:
+        - $ref: '#/components/parameters/DoesNotExist'
+      responses: { '200': { description: ok } }
+components:
+  parameters:
+    TraceHeader:
+      name: X-Trace
+      in: header
+      schema: { type: string }
+      example: local-ref
+  requestBodies:
+    PetBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: 'shared/schemas.yaml#/components/schemas/Pet'

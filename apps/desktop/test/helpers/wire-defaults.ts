@@ -5,7 +5,14 @@
  */
 
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES } from '@wirebench/engine';
-import type { ProjectSettingsWire, RequestPropertiesWire } from '../../src/shared/wire-types.js';
+import type {
+  ProjectSettingsWire,
+  ProjectWire,
+  RequestPropertiesWire,
+  RestApiWire,
+  RestFolderWire,
+  RestRequestWire,
+} from '../../src/shared/wire-types.js';
 
 /** The default §6.3 request properties, as the renderer mirrors them. */
 export const REQUEST_PROPERTIES: RequestPropertiesWire = {
@@ -14,3 +21,53 @@ export const REQUEST_PROPERTIES: RequestPropertiesWire = {
 
 /** The default project settings, as the renderer mirrors them. */
 export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTINGS };
+
+/**
+ * The REST halves of a `ProjectWire`, empty. Spread into a fixture that is about SOAP so the
+ * snapshot stays complete without every such test having to mention APIs it does not use.
+ */
+export const NO_REST: Pick<ProjectWire, 'apis' | 'folders' | 'restRequests'> = {
+  apis: [],
+  folders: [],
+  restRequests: [],
+};
+
+/** One REST API on the wire, with everything a fixture rarely cares about filled in. */
+export function restApiWire(overrides: Partial<RestApiWire> = {}): RestApiWire {
+  return {
+    kind: 'rest',
+    id: 'api-1',
+    name: 'Petstore',
+    slug: 'petstore',
+    order: 0,
+    baseUrl: 'https://api.test',
+    servers: [],
+    ...overrides,
+  };
+}
+
+/** One REST folder on the wire. */
+export function restFolderWire(overrides: Partial<RestFolderWire> = {}): RestFolderWire {
+  return { id: 'folder-1', apiId: 'api-1', name: 'Pets', slug: 'pets', order: 0, ...overrides };
+}
+
+/** One REST request on the wire, a bodyless `GET` unless the caller says otherwise. */
+export function restRequestWire(overrides: Partial<RestRequestWire> = {}): RestRequestWire {
+  return {
+    kind: 'rest',
+    id: 'rest-1',
+    apiId: 'api-1',
+    name: 'Get pet',
+    slug: 'get-pet',
+    order: 0,
+    method: 'GET',
+    url: '/pet/{petId}',
+    pathParams: [],
+    query: [],
+    headers: [],
+    body: { kind: 'none' },
+    auth: { type: 'inherit' },
+    settings: {},
+    ...overrides,
+  };
+}

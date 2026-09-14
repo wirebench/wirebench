@@ -37,6 +37,17 @@ export interface HistoryError {
 export interface HistoryEntry {
   /** ulid, also the entry's sort key (ulids are lexicographically time-ordered). */
   readonly id: string;
+  /**
+   * Which protocol this send used. Absent in every line written before the REST client, so a
+   * missing value reads as `'soap'` ({@link normalizeHistoryEntry}) and no file needs migrating.
+   *
+   * The response side of the record is deliberately one message. A protocol that answers with
+   * several — a gRPC server stream — extends this union with its own shape rather than bending
+   * this one, which is why the field exists before there is a second value for it to hold.
+   */
+  readonly kind?: 'soap' | 'rest';
+  /** The HTTP method, for a REST send. A SOAP send is always a POST and does not record one. */
+  readonly method?: string;
   /** ISO-8601 timestamp of the send. */
   readonly at: string;
   readonly projectId: string;
@@ -102,6 +113,14 @@ export interface HistoryFile {
 
 const DEFAULT_CAP = 1000;
 
+/**
+ * One entry as callers should see it: a line written before the REST client carried no `kind`,
+ * and every such send was SOAP. Applied on read so nothing has to rewrite a `.jsonl` file.
+ */
+export function normalizeHistoryEntry(entry: HistoryEntry): HistoryEntry {
+  return entry.kind === undefined ? { ...entry, kind: 'soap' } : entry;
+}
+
 /** Case-insensitive substring test, empty needle always matches. */
 function matches(entry: HistoryEntry, needle: string): boolean {
   if (needle.length === 0) {
@@ -113,6 +132,7 @@ function matches(entry: HistoryEntry, needle: string): boolean {
     entry.operationName,
     entry.interfaceName,
     entry.endpoint,
+    entry.method ?? '',
     entry.status !== undefined ? String(entry.status) : '',
     entry.fault?.reason ?? '',
     ...(entry.tags ?? []),
@@ -133,7 +153,7 @@ function parseLine(line: string): HistoryEntry | undefined {
     if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { id?: unknown }).id !== 'string') {
       return undefined;
     }
-    return parsed as HistoryEntry;
+    return normalizeHistoryEntry(parsed as HistoryEntry);
   } catch {
     return undefined;
   }

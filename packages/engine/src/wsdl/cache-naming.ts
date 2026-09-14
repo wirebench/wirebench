@@ -12,7 +12,6 @@
  */
 
 import { isReservedFileName, sanitiseFileName } from '../project/paths.js';
-import type { BundledDocument } from './resolver.js';
 
 /** Extracts the last path segment of a location's pathname, ignoring any query/fragment. */
 function lastPathSegment(location: string): string | undefined {
@@ -25,10 +24,23 @@ function lastPathSegment(location: string): string | undefined {
   }
 }
 
+/** The least a document must say for a file name to be derived from it. */
+export interface NameableDocument {
+  readonly location: string;
+  /** The extension a document with no usable name of its own falls back to (`wsdl`, `xsd`, `yaml`). */
+  readonly kind: string;
+}
+
+/** Options accepted by {@link assignFileNames}. */
+export interface AssignFileNamesOptions {
+  /** File name for the root document when its location gives none. Defaults to `service.wsdl`. */
+  readonly rootFile?: string;
+}
+
 /** Extension to use for a document with no usable name of its own, keyed by `kind`. */
-function fallbackName(isRoot: boolean, kind: 'wsdl' | 'xsd', index: number): string {
+function fallbackName(isRoot: boolean, kind: string, index: number, rootFile: string): string {
   if (isRoot) {
-    return 'service.wsdl';
+    return rootFile;
   }
   return `document-${index}.${kind}`;
 }
@@ -55,17 +67,17 @@ function guardReservedName(name: string): string {
  * unparsable locations (e.g. a `?wsdl` query-string root). Either way, the
  * result is sanitised and guarded against Windows reserved device names.
  */
-function baseFileName(doc: BundledDocument, isRoot: boolean, index: number): string {
+function baseFileName(doc: NameableDocument, isRoot: boolean, index: number, rootFile: string): string {
   const segment = lastPathSegment(doc.location);
   if (segment !== undefined && /\.[A-Za-z0-9]+$/.test(segment)) {
     return guardReservedName(sanitiseFileName(segment));
   }
-  return guardReservedName(fallbackName(isRoot, doc.kind, index));
+  return guardReservedName(fallbackName(isRoot, doc.kind, index, rootFile));
 }
 
 /** One document's assigned on-disk file name, alongside the document itself. */
-export interface NamedDocument {
-  readonly document: BundledDocument;
+export interface NamedDocument<T extends NameableDocument = NameableDocument> {
+  readonly document: T;
   readonly file: string;
 }
 
@@ -74,14 +86,22 @@ export interface NamedDocument {
  * (root first, in the order given), de-duplicating collisions with a
  * numeric suffix inserted before the extension (`service.wsdl`,
  * `service-2.wsdl`, ...).
+ *
+ * Generic in the document type so a caller keeps its own: the naming rules
+ * only ever read `location` and `kind`, which is why an OpenAPI definition
+ * cache uses the same function as a WSDL one.
  */
-export function assignFileNames(documents: readonly BundledDocument[]): readonly NamedDocument[] {
+export function assignFileNames<T extends NameableDocument>(
+  documents: readonly T[],
+  options?: AssignFileNamesOptions,
+): readonly NamedDocument<T>[] {
+  const rootFile = options?.rootFile ?? 'service.wsdl';
   const used = new Set<string>();
-  const named: NamedDocument[] = [];
+  const named: NamedDocument<T>[] = [];
 
   documents.forEach((document, index) => {
     const isRoot = index === 0;
-    const base = baseFileName(document, isRoot, index);
+    const base = baseFileName(document, isRoot, index, rootFile);
     const dot = base.lastIndexOf('.');
     const stem = dot > 0 ? base.slice(0, dot) : base;
     const ext = dot > 0 ? base.slice(dot) : '';

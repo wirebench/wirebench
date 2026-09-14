@@ -116,6 +116,55 @@ in a `.p12` loads its certificate but is never paired with it, so the alias repo
 key and signing with it fails — rather than silently pairing a certificate with the wrong key.
 Signing and TLS client authentication with non-RSA keystores are not supported yet.
 
+## The OAuth2 callback listens on loopback only
+
+A REST request whose credentials are an OAuth2 configuration is signed with an access token main
+obtains itself. Two parts of that are security-relevant: a port, and a token.
+
+The authorization-code grant answers to a URL, so main opens an HTTP listener for it. It binds
+`127.0.0.1` and nothing else — a listener on a routable address is a way to hand somebody else's
+authorization code to this app (RFC 8252 §8.3). It takes a random free port unless the user pinned
+one in Preferences, because some providers insist on an exact registered redirect URI. It accepts
+exactly one callback and then closes, requires the `state` value it generated (a callback carrying
+any other `state` is answered but neither accepted nor allowed to end the flow), and gives up after
+five minutes. Only one sign-in may be pending at a time, and the user can cancel it. PKCE
+(RFC 7636, S256) is on by default. The authorization URL is opened through the same http(s)-only
+check every other outbound link goes through.
+
+Access tokens live in main's memory, keyed by a hash of the configuration that produced them, and
+are never written to disk. A refresh token is written to the keychain only when the configuration
+carries a reference to put it behind — the user asking for it to be remembered — and otherwise
+lasts the session. `oauth2.status` never returns the token itself unless the session's show-secrets
+flag is on.
+
+Every `oauth2.*` call names an *owner*: an API, a folder or a request. Main reads the configuration
+from the project model, because a channel that accepted one would be a channel for pointing the app
+at an attacker's token endpoint with the user's client secret.
+
+Sending a request never opens a browser. An authorization-code configuration whose token has
+expired and cannot be refreshed fails the send with `oauth2-sign-in-required`, and the user presses
+*Get new token*.
+
+## A response body never gets to run
+
+The Query view evaluates an expression the user wrote against bytes a server returned, which makes
+the evaluator a place worth being explicit about.
+
+XPath 3.1 and XQuery 3.1 run under `fontoxpath`, which has no facility for calling out to the host at
+all. JSONPath runs under `jsonpath-plus`, which does: its `?(...)` filters and `(...)` script
+expressions can be evaluated either with the platform's real `eval`/`Function`, or with a `jsep`
+expression parser that cannot reach the host. Wirebench passes `eval: 'safe'`, which selects the
+parser (`packages/engine/src/xpath/jsonpath.ts`). Filters keep working — that mode is not a
+restriction on what a user can express — but the classic escape through
+`constructor.constructor('…')()` is refused rather than executed, whether it is reached through
+`this` or through a value in the document. Two tests in
+`packages/engine/test/unit/xpath/jsonpath.test.ts` try both routes.
+
+Both evaluators also run on a **worker thread** with a five-second budget
+(`xpath/evaluate-async.ts`), so an expression that never terminates costs a terminated worker rather
+than a frozen window, and neither library is in the renderer bundle: evaluation is an IPC call, and
+the renderer has no evaluator of its own.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

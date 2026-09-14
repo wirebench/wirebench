@@ -12,13 +12,18 @@ const MONACO_PATH = {
 };
 
 /**
- * Bans every `@wirebench/engine` import bar the browser-safe `/xml` subpath. A regex, not a
- * `group`: gitignore-style globs cannot express "this package and every subpath of it *except* one".
+ * Bans every `@wirebench/engine` import bar the browser-safe subpaths. A regex, not a `group`:
+ * gitignore-style globs cannot express "this package and every subpath of it *except* these".
+ *
+ * `/xml` carries the parser Monaco's XML language service needs; `/rest` carries the URL helpers the
+ * REST editor's query table and URL field share with the send path — the one thing that must not be
+ * reimplemented in the renderer, since two sets of escaping rules would eventually disagree about
+ * what is being sent. Both are pure text code with no Node dependency.
  */
 const ENGINE_PATTERN = {
-  regex: '^@wirebench/engine(?!/xml$)(/.*)?$',
+  regex: '^@wirebench/engine(?!/(xml|rest)$)(/.*)?$',
   message:
-    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml subpath may be imported (ADR-0002)',
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml and /rest subpaths may be imported (ADR-0002)',
 };
 
 export default tseslint.config(
@@ -61,9 +66,9 @@ export default tseslint.config(
   },
   {
     // ADR-0002 put the engine in the main process: the renderer talks to it over IPC, never by
-    // importing it. The one exception is the browser-safe `@wirebench/engine/xml` subpath (the
-    // Monaco XML language service needs the same parser main uses), so the ban is expressed as
-    // "the engine, except that subpath" rather than as a convention nobody can enforce. The
+    // importing it. The exceptions are the two browser-safe subpaths `@wirebench/engine/xml` and
+    // `@wirebench/engine/rest` (see ENGINE_PATTERN), so the ban is expressed as "the engine, except
+    // those subpaths" rather than as a convention nobody can enforce. The
     // Monaco rule from the block above is repeated here because a second `no-restricted-imports`
     // entry replaces the first rather than merging with it.
     files: ['apps/desktop/src/renderer/**/*.{ts,tsx,mts,cts}'],

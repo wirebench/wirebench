@@ -5,8 +5,16 @@
  */
 
 import { findBinding, qnameToString } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactRawHttp, redactResponseAttachments, redactXml } from './redact.js';
+import {
+  redactHeaderPairs,
+  redactHeaders,
+  redactUrl,
+  redactRawHttp,
+  redactResponseAttachments,
+  redactXml,
+} from './redact.js';
 import type {
+  RestExchange,
   GeneratedRequest,
   HttpExchange,
   ImportResult,
@@ -17,6 +25,7 @@ import type {
   UnresolvedRef,
 } from '@wirebench/engine';
 import type {
+  RestExchangeSummary,
   ExchangeSummary,
   FaultWire,
   HttpExchangeWire,
@@ -195,6 +204,49 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
       method: http.request.method,
       headers: redactHeaders(http.request.headers, { show }),
     },
+  };
+}
+
+/**
+ * Converts a `RestExchange` plus its `sendId` into the `request.sendRest` response payload.
+ *
+ * The URL is redacted here rather than by the caller because it is the one field that can carry a
+ * credential in plain sight: an API key configured to travel in the query string ends up in the URL
+ * of every request that uses it. `keyParams` names the parameter that key is configured under, so a
+ * key called something this build has never heard of is masked too.
+ */
+export function toRestExchangeSummary(
+  exchange: RestExchange,
+  sendId: string,
+  context: { readonly method: string; readonly show?: boolean; readonly keyParams?: readonly string[] },
+): RestExchangeSummary {
+  const show = context.show ?? false;
+  return {
+    sendId,
+    durationMs: exchange.durationMs,
+    // A `RestExchange` *is* an `HttpExchange` with the decoded body added, so the same projection
+    // the SOAP path uses applies to it directly.
+    http: toHttpExchangeWire(exchange, { show }),
+    url: redactUrl(exchange.request.url, {
+      show,
+      ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
+    }),
+    method: context.method,
+    text: exchange.text,
+    language: exchange.language,
+    ...(exchange.decodeNote !== undefined ? { decodeNote: exchange.decodeNote } : {}),
+    cookies: exchange.cookies.map((cookie) => ({ ...cookie })),
+    methodChanged: exchange.methodChanged,
+    problems: [],
+    ...(exchange.auth !== undefined
+      ? {
+          auth: {
+            scheme: exchange.auth.scheme,
+            challenged: exchange.auth.challenged,
+            attempts: exchange.auth.attempts,
+          },
+        }
+      : {}),
   };
 }
 

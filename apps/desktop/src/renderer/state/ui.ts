@@ -10,7 +10,7 @@ import type {
   ThemePreference,
   UiSnapshot,
 } from './ui-state.js';
-import type { PreferencesSectionWire } from '../../shared/wire-types.js';
+import type { PreferencesSectionWire, RequestImportCurlTarget } from '../../shared/wire-types.js';
 import { DEFAULT_UI_STATE, readUi, writeUi } from './ui-state.js';
 
 /** A selected node in the explorer tree, read by the request inspectors and explorer actions. */
@@ -28,6 +28,22 @@ export interface Selection {
   readonly requestId?: string;
   /** Set when `kind` is `endpoint`: the port's address. */
   readonly address?: string;
+  /** Set on an `api`, `folder` or `rest-request` selection: the API it belongs to. */
+  readonly apiId?: string;
+  /** Set on a `folder` selection (the folder itself) and on a `rest-request` inside one. */
+  readonly folderId?: string;
+}
+
+/**
+ * A REST node the user asked to delete, held until they confirm. One shape for all three kinds
+ * because the dialog only needs to name the thing and say how much goes with it.
+ */
+export interface PendingNodeDeletion {
+  readonly kind: 'api' | 'folder' | 'rest-request';
+  readonly id: string;
+  readonly name: string;
+  /** How many requests are inside it; `0` for an empty folder or API, and for a request. */
+  readonly requestCount: number;
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
@@ -36,12 +52,25 @@ export interface UiStore extends UiSnapshot {
   readonly selection: Selection | undefined;
   /** Whether the Import WSDL dialog is open. Transient — never persisted. */
   readonly importDialogOpen: boolean;
+  /** Whether the Import OpenAPI dialog is open. Its own flag: the two dialogs share no state. */
+  readonly importOpenApiDialogOpen: boolean;
+  /** The folder whose credentials dialog is open, if any. A folder has no tab to put them on. */
+  readonly folderAuthId: string | undefined;
+  /**
+   * Where an Import cURL… opened from the palette or the explorer should land, if it is open.
+   *
+   * Held here rather than in the dialog because the two entry points that are *not* an editor tab —
+   * the palette and an explorer row — have nowhere else to put it.
+   */
+  readonly importCurlTarget: RequestImportCurlTarget | undefined;
   /** Whether the New Project dialog (a name, nothing else) is open. Transient — never persisted. */
   readonly newProjectDialogOpen: boolean;
   /** Interface id pending a remove confirmation, from either the context menu or a command. */
   readonly confirmRemoveInterfaceId: string | undefined;
   /** Request id pending a delete confirmation, from either the context menu or a command. */
   readonly confirmDeleteRequestId: string | undefined;
+  /** The API, folder or REST request pending a delete confirmation. Transient. */
+  readonly confirmDeleteNode: PendingNodeDeletion | undefined;
   /** Whether the status bar's environment dropdown is open. Transient — never persisted. */
   readonly envSwitcherOpen: boolean;
   /** Whether the title bar's workspace dropdown is open. Transient — never persisted. */
@@ -56,10 +85,15 @@ export interface UiStore extends UiSnapshot {
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
+  readonly setImportOpenApiDialogOpen: (open: boolean) => void;
+  readonly setFolderAuthId: (folderId: string | undefined) => void;
+  readonly setImportCurlTarget: (target: RequestImportCurlTarget | undefined) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
   readonly closeImportDialog: () => void;
   readonly requestRemoveInterface: (interfaceId: string | undefined) => void;
   readonly requestDeleteRequest: (requestId: string | undefined) => void;
+  /** Asks for a REST node's deletion to be confirmed; `undefined` dismisses the dialog. */
+  readonly requestDeleteNode: (pending: PendingNodeDeletion | undefined) => void;
   readonly setEnvSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
@@ -136,9 +170,13 @@ export const useUiStore = create<UiStore>((set, get) => {
     ...DEFAULT_UI_STATE,
     selection: undefined,
     importDialogOpen: false,
+    importOpenApiDialogOpen: false,
+    folderAuthId: undefined,
+    importCurlTarget: undefined,
     newProjectDialogOpen: false,
     confirmRemoveInterfaceId: undefined,
     confirmDeleteRequestId: undefined,
+    confirmDeleteNode: undefined,
     envSwitcherOpen: false,
     workspaceSwitcherOpen: false,
     workspaceManageOpen: false,
@@ -152,6 +190,15 @@ export const useUiStore = create<UiStore>((set, get) => {
     openImportDialog: () => {
       set({ importDialogOpen: true });
     },
+    setImportOpenApiDialogOpen: (open) => {
+      set({ importOpenApiDialogOpen: open });
+    },
+    setFolderAuthId: (folderId) => {
+      set({ folderAuthId: folderId });
+    },
+    setImportCurlTarget: (target) => {
+      set({ importCurlTarget: target });
+    },
     setNewProjectDialogOpen: (open) => {
       set({ newProjectDialogOpen: open });
     },
@@ -163,6 +210,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     requestDeleteRequest: (requestId) => {
       set({ confirmDeleteRequestId: requestId });
+    },
+    requestDeleteNode: (pending) => {
+      set({ confirmDeleteNode: pending });
     },
     setEnvSwitcherOpen: (open) => {
       set({ envSwitcherOpen: open });

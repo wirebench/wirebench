@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
+import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import type { PropertyMapWire } from '../../../shared/wire-types.js';
 
@@ -177,11 +178,10 @@ function parsePastedVariables(text: string): readonly PastedVariable[] {
   return items;
 }
 
-// A transparent border by default so a row reads as data, not a form field; hover swaps only
-// the border's colour (never adds one) so nothing shifts a pixel, and focus keeps the border
-// transparent since the accent ring already marks it.
-const INPUT_CLASS =
-  'h-row w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 font-mono text-sm text-fg-default hover:border-hairline-strong focus:border-transparent focus:outline-none focus:ring-1 focus:ring-accent';
+// The look and the commit rule come from `KvTable`: this table's data model is a keyed map with an
+// inheritance chain, which that component deliberately does not model, but "a keystroke is not a
+// mutation" and the way an editable cell looks are the same promise in both.
+const INPUT_CLASS = KV_INPUT_CLASS;
 
 interface RowProps {
   readonly name: string;
@@ -208,15 +208,8 @@ function VariableRow({
   onToggleEnabled,
   onRemove,
 }: RowProps) {
-  const [draftName, setDraftName] = useState(name);
-  const [draftValue, setDraftValue] = useState(value);
-
-  useEffect(() => {
-    setDraftName(name);
-  }, [name]);
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
+  const nameField = useCommittedDraft(name, onCommitName);
+  const valueField = useCommittedDraft(value, onCommitValue);
 
   return (
     <tr
@@ -239,47 +232,14 @@ function VariableRow({
         />
       </td>
       <td className="px-2 py-1">
-        <input
-          aria-label={`Name of ${name}`}
-          data-testid="env-variable-name"
-          className={INPUT_CLASS}
-          value={draftName}
-          onChange={(event) => {
-            setDraftName(event.target.value);
-          }}
-          onBlur={() => {
-            onCommitName(draftName);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              onCommitName(draftName);
-            }
-            if (event.key === 'Escape') {
-              setDraftName(name);
-            }
-          }}
-        />
+        <input aria-label={`Name of ${name}`} data-testid="env-variable-name" className={INPUT_CLASS} {...nameField} />
       </td>
       <td className="px-2 py-1">
         <input
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
           className={INPUT_CLASS}
-          value={draftValue}
-          onChange={(event) => {
-            setDraftValue(event.target.value);
-          }}
-          onBlur={() => {
-            onCommitValue(draftValue);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              onCommitValue(draftValue);
-            }
-            if (event.key === 'Escape') {
-              setDraftValue(value);
-            }
-          }}
+          {...valueField}
         />
       </td>
       <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
@@ -317,11 +277,7 @@ interface InheritedRowProps {
  * to an override, written into this scope's own properties via `onCommitValue`.
  */
 function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onCommitValue }: InheritedRowProps) {
-  const [draftValue, setDraftValue] = useState(value);
-
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
+  const valueField = useCommittedDraft(value, onCommitValue);
 
   return (
     <tr
@@ -353,22 +309,8 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onComm
           aria-label={`Value of ${name}`}
           data-testid="env-variable-value"
           className={INPUT_CLASS}
-          value={draftValue}
           title={`Override ${ownerLabel} here`}
-          onChange={(event) => {
-            setDraftValue(event.target.value);
-          }}
-          onBlur={() => {
-            onCommitValue(draftValue);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              onCommitValue(draftValue);
-            }
-            if (event.key === 'Escape') {
-              setDraftValue(value);
-            }
-          }}
+          {...valueField}
         />
       </td>
       <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">

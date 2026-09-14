@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, X } from 'lucide-react';
-import { AuthFields } from '../../components/auth-fields.js';
+import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../components/auth-fields.js';
 import { TRUST_INVALID_HINT, TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -133,10 +133,11 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
                       <span className="text-xs text-status-danger">{TRUST_INVALID_HINT}</span>
                     </label>
                     <AuthFields
+                      types={SOAP_AUTH_TYPES}
                       scope="Endpoint"
                       auth={endpoint.auth}
                       onChange={(auth) => {
-                        void updateEndpointAuth(interfaceId, endpoint.id, auth).catch((error: unknown) =>
+                        void updateEndpointAuth(interfaceId, endpoint.id, asSoapAuth(auth)).catch((error: unknown) =>
                           report(error, 'Could not update the endpoint credentials'),
                         );
                       }}

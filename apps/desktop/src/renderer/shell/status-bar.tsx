@@ -3,7 +3,7 @@ import { cycleTheme } from '../lib/theme-actions.js';
 import { THEME_LABEL, useResolvedTheme } from '../lib/theme.js';
 import { useAppVersion } from '../lib/use-app-version.js';
 import { updateStatusLabel, useUpdateStatus } from '../lib/update-status.js';
-import { formatBytes } from '../lib/format-size.js';
+import { formatBytes, formatDuration } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
 import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { useEditorsStore } from '../state/editors.js';
@@ -185,14 +185,16 @@ export function StatusBar() {
         )}
       </div>
       {last === undefined ? (
-        <span className="font-mono">no requests sent</span>
+        <span data-testid="status-bar-last" className="font-mono">
+          no requests sent
+        </span>
       ) : (
-        <span className="font-mono">
+        <span data-testid="status-bar-last" className="font-mono">
           last:{' '}
           <span className={toneFor(last) === 'bad' ? 'text-status-danger' : 'text-status-success'}>
             {last.http.status}
           </span>{' '}
-          in {last.durationMs} ms · {formatBytes(responseSize(last))}
+          in {formatDuration(last.durationMs)} · {formatBytes(responseSize(last))}
         </span>
       )}
     </footer>

@@ -84,6 +84,7 @@ export function sampleProject(): Project {
     settings: { ...DEFAULT_PROJECT_SETTINGS, resourceRoot: './res' },
     properties: { region: 'eu-west-1', tier: 'gold' },
     disabledProperties: ['tier'],
+    apis: [],
     interfaces: [
       {
         kind: 'soap',

@@ -4,6 +4,7 @@ import {
   removeSelectedAttachment,
 } from '../features/request-editor/attachment-actions.js';
 import { copyAsCurl, recreateRequest } from '../features/request-editor/request-actions.js';
+import { getOAuth2Token } from '../features/rest-editor/rest-actions.js';
 import { openRequestDialog } from '../features/request-editor/request-dialogs.js';
 import { validateAndReport } from '../features/request-editor/validate-actions.js';
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
@@ -13,7 +14,8 @@ import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
-import { activeRequestId, onActiveRequest, ui } from './command-helpers.js';
+import { useUiStore } from '../state/ui.js';
+import { activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
 
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
 export function registerRequestCommands(): void {
@@ -31,6 +33,22 @@ export function registerRequestCommands(): void {
       }
     },
   });
+  // A REST tab's own send. It shares `Mod+Enter` with `request.send` because the two can never be
+  // active at once — a tab is one kind or the other — which is what the distinct `when` scopes say.
+  registerCommand({
+    id: 'rest.send',
+    label: 'Send REST Request',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: () => {
+      const requestId = activeRestRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().sendRest(requestId);
+      }
+    },
+  });
   registerCommand({
     id: 'request.cancel',
     label: 'Cancel Request',
@@ -41,12 +59,23 @@ export function registerRequestCommands(): void {
     whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
-      return requestId !== undefined && useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
+      if (requestId !== undefined) {
+        return useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
+      }
+      const restRequestId = activeRestRequestId();
+      return (
+        restRequestId !== undefined && useExchangesStore.getState().restByRequest[restRequestId]?.status === 'sending'
+      );
     },
     run: () => {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
         void useExchangesStore.getState().cancel(requestId);
+        return;
+      }
+      const restRequestId = activeRestRequestId();
+      if (restRequestId !== undefined) {
+        void useExchangesStore.getState().cancelRest(restRequestId);
       }
     },
   });
@@ -173,6 +202,60 @@ export function registerRequestCommands(): void {
     run: onActiveRequest((requestId) => {
       openRequestDialog('import-curl', requestId);
     }),
+  });
+  // The REST counterparts of the SOAP cURL, token and import actions. Each goes through the same
+  // channel its SOAP sibling does, so the palette and the panel can never mean different things.
+  registerCommand({
+    id: 'rest.copyAsCurl',
+    label: 'REST: Copy as cURL',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    // The same `request.curl` the SOAP command uses, and the same shell the Code panel remembers:
+    // the palette and the panel must never hand out two different commands for one request.
+    run: () => {
+      const requestId = activeRestRequestId();
+      if (requestId !== undefined) {
+        void copyAsCurl(requestId, ui().slideOver.codeShell);
+      }
+    },
+  });
+  registerCommand({
+    id: 'rest.importCurl',
+    label: 'REST: Import cURL…',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: () => {
+      const requestId = activeRestRequestId();
+      const request = requestId === undefined ? undefined : useProjectStore.getState().restRequests[requestId];
+      if (request !== undefined) {
+        ui().setImportCurlTarget({
+          kind: 'rest',
+          apiId: request.apiId,
+          ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+        });
+      }
+    },
+  });
+  registerCommand({
+    id: 'rest.getToken',
+    label: 'REST: Get OAuth2 Token',
+    category: 'Request',
+    when: () => activeRestRequestId() !== undefined,
+    whenScope: 'editor.rest',
+    run: () => {
+      void getOAuth2Token(activeRestRequestId());
+    },
+  });
+  registerCommand({
+    id: 'rest.importOpenApi',
+    label: 'REST: Import OpenAPI…',
+    category: 'Definition',
+    shortcut: 'Mod+Shift+I',
+    run: () => {
+      useUiStore.getState().setImportOpenApiDialogOpen(true);
+    },
   });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.

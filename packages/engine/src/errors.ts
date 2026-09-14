@@ -83,6 +83,14 @@ export class WorkspaceError extends WirebenchError {
   }
 }
 
+/** Thrown when an OpenAPI document cannot be read, or describes something this client cannot import. */
+export class OpenApiError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'OpenApiError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

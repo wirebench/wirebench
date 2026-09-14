@@ -1,7 +1,8 @@
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { BrowserWindow, dialog } from 'electron';
 import { channels } from '../../shared/ipc.js';
 import { registerHandler } from './register.js';
+import { nodeFs, writeFileAtomic } from '@wirebench/engine';
 
 /** Refuse to load a file bigger than this into the editor. */
 const MAX_LOAD_BYTES = 20 * 1024 * 1024;
@@ -35,7 +36,10 @@ export function registerFsChannels(): void {
     if (targetPath === undefined) {
       return { path: undefined };
     }
-    await writeFile(targetPath, request.text, 'utf-8');
+    // Atomic, like every other write the app makes (see `writeFileAtomic`): the bytes land in a
+    // sibling temp file that is renamed over the target, so a crash mid-write cannot leave a
+    // truncated file at the path the user chose.
+    await writeFileAtomic(nodeFs, targetPath, request.text);
     return { path: targetPath };
   });
 

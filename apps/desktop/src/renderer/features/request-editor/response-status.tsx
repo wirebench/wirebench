@@ -1,17 +1,26 @@
-import type { ExchangeSummary } from '../../../shared/wire-types.js';
+import type { ExchangeSummary, RestExchangeSummary } from '../../../shared/wire-types.js';
 import type { IpcError } from '../../../shared/ipc.js';
-import { base64ByteLength, formatBytes } from '../../lib/format-size.js';
+import { base64ByteLength, formatBytes, formatDuration } from '../../lib/format-size.js';
 
 /** How a finished exchange should read: fine, or something went wrong. */
 export type ExchangeTone = 'ok' | 'bad';
 
+/**
+ * A finished exchange of either protocol, as far as the status line and the HTTP Log care.
+ *
+ * Both summaries carry the `http` exchange and the duration; only a SOAP one can carry a fault. The
+ * log is a protocol-neutral surface, so the two helpers below take this rather than the SOAP shape.
+ */
+export type AnyExchangeSummary = ExchangeSummary | RestExchangeSummary;
+
 /** A fault, a 4xx, or a 5xx is a failure regardless of what the other two say. */
-export function toneFor(exchange: ExchangeSummary): ExchangeTone {
-  return exchange.response?.fault !== undefined || exchange.http.status >= 400 ? 'bad' : 'ok';
+export function toneFor(exchange: AnyExchangeSummary): ExchangeTone {
+  const fault = 'response' in exchange ? exchange.response?.fault : undefined;
+  return fault !== undefined || exchange.http.status >= 400 ? 'bad' : 'ok';
 }
 
 /** Decoded response body size in bytes — what the header line and the log's size column show. */
-export function responseSize(exchange: ExchangeSummary): number {
+export function responseSize(exchange: AnyExchangeSummary): number {
   return base64ByteLength(exchange.http.bodyBase64);
 }
 
@@ -52,7 +61,8 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
         {exchange.http.status} {exchange.http.statusText}
       </span>
       {' · '}
-      {exchange.durationMs} ms{' · '}
+      {formatDuration(exchange.durationMs)}
+      {' · '}
       {formatBytes(responseSize(exchange))}
       {fault !== undefined && (
         <span className="text-status-danger">

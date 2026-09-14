@@ -17,6 +17,13 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 export interface EvaluateWithTimeoutOptions {
   /** Milliseconds to wait before terminating the worker and reporting `xpath-timeout`. */
   readonly timeoutMs?: number;
+  /**
+   * Which document `text` is. Defaults to `xml`.
+   *
+   * The timeout, the worker and the result shape are identical either way — only the evaluator on
+   * the far side differs — so a JSON query gets the same runaway-expression protection for free.
+   */
+  readonly kind?: 'xml' | 'json';
 }
 
 /**
@@ -57,16 +64,17 @@ function workerUrl(): URL {
  * @param timeoutOptions `{timeoutMs}`, default 5000
  */
 export function evaluateWithTimeout(
-  xml: string,
+  text: string,
   expression: string,
   options: EvaluateOptions,
   timeoutOptions?: EvaluateWithTimeoutOptions,
 ): Promise<QueryResult> {
   const timeoutMs = timeoutOptions?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const kind = timeoutOptions?.kind ?? 'xml';
 
   return new Promise((resolve) => {
     let settled = false;
-    const worker = new Worker(workerUrl(), { workerData: { xml, expression, options } });
+    const worker = new Worker(workerUrl(), { workerData: { text, kind, expression, options } });
 
     const finish = (result: QueryResult): void => {
       if (settled) {

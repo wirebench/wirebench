@@ -1,5 +1,4 @@
-import { writeFile } from 'node:fs/promises';
-import { WirebenchError } from '@wirebench/engine';
+import { nodeFs, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks, RecordsWritePicks } from '../dialog-picks.js';
@@ -166,7 +165,7 @@ export function registerDefinitionChannels(service: EngineService, deps?: Defini
     if (path === undefined) {
       return { cancelled: true };
     }
-    await writeFile(path, document, 'utf8');
+    await writeFileAtomic(nodeFs, path, document);
     return { cancelled: false, path };
   });
 }

@@ -47,6 +47,86 @@ export const endpointAuthSchema = z
     path: ['password'],
   });
 
+/**
+ * Keys that would hold a credential *value* rather than a reference to one. A project file must
+ * never carry one, in any authentication scheme, so they are rejected outright rather than
+ * ignored — the same rule `endpointAuthSchema` applies to `password`, stated once for the
+ * schemes added with the REST client (ADR-0004).
+ */
+const PLAINTEXT_SECRET_KEYS = [
+  'password',
+  'token',
+  'secret',
+  'clientSecret',
+  'client_secret',
+  'apiKey',
+  'refreshToken',
+];
+
+/** Adds the {@link PLAINTEXT_SECRET_KEYS} rejection to one authentication schema. */
+function refuseSecretValues<T extends z.ZodType<Record<string, unknown>>>(schema: T) {
+  return schema.superRefine((value, ctx) => {
+    for (const key of PLAINTEXT_SECRET_KEYS) {
+      if (key in value) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `auth must not contain a plaintext "${key}" field; use a secretRef`,
+        });
+      }
+    }
+  });
+}
+
+const inheritAuthSchema = z.looseObject({ type: z.literal('inherit') });
+
+const bearerAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('bearer'),
+    tokenRef: z.string().optional(),
+    scheme: z.string().optional(),
+  }),
+);
+
+const apiKeyAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('api-key'),
+    name: z.string(),
+    valueRef: z.string().optional(),
+    in: z.enum(['header', 'query']),
+  }),
+);
+
+const oauth2AuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('oauth2'),
+    grant: z.enum(['client-credentials', 'authorization-code']),
+    tokenUrl: z.string(),
+    authorizationUrl: z.string().optional(),
+    clientId: z.string(),
+    clientSecretRef: z.string().optional(),
+    scopes: z.array(z.string()).default([]),
+    audience: z.string().optional(),
+    clientAuth: z.enum(['basic', 'body']).default('basic'),
+    pkce: z.boolean().default(true),
+    refreshTokenRef: z.string().optional(),
+  }),
+);
+
+/**
+ * Authentication as persisted anywhere a project configures it. `endpointAuthSchema` is one arm,
+ * so a file written before the REST client — which only ever held `none`/`basic`/`ntlm` — parses
+ * unchanged. `inherit` is accepted here and rejected by the SOAP schemas that reuse
+ * `endpointAuthSchema` instead, since an interface has nothing to inherit from.
+ */
+export const authConfigSchema = z.union([
+  endpointAuthSchema,
+  inheritAuthSchema,
+  bearerAuthSchema,
+  apiKeyAuthSchema,
+  oauth2AuthSchema,
+]);
+
 const endpointSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
@@ -145,6 +225,12 @@ const requestPropertiesSchema = z.looseObject({
   sslKeystoreRef: z.string().optional(),
 });
 
+/** Where a file's bytes live: the project's content-addressed cache, or a path on disk. */
+export const attachmentSourceSchema = z.union([
+  z.looseObject({ kind: z.literal('cache'), sha256: nonEmpty }),
+  z.looseObject({ kind: z.literal('path'), path: nonEmpty }),
+]);
+
 const attachmentSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
@@ -154,10 +240,7 @@ const attachmentSchema = z.looseObject({
   type: z.enum(['XOP', 'MIME', 'SWAREF', 'CONTENT', 'UNKNOWN']),
   contentId: z.string(),
   cached: z.boolean(),
-  source: z.union([
-    z.looseObject({ kind: z.literal('cache'), sha256: nonEmpty }),
-    z.looseObject({ kind: z.literal('path'), path: nonEmpty }),
-  ]),
+  source: attachmentSourceSchema,
 });
 
 /** `interfaces/<slug>/operations/<slug>/<name>.request.yaml` (the envelope lives in the sibling `.xml`). */
@@ -180,6 +263,148 @@ export const requestFileSchema = z.looseObject({
   properties: requestPropertiesSchema,
   orphaned: z.boolean().optional(),
 });
+
+/**
+ * One table row as persisted. `enabled` is written only when `false`, so a missing key means
+ * enabled; names may repeat and their order is the wire order.
+ */
+export const keyValueEntrySchema = z.looseObject({
+  name: z.string(),
+  value: z.string(),
+  enabled: z.boolean().default(true),
+  description: z.string().optional(),
+});
+
+/**
+ * An HTTP method: any RFC 9110 token, not just the seven the editor names. A service that speaks
+ * `PURGE` or `REPORT` is not a malformed project.
+ */
+const methodSchema = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, 'a method must be an HTTP token');
+
+const multipartPartSchema = z.union([
+  z.looseObject({
+    kind: z.literal('text'),
+    name: z.string(),
+    value: z.string(),
+    enabled: z.boolean().default(true),
+    contentType: z.string().optional(),
+  }),
+  z.looseObject({
+    kind: z.literal('file'),
+    name: z.string(),
+    source: attachmentSourceSchema,
+    enabled: z.boolean().default(true),
+    fileName: z.string().optional(),
+    contentType: z.string().optional(),
+  }),
+]);
+
+/**
+ * A request body as persisted. A raw body names its sibling file rather than carrying its text:
+ * `file` is a bare file name in the request's own directory, validated as a path segment before
+ * anything is read or written (ADR-0005).
+ */
+export const restBodySchema = z.union([
+  z.looseObject({ kind: z.literal('none') }),
+  z.looseObject({
+    kind: z.literal('raw'),
+    language: z.enum(['json', 'xml', 'text', 'html', 'javascript']),
+    contentType: z.string().optional(),
+    file: nonEmpty,
+  }),
+  z.looseObject({ kind: z.literal('form'), fields: z.array(keyValueEntrySchema).default([]) }),
+  z.looseObject({ kind: z.literal('multipart'), parts: z.array(multipartPartSchema).default([]) }),
+  z.looseObject({ kind: z.literal('binary'), source: attachmentSourceSchema, contentType: z.string() }),
+]);
+
+const restSettingsSchema = z.looseObject({
+  timeoutMs: z.number().int().nonnegative().optional(),
+  followRedirects: z.boolean().optional(),
+  maxRedirects: z.number().int().nonnegative().optional(),
+  keepBodyOnRedirect: z.boolean().optional(),
+  encodeUrl: z.boolean().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  sendCookies: z.boolean().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+
+/** `apis/<slug>/requests/[<folder>/…]<name>.request.yaml`. */
+export const restRequestFileSchema = z.looseObject({
+  kind: z.literal('rest'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  method: methodSchema,
+  url: z.string(),
+  pathParams: z.array(keyValueEntrySchema).default([]),
+  query: z.array(keyValueEntrySchema).default([]),
+  headers: z.array(keyValueEntrySchema).default([]),
+  body: restBodySchema.default({ kind: 'none' }),
+  auth: authConfigSchema.default({ type: 'inherit' }),
+  settings: restSettingsSchema.default({}),
+  orphaned: z.boolean().optional(),
+});
+
+/** `apis/<slug>/requests/[<folder>/…]folder.yaml`. */
+export const restFolderFileSchema = z.looseObject({
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  auth: authConfigSchema.optional(),
+});
+
+/** `apis/<slug>/api.yaml`. */
+export const apiFileSchema = z.looseObject({
+  kind: z.literal('rest'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  baseUrl: z.string(),
+  servers: z.array(z.looseObject({ url: z.string(), description: z.string().optional() })).default([]),
+  auth: authConfigSchema.optional(),
+  definition: z
+    .looseObject({ source: nonEmpty, cache: z.boolean().default(true), version: z.string().default('') })
+    .optional(),
+});
+
+/** Every protocol this build can load. `grpc` is reserved: recognised, refused, never guessed at. */
+const SUPPORTED_KINDS = ['soap', 'rest'];
+
+/**
+ * Refuses a document whose `kind` this build knows the name of but cannot honour — today only
+ * `grpc`, which the format reserves for a later release.
+ *
+ * Called before schema validation so the error says what is actually wrong ("this build does not
+ * support gRPC") instead of "expected 'rest', received 'grpc'", and so a project written by a
+ * future build fails loudly rather than losing its gRPC requests to a dropped unknown key.
+ *
+ * @throws ProjectError `project-kind-not-supported`
+ */
+export function assertSupportedKind(document: unknown, file: string): void {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+    return;
+  }
+  const kind = (document as Record<string, unknown>)['kind'];
+  if (typeof kind !== 'string' || SUPPORTED_KINDS.includes(kind)) {
+    return;
+  }
+  throw new ProjectError(
+    'project-kind-not-supported',
+    `${file} is a "${kind}" document, which this build cannot open`,
+    {
+      details: { file, kind, supported: SUPPORTED_KINDS },
+    },
+  );
+}
 
 /** `environments/<slug>.yaml`. */
 export const environmentFileSchema = z.looseObject({
@@ -358,6 +583,35 @@ export const definitionCacheManifestSchema = z.looseObject({
   documents: z.array(definitionCacheDocumentSchema),
 });
 
+/** One entry of `apis/<slug>/definition/manifest.yaml`. */
+const apiDefinitionCacheDocumentSchema = z.looseObject({
+  file: nonEmpty,
+  location: nonEmpty,
+  requestedLocation: z.string().optional(),
+  sha256: nonEmpty,
+  bytes: z.number().int().nonnegative(),
+});
+
+/**
+ * `apis/<slug>/definition/manifest.yaml`. Its own schema rather than the WSDL one because an
+ * OpenAPI document has no `kind`, `namespace` or `importedBy` to record — a JSON or YAML file
+ * references its siblings by location and nothing else.
+ */
+export const apiDefinitionCacheManifestSchema = z.looseObject({
+  formatVersion: z.literal(1),
+  rootLocation: nonEmpty,
+  fetchedAt: nonEmpty,
+  /** The `openapi` string the root document declared, so the API tab can show it without parsing. */
+  declaredVersion: z.string().optional(),
+  documents: z.array(apiDefinitionCacheDocumentSchema),
+});
+
+/** The API definition cache manifest as persisted. */
+export type ApiDefinitionCacheManifest = z.infer<typeof apiDefinitionCacheManifestSchema>;
+
+/** One document of an API definition cache, as the manifest records it. */
+export type ApiDefinitionCacheDocument = z.infer<typeof apiDefinitionCacheDocumentSchema>;
+
 /** The definition cache manifest as persisted. */
 export type DefinitionCacheManifest = z.infer<typeof definitionCacheManifestSchema>;
 /** One document entry inside a definition cache manifest. */
@@ -371,6 +625,14 @@ export type InterfaceFile = z.infer<typeof interfaceFileSchema>;
 export type RequestFile = z.infer<typeof requestFileSchema>;
 /** An environment document as persisted. */
 export type EnvironmentFile = z.infer<typeof environmentFileSchema>;
+/** One table row as persisted (params, query, headers, form fields). */
+export type KeyValueEntryFile = z.infer<typeof keyValueEntrySchema>;
+/** An API document as persisted. */
+export type ApiFile = z.infer<typeof apiFileSchema>;
+/** A folder document as persisted. */
+export type RestFolderFile = z.infer<typeof restFolderFileSchema>;
+/** A REST request document as persisted (a raw body's text excluded). */
+export type RestRequestFile = z.infer<typeof restRequestFileSchema>;
 
 /**
  * Validates `value` against `schema`, raising

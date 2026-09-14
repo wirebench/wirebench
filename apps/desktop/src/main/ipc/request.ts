@@ -1,18 +1,50 @@
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { fromCurl, prettyPrint, ProjectError, recreateRequest, toCurl } from '@wirebench/engine';
+import { mkdir } from 'node:fs/promises';
+import {
+  composeUrl,
+  CURL_REDACTED,
+  fromCurl,
+  fromRestCurl,
+  isWirebenchError,
+  nodeFs,
+  prettyPrint,
+  ProjectError,
+  recreateRequest,
+  restToCurl,
+  soapToCurl,
+  WirebenchError,
+  writeFileAtomic,
+} from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
-import type { PropertyScopes } from '@wirebench/engine';
+import type {
+  AuthConfig,
+  Cookie,
+  OAuth2Auth,
+  ProxyOptions,
+  RestBody,
+  SendAuth,
+  TlsOptions,
+  PropertyScopes,
+} from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
+import { resolveAuthConfig } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
+import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
+import type { RestSendResolution } from '../rest-send.js';
+import type { PreflightResult } from '../expansion-preflight.js';
+import { toUnresolvedRefWire } from '../engine-wire.js';
 import type {
+  RestRequestPatchWire,
+  UnresolvedRefWire,
+  RequestSendRestRequest,
+  RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
   RequestSendRequest,
@@ -20,6 +52,7 @@ import type {
   RequestCurlRequest,
   RequestCurlResponse,
   RequestImportCurlRequest,
+  RequestImportCurlTarget,
   RequestImportCurlResponse,
   RequestPatchWire,
   RequestRecreateRequest,
@@ -45,7 +78,24 @@ export type RequestChannelProject = Pick<
   // has no saved request behind it has no attachments to carry either.
   // Optional for the same reason: an ad-hoc send has no saved request, and so no keystore.
   // ... and, for the same reason, no WS-Security configuration.
-  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'tlsFor' | 'wssFor' | 'hasOutgoingWss' | 'proxyFor'>>;
+  Partial<
+    Pick<
+      ProjectRouter,
+      | 'sendAttachmentsFor'
+      | 'tlsFor'
+      | 'wssFor'
+      | 'hasOutgoingWss'
+      | 'proxyFor'
+      // The REST half, optional for the same reason: a stub that never sends a REST request needs
+      // none of it.
+      | 'restSend'
+      // Read to split an imported cURL URL against the API's own base URL.
+      | 'projectSnapshot'
+      | 'restTlsFor'
+      | 'rememberRestCookies'
+      | 'restMeta'
+    >
+  >;
 
 /**
  * The id of the project owning `entityId`, for the handful of calls that address the *project*
@@ -87,6 +137,18 @@ export interface RequestChannelDeps {
    * folder. Omitted in tests, which then get no exemptions at all.
    */
   readonly dialogPicks?: DumpFilePicks;
+  /**
+   * The app's OAuth2 token service, for a REST request whose credentials are an OAuth2
+   * configuration. Omitted in tests that never send one, which then send no token at all rather
+   * than quietly obtaining one.
+   */
+  readonly oauth2?: Pick<OAuth2Service, 'accessToken'>;
+  /**
+   * Resolves one keychain reference, for the client secret and the remembered refresh token an
+   * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
+   * only for the material the token request consumes before a send exists.
+   */
+  readonly getSecret?: (ref: string) => Promise<string | undefined>;
 }
 
 /**
@@ -227,7 +289,7 @@ async function writeDumpFile(
   }
   try {
     await mkdir(dirname(resolved.path), { recursive: true });
-    await writeFile(resolved.path, Buffer.from(summary.http.bodyBase64, 'base64'));
+    await writeFileAtomic(nodeFs, resolved.path, Buffer.from(summary.http.bodyBase64, 'base64'));
     return summary;
   } catch (error) {
     return {
@@ -296,11 +358,89 @@ async function recreate(
  * secret-bearing headers masked unless the session's show-secrets flag is on, since the
  * command is about to land on a clipboard.
  */
+/**
+ * A credential's shape with no value in it, for an export that will redact it anyway.
+ *
+ * Every arm carries the marker rather than a secret, so the command shows *which* credential a
+ * request sends and where it goes without the keychain being touched.
+ */
+function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
+  switch (auth.type) {
+    case 'basic':
+      return {
+        type: 'basic',
+        username: auth.username ?? '',
+        password: CURL_REDACTED,
+        preemptive: auth.preemptive ?? true,
+      };
+    case 'ntlm':
+      return {
+        type: 'ntlm',
+        username: auth.username ?? '',
+        password: CURL_REDACTED,
+        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
+      };
+    case 'bearer':
+      return { type: 'bearer', token: CURL_REDACTED, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
+    case 'api-key':
+      return { type: 'api-key', name: auth.name, value: CURL_REDACTED, in: auth.in };
+    default:
+      // `none`, `inherit` and `oauth2`: nothing to put on the command (the last is noted instead).
+      return undefined;
+  }
+}
+
+/**
+ * One REST request as a `curl` command.
+ *
+ * Exports what the send path would actually do — the same resolved input, credentials applied — so a
+ * user comparing the two is comparing like with like. Secrets are masked unless the session's
+ * show-secrets switch is on, and an unresolved property is a note rather than a refusal: the command
+ * is a thing to read and edit, not a send.
+ */
+async function restCurl(
+  deps: RequestChannelDeps,
+  request: RequestCurlRequest,
+  resolved: NonNullable<ReturnType<NonNullable<RequestChannelProject['restSend']>>>,
+): Promise<RequestCurlResponse> {
+  const show = deps.showSecrets?.get() ?? false;
+  // With show-secrets off no secret is read at all: the command needs the *shape* of the credential,
+  // not its value, so a stand-in is both sufficient and the safer thing to ask the keychain for.
+  const auth = show
+    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+    : placeholderAuth(resolved.auth);
+  const command = restToCurl(
+    { ...resolved.input, ...(auth !== undefined ? { auth } : {}) },
+    { shell: request.shell, redactSecrets: !show },
+  );
+  const notes: string[] = [];
+  if (resolved.unresolved.length > 0) {
+    notes.push(
+      `Unresolved propert${resolved.unresolved.length === 1 ? 'y' : 'ies'}: ${resolved.unresolved
+        .map((reference) => reference.expr)
+        .join(', ')}.`,
+    );
+  }
+  if (resolved.auth.type === 'oauth2') {
+    // The access token lives in main's memory for the session and is never written into a command:
+    // one pasted with a live token would keep working long after the user forgot they shared it.
+    notes.push('The OAuth2 access token is not included; the command carries the configuration only.');
+  }
+  return { command, ...(notes.length > 0 ? { notes } : {}) };
+}
+
 async function curl(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
 ): Promise<RequestCurlResponse> {
+  // Dispatch on what the id names rather than on a flag the renderer sends: the Code panel asks about
+  // whatever request is in front of the user, and only the model knows which protocol that is.
+  const rest = deps.project.restSend?.(request.requestId, request.draft);
+  if (rest !== undefined) {
+    return await restCurl(deps, request, rest);
+  }
   const live = deps.project.buildLiveSendInput(request.requestId);
   if (live === undefined) {
     throw unknownRequest(request.requestId);
@@ -313,7 +453,7 @@ async function curl(
   const show = deps.showSecrets?.get() ?? false;
   const headers = redactHeaders(effective.headers ?? {}, { show });
   const envelopeXml = redactXml(effective.envelopeXml, { show });
-  const command = toCurl(
+  const command = soapToCurl(
     {
       endpoint: effective.endpoint,
       envelopeXml,
@@ -324,7 +464,7 @@ async function curl(
     },
     { shell: request.shell },
   );
-  // `toCurl` builds a single-part request and gains no multipart support here, so a request
+  // `soapToCurl` builds a single-part request and gains no multipart support here, so a request
   // with attachments would otherwise be silently exported as one without them. Saying so in a
   // leading comment keeps the command paste-able while making the difference impossible to miss.
   const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
@@ -406,12 +546,23 @@ async function importCurl(
   project: RequestChannelProject,
   request: RequestImportCurlRequest,
 ): Promise<RequestImportCurlResponse> {
+  return request.target.kind === 'rest'
+    ? await importCurlAsRest(project, request, request.target)
+    : await importCurlAsSoap(project, request, request.target);
+}
+
+/** The SOAP half: a new request under an operation, with the envelope the command carried. */
+async function importCurlAsSoap(
+  project: RequestChannelProject,
+  request: RequestImportCurlRequest,
+  target: Extract<RequestImportCurlTarget, { kind: 'soap' }>,
+): Promise<RequestImportCurlResponse> {
   const parsed = fromCurl(request.command);
-  const created = await project.projectMutate(ownerOf(project, request.interfaceId), {
+  const created = await project.projectMutate(ownerOf(project, target.interfaceId), {
     kind: 'add-request',
-    interfaceId: request.interfaceId,
-    bindingName: request.bindingName,
-    operationName: request.operationName,
+    interfaceId: target.interfaceId,
+    bindingName: target.bindingName,
+    operationName: target.operationName,
   });
   const requestId = created.createdRequestId;
   if (requestId === undefined) {
@@ -427,6 +578,277 @@ async function importCurl(
   };
   await project.projectMutate(ownerOf(project, requestId), { kind: 'update-request', requestId, patch });
   return { requestId, problems: [...parsed.problems] };
+}
+
+/** The engine's body as the wire spells it: the same shape, with its arrays no longer readonly. */
+function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
+  switch (body.kind) {
+    case 'raw':
+      return {
+        kind: 'raw',
+        language: body.language,
+        ...(body.contentType !== undefined ? { contentType: body.contentType } : {}),
+        text: body.text,
+      };
+    case 'form':
+      return { kind: 'form', fields: body.fields.map((field) => ({ ...field })) };
+    case 'multipart':
+      return { kind: 'multipart', parts: body.parts.map((part) => ({ ...part })) };
+    case 'binary':
+      return { kind: 'binary', source: { ...body.source }, contentType: body.contentType };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/**
+ * The REST half: a new request in an API (or a folder of it), then one patch with everything the
+ * command described.
+ *
+ * The URL is split against the API's own base URL, so an imported request keeps a relative path and
+ * follows the API's environment overrides like every other request in it. A `-u` password is not in
+ * the command as far as this channel is concerned: the dialog stores it and sends a reference.
+ */
+async function importCurlAsRest(
+  project: RequestChannelProject,
+  request: RequestImportCurlRequest,
+  target: Extract<RequestImportCurlTarget, { kind: 'rest' }>,
+): Promise<RequestImportCurlResponse> {
+  const owner = ownerOf(project, target.apiId);
+  const api = project.projectSnapshot?.(owner)?.apis.find((candidate) => candidate.id === target.apiId);
+
+  const parsed = fromRestCurl(request.command, api?.baseUrl !== undefined ? { baseUrl: api.baseUrl } : {});
+
+  const created = await project.projectMutate(owner, {
+    kind: 'add-rest-request',
+    apiId: target.apiId,
+    ...(target.folderId !== undefined ? { parentId: target.folderId } : {}),
+    ...(request.name !== undefined ? { name: request.name } : {}),
+  });
+  const requestId = created.createdId;
+  if (requestId === undefined) {
+    throw new ProjectError('add-request-failed', 'The new REST request was not created');
+  }
+
+  const { method, url, pathParams, query, headers, body, settings } = parsed.request;
+  const auth =
+    parsed.basic === undefined
+      ? undefined
+      : {
+          type: 'basic' as const,
+          username: parsed.basic.username,
+          ...(request.passwordRef !== undefined ? { passwordRef: request.passwordRef } : {}),
+          preemptive: true,
+        };
+  await project.projectMutate(owner, {
+    kind: 'update-rest-request',
+    requestId,
+    patch: {
+      ...(method !== undefined ? { method } : {}),
+      ...(url !== undefined ? { url } : {}),
+      ...(pathParams !== undefined ? { pathParams: [...pathParams] } : {}),
+      ...(query !== undefined ? { query: [...query] } : {}),
+      ...(headers !== undefined ? { headers: [...headers] } : {}),
+      ...(body !== undefined ? { body: bodyToWire(body) } : {}),
+      ...(settings !== undefined ? { settings } : {}),
+      ...(auth !== undefined ? { auth } : {}),
+    },
+  });
+
+  return {
+    requestId,
+    problems: [...parsed.problems],
+    ...(parsed.basic !== undefined ? { basicUsername: parsed.basic.username } : {}),
+  };
+}
+
+/**
+ * Sends one REST request.
+ *
+ * Everything the renderer did not send is resolved here: the API's base URL under the active
+ * environment, the properties, the credentials its folder chain lands on, its TLS identity. A send
+ * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
+ * it reaches the wire, with the problems that explain why.
+ */
+async function sendRestRequest(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  request: RequestSendRestRequest,
+): Promise<RestExchangeSummary> {
+  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
+      details: { requestId: request.requestId },
+    });
+  }
+  if (resolved.unresolved.length > 0) {
+    throw new WirebenchError('rest-unresolved-properties', 'Some property references could not be resolved', {
+      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
+    });
+  }
+
+  const tls = await deps.project.restTlsFor?.(request.requestId);
+  const anchors = extraTrustAnchors();
+  const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
+  const mergedTls = withoutUndefined<TlsOptions>({
+    ...resolved.input.tls,
+    ...tls,
+    ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+  });
+  const owner = deps.project.projectId(request.requestId);
+  const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
+  const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
+  const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
+  const input = { ...resolved.input, tls: mergedTls, ...(proxy !== undefined ? { proxy } : {}) };
+  // The one query parameter an API key may be configured to travel in, so the URL is masked
+  // wherever it is logged even when the key is called something this build has never heard of.
+  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
+
+  // The token is obtained here rather than inside the engine service: it needs a browser, a
+  // loopback listener and a cache, none of which the engine may own. A grant that would have to
+  // open a window refuses instead, and the user presses *Get new token*.
+  const accessToken =
+    resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+      ? await deps.oauth2.accessToken(resolved.auth, {
+          credentials: await oauth2Credentials(deps, resolved.auth),
+          ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
+          ...(proxy !== undefined ? { proxy } : {}),
+        })
+      : undefined;
+
+  const startedAt = Date.now();
+  try {
+    const summary = await service.sendRestRequest(
+      { sendId: request.sendId, requestId: request.requestId, input },
+      {
+        showSecrets: deps.showSecrets?.get() ?? false,
+        auth: resolved.auth,
+        ...(accessToken !== undefined ? { accessToken } : {}),
+        ...(keyParams !== undefined ? { keyParams } : {}),
+      },
+    );
+    deps.project.rememberRestCookies?.(
+      request.requestId,
+      summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
+    );
+    await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt);
+    return summary;
+  } catch (error) {
+    await recordRest(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    throw error;
+  }
+}
+
+/** Appends one REST send's history entry, successful or not. A no-op without a history service. */
+async function recordRest(
+  deps: RequestChannelDeps,
+  requestId: string,
+  resolved: RestSendResolution,
+  summary: RestExchangeSummary | undefined,
+  durationMs: number,
+  error?: unknown,
+): Promise<void> {
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.restMeta?.(requestId);
+  const body = resolved.input.request.body;
+  const entry = await deps.history.recordRestSend(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? resolved.request.name,
+    apiName: meta?.apiName ?? resolved.api.name,
+    folderPath: meta?.folderPath ?? '',
+    method: resolved.input.request.method,
+    url: summary?.url ?? resolved.input.baseUrl,
+    requestHeaders: Object.fromEntries(
+      resolved.input.request.headers.filter((header) => header.enabled).map((header) => [header.name, header.value]),
+    ),
+    requestBody: body.kind === 'raw' ? body.text : '',
+    ...(summary !== undefined ? { exchange: summary } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    durationMs,
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
+async function oauth2Credentials(
+  deps: RequestChannelDeps,
+  config: OAuth2Auth,
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+  const read = async (ref: string | undefined): Promise<string | undefined> =>
+    ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
+  const clientSecret = await read(config.clientSecretRef);
+  const refreshToken = await read(config.refreshTokenRef);
+  return {
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
+    ...(refreshToken !== undefined ? { refreshToken } : {}),
+  };
+}
+
+/**
+ * Drops the keys whose value came over as `undefined`.
+ *
+ * The wire's TLS shape has optional fields that may be present-and-undefined; the engine's has
+ * fields that must be absent instead (`exactOptionalPropertyTypes`), and merging the two is exactly
+ * where the difference bites.
+ */
+function withoutUndefined<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+/**
+ * The dry run of a REST send: where it would go, what would not expand, and which credentials it
+ * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
+ * badge while the user types.
+ */
+function preflightRest(
+  deps: RequestChannelDeps,
+  request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
+): PreflightResult {
+  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+  }
+  const composed = composeUrl(
+    resolved.input.baseUrl,
+    resolved.input.request.url,
+    resolved.input.request.pathParams,
+    resolved.input.request.query,
+    { encode: resolved.input.settings.encodeUrl ?? true },
+  );
+  // A `{param}` with no value is reported in the same list as an unresolved property: both are
+  // "this request is not finished", and the console shows them together.
+  const missing: UnresolvedRefWire[] = composed.problems
+    .filter((problem) => problem.code === 'missing-path-param')
+    .map((problem) => ({
+      expr: `{${problem.name}}`,
+      code: 'missing' as const,
+      start: 0,
+      end: 0,
+      scope: 'path',
+      name: problem.name,
+    }));
+  return {
+    endpoint: composed.url,
+    // The base URL's source uses the same vocabulary an interface endpoint's does, so the badge in
+    // the editor reads identically for either protocol.
+    endpointSource: resolved.baseUrlSource === 'api' ? 'interface-default' : resolved.baseUrlSource,
+    unresolved: [...resolved.unresolved.map(toUnresolvedRefWire), ...missing],
+    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    wsa: { enabled: false },
+  };
+}
+
+/** One failure, as a history line records it. */
+function restErrorDetail(error: unknown): { code: string; message: string } {
+  if (isWirebenchError(error)) {
+    return { code: error.code, message: error.message };
+  }
+  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
 }
 
 /**
@@ -448,6 +870,10 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     const summary = await sendAndRecordHistory(service, deps, effective);
     return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
+
+  registerHandler(channels.request.sendRest, (request) => sendRestRequest(service, deps, request));
+
+  registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

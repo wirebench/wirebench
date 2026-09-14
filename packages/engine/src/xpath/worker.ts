@@ -1,17 +1,19 @@
 /**
  * Entry point run inside a `node:worker_threads` Worker by {@link evaluateWithTimeout}. Receives
- * `{xml, expression, options}` as `workerData`, runs the synchronous {@link evaluate} once, and
+ * `{text, kind, expression, options}` as `workerData`, runs the synchronous evaluator once, and
  * posts the {@link QueryResult} back — this file never imports anything Electron/DOM-specific,
- * only what `evaluate` itself needs, so it can run unmodified in a bare worker thread.
+ * only what the evaluators themselves need, so it can run unmodified in a bare worker thread.
  */
 
 import { parentPort, workerData } from 'node:worker_threads';
-import { evaluate } from './evaluate.js';
+import { evaluate, evaluateJson } from './evaluate.js';
 import type { EvaluateOptions, QueryResult } from './evaluate.js';
 
 /** The shape `evaluateWithTimeout` passes as `workerData` when spawning this worker. */
 interface WorkerRequest {
-  readonly xml: string;
+  readonly text: string;
+  /** Which evaluator to run. Absent for a caller that predates JSON querying, meaning `xml`. */
+  readonly kind?: 'xml' | 'json';
   readonly expression: string;
   readonly options: EvaluateOptions;
 }
@@ -23,7 +25,10 @@ if (parentPort !== null) {
   const request = workerData as WorkerRequest;
   let result: QueryResult;
   try {
-    result = evaluate(request.xml, request.expression, request.options);
+    result =
+      request.kind === 'json'
+        ? evaluateJson(request.text, request.expression, request.options)
+        : evaluate(request.text, request.expression, request.options);
   } catch (error) {
     result = { kind: 'error', message: error instanceof Error ? error.message : String(error) };
   }

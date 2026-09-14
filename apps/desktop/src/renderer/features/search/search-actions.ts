@@ -13,6 +13,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { openInterfaceTab } from '../interface-editor/interface-actions.js';
 import { useInterfaceEditorStore } from '../interface-editor/interface-editor-state.js';
 import { openRequestTab } from '../request-editor/request-actions.js';
+import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 
 /** How long to keep waiting for a lazily-loaded request editor to mount before giving up. */
 const REVEAL_TIMEOUT_MS = 2_000;
@@ -67,6 +68,13 @@ export function revealSearchMatch(match: SearchMatchWire): void {
   }
 
   if (match.requestId === undefined) {
+    return;
+  }
+  // A REST match opens the REST editor: its id names a REST request, which the SOAP tab would
+  // open empty. The matched range is not revealed there — a REST request's searchable text is
+  // assembled from its URL and tables, so an offset into it points at no single editor.
+  if (match.protocol === 'rest') {
+    openRestRequestTab(match.requestId, match.requestName);
     return;
   }
   openRequestTab(match.requestId, match.requestName);

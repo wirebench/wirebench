@@ -8,6 +8,7 @@ export {
   ProjectError,
   ValidationError,
   WorkspaceError,
+  OpenApiError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -20,8 +21,9 @@ export type { NamespaceUri } from './xml/namespaces.js';
 export { LineIndex } from './xml/positions.js';
 export type { LinePosition } from './xml/positions.js';
 
-export { evaluate } from './xpath/evaluate.js';
-export type { EvaluateOptions, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export { evaluate, evaluateJson } from './xpath/evaluate.js';
+export type { EvaluateOptions, QueryLanguage, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export { evaluateJsonPath } from './xpath/jsonpath.js';
 export { evaluateWithTimeout } from './xpath/evaluate-async.js';
 export type { EvaluateWithTimeoutOptions } from './xpath/evaluate-async.js';
 export { collectNamespaces, suggestPrefixes } from './xpath/namespaces.js';
@@ -165,7 +167,8 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
-export { fromCurl, toCurl } from './http/curl.js';
+export { fromCurl, soapToCurl, toCurl } from './http/curl.js';
+export type { CurlBody, CurlCommand, CurlHeader, CurlPart } from './http/curl.js';
 export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
@@ -253,6 +256,7 @@ export type {
 } from './types.js';
 
 export {
+  DEFAULT_OAUTH2_AUTH,
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_REQUEST_PROPERTIES,
   FORMAT_VERSION,
@@ -263,9 +267,14 @@ export {
   generateId,
 } from './project/model.js';
 export type {
+  AnyRequestDef,
+  ApiKeyAuth,
   Attachment,
   AttachmentSource,
   AttachmentType,
+  AuthConfig,
+  AuthType,
+  BearerAuth,
   CreateInterfaceInput,
   CreateOptions,
   CreateRequestInput,
@@ -274,23 +283,136 @@ export type {
   Environment,
   HeaderEntry,
   IdGenerator,
+  InheritAuth,
   Interface,
+  OAuth2Auth,
   OperationDef,
   Project,
   ProjectSettings,
   PropertyMap,
   RequestDef,
   RequestProperties,
+  SoapRequestDef,
   WsaConfig,
   WssRef,
 } from './project/model.js';
 export {
+  COMMON_METHODS,
+  NO_BODY,
+  RAW_LANGUAGE_CONTENT_TYPES,
+  RAW_LANGUAGE_EXTENSIONS,
+  apiFolders,
+  apiRequests,
+  createApi,
+  createFolder,
+  createRestRequest,
+  entry,
+  folderRequests,
+} from './rest/model.js';
+export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
+export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
+export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
+export type { AppliedAuth } from './rest/auth.js';
+export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
+export type { CookieMatchOptions } from './rest/cookies.js';
+export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
+export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
+export {
+  TOKEN_REFRESH_MARGIN_MS,
+  authorizationUrl,
+  buildTokenRequest,
+  needsRefresh,
+  newState,
+  parseTokenResponse,
+  pkce,
+} from './rest/oauth2.js';
+export type {
+  AuthorizationUrlInput,
+  OAuth2Secrets,
+  PkcePair,
+  TokenGrantInput,
+  TokenRequestOptions,
+  TokenResponseInput,
+  TokenSet,
+} from './rest/oauth2.js';
+export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
+export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
+export { expandRestSendInput } from './rest/expand.js';
+export type { ExpandRestOptions } from './rest/expand.js';
+export { decodeRestResponse, sendRest } from './rest/send.js';
+export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
+// OpenAPI: reading a description into the model an import maps onto an API.
+export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
+export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
+export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
+export type { MapApiOptions, MappedApi, OpenApiImportSummary, OpenApiSchemeCandidate } from './rest/openapi/map.js';
+export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
+export type {
+  ApiDefinitionCacheOptions,
+  CachedApiDefinition,
+  WriteApiDefinitionCacheOptions,
+} from './rest/openapi/cache.js';
+export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/openapi/import.js';
+export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
+export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
+export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
+export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
+export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
+export type {
+  JsonSchema,
+  JsonValue,
+  OpenApiDocument,
+  OpenApiExample,
+  OpenApiInfo,
+  OpenApiMediaType,
+  OpenApiOAuthFlow,
+  OpenApiOperation,
+  OpenApiParameter,
+  OpenApiRequestBody,
+  OpenApiSecurityRequirement,
+  OpenApiSecurityScheme,
+  OpenApiServer,
+  OpenApiServerVariable,
+  OpenApiSkipped,
+  OpenApiTag,
+  OpenApiVersion,
+  OpenApiXml,
+  ParameterLocation,
+} from './rest/openapi/model.js';
+export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
+export type {
+  CreateApiInput,
+  CreateFolderInput,
+  CreateRestRequestInput,
+  KeyValueEntry,
+  MultipartFormPart,
+  RawLanguage,
+  RestApi,
+  RestBody,
+  RestDefinitionRef,
+  RestFolder,
+  RestMethod,
+  RestRequestDef,
+  RestRequestSettings,
+  RestServer,
+} from './rest/model.js';
+export {
+  API_FILE,
+  APIS_DIR,
   ATTACHMENTS_DIR,
   ENVIRONMENTS_DIR,
+  FOLDER_FILE,
   INTERFACES_DIR,
+  MAX_FOLDER_DEPTH,
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
+  REQUESTS_DIR,
   WSS_DIR,
+  apiDefinitionDir,
+  apiDir,
+  apiFile,
   definitionCacheDir,
   definitionDir,
   environmentFile,
@@ -300,31 +422,50 @@ export {
   manifestFile,
   operationDir,
   requestFiles,
+  restBodyFileName,
+  restFolderDir,
+  restFolderFile,
+  restRequestFile,
   slugify,
   uniqueSlug,
   wssFile,
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
 export {
+  apiFileSchema,
+  assertSupportedKind,
+  attachmentSourceSchema,
+  authConfigSchema,
   definitionCacheManifestSchema,
   environmentFileSchema,
+  keyValueEntrySchema,
   interfaceFileSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
   requestFileSchema,
+  restBodySchema,
+  apiDefinitionCacheManifestSchema,
+  restFolderFileSchema,
+  restRequestFileSchema,
   wssIncomingFileSchema,
   wssEntrySchema,
   wssOutgoingFileSchema,
 } from './project/schema.js';
 export type {
+  ApiDefinitionCacheDocument,
+  ApiDefinitionCacheManifest,
+  ApiFile,
   DefinitionCacheDocument,
   DefinitionCacheManifest,
   EnvironmentFile,
   InterfaceFile,
+  KeyValueEntryFile,
   ManifestFile,
   RequestFile,
+  RestFolderFile,
+  RestRequestFile,
 } from './project/schema.js';
 export { DEFAULT_PREFERENCES, mergePreferences, preferencesSchema, resetPreferences } from './project/preferences.js';
 export type {
@@ -339,15 +480,22 @@ export type {
   UiPreferences,
   UpdatePreferences,
   WsdlPreferences,
+  RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toSendInput } from './send-options.js';
-export type { AttachmentResolvers, SendRequestInput, ToSendInputArgs } from './send-options.js';
+export { toRestSendInput, toSendInput } from './send-options.js';
+export type {
+  AttachmentResolvers,
+  RestSendRequestInput,
+  SendRequestInput,
+  ToRestSendInputArgs,
+  ToSendInputArgs,
+} from './send-options.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
-export { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './project/serialize.js';
+export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
@@ -364,9 +512,9 @@ export {
   readAttachment,
 } from './project/attachments-cache.js';
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
-export { nodeFs } from './project/fs.js';
+export { nodeFs, writeFileAtomic } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export { appendHistory, generateHistoryId, openHistory } from './project/history.js';
+export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
 export type {
   HistoryEntry,
   HistoryError,
@@ -482,12 +630,13 @@ export type {
 export {
   findEnvironment,
   removeEnvironment,
+  resolveApiBaseUrl,
   resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
   upsertEnvironment,
 } from './project/environments.js';
-export type { EndpointSource } from './project/environments.js';
+export type { BaseUrlSource, EndpointSource } from './project/environments.js';
 // Workspace
 export {
   WORKSPACE_FORMAT_VERSION,
@@ -504,6 +653,7 @@ export {
   migrateWorkspace,
   parseWorkspaceFile,
   reidentifyProject,
+  resolveWorkspaceApiBaseUrl,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveWorkspace,

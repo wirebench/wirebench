@@ -18,6 +18,17 @@ const RequestEditor = lazy(async () => {
   return { default: module.RequestEditor };
 });
 
+// Split out for the same reason as the SOAP editor: its raw-body editor is Monaco.
+const RestEditor = lazy(async () => {
+  const module = await import('../features/rest-editor/rest-editor.js');
+  return { default: module.RestEditor };
+});
+
+const ApiTab = lazy(async () => {
+  const module = await import('../features/rest-api/api-tab.js');
+  return { default: module.ApiTab };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: module.HistoryEntryView };
@@ -88,6 +99,7 @@ const MENU_ITEM_CLASS =
 export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
   const dirtyRequests = useDraftsStore((state) => state.requests);
+  const dirtyRestRequests = useDraftsStore((state) => state.restRequests);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
   const showStart = useEditorsStore((state) => state.showStart);
@@ -97,6 +109,8 @@ export function EditorArea() {
   const projects = useProjectStore((state) => state.projects);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments ?? NO_ENVIRONMENTS);
   const interfaces = useProjectStore((state) => state.interfaces);
+  const apis = useProjectStore((state) => state.apis);
+  const restRequests = useProjectStore((state) => state.restRequests);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -188,15 +202,18 @@ export function EditorArea() {
   /** A tab's live name: renames reach the strip before the tab's own stored title catches up. */
   const labelFor = (tab: (typeof tabs)[number]): string =>
     (tab.kind === 'interface' && tab.interfaceId !== undefined ? interfaces[tab.interfaceId]?.name : undefined) ??
+    (tab.kind === 'api' && tab.apiId !== undefined ? apis[tab.apiId]?.name : undefined) ??
+    (tab.restRequestId !== undefined ? restRequests[tab.restRequestId]?.name : undefined) ??
     (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
     (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
     (tab.environmentId !== undefined
       ? environmentName(projects, workspaceEnvironments, tab.environmentId)
       : undefined) ??
     tab.title;
-  // Only request tabs carry drafts today; every other kind still autosaves.
+  // Only the two request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean =>
-    tab.requestId !== undefined && dirtyRequests[tab.requestId] !== undefined;
+    (tab.requestId !== undefined && dirtyRequests[tab.requestId] !== undefined) ||
+    (tab.restRequestId !== undefined && dirtyRestRequests[tab.restRequestId] !== undefined);
 
   const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     const current = order.indexOf(selectedId);
@@ -462,6 +479,14 @@ export function EditorArea() {
         ) : activeTab.kind === 'diff' && activeTab.diff !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <DiffView {...activeTab.diff} />
+          </Suspense>
+        ) : activeTab.kind === 'rest-request' && activeTab.restRequestId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <RestEditor requestId={activeTab.restRequestId} />
+          </Suspense>
+        ) : activeTab.kind === 'api' && activeTab.apiId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <ApiTab apiId={activeTab.apiId} />
           </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

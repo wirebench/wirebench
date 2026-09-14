@@ -8,6 +8,9 @@ import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-d
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { registerExplorerTree } from '../../src/renderer/features/explorer/explorer-api.js';
+import { restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 
 /** Sets `preferences.ui.confirmOnDelete` on the mirror. */
 function confirmOnDelete(value: boolean): void {
@@ -68,5 +71,168 @@ describe('explorerActions deletion', () => {
     explorerActions.removeInterface(undefined);
 
     expect(removeRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The REST creators and destroyers. Each case pins the store call the action makes, because that
+ * call is the whole action: the mutation payload is what reaches disk, and the tab it opens
+ * afterwards is what the user sees.
+ */
+describe('explorerActions for REST nodes', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    useEditorsStore.getState().reset();
+    useUiStore.setState({ confirmDeleteNode: undefined });
+    useProjectStore.setState({ apis: {}, folders: {}, restRequests: {} });
+  });
+
+  it('names a new API after the ones already there, and opens its tab', async () => {
+    const addApi = vi.fn().mockResolvedValue('api-new');
+    useProjectStore.setState({
+      addApi,
+      apis: { 'api-1': restApiWire({ name: 'API 1' }) },
+    });
+
+    explorerActions.newApi('p1');
+    await vi.waitFor(() => {
+      expect(addApi).toHaveBeenCalledWith('p1', 'API 2');
+    });
+    // The tab opens once the mirror holds the new API — the reply is what carries its name.
+    useProjectStore.setState({
+      apis: { 'api-1': restApiWire({ name: 'API 1' }), 'api-new': restApiWire({ id: 'api-new', name: 'API 2' }) },
+    });
+    explorerActions.openApi('api-new');
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['api:api-new']);
+  });
+
+  it('creates a folder at the API root and puts the row into rename mode', async () => {
+    const addFolder = vi.fn().mockResolvedValue('folder-new');
+    useProjectStore.setState({ addFolder, folders: { 'folder-1': restFolderWire({ name: 'Folder 1' }) } });
+    const edit = vi.fn();
+    registerExplorerTree({ get: () => ({ edit }) } as unknown as Parameters<typeof registerExplorerTree>[0]);
+
+    explorerActions.newFolder('api-1');
+    await vi.waitFor(() => {
+      expect(edit).toHaveBeenCalled();
+    });
+    expect(addFolder).toHaveBeenCalledWith('api-1', undefined, 'Folder 2');
+    registerExplorerTree(null);
+  });
+
+  it('creates a folder inside the folder the caller named', () => {
+    const addFolder = vi.fn().mockResolvedValue('folder-new');
+    useProjectStore.setState({ addFolder });
+
+    explorerActions.newFolder('api-1', 'folder-1');
+
+    expect(addFolder).toHaveBeenCalledWith('api-1', 'folder-1', 'Folder 1');
+  });
+
+  it('creates a REST request and opens its editor', async () => {
+    const addRestRequest = vi.fn().mockResolvedValue('rest-new');
+    useProjectStore.setState({ addRestRequest, restRequests: { 'rest-new': restRequestWire({ id: 'rest-new' }) } });
+
+    explorerActions.newRestRequest('api-1', 'folder-1');
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['rest:rest-new']);
+    });
+    expect(addRestRequest).toHaveBeenCalledWith('api-1', 'folder-1');
+  });
+
+  it('duplicates a request and opens the copy', async () => {
+    const cloneRestRequest = vi.fn().mockResolvedValue('rest-copy');
+    useProjectStore.setState({
+      cloneRestRequest,
+      restRequests: { 'rest-copy': restRequestWire({ id: 'rest-copy', name: 'Get pet (copy)' }) },
+    });
+
+    explorerActions.duplicateRestRequest('rest-1');
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs[0]?.title).toBe('Get pet (copy)');
+    });
+    expect(cloneRestRequest).toHaveBeenCalledWith('rest-1');
+  });
+
+  it('always confirms deleting an API that holds requests, even with the preference off', () => {
+    confirmOnDelete(false);
+    const removeApi = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      removeApi,
+      apis: { 'api-1': restApiWire() },
+      restRequests: { 'rest-1': restRequestWire(), 'rest-2': restRequestWire({ id: 'rest-2' }) },
+    });
+
+    explorerActions.removeApi('api-1');
+
+    expect(removeApi).not.toHaveBeenCalled();
+    expect(useUiStore.getState().confirmDeleteNode).toEqual({
+      kind: 'api',
+      id: 'api-1',
+      name: 'Petstore',
+      requestCount: 2,
+    });
+  });
+
+  it('deletes an empty API straight away when the preference is off', () => {
+    confirmOnDelete(false);
+    const removeApi = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ removeApi, apis: { 'api-1': restApiWire() } });
+
+    explorerActions.removeApi('api-1');
+
+    expect(removeApi).toHaveBeenCalledWith('api-1');
+    expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
+  });
+
+  it('counts the requests in a folder and in the folders under it', () => {
+    confirmOnDelete(false);
+    useProjectStore.setState({
+      removeFolder: vi.fn().mockResolvedValue(undefined),
+      folders: {
+        'folder-1': restFolderWire(),
+        'folder-2': restFolderWire({ id: 'folder-2', parentId: 'folder-1' }),
+        'folder-3': restFolderWire({ id: 'folder-3', parentId: 'folder-2' }),
+        elsewhere: restFolderWire({ id: 'elsewhere' }),
+      },
+      restRequests: {
+        a: restRequestWire({ id: 'a', folderId: 'folder-1' }),
+        b: restRequestWire({ id: 'b', folderId: 'folder-3' }),
+        c: restRequestWire({ id: 'c', folderId: 'elsewhere' }),
+      },
+    });
+
+    explorerActions.removeFolder('folder-1');
+
+    expect(useUiStore.getState().confirmDeleteNode?.requestCount).toBe(2);
+  });
+
+  it('deletes a REST request straight away with the preference off, and asks with it on', () => {
+    const removeRestRequest = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ removeRestRequest, restRequests: { 'rest-1': restRequestWire() } });
+
+    confirmOnDelete(false);
+    explorerActions.deleteRestRequest('rest-1');
+    expect(removeRestRequest).toHaveBeenCalledWith('rest-1');
+
+    confirmOnDelete(true);
+    explorerActions.deleteRestRequest('rest-1');
+    expect(useUiStore.getState().confirmDeleteNode).toMatchObject({ kind: 'rest-request', id: 'rest-1' });
+  });
+
+  it('does nothing for an entity the mirror no longer holds', () => {
+    const removeApi = vi.fn();
+    const removeFolder = vi.fn();
+    const removeRestRequest = vi.fn();
+    useProjectStore.setState({ removeApi, removeFolder, removeRestRequest });
+
+    explorerActions.removeApi('gone');
+    explorerActions.removeFolder('gone');
+    explorerActions.deleteRestRequest('gone');
+
+    expect(removeApi).not.toHaveBeenCalled();
+    expect(removeFolder).not.toHaveBeenCalled();
+    expect(removeRestRequest).not.toHaveBeenCalled();
+    expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
   });
 });

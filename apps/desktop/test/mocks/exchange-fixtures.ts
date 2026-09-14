@@ -1,4 +1,4 @@
-import type { ExchangeSummary, InterfaceWire } from '../../src/shared/wire-types.js';
+import type { ExchangeSummary, InterfaceWire, RestExchangeSummary } from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
@@ -105,4 +105,36 @@ export function makeDraft(overrides: DraftOverrides = {}): RequestDraft {
     order: 0,
     ...overrides,
   } as RequestDraft;
+}
+
+/** A successful REST exchange, with a small JSON body; every field can be overridden per test. */
+export function makeRestExchange(overrides: Partial<RestExchangeSummary> = {}): RestExchangeSummary {
+  const body = overrides.text ?? '{"id":1}';
+  return {
+    sendId: 'send-1',
+    durationMs: 12,
+    url: 'https://api.test/pet/1',
+    method: 'GET',
+    text: body,
+    language: 'json',
+    cookies: [],
+    methodChanged: false,
+    problems: [],
+    http: {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      rawHeaders: [['content-type', 'application/json']],
+      bodyBase64: b64(body),
+      rawBodyBase64: b64(body),
+      rawRequestBase64: b64('GET /pet/1 HTTP/1.1\r\nHost: api.test\r\n\r\n'),
+      rawResponseBase64: b64(`HTTP/1.1 200 OK\r\n\r\n${body}`),
+      truncated: false,
+      httpVersion: '1.1',
+      timings: { startedAt: '2026-09-13T08:30:05.000Z', totalMs: 12, ttfbMs: 8 },
+      redirects: [],
+      request: { url: 'https://api.test/pet/1', method: 'GET', headers: {} },
+    },
+    ...overrides,
+  };
 }

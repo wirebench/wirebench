@@ -37,12 +37,19 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'interface' | 'project';
+  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'interface' | 'project' | 'rest-request' | 'api';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
   /** Set when `kind` is `'interface'`: the imported interface this viewer tab shows. */
   readonly interfaceId?: string;
+  /**
+   * Set when `kind` is `'rest-request'`: the REST request this tab edits. A separate field from
+   * `requestId` so nothing that reads a SOAP tab's request can pick up a REST one by accident.
+   */
+  readonly restRequestId?: string;
+  /** Set when `kind` is `'api'`: the API this tab shows. */
+  readonly apiId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

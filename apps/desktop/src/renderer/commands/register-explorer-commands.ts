@@ -166,4 +166,51 @@ export function registerExplorerCommands(): void {
       explorerActions.copyEndpointAddress(ctx.selection?.address);
     },
   });
+
+  // The three REST creators. Each is gated on a selection *anywhere inside* an API — a folder row
+  // and a request row both name their API — so "New request" works from wherever the user is
+  // rather than only on the API row itself.
+  registerCommand({
+    id: 'rest.newApi',
+    label: 'REST: New API',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'project',
+    whenScope: 'selection.project',
+    run: (ctx) => {
+      explorerActions.newApi(ctx.selection?.id);
+    },
+  });
+  registerCommand({
+    id: 'rest.newFolder',
+    label: 'REST: New Folder',
+    category: 'Explorer',
+    when: (ctx) => insideApi(ctx.selection?.kind),
+    whenScope: 'selection.api',
+    run: (ctx) => {
+      explorerActions.newFolder(ctx.selection?.apiId, folderOf(ctx.selection));
+    },
+  });
+  registerCommand({
+    id: 'rest.newRequest',
+    label: 'REST: New Request',
+    category: 'Explorer',
+    when: (ctx) => insideApi(ctx.selection?.kind),
+    whenScope: 'selection.api',
+    run: (ctx) => {
+      explorerActions.newRestRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+    },
+  });
+}
+
+/** Whether the selected node sits in an API, whichever of the three kinds it is. */
+function insideApi(kind: string | undefined): boolean {
+  return kind === 'api' || kind === 'folder' || kind === 'rest-request';
+}
+
+/**
+ * The folder a new node should land in: the selected folder itself, the folder holding the
+ * selected request, or the API's root when an API row is selected.
+ */
+function folderOf(selection: { readonly kind: string; readonly folderId?: string } | undefined): string | undefined {
+  return selection?.kind === 'api' ? undefined : selection?.folderId;
 }

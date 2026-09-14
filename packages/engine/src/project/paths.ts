@@ -18,6 +18,31 @@ const ILLEGAL_CHARS = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
 /** Device names Windows refuses to use as a file name, with or without an extension. */
 const RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
+/** True for the two characters a path segment must not begin or end with on Windows. */
+function isDotOrSpace(code: number): boolean {
+  return code === 0x2e || code === 0x20;
+}
+
+/**
+ * Replaces a leading run and a trailing run of dots/spaces with one `_` each. A single pass over
+ * the ends rather than an unanchored `[. ]+$`, which backtracks quadratically on a long run of
+ * dots and spaces that a display name from a file may contain.
+ */
+function replaceEdgeDotsAndSpaces(value: string): string {
+  let start = 0;
+  while (start < value.length && isDotOrSpace(value.charCodeAt(start))) {
+    start += 1;
+  }
+  if (start === value.length) {
+    return start === 0 ? value : '_';
+  }
+  let end = value.length;
+  while (end > start && isDotOrSpace(value.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return `${start > 0 ? '_' : ''}${value.slice(start, end)}${end < value.length ? '_' : ''}`;
+}
+
 /**
  * Derives a portable file-system name from a display name.
  *
@@ -29,9 +54,9 @@ const RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 export function slugify(name: string): string {
   let slug = name.replace(/\s+/g, ' ').replace(ILLEGAL_CHARS, '_');
   slug = slug.trim();
-  slug = slug.replace(/^[. ]+/, '_').replace(/[. ]+$/, '_');
+  slug = replaceEdgeDotsAndSpaces(slug);
   if (slug.length > MAX_SLUG_LENGTH) {
-    slug = slug.slice(0, MAX_SLUG_LENGTH).replace(/[. ]+$/, '_');
+    slug = replaceEdgeDotsAndSpaces(slug.slice(0, MAX_SLUG_LENGTH));
   }
   if (slug === '') {
     return 'unnamed';
@@ -152,6 +177,23 @@ export const OPERATIONS_DIR = 'operations';
 export const ATTACHMENTS_DIR = 'attachments';
 /** Suffix identifying a request metadata file. */
 export const REQUEST_SUFFIX = '.request.yaml';
+/** Directory holding every REST API, beside `interfaces/`. */
+export const APIS_DIR = 'apis';
+/** Per-API directory holding the request tree: request files and folder directories. */
+export const REQUESTS_DIR = 'requests';
+/** File naming a folder inside an API's request tree. */
+export const FOLDER_FILE = 'folder.yaml';
+/** File describing an API. */
+export const API_FILE = 'api.yaml';
+/**
+ * How deeply folders may nest inside an API's request tree.
+ *
+ * Eight is not a taste judgement: `apis/<slug>/requests/` plus eight 80-character folder slugs
+ * plus a request file already sits close to the 260-character path limit Windows still applies to
+ * many APIs, and a tree deeper than this is unreadable in an explorer anyway. A folder below the
+ * cap loads as a {@link ProjectProblem} rather than being written to a path that might not open.
+ */
+export const MAX_FOLDER_DEPTH = 8;
 
 /** Absolute path of the project manifest. */
 export function manifestFile(root: string): string {
@@ -202,6 +244,52 @@ export function requestFiles(
     yaml: join(dir, `${requestSlug}${REQUEST_SUFFIX}`),
     xml: join(dir, `${requestSlug}.xml`),
   };
+}
+
+/** Absolute path of an API's directory (`apis/<slug>/`). */
+export function apiDir(root: string, apiSlug: string): string {
+  return join(root, APIS_DIR, apiSlug);
+}
+
+/** Absolute path of an API's metadata file. */
+export function apiFile(root: string, apiSlug: string): string {
+  return join(apiDir(root, apiSlug), API_FILE);
+}
+
+/** Absolute path of an API's definition cache directory (`apis/<slug>/definition/`). */
+export function apiDefinitionDir(root: string, apiSlug: string): string {
+  return join(apiDir(root, apiSlug), DEFINITION_DIR);
+}
+
+/**
+ * Absolute path of a directory inside an API's request tree: `apis/<slug>/requests/` itself when
+ * `folderSlugs` is empty, and one directory per folder below it otherwise.
+ */
+export function restFolderDir(root: string, apiSlug: string, folderSlugs: readonly string[] = []): string {
+  return join(apiDir(root, apiSlug), REQUESTS_DIR, ...folderSlugs);
+}
+
+/** Absolute path of the `folder.yaml` describing the folder at `folderSlugs`. */
+export function restFolderFile(root: string, apiSlug: string, folderSlugs: readonly string[]): string {
+  return join(restFolderDir(root, apiSlug, folderSlugs), FOLDER_FILE);
+}
+
+/** Absolute path of a REST request's metadata file. */
+export function restRequestFile(
+  root: string,
+  apiSlug: string,
+  folderSlugs: readonly string[],
+  requestSlug: string,
+): string {
+  return join(restFolderDir(root, apiSlug, folderSlugs), `${requestSlug}${REQUEST_SUFFIX}`);
+}
+
+/**
+ * The file name a raw body is stored under, beside its request file: `<slug>.body.<ext>`, the
+ * extension chosen by the body's language so the file diffs and highlights as what it is.
+ */
+export function restBodyFileName(requestSlug: string, extension: string): string {
+  return `${requestSlug}.body.${extension}`;
 }
 
 /** Absolute path of an environment file. */

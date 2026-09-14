@@ -13,29 +13,54 @@ import { join } from 'node:path';
 import { ProjectError } from '../errors.js';
 import type {
   Attachment,
+  AuthConfig,
   Endpoint,
   Environment,
   Interface,
   OperationDef,
   Project,
   ProjectSettings,
-  RequestDef,
   RequestProperties,
+  SoapRequestDef,
   WssRef,
 } from './model.js';
+import type {
+  KeyValueEntry,
+  RestApi,
+  RestBody,
+  RestFolder,
+  RestRequestDef,
+  RestRequestSettings,
+} from '../rest/model.js';
 import { FORMAT_VERSION } from './model.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
 import { migrate } from './migrate.js';
 import { normalizeWsa } from '../wsa/model.js';
-import { ENVIRONMENTS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX, WSS_DIR } from './paths.js';
 import {
+  API_FILE,
+  APIS_DIR,
+  ENVIRONMENTS_DIR,
+  FOLDER_FILE,
+  INTERFACES_DIR,
+  MAX_FOLDER_DEPTH,
+  OPERATIONS_DIR,
+  REQUEST_SUFFIX,
+  REQUESTS_DIR,
+  WSS_DIR,
+} from './paths.js';
+import type { KeyValueEntryFile } from './schema.js';
+import {
+  apiFileSchema,
+  assertSupportedKind,
   environmentFileSchema,
   interfaceFileSchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
   requestFileSchema,
+  restFolderFileSchema,
+  restRequestFileSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from './schema.js';
@@ -44,7 +69,19 @@ import { parseYaml } from './yaml.js';
 
 /** A recoverable inconsistency found while loading a project. */
 export interface ProjectProblem {
-  readonly code: 'missing-envelope' | 'orphan-operation-folder' | 'orphan-request-file' | 'missing-interface-file';
+  readonly code:
+    | 'missing-envelope'
+    | 'orphan-operation-folder'
+    | 'orphan-request-file'
+    | 'missing-interface-file'
+    /** An `apis/<slug>/` directory with no `api.yaml`; the API is skipped. */
+    | 'missing-api-file'
+    /** A raw body whose sibling file is gone; the request loads with an empty body. */
+    | 'missing-body'
+    /** A folder nested deeper than {@link MAX_FOLDER_DEPTH}; it and everything below it is skipped. */
+    | 'folder-too-deep'
+    /** An API and an interface sharing a slug, which would make an endpoint override ambiguous. */
+    | 'api-slug-conflict';
   readonly message: string;
   /** Path relative to the project root. */
   readonly file: string;
@@ -94,8 +131,13 @@ function exact<T extends object>(value: { readonly [K in keyof T]: T[K] | undefi
   return out as T;
 }
 
-async function loadRequests(fs: FsLike, root: string, dir: string, problems: ProjectProblem[]): Promise<RequestDef[]> {
-  const requests: RequestDef[] = [];
+async function loadRequests(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  problems: ProjectProblem[],
+): Promise<SoapRequestDef[]> {
+  const requests: SoapRequestDef[] = [];
   const entries = await readdirIfExists(fs, abs(root, dir));
   const names = new Set(entries.filter((e) => e.isFile).map((e) => e.name));
   for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -104,7 +146,9 @@ async function loadRequests(fs: FsLike, root: string, dir: string, problems: Pro
     }
     const slug = entry.name.slice(0, -REQUEST_SUFFIX.length);
     const relative = `${dir}/${entry.name}`;
-    const parsed = parseFile(requestFileSchema, await readYaml(fs, root, relative), relative);
+    const document = await readYaml(fs, root, relative);
+    assertSupportedKind(document, relative);
+    const parsed = parseFile(requestFileSchema, document, relative);
     const xmlRelative = `${dir}/${slug}.xml`;
     const envelope = await readFileIfExists(fs, abs(root, xmlRelative));
     if (envelope === undefined) {
@@ -164,6 +208,7 @@ async function loadInterface(
     });
     return undefined;
   }
+  assertSupportedKind(document, relative);
   const parsed = parseFile(interfaceFileSchema, document, relative);
   const operationsDir = `${INTERFACES_DIR}/${slug}/${OPERATIONS_DIR}`;
   const folders = new Set(
@@ -208,6 +253,220 @@ async function loadInterface(
     wsa: normalizeWsa(parsed.wsa),
     ...optional('auth', parsed.auth),
     operations: operations.sort(byOrder),
+  };
+}
+
+/**
+ * Authentication as loaded: the same `undefined`-key drop {@link exact} performs, expressed
+ * separately because `AuthConfig` is a union and so has no single mapped shape to hand `exact`.
+ * The cast is safe for the same reason `exact`'s is: the schema has already established the
+ * arm's own fields, and this only removes keys whose value is absent.
+ */
+function authConfig(parsed: Record<string, unknown>): AuthConfig {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (value !== undefined) {
+      out[key] = value;
+    }
+  }
+  return out as unknown as AuthConfig;
+}
+
+/** A table row as loaded: `enabled` defaults to true, an absent description stays absent. */
+function keyValueEntries(rows: readonly KeyValueEntryFile[]): KeyValueEntry[] {
+  return rows.map((row) =>
+    exact<KeyValueEntry>({ name: row.name, value: row.value, enabled: row.enabled, description: row.description }),
+  );
+}
+
+/**
+ * One request body as loaded. A raw body's text lives in a sibling file, so it is read here and
+ * the file name is dropped: the model holds the text, the layout holds the name
+ * (`project/paths.ts` rebuilds it on save from the language).
+ */
+async function loadBody(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  document: RestRequestFileBody,
+  requestName: string,
+  problems: ProjectProblem[],
+): Promise<RestBody> {
+  switch (document.kind) {
+    case 'raw': {
+      const relative = `${dir}/${document.file}`;
+      const text = await readFileIfExists(fs, abs(root, relative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${requestName}" has no body file; loaded with an empty body`,
+          file: relative,
+        });
+      }
+      return {
+        kind: 'raw',
+        language: document.language,
+        ...optional('contentType', document.contentType),
+        text: text === undefined ? '' : text.toString('utf8'),
+      };
+    }
+    case 'form':
+      return { kind: 'form', fields: keyValueEntries(document.fields) };
+    case 'multipart':
+      return {
+        kind: 'multipart',
+        parts: document.parts.map((part) =>
+          part.kind === 'text'
+            ? exact<Extract<RestBody, { kind: 'multipart' }>['parts'][number]>({ ...part, kind: 'text' })
+            : exact<Extract<RestBody, { kind: 'multipart' }>['parts'][number]>({ ...part, kind: 'file' }),
+        ),
+      };
+    case 'binary':
+      return { kind: 'binary', source: document.source, contentType: document.contentType };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/** The `body` field of a parsed REST request document. */
+type RestRequestFileBody = ReturnType<typeof restRequestFileSchema.parse>['body'];
+
+/** What one directory of an API's request tree holds. */
+interface FolderContents {
+  readonly folders: RestFolder[];
+  readonly requests: RestRequestDef[];
+}
+
+/**
+ * Loads one directory of an API's request tree: its `*.request.yaml` files as requests, its
+ * subdirectories as folders, recursively.
+ *
+ * A directory with no `folder.yaml` is still a folder — named after the directory, ordered after
+ * the ones that do have a file, and given a file of its own on the next save — because a folder
+ * someone created with `mkdir` in a checked-out project is a folder, not a fault. A directory
+ * deeper than {@link MAX_FOLDER_DEPTH} becomes a problem and is skipped whole, so nothing is ever
+ * written to a path that might not open on Windows.
+ */
+async function loadFolderContents(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  depth: number,
+  problems: ProjectProblem[],
+): Promise<FolderContents> {
+  const entries = await readdirIfExists(fs, abs(root, dir));
+  const unclaimed = new Set(entries.filter((e) => e.isFile && e.name !== FOLDER_FILE).map((e) => e.name));
+  const requests: RestRequestDef[] = [];
+  const folders: RestFolder[] = [];
+
+  for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isFile && entry.name.endsWith(REQUEST_SUFFIX)) {
+      const relative = `${dir}/${entry.name}`;
+      const document = await readYaml(fs, root, relative);
+      assertSupportedKind(document, relative);
+      const parsed = parseFile(restRequestFileSchema, document, relative);
+      unclaimed.delete(entry.name);
+      if (parsed.body.kind === 'raw') {
+        unclaimed.delete(parsed.body.file);
+      }
+      requests.push({
+        kind: 'rest',
+        id: parsed.id,
+        name: parsed.name,
+        slug: entry.name.slice(0, -REQUEST_SUFFIX.length),
+        order: parsed.order,
+        ...optional('description', parsed.description),
+        method: parsed.method,
+        url: parsed.url,
+        pathParams: keyValueEntries(parsed.pathParams),
+        query: keyValueEntries(parsed.query),
+        headers: keyValueEntries(parsed.headers),
+        body: await loadBody(fs, root, dir, parsed.body, parsed.name, problems),
+        auth: authConfig(parsed.auth),
+        settings: exact<RestRequestSettings>(parsed.settings),
+        ...(parsed.orphaned === true ? { orphaned: true } : {}),
+      });
+      continue;
+    }
+    if (!entry.isDirectory) {
+      continue;
+    }
+    const childDir = `${dir}/${entry.name}`;
+    if (depth + 1 > MAX_FOLDER_DEPTH) {
+      problems.push({
+        code: 'folder-too-deep',
+        message: `Folder "${entry.name}" is nested more than ${String(MAX_FOLDER_DEPTH)} deep and was skipped`,
+        file: childDir,
+      });
+      continue;
+    }
+    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems);
+    const relative = `${childDir}/${FOLDER_FILE}`;
+    const document = await readYaml(fs, root, relative);
+    const parsed = document === undefined ? undefined : parseFile(restFolderFileSchema, document, relative);
+    folders.push({
+      id: parsed?.id ?? `folder:${entry.name}`,
+      name: parsed?.name ?? entry.name,
+      slug: entry.name,
+      order: parsed?.order ?? Number.MAX_SAFE_INTEGER,
+      ...optional('description', parsed?.description),
+      ...(parsed?.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+      folders: contents.folders,
+      requests: contents.requests,
+    });
+  }
+
+  for (const orphan of [...unclaimed].sort()) {
+    problems.push({
+      code: 'orphan-request-file',
+      message: `"${orphan}" does not belong to any request`,
+      file: `${dir}/${orphan}`,
+    });
+  }
+  return { folders: folders.sort(byOrder), requests: requests.sort(byOrder) };
+}
+
+/** Loads one `apis/<slug>/` directory, or records a problem and returns nothing. */
+async function loadApi(
+  fs: FsLike,
+  root: string,
+  slug: string,
+  problems: ProjectProblem[],
+): Promise<RestApi | undefined> {
+  const relative = `${APIS_DIR}/${slug}/${API_FILE}`;
+  const document = await readYaml(fs, root, relative);
+  if (document === undefined) {
+    problems.push({
+      code: 'missing-api-file',
+      message: `Folder "${slug}" has no ${API_FILE} and was skipped`,
+      file: relative,
+    });
+    return undefined;
+  }
+  assertSupportedKind(document, relative);
+  const parsed = parseFile(apiFileSchema, document, relative);
+  const contents = await loadFolderContents(fs, root, `${APIS_DIR}/${slug}/${REQUESTS_DIR}`, 0, problems);
+  return {
+    kind: 'rest',
+    id: parsed.id,
+    name: parsed.name,
+    slug,
+    order: parsed.order,
+    ...optional('description', parsed.description),
+    baseUrl: parsed.baseUrl,
+    servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
+    ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+    ...(parsed.definition !== undefined
+      ? {
+          definition: {
+            source: parsed.definition.source,
+            cache: parsed.definition.cache,
+            version: parsed.definition.version,
+          },
+        }
+      : {}),
+    folders: contents.folders,
+    requests: contents.requests,
   };
 }
 
@@ -276,6 +535,29 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     }
   }
 
+  const interfaceSlugs = new Set(interfaces.map((iface) => iface.slug.toLowerCase()));
+  const apis: RestApi[] = [];
+  for (const entry of await readdirIfExists(fs, abs(root, APIS_DIR))) {
+    if (!entry.isDirectory) {
+      continue;
+    }
+    const api = await loadApi(fs, root, entry.name, problems);
+    if (api === undefined) {
+      continue;
+    }
+    // An environment's endpoint overrides are keyed by slug, so two entities sharing one would
+    // make the override ambiguous. The folders never collide; the override key would.
+    if (interfaceSlugs.has(api.slug.toLowerCase())) {
+      problems.push({
+        code: 'api-slug-conflict',
+        message: `API "${api.name}" and an interface share the slug "${api.slug}"; the API was skipped`,
+        file: `${APIS_DIR}/${api.slug}/${API_FILE}`,
+      });
+      continue;
+    }
+    apis.push(api);
+  }
+
   const keystoresDocument = await readYaml(fs, root, KEYSTORES_PATH);
   const keystores =
     keystoresDocument === undefined
@@ -296,6 +578,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     disabledProperties: manifest.disabled ?? [],
     ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     interfaces: interfaces.sort(byOrder),
+    apis: apis.sort(byOrder),
     environments: await loadEnvironments(fs, root),
     wss: {
       outgoing: await loadWssRefs(fs, root, 'outgoing'),

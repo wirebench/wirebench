@@ -16,6 +16,14 @@ export interface HttpRequest {
   readonly followRedirects: boolean;
   /** Maximum number of redirects to follow. Default 5. */
   readonly maxRedirects?: number;
+  /**
+   * Keep the method and body across a 301 or 302 that would otherwise become a bodyless `GET`.
+   *
+   * Browsers downgrade those two, which is why the default does too (RFC 9110 §15.4.3 notes the
+   * practice), but a REST client talking to an API that answers a `POST` with a 302 to the created
+   * resource needs the choice. 303 always becomes a `GET`: that is what the status means.
+   */
+  readonly preserveMethodOnRedirect?: boolean;
   /** Maximum response body size to buffer, in bytes. Undefined = unlimited. */
   readonly maxSizeBytes?: number;
   readonly signal?: AbortSignal;

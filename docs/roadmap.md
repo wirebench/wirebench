@@ -1,12 +1,14 @@
 # Roadmap
 
-What Wirebench 1.1 deliberately leaves out, reorganised by what each item unlocks and in the order it is
+What Wirebench 2.0 deliberately leaves out, reorganised by what each item unlocks and in the order it is
 worth building. The v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`, §14) is
 the phase plan this page argues from; where the two differ, [Departures from the v1 spec](#departures-from-the-v1-spec)
 says so, and the spec stays authoritative until it is updated.
 
-**Where things stand (2026-09-12).** 1.0.0 (explore and send) was tagged and withdrawn unpublished;
-1.1.0 is the first published release. It adds workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
+**Where things stand (2026-09-14).** 2.0.0 adds the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
+ADR-0007) and moves the project format to version 3 — the major bump is that one-way door, not a
+rewrite. Before it: 1.0.0 (explore and send) was tagged and withdrawn unpublished;
+1.1.0 was the first published release. It added workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
 ADR-0006), the Environments view with per-variable enabling
 (`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`), manual saving with per-tab
 dirty marks (`docs/plans/2026-09-12-save-granularity-plan.md`), and OS- and arch-named release
@@ -27,7 +29,9 @@ v1 spec puts the item in; the spec's "1.1" list is not the 1.1.0 release, which 
 | 3   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
 | 4   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
 | 5   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
-| 6   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
+| —   | REST client, minimum viable                                          | Dev  | L                    | **shipped on `main`** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import; the follow-ups below are what it left out. |
+| 6   | REST follow-ups                                                      | Dev  | S–M each             | new            | Each is a gap a user hits within a day of real use; none needed a format change, which is why they were cut from the first pass.            |
+| 6b  | gRPC client                                                          | Dev  | L                    | reserved       | The third container, on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive. `kind: grpc` is already reserved and refused by name. |
 | 7   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
 | 8   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
 | 9   | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
@@ -117,7 +121,12 @@ enabled checkbox, and the `disabled` list format bump
 - **Kerberos/SPNEGO.** Requires the native `kerberos` module as an optional dependency, which the v1
   boundaries make an ask-first decision.
 - **SAML tokens.** Form and XML variants in outgoing WS-Security.
-- **OAuth2 and Bearer.** Arrive with the REST client and are reusable by SOAP requests.
+- **OAuth2 and Bearer.** Arrived with the REST client, for REST owners. Reusing them from a SOAP
+  interface, endpoint or request is still open: the auth model and the inspector are already shared, but
+  the project format persists SOAP owners under the narrower `endpointAuthSchema`, and the SOAP send path
+  applies only the schemes the transport owns (Basic, NTLM). Widening it means the schema at three sites,
+  the engine's `Interface`/`Endpoint`/`RequestDef` auth types, a SOAP-side `applyAuth` for the header and
+  query schemes, and main resolving the new references — see §15.11 of the REST client design.
 
 ### Automation and CI
 
@@ -130,12 +139,43 @@ enabled checkbox, and the `disabled` list format bump
   drive the engine.
 - **Plugin API.** An idea only.
 
-### REST client
+### REST client — shipped on `main`
 
-Collections and requests beside SOAP interfaces in the same project and environments; OpenAPI import;
-query, path, form, multipart and body editors; auth reuse; the test steps and assertions extend to REST
-with JSONPath and JSON Schema. The engine gains `rest/`, the renderer a REST request editor, and the
-reserved `kind: rest` discriminator activates.
+Built to `docs/specs/2026-09-13-wirebench-rest-client-design.md` (implemented) by
+`docs/plans/2026-09-13-wirebench-rest-client-plan.md`. APIs with folders and requests beside SOAP
+interfaces in the same project, environments, history and search; OpenAPI 3.0/3.1 import cached like a
+WSDL; query, path, form, multipart, binary and raw body editors; Basic, NTLM, Bearer, API-key and
+OAuth2 (authorization code with PKCE, and client credentials); cURL both ways; the Query view over JSON
+in XPath 3.1, XQuery 3.1 and JSONPath. The engine gained `rest/` and `rest/openapi/`, the renderer a
+REST editor and an API tab, `formatVersion` went to 3, and the `kind` discriminator activated with
+`grpc` reserved and refused by name — see [ADR-0007](adr/0007-apis-beside-interfaces.md) for why an API
+is a sibling container rather than a generalised interface. Evidence per criterion is in
+[`success-criteria.md`](success-criteria.md), rows SC-R1–SC-R8.
+
+**Follow-ups, roughly in the order a real user hits them.** None needs a format change:
+
+- **Resend and diff a REST send from History.** The entry is recorded with everything needed to show
+  it, but `history.resend` still rebuilds a SOAP envelope, so a REST entry can be inspected and not
+  replayed. The one §14 criterion only partly met (SC-R6).
+- **The three token-style auth kinds for SOAP owners.** `bearer`, `api-key` and `oauth2` are offered to
+  REST owners only; see [Authentication](#authentication) for what widening it costs and why it was not
+  "tests only" as the spec first assumed.
+- **A persistent cookie jar.** Today cookies are per-request session cookies with no jar; a
+  workspace-wide jar with a manager was deliberately deferred (spec §15.4).
+- **HTML response preview.** Needs a sandboxed frame and a CSP decision that deserves its own security
+  review (spec §15.5). Pretty and Raw show the markup meanwhile.
+- **OpenAPI 2.0 (Swagger) import.** Refused today with a clear message; a converter step is the fix
+  (spec §15.6).
+- **_Update Definition_ for an API**, preserving edited values the way the WSDL one does (spec §15.7).
+- **Response validation against the OpenAPI response schema** — the functional-testing phase, with the
+  `ajv` ask (spec §15.8).
+- **Re-redact a REST row in the HTTP Log when _show secrets_ is toggled.** REST sends reach the log
+  now, but `refreshExchange` re-fetches through `exchanges.get`, which only knows the SOAP cache, so a
+  REST row keeps the redaction it was given at send time instead of gaining the secret back. The row
+  is never *wrong* — it is redacted, which is the safe direction — it just does not update.
+
+The test steps and assertions extend to REST in the functional-testing phase; JSONPath is already in
+the engine (`xpath/jsonpath.ts`), so assertions can reuse it rather than adding a dependency.
 
 ### Mock services
 

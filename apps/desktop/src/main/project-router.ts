@@ -51,6 +51,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['addInterface']>
   ): ReturnType<ProjectHost['addInterface']>;
+  /**
+   * Places an imported OpenAPI-described API in the addressed project, caching its documents.
+   * `api.importOpenApi` carries the same target union `project.addInterface` does.
+   */
+  addApi(projectId: string, ...args: Parameters<ProjectHost['addApi']>): ReturnType<ProjectHost['addApi']>;
   /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */
   reload(projectId: string): ReturnType<ProjectHost['reload']>;
 
@@ -79,6 +84,23 @@ export interface ProjectRouter {
   ): ReturnType<ProjectHost['sendAttachmentsFor']>;
   dumpFileFor(...args: Parameters<ProjectHost['dumpFileFor']>): ReturnType<ProjectHost['dumpFileFor']>;
   tlsFor(...args: Parameters<ProjectHost['tlsFor']>): ReturnType<ProjectHost['tlsFor']>;
+
+  /** Resolves one REST send: base URL, expansion, credentials as refs, settings. */
+  restSend(...args: Parameters<ProjectHost['restSend']>): ReturnType<ProjectHost['restSend']>;
+
+  /** The TLS material a REST send needs: anchors, client identity, its own trust decision. */
+  restTlsFor(...args: Parameters<ProjectHost['restTlsFor']>): ReturnType<ProjectHost['restTlsFor']>;
+
+  /** The credentials configured on one API, folder or REST request — its own, not its chain's. */
+  restAuthOf(...args: Parameters<ProjectHost['restAuthOf']>): ReturnType<ProjectHost['restAuthOf']>;
+
+  /** What History names a REST send by: the request, its API, and its folder path. */
+  restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
+
+  /** Remembers what a REST response set, for the next send of that same request. */
+  rememberRestCookies(
+    ...args: Parameters<ProjectHost['rememberRestCookies']>
+  ): ReturnType<ProjectHost['rememberRestCookies']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(
@@ -114,6 +136,18 @@ export interface ProjectRouter {
     ...args: Parameters<ProjectHost['exportDefinitionTo']>
   ): ReturnType<ProjectHost['exportDefinitionTo']>;
   definitionDocs(...args: Parameters<ProjectHost['definitionDocs']>): ReturnType<ProjectHost['definitionDocs']>;
+
+  // — an API's cached definition, routed by api id ——————————————————————————————————————————
+
+  apiDefinitionDocuments(
+    ...args: Parameters<ProjectHost['apiDefinitionDocuments']>
+  ): ReturnType<ProjectHost['apiDefinitionDocuments']>;
+  apiDefinitionText(
+    ...args: Parameters<ProjectHost['apiDefinitionText']>
+  ): ReturnType<ProjectHost['apiDefinitionText']>;
+  exportApiDefinitionTo(
+    ...args: Parameters<ProjectHost['exportApiDefinitionTo']>
+  ): ReturnType<ProjectHost['exportApiDefinitionTo']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

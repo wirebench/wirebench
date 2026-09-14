@@ -1,8 +1,12 @@
 /**
- * "Import cURL…": paste a `curl` command, see what the parser made of it, and turn it into a
- * new saved request against the operation the dialog was opened from. Parsing happens in main
- * (`request.importCurl`) — the preview below is a local, best-effort read of the same text, so
- * the user sees the endpoint/headers/problems before anything is written.
+ * "Import cURL…": paste a `curl` command, see what the parser made of it, and turn it into a new
+ * saved request. Parsing happens in main (`request.importCurl`) — the preview below is a local,
+ * best-effort read of the same text, so the user sees the endpoint, headers and problems before
+ * anything is written.
+ *
+ * Where the request lands is the caller's decision, not the dialog's: opened from a SOAP request it
+ * targets that operation, opened from an API or folder row or the REST editor it targets that API. The
+ * dialog only says which, so the user cannot import into somewhere they did not mean.
  */
 
 import { useMemo, useState } from 'react';
@@ -11,16 +15,15 @@ import { X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { importCurl } from './request-actions.js';
 import { previewCurl, type CurlPreview } from './curl-preview.js';
+import type { RequestImportCurlTarget } from '../../../shared/wire-types.js';
 
 export interface ImportCurlDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** The operation the imported request is hung off — normally the active request's own. */
-  readonly operation: {
-    readonly interfaceId: string;
-    readonly bindingName: string;
-    readonly operationName: string;
-  };
+  /** Where the imported request is created. Decided by whatever opened the dialog. */
+  readonly target: RequestImportCurlTarget;
+  /** How the target reads in the dialog, e.g. `the Add operation` or `the API “Petstore”`. */
+  readonly targetLabel?: string;
 }
 
 function PreviewRow({ label, value }: { readonly label: string; readonly value: string }) {
@@ -51,7 +54,7 @@ function Preview({ preview }: { readonly preview: CurlPreview }) {
 }
 
 /** The paste-a-command dialog; `Import` creates the request and opens it. */
-export function ImportCurlDialog({ open, onOpenChange, operation }: ImportCurlDialogProps) {
+export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: ImportCurlDialogProps) {
   const [command, setCommand] = useState('');
   const [busy, setBusy] = useState(false);
   const preview = useMemo(() => previewCurl(command), [command]);
@@ -85,6 +88,11 @@ export function ImportCurlDialog({ open, onOpenChange, operation }: ImportCurlDi
           <label className="mt-3 text-sm text-fg-muted" htmlFor="import-curl-command">
             Paste a curl command
           </label>
+          {targetLabel !== undefined && (
+            <p data-testid="import-curl-target" className="text-xs text-fg-subtle">
+              {`Imports into ${targetLabel}.`}
+            </p>
+          )}
           <textarea
             id="import-curl-command"
             aria-label="cURL command"
@@ -107,7 +115,7 @@ export function ImportCurlDialog({ open, onOpenChange, operation }: ImportCurlDi
               data-testid="import-curl-submit"
               onClick={() => {
                 setBusy(true);
-                void importCurl(command, operation).finally(() => {
+                void importCurl(command, target).finally(() => {
                   setBusy(false);
                   setCommand('');
                   onOpenChange(false);

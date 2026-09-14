@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryView } from '../../src/renderer/features/request-editor/views/query-view.js';
+import { placeholderFor, QueryView } from '../../src/renderer/features/request-editor/views/query-view.js';
 import type { QuerySource } from '../../src/renderer/features/request-editor/views/query-view.js';
 
 const XML = '<a xmlns:tem="http://tempuri.org/"><tem:AddResult>3</tem:AddResult></a>';
@@ -199,5 +199,144 @@ describe('QueryView', () => {
       render(<QueryView requestId="r4" xml={XML} source={stubSource().source} />);
     });
     expect(await screen.findByTitle('count(//*)')).toBeDefined();
+  });
+});
+
+describe('QueryView over a JSON response', () => {
+  const JSON_BODY = '{"items":[{"id":1,"status":"open"}]}';
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('asks main to evaluate against JSON, and never asks about namespaces', async () => {
+    const { source, namespaces, evaluate } = stubSource({
+      evaluate: { ok: true, value: { kind: 'values', items: [{ text: '1', type: 'xs:integer' }], truncated: false } },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('?items?*?id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith({
+        xml: JSON_BODY,
+        expression: '?items?*?id',
+        language: 'xpath',
+        namespaces: {},
+        kind: 'json',
+      });
+    });
+    // JSON binds no namespaces, so there is nothing to seed and nothing to ask.
+    expect(namespaces).not.toHaveBeenCalled();
+  });
+
+  it('hides the namespace table and says where an expression starts instead', () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.queryByLabelText('Namespace prefix')).toBeNull();
+    expect(screen.queryByText('+ Add namespace')).toBeNull();
+    expect(screen.getByText(/is the context item/)).toBeDefined();
+  });
+
+  it('keeps both languages: XQuery over JSON is a FLWOR over its arrays', async () => {
+    const { source, evaluate } = stubSource({
+      evaluate: { ok: true, value: { kind: 'values', items: [{ text: '1', type: 'xs:integer' }], truncated: false } },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: 'XQuery 3.1' }));
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('for $i in ?items?* return $i?id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith(expect.objectContaining({ language: 'xquery', kind: 'json' }));
+    });
+  });
+
+  it('offers JSONPath as a third language and sends it with the JSON kind', async () => {
+    const { source, evaluate } = stubSource({
+      evaluate: {
+        ok: true,
+        value: {
+          kind: 'values',
+          items: [{ text: '1', type: 'number', path: "$['items'][0]['id']" }],
+          truncated: false,
+        },
+      },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('$.items[?(@.status=="open")].id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith({
+        xml: JSON_BODY,
+        expression: '$.items[?(@.status=="open")].id',
+        language: 'jsonpath',
+        namespaces: {},
+        kind: 'json',
+      });
+    });
+    // A JSONPath result locates a value, so the path is what makes several matches readable.
+    expect(screen.getByText("$['items'][0]['id']")).toBeDefined();
+  });
+
+  it('swaps the context-item hint for the JSONPath one', async () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.getByText(/is the context item/)).toBeDefined();
+    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
+    expect(screen.queryByText(/is the context item/)).toBeNull();
+    expect(screen.getByText(/reads a key/)).toBeDefined();
+  });
+
+  it('suggests JSON examples in the empty state, not envelope ones', () => {
+    const { source } = stubSource();
+    // Its own request id: the expression-history strip is module-level and keyed by it, so reusing
+    // `r1` here would show the XML expressions earlier tests ran and mask what this one asserts.
+    render(<QueryView requestId="json-examples" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.getByText('$..id')).toBeDefined();
+    expect(screen.queryByText('//tem:AddResult/text()')).toBeNull();
+  });
+
+  it('does not offer JSONPath for an XML response, which it cannot query', () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={XML} source={source} />);
+
+    expect(screen.queryByRole('radio', { name: 'JSONPath' })).toBeNull();
+    expect(screen.getByRole('radio', { name: 'XPath 3.1' })).toBeDefined();
+  });
+
+  it('still sends no kind for an XML document, so the channel default stands', async () => {
+    const { source, evaluate } = stubSource();
+    render(<QueryView requestId="r1" xml={XML} source={source} />);
+
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('//a');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalled();
+    });
+    expect(evaluate.mock.calls[0]?.[0]).not.toHaveProperty('kind');
+  });
+});
+
+describe('placeholderFor', () => {
+  it('offers a working expression for the document actually on screen', () => {
+    expect(placeholderFor('xpath', 'xml')).toBe('//tem:AddResult/text()');
+    expect(placeholderFor('xquery', 'xml')).toContain('for $x in');
+    expect(placeholderFor('xpath', 'json')).toBe('?items?*[?status = "open"]?id');
+    expect(placeholderFor('xquery', 'json')).toContain('for $i in ?items?*');
+    expect(placeholderFor('jsonpath', 'json')).toBe('$.items[?(@.status=="open")].id');
   });
 });

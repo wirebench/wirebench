@@ -1,0 +1,19 @@
+{
+  "name": "security-3.1",
+  "package": "@readme/oas-examples",
+  "version": "8.2.2",
+  "tarball": "https://registry.npmjs.org/@readme/oas-examples/-/oas-examples-8.2.2.tgz",
+  "tarballSha256": "df951ee87b5b069c86148bf5bbf3923d6cfd27fb95a45aacb95f06b31f604241",
+  "file": "3.1/json/security.json",
+  "license": "MIT",
+  "attribution": "ReadMe, from the package itself (no info.license of its own)",
+  "fetchedAt": "2026-09-13T19:03:21.245Z",
+  "files": [
+    {
+      "file": "openapi.json",
+      "url": "https://registry.npmjs.org/@readme/oas-examples/-/oas-examples-8.2.2.tgz#package/3.1/json/security.json",
+      "sha256": "bf5c93ff1c433b3c75657b93b3ca8c45805a9c303a9686b6f01e749792ed6767",
+      "bytes": 13646
+    }
+  ]
+}

@@ -3,8 +3,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProjectWithCalculator, expectReopenedWorkspace, openFirstRequest } from '../helpers/project.js';
-import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import {
+  createProject,
+  createProjectWithCalculator,
+  createWorkspace,
+  expectReopenedWorkspace,
+  openFirstRequest,
+} from '../helpers/project.js';
+import { createApi, createRestRequest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  startTestRestServer,
+  startTestSoapServer,
+  type TestRestServer,
+  type TestSoapServer,
+} from '../helpers/test-server.js';
 
 /** The platform's `Mod`: ⌘ on macOS, Ctrl elsewhere — the same split `lib/keybindings.ts` makes. */
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -27,6 +39,7 @@ async function closeSettings(page: Page) {
 test.describe('keyboard', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
+  let restServer: TestRestServer | undefined;
   let userDataDir = '';
 
   test.beforeEach(async () => {
@@ -42,6 +55,10 @@ test.describe('keyboard', () => {
     if (server) {
       await server.close();
       server = undefined;
+    }
+    if (restServer) {
+      await restServer.close();
+      restServer = undefined;
     }
     if (userDataDir.length > 0) {
       rmSync(userDataDir, { recursive: true, force: true });
@@ -98,6 +115,35 @@ test.describe('keyboard', () => {
     await page.keyboard.press(`${MOD}+Enter`);
     await expect(page.getByTestId('response-status')).toContainText(/200/, { timeout: 20_000 });
     await expect(page.getByTestId('response-editor')).toContainText('AddResult');
+  });
+
+  test('sends a REST request with ⌘⏎, from the URL field and from the body editor', async () => {
+    restServer = await startTestRestServer();
+    launched = await launchApp({ userDataDir, keepUserDataDir: true });
+    const page = launched.window;
+
+    await createWorkspace(page, 'Keyboard');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', restServer.url);
+    await createRestRequest(page, 'Petstore', 'Echo');
+    await setMethodAndUrl(page, 'GET', '/echo');
+
+    // With the caret in the URL field, the editor's own handler sends it.
+    await page.getByTestId('rest-url').focus();
+    await page.keyboard.press(`${MOD}+Enter`);
+    await expect(page.getByTestId('rest-response-status')).toContainText(/200/, { timeout: 20_000 });
+
+    // And with the caret in the raw body editor, where Monaco would otherwise swallow the chord.
+    await page.getByRole('tablist', { name: 'Request tabs' }).getByRole('tab', { name: 'Body' }).click();
+    await page.getByTestId('rest-body-kind').selectOption('raw');
+    const editorRoot = page
+      .locator('[aria-label="Request body"]')
+      .locator('xpath=ancestor::*[contains(@class, "monaco-editor")][1]');
+    await expect(editorRoot).toBeVisible({ timeout: 20_000 });
+    await editorRoot.click({ position: { x: 8, y: 8 } });
+    await page.keyboard.press(`${MOD}+Enter`);
+    await expect(page.getByTestId('rest-response-status')).toContainText(/200/, { timeout: 20_000 });
+    expect(restServer.requests.length).toBeGreaterThanOrEqual(2);
   });
 
   test('creates a second workspace and switches back, from the palette alone', async () => {

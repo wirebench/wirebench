@@ -197,3 +197,41 @@ describe('HistoryView', () => {
     });
   });
 });
+
+/**
+ * The protocol column. A row has to say which kind of send it was: two requests may share a name,
+ * and "Re-send" means something different for each.
+ */
+describe('HistoryView with REST entries', () => {
+  beforeEach(() => {
+    useHistoryStore.setState({ entries: [], total: 0, query: '', loading: false, projectId: undefined });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('badges a REST row with its method and a SOAP row with its version', () => {
+    useHistoryStore.setState({
+      entries: [
+        makeEntry({ id: 'h-rest', kind: 'rest', method: 'POST', soapVersion: 'none', requestName: 'Create pet' }),
+        makeEntry({ id: 'h-soap' }),
+      ],
+      total: 2,
+    });
+    render(<HistoryView />);
+
+    expect(screen.getByTestId('method-badge').getAttribute('data-method')).toBe('POST');
+    expect(screen.getByTestId('history-soap-version').textContent).toBe('SOAP 1.1');
+  });
+
+  it('reads an entry with no kind as SOAP, as entries recorded before REST existed are', () => {
+    useHistoryStore.setState({ entries: [makeEntry()], total: 1 });
+    render(<HistoryView />);
+
+    expect(screen.queryByTestId('method-badge')).toBeNull();
+    expect(screen.getByTestId('history-soap-version')).toBeTruthy();
+  });
+});

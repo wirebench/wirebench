@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toCurl } from '@wirebench/engine';
+import { soapToCurl } from '@wirebench/engine';
 import { highlightCurl, type CurlLine } from '../../src/renderer/shell/curl-highlight.js';
 
 /** Reassembles what the Code panel renders, so a test can compare it to what it was handed. */
@@ -24,12 +24,12 @@ const SEND = {
 
 describe('highlightCurl', () => {
   it('reproduces a POSIX command exactly', () => {
-    const command = toCurl(SEND);
+    const command = soapToCurl(SEND);
     expect(rendered(highlightCurl(command))).toBe(command);
   });
 
   it('reproduces a PowerShell command exactly', () => {
-    const command = toCurl(SEND, { shell: 'powershell' });
+    const command = soapToCurl(SEND, { shell: 'powershell' });
     expect(rendered(highlightCurl(command))).toBe(command);
   });
 
@@ -38,7 +38,7 @@ describe('highlightCurl', () => {
     // string at the first inner quote would still round-trip, but would colour the rest wrongly.
     const quoted = { ...SEND, headers: { 'X-Note': "it's fine" } };
     for (const shell of ['posix', 'powershell'] as const) {
-      const command = toCurl(quoted, { shell });
+      const command = soapToCurl(quoted, { shell });
       const lines = highlightCurl(command);
       expect(rendered(lines)).toBe(command);
       expect(textOf(lines, 'string').some((text) => text.includes('X-Note'))).toBe(true);
@@ -46,31 +46,31 @@ describe('highlightCurl', () => {
   });
 
   it('names the command and its flags', () => {
-    const lines = highlightCurl(toCurl(SEND));
+    const lines = highlightCurl(soapToCurl(SEND));
     expect(textOf(lines, 'command')).toEqual(['curl']);
     expect(textOf(lines, 'flag')).toEqual(['--request', '--header', '--header', '--header', '--data-binary']);
   });
 
   it('recognises `curl.exe` as the command', () => {
-    expect(textOf(highlightCurl(toCurl(SEND, { shell: 'powershell' })), 'command')).toEqual(['curl.exe']);
+    expect(textOf(highlightCurl(soapToCurl(SEND, { shell: 'powershell' })), 'command')).toEqual(['curl.exe']);
   });
 
   it('treats the whole POSIX heredoc body as body, not shell', () => {
-    expect(textOf(highlightCurl(toCurl(SEND)), 'body').join('\n')).toBe(ENVELOPE);
+    expect(textOf(highlightCurl(soapToCurl(SEND)), 'body').join('\n')).toBe(ENVELOPE);
   });
 
   it('treats the whole PowerShell here-string body as body, not shell', () => {
-    expect(textOf(highlightCurl(toCurl(SEND, { shell: 'powershell' })), 'body').join('\n')).toBe(ENVELOPE);
+    expect(textOf(highlightCurl(soapToCurl(SEND, { shell: 'powershell' })), 'body').join('\n')).toBe(ENVELOPE);
   });
 
   it('does not mistake an XML line inside the body for a flag', () => {
     // A body line can start with anything, `--` included (an XML comment opens with `<!--`).
     const commented = { ...SEND, envelopeXml: '<!-- --request -->\n<Envelope/>' };
-    const lines = highlightCurl(toCurl(commented));
+    const lines = highlightCurl(soapToCurl(commented));
     // Exactly the command's own five flags: the `--request` inside the comment contributed none.
     expect(textOf(lines, 'flag')).toEqual(['--request', '--header', '--header', '--header', '--data-binary']);
     expect(textOf(lines, 'body').join('\n')).toBe(commented.envelopeXml);
-    expect(rendered(lines)).toBe(toCurl(commented));
+    expect(rendered(lines)).toBe(soapToCurl(commented));
   });
 
   it('returns one empty line for an empty command, so nothing renders', () => {

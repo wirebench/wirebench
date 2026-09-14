@@ -174,8 +174,18 @@ export function SearchView() {
         )}
         {groups.map(([heading, group]) => (
           <section key={heading} data-testid="search-group">
-            <h3 className="truncate px-3 py-1 text-xs tracking-wider text-fg-faint uppercase" title={heading}>
-              {heading}
+            <h3
+              className="flex items-center gap-1.5 truncate px-3 py-1 text-xs tracking-wider text-fg-faint uppercase"
+              title={heading}
+            >
+              {/* Which protocol the group's request belongs to: two requests may share a name, and
+                  a click opens a different editor for each. */}
+              {group[0]?.protocol === 'rest' && (
+                <span data-testid="search-result-badge" className="rounded-full bg-surface-base px-1.5 normal-case">
+                  REST
+                </span>
+              )}
+              <span className="truncate">{heading}</span>
             </h3>
             <ul>
               {group.map((match) => (

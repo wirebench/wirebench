@@ -35,6 +35,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     nameWithBinding: false,
   },
   wsi: { verbose: false, profile: 'BP1.1' },
+  rest: { followRedirects: true, maxRedirects: 5, prettyPrintMaxBytes: 5 * 1024 * 1024, defaultAccept: '' },
   editor: {
     fontSize: 13,
     tabSize: 3,

@@ -7,7 +7,7 @@ import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { InterfaceWire, WorkspaceProjectWire } from '../../src/shared/wire-types.js';
-import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjectWire {
@@ -261,5 +261,131 @@ describe('ExplorerView', () => {
       </TooltipPrimitive.Provider>,
     );
     expect(screen.getByText('Operations')).toBeTruthy();
+  });
+});
+
+/**
+ * The REST rows. The tests cover what the row *is* (its testid, its badge) and what a click on it
+ * does, because both are what the rest of the app addresses the explorer by.
+ */
+describe('ExplorerView with APIs', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      projects: {},
+      interfaces: {},
+      requests: {},
+      apis: {},
+      folders: {},
+      restRequests: {},
+      rest: {},
+      order: [],
+    });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useUiStore.setState({ selection: undefined, workspaces: {}, confirmDeleteNode: undefined });
+    openWorkspace([wireProject()]);
+    globalThis.ResizeObserver = ManualResizeObserver;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** Mirrors one API with one folder and two requests, and unfolds the whole path. */
+  function seedRest(): void {
+    useProjectStore.setState({
+      order: [{ projectId: 'p1', interfaceIds: [] }],
+      rest: {
+        p1: {
+          apis: [restApiWire()],
+          folders: [restFolderWire()],
+          requests: [
+            restRequestWire({ id: 'rest-root', name: 'At root', method: 'POST', order: 1 }),
+            restRequestWire({ id: 'rest-deep', name: 'In folder', folderId: 'folder-1', order: 0 }),
+          ],
+        },
+      },
+      apis: { 'api-1': restApiWire() },
+      folders: { 'folder-1': restFolderWire() },
+      restRequests: {
+        'rest-root': restRequestWire({ id: 'rest-root', name: 'At root', method: 'POST', order: 1 }),
+        'rest-deep': restRequestWire({ id: 'rest-deep', name: 'In folder', folderId: 'folder-1', order: 0 }),
+      },
+      projectOf: { p1: 'p1', 'api-1': 'p1', 'folder-1': 'p1', 'rest-root': 'p1', 'rest-deep': 'p1' },
+    });
+    useUiStore.setState({
+      workspaces: { w1: { tabs: [], explorerOpen: { 'api:api-1': true, 'folder:folder-1': true } } },
+    });
+  }
+
+  function mount(): void {
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+  }
+
+  it('renders an API row with a REST badge, a folder row and method-badged request rows', () => {
+    seedRest();
+    mount();
+
+    expect(screen.getByTestId('api-row').textContent).toContain('Petstore');
+    expect(screen.getByTestId('explorer-api-badge').textContent).toBe('REST');
+    expect(screen.getByTestId('folder-row').textContent).toContain('Pets');
+
+    const rows = screen.getAllByTestId('rest-request-row');
+    expect(rows).toHaveLength(2);
+    const badges = screen.getAllByTestId('method-badge');
+    expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
+  });
+
+  it('opens a REST request tab on a single click, and the same tab on a second click', () => {
+    seedRest();
+    mount();
+
+    fireEvent.click(screen.getByText('At root'));
+
+    expect(useEditorsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'rest:rest-root', kind: 'rest-request', restRequestId: 'rest-root' }),
+    ]);
+
+    fireEvent.click(screen.getByText('At root'));
+    expect(useEditorsStore.getState().tabs).toHaveLength(1);
+  });
+
+  it('opens the API tab on a single click of the API row, and selects it', () => {
+    seedRest();
+    mount();
+
+    fireEvent.click(screen.getByText('Petstore'));
+
+    expect(useEditorsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'api:api-1', kind: 'api', apiId: 'api-1', title: 'Petstore' }),
+    ]);
+    expect(useUiStore.getState().selection).toMatchObject({ kind: 'api', apiId: 'api-1' });
+  });
+
+  it('carries the API and folder onto the selection, so the creators know where to put things', () => {
+    seedRest();
+    mount();
+
+    fireEvent.click(screen.getByText('In folder'));
+
+    expect(useUiStore.getState().selection).toMatchObject({
+      kind: 'rest-request',
+      requestId: 'rest-deep',
+      apiId: 'api-1',
+      folderId: 'folder-1',
+    });
+  });
+
+  it('remembers an API and a folder in the fold state, like every other container', () => {
+    seedRest();
+    mount();
+
+    fireEvent.click(screen.getByText('Petstore'));
+
+    // The click opened the tab and folded the row shut; the fold state records it per workspace.
+    expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
   });
 });

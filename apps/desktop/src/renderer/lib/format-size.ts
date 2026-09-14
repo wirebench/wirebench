@@ -40,6 +40,18 @@ export function decodeBase64Text(base64: string): string | undefined {
 }
 
 /** `HH:MM:SS` in local time, for the HTTP log's time column. */
+/**
+ * A send's duration, as every surface shows it.
+ *
+ * `durationMs` comes off `performance.now()` arithmetic, so it is a float with a full mantissa of
+ * noise behind it: rendering it raw puts `15.645407999999861 ms` in the status bar. Sub-millisecond
+ * precision means nothing for a network round trip, so this rounds to a whole millisecond — except
+ * below 10 ms, where one decimal is the difference between "0 ms" and a number.
+ */
+export function formatDuration(ms: number): string {
+  return ms < 10 ? `${ms.toFixed(1)} ms` : `${String(Math.round(ms))} ms`;
+}
+
 export function formatClockTime(isoTimestamp: string): string {
   const date = new Date(isoTimestamp);
   if (Number.isNaN(date.getTime())) {

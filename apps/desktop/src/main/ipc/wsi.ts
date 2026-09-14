@@ -7,14 +7,15 @@
  * rendered and written here so no HTML string round-trips through the bridge twice.
  */
 
-import { writeFile } from 'node:fs/promises';
 import {
-  ProjectError,
-  WirebenchError,
   messageBindingFor,
+  nodeFs,
+  ProjectError,
   renderWsiReportHtml,
   runMessageAssertions,
   runWsdlAssertions,
+  WirebenchError,
+  writeFileAtomic,
   wsiWsdlContext,
 } from '@wirebench/engine';
 import type { QName, WsiReport } from '@wirebench/engine';
@@ -181,7 +182,7 @@ export function registerWsiChannels(service: EngineService, deps: WsiChannelDeps
       generatedAt: (deps.now?.() ?? new Date()).toISOString(),
       ...(request.verbose !== undefined ? { verbose: request.verbose } : {}),
     });
-    await writeFile(path, html, 'utf-8');
+    await writeFileAtomic(nodeFs, path, html);
     return { path, cancelled: false };
   });
 }

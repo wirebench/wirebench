@@ -93,6 +93,27 @@ export interface WsdlPreferences {
   readonly nameWithBinding: boolean;
 }
 
+/**
+ * REST client preferences: the defaults every REST request inherits, and the two viewer limits.
+ *
+ * Redirects are followed by default here and not for SOAP, deliberately: a REST API that answers a
+ * `GET` with a 301 to its canonical URL is ordinary, while a redirected SOAP `POST` is a sign
+ * something is wrong (see the roadmap's note on the same-host upgrade case).
+ */
+export interface RestPreferences {
+  readonly followRedirects: boolean;
+  readonly maxRedirects: number;
+  /** Above this many bytes the response viewer stops offering the formatted view. */
+  readonly prettyPrintMaxBytes: number;
+  /** `Accept` added to a request that does not set one. Empty by default: say nothing, take anything. */
+  readonly defaultAccept: string;
+  /**
+   * Fixed loopback port for the OAuth2 authorization-code callback, for providers that demand an
+   * exact redirect URI. Absent means a random free port, which is what RFC 8252 §7.3 prefers.
+   */
+  readonly oauth2CallbackPort?: number;
+}
+
 /** WS-I Basic Profile validation preferences. */
 export interface WsiPreferences {
   readonly verbose: boolean;
@@ -153,6 +174,7 @@ export interface Preferences {
   readonly ssl: SslPreferences;
   readonly wsdl: WsdlPreferences;
   readonly wsi: WsiPreferences;
+  readonly rest: RestPreferences;
   readonly editor: EditorPreferences;
   readonly ui: UiPreferences;
   readonly updates: UpdatePreferences;
@@ -190,6 +212,12 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     nameWithBinding: false,
   }),
   wsi: Object.freeze({ verbose: false, profile: 'BP1.1' }),
+  rest: Object.freeze({
+    followRedirects: true,
+    maxRedirects: 5,
+    prettyPrintMaxBytes: 5 * 1024 * 1024,
+    defaultAccept: '',
+  }),
   editor: Object.freeze({
     fontSize: 13,
     tabSize: 3,
@@ -260,6 +288,15 @@ export const preferencesSchema = z.object({
     })
     .optional(),
   wsi: z.object({ verbose: z.boolean().optional(), profile: z.literal('BP1.1').optional() }).optional(),
+  rest: z
+    .object({
+      followRedirects: z.boolean().optional(),
+      maxRedirects: z.number().int().nonnegative().optional(),
+      prettyPrintMaxBytes: z.number().int().positive().optional(),
+      defaultAccept: z.string().optional(),
+      oauth2CallbackPort: z.number().int().min(1024).max(65_535).optional(),
+    })
+    .optional(),
   editor: z
     .object({
       fontFamily: z.string().optional(),
@@ -340,6 +377,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     ssl: parseSection(shape.ssl, root['ssl']),
     wsdl: parseSection(shape.wsdl, root['wsdl']),
     wsi: parseSection(shape.wsi, root['wsi']),
+    rest: parseSection(shape.rest, root['rest']),
     editor: parseSection(shape.editor, root['editor']),
     ui: parseSection(shape.ui, root['ui']),
     updates: parseSection(shape.updates, root['updates']),
@@ -351,6 +389,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     ssl: { ...mergeSection(base.ssl, value.ssl), trustAll: false },
     wsdl: mergeSection(base.wsdl, value.wsdl),
     wsi: mergeSection(base.wsi, value.wsi),
+    rest: mergeSection(base.rest, value.rest),
     editor: mergeSection(base.editor, value.editor),
     ui: {
       ...mergeSection(base.ui, value.ui),

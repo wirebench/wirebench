@@ -13,7 +13,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { makeDraft, makeInterface } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -23,6 +23,7 @@ const context = { platform: 'mac', ui: () => DEFAULT_UI_STATE, selection: undefi
 /** A project wire complete enough for the mirror to index it. */
 function projectWire() {
   return {
+    ...NO_REST,
     id: 'p1',
     name: 'P',
     dir: '/tmp/p',
@@ -113,7 +114,24 @@ describe('item.save, invoked the way the application menu invokes it', () => {
     });
   });
 
-  it('is a harmless no-op when the tab has nothing staged', async () => {
+  it('writes the project when nothing is staged but the project is dirty', async () => {
+    // A rename from the tree or the breadcrumb reaches main without being staged here, so the
+    // project is dirty while the tab is clean. "Save" then means "write what is pending".
+    render(<RequestEditor requestId="req-1" />);
+    await screen.findByLabelText('Request envelope XML');
+
+    await expect(runCommand('item.save', context)).resolves.toBe(true);
+
+    expect(mutate).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(save).toHaveBeenCalled();
+    });
+  });
+
+  it('is a harmless no-op when nothing is staged and the project is clean', async () => {
+    useProjectStore.setState((state) => ({
+      projects: { p1: { ...state.projects['p1']!, dirty: false } },
+    }));
     render(<RequestEditor requestId="req-1" />);
     await screen.findByLabelText('Request envelope XML');
 

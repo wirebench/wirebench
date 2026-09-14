@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { MethodBadge } from '../rest-api/method-badge.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
-import { formatClockTime } from '../../lib/format-size.js';
+import { formatClockTime, formatDuration } from '../../lib/format-size.js';
 import type { GridRowProps } from '../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
@@ -91,6 +92,15 @@ function Row({
               {projectName}
             </span>
           )}
+          {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
+              says what kind of send this was, so the column is never empty. */}
+          {entry.kind === 'rest' && entry.method !== undefined ? (
+            <MethodBadge method={entry.method} title={`${entry.method} ${entry.requestName}`} />
+          ) : (
+            <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
+              {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
+            </span>
+          )}
           <span className="min-w-0 flex-1 truncate">
             <span className="text-fg-default">{entry.requestName}</span>
             {entry.operationName.length > 0 && <span className="text-fg-subtle"> · {entry.operationName}</span>}
@@ -99,7 +109,7 @@ function Row({
             {hostOf(entry.endpoint)}
           </span>
           <span className={`w-10 shrink-0 font-mono ${TONE_CLASS[toneOf(entry)]}`}>{entry.status ?? 'err'}</span>
-          <span className="w-16 shrink-0 text-fg-subtle">{entry.durationMs} ms</span>
+          <span className="w-16 shrink-0 text-fg-subtle">{formatDuration(entry.durationMs)}</span>
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">

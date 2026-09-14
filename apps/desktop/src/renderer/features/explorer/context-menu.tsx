@@ -48,7 +48,17 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
   if (node.kind === 'project' && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups(
-      [{ key: 'import', label: 'Import WSDL…', run: () => projectRowActions.importInto(projectId) }],
+      [
+        { key: 'import', label: 'Import WSDL…', run: () => projectRowActions.importInto(projectId) },
+        {
+          key: 'import-openapi',
+          label: 'Import OpenAPI…',
+          run: () => projectRowActions.importOpenApiInto(projectId),
+        },
+        // §3.1 puts _New API…_ on the project row: an API is created in a project, and this is the
+        // only row that names one.
+        { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
+      ],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
         // Only a linked project has environments of its own; an internal project's environments
@@ -173,6 +183,49 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameRequest(node.requestId) },
         { key: 'delete', label: 'Delete', run: () => explorerActions.deleteRequest(node.requestId) },
       ],
+    );
+  }
+
+  if (node.kind === 'api' && node.apiId !== undefined) {
+    const apiId = node.apiId;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openApi(apiId) },
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
+        { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
+    );
+  }
+
+  if (node.kind === 'folder' && node.apiId !== undefined && node.folderId !== undefined) {
+    const { apiId, folderId } = { apiId: node.apiId, folderId: node.folderId };
+    return groups(
+      [
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId, folderId) },
+        { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId, folderId) },
+      ],
+      [
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
+        // A folder has no editor tab, so its one other field gets a dialog of its own.
+        { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
+    );
+  }
+
+  if (node.kind === 'rest-request' && node.requestId !== undefined) {
+    const requestId = node.requestId;
+    // No *Open*, for the same reason a SOAP request row has none: a single click already opens it.
+    return groups(
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
     );
   }
 

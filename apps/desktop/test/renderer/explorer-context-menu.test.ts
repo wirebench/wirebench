@@ -24,6 +24,8 @@ describe('explorerMenuItems', () => {
 
     expect(items.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'Import OpenAPI…',
+      'New API…',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -40,6 +42,8 @@ describe('explorerMenuItems', () => {
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
       'Import WSDL…',
+      'Import OpenAPI…',
+      'New API…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -111,7 +115,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import'],
+      ['import', 'import-openapi', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
       ['rename', 'remove'],
@@ -128,10 +132,93 @@ describe('explorerMenuItems', () => {
     expect(useUiStore.getState().importDialogOpen).toBe(true);
   });
 
+  it('Import OpenAPI… does the same for its own dialog', () => {
+    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    items.find((item) => item.label === 'Import OpenAPI…')?.run();
+
+    expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
+    expect(useUiStore.getState().importOpenApiDialogOpen).toBe(true);
+    // The two dialogs are independent: opening one must not open the other.
+    expect(useUiStore.getState().importDialogOpen).toBe(false);
+  });
+
   it('Remove from workspace only opens the confirmation', () => {
     const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
     items.find((item) => item.label === 'Remove from workspace')?.run();
 
     expect(useUiStore.getState().confirmRemoveProjectId).toBe('p1');
+  });
+});
+
+/**
+ * The REST rows. The point of each case is what the menu does *not* offer: an API row has no
+ * *Recreate* (there is no definition to recreate from), a folder has nothing to open, and a request
+ * row has no *Open* because a single click already opens it.
+ */
+describe('explorerMenuItems on a REST row', () => {
+  it('offers an API its containers and its own lifecycle', () => {
+    const items = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
+
+    expect(items.map((item) => item.label)).toEqual([
+      'Open',
+      'New folder',
+      'New request',
+      'Import cURL…',
+      'Rename…',
+      'Delete',
+    ]);
+  });
+
+  it('offers a folder the two creators, a rename, its credentials and a delete', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+
+    expect(items.map((item) => item.label)).toEqual([
+      'New folder',
+      'New request',
+      'Import cURL…',
+      'Rename…',
+      'Auth…',
+      'Delete',
+    ]);
+  });
+
+  it('Auth… opens the folder credentials dialog, which is a folder’s only editable field', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+    items.find((item) => item.label === 'Auth…')?.run();
+
+    expect(useUiStore.getState().folderAuthId).toBe('f1');
+  });
+
+  it('offers a REST request duplicate, rename and delete, and no Open', () => {
+    const items = explorerMenuItems(node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+  });
+
+  it('keeps the destructive entry in a group of its own on all three', () => {
+    for (const kinds of [
+      node({ kind: 'api', id: 'api:a1', apiId: 'a1' }),
+      node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }),
+      node({ kind: 'rest-request', id: 'rest:r1', apiId: 'a1', requestId: 'r1' }),
+    ]) {
+      const groups = explorerMenuGroups(kinds);
+      expect(groups.at(-1)?.map((item) => item.label)).toEqual(['Delete']);
+    }
+  });
+
+  it('offers nothing for a row whose ids are missing, rather than items that would no-op', () => {
+    expect(explorerMenuItems(node({ kind: 'api' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'folder', apiId: 'a1' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'rest-request', apiId: 'a1' }))).toEqual([]);
+  });
+
+  it('Import cURL… on an API points the dialog at it, and on a folder at the folder', () => {
+    const api = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
+    api.find((item) => item.label === 'Import cURL…')?.run();
+    expect(useUiStore.getState().importCurlTarget).toEqual({ kind: 'rest', apiId: 'a1' });
+
+    const folder = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
+    folder.find((item) => item.label === 'Import cURL…')?.run();
+    expect(useUiStore.getState().importCurlTarget).toEqual({ kind: 'rest', apiId: 'a1', folderId: 'f1' });
   });
 });

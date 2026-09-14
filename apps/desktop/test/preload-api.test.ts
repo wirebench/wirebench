@@ -17,6 +17,7 @@ describe('buildApi', () => {
     const api = buildApi(vi.fn(), vi.fn());
 
     expect(Object.keys(api).sort()).toEqual([
+      'api',
       'app',
       'attachments',
       'definition',
@@ -27,6 +28,7 @@ describe('buildApi', () => {
       'globals',
       'history',
       'keystores',
+      'oauth2',
       'on',
       'preferences',
       'project',

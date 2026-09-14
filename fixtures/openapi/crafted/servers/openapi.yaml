@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info:
+  title: Servers
+  version: 2.1.0
+servers:
+  - url: https://{tenant}.api.test/{version}
+    description: Tenanted
+    variables:
+      tenant:
+        default: acme
+        enum: [acme, globex]
+      version:
+        default: v2
+  - url: https://sandbox.api.test/v2
+    description: Sandbox
+  - url: https://{region}.api.test
+    description: No default for its variable
+    variables:
+      region:
+        enum: [eu, us]
+        description: Deliberately without a default
+paths:
+  /ping:
+    get:
+      operationId: ping
+      responses: { '200': { description: ok } }

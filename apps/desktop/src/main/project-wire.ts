@@ -15,6 +15,11 @@ import {
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
 import type {
+  AuthConfig,
+  KeyValueEntry,
+  RestApi,
+  RestBody,
+  RestRequestDef,
   Attachment,
   Endpoint,
   Environment,
@@ -27,6 +32,12 @@ import type {
   WssRef,
 } from '@wirebench/engine';
 import type {
+  AuthConfigWire,
+  KeyValueWire,
+  RestApiWire,
+  RestBodyWire,
+  RestFolderWire,
+  RestRequestWire,
   AttachmentWire,
   EndpointWire,
   EnvironmentWire,
@@ -309,8 +320,120 @@ function toWssEntryWire(entry: WssEntry): WssEntryWire {
   };
 }
 
+/**
+ * An API's own row. Its folders and requests travel as flat lists beside it, keyed by `apiId` and
+ * `parentId`: the renderer's tree is rebuilt from those, and a nested payload would have to be
+ * re-walked on every change anyway.
+ */
+function toApiWire(api: RestApi): RestApiWire {
+  return {
+    kind: 'rest',
+    id: api.id,
+    name: api.name,
+    slug: api.slug,
+    order: api.order,
+    ...(api.description !== undefined ? { description: api.description } : {}),
+    baseUrl: api.baseUrl,
+    servers: api.servers.map((server) => ({
+      url: server.url,
+      ...(server.description !== undefined ? { description: server.description } : {}),
+    })),
+    ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
+    ...(api.definition !== undefined ? { definition: { ...api.definition } } : {}),
+  };
+}
+
+/** Authentication as the renderer sees it: the engine's union flattened into one optional-field row. */
+export function toAuthConfigWire(auth: AuthConfig): AuthConfigWire {
+  return { ...auth } as AuthConfigWire;
+}
+
+function toKeyValueWires(rows: readonly KeyValueEntry[]): KeyValueWire[] {
+  return rows.map((row) => ({
+    name: row.name,
+    value: row.value,
+    enabled: row.enabled,
+    ...(row.description !== undefined ? { description: row.description } : {}),
+  }));
+}
+
+/** A body as the renderer sees it: identical to the model, since the model already holds the text. */
+function toRestBodyWire(body: RestBody): RestBodyWire {
+  switch (body.kind) {
+    case 'raw':
+      return {
+        kind: 'raw',
+        language: body.language,
+        ...(body.contentType !== undefined ? { contentType: body.contentType } : {}),
+        text: body.text,
+      };
+    case 'form':
+      return { kind: 'form', fields: toKeyValueWires(body.fields) };
+    case 'multipart':
+      return { kind: 'multipart', parts: body.parts.map((part) => ({ ...part })) };
+    case 'binary':
+      return { kind: 'binary', source: { ...body.source }, contentType: body.contentType };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: string | undefined): RestRequestWire {
+  return {
+    kind: 'rest',
+    id: request.id,
+    apiId,
+    ...(folderId !== undefined ? { folderId } : {}),
+    name: request.name,
+    slug: request.slug,
+    order: request.order,
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    method: request.method,
+    url: request.url,
+    pathParams: toKeyValueWires(request.pathParams),
+    query: toKeyValueWires(request.query),
+    headers: toKeyValueWires(request.headers),
+    body: toRestBodyWire(request.body),
+    auth: toAuthConfigWire(request.auth),
+    settings: { ...request.settings },
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+  };
+}
+
+/** Every folder and REST request of every API, flattened for the wire. */
+function toRestTreeWires(apis: readonly RestApi[]): {
+  readonly folders: RestFolderWire[];
+  readonly requests: RestRequestWire[];
+} {
+  const folders: RestFolderWire[] = [];
+  const requests: RestRequestWire[] = [];
+  const walk = (api: RestApi, container: Pick<RestApi, 'folders' | 'requests'>, parentId?: string): void => {
+    for (const request of container.requests) {
+      requests.push(toRestRequestWire(request, api.id, parentId));
+    }
+    for (const folder of container.folders) {
+      folders.push({
+        id: folder.id,
+        apiId: api.id,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name: folder.name,
+        slug: folder.slug,
+        order: folder.order,
+        ...(folder.description !== undefined ? { description: folder.description } : {}),
+        ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+      });
+      walk(api, folder, folder.id);
+    }
+  };
+  for (const api of apis) {
+    walk(api, api);
+  }
+  return { folders, requests };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
+  const restTree = toRestTreeWires(project.apis);
   return {
     id: project.id,
     name: project.name,
@@ -319,6 +442,9 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     ...(context.lastSavedAt !== undefined ? { lastSavedAt: context.lastSavedAt } : {}),
     interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
+    apis: project.apis.map(toApiWire),
+    folders: restTree.folders,
+    restRequests: restTree.requests,
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),

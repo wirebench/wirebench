@@ -46,6 +46,12 @@ export const projectRowActions = {
     useUiStore.getState().openImportDialog();
   },
 
+  /** Opens the Import OpenAPI dialog with this project preselected as the target. */
+  importOpenApiInto(projectId: string): void {
+    projectRowActions.select(projectId);
+    useUiStore.getState().setImportOpenApiDialogOpen(true);
+  },
+
   /**
    * Opens a **linked** project's own environments editor. A linked project keeps its per-project
    * environments (they win over the workspace's on a shared slug), so the tab opens on the one

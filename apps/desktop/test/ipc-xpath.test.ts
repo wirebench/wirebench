@@ -68,6 +68,43 @@ describe('xpath.* IPC', () => {
     expect(result.value.message).toContain('XPST0003');
   });
 
+  it('xpath.evaluate runs JSONPath against a JSON body, with the path on each match', async () => {
+    const result = (await invoke('xpath.evaluate', {
+      xml: '{"items":[{"id":1,"status":"open"},{"id":2,"status":"shut"}]}',
+      expression: '$.items[?(@.status=="open")].id',
+      language: 'jsonpath',
+      kind: 'json',
+    })) as { ok: true; value: { kind: string; items: { text: string; type: string; path?: string }[] } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.kind).toBe('values');
+    // The optional `path` has to survive the response schema: it is what the Query view renders
+    // above each JSONPath match, and a zod object drops a key it does not declare.
+    expect(result.value.items).toEqual([{ text: '1', type: 'number', path: "$['items'][0]['id']" }]);
+  });
+
+  it('xpath.evaluate refuses JSONPath against an XML document instead of guessing', async () => {
+    const result = (await invoke('xpath.evaluate', {
+      xml: ADD_RESPONSE,
+      expression: '$.a',
+      language: 'jsonpath',
+    })) as { ok: true; value: { kind: string; message?: string } };
+
+    expect(result.ok).toBe(true);
+    expect(result.value.kind).toBe('error');
+    expect(result.value.message).toContain('JSON response');
+  });
+
+  it('xpath.evaluate rejects a language the channel does not know', async () => {
+    const result = (await invoke('xpath.evaluate', {
+      xml: ADD_RESPONSE,
+      expression: '//*',
+      language: 'jmespath',
+    })) as { ok: false; error: { code: string } };
+
+    expect(result.ok).toBe(false);
+  });
+
   it('xpath.namespaces reports the bound prefixes and suggestions for a document', async () => {
     const result = (await invoke('xpath.namespaces', { xml: ADD_RESPONSE })) as {
       ok: true;

@@ -1,0 +1,37 @@
+openapi: 3.1.0
+info:
+  title: Modern
+  version: 1.0.0
+servers:
+  - url: https://modern.test
+webhooks:
+  petCreated:
+    post:
+      operationId: petCreatedHook
+      responses: { '200': { description: ok } }
+x-owner: platform
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      x-internal: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, nickname, kind]
+              properties:
+                name:
+                  type: string
+                  examples: [Fido]
+                nickname:
+                  type: [string, 'null']
+                kind:
+                  const: dog
+      callbacks:
+        onDone:
+          '{$request.body#/callbackUrl}':
+            post:
+              responses: { '200': { description: ok } }
+      responses: { '200': { description: ok } }

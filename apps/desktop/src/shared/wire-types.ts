@@ -476,6 +476,27 @@ export type ResolvedSendInputWire = Omit<SoapSendInputWire, 'tls'> & { readonly 
 /** A {@link RequestSendRequest} whose input has been through that same resolution. */
 export type ResolvedSendRequest = Omit<RequestSendRequest, 'input'> & { readonly input: ResolvedSendInputWire };
 
+/**
+ * What the renderer is told about an OAuth2 token. Never the token itself unless the session's
+ * show-secrets flag is on, and never a refresh token or a client secret at all.
+ */
+export const oauth2StatusSchema = z.object({
+  state: z.enum(['none', 'valid', 'expired', 'pending']),
+  expiresAt: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  token: z.string().optional(),
+  /** The loopback URI the provider must have registered, for the inspector to show. */
+  redirectUri: z.string(),
+});
+export type OAuth2StatusWire = z.infer<typeof oauth2StatusSchema>;
+
+/**
+ * Request payload for every `oauth2.*` call: the entity whose configuration to use — an API, a
+ * folder or a request. Main reads the configuration from the model; the renderer never sends one,
+ * because it would then be sending a client secret's reference around.
+ */
+export const oauth2OwnerRequestSchema = z.object({ ownerId: z.string() });
+
 /** Request payload for `request.recreate` — "Recreate Request", applied to a saved request. */
 export const requestRecreateRequestSchema = z.object({
   requestId: z.string(),
@@ -497,33 +518,34 @@ export const requestRecreateResponseSchema = z.object({
 });
 export type RequestRecreateResponse = z.infer<typeof requestRecreateResponseSchema>;
 
-/** Request payload for `request.curl`: which saved request, and which shell's quoting. */
-export const requestCurlRequestSchema = z.object({
-  requestId: z.string(),
-  shell: z.enum(['posix', 'powershell']),
-});
-export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+/**
+ * Where an imported cURL command lands: a SOAP operation, or a REST API and optionally a folder in it.
+ *
+ * A discriminated union rather than two channels, because the parse and the "what was dropped" report
+ * are the same work either way — only the entity created at the end differs.
+ */
+export const requestImportCurlTargetSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('soap'),
+    interfaceId: z.string(),
+    /** Clark-notation binding QName: `{namespaceUri}localName`. */
+    bindingName: z.string(),
+    operationName: z.string(),
+  }),
+  z.object({ kind: z.literal('rest'), apiId: z.string(), folderId: z.string().optional() }),
+]);
+export type RequestImportCurlTarget = z.infer<typeof requestImportCurlTargetSchema>;
 
-/** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
-export const requestCurlResponseSchema = z.object({
-  command: z.string(),
-  /**
-   * One-line notes about what the command does *not* carry — WS-Security (needs secrets and a
-   * keystore the export never touches) and/or attachments (never ride on this wire shape) —
-   * present only for the layers this particular request actually has.
-   */
-  notes: z.array(z.string()).optional(),
-});
-export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
-
-/** Request payload for `request.importCurl`: a pasted command, and the operation to hang it off. */
+/** Request payload for `request.importCurl`: a pasted command, and where to put what it describes. */
 export const requestImportCurlRequestSchema = z.object({
   command: z.string(),
-  interfaceId: z.string(),
-  /** Clark-notation binding QName: `{namespaceUri}localName`. */
-  bindingName: z.string(),
-  operationName: z.string(),
+  target: requestImportCurlTargetSchema,
   name: z.string().optional(),
+  /**
+   * A keychain reference for a `-u` password the renderer already stored. The value itself never
+   * crosses this wire: the dialog stores it through `secrets.set` and sends the reference (ADR-0004).
+   */
+  passwordRef: z.string().optional(),
 });
 export type RequestImportCurlRequest = z.infer<typeof requestImportCurlRequestSchema>;
 
@@ -531,6 +553,11 @@ export type RequestImportCurlRequest = z.infer<typeof requestImportCurlRequestSc
 export const requestImportCurlResponseSchema = z.object({
   requestId: z.string(),
   problems: z.array(z.string()),
+  /**
+   * The username a `-u` flag carried, when it had one. The dialog shows it so the user can see which
+   * credential the request now expects, and knows to supply the password if they did not paste one.
+   */
+  basicUsername: z.string().optional(),
 });
 export type RequestImportCurlResponse = z.infer<typeof requestImportCurlResponseSchema>;
 
@@ -690,8 +717,9 @@ export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
  * never crosses IPC (only its `passwordRef` is ever stored, and that stays in main).
  */
 export const requestAuthSourceSchema = z.object({
-  source: z.enum(['request', 'endpoint', 'interface', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm']),
+  /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
+  source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -732,7 +760,7 @@ export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSc
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
@@ -1211,6 +1239,278 @@ export const keystoreWireSchema = z.object({
 });
 export type KeystoreWire = z.infer<typeof keystoreWireSchema>;
 
+/**
+ * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
+ * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
+ * renderer can configure a token it can never read back.
+ */
+export const authConfigWireSchema = z.object({
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  username: z.string().optional(),
+  passwordRef: z.string().optional(),
+  domain: z.string().optional(),
+  workstation: z.string().optional(),
+  preemptive: z.boolean().optional(),
+  tokenRef: z.string().optional(),
+  scheme: z.string().optional(),
+  name: z.string().optional(),
+  valueRef: z.string().optional(),
+  in: z.enum(['header', 'query']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  tokenUrl: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecretRef: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  audience: z.string().optional(),
+  clientAuth: z.enum(['basic', 'body']).optional(),
+  pkce: z.boolean().optional(),
+  refreshTokenRef: z.string().optional(),
+});
+export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
+
+/** One params, query, header or form row. */
+export const keyValueWireSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  enabled: z.boolean(),
+  description: z.string().optional(),
+});
+export type KeyValueWire = z.infer<typeof keyValueWireSchema>;
+
+/**
+ * A request body on the wire. A raw body carries its `text` here, unlike on disk where it lives in
+ * a sibling file: the renderer edits the text, and main decides where it is written.
+ */
+export const restBodyWireSchema = z.union([
+  z.object({ kind: z.literal('none') }),
+  z.object({
+    kind: z.literal('raw'),
+    language: z.enum(['json', 'xml', 'text', 'html', 'javascript']),
+    contentType: z.string().optional(),
+    text: z.string(),
+  }),
+  z.object({ kind: z.literal('form'), fields: z.array(keyValueWireSchema) }),
+  z.object({
+    kind: z.literal('multipart'),
+    parts: z.array(
+      z.union([
+        z.object({
+          kind: z.literal('text'),
+          name: z.string(),
+          value: z.string(),
+          enabled: z.boolean(),
+          contentType: z.string().optional(),
+        }),
+        z.object({
+          kind: z.literal('file'),
+          name: z.string(),
+          source: attachmentSourceWireSchema,
+          enabled: z.boolean(),
+          fileName: z.string().optional(),
+          contentType: z.string().optional(),
+        }),
+      ]),
+    ),
+  }),
+  z.object({ kind: z.literal('binary'), source: attachmentSourceWireSchema, contentType: z.string() }),
+]);
+export type RestBodyWire = z.infer<typeof restBodyWireSchema>;
+
+/** Per-request transport settings; an absent field means *inherit*, never *off*. */
+export const restSettingsWireSchema = z.object({
+  timeoutMs: z.number().int().nonnegative().optional(),
+  followRedirects: z.boolean().optional(),
+  maxRedirects: z.number().int().nonnegative().optional(),
+  keepBodyOnRedirect: z.boolean().optional(),
+  encodeUrl: z.boolean().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  sendCookies: z.boolean().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+export type RestSettingsWire = z.infer<typeof restSettingsWireSchema>;
+
+/** One REST request as the renderer sees it. */
+export const restRequestWireSchema = z.object({
+  kind: z.literal('rest'),
+  id: z.string(),
+  apiId: z.string(),
+  /** Id of the folder it sits in, absent at the API's root. */
+  folderId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  method: z.string(),
+  url: z.string(),
+  pathParams: z.array(keyValueWireSchema),
+  query: z.array(keyValueWireSchema),
+  headers: z.array(keyValueWireSchema),
+  body: restBodyWireSchema,
+  auth: authConfigWireSchema,
+  settings: restSettingsWireSchema,
+  orphaned: z.boolean().optional(),
+});
+export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
+
+/** One folder as the renderer sees it; its children arrive as flat lists keyed by `parentId`. */
+export const restFolderWireSchema = z.object({
+  id: z.string(),
+  apiId: z.string(),
+  parentId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  auth: authConfigWireSchema.optional(),
+});
+export type RestFolderWire = z.infer<typeof restFolderWireSchema>;
+
+/** One API as the renderer sees it. Its folders and requests are separate flat lists. */
+export const restApiWireSchema = z.object({
+  kind: z.literal('rest'),
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  baseUrl: z.string(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })),
+  auth: authConfigWireSchema.optional(),
+  definition: z.object({ source: z.string(), cache: z.boolean(), version: z.string() }).optional(),
+});
+export type RestApiWire = z.infer<typeof restApiWireSchema>;
+
+/** The fields of an API the renderer may patch; `null` clears an optional one. */
+export const apiPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  baseUrl: z.string().optional(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })).optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type ApiPatchWire = z.infer<typeof apiPatchSchema>;
+
+/** The fields of a folder the renderer may patch. */
+export const restFolderPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type RestFolderPatchWire = z.infer<typeof restFolderPatchSchema>;
+
+/**
+ * The fields of a REST request the renderer may patch. Tables and settings are replaced wholesale
+ * rather than merged: an absent setting means *inherit*, so a merge could never turn one back off.
+ */
+export const restRequestPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  method: z.string().optional(),
+  url: z.string().optional(),
+  pathParams: z.array(keyValueWireSchema).optional(),
+  query: z.array(keyValueWireSchema).optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  body: restBodyWireSchema.optional(),
+  auth: authConfigWireSchema.optional(),
+  settings: restSettingsWireSchema.optional(),
+});
+export type RestRequestPatchWire = z.infer<typeof restRequestPatchSchema>;
+
+/** One cookie a response set, as the Cookies tab shows it. */
+export const cookieWireSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  domain: z.string().optional(),
+  path: z.string().optional(),
+  expires: z.string().optional(),
+  maxAge: z.number().optional(),
+  secure: z.boolean().optional(),
+  httpOnly: z.boolean().optional(),
+  sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+  /** The header could not be parsed as a cookie; `name` holds the whole line. */
+  malformed: z.boolean().optional(),
+});
+export type CookieWire = z.infer<typeof cookieWireSchema>;
+
+/**
+ * What one REST send produced. The same `http` projection a SOAP exchange carries — so the HTTP
+ * log, the raw view and the timing waterfall are one implementation — plus what the body turned out
+ * to be.
+ */
+export const restExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  durationMs: z.number(),
+  http: httpExchangeWireSchema,
+  /** The URL actually sent, redacted unless the session shows secrets. */
+  url: z.string(),
+  method: z.string(),
+  /** The response body decoded to text; empty for an image or another binary body. */
+  text: z.string(),
+  language: z.enum(['json', 'xml', 'html', 'javascript', 'text', 'image', 'binary']),
+  /** Set when the declared charset could not be honoured and UTF-8 was used instead. */
+  decodeNote: z.string().optional(),
+  cookies: z.array(cookieWireSchema),
+  /** A redirect turned the request into a `GET`; the HTTP log calls it out. */
+  methodChanged: z.boolean(),
+  problems: z.array(exchangeProblemSchema),
+  auth: authSummaryWireSchema.optional(),
+  unresolved: z.array(unresolvedRefWireSchema).optional(),
+});
+export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
+
+/**
+ * Request payload for `request.sendRest`.
+ *
+ * The renderer names the request and, when its editor has unsaved edits, hands over the draft it is
+ * looking at. It never sends a resolved URL, a base URL or a credential: main owns the environment,
+ * the project model and the keychain, so it is main that decides where the request goes.
+ */
+export const requestSendRestRequestSchema = z.object({
+  /** Client-generated id, used to correlate a later `request.cancel`. */
+  sendId: z.string(),
+  requestId: z.string(),
+  /** The editor's unsaved edits, applied to this send only. */
+  draft: restRequestPatchSchema.optional(),
+});
+export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
+
+/** Request payload for `request.preflightRest`: the same pair, with nothing sent. */
+export const requestPreflightRestRequestSchema = z.object({
+  requestId: z.string(),
+  draft: restRequestPatchSchema.optional(),
+});
+
+/** Request payload for `request.curl`: which saved request, and which shell's quoting. */
+export const requestCurlRequestSchema = z.object({
+  requestId: z.string(),
+  shell: z.enum(['posix', 'powershell']),
+  /**
+   * The editor's unsaved edits, applied to this export only — the same draft a send carries.
+   *
+   * Without it the command would describe what is *saved* rather than what the user is looking at,
+   * which is the one thing a "copy this request as curl" must never do. REST only: a SOAP draft
+   * already reaches main through its own staged-edit path.
+   */
+  draft: restRequestPatchSchema.optional(),
+});
+export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
+
+/** Response payload for `request.curl`. Secret-bearing headers are masked unless show-secrets is on. */
+export const requestCurlResponseSchema = z.object({
+  command: z.string(),
+  /**
+   * One-line notes about what the command does *not* carry — WS-Security (needs secrets and a
+   * keystore the export never touches) and/or attachments (never ride on this wire shape) —
+   * present only for the layers this particular request actually has.
+   */
+  notes: z.array(z.string()).optional(),
+});
+export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -1219,6 +1519,12 @@ export const projectWireSchema = z.object({
   lastSavedAt: z.string().optional(),
   interfaces: z.array(interfaceWireSchema),
   requests: z.array(requestWireSchema),
+  /** The project's REST APIs; `order` is shared with `interfaces`, so the two interleave. */
+  apis: z.array(restApiWireSchema),
+  /** Every folder of every API, flat; `parentId` gives the tree. */
+  folders: z.array(restFolderWireSchema),
+  /** Every REST request of every API, flat; `apiId`/`folderId` give its place. */
+  restRequests: z.array(restRequestWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -1331,6 +1637,34 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     endpointId: z.string(),
     auth: endpointAuthSchema.nullable(),
   }),
+  z.object({ kind: z.literal('add-api'), name: z.string(), baseUrl: z.string() }),
+  z.object({ kind: z.literal('update-api'), apiId: z.string(), patch: apiPatchSchema }),
+  z.object({ kind: z.literal('remove-api'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-folder'),
+    apiId: z.string(),
+    /** Absent adds the folder at the API's root. */
+    parentId: z.string().optional(),
+    name: z.string(),
+  }),
+  z.object({ kind: z.literal('update-folder'), folderId: z.string(), patch: restFolderPatchSchema }),
+  z.object({ kind: z.literal('remove-folder'), folderId: z.string() }),
+  z.object({
+    kind: z.literal('add-rest-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-rest-request'), requestId: z.string(), patch: restRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-rest-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-rest-request'), requestId: z.string() }),
+  z.object({
+    kind: z.literal('move-node'),
+    nodeId: z.string(),
+    /** Absent moves the node to the API's root. */
+    parentId: z.string().optional(),
+    index: z.number().int().nonnegative(),
+  }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -1424,6 +1758,11 @@ export const projectMutateResponseSchema = z.object({
   project: projectWireSchema,
   /** Set by `add-request` and `clone-request`: the id of the request that was created. */
   createdRequestId: z.string().optional(),
+  /**
+   * Set by every REST change that creates something — `add-api`, `add-folder`, `add-rest-request`
+   * and `clone-rest-request`: the id of the entity created, so the renderer can select or open it.
+   */
+  createdId: z.string().optional(),
   /** Set by `add-environment`: the id of the environment that was created. */
   createdEnvironmentId: z.string().optional(),
   /** Set by `add-attachment`: the id of the attachment that was created. */
@@ -1476,6 +1815,131 @@ export const projectAddInterfaceResponseSchema = z.object({
   interfaceId: z.string(),
 });
 export type ProjectAddInterfaceResponse = z.infer<typeof projectAddInterfaceResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// OpenAPI import (`api.*`): one API made from a described document, and the
+// cached definition it can be read back and exported from.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where an OpenAPI document comes from. The same three arms a WSDL import has, and the same rule:
+ * passing this schema does not authorize a `file` path — main additionally requires it to be inside
+ * an open project folder or to have been picked through a dialog this session.
+ */
+export const openApiSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string(),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
+]);
+export type OpenApiSourceWire = z.infer<typeof openApiSourceSchema>;
+
+/** One thing the import could not use, and where it was. */
+export const openApiSkippedSchema = z.object({
+  kind: z.string(),
+  where: z.string(),
+  reason: z.string(),
+});
+export type OpenApiSkippedWire = z.infer<typeof openApiSkippedSchema>;
+
+/**
+ * One security scheme the document declares, as a candidate for the API's credentials.
+ *
+ * Every scheme is listed, usable or not: the dialog offers the choice, and one this client cannot
+ * use has to say why rather than be missing from the list. `auth` is exactly what picking it sets,
+ * computed by the engine so the renderer never has to know how a scheme becomes credentials.
+ */
+export const openApiSchemeCandidateSchema = z.object({
+  name: z.string(),
+  type: z.enum(['http', 'apiKey', 'oauth2', 'openIdConnect', 'mutualTLS']),
+  description: z.string().optional(),
+  auth: authConfigWireSchema.optional(),
+  reason: z.string().optional(),
+  applied: z.boolean(),
+});
+export type OpenApiSchemeCandidateWire = z.infer<typeof openApiSchemeCandidateSchema>;
+
+/** What an import made, for the summary the dialog shows when it finishes. */
+export const openApiImportSummarySchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  /** The `openapi` string the document declared. */
+  declaredVersion: z.string(),
+  /** `info.version` — the version of the API, not of the specification. */
+  apiVersion: z.string().optional(),
+  baseUrl: z.string(),
+  servers: z.array(z.object({ url: z.string(), description: z.string().optional() })),
+  folders: z.number(),
+  requests: z.number(),
+  deprecated: z.number(),
+  auth: z.string().optional(),
+  securitySchemes: z.array(openApiSchemeCandidateSchema),
+  skipped: z.array(openApiSkippedSchema),
+});
+export type OpenApiImportSummaryWire = z.infer<typeof openApiImportSummarySchema>;
+
+/** Request/response for `api.importOpenApi`. The target is the same union a WSDL import takes. */
+export const apiImportOpenApiRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: openApiSourceSchema,
+  /** Overrides `info.title` as the API's name; the dialog offers it for editing. */
+  name: z.string().max(200).optional(),
+  /** Overrides the first server's URL as the base URL. */
+  baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  /** The security scheme, by its name in the document, to use as the API's own credentials. */
+  securityScheme: z.string().max(200).optional(),
+  /** Write the definition cache. Defaults to the definition-caching preference. */
+  cache: z.boolean().optional(),
+  /** Echoed back on `engine.progress` events raised while this import is in flight. */
+  token: z.string().optional(),
+});
+export type ApiImportOpenApiRequest = z.infer<typeof apiImportOpenApiRequestSchema>;
+
+export const apiImportOpenApiResponseSchema = z.object({
+  /** The project the API landed in — the one that was created, for a `newProjectName`. */
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: openApiImportSummarySchema,
+});
+export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
+
+/** Request/response for `api.cancelImport`, by the token the import was started with. */
+export const apiCancelImportRequestSchema = z.object({ token: z.string() });
+export const apiCancelImportResponseSchema = z.object({ cancelled: z.boolean() });
+
+/** Request payload for the channels that address one API's cached definition. */
+export const apiIdRequestSchema = z.object({ apiId: z.string() });
+
+/** Response for `api.definitionDocuments`: identity and size only, never text. */
+export const apiDefinitionDocumentsResponseSchema = z.object({
+  documents: z.array(z.object({ location: z.string(), size: z.number() })),
+  rootLocation: z.string(),
+  fetchedAt: z.string(),
+  declaredVersion: z.string().optional(),
+});
+export type ApiDefinitionDocumentsResponse = z.infer<typeof apiDefinitionDocumentsResponseSchema>;
+
+/**
+ * Request payload for `api.definitionText`. `location` is never a path the renderer made up: main
+ * matches it against the manifest's own locations and rejects anything else.
+ */
+export const apiDefinitionTextRequestSchema = z.object({
+  apiId: z.string(),
+  location: z.string().max(4096),
+});
+export const apiDefinitionTextResponseSchema = z.object({ text: z.string() });
+
+/** Response for `api.exportDefinition`: main runs the folder dialog and writes the bytes. */
+export const apiExportDefinitionResponseSchema = z.object({
+  dir: z.string().optional(),
+  files: z.array(z.string()).default([]),
+  cancelled: z.boolean(),
+});
+export type ApiExportDefinitionResponse = z.infer<typeof apiExportDefinitionResponseSchema>;
 
 /** Payload for the `project.changed` event: the renderer replaces its mirror wholesale. */
 export const projectChangedEventSchema = z.object({
@@ -1555,6 +2019,22 @@ export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
 
+/**
+ * Request payload for `exchanges.saveRestBody`: a handle, and deliberately nothing else.
+ *
+ * There is no `path` field, for the same reason `attachments.saveResponse` has none: these are bytes
+ * a remote server sent, so the file they land in is always chosen by the user through the native
+ * Save-as dialog. A renderer that could name the target could write server-controlled content
+ * anywhere the user can write.
+ */
+export const exchangesSaveRestBodyRequestSchema = z.object({ sendId: z.string() });
+
+/** Response for `exchanges.saveRestBody`: the file written, or `cancelled` when the user backed out. */
+export const exchangesSaveRestBodyResponseSchema = z.union([
+  z.object({ path: z.string() }),
+  z.object({ cancelled: z.literal(true) }),
+]);
+
 // ---------------------------------------------------------------------------
 // History (Task 24): a persistent, per-project record of every send, kept in
 // `userData` (outside the project folder) and always stored redacted.
@@ -1566,6 +2046,12 @@ const historyErrorSchema = z.object({ code: z.string(), message: z.string() });
 /** Wire (and on-disk) shape of one recorded send — mirrors the engine's `HistoryEntry`. */
 export const historyEntrySchema = z.object({
   id: z.string(),
+  /**
+   * Which protocol the send used. Optional, and honestly so: a line written before the REST client
+   * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
+   * main writes from now on names its kind.
+   */
+  kind: z.enum(['soap', 'rest']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -1575,6 +2061,8 @@ export const historyEntrySchema = z.object({
   endpoint: z.string(),
   soapVersion: soapVersionSchema,
   soapAction: z.string().optional(),
+  /** The HTTP method, for a REST send. A SOAP send is always a POST and records none. */
+  method: z.string().optional(),
   status: z.number().optional(),
   durationMs: z.number(),
   ok: z.boolean(),
@@ -1967,10 +2455,23 @@ export const attachmentsPickFilesResponseSchema = z.object({ paths: z.array(z.st
 
 /** Request payload for `xpath.evaluate`. Mirrors the engine's `EvaluateOptions`. */
 export const xpathEvaluateRequestSchema = z.object({
+  /** The document text. Named `xml` since that is what it was; a JSON body travels here too. */
   xml: z.string(),
   expression: z.string(),
-  language: z.enum(['xpath', 'xquery']),
+  /**
+   * The query language. `jsonpath` is JSON-only — main answers an XML document queried with it as an
+   * error result rather than guessing — and the Query view only offers it for a JSON response.
+   */
+  language: z.enum(['xpath', 'xquery', 'jsonpath']),
   namespaces: z.record(z.string(), z.string()).optional(),
+  /**
+   * Which document `xml` is. Defaults to `xml`.
+   *
+   * XPath 3.1's maps, arrays and `?` lookup query JSON directly, so a JSON body is the same two
+   * languages against a different context item. `jsonpath` is the third, for the syntax REST users
+   * already have in their notes.
+   */
+  kind: z.enum(['xml', 'json']).optional(),
 });
 
 /** One node-shaped result item; mirrors the engine's `QueryNodeItem`. */
@@ -1981,8 +2482,9 @@ const xpathQueryNodeItemSchema = z.object({
   path: z.string(),
 });
 
-/** One atomic-value result item; mirrors the engine's `QueryValueItem`. */
-const xpathQueryValueItemSchema = z.object({ text: z.string(), type: z.string() });
+/** One atomic-value result item; mirrors the engine's `QueryValueItem`. `path` is filled in only by
+ * JSONPath, which locates a value rather than computing one. */
+const xpathQueryValueItemSchema = z.object({ text: z.string(), type: z.string(), path: z.string().optional() });
 
 /** Response for `xpath.evaluate`; mirrors the engine's `QueryResult`. */
 export const xpathEvaluateResponseSchema = z.discriminatedUnion('kind', [
@@ -2168,6 +2670,13 @@ export const preferencesWireSchema = z.object({
     nameWithBinding: z.boolean(),
   }),
   wsi: z.object({ verbose: z.boolean(), profile: z.literal('BP1.1') }),
+  rest: z.object({
+    followRedirects: z.boolean(),
+    maxRedirects: z.number(),
+    prettyPrintMaxBytes: z.number(),
+    defaultAccept: z.string(),
+    oauth2CallbackPort: z.number().optional(),
+  }),
   editor: z.object({
     fontFamily: z.string().optional(),
     fontSize: z.number(),
@@ -2197,6 +2706,7 @@ export const preferencesSectionSchema = z.enum([
   'http',
   'proxy',
   'ssl',
+  'rest',
   'wsdl',
   'wsi',
   'editor',
@@ -2217,6 +2727,7 @@ export const preferencesPatchWireSchema = z.object({
   ssl: z.record(z.string(), z.unknown()).optional(),
   wsdl: z.record(z.string(), z.unknown()).optional(),
   wsi: z.record(z.string(), z.unknown()).optional(),
+  rest: z.record(z.string(), z.unknown()).optional(),
   editor: z.record(z.string(), z.unknown()).optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
   updates: z.record(z.string(), z.unknown()).optional(),
@@ -2389,6 +2900,12 @@ export type SearchQueryRequest = z.infer<typeof searchQueryRequestSchema>;
  */
 export const searchMatchSchema = z.object({
   kind: z.enum(['request-body', 'request-header', 'document']),
+  /**
+   * Which protocol's request matched. Absent means SOAP, so an entry recorded before REST existed
+   * reads as what it was. It decides both the badge in the results list and which editor a click
+   * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
+   */
+  protocol: z.enum(['soap', 'rest']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.
@@ -2647,6 +3164,11 @@ export type WorkspaceChangedEvent = z.infer<typeof workspaceChangedEventSchema>;
 export const workspaceStashDraftsRequestSchema = z.object({
   workspaceId: z.string(),
   requests: z.record(z.string(), requestPatchSchema),
+  /**
+   * The REST editor's unsaved edits, by REST request id. Optional so a stash written by an older
+   * build still loads: absent means the session had none.
+   */
+  restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 
@@ -2671,6 +3193,8 @@ export type UnsavedRestoreNoticeWire = z.infer<typeof unsavedRestoreNoticeSchema
 export const workspaceRestoredResponseSchema = z.object({
   workspaceId: z.string().nullable(),
   drafts: z.record(z.string(), requestPatchSchema),
+  /** The REST drafts the last session left unsaved, by REST request id. */
+  restDrafts: z.record(z.string(), restRequestPatchSchema),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

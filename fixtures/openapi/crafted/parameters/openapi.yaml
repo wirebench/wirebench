@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: Parameters
+  version: 1.0.0
+servers:
+  - url: https://params.test/v1
+paths:
+  /pets/{petId}/photos/{photoId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema: { type: string }
+        example: p-1
+      - name: X-Shared
+        in: header
+        schema: { type: string }
+        example: shared
+    get:
+      operationId: getPhoto
+      summary: Read one photo
+      tags: [Pets]
+      parameters:
+        - name: photoId
+          in: path
+          required: true
+          schema: { type: integer }
+          example: 7
+        # Overrides the path-level `petId`: the operation's own wins.
+        - name: petId
+          in: path
+          required: true
+          schema: { type: string }
+          example: p-override
+        - name: size
+          in: query
+          required: true
+          schema: { type: string, enum: [small, large] }
+        - name: tag
+          in: query
+          schema: { type: string }
+          description: Optional, so the row arrives disabled
+        - name: X-Trace
+          in: header
+          schema: { type: string }
+          example: trace-1
+        - name: session
+          in: cookie
+          schema: { type: string }
+      responses:
+        '200': { description: ok }

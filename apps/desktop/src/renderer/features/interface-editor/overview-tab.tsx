@@ -5,7 +5,7 @@
  * their own.
  */
 
-import { AuthFields } from '../../components/auth-fields.js';
+import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
 import { ReadOnlySetting, SettingsGroup } from '../../components/settings-grid.js';
 import { WsaFields } from '../../components/wsa-fields.js';
@@ -91,10 +91,11 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
             Used by every request of this interface that configures no credentials of its own.
           </p>
           <AuthFields
+            types={SOAP_AUTH_TYPES}
             scope="Interface"
             auth={iface.auth}
             onChange={(auth) => {
-              void updateInterfaceAuth(interfaceId, auth);
+              void updateInterfaceAuth(interfaceId, asSoapAuth(auth));
             }}
           />
         </div>

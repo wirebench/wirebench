@@ -43,6 +43,22 @@ export const BUDGETS_MS = {
   'mtom-package-10mb': 500,
   /** Evaluate an XPath expression over a 1 MB SOAP response. */
   'xpath-evaluate-1mb': 200,
+  /** Parse, resolve and map the generated ~1 MB / 300-operation `crafted/large.json` into an API. */
+  'openapi-import-1mb': 1000,
+  /**
+   * Generate a body sample for every request-body schema of the generated ~1 MB document, in both
+   * preference combinations plus XML.
+   *
+   * Dominated by the `includeOptional` and XML variants, which an import does not run by default —
+   * the default (required properties only) is a fraction of this. Budgeted over the expensive
+   * combination because that is the one a user can turn on, and because this is the scenario that
+   * bounds sample generation over a schema graph rather than a schema tree.
+   */
+  'openapi-samples': 1500,
+  /** Pretty-print a 5 MB JSON response body, which is what the Pretty view does on arrival. */
+  'rest-pretty-5mb': 500,
+  /** `sendRest` wall-clock time minus the test server's own handling time (`x-server-ms`). */
+  'rest-send-overhead': 20,
 } as const satisfies Readonly<Record<string, number>>;
 
 /** The name of a budgeted scenario. */

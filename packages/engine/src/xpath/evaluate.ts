@@ -1,7 +1,12 @@
 /**
- * XPath 3.1 / XQuery 3.1 evaluation against a response document, for the response Query
- * scratchpad. Where classic SOAP workbenches limit querying to XPath 2.0 inside assertions,
- * this runs both languages over the actual bytes the server returned, ahead of any assertion.
+ * XPath 3.1 / XQuery 3.1 evaluation against a response, for the response Query scratchpad. Where
+ * classic SOAP workbenches limit querying to XPath 2.0 inside assertions, this runs both languages
+ * over the actual bytes the server returned, ahead of any assertion.
+ *
+ * A JSON response is queried by the same two languages ({@link evaluateJson}) rather than by a third
+ * one: XPath 3.1 has maps, arrays and the `?` lookup operator, so `?items?*[?status = "open"]?id`
+ * needs no new dependency and no second expression syntax for users to learn. The context item is
+ * the parsed document itself.
  */
 
 import fontoxpathModule from 'fontoxpath';
@@ -11,6 +16,7 @@ import { serializeXml } from '../xml/serialize.js';
 import { LineIndex } from '../xml/positions.js';
 import type { LinePosition } from '../xml/positions.js';
 import type { TextRange } from '../xsd/locate.js';
+import { evaluateJsonPath } from './jsonpath.js';
 
 // `fontoxpath` ships as CommonJS; its named exports only land on the default import under
 // Node's ESM interop, so every entry point this module needs is re-destructured here once.
@@ -45,6 +51,14 @@ export interface QueryValueItem {
   readonly text: string;
   /** A type label: `xs:string`, `xs:integer`, `map`, `array`, … */
   readonly type: string;
+  /**
+   * Where the value was found, when the evaluator knows.
+   *
+   * Only JSONPath fills this in (`$['items'][0]['id']`): it walks a document and can say where it
+   * landed, so a multi-match result stays readable. An XPath or XQuery expression computes a value
+   * rather than locating one — `count(//*)` has no path — so it leaves this absent.
+   */
+  readonly path?: string;
 }
 
 /** The outcome of running one XPath/XQuery expression against a document. */
@@ -54,9 +68,13 @@ export type QueryResult =
   | { readonly kind: 'empty' }
   | { readonly kind: 'error'; readonly message: string; readonly code?: string; readonly position?: LinePosition };
 
+/** The languages the Query view offers. `jsonpath` is JSON-only, and only
+ * {@link evaluateJson} accepts it — see `rest/jsonpath.ts`. */
+export type QueryLanguage = 'xpath' | 'xquery' | 'jsonpath';
+
 /** Options accepted by {@link evaluate}. */
 export interface EvaluateOptions {
-  readonly language: 'xpath' | 'xquery';
+  readonly language: QueryLanguage;
   /** Prefix to namespace URI, used to resolve `prefix:local` names in the expression. */
   readonly namespaces?: Readonly<Record<string, string>>;
 }
@@ -287,6 +305,12 @@ function codeOf(message: string): string | undefined {
  * @param options language and namespace bindings
  */
 export function evaluate(xml: string, expression: string, options: EvaluateOptions): QueryResult {
+  if (options.language === 'jsonpath') {
+    // Reachable only from a caller that paired the language with the wrong document kind; the
+    // Query view hides the JSONPath option for an XML response. Reported rather than thrown, like
+    // every other way a query can be wrong.
+    return { kind: 'error', message: 'JSONPath queries a JSON response, not an XML one' };
+  }
   let doc;
   try {
     doc = parseXml(xml);
@@ -344,6 +368,62 @@ export function evaluate(xml: string, expression: string, options: EvaluateOptio
     };
   }
 
+  return {
+    kind: 'values',
+    items: capped.map((item) => ({ text: toValueText(item), type: typeOf(item) })),
+    truncated,
+  };
+}
+
+/**
+ * Evaluates `expression` against a JSON document.
+ *
+ * The parsed JSON *is* the context item, so a lookup starts at `?`: `?name` reads a field of a
+ * top-level object, `?*` every member of an array, and `?items?*[?status = "open"]?id` filters and
+ * projects in one expression. Results are always values — JSON has no nodes — so nothing here needs
+ * the document's text, and a result carries no source range.
+ *
+ * A `language` of `jsonpath` is delegated to {@link evaluateJsonPath} instead, which answers in this same
+ * result shape — so one caller, and one result renderer, covers all three languages.
+ *
+ * @param json the response body as text
+ * @param expression the XPath, XQuery or JSONPath source
+ * @param options language (namespaces are accepted and unused: JSON has no names to qualify)
+ */
+export function evaluateJson(json: string, expression: string, options: EvaluateOptions): QueryResult {
+  if (options.language === 'jsonpath') {
+    return evaluateJsonPath(json, expression);
+  }
+  let context: unknown;
+  try {
+    context = JSON.parse(json);
+  } catch (error) {
+    // The same shape a malformed XML document produces, so one caller handles both.
+    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
+  }
+
+  let raw: unknown[];
+  try {
+    raw = evaluateXPath(expression, context, null, null, evaluateXPath.ALL_RESULTS_TYPE, {
+      language: options.language === 'xquery' ? Language.XQUERY_3_1_LANGUAGE : Language.XPATH_3_1_LANGUAGE,
+    }) as unknown[];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = codeOf(message);
+    const position = positionOf(error);
+    return {
+      kind: 'error',
+      message,
+      ...(code !== undefined ? { code } : {}),
+      ...(position !== undefined ? { position } : {}),
+    };
+  }
+
+  if (raw.length === 0) {
+    return { kind: 'empty' };
+  }
+  const truncated = raw.length > RESULT_CAP;
+  const capped = raw.slice(0, RESULT_CAP);
   return {
     kind: 'values',
     items: capped.map((item) => ({ text: toValueText(item), type: typeOf(item) })),

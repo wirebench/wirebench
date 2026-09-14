@@ -1,0 +1,69 @@
+attachments:
+  - cached: true
+    contentId: AT1@wirebench
+    contentType: application/pdf
+    id: AT1
+    name: invoice.pdf
+    part: file
+    size: 1234
+    source:
+      kind: cache
+      sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    type: MIME
+  - cached: false
+    contentId: AT2@wirebench
+    contentType: text/plain
+    id: AT2
+    name: note.txt
+    size: 6
+    source:
+      kind: path
+      path: notes/note.txt
+    type: CONTENT
+auth:
+  passwordRef: secret://country/basic
+  type: basic
+  username: u
+description: uses every optional field
+endpointId: EP-country
+endpointUrl: https://override.example.test/country
+headers:
+  - name: X-Trace
+    value: on
+  - name: X-Trace
+    value: verbose
+id: ID0005
+kind: soap
+name: Kitchen sink
+order: 2
+properties:
+  bindAddress: 127.0.0.1
+  disableMultiparts: false
+  dumpFile: ./dump.xml
+  enableInlineFiles: false
+  enableMtom: false
+  encodeAttachments: false
+  encoding: UTF-8
+  entitizeProperties: false
+  expandMtomAttachments: false
+  followRedirects: false
+  forceMtom: false
+  inlineResponseAttachments: false
+  maxSizeBytes: 1024
+  prettyPrint: false
+  removeEmptyContent: false
+  skipSoapAction: false
+  stripWhitespaces: false
+  wssPasswordType: digest
+  wssTimeToLive: 300
+soapAction: urn:demo/Kitchen sink
+soapVersion: "1.1"
+wsa:
+  addDefaultAction: true
+  addDefaultTo: true
+  enabled: true
+  generateMessageId: true
+  mustUnderstand: none
+  version: 2004/08
+wssIncomingRef: default
+wssOutgoingRef: prod-signature

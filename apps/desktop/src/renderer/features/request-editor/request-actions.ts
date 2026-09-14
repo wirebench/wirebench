@@ -8,7 +8,8 @@ import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { RequestCurlRequest } from '../../../shared/wire-types.js';
+import type { RequestCurlRequest, RequestImportCurlTarget } from '../../../shared/wire-types.js';
+import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
 
 /** Which of the three Recreate menu items was chosen. */
@@ -104,21 +105,40 @@ export async function copyAsCurl(requestId: string, shell: RequestCurlRequest['s
  */
 export async function importCurl(
   command: string,
-  operation: { readonly interfaceId: string; readonly bindingName: string; readonly operationName: string },
+  target: RequestImportCurlTarget,
+  options: { readonly passwordRef?: string } = {},
 ): Promise<string | undefined> {
-  const result = await ipc().request.importCurl({ command, ...operation });
+  const result = await ipc().request.importCurl({
+    command,
+    target,
+    ...(options.passwordRef !== undefined ? { passwordRef: options.passwordRef } : {}),
+  });
   if (!result.ok) {
     showToast(result.error.message);
     return undefined;
   }
-  const { requestId, problems } = result.value;
+  const { requestId, problems, basicUsername } = result.value;
   // The snapshot main broadcast for the new request may not have landed yet; refresh so the
   // tab (and the explorer row) can be opened against a mirror that actually contains it.
-  const projectId = useProjectStore.getState().projectOf[operation.interfaceId];
+  const owner = target.kind === 'soap' ? target.interfaceId : target.apiId;
+  const projectId = useProjectStore.getState().projectOf[owner];
   if (projectId !== undefined) {
     await useProjectStore.getState().refresh(projectId);
   }
-  openRequestTab(requestId, 'Imported request');
-  showToast(problems.length === 0 ? 'Imported cURL command' : `Imported with ${problems.length} problem(s)`);
+  if (target.kind === 'rest') {
+    openRestRequestTab(requestId, 'Imported request');
+  } else {
+    openRequestTab(requestId, 'Imported request');
+  }
+  const notes: string[] = [];
+  if (problems.length > 0) {
+    notes.push(`${String(problems.length)} problem(s)`);
+  }
+  // A `-u` with no password pasted leaves the request configured but unable to authenticate, which
+  // is worth saying once rather than leaving the user to a 401.
+  if (basicUsername !== undefined && options.passwordRef === undefined) {
+    notes.push(`set a password for “${basicUsername}” on the Auth tab`);
+  }
+  showToast(notes.length === 0 ? 'Imported cURL command' : `Imported — ${notes.join('; ')}`);
   return requestId;
 }

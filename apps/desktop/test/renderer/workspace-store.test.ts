@@ -8,7 +8,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { ProjectWire, WorkspaceProjectWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const SUMMARY: WorkspaceSummaryWire = {
@@ -21,6 +21,7 @@ const SUMMARY: WorkspaceSummaryWire = {
 };
 
 const PROJECT: ProjectWire = {
+  ...NO_REST,
   settings: PROJECT_SETTINGS,
   id: 'p1',
   name: 'Calculator',
@@ -48,6 +49,7 @@ const PROJECT_REF: WorkspaceProjectWire = {
 };
 
 const PROJECT_WITH_REQUEST: ProjectWire = {
+  ...NO_REST,
   ...PROJECT,
   requests: [{ id: 'r1', name: 'Add', interfaceId: 'i1', operationName: 'Add', bindingName: 'b' } as never],
 };
@@ -262,7 +264,11 @@ describe('useWorkspaceStore', () => {
 
     await useWorkspaceStore.getState().open('w2');
 
-    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { envelopeXml: '<unsaved/>' } } });
+    expect(stashDrafts).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      requests: { r1: { envelopeXml: '<unsaved/>' } },
+      restRequests: {},
+    });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
@@ -277,7 +283,11 @@ describe('useWorkspaceStore', () => {
 
     await useWorkspaceStore.getState().close();
 
-    expect(stashDrafts).toHaveBeenCalledWith({ workspaceId: 'w1', requests: { r1: { name: 'Renamed' } } });
+    expect(stashDrafts).toHaveBeenCalledWith({
+      workspaceId: 'w1',
+      requests: { r1: { name: 'Renamed' } },
+      restRequests: {},
+    });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
 

@@ -19,16 +19,22 @@ function toWire(result: QueryResult): ChannelResponse<typeof channels.xpath.eval
 
 /**
  * Registers the `xpath.*` IPC channels backing the response Query view: evaluating an
- * XPath 3.1 / XQuery 3.1 expression, and discovering the namespaces a document already binds.
- * Both are pure engine calls (no project/interface state), but `fontoxpath` stays out of the
- * renderer bundle by running here instead.
+ * XPath 3.1 / XQuery 3.1 / JSONPath expression — over an envelope or over a JSON body — and
+ * discovering the namespaces a document already binds. Both are pure engine calls (no
+ * project/interface state), but `fontoxpath` and `jsonpath-plus` stay out of the renderer bundle by
+ * running here instead.
  */
 export function registerXpathChannels(): void {
   registerHandler(channels.xpath.evaluate, async (request) => {
-    const result = await evaluateWithTimeout(request.xml, request.expression, {
-      language: request.language,
-      ...(request.namespaces !== undefined ? { namespaces: request.namespaces } : {}),
-    });
+    const result = await evaluateWithTimeout(
+      request.xml,
+      request.expression,
+      {
+        language: request.language,
+        ...(request.namespaces !== undefined ? { namespaces: request.namespaces } : {}),
+      },
+      request.kind !== undefined ? { kind: request.kind } : {},
+    );
     return toWire(result);
   });
 

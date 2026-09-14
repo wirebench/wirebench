@@ -1,5 +1,19 @@
 import { z } from 'zod';
 import {
+  apiCancelImportRequestSchema,
+  apiCancelImportResponseSchema,
+  apiDefinitionDocumentsResponseSchema,
+  apiDefinitionTextRequestSchema,
+  apiDefinitionTextResponseSchema,
+  apiExportDefinitionResponseSchema,
+  apiIdRequestSchema,
+  apiImportOpenApiRequestSchema,
+  apiImportOpenApiResponseSchema,
+  oauth2OwnerRequestSchema,
+  oauth2StatusSchema,
+  requestPreflightRestRequestSchema,
+  requestSendRestRequestSchema,
+  restExchangeSummarySchema,
   definitionCancelImportRequestSchema,
   definitionCancelImportResponseSchema,
   definitionCloseRequestSchema,
@@ -42,6 +56,8 @@ import {
   engineProgressEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
+  exchangesSaveRestBodyRequestSchema,
+  exchangesSaveRestBodyResponseSchema,
   globalsStateSchema,
   historyAppendedEventSchema,
   historyClearResponseSchema,
@@ -280,11 +296,52 @@ export const channels = {
   request: {
     generate: defineChannel('request.generate', requestGenerateRequestSchema, requestGenerateResponseSchema),
     send: defineChannel('request.send', requestSendRequestSchema, exchangeSummarySchema),
+    /**
+     * A REST send. Separate from `request.send` rather than a discriminated union of it: the two
+     * payloads share no fields — one carries an envelope the user typed, the other a request id and
+     * the editor's draft — and one channel for both would give every SOAP call a kind tag it never
+     * reads.
+     */
+    sendRest: defineChannel('request.sendRest', requestSendRestRequestSchema, restExchangeSummarySchema),
+    preflightRest: defineChannel(
+      'request.preflightRest',
+      requestPreflightRestRequestSchema,
+      requestPreflightResponseSchema,
+    ),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
     preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
     curl: defineChannel('request.curl', requestCurlRequestSchema, requestCurlResponseSchema),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
+  },
+  /**
+   * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
+   * configuration itself: the client secret is a keychain reference main resolves, and the access
+   * token comes back only as a status unless the session shows secrets.
+   */
+  oauth2: {
+    fetchToken: defineChannel('oauth2.fetchToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    status: defineChannel('oauth2.status', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    clearToken: defineChannel('oauth2.clearToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
+    cancel: defineChannel('oauth2.cancel', oauth2OwnerRequestSchema.partial(), requestCancelResponseSchema),
+  },
+  // An API and the definition it was imported from. Separate from `definition.*` because the two
+  // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
+  // definition is read back from its cache on demand — and nothing here addresses an interface.
+  api: {
+    importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
+    cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
+    definitionDocuments: defineChannel(
+      'api.definitionDocuments',
+      apiIdRequestSchema,
+      apiDefinitionDocumentsResponseSchema,
+    ),
+    definitionText: defineChannel(
+      'api.definitionText',
+      apiDefinitionTextRequestSchema,
+      apiDefinitionTextResponseSchema,
+    ),
+    exportDefinition: defineChannel('api.exportDefinition', apiIdRequestSchema, apiExportDefinitionResponseSchema),
   },
   // A workspace owns its projects: creating, opening and closing one is a `workspace.*` call,
   // not a `project.*` one. What is left here addresses *one* project of the open workspace,
@@ -408,6 +465,13 @@ export const channels = {
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.
   exchanges: {
     get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangeSummarySchema),
+    // The REST response body, written to a file the *user* picks. The bytes never cross the bridge:
+    // main holds them in the exchange cache and writes them itself.
+    saveRestBody: defineChannel(
+      'exchanges.saveRestBody',
+      exchangesSaveRestBodyRequestSchema,
+      exchangesSaveRestBodyResponseSchema,
+    ),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),

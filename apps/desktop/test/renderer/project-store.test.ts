@@ -1,16 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectWire } from '../../src/shared/wire-types.js';
 import { selectRequestEndpoint, selectRequestEndpointUrl } from '../../src/renderer/state/project-endpoint.js';
-import { selectEnvironment, selectProjectEnvironments, useProjectStore } from '../../src/renderer/state/project.js';
+import {
+  selectApiOf,
+  selectEnvironment,
+  selectFolderChain,
+  selectProjectEnvironments,
+  selectRestRequest,
+  useProjectStore,
+} from '../../src/renderer/state/project.js';
+import { useDraftsStore } from '../../src/renderer/state/drafts.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { PROJECT_SETTINGS, REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
+import {
+  NO_REST,
+  PROJECT_SETTINGS,
+  REQUEST_PROPERTIES,
+  restApiWire,
+  restFolderWire,
+  restRequestWire,
+} from '../helpers/wire-defaults.js';
 
 const BINDING = '{tns}CalculatorSoap';
 
 function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
   return {
+    ...NO_REST,
     settings: PROJECT_SETTINGS,
     id: 'proj-1',
     name: 'Demo',
@@ -883,5 +900,198 @@ describe('useProjectStore: several projects at once', () => {
       saveStatus: {},
       changedOnDisk: {},
     });
+  });
+});
+
+/**
+ * The REST half of the mirror. Two things are worth pinning: the indexes an explorer row and an
+ * editor read (including `projectOf`, which is how an action addressed at an entity finds its
+ * project), and the exact mutation each action sends — that payload is what reaches disk.
+ */
+describe('useProjectStore with REST data', () => {
+  beforeEach(() => {
+    resetStore();
+    installWirebenchApi();
+  });
+
+  const restWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+    projectWire({
+      apis: [restApiWire()],
+      folders: [restFolderWire()],
+      restRequests: [restRequestWire({ folderId: 'folder-1' })],
+      ...overrides,
+    });
+
+  /** Mirrors a project and stubs `project.mutate` to echo it back, returning the spy. */
+  function withMutate(wire: ProjectWire = restWire(), created?: string): ReturnType<typeof vi.fn> {
+    const mutate = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { project: wire, ...(created !== undefined ? { createdId: created } : {}) },
+    });
+    installWirebenchApi({ project: { mutate } });
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+    return mutate;
+  }
+
+  it('indexes APIs, folders and REST requests, and says which project owns each', () => {
+    const wire = restWire();
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+    const state = useProjectStore.getState();
+
+    expect(state.apis['api-1']?.name).toBe('Petstore');
+    expect(state.folders['folder-1']?.name).toBe('Pets');
+    expect(state.restRequests['rest-1']?.method).toBe('GET');
+    expect(state.projectOf['api-1']).toBe('proj-1');
+    expect(state.projectOf['folder-1']).toBe('proj-1');
+    expect(state.projectOf['rest-1']).toBe('proj-1');
+    expect(state.rest['proj-1']).toMatchObject({ apis: wire.apis, folders: wire.folders });
+  });
+
+  it('lays a staged REST edit over the snapshot main sent', () => {
+    const wire = restWire();
+    useDraftsStore.getState().stageRestRequest('rest-1', { method: 'POST', url: '/pets' });
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+
+    expect(useProjectStore.getState().restRequests['rest-1']).toMatchObject({ method: 'POST', url: '/pets' });
+    // And the per-project list the explorer reads carries the same edit.
+    expect(useProjectStore.getState().rest['proj-1']?.requests[0]).toMatchObject({ method: 'POST' });
+    useDraftsStore.getState().reset();
+  });
+
+  it('drops every REST index when its project leaves the mirror', () => {
+    const wire = restWire();
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+    useProjectStore.getState().applySnapshot('proj-1', null);
+
+    expect(useProjectStore.getState()).toMatchObject({ apis: {}, folders: {}, restRequests: {}, rest: {} });
+  });
+
+  it('selects an API from any id inside it, and the folder chain of a request', () => {
+    const wire = restWire({
+      folders: [restFolderWire(), restFolderWire({ id: 'folder-2', parentId: 'folder-1', name: 'Admin' })],
+      restRequests: [restRequestWire({ folderId: 'folder-2' })],
+    });
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+    const state = useProjectStore.getState();
+
+    expect(selectApiOf(state, 'rest-1')?.id).toBe('api-1');
+    expect(selectApiOf(state, 'folder-2')?.id).toBe('api-1');
+    expect(selectApiOf(state, 'api-1')?.id).toBe('api-1');
+    expect(selectApiOf(state, 'nope')).toBeUndefined();
+    expect(selectFolderChain(state, 'rest-1').map((folder) => folder.name)).toEqual(['Pets', 'Admin']);
+    expect(selectRestRequest(state, 'rest-1')?.name).toBe('Get pet');
+  });
+
+  it('stops rather than looping when two folders name each other as parent', () => {
+    const wire = restWire({
+      folders: [
+        restFolderWire({ id: 'f1', parentId: 'f2' }),
+        restFolderWire({ id: 'f2', parentId: 'f1', name: 'Other' }),
+      ],
+      restRequests: [restRequestWire({ folderId: 'f1' })],
+    });
+    useProjectStore.getState().applySnapshot(wire.id, wire);
+
+    expect(selectFolderChain(useProjectStore.getState(), 'rest-1')).toHaveLength(2);
+  });
+
+  it('sends add-api and returns the id main created', async () => {
+    const mutate = withMutate(restWire(), 'api-new');
+
+    await expect(useProjectStore.getState().addApi('proj-1', 'Petstore', 'https://api.test')).resolves.toBe('api-new');
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'add-api', name: 'Petstore', baseUrl: 'https://api.test' },
+    });
+  });
+
+  it('fails loudly when a create returns no id, rather than handing back an empty one', async () => {
+    withMutate();
+    await expect(useProjectStore.getState().addApi('proj-1', 'Petstore')).rejects.toThrow(/did not return/);
+  });
+
+  it('sends add-folder with the parent only when there is one', async () => {
+    const mutate = withMutate(restWire(), 'folder-new');
+
+    await useProjectStore.getState().addFolder('api-1', undefined, 'Pets');
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'add-folder', apiId: 'api-1', name: 'Pets' },
+    });
+
+    await useProjectStore.getState().addFolder('api-1', 'folder-1', 'Admin');
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'add-folder', apiId: 'api-1', parentId: 'folder-1', name: 'Admin' },
+    });
+  });
+
+  it('sends add-rest-request, update-rest-request, clone and move', async () => {
+    const mutate = withMutate(restWire(), 'rest-new');
+
+    await useProjectStore.getState().addRestRequest('api-1', 'folder-1', 'Create pet');
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'add-rest-request', apiId: 'api-1', parentId: 'folder-1', name: 'Create pet' },
+    });
+
+    await useProjectStore.getState().updateRestRequest('rest-1', { method: 'POST' });
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'update-rest-request', requestId: 'rest-1', patch: { method: 'POST' } },
+    });
+
+    await useProjectStore.getState().cloneRestRequest('rest-1');
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'clone-rest-request', requestId: 'rest-1' },
+    });
+
+    await useProjectStore.getState().moveNode('rest-1', 'folder-1', 2);
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'move-node', nodeId: 'rest-1', parentId: 'folder-1', index: 2 },
+    });
+
+    await useProjectStore.getState().moveNode('folder-1', undefined, 0);
+    expect(mutate).toHaveBeenLastCalledWith({
+      projectId: 'proj-1',
+      change: { kind: 'move-node', nodeId: 'folder-1', index: 0 },
+    });
+  });
+
+  it('closes the tab and discards the draft of a deleted REST request', async () => {
+    const emptied = restWire({ restRequests: [] });
+    withMutate(restWire(), undefined);
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/x' });
+    useEditorsStore
+      .getState()
+      .open({ id: 'rest:rest-1', kind: 'rest-request', title: 'Get pet', restRequestId: 'rest-1' });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+    });
+
+    await useProjectStore.getState().removeRestRequest('rest-1');
+
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
+  it('deleting an API takes the tabs and drafts of the requests inside it', async () => {
+    const emptied = restWire({ apis: [], folders: [], restRequests: [] });
+    withMutate(restWire());
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/x' });
+    useEditorsStore
+      .getState()
+      .open({ id: 'rest:rest-1', kind: 'rest-request', title: 'Get pet', restRequestId: 'rest-1' });
+    useEditorsStore.getState().open({ id: 'api:api-1', kind: 'api', title: 'Petstore', apiId: 'api-1' });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+    });
+
+    await useProjectStore.getState().removeApi('api-1');
+
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
   });
 });

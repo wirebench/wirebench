@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info:
+  title: Deprecated
+  version: 1.0.0
+servers:
+  - url: https://old.test
+tags:
+  - name: Pets
+    description: Everything about pets
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      tags: [Pets]
+      responses: { '200': { description: ok } }
+  /pets-old:
+    get:
+      operationId: listPetsOld
+      deprecated: true
+      tags: [Pets]
+      responses: { '200': { description: ok } }
+  /untagged-old:
+    get:
+      operationId: untaggedOld
+      deprecated: true
+      responses: { '200': { description: ok } }

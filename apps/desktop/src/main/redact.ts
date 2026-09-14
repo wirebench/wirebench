@@ -47,6 +47,56 @@ export function redactHeaderPairs(
 }
 
 /**
+ * Query-parameter names (case-insensitive) whose value is masked wherever a URL is logged, stored
+ * or shown. An API key that travels in the query string is as much a credential as one in a header,
+ * and a URL reaches more places than a header does: the HTTP log, history, the cURL export, a
+ * problem message.
+ */
+const SENSITIVE_QUERY_PARAMS = new Set([
+  'api_key',
+  'apikey',
+  'api-key',
+  'access_token',
+  'token',
+  'key',
+  'auth',
+  'signature',
+  'sig',
+]);
+
+/**
+ * Masks the value of every sensitive query parameter in `url`, plus any parameter named in
+ * `extraParams` — which is how the send path masks the exact parameter an API key is configured to
+ * travel in, whatever it is called.
+ *
+ * A URL that cannot be parsed is returned unchanged: it is already not a URL, and mangling it would
+ * only hide what is wrong with it.
+ */
+export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: readonly string[] }): string {
+  if (opts?.show === true) {
+    return url;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const extra = new Set((opts?.extraParams ?? []).map((name) => name.toLowerCase()));
+  let changed = false;
+  for (const name of [...parsed.searchParams.keys()]) {
+    const lower = name.toLowerCase();
+    if (SENSITIVE_QUERY_PARAMS.has(lower) || extra.has(lower)) {
+      parsed.searchParams.set(name, REDACTED);
+      changed = true;
+    }
+  }
+  // `URL` normalises as it serialises (a `+` becomes `%2B`, a default port disappears), so an
+  // untouched URL is returned as it came in rather than as the parser would have written it.
+  return changed ? parsed.toString() : url;
+}
+
+/**
  * The redaction pass for a response's attachment list. Nothing in `{index, contentId,
  * contentType, size, name}` carries a secret today, so this is a copy — it exists as the one
  * call site so that when a part's `Content-Disposition` (or a signed-URL-shaped name) does need
@@ -59,8 +109,15 @@ export function redactResponseAttachments<T>(attachments: readonly T[]): T[] {
   return [...attachments];
 }
 
-/** Matches an (optionally namespace-prefixed) `<Password ...>...</Password>` element's text. */
-const WSSE_PASSWORD_RE = /(<(?:[\w-]+:)?Password\b[^>]*>)([\s\S]*?)(<\/(?:[\w-]+:)?Password>)/gi;
+/**
+ * The start of an (optionally namespace-prefixed) `<Password` open tag, and a matching close tag.
+ *
+ * Used by a scanner rather than as one `/(<…Password[^>]*>)([\\s\\S]*?)(<\\/…Password>)/gi`: that
+ * pattern's lazy body backtracks to the end of the text for every open tag that has no close tag,
+ * which is O(n²) — and this runs over a *response*, so the text is whatever server answered.
+ */
+const PASSWORD_OPEN_RE = /<(?:[\w-]+:)?Password\b/gi;
+const PASSWORD_CLOSE_RE = /<\/(?:[\w-]+:)?Password>/gi;
 
 /** Matches a `Type` attribute in a `Password` open tag, capturing its value. */
 const TYPE_ATTR_RE = /\bType\s*=\s*"([^"]*)"|\bType\s*=\s*'([^']*)'/i;
@@ -84,9 +141,34 @@ export function redactXml(text: string, opts?: { show?: boolean }): string {
   if (opts?.show) {
     return text;
   }
-  return text.replace(WSSE_PASSWORD_RE, (match, open: string, _content: string, close: string) =>
-    isPasswordDigest(open) ? match : `${open}${REDACTED}${close}`,
-  );
+  // One forward pass. Each open tag is paired with the first close tag after it (what the lazy
+  // match did), and the scan resumes past that close tag. An open tag with no `>` or no close tag
+  // ends the pass: nothing later could pair either, which is exactly when the regex found nothing.
+  const open = new RegExp(PASSWORD_OPEN_RE.source, 'gi');
+  const close = new RegExp(PASSWORD_CLOSE_RE.source, 'gi');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    open.lastIndex = from;
+    const opened = open.exec(text);
+    if (opened === null) {
+      break;
+    }
+    const tagEnd = text.indexOf('>', opened.index + opened[0].length);
+    if (tagEnd === -1) {
+      break;
+    }
+    close.lastIndex = tagEnd + 1;
+    const closed = close.exec(text);
+    if (closed === null) {
+      break;
+    }
+    const openTag = text.slice(opened.index, tagEnd + 1);
+    const content = isPasswordDigest(openTag) ? text.slice(tagEnd + 1, closed.index) : REDACTED;
+    out += `${text.slice(from, tagEnd + 1)}${content}${closed[0]}`;
+    from = closed.index + closed[0].length;
+  }
+  return out + text.slice(from);
 }
 
 /** Masks a single raw `name: value` header line (no terminator), case-insensitively. */

@@ -38,6 +38,17 @@ describe('slugify', () => {
   it('replaces leading and trailing dots and spaces', () => {
     expect(slugify('  .hidden.  ')).toBe('_hidden_');
     expect(slugify('...')).toBe('_');
+    expect(slugify('. . x . .')).toBe('_x_');
+    expect(slugify('.x')).toBe('_x');
+    expect(slugify('x.')).toBe('x_');
+  });
+
+  it('trims the edges in linear time on a long run of dots and spaces', () => {
+    // A trailing `[. ]+$` backtracks quadratically on this; the scanner must not.
+    const hostile = `${'. '.repeat(100_000)}x`;
+    const started = performance.now();
+    expect(slugify(hostile)).toBe('_x');
+    expect(performance.now() - started).toBeLessThan(400);
   });
 
   it('caps the length at 80 characters', () => {

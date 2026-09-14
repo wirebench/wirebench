@@ -43,6 +43,8 @@ const REJECTED_PATTERNS = /\([^)]*[+*]\)\s*[+*]/;
 /** One searchable text, plus the identity a match in it should carry back to the renderer. */
 export interface SearchDocument {
   readonly kind: SearchMatchWire['kind'];
+  /** Which protocol's request this text came from; absent for a definition document. */
+  readonly protocol?: 'soap' | 'rest';
   readonly text: string;
   /** Which project of the open workspace the text came from, and its display name. */
   readonly projectId?: string;
@@ -194,6 +196,7 @@ export function searchDocuments(
       }
       matches.push({
         kind: document.kind,
+        ...(document.protocol !== undefined ? { protocol: document.protocol } : {}),
         ...(document.projectId !== undefined ? { projectId: document.projectId } : {}),
         ...(document.projectName !== undefined ? { projectName: document.projectName } : {}),
         ...(document.requestId !== undefined ? { requestId: document.requestId } : {}),

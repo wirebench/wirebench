@@ -5,7 +5,7 @@
  */
 
 import { WirebenchError } from '@wirebench/engine';
-import type { EndpointAuth } from '@wirebench/engine';
+import type { AuthConfig, EndpointAuth, SendAuth } from '@wirebench/engine';
 
 /** The engine-facing shape: a resolved password in place of a `passwordRef`. */
 export interface ResolvedAuth {
@@ -47,4 +47,79 @@ export async function resolveEndpointAuth(
     });
   }
   return { ...resolved, password };
+}
+
+/**
+ * Resolves any {@link AuthConfig} into the engine's `SendAuth` — the shape that carries values
+ * rather than references.
+ *
+ * The token-bearing schemes are resolved here; OAuth2 is not, because obtaining a token is a
+ * network exchange with its own cache and its own browser flow. The caller passes `accessToken`
+ * for an OAuth2 configuration, having got it from `oauth2.ts`.
+ *
+ * `inherit` and `none` resolve to no credentials at all: `inherit` should already have been
+ * resolved by `resolveAuthChain` before this is called, and reaching here means nothing in the
+ * chain configured anything.
+ *
+ * @throws WirebenchError `secret-missing` when a reference is set but the store has no value for
+ * it — a dangling reference must fail loudly rather than quietly sending no credentials.
+ */
+export async function resolveAuthConfig(
+  auth: AuthConfig | undefined,
+  getSecret: (ref: string) => Promise<string | undefined>,
+  options: { readonly accessToken?: string } = {},
+): Promise<SendAuth | undefined> {
+  if (auth === undefined) {
+    return undefined;
+  }
+  switch (auth.type) {
+    case 'basic':
+    case 'ntlm': {
+      const resolved = await resolveEndpointAuth(auth, getSecret);
+      if (resolved === undefined || resolved.type === 'none') {
+        return undefined;
+      }
+      const password = resolved.password ?? '';
+      return resolved.type === 'basic'
+        ? { type: 'basic', username: resolved.username ?? '', password, preemptive: resolved.preemptive ?? true }
+        : {
+            type: 'ntlm',
+            username: resolved.username ?? '',
+            password,
+            ...(resolved.domain !== undefined ? { domain: resolved.domain } : {}),
+            ...(resolved.workstation !== undefined ? { workstation: resolved.workstation } : {}),
+          };
+    }
+    case 'bearer': {
+      const token = await requireSecret(auth.tokenRef, getSecret);
+      return token === undefined
+        ? undefined
+        : { type: 'bearer', token, ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}) };
+    }
+    case 'api-key': {
+      const value = await requireSecret(auth.valueRef, getSecret);
+      return value === undefined ? undefined : { type: 'api-key', name: auth.name, value, in: auth.in };
+    }
+    case 'oauth2':
+      return options.accessToken === undefined ? undefined : { type: 'oauth2', accessToken: options.accessToken };
+    default:
+      return undefined;
+  }
+}
+
+/** One reference resolved, or `undefined` when the scheme has none configured yet. */
+async function requireSecret(
+  ref: string | undefined,
+  getSecret: (ref: string) => Promise<string | undefined>,
+): Promise<string | undefined> {
+  if (ref === undefined || ref === '') {
+    return undefined;
+  }
+  const value = await getSecret(ref);
+  if (value === undefined) {
+    throw new WirebenchError('secret-missing', `Secret ${ref} was not found in the secret store.`, {
+      details: { ref },
+    });
+  }
+  return value;
 }

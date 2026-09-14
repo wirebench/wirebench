@@ -7,10 +7,11 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
 import type { ProjectChannelDeps } from '../src/main/ipc/project.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
-import { PROJECT_SETTINGS } from './helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 
 /** A valid reply body, so an accepted import's envelope passes the response schema. */
 const PROJECT: ProjectWire = {
+  ...NO_REST,
   settings: PROJECT_SETTINGS,
   id: 'p1',
   name: 'Calculator',

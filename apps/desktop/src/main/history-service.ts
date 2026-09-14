@@ -10,10 +10,11 @@
  */
 
 import { join } from 'node:path';
-import { assertPathSegment, generateHistoryId, openHistory } from '@wirebench/engine';
+import { normalizeHistoryEntry, assertPathSegment, generateHistoryId, openHistory } from '@wirebench/engine';
 import type { HistoryEntry, HistoryFile, HistoryListQuery } from '@wirebench/engine';
 import { redactHeaderPairs, redactHeaders, redactXml } from './redact.js';
 import type {
+  RestExchangeSummary,
   ExchangeSummary,
   HeaderEntryWire,
   HistoryEntryWire,
@@ -26,7 +27,9 @@ import type {
  * this only strips the `readonly` modifiers `wrapHandler`'s response validation needs gone.
  */
 export function toHistoryEntryWire(entry: HistoryEntry): HistoryEntryWire {
-  return JSON.parse(JSON.stringify(entry)) as HistoryEntryWire;
+  // Normalised first: a line written before the REST client carries no `kind`, and the wire shape
+  // says every entry has one. `normalizeHistoryEntry` is what decides such a line is SOAP.
+  return JSON.parse(JSON.stringify(normalizeHistoryEntry(entry))) as HistoryEntryWire;
 }
 
 /**
@@ -93,6 +96,7 @@ export function buildHistoryEntry(projectId: string, record: RecordSendInput): H
   const fault = exchange?.response?.fault;
   return {
     id: generateHistoryId(),
+    kind: 'soap',
     at: new Date().toISOString(),
     projectId,
     ...(record.requestId !== undefined ? { requestId: record.requestId } : {}),
@@ -121,6 +125,89 @@ export function buildHistoryEntry(projectId: string, record: RecordSendInput): H
       : {}),
     ...(record.error !== undefined ? { error: record.error } : {}),
     sizeBytes: sizeOf(exchange, record.input),
+    ...(record.tags !== undefined ? { tags: record.tags } : {}),
+  };
+}
+
+/** What `HistoryService.recordRestSend` needs to build one REST entry. */
+export interface RecordRestSendInput {
+  readonly requestId: string;
+  readonly requestName: string;
+  /** The API the request belongs to, which takes the place of a SOAP interface's name. */
+  readonly apiName: string;
+  /** The folder path inside the API, as `Pets / Admin`; empty at the API's root. */
+  readonly folderPath: string;
+  readonly method: string;
+  /** The URL as sent, already redacted by `toRestExchangeSummary`. */
+  readonly url: string;
+  readonly requestHeaders: Readonly<Record<string, string>>;
+  /** The request body as text; empty for a body with no text form. */
+  readonly requestBody: string;
+  readonly exchange?: RestExchangeSummary;
+  readonly error?: { readonly code: string; readonly message: string };
+  readonly durationMs: number;
+  readonly tags?: readonly string[];
+}
+
+/** How much of a body a history line keeps. Beyond this it is truncated with a marker. */
+const MAX_HISTORY_BODY_CHARS = 256 * 1024;
+
+/** A body as stored: itself when small, or its first characters with a marker naming what was cut. */
+function storedBody(text: string): string {
+  if (text.length <= MAX_HISTORY_BODY_CHARS) {
+    return text;
+  }
+  const kept = text.slice(0, MAX_HISTORY_BODY_CHARS);
+  return `${kept}\n… truncated, ${String(text.length - MAX_HISTORY_BODY_CHARS)} more characters`;
+}
+
+/**
+ * Builds one (already redacted) REST `HistoryEntry`.
+ *
+ * The shape is the SOAP entry's, reused deliberately: `interfaceName` carries the API's name and
+ * `operationName` the folder path, so History's search, list and diff need no per-protocol
+ * branching beyond the badge. `kind` says which protocol it was, and `method` the verb a SOAP entry
+ * has no need of.
+ */
+export function buildRestHistoryEntry(projectId: string, record: RecordRestSendInput): HistoryEntry {
+  const headers: HeaderEntryWire[] = Object.entries(redactHeaders(record.requestHeaders, { show: false })).map(
+    ([name, value]) => ({ name, value }),
+  );
+  const exchange = record.exchange;
+  const status = exchange?.http.status;
+  return {
+    id: generateHistoryId(),
+    kind: 'rest',
+    at: new Date().toISOString(),
+    projectId,
+    requestId: record.requestId,
+    requestName: record.requestName,
+    interfaceName: record.apiName,
+    operationName: record.folderPath,
+    endpoint: record.url,
+    method: record.method,
+    // A REST send speaks no SOAP version; the field is the shared entry's, so it says so.
+    soapVersion: 'none',
+    ...(status !== undefined ? { status } : {}),
+    durationMs: record.durationMs,
+    // A 3xx that was not followed is a perfectly good answer, so "ok" is anything but 4xx/5xx.
+    ok: status !== undefined && status >= 200 && status < 400,
+    request: { envelopeXml: storedBody(record.requestBody), headers },
+    ...(exchange !== undefined
+      ? {
+          response: {
+            envelopeXml: storedBody(exchange.text),
+            rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
+            status: exchange.http.status,
+            statusText: exchange.http.statusText,
+          },
+        }
+      : {}),
+    ...(record.error !== undefined ? { error: record.error } : {}),
+    sizeBytes:
+      exchange === undefined
+        ? Buffer.byteLength(record.requestBody, 'utf8')
+        : Buffer.from(exchange.http.rawResponseBase64, 'base64').byteLength,
     ...(record.tags !== undefined ? { tags: record.tags } : {}),
   };
 }
@@ -192,6 +279,17 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildHistoryEntry(projectId, record);
+    await file.append(entry);
+    return toHistoryEntryWire(entry);
+  }
+
+  /** Appends one REST send's entry to its project's file, returning the wire shape it wrote. */
+  async recordRestSend(projectId: string, record: RecordRestSendInput): Promise<HistoryEntryWire | undefined> {
+    const file = this.files.get(projectId);
+    if (file === undefined) {
+      return undefined;
+    }
+    const entry = buildRestHistoryEntry(projectId, record);
     await file.append(entry);
     return toHistoryEntryWire(entry);
   }

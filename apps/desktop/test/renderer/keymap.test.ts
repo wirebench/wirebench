@@ -109,8 +109,10 @@ describe('keymapRows', () => {
   it('treats an ungated command as overlapping everything', () => {
     const rows = keymapRows({ 'view.toggleSidebar': 'Mod+Enter' });
 
-    expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual(['Send Request']);
+    // Both send commands carry ⌘⏎, and an ungated command overlaps either of them.
+    expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual(['Send Request', 'Send REST Request']);
     expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
+    expect(rowFor(rows, 'rest.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
   });
 
   it('treats a narrower scope as overlapping the wider one it sits inside', () => {
@@ -118,7 +120,7 @@ describe('keymapRows', () => {
     // narrower condition inside it — whenever a request tab is active, a tab is open.
     const rows = keymapRows({ 'editor.closeTab': 'Mod+Enter' });
 
-    expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual(['Send Request']);
+    expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual(['Send Request', 'Send REST Request']);
   });
 
   it('ignores an unparseable override rather than throwing', () => {

@@ -61,6 +61,7 @@ function collectFrom(
     if (scopes.requestBodies) {
       documents.push({
         kind: 'request-body',
+        protocol: 'soap',
         text: request.envelopeXml,
         projectId,
         projectName,
@@ -73,6 +74,7 @@ function collectFrom(
     if (scopes.headers && request.headers.length > 0) {
       documents.push({
         kind: 'request-header',
+        protocol: 'soap',
         // One header per line, so a match's line number points at the header that matched.
         text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
         projectId,
@@ -81,6 +83,51 @@ function collectFrom(
         requestName: request.name,
         interfaceId: request.interfaceId,
         interfaceName: interfaceName(request.interfaceId),
+      });
+    }
+  }
+
+  // A REST request's searchable text is its URL, its tables and its body — the three places a
+  // user looks for "which request talks to /orders". The API's name takes the interface name's slot
+  // so a match reads the same way in the results list whichever protocol it came from.
+  for (const request of snapshot.restRequests) {
+    const apiName = snapshot.apis.find((api) => api.id === request.apiId)?.name ?? request.apiId;
+    if (scopes.requestBodies) {
+      const body = request.body;
+      const lines = [`${request.method} ${request.url}`];
+      for (const row of [...request.pathParams, ...request.query]) {
+        lines.push(`${row.name}=${row.value}`);
+      }
+      if (body.kind === 'raw') {
+        lines.push(body.text);
+      } else if (body.kind === 'form') {
+        for (const field of body.fields) {
+          lines.push(`${field.name}=${field.value}`);
+        }
+      }
+      documents.push({
+        kind: 'request-body',
+        protocol: 'rest',
+        text: lines.join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
+      });
+    }
+    if (scopes.headers && request.headers.length > 0) {
+      documents.push({
+        kind: 'request-header',
+        protocol: 'rest',
+        text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
       });
     }
   }

@@ -6,10 +6,11 @@
  * `test/bench/*.bench.ts` and `test/perf/budgets.test.ts` both drive these, so the number in
  * the bench report and the number the CI gate asserts on measure the same thing.
  */
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { generateRequest } from '../../src/generate.js';
 import { importDefinition } from '../../src/import.js';
 import type { ImportResult } from '../../src/types.js';
@@ -18,6 +19,14 @@ import { buildMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { prepareMtomRequest } from '../../src/soap/mime/mtom.js';
 import type { Attachment } from '../../src/project/model.js';
 import { evaluate } from '../../src/xpath/evaluate.js';
+import { importOpenApi, parseOpenApi } from '../../src/rest/openapi/import.js';
+import type { JsonSchema } from '../../src/rest/openapi/model.js';
+import { sampleFromSchema, sampleXml } from '../../src/rest/openapi/sample.js';
+import { prettyBody } from '../../src/rest/response.js';
+import { sendRest } from '../../src/rest/send.js';
+import type { FetchDocument } from '../../src/wsdl/resolver.js';
+import { writeLargeOpenApiFixture } from '../helpers/large-openapi.js';
+import { startTestRestServer } from '../helpers/test-rest-server.js';
 import { readPublicFixture } from '../helpers/fixtures.js';
 import { writeLargeSchemaFixture } from '../helpers/large-schema.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
@@ -188,6 +197,147 @@ function prepareXpath(): PreparedScenario {
   };
 }
 
+/**
+ * Parses, resolves and maps the generated ~1 MB / 300-operation OpenAPI document into an API.
+ *
+ * The whole import path a user waits on, minus the network: reading the text, following every
+ * `$ref`, and building the tree of folders and requests with a sample body per operation. The
+ * fixture is written to a temp directory first, because generating a megabyte of JSON is not what
+ * the budget is about.
+ */
+async function prepareOpenApiImport(): Promise<PreparedScenario> {
+  const dir = await mkdtemp(join(tmpdir(), 'wirebench-large-openapi-'));
+  const written = await writeLargeOpenApiFixture(dir);
+  const source = { kind: 'file' as const, path: pathToFileURL(written.file).href };
+  const fetchDocument: FetchDocument = (location) => {
+    const text = readFileSync(fileURLToPath(location), 'utf-8');
+    return Promise.resolve({ location, bytes: new TextEncoder().encode(text), text });
+  };
+  return {
+    run: async () => {
+      const imported = await importOpenApi(source, { fetchDocument });
+      if (imported.summary.requests !== written.operations) {
+        throw new Error(`expected ${String(written.operations)} requests, got ${String(imported.summary.requests)}`);
+      }
+    },
+    dispose: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * Generates a body sample for every request-body schema of the generated ~1 MB document.
+ *
+ * Over the *large* fixture rather than the crafted ones: the crafted fixtures are a few properties
+ * each and measure nothing, while this one's schemas reference each other, which is the shape that
+ * makes sample generation expensive — and the shape a real description has. Both preference
+ * combinations and the XML renderer are included, since an import runs whichever the user has set.
+ */
+async function prepareOpenApiSamples(): Promise<PreparedScenario> {
+  const dir = await mkdtemp(join(tmpdir(), 'wirebench-openapi-samples-'));
+  const written = await writeLargeOpenApiFixture(dir);
+  const fetchDocument: FetchDocument = (location) => {
+    const text = readFileSync(fileURLToPath(location), 'utf-8');
+    return Promise.resolve({ location, bytes: new TextEncoder().encode(text), text });
+  };
+  const parsed = await parseOpenApi({ kind: 'file', path: pathToFileURL(written.file).href }, { fetchDocument });
+  const schemas: JsonSchema[] = [];
+  for (const operation of parsed.document.operations) {
+    for (const media of Object.values(operation.requestBody?.content ?? {})) {
+      if (media.schema !== undefined) {
+        schemas.push(media.schema);
+      }
+    }
+  }
+  if (schemas.length === 0) {
+    throw new Error('no request-body schemas in the generated OpenAPI fixture');
+  }
+  return {
+    run: () => {
+      for (const schema of schemas) {
+        sampleFromSchema(schema, { includeOptional: true, sampleValues: true });
+        sampleFromSchema(schema, {});
+        sampleXml(schema, { includeOptional: true });
+      }
+      return Promise.resolve();
+    },
+    dispose: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+/** Pretty-prints a 5 MB JSON body, which is what the Pretty view does the moment one arrives. */
+function prepareRestPretty(): PreparedScenario {
+  // Sized so the minified body is ~5 MB, which is what the name claims and what the Pretty view has
+  // to survive on arrival.
+  const rows = Array.from({ length: 25_500 }, (_unused, index) => ({
+    id: index,
+    name: `row-${String(index)}`,
+    status: index % 3 === 0 ? 'open' : 'shut',
+    tags: [`t${String(index % 7)}`, `u${String(index % 11)}`],
+    nested: { a: index, b: `value-${String(index)}`, c: index % 2 === 0, d: `detail-${String(index)}-padding` },
+    note: `a note about row ${String(index)} long enough to be worth measuring`,
+  }));
+  // Minified on the way in: pretty-printing already-indented text is not the case that costs.
+  const text = JSON.stringify({ rows });
+  const megabytes = Buffer.byteLength(text, 'utf-8') / 1024 / 1024;
+  if (megabytes < 4.5 || megabytes > 5.5) {
+    throw new Error(`the pretty-print fixture is ${megabytes.toFixed(2)} MB; the budget expects ~5 MB`);
+  }
+  return {
+    run: () => {
+      const pretty = prettyBody(text, 'json');
+      if (pretty.text.length <= text.length) {
+        throw new Error('pretty-printing did not expand the body; the budget is measuring nothing');
+      }
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * Measures what `sendRest` adds on top of the exchange itself.
+ *
+ * The REST counterpart of {@link prepareSendOverhead}, and measured the same way: the whole call is
+ * timed and the test server's own handling time (`x-server-ms`) subtracted, so the number is the
+ * engine's cost — composing the URL, encoding the body, decoding and detecting the response — and
+ * not how fast the fixture answers.
+ */
+async function prepareRestSendOverhead(): Promise<PreparedScenario> {
+  const server = await startTestRestServer();
+  const input = {
+    baseUrl: server.url,
+    request: {
+      method: 'POST',
+      url: '/echo',
+      pathParams: [],
+      query: [],
+      headers: [{ name: 'Content-Type', value: 'application/json', enabled: true }],
+      body: { kind: 'raw' as const, language: 'json' as const, text: '{"ping":true}' },
+    },
+    settings: { timeoutMs: 30_000, followRedirects: false },
+  };
+  const sample = async (): Promise<number> => {
+    const started = performance.now();
+    const exchange = await sendRest(input);
+    const wallMs = performance.now() - started;
+    // A `RestExchange` *is* an `HttpExchange`, so its response headers are its own.
+    const serverMs = Number(exchange.headers['x-server-ms']);
+    if (!Number.isFinite(serverMs)) {
+      throw new Error('test server did not report x-server-ms; the rest-send-overhead budget cannot be measured');
+    }
+    return wallMs - serverMs;
+  };
+
+  // Warm the path so the measured samples do not pay for the first connection.
+  await sample();
+  return {
+    run: async () => {
+      await sample();
+    },
+    measure: sample,
+    dispose: () => server.close(),
+  };
+}
+
 /** Every budgeted scenario, keyed exactly like {@link BUDGETS_MS}. */
 export const SCENARIOS: Readonly<Record<BudgetName, () => Promise<PreparedScenario>>> = {
   'calculator-import-generate': () =>
@@ -198,6 +348,10 @@ export const SCENARIOS: Readonly<Record<BudgetName, () => Promise<PreparedScenar
   'send-overhead': prepareSendOverhead,
   'mtom-package-10mb': () => Promise.resolve(prepareMtomPackage()),
   'xpath-evaluate-1mb': () => Promise.resolve(prepareXpath()),
+  'openapi-import-1mb': prepareOpenApiImport,
+  'openapi-samples': prepareOpenApiSamples,
+  'rest-pretty-5mb': () => Promise.resolve(prepareRestPretty()),
+  'rest-send-overhead': prepareRestSendOverhead,
 };
 
 /**

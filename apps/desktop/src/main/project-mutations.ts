@@ -48,6 +48,19 @@ import {
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
 import {
+  addApi,
+  addFolder,
+  addRestRequest,
+  cloneRestRequest,
+  moveNode,
+  removeApi,
+  removeFolder,
+  removeRestRequest,
+  updateApi,
+  updateFolder,
+  updateRestRequest,
+} from './project-rest-mutations.js';
+import {
   addWssIncoming,
   addWssOutgoing,
   removeWssIncoming,
@@ -94,6 +107,12 @@ export interface MutationDeps {
 /** The outcome of one change: the next model, plus any entity the change created. */
 export interface MutationResult {
   readonly project: Project;
+  /**
+   * The REST entity a change created — an API, a folder or a request. One field for all three
+   * because the caller already knows which change it sent, and the renderer only ever needs "the
+   * thing I just made" to select or open it.
+   */
+  readonly createdId?: string;
   readonly createdRequestId?: string;
   readonly createdEnvironmentId?: string;
   readonly createdAttachmentId?: string;
@@ -712,6 +731,51 @@ export async function applyChange(
       );
       return { project: replaceInterface(project, { ...iface, endpoints }) };
     }
+
+    case 'add-api':
+      return addApi(project, { name: change.name, baseUrl: change.baseUrl });
+
+    case 'update-api':
+      return updateApi(project, change.apiId, change.patch);
+
+    case 'remove-api':
+      return removeApi(project, change.apiId);
+
+    case 'add-folder':
+      return addFolder(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        name: change.name,
+      });
+
+    case 'update-folder':
+      return updateFolder(project, change.folderId, change.patch);
+
+    case 'remove-folder':
+      return removeFolder(project, change.folderId);
+
+    case 'add-rest-request':
+      return addRestRequest(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+      });
+
+    case 'update-rest-request':
+      return updateRestRequest(project, change.requestId, change.patch);
+
+    case 'remove-rest-request':
+      return removeRestRequest(project, change.requestId);
+
+    case 'clone-rest-request':
+      return cloneRestRequest(project, change.requestId);
+
+    case 'move-node':
+      return moveNode(project, {
+        nodeId: change.nodeId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        index: change.index,
+      });
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);

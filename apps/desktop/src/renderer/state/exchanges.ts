@@ -4,7 +4,8 @@ import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
-import type { ExchangeSummary, UnresolvedRefWire } from '../../shared/wire-types.js';
+import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
+import type { ExchangeSummary, RestExchangeSummary, UnresolvedRefWire } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
@@ -12,6 +13,7 @@ import { useProblemsStore } from './problems.js';
 import { selectRequestEndpointUrl } from './project-endpoint.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
+import { useDraftsStore } from './drafts.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
 const LOG_CAP = 500;
@@ -28,10 +30,30 @@ export interface ExchangeState {
   readonly startedAt?: string;
 }
 
+/** What is known about the most recent send for one REST request. */
+export interface RestExchangeState {
+  readonly status: ExchangeStatus;
+  readonly sendId?: string;
+  readonly exchange?: RestExchangeSummary;
+  readonly error?: IpcError;
+  readonly startedAt?: string;
+}
+
 /** The exchanges store's serialisable state. */
 export interface ExchangesSnapshot {
   readonly byRequest: Record<string, ExchangeState>;
-  readonly log: readonly ExchangeSummary[];
+  /**
+   * The REST half, keyed by REST request id. Kept apart from {@link byRequest} because the two
+   * exchange shapes differ (a REST response has cookies, redirects and a detected language), and a
+   * pane reading the wrong one would have to narrow on every field.
+   */
+  readonly restByRequest: Record<string, RestExchangeState>;
+  /**
+   * Newest-last log of every completed exchange, SOAP and REST alike: the console's HTTP Log is a
+   * protocol-neutral surface, and a REST send that never reached it left the log and the status
+   * bar's "last:" indicator claiming nothing had been sent.
+   */
+  readonly log: readonly AnyExchangeSummary[];
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -58,6 +80,16 @@ export interface ExchangesStore extends ExchangesSnapshot {
    * request's pane. A no-op when main has evicted the exchange.
    */
   readonly refreshExchange: (sendId: string) => Promise<void>;
+  /**
+   * Sends one REST request. The renderer names the request and hands over its unsaved draft; main
+   * resolves the base URL, the properties and the credentials, so nothing about where the request
+   * goes is decided here.
+   */
+  readonly sendRest: (requestId: string) => Promise<void>;
+  /** Cancels the REST send in flight for `requestId`, if any. */
+  readonly cancelRest: (requestId: string) => Promise<void>;
+  /** Clears the REST exchange state for a removed request. */
+  readonly clearRestRequest: (requestId: string) => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -88,10 +120,93 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
   return {
     byRequest: {},
+    restByRequest: {},
     log: [],
 
     reset: () => {
-      set({ byRequest: {}, log: [] });
+      set({ byRequest: {}, restByRequest: {}, log: [] });
+    },
+
+    sendRest: async (requestId) => {
+      const request = useProjectStore.getState().restRequests[requestId];
+      if (request === undefined) {
+        update((draft) => {
+          draft.restByRequest[requestId] = {
+            status: 'error',
+            error: { code: 'unknown-request', message: `No REST request with id "${requestId}"` },
+          };
+        });
+        return;
+      }
+
+      // Last send's unresolved references say nothing about the request as it stands now.
+      useProblemsStore.getState().clearSource('expansion', requestId);
+      useProblemsStore.getState().clearSource('send', requestId);
+
+      const sendId = crypto.randomUUID();
+      update((draft) => {
+        draft.restByRequest[requestId] = { status: 'sending', sendId, startedAt: new Date().toISOString() };
+      });
+
+      // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
+      // is main that decides where this goes and what it carries.
+      const draftPatch = useDraftsStore.getState().peekRestRequest(requestId);
+      const result = await ipc().request.sendRest({
+        sendId,
+        requestId,
+        ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+      });
+
+      // A cancel may already have cleared this send; only settle it if it is still ours.
+      if (get().restByRequest[requestId]?.sendId !== sendId) {
+        return;
+      }
+
+      if (!result.ok) {
+        update((draft) => {
+          draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
+        });
+        useProblemsStore.getState().add([
+          {
+            groupId: `send:${requestId}`,
+            source: 'send',
+            severity: 'error',
+            requestId,
+            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
+          },
+        ]);
+        return;
+      }
+
+      const unresolved = result.value.unresolved ?? [];
+      if (unresolved.length > 0) {
+        useProblemsStore.getState().add(expansionProblems(requestId, unresolved));
+      }
+      update((draft) => {
+        draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
+        // The same push the SOAP path does: the HTTP Log is one list across both protocols.
+        // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
+        // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
+        // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
+        draft.log.push(result.value);
+        if (draft.log.length > LOG_CAP) {
+          draft.log.splice(0, draft.log.length - LOG_CAP);
+        }
+      });
+    },
+
+    cancelRest: async (requestId) => {
+      const entry = get().restByRequest[requestId];
+      if (entry?.sendId === undefined) {
+        return;
+      }
+      await ipc().request.cancel({ sendId: entry.sendId });
+    },
+
+    clearRestRequest: (requestId) => {
+      update((draft) => {
+        delete draft.restByRequest[requestId];
+      });
     },
 
     send: async (requestId, force) => {
