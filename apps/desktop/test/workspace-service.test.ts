@@ -730,6 +730,29 @@ describe('active environment: machine-local, via local.yaml', () => {
     await reopened.close();
   });
 
+  it('renaming a closed v2 workspace keeps its active environment in local.yaml', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
+    const v2Text = manifestText
+      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
+    await writeFile(workspaceManifestFile(dir), v2Text);
+
+    // Rewrites the manifest at v3 while closed, which drops the key from it.
+    await newService().rename(created.id, 'Renamed legacy');
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.name).toBe('Renamed legacy');
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+    await reopened.close();
+  });
+
   it('finishes the v2->v3 migration on open: the manifest is rewritten at v3 with the key gone, so a later clear sticks', async () => {
     const service = newService();
     const created = await service.create('Legacy');

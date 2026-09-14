@@ -89,6 +89,7 @@ import {
   copyProjectIntoWorkspace,
   joinFromFolder,
   joinRemote,
+  keepLegacyActiveEnvironment,
   nodeFileOps,
   shareAsGit,
   shareToFolder,
@@ -1281,7 +1282,8 @@ export class WorkspaceService implements ProjectRouter {
     } else {
       const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
       const { tree } = await this.resolveTree(dir);
-      const { workspace } = await loadWorkspace(tree, this.fsOption());
+      const { workspace, legacy } = await loadWorkspace(tree, this.fsOption());
+      await keepLegacyActiveEnvironment(dir, workspace, legacy, this.fsOption());
       await saveWorkspace({ ...workspace, name }, tree, this.fsOption());
     }
     return await this.list();

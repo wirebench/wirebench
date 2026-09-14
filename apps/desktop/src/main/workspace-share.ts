@@ -613,6 +613,28 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
 // ——— move project to workspace ——————————————————————————————————————————————————————————
 
 /**
+ * Rewriting a v1/v2 manifest drops the active environment it still carries (`loadWorkspace` has
+ * already moved it into `legacy`); this keeps it in `<dir>/local.yaml`, as `open` does — only
+ * when there is no local choice yet and it still names one of the workspace's environments.
+ * Call it before the rewrite, for a workspace that is not open.
+ */
+export async function keepLegacyActiveEnvironment(
+  dir: string,
+  workspace: Workspace,
+  legacy: { readonly activeEnvironmentId?: string | undefined },
+  fsOption: ShareDeps['fsOption'],
+): Promise<void> {
+  const legacyId = legacy.activeEnvironmentId;
+  if (legacyId === undefined || !workspace.environments.some((environment) => environment.id === legacyId)) {
+    return;
+  }
+  const local = await loadLocalState(dir, fsOption);
+  if (local.activeEnvironmentId === undefined) {
+    await saveLocalState(dir, { version: 1, activeEnvironmentId: legacyId }, fsOption);
+  }
+}
+
+/**
  * Writes `model` (with the attachment and definition-cache bytes from `sourceDir`) into the
  * closed workspace `targetId` as a new internal project, and appends its reference to that
  * workspace's manifest. Ids are kept unless the target already references this project id, in
@@ -641,16 +663,7 @@ export async function copyProjectIntoWorkspace(
     await mkdir(projectDir, { recursive: true });
     await saveProject(copy, projectDir, deps.fsOption);
     await copyProjectPayload(source.dir, projectDir);
-    // Rewriting a v2 manifest drops its active environment; keep it in local.yaml as `open` does.
-    if (legacy.activeEnvironmentId !== undefined) {
-      const local = await loadLocalState(targetDir, deps.fsOption);
-      if (
-        local.activeEnvironmentId === undefined &&
-        workspace.environments.some((environment) => environment.id === legacy.activeEnvironmentId)
-      ) {
-        await saveLocalState(targetDir, { version: 1, activeEnvironmentId: legacy.activeEnvironmentId }, deps.fsOption);
-      }
-    }
+    await keepLegacyActiveEnvironment(targetDir, workspace, legacy, deps.fsOption);
     await saveWorkspace(
       { ...workspace, projects: [...workspace.projects, { id: copy.id, slug, source: 'internal' }] },
       tree,
