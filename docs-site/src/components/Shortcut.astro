@@ -1,0 +1,13 @@
+---
+interface Props {
+  keys: string[];
+}
+
+const { keys } = Astro.props;
+---
+
+<span class="inline-flex items-center gap-1">
+  {keys.map((k) => (
+    <kbd class="key-badge">{k}</kbd>
+  ))}
+</span>
