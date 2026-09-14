@@ -5,6 +5,18 @@ import { JoinDialog } from '../../src/renderer/features/workspace/join-dialog.js
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+
+const showToast = vi.hoisted(() => vi.fn());
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast }));
+
+const ALREADY_PRESENT = {
+  ok: false,
+  error: {
+    code: 'workspace-already-present',
+    message: '"Team" is already on this machine.',
+    details: { workspaceId: 'w-existing' },
+  },
+};
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 async function openJoinDialog(): Promise<void> {
@@ -70,6 +82,35 @@ describe('JoinDialog', () => {
 
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByTestId('join-confirm').hasAttribute('disabled')).toBe(true);
+  });
+
+  it.each([
+    ['a remote join', 'join'],
+    ['a join from an existing folder', 'joinFromFolder'],
+  ])('offers the workspace already on this machine inline after %s, without a toast', async (_label, channel) => {
+    showToast.mockClear();
+    const refused = vi.fn().mockResolvedValue(ALREADY_PRESENT);
+    const open = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire({ id: 'w-existing' }) } });
+    installWirebenchApi({
+      workspace: { [channel]: refused, open, list: vi.fn().mockResolvedValue({ ok: true, value: { workspaces: [] } }) },
+    });
+    await openJoinDialog();
+
+    if (channel === 'join') {
+      await userEvent.type(screen.getByTestId('join-remote'), 'git@x:y.git');
+      await userEvent.click(screen.getByTestId('join-confirm'));
+    } else {
+      await userEvent.click(screen.getByTestId('join-from-folder'));
+    }
+
+    const notice = await screen.findByTestId('join-already-present');
+    expect(notice.textContent).toContain('"Team" is already on this machine.');
+    expect(showToast).not.toHaveBeenCalled();
+    expect(useUiStore.getState().joinDialogOpen).toBe(true);
+
+    await userEvent.click(screen.getByTestId('join-open-existing'));
+    await waitFor(() => expect(open).toHaveBeenCalledWith({ workspaceId: 'w-existing' }));
+    await waitFor(() => expect(useUiStore.getState().joinDialogOpen).toBe(false));
   });
 
   it('joins from an existing folder via the secondary button', async () => {

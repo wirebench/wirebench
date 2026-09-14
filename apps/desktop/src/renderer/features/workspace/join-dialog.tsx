@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { useUiStore } from '../../state/ui.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
 import { validateBranchName, validateRemoteUrl } from './share-validation.js';
-import { workspaceActions } from './workspace-actions.js';
+import { workspaceActions, type AlreadyPresent } from './workspace-actions.js';
 
 /**
  * *Join Shared Workspace…*: clones a workspace by URL and opens it, or — for a clone or synced
@@ -16,13 +17,24 @@ export function JoinDialog() {
   const [remote, setRemote] = useState('');
   const [branch, setBranch] = useState('main');
   const [busy, setBusy] = useState(false);
+  /** Set when a join was refused because that workspace is already on this machine. */
+  const [existing, setExisting] = useState<AlreadyPresent | undefined>(undefined);
 
   useEffect(() => {
     if (open) {
       setRemote('');
       setBranch('main');
+      setExisting(undefined);
     }
   }, [open]);
+
+  const settle = (outcome: boolean | AlreadyPresent): void => {
+    if (typeof outcome === 'object') {
+      setExisting(outcome);
+    } else if (outcome) {
+      setOpen(false);
+    }
+  };
 
   const remoteCheck = validateRemoteUrl(remote);
   const trimmedRemote = remote.trim();
@@ -34,11 +46,10 @@ export function JoinDialog() {
       return;
     }
     setBusy(true);
-    const ok = await workspaceActions.join(trimmedRemote, branch.trim());
+    setExisting(undefined);
+    const outcome = await workspaceActions.join(trimmedRemote, branch.trim());
     setBusy(false);
-    if (ok) {
-      setOpen(false);
-    }
+    settle(outcome);
   };
 
   const useExisting = async (): Promise<void> => {
@@ -46,9 +57,21 @@ export function JoinDialog() {
       return;
     }
     setBusy(true);
-    const ok = await workspaceActions.joinFromFolder();
+    setExisting(undefined);
+    const outcome = await workspaceActions.joinFromFolder();
     setBusy(false);
-    if (ok) {
+    settle(outcome);
+  };
+
+  const openExisting = async (): Promise<void> => {
+    if (busy || existing === undefined) {
+      return;
+    }
+    setBusy(true);
+    await workspaceActions.open(existing.workspaceId);
+    setBusy(false);
+    // `open` reports its own failure; the dialog only goes away once that workspace is open.
+    if (useWorkspaceStore.getState().workspace?.id === existing.workspaceId) {
       setOpen(false);
     }
   };
@@ -110,6 +133,25 @@ export function JoinDialog() {
             <p role="alert" className="mt-1 text-xs text-status-danger">
               {branchCheck.message}
             </p>
+          )}
+
+          {existing !== undefined && (
+            <div
+              data-testid="join-already-present"
+              role="status"
+              className="mt-3 flex items-center justify-between gap-2 rounded border border-hairline-strong px-2 py-1.5 text-xs text-fg-default"
+            >
+              <span>{existing.message}</span>
+              <Button
+                data-testid="join-open-existing"
+                disabled={busy}
+                onClick={() => {
+                  void openExisting();
+                }}
+              >
+                Open it
+              </Button>
+            </div>
           )}
 
           <div className="mt-4 flex items-center justify-between gap-2">

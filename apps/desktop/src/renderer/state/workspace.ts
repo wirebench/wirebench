@@ -27,7 +27,10 @@ import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
 
 function asError(error: IpcError): Error {
-  return Object.assign(new Error(error.message), { code: error.code });
+  return Object.assign(new Error(error.message), {
+    code: error.code,
+    ...(error.details !== undefined ? { details: error.details } : {}),
+  });
 }
 
 /** The workspace store's serialisable state. */
