@@ -37,9 +37,12 @@ export async function mkTempDir(prefix = 'wirebench-sync-'): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
 }
 
-/** Recursively removes a temp directory created by {@link mkTempDir}; safe to call if already gone. */
+/**
+ * Recursively removes a temp directory created by {@link mkTempDir}; safe to call if already gone.
+ * Retries, because Windows briefly keeps a closed watcher's or a finished git's handles open (EBUSY).
+ */
 export async function removeTempDir(dir: string): Promise<void> {
-  await rm(dir, { recursive: true, force: true });
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 /**

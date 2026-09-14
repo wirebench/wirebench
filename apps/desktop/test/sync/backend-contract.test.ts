@@ -377,6 +377,8 @@ describe('fake-server backend contract', () => {
   defineContract(makeFake);
 });
 
-describeGit('git backend contract', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('git backend contract', { timeout: 30_000 }, () => {
   defineContract(makeGit);
 });
