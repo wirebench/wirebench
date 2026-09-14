@@ -18,6 +18,31 @@ const ILLEGAL_CHARS = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
 /** Device names Windows refuses to use as a file name, with or without an extension. */
 const RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
+/** True for the two characters a path segment must not begin or end with on Windows. */
+function isDotOrSpace(code: number): boolean {
+  return code === 0x2e || code === 0x20;
+}
+
+/**
+ * Replaces a leading run and a trailing run of dots/spaces with one `_` each. A single pass over
+ * the ends rather than an unanchored `[. ]+$`, which backtracks quadratically on a long run of
+ * dots and spaces that a display name from a file may contain.
+ */
+function replaceEdgeDotsAndSpaces(value: string): string {
+  let start = 0;
+  while (start < value.length && isDotOrSpace(value.charCodeAt(start))) {
+    start += 1;
+  }
+  if (start === value.length) {
+    return start === 0 ? value : '_';
+  }
+  let end = value.length;
+  while (end > start && isDotOrSpace(value.charCodeAt(end - 1))) {
+    end -= 1;
+  }
+  return `${start > 0 ? '_' : ''}${value.slice(start, end)}${end < value.length ? '_' : ''}`;
+}
+
 /**
  * Derives a portable file-system name from a display name.
  *
@@ -29,9 +54,9 @@ const RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 export function slugify(name: string): string {
   let slug = name.replace(/\s+/g, ' ').replace(ILLEGAL_CHARS, '_');
   slug = slug.trim();
-  slug = slug.replace(/^[. ]+/, '_').replace(/[. ]+$/, '_');
+  slug = replaceEdgeDotsAndSpaces(slug);
   if (slug.length > MAX_SLUG_LENGTH) {
-    slug = slug.slice(0, MAX_SLUG_LENGTH).replace(/[. ]+$/, '_');
+    slug = replaceEdgeDotsAndSpaces(slug.slice(0, MAX_SLUG_LENGTH));
   }
   if (slug === '') {
     return 'unnamed';
