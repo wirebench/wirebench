@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
+import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type { ExchangeSummary, RestExchangeSummary, UnresolvedRefWire } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
@@ -47,7 +48,12 @@ export interface ExchangesSnapshot {
    * pane reading the wrong one would have to narrow on every field.
    */
   readonly restByRequest: Record<string, RestExchangeState>;
-  readonly log: readonly ExchangeSummary[];
+  /**
+   * Newest-last log of every completed exchange, SOAP and REST alike: the console's HTTP Log is a
+   * protocol-neutral surface, and a REST send that never reached it left the log and the status
+   * bar's "last:" indicator claiming nothing had been sent.
+   */
+  readonly log: readonly AnyExchangeSummary[];
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -178,6 +184,14 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       }
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
+        // The same push the SOAP path does: the HTTP Log is one list across both protocols.
+        // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
+        // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
+        // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
+        draft.log.push(result.value);
+        if (draft.log.length > LOG_CAP) {
+          draft.log.splice(0, draft.log.length - LOG_CAP);
+        }
       });
     },
 

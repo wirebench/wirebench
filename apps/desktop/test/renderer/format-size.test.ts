@@ -4,6 +4,7 @@ import {
   decodeBase64Text,
   formatBytes,
   formatClockTime,
+  formatDuration,
 } from '../../src/renderer/lib/format-size.js';
 
 describe('formatBytes', () => {
@@ -41,6 +42,25 @@ describe('decodeBase64Text', () => {
 
   it('returns undefined for a payload that is not base64', () => {
     expect(decodeBase64Text('not base64!!')).toBeUndefined();
+  });
+});
+
+describe('formatDuration', () => {
+  it('rounds away the float noise performance.now() arithmetic leaves behind', () => {
+    expect(formatDuration(15.645407999999861)).toBe('16 ms');
+    expect(formatDuration(2.365666999999803)).toBe('2.4 ms');
+    expect(formatDuration(13.657760699999846)).toBe('14 ms');
+  });
+
+  it('keeps one decimal below 10 ms, where rounding would erase the number', () => {
+    expect(formatDuration(0.42)).toBe('0.4 ms');
+    expect(formatDuration(9.94)).toBe('9.9 ms');
+    expect(formatDuration(0)).toBe('0.0 ms');
+  });
+
+  it('switches to whole milliseconds at 10 and stays there', () => {
+    expect(formatDuration(10)).toBe('10 ms');
+    expect(formatDuration(1234.5)).toBe('1235 ms');
   });
 });
 

@@ -83,6 +83,11 @@ All notable changes to this project are documented here. The format follows
   percent-encoded as `%3Credacted%3E` inside the URL.
 - *Remember the refresh token* now responds to the click immediately instead of waiting for a round
   trip, so a quick tick no longer looked ignored.
+- A REST send now appears in the console's HTTP Log and in the status bar's *last:* indicator. Both
+  are shared with SOAP and both used to keep saying nothing had been sent while a REST response sat
+  on screen.
+- Durations read as `16 ms` rather than `15.645407999999861 ms` in the status bar, the HTTP Log, the
+  response header line and History.
 
 ### Dependencies
 

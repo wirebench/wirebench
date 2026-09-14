@@ -2,7 +2,7 @@ import { Group, Panel, Separator } from 'react-resizable-panels';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { prettyPrintBody, sniffLanguage } from './history-format.js';
-import { formatBytes } from '../../lib/format-size.js';
+import { formatBytes, formatDuration } from '../../lib/format-size.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
@@ -81,7 +81,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
             {entry.operationName.length > 0 ? ` · ${entry.operationName}` : ''}
           </p>
           <p className="truncate text-xs text-fg-subtle" title={entry.endpoint}>
-            {new Date(entry.at).toLocaleString()} · {entry.endpoint} · {entry.durationMs} ms ·{' '}
+            {new Date(entry.at).toLocaleString()} · {entry.endpoint} · {formatDuration(entry.durationMs)} ·{' '}
             {formatBytes(entry.sizeBytes)}
           </p>
         </div>

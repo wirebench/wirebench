@@ -103,6 +103,15 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await query.getByLabel('Query expression').fill('$.query.x');
     await query.getByTestId('query-run').click();
     await expect(query.getByTestId('query-results')).toContainText("$['query']['x']", { timeout: 20_000 });
+
+    // The console's HTTP Log is one list across both protocols, and the status bar's "last:"
+    // indicator reads its newest row. A REST send used not to reach either, which left them both
+    // claiming nothing had been sent while a 200 sat on screen.
+    const logRow = page.locator('[data-testid="http-log-row"]');
+    await expect(logRow).toHaveCount(1);
+    await expect(logRow.first()).toContainText('GET');
+    await expect(logRow.first()).toContainText('/echo');
+    await expect(page.getByTestId('status-bar-last')).toContainText('200');
   });
 
   test('shows the cookies a response set and the redirects it followed', async () => {

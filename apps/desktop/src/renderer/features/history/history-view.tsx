@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
-import { formatClockTime } from '../../lib/format-size.js';
+import { formatClockTime, formatDuration } from '../../lib/format-size.js';
 import type { GridRowProps } from '../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
@@ -109,7 +109,7 @@ function Row({
             {hostOf(entry.endpoint)}
           </span>
           <span className={`w-10 shrink-0 font-mono ${TONE_CLASS[toneOf(entry)]}`}>{entry.status ?? 'err'}</span>
-          <span className="w-16 shrink-0 text-fg-subtle">{entry.durationMs} ms</span>
+          <span className="w-16 shrink-0 text-fg-subtle">{formatDuration(entry.durationMs)}</span>
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">

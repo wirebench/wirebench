@@ -55,6 +55,23 @@ describe('sendRest', () => {
     expect(useExchangesStore.getState().byRequest).toEqual({});
   });
 
+  it('puts the send in the HTTP Log, which is one list across both protocols', async () => {
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    const { log } = useExchangesStore.getState();
+    expect(log).toHaveLength(1);
+    expect(log.at(-1)).toBe(useExchangesStore.getState().restByRequest['rest-1']?.exchange);
+    // `log.at(-1)` is also what the status bar's "last:" indicator reads, so a REST send that
+    // never reached the log left it saying "no requests sent" beside a 200.
+  });
+
+  it('leaves the log alone when the send failed, the same as the SOAP path', async () => {
+    sendRest.mockResolvedValue({ ok: false, error: { code: 'dns', message: 'not found' } });
+    await useExchangesStore.getState().sendRest('rest-1');
+
+    expect(useExchangesStore.getState().log).toEqual([]);
+  });
+
   it('records a failure as an error state and a Problems entry', async () => {
     sendRest.mockResolvedValue({ ok: false, error: { code: 'dns', message: 'not found' } });
 

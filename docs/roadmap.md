@@ -167,6 +167,10 @@ is a sibling container rather than a generalised interface. Evidence per criteri
 - **_Update Definition_ for an API**, preserving edited values the way the WSDL one does (spec §15.7).
 - **Response validation against the OpenAPI response schema** — the functional-testing phase, with the
   `ajv` ask (spec §15.8).
+- **Re-redact a REST row in the HTTP Log when _show secrets_ is toggled.** REST sends reach the log
+  now, but `refreshExchange` re-fetches through `exchanges.get`, which only knows the SOAP cache, so a
+  REST row keeps the redaction it was given at send time instead of gaining the secret back. The row
+  is never *wrong* — it is redacted, which is the safe direction — it just does not update.
 
 The test steps and assertions extend to REST in the functional-testing phase; JSONPath is already in
 the engine (`xpath/jsonpath.ts`), so assertions can reuse it rather than adding a dependency.

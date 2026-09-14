@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
-import { base64ByteLength, decodeBase64Text, formatBytes, formatClockTime } from '../../lib/format-size.js';
+import {
+  base64ByteLength,
+  decodeBase64Text,
+  formatBytes,
+  formatClockTime,
+  formatDuration,
+} from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { TimingsBar } from './timings-bar.js';
@@ -50,7 +56,7 @@ function LogRow({ exchange, selected, onSelect }: RowProps) {
         {exchange.http.request.url}
       </span>
       <span className={bad ? 'text-status-danger' : 'text-status-success'}>{exchange.http.status}</span>
-      <span>{exchange.durationMs} ms</span>
+      <span>{formatDuration(exchange.durationMs)}</span>
       <span>{formatBytes(responseSize(exchange))}</span>
     </button>
   );

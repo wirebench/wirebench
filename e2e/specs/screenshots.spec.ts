@@ -177,8 +177,10 @@ test.describe('README screenshots', () => {
     await resizeWindow(launched);
     await setTheme(window, 'dark');
 
-    await createWorkspace(window, 'Petstore');
-    await createProject(window, 'Petstore');
+    // Three distinct names: the workspace, the project and the API are different things, and a
+    // screenshot that calls all three "Petstore" teaches the reader nothing about which is which.
+    await createWorkspace(window, 'Demo');
+    await createProject(window, 'Pet Service');
     await createApi(window, 'Petstore', restServer.url);
     await createRestRequest(window, 'Petstore', 'Echo a query');
     await setMethodAndUrl(window, 'GET', '/echo?pet=Fido&limit=10');
