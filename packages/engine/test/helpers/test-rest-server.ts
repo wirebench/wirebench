@@ -21,30 +21,6 @@ const MAX_SLOW_MS = 10_000;
 /** Upper bound for `/large?bytes=`; the suite asks for a few megabytes at most. */
 const MAX_LARGE_BYTES = 64 * 1024 * 1024;
 
-/**
- * The `Location` a `/redirect/<code>?to=` request may send the client to.
- *
- * A relative path stays on this server. An absolute URL is allowed only when its host is loopback —
- * a second fixture started by the same test — and anything else (or anything unparseable) falls
- * back to `/echo`, so the query string can never point the fixture at an outside host.
- */
-function loopbackTarget(to: string | null): string {
-  if (to === null || to === '') {
-    return '/echo';
-  }
-  if (to.startsWith('/') && !to.startsWith('//')) {
-    return to;
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(to);
-  } catch {
-    return '/echo';
-  }
-  const host = parsed.hostname;
-  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]' ? parsed.href : '/echo';
-}
-
 export interface RecordedRestRequest {
   readonly method: string;
   readonly url: string;
@@ -69,6 +45,11 @@ export interface TestRestServerDocument {
 
 /** Options for {@link startTestRestServer}. */
 export interface TestRestServerOptions {
+  /**
+   * Origins a `/redirect/<code>?to=` may send the client to besides this server — a second fixture
+   * started by the same test. A target on any other origin falls back to `/echo` on this server.
+   */
+  readonly redirectOrigins?: readonly string[];
   readonly tls?: TestRestServerTls;
   /**
    * Static documents by pathname, e.g. `{ '/openapi.yaml': { body, contentType: 'application/yaml' } }`.
@@ -164,6 +145,37 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
   const sockets = new Set<Socket>();
   let counter = 0;
 
+  // Known once the server is listening; the handler only runs after that.
+  let selfOrigin = '';
+
+  /**
+   * Where `/redirect/<code>?to=` sends the client.
+   *
+   * The `Location` is always a trusted origin — this server's own, or one the test registered in
+   * `redirectOrigins` — followed by a `/` and then the requested path. The origin string never comes
+   * from the request, and the path is appended after a prefix that has already fixed the host, so
+   * the query string can steer the client between the test's own servers and nowhere else.
+   */
+  const redirectLocation = (to: string | null): string => {
+    if (to === null || to === '') {
+      return `${selfOrigin}/echo`;
+    }
+    if (to.startsWith('/')) {
+      return `${selfOrigin}/${to.replace(/^\/+/, '')}`;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(to);
+    } catch {
+      return `${selfOrigin}/echo`;
+    }
+    const allowed = (options.redirectOrigins ?? []).find((origin) => origin === parsed.origin);
+    if (allowed === undefined) {
+      return `${selfOrigin}/echo`;
+    }
+    return `${allowed}/${`${parsed.pathname}${parsed.search}`.replace(/^\/+/, '')}`;
+  };
+
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     // Stamped the moment the request reaches the handler, so `/echo` can report how much of a
     // client-side round trip was this server's own doing — see `x-server-ms` below.
@@ -230,7 +242,7 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
         // The target is checked, not trusted: a redirect test points at this server or at a second
         // one started by the same test, and both live on loopback. Anything else is refused, so the
         // fixture can never be steered at a host outside the test process.
-        response.writeHead(Number(redirect[1]), { location: loopbackTarget(url.searchParams.get('to')) });
+        response.writeHead(Number(redirect[1]), { location: redirectLocation(url.searchParams.get('to')) });
         response.end();
         return;
       }
@@ -420,6 +432,7 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
   const scheme = options.tls !== undefined ? 'https' : 'http';
+  selfOrigin = `${scheme}://127.0.0.1:${String(port)}`;
 
   return {
     url: `${scheme}://127.0.0.1:${String(port)}`,

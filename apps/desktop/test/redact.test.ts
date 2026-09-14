@@ -125,3 +125,32 @@ describe('redactRawHttp', () => {
     expect(redactRawHttp(raw, { show: true })).toBe(raw);
   });
 });
+
+describe('redactXml over hostile input', () => {
+  it('is linear when a response is full of open tags that never close', () => {
+    // The regex this replaced re-scanned to the end of the text for every unclosed <Password>,
+    // and this text is a *response* — whatever the server chose to send.
+    const time = (n: number): number => {
+      const input = '<Password>'.repeat(n);
+      const started = performance.now();
+      expect(redactXml(input)).toBe(input);
+      return performance.now() - started;
+    };
+    time(10_000);
+    expect(time(100_000)).toBeLessThan(400);
+  });
+
+  it('pairs each open tag with the first close tag after it, as the lazy match did', () => {
+    expect(redactXml('<a><Password>x</Password><wsse:Password>y</wsse:Password></a>')).toBe(
+      '<a><Password><redacted></Password><wsse:Password><redacted></wsse:Password></a>',
+    );
+    // A nested opener is swallowed into the first element's content, exactly as before.
+    expect(redactXml('<Password><Password>x</Password></Password>')).toBe('<Password><redacted></Password></Password>');
+  });
+
+  it('leaves an unterminated element alone, and matches case-insensitively', () => {
+    expect(redactXml('<Password>never closed')).toBe('<Password>never closed');
+    expect(redactXml('<PASSWORD>x</PASSWORD>')).toBe('<PASSWORD><redacted></PASSWORD>');
+    expect(redactXml('<Passwords>x</Passwords>')).toBe('<Passwords>x</Passwords>');
+  });
+});

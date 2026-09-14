@@ -15,8 +15,9 @@ let server: TestRestServer;
 let other: TestRestServer;
 
 beforeAll(async () => {
-  server = await startTestRestServer();
+  // `other` first: the redirecting server is told which second origin it may send a client to.
   other = await startTestRestServer();
+  server = await startTestRestServer({ redirectOrigins: [other.url] });
 });
 
 afterAll(async () => {

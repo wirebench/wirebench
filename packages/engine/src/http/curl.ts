@@ -10,6 +10,7 @@
 
 import type { SoapSendInput } from '../types.js';
 import { soapActionHeaders } from '../soap/soap-action.js';
+import { findHeredoc, findHereString } from './heredoc.js';
 
 /** One header of an exported command, in the order the user wrote it. */
 export interface CurlHeader {
@@ -219,17 +220,10 @@ export function fromCurl(text: string): FromCurlResult {
   // tokenizing the rest — its content is verbatim and may contain anything, including newlines.
   let heredocData: string | undefined;
   let withoutHeredoc = text;
-  const heredocMatch = /<<\s*'?(\w+)'?\r?\n([\s\S]*?)\r?\n\1/.exec(text);
-  if (heredocMatch !== undefined && heredocMatch !== null) {
-    heredocData = heredocMatch[2];
-    withoutHeredoc = text.slice(0, heredocMatch.index) + text.slice(heredocMatch.index + heredocMatch[0].length);
-  } else {
-    const hereStringMatch = /@'\r?\n([\s\S]*?)\r?\n'@/.exec(text);
-    if (hereStringMatch !== null) {
-      heredocData = hereStringMatch[1];
-      withoutHeredoc =
-        text.slice(0, hereStringMatch.index) + text.slice(hereStringMatch.index + hereStringMatch[0].length);
-    }
+  const embedded = findHeredoc(text) ?? findHereString(text);
+  if (embedded !== undefined) {
+    heredocData = embedded.body;
+    withoutHeredoc = text.slice(0, embedded.start) + text.slice(embedded.end);
   }
 
   const normalized = withoutHeredoc

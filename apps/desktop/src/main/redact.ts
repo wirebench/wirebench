@@ -109,8 +109,15 @@ export function redactResponseAttachments<T>(attachments: readonly T[]): T[] {
   return [...attachments];
 }
 
-/** Matches an (optionally namespace-prefixed) `<Password ...>...</Password>` element's text. */
-const WSSE_PASSWORD_RE = /(<(?:[\w-]+:)?Password\b[^>]*>)([\s\S]*?)(<\/(?:[\w-]+:)?Password>)/gi;
+/**
+ * The start of an (optionally namespace-prefixed) `<Password` open tag, and a matching close tag.
+ *
+ * Used by a scanner rather than as one `/(<…Password[^>]*>)([\\s\\S]*?)(<\\/…Password>)/gi`: that
+ * pattern's lazy body backtracks to the end of the text for every open tag that has no close tag,
+ * which is O(n²) — and this runs over a *response*, so the text is whatever server answered.
+ */
+const PASSWORD_OPEN_RE = /<(?:[\w-]+:)?Password\b/gi;
+const PASSWORD_CLOSE_RE = /<\/(?:[\w-]+:)?Password>/gi;
 
 /** Matches a `Type` attribute in a `Password` open tag, capturing its value. */
 const TYPE_ATTR_RE = /\bType\s*=\s*"([^"]*)"|\bType\s*=\s*'([^']*)'/i;
@@ -134,9 +141,34 @@ export function redactXml(text: string, opts?: { show?: boolean }): string {
   if (opts?.show) {
     return text;
   }
-  return text.replace(WSSE_PASSWORD_RE, (match, open: string, _content: string, close: string) =>
-    isPasswordDigest(open) ? match : `${open}${REDACTED}${close}`,
-  );
+  // One forward pass. Each open tag is paired with the first close tag after it (what the lazy
+  // match did), and the scan resumes past that close tag. An open tag with no `>` or no close tag
+  // ends the pass: nothing later could pair either, which is exactly when the regex found nothing.
+  const open = new RegExp(PASSWORD_OPEN_RE.source, 'gi');
+  const close = new RegExp(PASSWORD_CLOSE_RE.source, 'gi');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    open.lastIndex = from;
+    const opened = open.exec(text);
+    if (opened === null) {
+      break;
+    }
+    const tagEnd = text.indexOf('>', opened.index + opened[0].length);
+    if (tagEnd === -1) {
+      break;
+    }
+    close.lastIndex = tagEnd + 1;
+    const closed = close.exec(text);
+    if (closed === null) {
+      break;
+    }
+    const openTag = text.slice(opened.index, tagEnd + 1);
+    const content = isPasswordDigest(openTag) ? text.slice(tagEnd + 1, closed.index) : REDACTED;
+    out += `${text.slice(from, tagEnd + 1)}${content}${closed[0]}`;
+    from = closed.index + closed[0].length;
+  }
+  return out + text.slice(from);
 }
 
 /** Masks a single raw `name: value` header line (no terminator), case-insensitively. */

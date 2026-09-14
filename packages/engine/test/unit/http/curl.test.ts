@@ -85,3 +85,21 @@ describe('fromCurl', () => {
     expect(input.envelopeXml).toBe('<x><y>1</y></x>');
   });
 });
+
+describe('heredoc scan (SOAP parser)', () => {
+  it('is linear with many openers and no closing line', () => {
+    const time = (n: number): number => {
+      const input = "curl https://s.test/soap --data-binary @- <<'EOF'\n" + '<<a\n'.repeat(n);
+      const started = performance.now();
+      fromCurl(input);
+      return performance.now() - started;
+    };
+    time(10_000);
+    expect(time(100_000)).toBeLessThan(400);
+  });
+
+  it('reads a CRLF heredoc body verbatim', () => {
+    const crlf = ["curl https://s.test/soap --data-binary @- <<'EOF'", '<a>', '  <b/>', '</a>', 'EOF'].join('\r\n');
+    expect(fromCurl(crlf).input.envelopeXml).toBe('<a>\r\n  <b/>\r\n</a>');
+  });
+});
