@@ -81,7 +81,7 @@ from the normal flow. Linking a project folder that lives in git, and exporting 
 folder, are the bridges to teams that need no server.
 
 **Workspace sharing/syncing shipped** (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`,
-[ADR-0007](adr/0007-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`). A whole
+[ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`). A whole
 workspace — its projects and its environments — can now be shared as a git repository or a synced
 folder; members join by URL or by pointing at an existing clone, and Sync pulls, merges, pushes and
 resolves conflicts in the app. Still parked:
@@ -202,7 +202,7 @@ Wirebench does not have. Four principles bound the design:
 
 | Route                       | What it is                                                                                                                                                        | Size            |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Git-native teams            | **Shipped** (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, [ADR-0007](adr/0007-shared-workspaces-are-git-repositories.md)): a whole workspace — projects and environments — shared as a git repository on the team's own hosting (GitHub, GitLab, Azure DevOps, Gitea, or a bare repository on a network share) or a synced folder, with an in-app Sync control, conflict resolver, and per-member secrets. Roles are repository permissions, history is git history. | Shipped         |
+| Git-native teams            | **Shipped** (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md)): a whole workspace — projects and environments — shared as a git repository on the team's own hosting (GitHub, GitLab, Azure DevOps, Gitea, or a bare repository on a network share) or a synced folder, with an in-app Sync control, conflict resolver, and per-member secrets. Roles are repository permissions, history is git history. | Shipped         |
 | Self-hosted Wirebench Server | An open-source service (Node, Postgres): accounts and organisations, roles, real-time sync (the same `SyncBackend` interface git-native teams use, spec §5.4), a secrets vault, OIDC and SAML SSO, SCIM, an audit log. | XL              |
 | Hosted cloud                | The same server run as a service: billing, uptime, support, and eventually a SOC 2 report.                                                                        | a business      |
 

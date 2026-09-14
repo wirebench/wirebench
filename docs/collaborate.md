@@ -3,7 +3,7 @@
 A workspace can be shared with a team. Members join by URL (or by pointing at an existing
 folder), every save becomes a commit, and Sync pulls, merges and pushes so everyone converges on
 the same projects and environments. Design: [`specs/2026-09-13-wirebench-shared-workspaces-design.md`](specs/2026-09-13-wirebench-shared-workspaces-design.md);
-the decision to build this on git is [ADR-0007](adr/0007-shared-workspaces-are-git-repositories.md).
+the decision to build this on git is [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md).
 
 ## What a shared workspace is
 

@@ -1,10 +1,10 @@
 # ADR-0006: Workspaces live in app data, not as a folder the user manages
 
-- Status: accepted; superseded in part by [ADR-0007](0007-shared-workspaces-are-git-repositories.md)
+- Status: accepted; superseded in part by [ADR-0008](0008-shared-workspaces-are-git-repositories.md)
 - Date: 2026-09-12
 - Context: `docs/specs/2026-09-11-wirebench-workspaces-design.md` (spec §1, §14, §16)
 
-**Superseded in part by ADR-0007 (2026-09-13).** A shared workspace's tree may now live outside
+**Superseded in part by ADR-0008 (2026-09-13).** A shared workspace's tree may now live outside
 the app-data directory: `share.yaml` (never itself inside the tree) can name an external folder —
 picked only through a native dialog, and refused if it lies inside `<userData>` — for a git clone
 or synced folder the user manages themselves. A *local* workspace is unaffected: its tree still
@@ -92,7 +92,7 @@ workspaces/<id>/
   workspace at a time.
 - **Workspace sync/sharing shipped in a later spec, not here.** A workspace can now be shared as a
   git repository or a synced folder, with its environments and projects propagating to other
-  members' machines — see [ADR-0007](0007-shared-workspaces-are-git-repositories.md) and this
+  members' machines — see [ADR-0008](0008-shared-workspaces-are-git-repositories.md) and this
   ADR's superseded-in-part note above. Live sync through a Wirebench-run server is still future
   work (spec 2, tracked on the roadmap).
 

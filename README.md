@@ -168,7 +168,7 @@ repository. It is what the opt-in update feed is derived from.
 
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
-- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0007
+- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
 - [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it
 - [Release checklist](docs/release.md)
 - [Roadmap](docs/roadmap.md) — what 2.0 leaves out, in the order it is worth building, and what each item unlocks

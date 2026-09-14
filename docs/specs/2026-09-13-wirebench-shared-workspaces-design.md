@@ -243,6 +243,7 @@ paths.
 *.xsd text
 projects/*/attachments/** -text
 projects/*/interfaces/*/definition/** -text
+projects/*/apis/*/definition/** -text
 ```
 
 No `.gitignore` is needed: nothing machine-local is inside the tree. Definition caches (`definition/`)
@@ -430,7 +431,7 @@ apps/desktop/src/renderer/components/secret-field.tsx
 apps/desktop/src/renderer/features/preferences/sections/git.tsx
 apps/desktop/src/renderer/state/sync.ts
 e2e/helpers/git-remote.ts  e2e/specs/sync.spec.ts
-docs/adr/0007-shared-workspaces-are-git-repositories.md  docs/collaborate.md
+docs/adr/0008-shared-workspaces-are-git-repositories.md  docs/collaborate.md
 ```
 
 ## 10. Code style
@@ -492,7 +493,7 @@ Extends the v1 spec §12.
 7. `workspace.yaml` v3 contains no per-machine field; a 1.1.0 build refuses it with the existing message.
 8. The unsaved-changes recovery still passes its suite with shared workspaces.
 9. `pnpm check` passes on all three OSes, including the new e2e specs.
-10. `docs/collaborate.md`, ADR-0007, the ADR-0006 note, `security.md` and the roadmap are updated.
+10. `docs/collaborate.md`, ADR-0008, the ADR-0006 note, `security.md` and the roadmap are updated.
 
 ## 14. Migration and compatibility
 

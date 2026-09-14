@@ -1,4 +1,4 @@
-# ADR-0007: Shared workspaces are git repositories, synced by system git
+# ADR-0008: Shared workspaces are git repositories, synced by system git
 
 - Status: accepted
 - Date: 2026-09-13

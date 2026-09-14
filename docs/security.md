@@ -105,7 +105,7 @@ user configured Basic auth for the import.
 
 ## Git execution for shared workspaces
 
-Sharing a workspace (`docs/collaborate.md`, [ADR-0007](adr/0007-shared-workspaces-are-git-repositories.md))
+Sharing a workspace (`docs/collaborate.md`, [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md))
 runs the system `git`, never a bundled one, and only from the main process:
 
 - **`execFile` with argument arrays, never a shell.** Every call goes through one `GitCli.run`,

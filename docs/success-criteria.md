@@ -66,7 +66,7 @@ three-OS CI matrix once the branch is pushed.
 | SW7 | `workspace.yaml` v3 contains no per-machine field; a 1.1.0 build refuses it with the existing message | `packages/engine/test/unit/workspace/{migrate,model,local-state}.test.ts` | Met |
 | SW8 | The unsaved-changes recovery still passes its suite with shared workspaces | `apps/desktop/test/{unsaved-store,workspace-watch,project-watch}.test.ts`, `apps/desktop/test/sync/sync-service.test.ts` | Met |
 | SW9 | `pnpm check` passes on all three OSes, including the new e2e specs | [`ci.yml`](../.github/workflows/ci.yml) (`check` matrix, three OSes; `WIREBENCH_REQUIRE_GIT: '1'` on `check`, `coverage` and `e2e` jobs), `e2e/specs/{sync-share-join,sync-pull,sync-conflict,sync-secret,sync-identity,sync-no-git}.spec.ts` | Met locally (`pnpm check`); e2e proven in CI (not run locally) per the owner's standing no-local-Electron rule |
-| SW10 | `docs/collaborate.md`, ADR-0007, the ADR-0006 note, `security.md` and the roadmap are updated | [`collaborate.md`](collaborate.md), [`adr/0007-shared-workspaces-are-git-repositories.md`](adr/0007-shared-workspaces-are-git-repositories.md), [`adr/0006-workspaces-in-app-data.md`](adr/0006-workspaces-in-app-data.md), [`security.md`](security.md), [`roadmap.md`](roadmap.md) | Met |
+| SW10 | `docs/collaborate.md`, ADR-0008, the ADR-0006 note, `security.md` and the roadmap are updated | [`collaborate.md`](collaborate.md), [`adr/0008-shared-workspaces-are-git-repositories.md`](adr/0008-shared-workspaces-are-git-repositories.md), [`adr/0006-workspaces-in-app-data.md`](adr/0006-workspaces-in-app-data.md), [`security.md`](security.md), [`roadmap.md`](roadmap.md) | Met |
 
 ## SC13, stated plainly
 
@@ -84,4 +84,4 @@ Three parts of SC13 are not fully demonstrated in this repository as it stands:
 
 Everything else in SC13 is machine-checked: the `coverage` job in `ci.yml` fails below 85%,
 the budgets fail below their limits, and the documents listed exist (ADR-0001 through 0003 as
-the spec requires, plus 0004 through 0007 for decisions that turned out to be load-bearing).
+the spec requires, plus 0004 through 0008 for decisions that turned out to be load-bearing).
