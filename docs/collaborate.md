@@ -90,6 +90,8 @@ control at all). Clicking it opens the **Sync panel** with:
   up to 86,400), *Remote* and *Branch*.
 - **Reveal shared folder** and **Stop sharing…**.
 
+![The Sync panel of a workspace shared to a git remote](images/sync-panel.png)
+
 **Commit on save.** With it on (the default), every successful save runs `add -A` + commit with a
 generated message — `Update GetWeather in Weather`, `Add environment QA`, `Update 3 requests, 1
 environment` with one path per line, `(autosave)` appended for an autosave-triggered commit. With
@@ -116,9 +118,11 @@ dismisses itself after a few seconds.
 When a merge leaves conflicted files, the sync banner offers **Resolve…**, which opens the conflict
 resolver. The resolver lists each conflicted entity by name (for example `request: Ping`) with
 three choices: **Keep mine**, **Keep theirs**, and **Open file** to edit it by hand in your file
-manager and resolve it outside the app. **Cancel merge**, in the resolver, aborts the whole merge
+manager and resolve it outside the app. **Cancel**, in the resolver, aborts the whole merge
 (with a confirmation, since it discards every resolution made so far in this merge and the pull
 that started it).
+
+![The conflict resolver naming a request both sides edited](images/conflict-resolver.png)
 
 While a conflict is open, conflicted requests are read-only in the editor and marked in the
 explorer — nothing in the app writes to a file mid-conflict. Once every conflicted file is
