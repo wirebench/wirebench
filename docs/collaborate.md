@@ -48,8 +48,9 @@ From the workspace picker, choose **Join shared workspace…**:
   checkout or an existing synced folder containing a `workspace.yaml`. An existing clone must have
   an `origin` remote in one of the allowed forms (`https://`, `ssh://`, `file://`, or
   `user@host:path`) and must not be on a detached HEAD — check out a branch first if it is.
-  Before running anything else in a repository it did not create itself, Wirebench checks its
-  `.git/config` for settings that make git run programs, and refuses the folder if it finds any —
+  Before running anything else in a repository it did not create itself, Wirebench checks that
+  its `.git/config` sets only the handful of settings `git clone` writes (plus identity, line
+  endings and fetch/pull options), with an allowed `origin` URL, and refuses the folder otherwise —
   see `git-config-refused` under [Troubleshooting](#troubleshooting).
 
 Joining a workspace whose id is already on this machine is refused; the join dialog says so and
@@ -66,10 +67,10 @@ share) or "Synced folder".
 | `.gitattributes` | secret values, history, preferences, UI state |
 
 Only **internal** projects live inside a shared workspace's tree. *Link Project Folder…* is
-unavailable there, and a linked project that still appears in a shared `workspace.yaml` (edited
-by hand, or pulled from a teammate) is listed as an error and never opened — Wirebench does not
-read, watch or write that folder (disabled, with a tooltip explaining why) — a linked project points at a path
-outside the tree, which a teammate's machine cannot resolve. Use **Move to workspace…** (project
+unavailable there (disabled, with a tooltip explaining why) — a linked project points at a path
+outside the tree, which a teammate's machine cannot resolve. A linked project that still appears
+in a shared `workspace.yaml` (edited by hand, or pulled from a teammate) is listed as an error and
+never opened; Wirebench does not read, watch or write that folder. Use **Move to workspace…** (project
 context menu) instead: it copies the project's files into the target workspace, keeping its id
 unless that id already exists there, in which case the copy is re-identified. The move always
 asks for confirmation, because the project's files here go to the trash afterwards.
@@ -153,7 +154,7 @@ sync client does about it — usually last-write-wins, with a conflicted copy Wi
 know about and will not merge. **Use a git share for anything beyond a single person working
 across their own machines.** If a folder gains a `.git` directory (for example, because you ran
 `git init` in it yourself), Wirebench treats it as a git share the next time the workspace opens,
-provided git is found and the repository's `.git/config` passes the check described under
+provided git is found and the repository's `.git/config` passes the allow-list described under
 `git-config-refused`.
 
 ## Stop sharing
@@ -234,7 +235,7 @@ length. If clone or checkout fails on long paths, run
 | `share-linked-project-refused` | *Shared workspaces hold their projects inside the workspace…* — sharing or linking was refused, or a linked project in a shared `workspace.yaml` was not opened | Remove the linked project, or use **Move to workspace…** from a local workspace to copy it in |
 | `git-identity-needed` | *Set the name and email your commits are recorded under.* | Enter your name and email in the dialog; the commit that asked is retried with its own message |
 | `workspace-move-incomplete` | *The files were copied, but the originals could not all be removed.* | The copy is complete; delete the leftover source files by hand |
-| `git-config-refused` | *This repository's .git/config sets &lt;keys&gt;, which could run programs on this machine…* — the repository's local config names a program to run (for example `core.fsmonitor`, `core.sshCommand`, `credential.helper`, a `filter.*` or `diff.*` driver, `include.path`) | Remove those keys from the repository's `.git/config`, or move them to your global git config (`git config --global …`), then open the workspace again |
+| `git-config-refused` | *This repository's .git/config sets &lt;keys&gt;, which Wirebench does not allow in a repository it did not create…* — a folder you joined from (or a synced folder holding `.git`) has local git settings beyond what `git clone` writes, or a remote URL in a form that is not allowed | Remove those keys from the repository's `.git/config`, or move them to your global git config (`git config --global …`), and fix the remote URL if it is named; then open the workspace again. Only `core.*` line-ending/filesystem defaults, `user.name`/`user.email`, `remote.*.url`/`fetch`/`tagopt`/`prune`, `branch.*.remote`/`merge`/`rebase`, `pull.rebase`/`ff`, `fetch.prune`, `init.defaultBranch` and `gc.auto` are accepted locally |
 
 With git absent entirely, a `git` share still opens and works as a plain folder — the badge shows
 *No git* and the Sync panel explains what to install.

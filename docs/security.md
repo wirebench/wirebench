@@ -124,18 +124,23 @@ runs the system `git`, never a bundled one, and only from the main process:
   repository's hooks — `post-checkout`, `post-merge`, anything else a hostile remote could ship —
   never execute, on join, pull, commit or any other command the app runs. Hostile *remote
   content* therefore cannot execute code.
-- **A repository's local config is checked before use.** `.git/config` never arrives with a clone,
-  but a folder the user joins from (or a synced folder that turns out to hold `.git`) can carry
-  one, and settings there can name a program for git to run. Before the app runs any other git
-  command in such a repository — and again at every open of a git share — it lists the local
-  config keys (`git config --local --list --name-only`) and refuses with `git-config-refused`
-  when any matches (case-insensitively) `core.fsmonitor`, `core.sshCommand`, `core.askPass`,
-  `core.editor`, `core.pager`, `core.hooksPath`, `core.gitProxy`, `sequence.editor`,
-  `gpg.program`, `gpg.*.program`, `credential.helper`, `credential.*.helper`, `filter.*.clean`,
-  `filter.*.smudge`, `filter.*.process`, `diff.*.textconv`, `diff.*.command`, `diff.external`,
-  `merge.*.driver`, `remote.*.uploadpack`, `remote.*.receivepack`, `remote.*.vcs`,
-  `uploadpack.packObjectsHook`, `include.path` or `includeIf.*.path`. Global and system config are
-  the user's own and are not checked.
+- **A repository's local config must pass an allow-list.** `.git/config` never arrives with a
+  clone, but a folder the user joins from (or a synced folder that turns out to hold `.git`) can
+  carry one, and git has many settings that name a program to run — too many for a list of refused
+  keys to be trusted. Before the app runs any other git command in such a repository, and again at
+  every open of a git share, it lists the local config keys (`git config --local --list
+  --name-only -z`) and refuses with `git-config-refused` unless every key (case-insensitively; `*`
+  is any subsection) is one of: `core.repositoryformatversion`, `core.filemode`, `core.bare`,
+  `core.logallrefupdates`, `core.ignorecase`, `core.precomposeunicode`, `core.symlinks`,
+  `core.autocrlf`, `core.safecrlf`, `core.eol`, `core.quotepath`, `core.longpaths`,
+  `core.checkstat`, `core.trustctime`, `user.name`, `user.email`, `remote.*.url`,
+  `remote.*.fetch`, `remote.*.tagopt`, `remote.*.prune`, `branch.*.remote`, `branch.*.merge`,
+  `branch.*.rebase`, `pull.rebase`, `pull.ff`, `fetch.prune`, `init.defaultbranch`, `gc.auto`.
+  That covers everything `git init`/`git clone` and the app itself write. Every `remote.*.url`
+  value must also pass the remote URL allow-list below; a refusal names the key, never the URL.
+  Anything else — `extensions.*`, `include.*`, `includeIf.*`, `url.*`, `protocol.*`, `gpg.*`,
+  `commit.gpgsign`, `remote.*.pushurl`, any other `core.*` — is refused. Global and system config
+  are the user's own and are not checked. Clones the app makes itself are safe by construction.
 - **A remote URL allow-list.** `assertRemoteUrl` accepts only `https://`, `ssh://`, `file://`, or
   `user@host:path`; refuses `ext::` (git's "run an arbitrary command" transport), values starting
   with `-` (parsed as a flag by git or by a transport helper's own shell), and a user or host

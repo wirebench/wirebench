@@ -78,8 +78,11 @@ Wirebench Server does.** Concretely:
   hostile *remote content* — hooks, or anything else a fetch, merge or clone brings in — cannot
   execute code when joining, pulling or committing. A repository's *local config*
   (`.git/config`) never travels with a clone, but a folder the user points the app at can carry
-  one; it is checked against a refused-key list (settings that name a program to run, or include
-  more config) before the app runs anything else in that repository, and at every open.
+  one; every key in it must be on an allow-list (what `init`/`clone` and the app itself write, plus a
+  few line-ending and fetch/pull settings), and every `remote.*.url` value must pass the remote URL
+  allow-list, before the app runs anything else in that repository and at every open. An
+  allow-list, not a list of refused keys: git has too many settings that run a program (worktree
+  config, alternate-refs commands, signing key commands, URL rewrites) for a deny-list to hold.
 
 ## Alternatives considered
 

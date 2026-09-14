@@ -383,6 +383,10 @@ workspaceId }`), the status model, the resolver, the banners and the contract te
   another workspace's app-data directory.
 - A git repository can carry hooks; the `core.hooksPath` override above applies to every command the app
   issues, so a cloned repository cannot execute code on join, commit or merge.
+  Clones the app makes are safe this way (a clone never brings `.git/config` with it); a repository
+  the app adopts rather than creates (join from folder, a folder share holding `.git`) must pass the
+  local-config allow-list before any other git command and at every open — see `docs/security.md`,
+  "A repository's local config must pass an allow-list".
 - `secret-missing` and the *Not on this machine* state ensure a shared ref is never silently treated as
   set; nothing here adds a `secrets.get` channel.
 - Auto-fetch is a network call the user initiated by sharing the workspace; it is disclosed in the Sync
