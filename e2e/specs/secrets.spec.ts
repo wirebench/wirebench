@@ -7,6 +7,7 @@ import { createProject, createWorkspace, expandExplorer, saveAll, workspaceProje
 import {
   apiRow,
   createApi,
+  chooseContextMenuItem,
   createRestRequest,
   folderRow,
   openApiTab,
@@ -201,14 +202,12 @@ test.describe('secrets', () => {
     await page.getByTestId('auth-remember-refresh').check();
 
     // A folder: a Bearer token.
-    await apiRow(page, 'Secure').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'New folder' }).click();
+    await chooseContextMenuItem(page, apiRow(page, 'Secure'), 'New folder');
     // A new folder lands in inline rename mode; Escape keeps the name it was given. The API row is
     // still folded shut, so the folder has to be revealed before it can be right-clicked.
     await page.keyboard.press('Escape');
     await apiRow(page, 'Secure').click();
-    await folderRow(page, 'Folder 1').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Auth…' }).click();
+    await chooseContextMenuItem(page, folderRow(page, 'Folder 1'), 'Auth…');
     const dialog = page.getByTestId('folder-auth-dialog');
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await page.getByLabel('Folder authentication type').selectOption('bearer');
