@@ -176,6 +176,8 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     bindingName: operation.bindingName,
     operationName: operation.name,
     name: request.name,
+    slug: request.slug,
+    operationSlug: operation.slug,
     envelopeXml: request.envelopeXml,
     soapVersion: request.soapVersion,
     ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),

@@ -112,6 +112,47 @@ describe('ConflictResolver', () => {
     });
   });
 
+  it('stays open through a cold start (empty store, a slower loadConflicts resolving non-empty), then closes once the last row resolves', async () => {
+    // A single conflict this time, so "Keep mine" resolving it is the dialog's very last row.
+    const oneConflict = [CONFLICTS[0] as SyncConflictWire];
+    let releaseFirstLoad: (() => void) | undefined;
+    const firstLoad = new Promise<void>((resolve) => {
+      releaseFirstLoad = resolve;
+    });
+    const conflicts = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await firstLoad;
+        return { ok: true, value: { conflicts: oneConflict } };
+      })
+      .mockResolvedValueOnce({ ok: true, value: { conflicts: [] } });
+    const resolve = vi.fn().mockResolvedValue({ ok: true, value: LOCAL_STATUS });
+    installWirebenchApi({ sync: { conflicts, resolve } });
+    // The store starts empty, as it would on a cold app start opened directly into `conflict`
+    // state (e.g. via the `sync.resolveConflicts` command) before the resolver's own load lands.
+    useSyncStore.setState({ conflicts: [], status: LOCAL_STATUS });
+    useUiStore.setState({ conflictResolverOpen: true });
+
+    render(<ConflictResolver />);
+
+    // The load has not settled yet — the resolver must not have already decided "empty, close".
+    expect(screen.getByTestId('conflict-resolver')).toBeTruthy();
+    expect(useUiStore.getState().conflictResolverOpen).toBe(true);
+
+    releaseFirstLoad?.();
+    await waitFor(() => {
+      expect(screen.getAllByTestId('conflict-resolver-row')).toHaveLength(1);
+    });
+    expect(useUiStore.getState().conflictResolverOpen).toBe(true);
+
+    const row = screen.getByTestId('conflict-resolver-row');
+    await userEvent.click(within(row).getByRole('button', { name: 'Keep mine' }));
+
+    await waitFor(() => {
+      expect(useUiStore.getState().conflictResolverOpen).toBe(false);
+    });
+  });
+
   it('Cancel asks for confirmation, and confirming aborts the merge and closes', async () => {
     const abortMerge = vi.fn().mockResolvedValue({ ok: true, value: LOCAL_STATUS });
     installWirebenchApi({

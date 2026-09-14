@@ -327,9 +327,55 @@ describe('RequestEditor', () => {
   });
 
   it('goes read-only with a note while its request is conflicted', async () => {
-    useSyncStore.setState({
-      conflicts: [{ path: 'x', projectId: 'p1', entity: { kind: 'request', name: 'Request 1' } }],
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal', dir: '/w/Demo', status: 'ready' }],
+      }),
     });
+    useSyncStore.setState({
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Request 1.request.yaml', projectId: 'p1' },
+      ],
+    });
+    const form = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        root: {
+          id: 'r',
+          kind: 'group',
+          name: { namespaceUri: 'http://tempuri.org/', localName: 'Add' },
+          label: 'tem:Add',
+          required: true,
+          occurs: { min: 1, max: 1 },
+          present: true,
+          children: [
+            {
+              id: 'r/0',
+              kind: 'field',
+              name: { namespaceUri: 'http://tempuri.org/', localName: 'intA' },
+              label: 'tem:intA',
+              required: true,
+              occurs: { min: 1, max: 1 },
+              type: { name: 'xs:int', base: 'integer' },
+              present: true,
+              value: '1',
+              valueRange: { start: 0, end: 1 },
+              children: [],
+            },
+          ],
+        },
+        bodyRange: { start: 0, end: 0 },
+        problems: [],
+      },
+    });
+    installWirebenchApi({
+      request: { send, cancel },
+      project: {
+        mutate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'ignored', message: 'not asserted here' } }),
+      },
+      xml: { form, applyFormEdit: vi.fn() },
+    });
+
     render(<RequestEditor requestId="req-1" />);
 
     expect(screen.getByTestId('request-conflict-note').textContent).toBe('Read-only until the conflict is resolved');
@@ -339,11 +385,25 @@ describe('RequestEditor', () => {
     await userEvent.click(outlineTabs[0] as HTMLElement);
     const tree = screen.getByRole('tree');
     expect(tree.querySelectorAll('input')).toHaveLength(0);
+
+    const formTabs = screen.getAllByRole('tab', { name: 'Form' });
+    await userEvent.click(formTabs[0] as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getByLabelText('tem:intA value')).toBeTruthy();
+    });
+    expect(screen.getByLabelText<HTMLInputElement>('tem:intA value').disabled).toBe(true);
   });
 
   it('stays editable, with no conflict note, when its request has no conflict', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal', dir: '/w/Demo', status: 'ready' }],
+      }),
+    });
     useSyncStore.setState({
-      conflicts: [{ path: 'x', projectId: 'p1', entity: { kind: 'request', name: 'Some other request' } }],
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Some-other-request.request.yaml', projectId: 'p1' },
+      ],
     });
     render(<RequestEditor requestId="req-1" />);
 

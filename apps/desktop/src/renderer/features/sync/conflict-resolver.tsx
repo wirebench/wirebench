@@ -23,20 +23,38 @@ export function ConflictResolver() {
 
   const [busyPath, setBusyPath] = useState<string | undefined>(undefined);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Whether THIS open's own `loadConflicts()` has settled — an empty `conflicts` array means
+  // nothing to show only once it reflects a load this dialog actually started; on a cold start
+  // already in `state: 'conflict'` (opened via the `sync.resolveConflicts` command/shortcut) the
+  // store's `conflicts` can still be the empty default the instant this mounts, and closing on
+  // that stale emptiness would self-close in the same tick it opened.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      void loadConflicts();
+    if (!open) {
+      setLoaded(false);
+      return;
     }
+    setLoaded(false);
+    let cancelled = false;
+    void loadConflicts().then(() => {
+      if (!cancelled) {
+        setLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open, loadConflicts]);
 
   // The list this dialog exists to clear went empty (the last row was just resolved, or a
-  // fresher conflict event beat it there) — nothing left to show, so it closes itself.
+  // fresher conflict event beat it there) — nothing left to show, so it closes itself. Gated on
+  // `loaded` so this never fires against a load still in flight.
   useEffect(() => {
-    if (open && conflicts.length === 0) {
+    if (open && loaded && conflicts.length === 0) {
       setOpen(false);
     }
-  }, [open, conflicts.length, setOpen]);
+  }, [open, loaded, conflicts.length, setOpen]);
 
   const keep = (path: string, side: 'mine' | 'theirs'): void => {
     setBusyPath(path);

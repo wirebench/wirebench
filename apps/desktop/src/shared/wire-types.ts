@@ -1041,6 +1041,15 @@ export const requestWireSchema = z.object({
   bindingName: z.string(),
   operationName: z.string(),
   name: z.string(),
+  /**
+   * The on-disk file-system name (without the `.request.yaml` / `.xml` suffix) — `RequestDef.slug`.
+   * Sync conflict matching (Task 11) keys off this, `operationSlug` and the interface/project
+   * slugs to rebuild the exact tree path a conflict names, rather than a display name that
+   * `uniqueSlug` may have suffixed to stay unique on disk.
+   */
+  slug: z.string(),
+  /** The owning operation's file-system name (`OperationDef.slug`) — see {@link slug}. */
+  operationSlug: z.string(),
   envelopeXml: z.string(),
   soapVersion: z.enum(['1.1', '1.2']),
   soapAction: z.string().optional(),

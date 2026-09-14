@@ -13,6 +13,8 @@ const request: RequestDraft = {
   bindingName: '{tns}B',
   operationName: 'Add',
   name: 'Request 1',
+  slug: 'Request 1',
+  operationSlug: 'Add',
   envelopeXml: '<Envelope/>',
   soapVersion: '1.1',
   endpointUrl: 'http://example.test/soap',

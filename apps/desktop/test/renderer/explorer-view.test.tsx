@@ -116,6 +116,8 @@ describe('ExplorerView', () => {
           bindingName: '{tns}B',
           operationName: 'Add',
           name: 'Request 1',
+          slug: 'Request 1',
+          operationSlug: 'Add',
           envelopeXml: '<Envelope/>',
           soapVersion: '1.1',
           headers: [],
@@ -204,6 +206,8 @@ describe('ExplorerView', () => {
           bindingName: '{tns}B',
           operationName: 'Add',
           name: 'Request 1',
+          slug: 'Request 1',
+          operationSlug: 'Add',
           envelopeXml: '<Envelope/>',
           soapVersion: '1.1',
           headers: [],
@@ -217,6 +221,8 @@ describe('ExplorerView', () => {
           bindingName: '{tns}B',
           operationName: 'Add',
           name: 'Request 2',
+          slug: 'Request 2',
+          operationSlug: 'Add',
           envelopeXml: '<Envelope/>',
           soapVersion: '1.1',
           headers: [],
@@ -225,7 +231,9 @@ describe('ExplorerView', () => {
       },
     });
     useSyncStore.setState({
-      conflicts: [{ path: 'x', projectId: 'p1', entity: { kind: 'request', name: 'Request 1' } }],
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Request 1.request.yaml', projectId: 'p1' },
+      ],
     });
     useUiStore.setState({
       workspaces: {

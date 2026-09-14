@@ -51,6 +51,8 @@ function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
     bindingName: '{tns}CalculatorSoap',
     operationName: 'Add',
     name: 'Request 1',
+    slug: 'Request 1',
+    operationSlug: 'Add',
     envelopeXml: '<Envelope/>',
     soapVersion: '1.1',
     headers: [],

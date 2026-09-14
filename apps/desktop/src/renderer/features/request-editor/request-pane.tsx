@@ -354,6 +354,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
               onEnvelopeReplace={commitNow}
               viewType={formViewType}
               onViewTypeChange={(next) => setFormViewType(requestId, next)}
+              readOnly={conflicted}
             />
           ) : view === 'outline' ? (
             <OutlineView

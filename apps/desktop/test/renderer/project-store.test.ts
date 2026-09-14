@@ -73,6 +73,8 @@ function projectWire(overrides: Partial<ProjectWire> = {}): ProjectWire {
         bindingName: BINDING,
         operationName: 'Add',
         name: 'Request 1',
+        slug: 'Request 1',
+        operationSlug: 'Add',
         envelopeXml: '<Add/>',
         soapVersion: '1.1',
         endpointId: 'ep-1',

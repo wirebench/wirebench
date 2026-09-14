@@ -97,6 +97,8 @@ export function makeDraft(overrides: DraftOverrides = {}): RequestDraft {
     bindingName: '{http://tempuri.org/}CalculatorSoap',
     operationName: 'Add',
     name: 'Request 1',
+    slug: 'Request 1',
+    operationSlug: 'Add',
     envelopeXml: '<soap:Envelope><soap:Body><Add/></soap:Body></soap:Envelope>',
     soapVersion: '1.1',
     soapAction: 'http://tempuri.org/Add',
