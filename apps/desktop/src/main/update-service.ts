@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, dialog } from 'electron';
+import { appVersion } from './app-version.js';
 // `electron-updater` is CommonJS: under this package's ESM output a named import of
 // `autoUpdater` throws at load ("Named export not found"), so the default export is
 // destructured instead. The main bundle externalises it, so this is what actually runs.
@@ -68,7 +69,7 @@ export function createUpdateController(report: (status: UpdateStatus) => void): 
       confirmDownload: async (version) =>
         await confirm(
           `Wirebench ${version} is available.`,
-          `You are running ${app.getVersion()}. Download the update now? Nothing is installed until you say so.`,
+          `You are running ${appVersion()}. Download the update now? Nothing is installed until you say so.`,
           'Download',
         ),
       confirmInstall: async (version) =>

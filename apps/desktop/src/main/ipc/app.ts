@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu } from 'electron';
+import { appVersion } from '../app-version.js';
 import { channels, events } from '../../shared/ipc.js';
 import { applyCommandMenu } from '../menu.js';
 import type { MenuApi } from '../menu.js';
@@ -26,7 +27,7 @@ export function registerAppChannels(
 ): void {
   registerHandler(channels.app.version, () =>
     Promise.resolve({
-      version: app.getVersion(),
+      version: appVersion(),
       electron: process.versions.electron,
       node: process.versions.node,
     }),

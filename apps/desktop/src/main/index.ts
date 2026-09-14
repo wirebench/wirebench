@@ -1,6 +1,7 @@
 import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
+import { appVersion } from './app-version.js';
 import { WirebenchError, enabledProperties } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
@@ -177,7 +178,7 @@ const workspaceService = new WorkspaceService({
 // the About panel read "Wirebench" in development too. A packaged bundle already carries it as
 // `productName` (CFBundleName); without this, a `pnpm dev` run shows Electron's own name.
 app.setName('Wirebench');
-app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: app.getVersion() });
+app.setAboutPanelOptions({ applicationName: 'Wirebench', applicationVersion: appVersion() });
 
 void app.whenReady().then(() => {
   electronApp.setAppUserModelId('io.wirebench.desktop');
