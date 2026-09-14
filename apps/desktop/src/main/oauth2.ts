@@ -86,13 +86,37 @@ export function tokenCacheKey(config: OAuth2Auth): string {
 }
 
 /** The page the browser lands on after the callback. Plain, self-contained, no network of its own. */
+/** The five characters that can break out of HTML text or an attribute. */
+const HTML_ESCAPES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/** Escapes `text` for interpolation into HTML element content. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] ?? character);
+}
+
+/**
+ * The one-page response the loopback listener returns to the browser.
+ *
+ * `message` is **escaped**, not trusted. One caller interpolates the provider's own `error` query
+ * parameter into it, and that string is chosen by whoever the user pointed the flow at: an
+ * authorization server (or anyone who can drive the redirect, since it carries the matching
+ * `state`) could otherwise close the paragraph and run script on the `http://127.0.0.1:<port>`
+ * origin in the user's own browser. Escaping here rather than at the call site keeps a later caller
+ * from reintroducing it.
+ */
 function callbackPage(message: string): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<title>Wirebench</title>',
     '<style>body{font:14px system-ui;margin:3rem;color:#222}</style>',
     '</head><body><h1>Wirebench</h1><p>',
-    message,
+    escapeHtml(message),
     '</p></body></html>',
   ].join('');
 }

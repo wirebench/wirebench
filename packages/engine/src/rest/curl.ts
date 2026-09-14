@@ -18,7 +18,7 @@ import type { KeyValueEntry, RawLanguage, RestBody, RestMethod, RestRequestSetti
 import { entry, RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
 import type { RestSendInput } from './send.js';
 import { applyAuth } from './auth.js';
-import { composeUrl, splitQuery } from './url.js';
+import { composeUrl, splitQuery, trimTrailingSlashes } from './url.js';
 
 /** What a redacted secret reads as in an exported command. Matches the host's own marker. */
 export const CURL_REDACTED = '<redacted>';
@@ -393,7 +393,7 @@ function splitAgainstBase(
   if (baseUrl === undefined || baseUrl === '') {
     return { path, query };
   }
-  const base = baseUrl.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(baseUrl);
   if (path === base) {
     return { path: '/', query };
   }

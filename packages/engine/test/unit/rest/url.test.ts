@@ -6,7 +6,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { entry } from '../../../src/rest/model.js';
-import { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from '../../../src/rest/url.js';
+import {
+  composeUrl,
+  encodeValue,
+  joinBase,
+  joinQuery,
+  parseUrlParams,
+  splitQuery,
+  trimTrailingSlashes,
+} from '../../../src/rest/url.js';
 
 describe('joinBase', () => {
   it.each([
@@ -168,5 +176,28 @@ describe('composeUrl', () => {
 
   it('accepts an absolute request URL with no base', () => {
     expect(composeUrl('', 'https://h/pet')).toEqual({ url: 'https://h/pet', problems: [] });
+  });
+});
+
+describe('trimTrailingSlashes', () => {
+  it('drops every trailing slash and nothing else', () => {
+    expect(trimTrailingSlashes('https://h/api///')).toBe('https://h/api');
+    expect(trimTrailingSlashes('https://h/api')).toBe('https://h/api');
+    expect(trimTrailingSlashes('///')).toBe('');
+    expect(trimTrailingSlashes('')).toBe('');
+    expect(trimTrailingSlashes('//a//b')).toBe('//a//b');
+  });
+
+  it('is linear, where the regex it replaces was quadratic', () => {
+    // `replace(/\/+$/, '')` retries at every position: 80k slashes took ~5s. This asserts the
+    // shape of the cost, not a wall-clock budget — the perf suite is where timings are gated.
+    const time = (n: number): number => {
+      const input = '/'.repeat(n) + 'a' + '/'.repeat(n);
+      const started = performance.now();
+      expect(trimTrailingSlashes(input)).toBe('/'.repeat(n) + 'a');
+      return performance.now() - started;
+    };
+    time(20_000);
+    expect(time(160_000)).toBeLessThan(250);
   });
 });

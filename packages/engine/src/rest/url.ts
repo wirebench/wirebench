@@ -102,6 +102,22 @@ function unexpandedProperties(text: string): string[] {
   return [...text.matchAll(/\$\{([^}]*)\}/g)].map((match) => match[1]!);
 }
 
+/**
+ * Drops every trailing `/` from `text`.
+ *
+ * A character walk rather than `replace(/\/+$/, '')`: that pattern is anchored at the end but not
+ * at the start, so the engine retries it at each of the string's positions and the whole trim costs
+ * O(n²) — 80k slashes took five seconds. Nothing here is attacker-supplied (it is the user's own
+ * base URL), so this is a sharp edge rather than a vulnerability, but linear is free.
+ */
+export function trimTrailingSlashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 0x2f) {
+    end -= 1;
+  }
+  return text.slice(0, end);
+}
+
 /** True when `url` already carries its own scheme, so the base URL plays no part. */
 function isAbsolute(url: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(url);
@@ -118,7 +134,7 @@ export function joinBase(base: string, url: string): string {
   if (isAbsolute(url)) {
     return url;
   }
-  const trimmedBase = base.replace(/\/+$/, '');
+  const trimmedBase = trimTrailingSlashes(base);
   if (url === '') {
     return trimmedBase;
   }

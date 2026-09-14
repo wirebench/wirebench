@@ -171,6 +171,33 @@ describe('the authorization-code grant', () => {
     });
   });
 
+  it("escapes the provider's error into the callback page rather than rendering it as markup", async () => {
+    // The provider (or anyone who can drive the redirect, since it carries the matching state)
+    // chooses this string, and it is interpolated into the page the user's own browser renders on
+    // the http://127.0.0.1:<port> origin. Unescaped, it is reflected XSS.
+    const injection = '</p><script>alert(1)</script><p>';
+    let page = '';
+    const service = new OAuth2Service({
+      openExternal: async (url) => {
+        const redirectUri = new URL(url).searchParams.get('redirect_uri') ?? '';
+        const state = new URL(url).searchParams.get('state') ?? '';
+        const response = await fetch(
+          `${redirectUri}?error=${encodeURIComponent(injection)}&state=${encodeURIComponent(state)}`,
+        );
+        page = await response.text();
+      },
+    });
+
+    await expect(service.fetchToken(authorizationCode(), { credentials })).rejects.toMatchObject({
+      code: 'oauth2-authorization-failed',
+    });
+
+    expect(page).not.toContain('<script>');
+    expect(page).toContain('&lt;script&gt;');
+    // The page still says what happened — escaping must not cost the message.
+    expect(page).toContain('refused the sign-in');
+  });
+
   it('allows only one pending flow, and says which state it is in', async () => {
     let released: (() => void) | undefined;
     const service = new OAuth2Service({
