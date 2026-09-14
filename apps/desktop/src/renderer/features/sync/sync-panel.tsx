@@ -102,7 +102,14 @@ export function SyncPanel() {
     setRemote(next.remote);
     setBranch(next.branch);
     setAutoFetchSeconds(String(next.autoFetchSeconds));
-  }, [share]);
+    // Deliberately depends on the persisted primitives, not on `share` itself: `shareWire()`
+    // (main/workspace-service.ts) builds a brand-new `share` object on *every* `onChanged`
+    // broadcast — a rename, an environment edit, a project add/remove — not only when settings
+    // actually change. Keying on the object would re-run (and reset every draft below, wiping
+    // an uncommitted keystroke) on any of those unrelated workspace mutations while the panel
+    // is open. A genuine persisted change arriving mid-edit can still overwrite a draft — that
+    // is accepted, not worked around with dirty-tracking.
+  }, [share?.kind, share?.remote, share?.branch, share?.autoFetchSeconds, share?.commitOnSave, share?.pushOnSave]);
 
   useEffect(() => {
     if (!open) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SyncPanel } from '../../src/renderer/features/sync/sync-panel.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -157,6 +157,36 @@ describe('SyncPanel', () => {
     });
 
     await waitFor(() => expect(autoFetch.value).toBe('45'));
+  });
+
+  it('does not clobber a committed-but-not-yet-persisted draft when an unrelated workspace snapshot arrives', async () => {
+    const updateSettings = vi.fn().mockResolvedValue({ ok: true, value: STATUS });
+    installWirebenchApi({ sync: { updateSettings } });
+    openShared();
+    render(<SyncPanel />);
+    useUiStore.getState().setSyncPanelOpen(true);
+
+    const autoFetch = await screen.findByLabelText<HTMLInputElement>('Auto-fetch every N seconds');
+    // Commits locally (the panel's own `autoFetchSeconds` state becomes '90') without the mocked
+    // channel ever reflecting it back onto `workspace.share` — exactly the window between a user
+    // submitting a change and main's `workspace.changed` echo arriving.
+    await userEvent.clear(autoFetch);
+    await userEvent.type(autoFetch, '90{Enter}');
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledWith({ autoFetchSeconds: 90 }));
+    expect(autoFetch.value).toBe('90');
+
+    // A rename (or any other workspace-level mutation) broadcasts a fresh `workspace.changed`
+    // with a brand-new `share` object carrying the exact same (still-default) settings — this
+    // must not be mistaken for a settings change and must not overwrite the just-committed value.
+    // `act` flushes the resulting render and its effects synchronously, so the assertion below
+    // observes the settled state rather than racing a pending update.
+    act(() => {
+      useWorkspaceStore.setState({
+        workspace: workspaceWire({ name: 'Renamed', share: { kind: 'git', managed: true } }),
+      });
+    });
+
+    expect(autoFetch.value).toBe('90');
   });
 
   it('does not double-submit a commit while another sync action is busy', async () => {
