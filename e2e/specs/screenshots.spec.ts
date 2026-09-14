@@ -2,13 +2,17 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { setMonacoText } from '../helpers/editor.js';
+import { ADA, createBareRemote, gitConfigEnv, remoteContains } from '../helpers/git-remote.js';
+import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
+import { runCommand } from '../helpers/palette.js';
 import {
   createProject,
   createProjectWithCalculator,
   createWorkspace,
   expandExplorer,
   openFirstRequest,
+  saveAll,
 } from '../helpers/project.js';
 import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
 import {
@@ -17,6 +21,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
+import { awaitConflict, calculatorEnvelope, joinWorkspace, shareWorkspace, waitForSync } from '../helpers/sync.js';
 
 /**
  * Captures the README's screenshots into `docs/images/`.
@@ -117,14 +122,21 @@ test.describe('README screenshots', () => {
   test.skip(process.env['WIREBENCH_SCREENSHOTS'] !== '1', 'set WIREBENCH_SCREENSHOTS=1 to re-shoot the README images');
 
   let launched: LaunchedApp | undefined;
+  /** The second profile of the conflict capture, which needs someone to conflict with. */
+  let second: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let restServer: TestRestServer | undefined;
+  let remoteDir: string | undefined;
 
   test.afterEach(async () => {
-    if (launched) {
-      await launched.close();
-      launched = undefined;
+    const failures: unknown[] = [];
+    for (const app of [launched, second]) {
+      if (app) {
+        await app.close().catch((error: unknown) => failures.push(error));
+      }
     }
+    launched = undefined;
+    second = undefined;
     if (server) {
       await server.close();
       server = undefined;
@@ -133,6 +145,11 @@ test.describe('README screenshots', () => {
       await restServer.close();
       restServer = undefined;
     }
+    if (remoteDir !== undefined) {
+      removeDirSync(remoteDir);
+      remoteDir = undefined;
+    if (failures.length > 0) {
+      throw failures[0];
   });
 
   test('workspace picker', async () => {
@@ -189,6 +206,49 @@ test.describe('README screenshots', () => {
 
     await capture(window, 'rest-response', { mask: restTimingRegions(window) });
   });
+  test('sync panel', async () => {
+    test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
+    test.setTimeout(180_000);
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const remote = await createBareRemote();
+    remoteDir = remote.dir;
+    launched = await launchApp({ extraEnv: gitConfigEnv(ADA) });
+    await createProjectWithCalculator(window, server);
+    await saveAll(window);
+    await shareWorkspace(window, remote.url);
+    await runCommand(window, 'Sync: Show Sync Panel');
+    await expect(window.getByTestId('sync-panel')).toBeVisible();
+    await expect(window.getByTestId('sync-log-row').first()).toBeVisible({ timeout: 20_000 });
+    await capture(window, 'sync-panel');
+  test('conflict resolver', async () => {
+    test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
+    test.setTimeout(180_000);
+    server = await startTestSoapServer({ fixture: 'calculator' });
+    const remote = await createBareRemote();
+    remoteDir = remote.dir;
+    // Someone else shares the workspace and pushes an edit to the first request…
+    second = await launchApp({ extraEnv: gitConfigEnv(ADA) });
+    await createProjectWithCalculator(second.window, server);
+    await saveAll(second.window);
+    await shareWorkspace(second.window, remote.url);
+    // …while this profile, having joined, edits the same line.
+    launched = await launchApp({ extraEnv: gitConfigEnv(ADA) });
+    await joinWorkspace(window, remote.url);
+    await waitForSync(window, 'clean');
+    for (const page of [second.window, window]) {
+      await expandExplorer(page, 'Request 1');
+      await openFirstRequest(page);
+    }
+    await setMonacoText(window, 'Request envelope XML', calculatorEnvelope('2222'));
+    await setMonacoText(second.window, 'Request envelope XML', calculatorEnvelope('1111'));
+    await saveAll(second.window);
+    await expect.poll(() => remoteContains(remote.dir, '<tem:intA>1111</tem:intA>'), { timeout: 60_000 }).toBe(true);
+    await saveAll(window);
+    await awaitConflict(window);
+    await window.getByTestId('sync-banner-resolve').click();
+    await expect(window.getByTestId('conflict-resolver')).toBeVisible();
+    await expect(window.getByTestId('conflict-resolver-row').first()).toBeVisible({ timeout: 20_000 });
+    await capture(window, 'conflict-resolver');
 
   test('the helpers used above still match the shared project flow', async () => {
     // `createProjectWithCalculator` is what every other spec uses; the two captures above
