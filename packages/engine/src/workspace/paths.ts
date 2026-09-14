@@ -58,12 +58,12 @@ export const WORKSPACE_JOINING_DIR = '.joining';
 export const GIT_ATTRIBUTES_FILE = '.gitattributes';
 /**
  * Contents of {@link GIT_ATTRIBUTES_FILE}: normalises line endings, and leaves bytes alone where
- * they must stay exact — attachments, and definition caches, whose manifest records each
- * document's SHA-256 as fetched (a CRLF definition normalised by git fails that check on the
- * other side, which then re-fetches and rewrites the cache).
+ * they must stay exact — attachments, and the definition caches of interfaces and APIs, which keep
+ * each document as fetched (a WSDL's manifest records its SHA-256, so a CRLF definition normalised
+ * by git fails that check on the other side, which then re-fetches and rewrites the cache).
  */
 export const GIT_ATTRIBUTES =
-  '* text=auto eol=lf\n*.yaml text\n*.xml text\n*.wsdl text\n*.xsd text\nprojects/*/attachments/** -text\nprojects/*/interfaces/*/definition/** -text\n';
+  '* text=auto eol=lf\n*.yaml text\n*.xml text\n*.wsdl text\n*.xsd text\nprojects/*/attachments/** -text\nprojects/*/interfaces/*/definition/** -text\nprojects/*/apis/*/definition/** -text\n';
 
 /** Absolute path of a workspace's own directory, given the app's user-data root and the workspace id. */
 export function workspaceDir(userDataDir: string, workspaceId: string): string {

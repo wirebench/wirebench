@@ -461,6 +461,11 @@ describeGit('GitBackend (real git)', () => {
     await mkdir(join(treeA, definition), { recursive: true });
     await writeFile(join(treeA, definition, 'calculator.wsdl'), wsdl);
     await writeFile(join(treeA, definition, 'types.xsd'), xsd);
+    // An OpenAPI document, cached beside its API byte for byte.
+    const apiDefinition = join('projects', 'Calc', 'apis', 'Petstore', 'definition');
+    const openapi = Buffer.from('openapi: 3.1.0\r\ninfo:\r\n  title: Petstore\r\n', 'utf8');
+    await mkdir(join(treeA, apiDefinition), { recursive: true });
+    await writeFile(join(treeA, apiDefinition, 'openapi.yaml'), openapi);
     await a.commit('Add Calculator');
     await a.push();
 
@@ -468,6 +473,7 @@ describeGit('GitBackend (real git)', () => {
 
     expect(await readFile(join(treeB, definition, 'calculator.wsdl'))).toEqual(wsdl);
     expect(await readFile(join(treeB, definition, 'types.xsd'))).toEqual(xsd);
+    expect(await readFile(join(treeB, apiDefinition, 'openapi.yaml'))).toEqual(openapi);
     expect((await git.run(treeB, ['status', '--porcelain'])).stdout).toBe('');
   });
 
