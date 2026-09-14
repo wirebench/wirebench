@@ -132,7 +132,7 @@ export class SyncService {
         this.deps.onConflict(await this.backend.conflicts());
         return;
       }
-      if (this.last.uncommitted > 0 && this.deps.settings().commitOnSave) {
+      if (this.last.uncommitted > 0 && this.deps.settings().commitOnSave && this.identityPending === undefined) {
         try {
           await this.commitNow(undefined, { autosave: false, push: false });
           await this.probeNow();
@@ -341,8 +341,12 @@ export class SyncService {
       throw new WirebenchError('sync-conflict', 'Resolve the merge conflicts before committing.');
     }
     if ((await this.backend.identity()) === undefined) {
-      this.identityPending = { message, autosave: options.autosave, push: options.push };
-      this.deps.onIdentityNeeded();
+      // The first request waiting on an identity wins: a later catch-up or save commit must not
+      // replace its message, nor ask the user a second time.
+      if (this.identityPending === undefined) {
+        this.identityPending = { message, autosave: options.autosave, push: options.push };
+        this.deps.onIdentityNeeded();
+      }
       throw new WirebenchError('git-identity-needed', 'Set the name and email your commits are recorded under.');
     }
     const explicit = message !== undefined && message.trim().length > 0 ? message : undefined;

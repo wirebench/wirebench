@@ -525,6 +525,21 @@ describe('SyncService — commit and identity', () => {
     await h.service.setIdentity('Ada', 'ada@example.test');
     expect(h.backend.commits).toEqual([commitMessage([requestChange])]);
   });
+
+  it('the first commit blocked on identity keeps its message through start() and asks once', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.current = status({ uncommitted: 1 });
+    h.backend.changes = [requestChange];
+    h.backend.identityValue = undefined;
+
+    const error = await rejectionOf(h.service.commit('Share workspace Workspace 1'));
+    expect(isWirebenchError(error) && error.code).toBe('git-identity-needed');
+    await h.service.start();
+    expect(h.identityNeeded).toBe(1);
+
+    await h.service.setIdentity('Ada', 'ada@example.test');
+    expect(h.backend.commits).toEqual(['Share workspace Workspace 1']);
+  });
 });
 
 describe('SyncService — pull, push, conflicts', () => {
