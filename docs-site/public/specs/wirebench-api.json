@@ -1,0 +1,193 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Wirebench Engine API",
+    "version": "2.0.0",
+    "description": "Headless API engine for Wirebench desktop client. Executes SOAP and REST requests, manages Git-backed workspaces, resolves environment properties, and performs schema validation."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:45124/api/v1",
+      "description": "Local Wirebench Engine Daemon"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Engine Health Status",
+        "description": "Returns the current status, version, and active workspace of the Wirebench engine.",
+        "responses": {
+          "200": {
+            "description": "Engine is running normally.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces": {
+      "get": {
+        "summary": "List Workspaces",
+        "description": "Retrieves all discovered local and shared Git-backed workspaces.",
+        "responses": {
+          "200": {
+            "description": "Array of workspace descriptors.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Workspace"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Workspace",
+        "description": "Initializes a new workspace directory with local or Git remote sync configuration.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspaceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{id}/sync": {
+      "post": {
+        "summary": "Sync Workspace",
+        "description": "Triggers Git pull, conflict check, and push for a shared team workspace.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sync completed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/requests/execute": {
+      "post": {
+        "summary": "Execute Request",
+        "description": "Dispatches a REST or SOAP request with property expansion, authentication handlers, and attachment processing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteRequestPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Request response received.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteResponseResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthStatus": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "ok" },
+          "version": { "type": "string", "example": "2.0.0" },
+          "activeWorkspaceId": { "type": "string", "example": "ws_default" }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "syncType": { "type": "string", "enum": ["local", "git"] }
+        }
+      },
+      "CreateWorkspaceRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "gitRemoteUrl": { "type": "string" }
+        }
+      },
+      "SyncResult": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["up-to-date", "pulled", "pushed", "conflict"] },
+          "commit": { "type": "string" },
+          "branch": { "type": "string" }
+        }
+      },
+      "ExecuteRequestPayload": {
+        "type": "object",
+        "required": ["method", "url"],
+        "properties": {
+          "method": { "type": "string", "example": "GET" },
+          "url": { "type": "string", "example": "https://api.example.com/v1/users" },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "body": { "type": "string" }
+        }
+      },
+      "ExecuteResponseResult": {
+        "type": "object",
+        "properties": {
+          "statusCode": { "type": "integer", "example": 200 },
+          "durationMs": { "type": "integer", "example": 142 },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "body": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@wirebench/docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.0",
+    "@scalar/api-reference": "^1.68.0",
+    "astro": "^7.3.2"
+  }
+}

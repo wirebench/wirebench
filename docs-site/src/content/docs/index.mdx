@@ -1,0 +1,51 @@
+---
+title: Wirebench Documentation
+description: The modern, clean-room desktop API client for SOAP and REST services.
+template: splash
+hero:
+  tagline: The craft desktop workbench for modern APIs. Explore WSDLs, craft REST requests, and collaborate across Git-backed workspaces with zero lock-in.
+  image:
+    file: ../../assets/hero-mark.svg
+  actions:
+    - text: Quickstart (5 min)
+      link: /getting-started/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: Interactive API Reference
+      link: /reference/
+      icon: external
+      variant: secondary
+---
+
+import { Card, CardGrid, Steps } from '@astrojs/starlight/components';
+import Endpoint from '../../components/Endpoint.astro';
+import MethodBadge from '../../components/MethodBadge.astro';
+
+<div class="mt-8">
+  <Endpoint method="POST" path="https://api.wirebench.dev/v1/workspaces/sync" />
+</div>
+
+## Explore by Feature Area
+
+<CardGrid stagger>
+  <Card title="REST Client" icon="rocket">
+    First-class REST client with OpenAPI 3.0 import, path variables, query parameters, header editors, and multiple body formats.
+    [Learn more about REST →](/guides/rest-client/)
+  </Card>
+  <Card title="SOAP & WSDL Inspection" icon="document">
+    Clean-room schema parser, operations tree, XML envelope generation, WS-Security with keystores, and MTOM/SwA attachments.
+    [Explore SOAP guides →](/guides/soap-wsdl/)
+  </Card>
+  <Card title="Environments & Property Expansion" icon="setting">
+    Dynamic property substitution using the `${#Env#var}` and `${#Project#var}` scope hierarchy with encrypted secrets.
+    [Configure environments →](/guides/environments/)
+  </Card>
+  <Card title="Git-Backed Shared Workspaces" icon="laptop">
+    Collaborate with your team without a hosted server. Workspaces sync seamlessly as standard Git repositories.
+    [Read collaboration guide →](/guides/workspaces/)
+  </Card>
+</CardGrid>
+
+## Interactive Reference Powered by Scalar
+
+Looking for schema models and live interactive testing? Explore the [Interactive Engine API Reference](/reference/) powered by **Scalar**, featuring real-time request runners and multi-language code generation.

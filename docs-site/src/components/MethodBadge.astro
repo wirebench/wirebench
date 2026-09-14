@@ -1,0 +1,10 @@
+---
+interface Props {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'SOAP' | string;
+}
+
+const { method } = Astro.props;
+const normalized = method.toLowerCase();
+---
+
+<span class={`method-badge ${normalized}`}>{method.toUpperCase()}</span>
