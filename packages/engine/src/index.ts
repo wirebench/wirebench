@@ -22,7 +22,8 @@ export { LineIndex } from './xml/positions.js';
 export type { LinePosition } from './xml/positions.js';
 
 export { evaluate, evaluateJson } from './xpath/evaluate.js';
-export type { EvaluateOptions, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export type { EvaluateOptions, QueryLanguage, QueryResult, QueryNodeItem, QueryValueItem } from './xpath/evaluate.js';
+export { evaluateJsonPath } from './xpath/jsonpath.js';
 export { evaluateWithTimeout } from './xpath/evaluate-async.js';
 export type { EvaluateWithTimeoutOptions } from './xpath/evaluate-async.js';
 export { collectNamespaces, suggestPrefixes } from './xpath/namespaces.js';

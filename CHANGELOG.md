@@ -8,6 +8,35 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **REST client.** A project can now hold **APIs** beside its SOAP interfaces, each with folders and
+  requests of its own, and the whole shell works the same for both: one explorer, one set of
+  environments, one History, one search, one HTTP stack.
+  - **Import an OpenAPI document** — *Import OpenAPI…* (`Mod+Shift+I`), from a URL or a file, 3.0 and
+    3.1, YAML or JSON, with `$ref`s followed across documents. Operations become requests grouped
+    into folders by their first tag, with path and query parameters as tables (required ones on,
+    optional ones off), a request body sampled from the schema, and the document's security schemes
+    recorded as the API's auth. The import summary lists what it could not map, and the document is
+    cached beside the API byte for byte so *View document* and *Export…* give back exactly what was
+    fetched. Or skip the document entirely: **New API** takes a name and a base URL, **New Request**
+    a method and a path.
+  - **Send anything.** Every method; JSON, XML, text, form, multipart and binary bodies; `{param}`
+    path parameters; per-request headers and cookies; redirects followed and listed. The response
+    pane shows status, duration and size, a pretty and a raw body, headers, cookies, the redirect
+    chain, a timing breakdown and the TLS details — and the raw bytes of both directions.
+  - **Auth per API, folder or request, inherited down the tree.** Basic, NTLM, Bearer token, API key
+    (header or query) and OAuth2 — authorization code with PKCE through a loopback listener, or
+    client credentials — with refresh handled for you. Nothing secret is written into a project:
+    every credential is a reference to the OS keychain, and a token is redacted everywhere unless
+    *show secrets* is on.
+  - **Everything the SOAP side already had.** `${…}` property expansion in the URL, tables, headers
+    and body; environment endpoint overrides that repoint an API's base URL; unresolved references
+    and unfilled path parameters blocked before Send with a Problem; every send in History with its
+    method badge; workspace search over URLs, tables and bodies; *Copy as cURL* and **Import cURL**
+    both ways; and the response **Query** view, now over JSON as well as XML.
+- **Query a JSON response.** The response Query view offers **XPath 3.1**, **XQuery 3.1** and
+  **JSONPath** over a JSON body (the parsed document is the context item for the first two; `$` for
+  the third). A JSONPath result shows the path each match was found at. An XML response is
+  unchanged — XPath and XQuery, with the namespace table.
 - **Reorder editor tabs.** Drag a tab to a new place in the strip, or move the active tab with
   *Move Tab Left* / *Move Tab Right* (`Mod+Shift+PageUp` / `Mod+Shift+PageDown`, or
   `Mod+Shift+←` / `→` on a focused tab). The order is kept with the workspace's tabs.
@@ -22,6 +51,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Project format version 3 — this is a one-way door.** A project gains an `apis/` tree beside
+  `interfaces/`, so `formatVersion` moved to `3`. A version-1 or version-2 project opens unchanged
+  and is rewritten at version 3 the next time it is saved. After that, **a 1.1.0 build can no longer
+  open it** — it sees the newer version and refuses with "created by a newer version of Wirebench" —
+  and that applies whether or not the project actually holds an API. Keep a copy if you need to go
+  back.
 - **Unsaved changes are never written behind your back, and never lost.** Quitting, or
   switching to another workspace, no longer saves your projects. Everything unsaved — request
   edits in tabs as well as properties, auth, endpoints, settings and renames — is kept with the
@@ -42,6 +77,18 @@ All notable changes to this project are documented here. The format follows
 
 - *Recreate* run from the command palette now keeps an edit typed a moment before, instead of
   rebuilding the envelope without it.
+- *Copy as cURL* now describes what is on screen, not the last-saved request: an unsaved edit to the
+  URL, tables, headers or body is in the command it gives you.
+- A redacted value in an exported cURL command is readable again; it used to arrive
+  percent-encoded as `%3Credacted%3E` inside the URL.
+- *Remember the refresh token* now responds to the click immediately instead of waiting for a round
+  trip, so a quick tick no longer looked ignored.
+
+### Dependencies
+
+- Added `jsonpath-plus` (MIT), for the Query view's JSONPath language — with `jsep` and two of its
+  plugins (all MIT) beneath it. It runs only in the main process; the renderer bundles neither it nor
+  `fontoxpath`. Filter expressions are evaluated by `jsep`, never by the platform's `eval`.
 
 ## [1.1.0] - 2026-09-12
 

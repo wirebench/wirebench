@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NO_REST, PROJECT_SETTINGS, REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
+import {
+  NO_REST,
+  PROJECT_SETTINGS,
+  REQUEST_PROPERTIES,
+  restApiWire,
+  restRequestWire,
+} from './helpers/wire-defaults.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -76,6 +82,27 @@ function project(id = 'p1', name = 'Demo'): ProjectWire {
   } as unknown as ProjectWire;
 }
 
+/** The same project, plus one REST API holding one request with a URL, a query row and a header. */
+function projectWithRest(): ProjectWire {
+  return {
+    ...project(),
+    apis: [restApiWire({ id: 'api-9', name: 'Orders', baseUrl: 'https://api.example.test' })],
+    restRequests: [
+      restRequestWire({
+        id: 'rest-9',
+        apiId: 'api-9',
+        name: 'List orders',
+        method: 'POST',
+        url: '/orders/{orderId}',
+        pathParams: [{ name: 'orderId', value: '42', enabled: true }],
+        query: [{ name: 'status', value: 'open', enabled: true }],
+        headers: [{ name: 'X-Tenant', value: 'acme', enabled: true }],
+        body: { kind: 'raw', language: 'json', contentType: 'application/json', text: '{ "note": "rush" }' },
+      }),
+    ],
+  };
+}
+
 function engineWith(text: string | undefined): SearchChannelEngine {
   return {
     resultFor: (interfaceId: string) => {
@@ -121,6 +148,15 @@ describe('searchCorpus', () => {
     expect(corpus.map((document) => document.kind)).toEqual(['request-body', 'request-header', 'document']);
     expect(corpus[1]?.text).toBe('X-Trace: abc-123');
     expect(corpus[2]).toMatchObject({ interfaceName: 'Calculator', location: 'calc.wsdl' });
+  });
+
+  it('collects a REST request under its API name, with its URL, rows and body in one document', () => {
+    const corpus = searchCorpus(projectsWith(projectWithRest()), engineWith(undefined), ALL_SCOPES);
+
+    const [body, header] = corpus.filter((document) => document.protocol === 'rest');
+    expect(body).toMatchObject({ kind: 'request-body', requestName: 'List orders', interfaceName: 'Orders' });
+    expect(body?.text).toBe(['POST /orders/{orderId}', 'orderId=42', 'status=open', '{ "note": "rush" }'].join('\n'));
+    expect(header).toMatchObject({ kind: 'request-header', text: 'X-Tenant: acme' });
   });
 
   it('honours the scope toggles', () => {
@@ -181,6 +217,23 @@ describe('search.query', () => {
       ['p1', 'Demo'],
       ['p2', 'Billing'],
     ]);
+  });
+
+  it('finds a REST request by a fragment of its URL', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithRest()));
+
+    const result = (await invoke({ query: '/orders', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string; snippet: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({
+      kind: 'request-body',
+      protocol: 'rest',
+      requestId: 'rest-9',
+      snippet: 'POST /orders/{orderId}',
+    });
   });
 
   it('reports an invalid regex as an error envelope rather than throwing', async () => {

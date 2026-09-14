@@ -10,7 +10,13 @@ import {
   expandExplorer,
   openFirstRequest,
 } from '../helpers/project.js';
-import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  startTestRestServer,
+  startTestSoapServer,
+  type TestRestServer,
+  type TestSoapServer,
+} from '../helpers/test-server.js';
 
 /**
  * Captures the README's screenshots into `docs/images/`.
@@ -85,6 +91,11 @@ function timingRegions(page: Page): Locator[] {
   return [page.getByTestId('response-status'), page.locator('[data-testid="http-log-row"]')];
 }
 
+/** The same, for the REST response pane, whose status line carries its own duration. */
+function restTimingRegions(page: Page): Locator[] {
+  return [page.getByTestId('rest-response-status'), page.locator('[data-testid="http-log-row"]')];
+}
+
 /** Shoots the whole window into `docs/images/<name>.png` and fails if it got too heavy. */
 async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
   // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
@@ -107,6 +118,7 @@ test.describe('README screenshots', () => {
 
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
+  let restServer: TestRestServer | undefined;
 
   test.afterEach(async () => {
     if (launched) {
@@ -116,6 +128,10 @@ test.describe('README screenshots', () => {
     if (server) {
       await server.close();
       server = undefined;
+    }
+    if (restServer) {
+      await restServer.close();
+      restServer = undefined;
     }
   });
 
@@ -152,6 +168,24 @@ test.describe('README screenshots', () => {
     await window.getByTestId('request-send').click();
     await expect(window.getByTestId('response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
     await capture(window, 'response', { mask: timingRegions(window) });
+  });
+
+  test('a REST request and its response', async () => {
+    restServer = await startTestRestServer();
+    launched = await launchApp();
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'dark');
+
+    await createWorkspace(window, 'Petstore');
+    await createProject(window, 'Petstore');
+    await createApi(window, 'Petstore', restServer.url);
+    await createRestRequest(window, 'Petstore', 'Echo a query');
+    await setMethodAndUrl(window, 'GET', '/echo?pet=Fido&limit=10');
+    await sendRest(window);
+    await expect(window.getByTestId('rest-response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
+
+    await capture(window, 'rest-response', { mask: restTimingRegions(window) });
   });
 
   test('the helpers used above still match the shared project flow', async () => {

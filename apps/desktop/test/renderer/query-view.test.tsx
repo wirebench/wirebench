@@ -257,6 +257,65 @@ describe('QueryView over a JSON response', () => {
     });
   });
 
+  it('offers JSONPath as a third language and sends it with the JSON kind', async () => {
+    const { source, evaluate } = stubSource({
+      evaluate: {
+        ok: true,
+        value: {
+          kind: 'values',
+          items: [{ text: '1', type: 'number', path: "$['items'][0]['id']" }],
+          truncated: false,
+        },
+      },
+    });
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
+    await userEvent.click(screen.getByLabelText('Query expression'));
+    await userEvent.paste('$.items[?(@.status=="open")].id');
+    await userEvent.click(screen.getByTestId('query-run'));
+
+    await waitFor(() => {
+      expect(evaluate).toHaveBeenCalledWith({
+        xml: JSON_BODY,
+        expression: '$.items[?(@.status=="open")].id',
+        language: 'jsonpath',
+        namespaces: {},
+        kind: 'json',
+      });
+    });
+    // A JSONPath result locates a value, so the path is what makes several matches readable.
+    expect(screen.getByText("$['items'][0]['id']")).toBeDefined();
+  });
+
+  it('swaps the context-item hint for the JSONPath one', async () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.getByText(/is the context item/)).toBeDefined();
+    await userEvent.click(screen.getByRole('radio', { name: 'JSONPath' }));
+    expect(screen.queryByText(/is the context item/)).toBeNull();
+    expect(screen.getByText(/reads a key/)).toBeDefined();
+  });
+
+  it('suggests JSON examples in the empty state, not envelope ones', () => {
+    const { source } = stubSource();
+    // Its own request id: the expression-history strip is module-level and keyed by it, so reusing
+    // `r1` here would show the XML expressions earlier tests ran and mask what this one asserts.
+    render(<QueryView requestId="json-examples" xml={JSON_BODY} documentKind="json" source={source} />);
+
+    expect(screen.getByText('$..id')).toBeDefined();
+    expect(screen.queryByText('//tem:AddResult/text()')).toBeNull();
+  });
+
+  it('does not offer JSONPath for an XML response, which it cannot query', () => {
+    const { source } = stubSource();
+    render(<QueryView requestId="r1" xml={XML} source={source} />);
+
+    expect(screen.queryByRole('radio', { name: 'JSONPath' })).toBeNull();
+    expect(screen.getByRole('radio', { name: 'XPath 3.1' })).toBeDefined();
+  });
+
   it('still sends no kind for an XML document, so the channel default stands', async () => {
     const { source, evaluate } = stubSource();
     render(<QueryView requestId="r1" xml={XML} source={source} />);
@@ -278,5 +337,6 @@ describe('placeholderFor', () => {
     expect(placeholderFor('xquery', 'xml')).toContain('for $x in');
     expect(placeholderFor('xpath', 'json')).toBe('?items?*[?status = "open"]?id');
     expect(placeholderFor('xquery', 'json')).toContain('for $i in ?items?*');
+    expect(placeholderFor('jsonpath', 'json')).toBe('$.items[?(@.status=="open")].id');
   });
 });

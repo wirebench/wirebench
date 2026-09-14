@@ -79,3 +79,31 @@ Consequences section calls out, so it is a format bump like any other. A version
 version-3-or-later file is refused with the existing clear error. This also means a 1.0.0 build
 cannot open a project this build has saved — it sees `formatVersion: 2` and refuses it with its
 "created by a newer version of Wirebench" error.
+
+**Update (2026-09-14, REST APIs): `formatVersion: 3`.** A project may now hold **APIs beside
+interfaces** (ADR-0007), in a parallel tree that follows the same one-concept-per-file rule:
+
+```
+my-service/
+  interfaces/<Interface>/…          # unchanged
+  apis/<Api>/
+    api.yaml                        # kind: rest, baseUrl, auth (refs only), settings, definition ref
+    definition/                     # the imported OpenAPI document, byte-exact, plus manifest.yaml
+    requests/
+      <Request>.request.yaml        # kind: rest, method, url, pathParams, query, headers, body, auth
+      <Request>.body.json           # a raw body, in a file of its own language (.json/.xml/.txt/…)
+      <Folder>/folder.yaml          # a folder's own name, order and inherited auth
+      <Folder>/<Request>.request.yaml
+```
+
+A raw body is a **file beside its request**, not a string inside the YAML, for the same reason the
+SOAP envelope is: it is JSON (or XML, or text), it is edited as that, and it should diff as that.
+Folders nest, capped at the depth the REST spec sets, and a folder deeper than the cap is reported
+as a problem rather than written. Every name on disk goes through ADR-0005's path-safety rules, and
+`api.yaml`/`*.request.yaml` both carry `kind:` explicitly (`grpc` is reserved and refused by name).
+
+`FORMAT_VERSION` moved to `3`. A version-1 or version-2 project opens unchanged — the
+migration is "no APIs, no folders, no REST requests" — and is rewritten at version 3 on the next
+save. As before, this is **one-way**: a 1.1.0 build cannot open a project this build has saved,
+because it sees `formatVersion: 3` and refuses it with its "created by a newer version of
+Wirebench" error, whether or not the project actually holds an API.

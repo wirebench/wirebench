@@ -145,6 +145,26 @@ Sending a request never opens a browser. An authorization-code configuration who
 expired and cannot be refreshed fails the send with `oauth2-sign-in-required`, and the user presses
 *Get new token*.
 
+## A response body never gets to run
+
+The Query view evaluates an expression the user wrote against bytes a server returned, which makes
+the evaluator a place worth being explicit about.
+
+XPath 3.1 and XQuery 3.1 run under `fontoxpath`, which has no facility for calling out to the host at
+all. JSONPath runs under `jsonpath-plus`, which does: its `?(...)` filters and `(...)` script
+expressions can be evaluated either with the platform's real `eval`/`Function`, or with a `jsep`
+expression parser that cannot reach the host. Wirebench passes `eval: 'safe'`, which selects the
+parser (`packages/engine/src/xpath/jsonpath.ts`). Filters keep working — that mode is not a
+restriction on what a user can express — but the classic escape through
+`constructor.constructor('…')()` is refused rather than executed, whether it is reached through
+`this` or through a value in the document. Two tests in
+`packages/engine/test/unit/xpath/jsonpath.test.ts` try both routes.
+
+Both evaluators also run on a **worker thread** with a five-second budget
+(`xpath/evaluate-async.ts`), so an expression that never terminates costs a terminated worker rather
+than a frozen window, and neither library is in the renderer bundle: evaluation is an IPC call, and
+the renderer has no evaluator of its own.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

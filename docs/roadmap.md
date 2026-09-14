@@ -27,7 +27,9 @@ v1 spec puts the item in; the spec's "1.1" list is not the 1.1.0 release, which 
 | 3   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
 | 4   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
 | 5   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
-| 6   | REST client, minimum viable                                          | Dev  | L                    | later phase    | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. OpenAPI import follows.                                            |
+| —   | REST client, minimum viable                                          | Dev  | L                    | **shipped on `main`** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import; the follow-ups below are what it left out. |
+| 6   | REST follow-ups                                                      | Dev  | S–M each             | new            | Each is a gap a user hits within a day of real use; none needed a format change, which is why they were cut from the first pass.            |
+| 6b  | gRPC client                                                          | Dev  | L                    | reserved       | The third container, on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive. `kind: grpc` is already reserved and refused by name. |
 | 7   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
 | 8   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
 | 9   | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
@@ -135,18 +137,39 @@ enabled checkbox, and the `disabled` list format bump
   drive the engine.
 - **Plugin API.** An idea only.
 
-### REST client
+### REST client — shipped on `main`
 
-Designed: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (draft, awaiting the §15 decisions).
-APIs with folders and requests beside SOAP interfaces in the same project and environments; OpenAPI 3
-import cached like a WSDL; query, path, form, multipart, binary and raw body editors; Basic, NTLM,
-Bearer, API-key and OAuth2 auth shared with SOAP; cURL both ways; history, search and diff. The engine
-gains `rest/`, the renderer a REST request editor, `formatVersion` goes to 3, and the reserved
-`kind: rest` discriminator activates with `grpc` reserved next (the spec's §8 says what is fixed now so a
-gRPC client is an extension rather than a migration). The test steps and assertions extend to REST with
-JSONPath and JSON Schema in the functional-testing phase. Left for follow-ups by the spec: a persistent
-cookie jar, HTML response preview, OpenAPI 2.0, a preserving _Update Definition_ for OpenAPI, and
-response validation against the OpenAPI schema.
+Built to `docs/specs/2026-09-13-wirebench-rest-client-design.md` (implemented) by
+`docs/plans/2026-09-13-wirebench-rest-client-plan.md`. APIs with folders and requests beside SOAP
+interfaces in the same project, environments, history and search; OpenAPI 3.0/3.1 import cached like a
+WSDL; query, path, form, multipart, binary and raw body editors; Basic, NTLM, Bearer, API-key and
+OAuth2 (authorization code with PKCE, and client credentials); cURL both ways; the Query view over JSON
+in XPath 3.1, XQuery 3.1 and JSONPath. The engine gained `rest/` and `rest/openapi/`, the renderer a
+REST editor and an API tab, `formatVersion` went to 3, and the `kind` discriminator activated with
+`grpc` reserved and refused by name — see [ADR-0007](adr/0007-apis-beside-interfaces.md) for why an API
+is a sibling container rather than a generalised interface. Evidence per criterion is in
+[`success-criteria.md`](success-criteria.md), rows SC-R1–SC-R8.
+
+**Follow-ups, roughly in the order a real user hits them.** None needs a format change:
+
+- **Resend and diff a REST send from History.** The entry is recorded with everything needed to show
+  it, but `history.resend` still rebuilds a SOAP envelope, so a REST entry can be inspected and not
+  replayed. The one §14 criterion only partly met (SC-R6).
+- **The three token-style auth kinds for SOAP owners.** `bearer`, `api-key` and `oauth2` are offered to
+  REST owners only; see [Authentication](#authentication) for what widening it costs and why it was not
+  "tests only" as the spec first assumed.
+- **A persistent cookie jar.** Today cookies are per-request session cookies with no jar; a
+  workspace-wide jar with a manager was deliberately deferred (spec §15.4).
+- **HTML response preview.** Needs a sandboxed frame and a CSP decision that deserves its own security
+  review (spec §15.5). Pretty and Raw show the markup meanwhile.
+- **OpenAPI 2.0 (Swagger) import.** Refused today with a clear message; a converter step is the fix
+  (spec §15.6).
+- **_Update Definition_ for an API**, preserving edited values the way the WSDL one does (spec §15.7).
+- **Response validation against the OpenAPI response schema** — the functional-testing phase, with the
+  `ajv` ask (spec §15.8).
+
+The test steps and assertions extend to REST in the functional-testing phase; JSONPath is already in
+the engine (`xpath/jsonpath.ts`), so assertions can reuse it rather than adding a dependency.
 
 ### Mock services
 

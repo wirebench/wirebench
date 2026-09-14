@@ -15,8 +15,9 @@ needs fixed now (§8).
 at `formatVersion: 3`; `EndpointAuth` grows into one `AuthConfig` union; main dispatches send, preflight, cURL and
 history on the request's `kind`; the renderer adds a per-kind editor behind the existing tab opener and three explorer
 node kinds. Everything flows engine → main → IPC → stores, as before.
-**Stack:** unchanged (v1 §3) plus `jsonpath-plus` (MIT, §9) — the one new runtime dependency, added in T24 and only
-if still approved then.
+**Stack:** unchanged (v1 §3) plus `jsonpath-plus` (MIT, §9) — the one new runtime dependency. Approved during W6 and
+added there rather than in T24, at `packages/engine/src/xpath/jsonpath.ts`; it brings `jsep` and two of its plugins
+(all MIT) with it. See the T24 deviation notes.
 
 ## Global constraints (every task inherits)
 
@@ -166,9 +167,29 @@ task's commit message.
   the context item: `?items?*[?status = "open"]?id` — the design's own example — works with no new dependency, and the
   worker, the timeout and the result shape are shared, so a JSON query gets the same runaway-expression protection.
   `QueryView` takes a `documentKind` and drops only the namespace table for JSON (there are no names to qualify),
-  replacing it with a line saying where an expression starts. **JSONPath is not added**: the plan gates it on approval
-  of the `jsonpath-plus` dependency, which has not been given, and XPath 3.1 covers the spec's §3.10 example without
-  it. Adding the mode later is additive — a third entry in the language radio and a `rest/jsonpath.ts` wrapper.
+  replacing it with a line saying where an expression starts.
+
+- **T24, JSONPath — approved in W6 and added.** T24 originally shipped without it (the dependency was gated on an
+  approval that had not been given, and XPath 3.1 covers the spec's §3.10 example), and the approval came during W6,
+  so it landed then. Three deviations from what T24's file list anticipated, all deliberate:
+  - The wrapper is `packages/engine/src/xpath/jsonpath.ts`, **not** `rest/jsonpath.ts`. JSONPath is a query language
+    for JSON rather than anything REST-specific, and `rest/` is the directory carrying the browser-safe subpath
+    export (`@wirebench/engine/rest`) the renderer imports — putting a Node-only dependency there would put it one
+    careless re-export away from the renderer bundle, which is the exact thing `fontoxpath` is kept out of.
+  - Filters run under `eval: 'safe'`. `eval: false` was tried first and is wrong: it does not harden the filter, it
+    removes it — `?(...)` is refused outright, which takes most of JSONPath's usefulness with it. `'safe'` selects
+    `jsonpath-plus`'s `jsep` expression parser, so filters and `(...)` script expressions both work while nothing
+    reachable from a response body can execute. Pinned by two tests that try the classic
+    `constructor.constructor('…')()` escape both through `this` and through the document.
+  - `QueryValueItem` gained an optional `path`, and the wire schema with it. JSONPath *locates* a value and can say
+    where; XPath often *computes* one (`count(//*)` has no path), so the field is optional rather than a second
+    result kind. It is what makes a multi-match JSONPath result readable, and the Query view already rendered
+    `item.path` when present.
+
+  Two divergences from RFC 9535 are pinned as tests rather than worked around: `jsonpath-plus` implements negative
+  bounds on a *slice* (`[-1:]`) but not a bare negative *index* (`[-1]`, which selects nothing), and an expression
+  that is not JSONPath at all (an XPath pasted into the box) reads as "no match" rather than as an error — the
+  language radio, not a message, is what tells the user they are in the wrong box.
 
 - **T25** — the budgets found three separate exponential blow-ups in the OpenAPI import, all from treating a
   `$ref`-resolved description as a tree when it is a **graph**: `resolveRefs` re-expanded each target once per
@@ -655,7 +676,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
 - [x] **24. Query view over JSON**
   - `xpath/evaluate.ts` accepts a JSON document (`parse-json()` of the response text as the context item; the
     existing worker path); `rest-response-query` tab reusing `query-view.tsx` with the language switch _XPath 3.1_ /
-    _XQuery 3.1_ / _JSONPath_ (the last only when `jsonpath-plus` is approved: `rest/jsonpath.ts` wrapping it with a
+    _XQuery 3.1_ / _JSONPath_ (the last approved in W6: `xpath/jsonpath.ts` — not `rest/` — wrapping it with a
     result shape identical to the XPath one; `THIRD-PARTY-LICENSES.md` regenerated); results as a JSON tree with
     _Copy path_.
   - Acceptance: engine tests for XPath over JSON (map/array lookups, `?` operators, a filter); JSONPath cases from
@@ -675,7 +696,7 @@ end-to-end in main tests, with history and redaction proven; no renderer file to
   - Verify: `pnpm test:perf`; `pnpm bench`; `pnpm build && pnpm test:e2e -- --grep perf`
   - Files: packages/engine/test/bench/{budgets,scenarios}.ts, packages/engine/test/bench/rest.bench.ts, packages/engine/test/perf/budgets.test.ts, e2e/specs/perf.spec.ts, fixtures/openapi/crafted/large.json, scripts/fixtures-refresh.ts
 
-- [ ] **26. Docs, ADRs, changelog, screenshots**
+- [x] **26. Docs, ADRs, changelog, screenshots**
   - README (REST in the intro and quick start step 6 "or import an OpenAPI document", shortcuts table `Mod+Shift+I`,
     the Documentation list pointing at this plan, roadmap section updated), `docs/architecture/overview.md` (the
     `rest/` module in the engine box and "Where things live", the send-by-kind paragraph, the loopback listener),

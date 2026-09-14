@@ -2458,13 +2458,18 @@ export const xpathEvaluateRequestSchema = z.object({
   /** The document text. Named `xml` since that is what it was; a JSON body travels here too. */
   xml: z.string(),
   expression: z.string(),
-  language: z.enum(['xpath', 'xquery']),
+  /**
+   * The query language. `jsonpath` is JSON-only — main answers an XML document queried with it as an
+   * error result rather than guessing — and the Query view only offers it for a JSON response.
+   */
+  language: z.enum(['xpath', 'xquery', 'jsonpath']),
   namespaces: z.record(z.string(), z.string()).optional(),
   /**
    * Which document `xml` is. Defaults to `xml`.
    *
    * XPath 3.1's maps, arrays and `?` lookup query JSON directly, so a JSON body is the same two
-   * languages against a different context item — not a third language, and not a new dependency.
+   * languages against a different context item. `jsonpath` is the third, for the syntax REST users
+   * already have in their notes.
    */
   kind: z.enum(['xml', 'json']).optional(),
 });
@@ -2477,8 +2482,9 @@ const xpathQueryNodeItemSchema = z.object({
   path: z.string(),
 });
 
-/** One atomic-value result item; mirrors the engine's `QueryValueItem`. */
-const xpathQueryValueItemSchema = z.object({ text: z.string(), type: z.string() });
+/** One atomic-value result item; mirrors the engine's `QueryValueItem`. `path` is filled in only by
+ * JSONPath, which locates a value rather than computing one. */
+const xpathQueryValueItemSchema = z.object({ text: z.string(), type: z.string(), path: z.string().optional() });
 
 /** Response for `xpath.evaluate`; mirrors the engine's `QueryResult`. */
 export const xpathEvaluateResponseSchema = z.discriminatedUnion('kind', [

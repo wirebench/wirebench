@@ -1,10 +1,12 @@
 # Wirebench
 
-Wirebench is an open-source desktop SOAP/WSDL workbench with a modern IDE shell, built on Electron, TypeScript and
-React. Import a WSDL, get a request generated from the contract, send it, and read the response — with WS-Security,
-WS-Addressing, MTOM/SwA attachments, schema and WS-I validation, environments, property expansion and searchable
-history along the way. REST support is planned for a later phase; the engine and project format are already
-protocol-neutral.
+Wirebench is an open-source desktop **SOAP and REST** workbench with a modern IDE shell, built on Electron,
+TypeScript and React. Import a WSDL, get a request generated from the contract, send it, and read the response — with
+WS-Security, WS-Addressing, MTOM/SwA attachments, schema and WS-I validation, environments, property expansion and
+searchable history along the way. Or import an OpenAPI document (or start from a URL and a method) and get the same
+shell for REST: folders of requests, every body kind, Basic/NTLM/Bearer/API-key/OAuth2 auth, cookies, redirects and a
+response pane with pretty, raw, headers, timing and TLS. Both protocols share one project, one set of environments,
+one history and one HTTP stack; gRPC is the next one to slot in.
 
 Projects are folders of small YAML and XML files, made to live in git. Credentials never go in them.
 
@@ -53,8 +55,16 @@ envelope was generated from the schema — the right elements, in the right orde
 then press **Send**. The response arrives beside the request with its status, duration, size, headers and raw bytes;
 the HTTP Log at the bottom shows the timing breakdown, and the run is in History for re-sending or diffing later.
 
+**6. Or do the same for a REST API.** Choose **Import OpenAPI…** (`Mod+Shift+I`) and paste a URL or pick a file —
+the explorer fills with folders and requests, each with its parameters and a body sampled from the schema. There is no
+document needed either: **New API** takes a name and a base URL, and **New Request** takes a method and a path. Send
+is the same button, and the send lands in the same History, badged with its method.
+
+![A REST request and its response](docs/images/rest-response.png)
+
 That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
-evaluates XPath 3.1 and XQuery 3.1 over the response; the request editor's inspector strip carries _Details_,
+evaluates XPath 3.1 and XQuery 3.1 over the response, plus JSONPath when the body is JSON; the request editor's
+inspector strip carries _Details_,
 _Properties_, _Headers_, _Attachments_, _Auth_, _WS-A_ and _SSL_, one inspector each; `Mod+K` opens the command
 palette; and **Environments**, reached from the
 activity bar, is workspace-wide — one set of environments and endpoint overrides shared by every project, switched
@@ -76,6 +86,7 @@ Every action in Wirebench is a command with an id, and every shortcut is that co
 | Show History            | `Mod+Shift+Y` |
 | Show Settings           | `Mod+,`       |
 | Import WSDL…            | `Mod+I`       |
+| Import OpenAPI…         | `Mod+Shift+I` |
 | New Project             | `Mod+Shift+N` |
 | Save All                | `Mod+S`       |
 | Next Environment        | `Mod+Alt+E`   |
@@ -155,8 +166,8 @@ repository. It is what the opt-in update feed is derived from.
 
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
-- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0006
-- [Success criteria and their evidence](docs/success-criteria.md) — every v1 criterion, and what proves it
+- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0007
+- [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it
 - [Release checklist](docs/release.md)
 - [Roadmap](docs/roadmap.md) — what 1.1 leaves out, in the order it is worth building, and what each item unlocks
 - [WS-I assertions implemented](docs/ws-i-assertions.md)
@@ -171,19 +182,22 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Roadmap
 
-1.1 does explore-and-send across workspaces. What comes next, in the order it is worth building; the
-[full roadmap](docs/roadmap.md) has the reasoning, sizes, and the detail per theme.
+Explore-and-send works across workspaces, for SOAP and for REST. What comes next, in the order it is worth building;
+the [full roadmap](docs/roadmap.md) has the reasoning, sizes, and the detail per theme.
 
 1. **Signed and notarised releases** — managed Macs and Windows fleets block unsigned apps.
 2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference.
 3. **CLI runner** — `wirebench run` with assertions and JUnit output, for CI.
 4. **Kerberos/SPNEGO** — Windows-integrated authentication.
-5. **REST client** — collections beside SOAP interfaces, OpenAPI import, OAuth2.
-6. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
-7. **MCP server** — the engine driven by coding agents.
-8. **Teams and sign-in** — git-linked project folders shipped in 1.1; next a sync design, then a self-hosted
+5. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response preview,
+   OpenAPI 2.0 (Swagger) import, _Update Definition_ for an API, response validation against the document, and the
+   three token-style auth kinds offered to SOAP owners too.
+6. **gRPC client** — a third container beside APIs and interfaces, on the shape ADR-0007 was written to survive.
+7. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
+8. **MCP server** — the engine driven by coding agents.
+9. **Teams and sign-in** — git-linked project folders shipped in 1.1; next a sync design, then a self-hosted
    server with SSO. The app stays fully usable without an account.
-9. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
+10. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
 
 Deferred: load testing, WSDL coverage and refactoring, code generation, a TCP monitor.
 

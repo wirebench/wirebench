@@ -88,8 +88,7 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await openResponseTab(page, 'Raw');
     await expect(page.getByTestId('rest-response-raw-exchange')).toContainText('GET /echo?x=1');
 
-    // The Query tab runs XPath 3.1 over the JSON body itself — maps, arrays and `?` lookup, no
-    // second query language and no extra dependency (§3.10).
+    // The Query tab runs XPath 3.1 over the JSON body itself — maps, arrays and `?` lookup (§3.10).
     await openResponseTab(page, 'Query');
     const query = page.getByTestId('rest-response-query');
     await expect(query).toBeVisible();
@@ -97,6 +96,13 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await query.getByLabel('Query expression').fill('?query?x');
     await query.getByTestId('query-run').click();
     await expect(query.getByTestId('query-results')).toContainText('1', { timeout: 20_000 });
+
+    // …and JSONPath beside it, which is the syntax a REST user already has in their notes. Both
+    // languages reach the same `xpath.evaluate` channel; only the expression differs.
+    await query.getByRole('radio', { name: 'JSONPath' }).click();
+    await query.getByLabel('Query expression').fill('$.query.x');
+    await query.getByTestId('query-run').click();
+    await expect(query.getByTestId('query-results')).toContainText("$['query']['x']", { timeout: 20_000 });
   });
 
   test('shows the cookies a response set and the redirects it followed', async () => {

@@ -1,7 +1,9 @@
 # Spec: REST client
 
-- Status: draft 2026-09-13, for review; the §15 defaults apply until changed here. Implemented by
-  `docs/plans/2026-09-13-wirebench-rest-client-plan.md`, which assumes those defaults.
+- Status: **implemented** (2026-09-14, on `main`). Every §15 default was approved as written, and §15.3
+  (JSONPath) and §15.11 (the SOAP half of shared auth) carry amendments recording what changed during
+  the build. Built by `docs/plans/2026-09-13-wirebench-rest-client-plan.md`; evidence per criterion is
+  in `docs/success-criteria.md`, rows SC-R1–SC-R8.
 - Date: 2026-09-13
 - Builds on: the v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`: §4 protocol-neutral
   core, §7 the reserved `kind: rest` discriminator, §10 style, §12 boundaries, §14 the REST item), the workspaces
@@ -308,9 +310,15 @@ workspace / project / API.
 
 For a JSON response the Query tab evaluates **XPath 3.1 / XQuery 3.1 over the JSON** through the engine's existing
 evaluator — `parse-json()`, maps and arrays are part of XPath 3.1, so `?items?*[?status = "open"]?id` works with no
-new dependency. For an XML response it is the existing view. A **JSONPath** mode is put to the owner in §9/§15: it is
-what most REST users reach for first, it is one small dependency, and the functional-testing phase will want it for
-assertions.
+new dependency — and **JSONPath** beside them, as a third entry in the same language radio. For an XML response it is
+the existing view, with the JSONPath entry absent because it has nothing to query.
+
+_Resolved during implementation (§15.3 approved):_ `jsonpath-plus` is in. JSONPath is what most REST users reach for
+first — `$.items[?(@.status=="open")].id` is what a person pastes in from a README — and asking them to translate it
+into XPath's `?` lookup syntax before they can check one field is friction with no payoff. All three languages answer
+in one result shape, so the view renders them through one code path, and a JSONPath result additionally carries the
+normalised path each match was found at. Filters run under the library's `eval: 'safe'` mode (a `jsep` expression
+parser, no `eval`/`Function`/`vm`), so a response body can never reach the host through a filter expression.
 
 ---
 
@@ -798,6 +806,11 @@ untouched).
 1. Name of the container: **_API_**, or _Collection_ despite the existing use of the word for projects?
 2. Format: **`formatVersion: 3` with a no-op migration**, accepted as part of approving this spec.
 3. JSONPath: **add `jsonpath-plus` now** beside XPath-over-JSON, or XPath only until the testing phase?
+   — _Approved and implemented (T24, revisited in W6)._ `jsonpath-plus@10` (MIT), with three MIT transitive
+   dependencies (`jsep` and two of its plugins). It lives at `packages/engine/src/xpath/jsonpath.ts`, beside the
+   other evaluators rather than under `rest/`: JSONPath is a query language for JSON, not anything REST-specific,
+   and `rest/` carries the browser-safe subpath the renderer imports — a Node-only dependency must stay out of
+   reach from there, exactly as `fontoxpath` does.
 4. Cookie jar: **per-request session cookies only, no jar**; a workspace-wide session jar with a manager is a
    follow-up.
 5. HTML preview of a response: **not in v1** — it needs a sandboxed frame and a CSP decision that deserves its own

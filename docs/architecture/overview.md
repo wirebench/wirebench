@@ -2,7 +2,7 @@
 
 Wirebench is an Electron app in three parts: a sandboxed React renderer that draws the IDE
 shell, a main process that owns every side effect, and `@wirebench/engine` — a plain Node
-library that knows SOAP, WSDL, XSD and HTTP, and knows nothing about Electron.
+library that knows SOAP, WSDL, XSD, REST, OpenAPI and HTTP, and knows nothing about Electron.
 
 The rule that shapes everything else: **the renderer has no network, no filesystem and no
 secrets.** It asks; main decides and acts.
@@ -11,7 +11,7 @@ secrets.** It asks; main decides and acts.
 flowchart TB
   subgraph R["Renderer — sandboxed, contextIsolation, no Node"]
     UI["React 19 · IDE shell<br/>tabs · trees · command palette"]
-    Monaco["Monaco editors<br/>XML · Form · Outline · Raw"]
+    Monaco["Monaco editors<br/>XML · JSON · Form · Outline · Raw"]
     Store["zustand + immer stores"]
     UI --- Store
     Monaco --- Store
@@ -23,6 +23,7 @@ flowchart TB
 
   subgraph M["Main — the only process with authority"]
     IPC["IPC handlers<br/>one zod request/response pair per channel"]
+    OAuth["OAuth2<br/>loopback listener · token cache"]
     WS["WorkspaceService<br/>+ ProjectRouter"]
     Proj["ProjectHost (× N)<br/>load · watch · mutate · save"]
     Sec["Secrets<br/>safeStorage · secretRef · redaction"]
@@ -32,6 +33,9 @@ flowchart TB
     IPC --> WS
     WS --> Proj
     IPC --> Sec
+    IPC --> OAuth
+    OAuth --> Sec
+    OAuth --> Eng
     IPC --> Paths
     WS --> Hist
     IPC --> Eng
@@ -43,11 +47,13 @@ flowchart TB
     S["soap/<br/>envelope · sample request · MTOM/SwA · fault"]
     H["http/<br/>undici · auth · TLS · proxy · timings"]
     Sx["wss/ · wsa/<br/>signature · encryption · tokens · addressing"]
-    V["validate/ · xpath/ · xml/<br/>schema · WS-I · XPath/XQuery 3.1"]
+    V["validate/ · xpath/ · xml/<br/>schema · WS-I · XPath/XQuery 3.1 · JSONPath"]
     Pr["project/<br/>folder format · environments · properties"]
+    Re["rest/<br/>url · body · send · auth · oauth2 · cookies"]
+    Oa["rest/openapi/<br/>parse · refs · map · sample · cache"]
   end
 
-  Net(["Remote SOAP service"])
+  Net(["Remote SOAP or REST service"])
   Disk[("Workspace folder<br/>workspace.yaml · environments/ · projects/<slug>/")]
   Key[("OS keychain<br/>userData/secrets.json")]
 
@@ -110,6 +116,19 @@ environments/`) lists Globals, the workspace and every environment; opening one 
 variables and endpoint overrides, each variable with an *enabled* checkbox — see "The `disabled`
 list" below.
 
+**The `rest/` module.** `packages/engine/src/rest/` is the REST half of the engine, and it is a
+sibling of `soap/` rather than a layer over it: `url.ts` (compose and split a URL, `{param}`
+placeholders), `body.ts` (the five body kinds → wire bytes), `send.ts` (the send itself, through the
+same `http/` dispatcher SOAP uses, so keystores, TLS trust, the proxy, timeouts and raw-byte capture
+are shared code and not a second implementation), `auth.ts` and `oauth2.ts`, `cookies.ts`,
+`response.ts`, `expand.ts` and `curl.ts`. Under it, `rest/openapi/` is the import: `parse.ts`,
+`refs.ts` (following `$ref` across documents, memoised per target — a resolved description is a
+*graph*, and walking it as a tree is exponential), `map.ts` (the pure document → API mapping),
+`sample.ts` (a body sampled from a schema, under a node budget) and `cache.ts` (the fetched document,
+byte-exact and SHA-256 verified). `rest/browser.ts` is the one browser-safe subpath
+(`@wirebench/engine/rest`): the URL helpers the renderer needs so the URL field and the query table
+cannot disagree with what is actually sent. Nothing else in `rest/` is importable from the renderer.
+
 **Engine.** `packages/engine`, `@wirebench/engine`. Zero Electron, DOM or React imports —
 enforced by lint, not convention. Every I/O entry point takes an `AbortSignal`, every export
 carries JSDoc, every error is a `WirebenchError` subclass with a stable `code`, and every model
@@ -117,6 +136,16 @@ object is `readonly`. It is a library, not a service: the same code is meant to 
 planned `wirebench run` CLI unchanged.
 
 ## How a send actually happens
+
+**Send dispatches on kind, once per layer.** A project holds SOAP requests and REST requests
+(ADR-0007), and `request.send` takes an id, not a protocol. Main resolves what that id names and
+calls `sendSoap` or `sendRest`; the engine's two send functions sit side by side over one `http/`
+dispatcher. The same single branch appears in `request.curl`, in the History entry's `kind`, and in
+the explorer row — and nowhere else. Everything between the branch and the wire (endpoint resolution,
+property expansion, `secretRef` → credential, keystores, TLS, proxy, cancellation, raw capture,
+redacted history) is one code path for both protocols. The walk-through below is the SOAP one; a REST
+send differs only in steps 4 and 5, where the engine composes a URL and a body instead of an envelope
+and parses the response by content type instead of as a SOAP message.
 
 1. The user presses Send. The renderer dispatches a command and calls
    `window.wirebench.request.send(…)` with the request's project id and the request id — not an
@@ -136,6 +165,36 @@ planned `wirebench run` CLI unchanged.
    newest-first across every open project for the History view), and answers the channel.
 6. The renderer renders what it was given. Cancel is the same path in reverse: one IPC call
    aborts the signal the engine is already holding.
+
+## The OAuth2 loopback listener
+
+The authorization-code grant needs a redirect URI the authorization server can reach, and the only
+one that does not involve running a server somewhere is `http://127.0.0.1:<port>/callback`. So main
+(`apps/desktop/src/main/oauth2.ts`) opens the authorization URL in the user's **own browser** — via
+`shell.openExternal`, never in a `BrowserWindow`, so the user is typing their password into their own
+browser with its own password manager and its own address bar, not into a window Wirebench drew — and
+listens on loopback for the redirect.
+
+What bounds that listener:
+
+- It binds **`127.0.0.1` only**, never `0.0.0.0`, so nothing off the machine can reach it.
+- It exists **only while an authorization is pending**: started when the flow starts, closed as soon
+  as the code arrives, the user cancels, or the flow times out. There is no listener at rest.
+- It accepts **exactly one callback**, identified by the `state` parameter it generated before the
+  browser was opened. A request whose `state` does not match is answered with a page saying so and
+  is neither accepted nor allowed to end the flow, which stays pending for the real one; a request
+  arriving after the flow is over gets a `410`. (The path is not what identifies the callback —
+  `state` is — so any path on the listener reaches the same one-shot handler.)
+- **PKCE (S256) is on by default** for a newly configured authorization-code grant, so an
+  intercepted code is useless without the verifier, which never leaves main. It is a per-config
+  switch rather than a hard rule, because a provider that rejects an unexpected `code_challenge`
+  would otherwise be unusable; `plain` is not offered at all.
+- The port is ephemeral by default; a fixed port is configurable because some authorization servers
+  only allow a pre-registered redirect URI, and the API tab says which URI to register.
+- The **access and refresh tokens never reach the renderer** as values. They live in main's memory
+  for the session; a refresh token is written to the OS keychain only if the user ticks *remember*,
+  and then as a `secretRef` like every other credential (ADR-0004). A token is redacted out of
+  History, out of the Raw view and out of an exported cURL command unless *show secrets* is on.
 
 ## The `disabled` list
 
@@ -161,17 +220,22 @@ existing "created by a newer version of Wirebench" error.
 |---|---|
 | WSDL/XSD parsing, resolution, schema sets | `packages/engine/src/wsdl`, `packages/engine/src/xsd` |
 | Envelope generation, faults, MTOM/SwA, cURL | `packages/engine/src/soap` |
+| REST URL, bodies, send, auth, OAuth2, cookies, cURL | `packages/engine/src/rest` |
+| OpenAPI parse, `$ref` resolution, mapping, sampling, cache | `packages/engine/src/rest/openapi` |
 | HTTP, auth (Basic/NTLMv2), TLS, proxy, timings | `packages/engine/src/http` |
 | WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |
-| Schema + WS-I validation, XPath/XQuery | `packages/engine/src/validate`, `.../xpath` |
+| Schema + WS-I validation, XPath/XQuery/JSONPath | `packages/engine/src/validate`, `.../xpath` |
 | Project folder format, environments, properties | `packages/engine/src/project` |
 | Workspace format, environments, properties (`${#Workspace#…}`) | `packages/engine/src/workspace` |
 | IPC channel schemas (one file, both directions) | `apps/desktop/src/shared/ipc.ts` |
 | IPC handlers | `apps/desktop/src/main/ipc/` |
 | WorkspaceService, ProjectHost, ProjectRouter, HistoryService | `apps/desktop/src/main/{workspace-service,project-host,project-router,history-service}.ts` |
 | Secrets, path safety, redaction | `apps/desktop/src/main/{secrets,path-*,redact}.ts` |
+| OAuth2 flows and the loopback listener | `apps/desktop/src/main/oauth2.ts` |
+| REST send path, OpenAPI import, REST project mutations | `apps/desktop/src/main/{rest-send,openapi-import,project-rest-mutations}.ts` |
 | IDE shell, editors, feature panels | `apps/desktop/src/renderer/` |
 | Environments view (sidebar list + editor page) | `apps/desktop/src/renderer/features/environments/` |
+| REST editor, API tab, import dialog | `apps/desktop/src/renderer/features/{rest-editor,rest-api}/`, `.../features/explorer/import-openapi-dialog.tsx` |
 | Right rail, Code slide-over, resizable/collapsible panel handles | `apps/desktop/src/renderer/shell/{right-rail,code-panel,panel-handle}.tsx` |
 | Request details inspector, project tab | `apps/desktop/src/renderer/features/request-editor/inspectors/details-inspector.tsx`, `apps/desktop/src/renderer/features/project/project-tab.tsx` |
 | Global properties file (`disabled` list, `version: 2`) | `apps/desktop/src/main/global-properties.ts` |
@@ -184,5 +248,6 @@ existing "created by a newer version of Wirebench" error.
 - [ADR-0004](../adr/0004-secrets-outside-project-files.md) — secrets
 - [ADR-0005](../adr/0005-renderer-path-safety.md) — path safety
 - [ADR-0006](../adr/0006-workspaces-in-app-data.md) — workspaces live in app data
+- [ADR-0007](../adr/0007-apis-beside-interfaces.md) — a REST API is a sibling to a SOAP interface
 - [Security model](../security.md)
 - [Success criteria and their evidence](../success-criteria.md)

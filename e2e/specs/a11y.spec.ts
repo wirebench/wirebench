@@ -5,7 +5,14 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
-import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import {
+  createApi,
+  createRestRequest,
+  openApiTab,
+  openImportOpenApi,
+  sendRest,
+  setMethodAndUrl,
+} from '../helpers/rest.js';
 import {
   startTestRestServer,
   startTestSoapServer,
@@ -233,6 +240,28 @@ test.describe('accessibility and theming', () => {
 
       await setTheme(window, theme);
       await expectNoSeriousViolations(window, `REST editor (${theme})`);
+    });
+
+    test(`a11y: the import dialog and the API tab have no serious violations (${theme})`, async () => {
+      restServer = await startTestRestServer();
+      launched = await launchApp();
+      const { window } = launched;
+
+      await createWorkspace(window, 'REST a11y');
+      await createProject(window, 'Pets');
+      await createApi(window, 'Petstore', restServer.url);
+
+      // The API tab first: it is the surface that carries the auth form and the definition card.
+      await openApiTab(window, 'Petstore');
+      await setTheme(window, theme);
+      await expectNoSeriousViolations(window, `API tab (${theme})`);
+
+      // Then the import dialog, over the same window. Its empty state is the one every user sees
+      // first, so it is the state worth gating — a summary needs a document and a live host.
+      await openImportOpenApi(window);
+      await expectNoSeriousViolations(window, `import OpenAPI dialog (${theme})`);
+      await window.keyboard.press('Escape');
+      await expect(window.getByTestId('import-openapi-dialog')).toBeHidden();
     });
 
     test(`a11y: the interface viewer has no serious violations (${theme})`, async () => {
