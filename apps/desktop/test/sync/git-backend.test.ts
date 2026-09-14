@@ -192,14 +192,20 @@ describe('GitBackend (mocked runner)', () => {
         throw new Error(`unexpected args ${JSON.stringify(args)}`);
       });
     const backendFor = (runner: Runner): GitBackend =>
-      new GitBackend({ git: new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner }), tree, settings });
+      new GitBackend({
+        git: new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner }),
+        tree,
+        settings,
+      });
 
     await expect(
       backendFor(answers({ 'user.name': 'Alice', 'user.email': 'alice@example.com' })).identity(),
     ).resolves.toEqual({ name: 'Alice', email: 'alice@example.com' });
     await expect(backendFor(answers({ 'user.name': 'Alice' })).identity()).resolves.toBeUndefined();
     await expect(backendFor(answers({ 'user.email': 'alice@example.com' })).identity()).resolves.toBeUndefined();
-    await expect(backendFor(answers({ 'user.name': '  ', 'user.email': 'alice@example.com' })).identity()).resolves.toBeUndefined();
+    await expect(
+      backendFor(answers({ 'user.name': '  ', 'user.email': 'alice@example.com' })).identity(),
+    ).resolves.toBeUndefined();
   });
 
   it('merge() is a no-op when origin/<branch> does not resolve', async () => {
@@ -461,11 +467,22 @@ describeGit('GitBackend (real git)', () => {
     // Control: the same hook in the same repository *does* fire for a git run without the
     // override, so the commit above passed because of `core.hooksPath`, not a hook git ignored.
     await writeFile(join(treeA, 'environments.txt'), 'control\n', 'utf8');
-    const control = spawnSync(gitLocation?.path ?? 'git', ['commit', '-a', '--allow-empty', '-m', 'Blocked by the hook'], {
-      cwd: treeA,
-      env: { ...process.env, ...env, GIT_AUTHOR_NAME: 'Alice', GIT_AUTHOR_EMAIL: 'alice@example.com', GIT_COMMITTER_NAME: 'Alice', GIT_COMMITTER_EMAIL: 'alice@example.com' },
-      encoding: 'utf8',
-    });
+    const control = spawnSync(
+      gitLocation?.path ?? 'git',
+      ['commit', '-a', '--allow-empty', '-m', 'Blocked by the hook'],
+      {
+        cwd: treeA,
+        env: {
+          ...process.env,
+          ...env,
+          GIT_AUTHOR_NAME: 'Alice',
+          GIT_AUTHOR_EMAIL: 'alice@example.com',
+          GIT_COMMITTER_NAME: 'Alice',
+          GIT_COMMITTER_EMAIL: 'alice@example.com',
+        },
+        encoding: 'utf8',
+      },
+    );
     expect(control.status).not.toBe(0);
     expect(await a.log(5)).toHaveLength(1);
   });

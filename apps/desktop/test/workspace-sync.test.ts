@@ -243,10 +243,8 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
 
     const a = await openMachine(aRoot);
 
-    expect(linkedEntry(a)).toMatchObject({
-      status: 'error',
-      message: expect.stringMatching(/Shared workspaces hold their projects inside the workspace/),
-    });
+    expect(linkedEntry(a)?.status).toBe('error');
+    expect(linkedEntry(a)?.message).toMatch(/Shared workspaces hold their projects inside the workspace/);
     expect(() => a.service.hostFor(LINKED_PROJECT_ID)).toThrow();
     expect(a.service.hostFor(PROJECT_ID)).toBeDefined();
     await settle();
@@ -286,7 +284,10 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
     expect(again.service.projectSnapshot(PROJECT_ID)?.dirty).toBe(true);
     expect(again.service.takeRestored().notices).toMatchObject([{ projectId: PROJECT_ID, status: 'restored' }]);
     // Unsaved means uncommitted: nothing was written into the shared tree for it.
-    const onDisk = await readFile(join(again.tree, 'projects', 'calc', 'interfaces', 'Calc', 'operations', 'Add', 'AddOne.request.yaml'), 'utf8').catch(() => '');
+    const onDisk = await readFile(
+      join(again.tree, 'projects', 'calc', 'interfaces', 'Calc', 'operations', 'Add', 'AddOne.request.yaml'),
+      'utf8',
+    ).catch(() => '');
     expect(onDisk).not.toContain('unsaved');
   });
 

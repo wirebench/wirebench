@@ -565,7 +565,10 @@ describeGit('WorkspaceService — join', () => {
         return git.run(cwd, args, options);
       },
     } as unknown as GitCli;
-    const { service } = await newService('b', { dialogs: dialogsPicking(clone), git: () => Promise.resolve(recording) });
+    const { service } = await newService('b', {
+      dialogs: dialogsPicking(clone),
+      git: () => Promise.resolve(recording),
+    });
 
     const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
 

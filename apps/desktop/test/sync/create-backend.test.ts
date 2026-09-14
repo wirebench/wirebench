@@ -79,7 +79,12 @@ describe('createSyncBackend', () => {
   it('a git share whose .git/config sets a refused key reports git-config-refused, running nothing else', async () => {
     const seen: string[][] = [];
     const hostile = gitWithLocalConfig('core.bare\ncore.fsmonitor\n', seen);
-    const backend = await createSyncBackend({ share: gitShare, tree: '/t', git: () => Promise.resolve(hostile), settings });
+    const backend = await createSyncBackend({
+      share: gitShare,
+      tree: '/t',
+      git: () => Promise.resolve(hostile),
+      settings,
+    });
 
     expect(backend).toBeInstanceOf(FolderBackend);
     await expect(backend.probe()).resolves.toMatchObject({
