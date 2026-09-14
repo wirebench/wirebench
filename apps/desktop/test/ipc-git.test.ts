@@ -12,10 +12,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
-import { configuredGitPath, PreferencesService, rememberPickedGit } from '../src/main/preferences.js';
+import {
+  configuredGitPath,
+  gitLocatorOptions,
+  PreferencesService,
+  rememberPickedGit,
+} from '../src/main/preferences.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerGitChannels } from '../src/main/ipc/git.js';
-import type { GitLocation } from '../src/main/sync/git-cli.js';
+import { findGit } from '../src/main/sync/git-cli.js';
+import type { GitLocation, Runner } from '../src/main/sync/git-cli.js';
 import type { PreferencesWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -232,5 +238,65 @@ describe('configuredGitPath', () => {
 
   it('is undefined when nothing is configured at all', () => {
     expect(configuredGitPath(DEFAULT_PREFERENCES)).toBeUndefined();
+  });
+});
+
+describe('gitLocatorOptions', () => {
+  /**
+   * The bug Task 15's e2e run found: `WIREBENCH_E2E_GIT_PATH=/nonexistent/git` (simulating "no
+   * git installed") must make discovery see *only* that path — not fall through to PATH or the
+   * platform defaults, which a real CI runner or dev machine has a usable git on.
+   */
+  it('restricts findGit to only the override when it is set and the app is unpackaged', async () => {
+    const seen: string[] = [];
+    const run: Runner = (file) => {
+      seen.push(file);
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 127 });
+    };
+
+    const options = gitLocatorOptions({
+      env: { WIREBENCH_E2E_GIT_PATH: '/nonexistent/git', PATH: '/usr/bin:/opt/homebrew/bin' },
+      isPackaged: false,
+      preferences: DEFAULT_PREFERENCES,
+    });
+    const location = await findGit({ ...options, platform: 'darwin', run });
+
+    expect(location).toBeUndefined();
+    expect(seen).toEqual(['/nonexistent/git']);
+  });
+
+  it('ignores the override when the app is packaged, falling back to the marked preference path', () => {
+    const options = gitLocatorOptions({
+      env: { WIREBENCH_E2E_GIT_PATH: '/nonexistent/git' },
+      isPackaged: true,
+      preferences: mergePreferences({ git: { path: '/opt/git', pathPickedByMain: true } }),
+    });
+
+    expect(options).toEqual({ configuredPath: '/opt/git' });
+  });
+
+  it('falls back to the marked preference path when no override is set', () => {
+    const options = gitLocatorOptions({
+      env: {},
+      isPackaged: false,
+      preferences: mergePreferences({ git: { path: '/opt/git', pathPickedByMain: true } }),
+    });
+
+    expect(options).toEqual({ configuredPath: '/opt/git' });
+  });
+
+  it('ignores an unmarked preference path, leaving discovery to findGit', () => {
+    const options = gitLocatorOptions({
+      env: {},
+      isPackaged: false,
+      preferences: mergePreferences({ git: { path: '/hand/edited/git' } }),
+    });
+
+    expect(options).toEqual({});
+  });
+
+  it('returns no configured path when nothing is set at all', () => {
+    const options = gitLocatorOptions({ env: {}, isPackaged: false, preferences: DEFAULT_PREFERENCES });
+    expect(options).toEqual({});
   });
 });

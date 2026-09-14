@@ -12,7 +12,7 @@ import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
 import {
-  configuredGitPath,
+  gitLocatorOptions,
   PreferencesService,
   rememberPickedCaBundle,
   rememberPickedGit,
@@ -159,15 +159,12 @@ const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
 // e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
 // at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
 // other `WIREBENCH_E2E_*` override is: a packaged build must not let an environment variable
-// redirect which executable main runs. Precedence: the e2e override, then a git.path preference
-// main itself picked (`configuredGitPath` — an unmarked or cleared value never counts), then
-// plain discovery.
-const gitLocator = (): ReturnType<typeof findGit> => {
-  const e2eOverride = app.isPackaged ? undefined : process.env['WIREBENCH_E2E_GIT_PATH'];
-  const configuredPath =
-    e2eOverride !== undefined && e2eOverride.length > 0 ? e2eOverride : configuredGitPath(preferencesService.get());
-  return findGit(configuredPath !== undefined ? { configuredPath } : {});
-};
+// redirect which executable main runs. Precedence (see `gitLocatorOptions`): the e2e override,
+// restricted to that path alone (so it can simulate "no git installed" even on a machine or CI
+// runner that has a real one), then a git.path preference main itself picked (`configuredGitPath`
+// — an unmarked or cleared value never counts), then plain discovery.
+const gitLocator = (): ReturnType<typeof findGit> =>
+  findGit(gitLocatorOptions({ env: process.env, isPackaged: app.isPackaged, preferences: preferencesService.get() }));
 
 const workspaceService = new WorkspaceService({
   userDataDir: app.getPath('userData'),

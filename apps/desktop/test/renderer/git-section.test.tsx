@@ -31,6 +31,64 @@ describe('GitSection', () => {
     });
   });
 
+  it('shows Checking… while the first detect is pending, never "Not found"', async () => {
+    let resolveDetect: (value: unknown) => void = () => undefined;
+    const detect = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetect = resolve;
+      }),
+    );
+    installWirebenchApi({ git: { detect } });
+
+    renderSection();
+
+    expect(screen.getByTestId('git-version').textContent).toContain('Checking…');
+    expect(screen.getByTestId('git-version').textContent).not.toContain('Not found');
+
+    resolveDetect({ ok: true, value: { location: null } });
+    await waitFor(() => {
+      expect(screen.getByTestId('git-version').textContent).toContain('Not found');
+    });
+  });
+
+  it('shows the detected path (not the unmarked preference) and hides Clear for an unmarked git.path', async () => {
+    const detect = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { location: { path: '/usr/bin/git', version: '2.40.0' } } });
+    installWirebenchApi({ git: { detect } });
+
+    const preferences: PreferencesWire = {
+      ...DEFAULT_PREFERENCES_WIRE,
+      // No `pathPickedByMain` — e.g. a hand-edited preferences.yaml. `gitLocator` ignores this
+      // value entirely, so the UI must never present it as though it were in effect.
+      git: { path: '/hand/edited/git' },
+    };
+    renderSection(preferences);
+
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLInputElement>('git-path').value).toBe('/usr/bin/git');
+    });
+    expect(screen.queryByTestId('git-clear')).toBeNull();
+  });
+
+  it('shows the marked path and the Clear button for a path main picked', async () => {
+    const detect = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { location: { path: '/opt/git', version: '2.44.0' } } });
+    installWirebenchApi({ git: { detect } });
+
+    const preferences: PreferencesWire = {
+      ...DEFAULT_PREFERENCES_WIRE,
+      git: { path: '/opt/git', pathPickedByMain: true },
+    };
+    renderSection(preferences);
+
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLInputElement>('git-path').value).toBe('/opt/git');
+    });
+    expect(screen.getByTestId('git-clear')).toBeTruthy();
+  });
+
   it('shows the not-found text when detect returns null', async () => {
     const detect = vi.fn().mockResolvedValue({ ok: true, value: { location: null } });
     installWirebenchApi({ git: { detect } });

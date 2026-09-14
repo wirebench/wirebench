@@ -20,6 +20,7 @@ import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences } from '@wirebe
 import type { Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
 
 import type { PreferencesWire } from '../shared/wire-types.js';
+import type { findGit } from './sync/git-cli.js';
 
 /**
  * The JSON-plain, mutable mirror of a {@link Preferences} document. A structural clone rather
@@ -94,6 +95,31 @@ export function rememberPickedGit(
 export function configuredGitPath(preferences: Preferences): string | undefined {
   const { path, pathPickedByMain } = preferences.git;
   return pathPickedByMain === true && path !== undefined && path.length > 0 ? path : undefined;
+}
+
+/**
+ * The `findGit` options `gitLocator` (and `git.detect`, when no marked path is configured)
+ * should call discovery with — the full precedence in one place: an e2e override
+ * (`WIREBENCH_E2E_GIT_PATH`, honoured only when the app is unpackaged), then a `git.path` main
+ * itself picked ({@link configuredGitPath}), then plain discovery.
+ *
+ * The override is not merely "try this one first" — a candidate `findGit` cannot spawn or that
+ * reports too old a version must not fall through to `PATH` or the platform defaults, or the
+ * override cannot simulate "no git installed" on a machine (or CI runner) that has a real one.
+ * `exists` is `findGit`'s existing candidate filter: restricting it to the override alone means
+ * every other candidate is skipped before a process is ever spawned for it.
+ */
+export function gitLocatorOptions(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly isPackaged: boolean;
+  readonly preferences: Preferences;
+}): Parameters<typeof findGit>[0] {
+  const override = input.isPackaged ? undefined : input.env['WIREBENCH_E2E_GIT_PATH'];
+  if (override !== undefined && override.length > 0) {
+    return { configuredPath: override, exists: (candidate) => candidate === override };
+  }
+  const configuredPath = configuredGitPath(input.preferences);
+  return configuredPath !== undefined ? { configuredPath } : {};
 }
 
 /** File name (inside `userData`) the preferences are persisted to. */

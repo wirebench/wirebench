@@ -62,8 +62,13 @@ export function GitSection({ preferences }: SectionProps) {
     await detect();
   }
 
-  const hasPath = git.path !== undefined && git.path.length > 0;
-  const pathValue = hasPath ? (git.path ?? '') : (detected?.path ?? '');
+  // Only a path main itself picked (`pathPickedByMain === true`, non-empty) is what `gitLocator`
+  // actually uses — the same rule `configuredGitPath` applies in main. An unmarked value (e.g. a
+  // hand-edited `preferences.yaml`) is inert to detection, so it must never be shown or offered
+  // for Clear as though it were the git wirebench runs.
+  const markedPath =
+    git.pathPickedByMain === true && git.path !== undefined && git.path.length > 0 ? git.path : undefined;
+  const pathValue = markedPath ?? detected?.path ?? '';
 
   return (
     <SettingsGroup title="Git">
@@ -79,9 +84,11 @@ export function GitSection({ preferences }: SectionProps) {
       <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
         <span className="text-sm text-fg-muted">Version</span>
         <output data-testid="git-version" className="block truncate py-1 text-sm text-fg-muted">
-          {detected !== undefined && detected !== null
-            ? `git ${detected.version}`
-            : 'Not found — install git to sync workspaces'}
+          {detected === undefined
+            ? 'Checking…'
+            : detected === null
+              ? 'Not found — install git to sync workspaces'
+              : `git ${detected.version}`}
         </output>
       </div>
       <div className="grid grid-cols-[minmax(8rem,14rem)_1fr] items-center gap-x-3 py-1">
@@ -107,7 +114,7 @@ export function GitSection({ preferences }: SectionProps) {
             >
               Locate…
             </Button>
-            {hasPath && (
+            {markedPath !== undefined && (
               <Button
                 variant="secondary"
                 data-testid="git-clear"
