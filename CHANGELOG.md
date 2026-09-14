@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-14
+
+The major version is the project format: a project this release has saved carries
+`formatVersion: 3`, which a 1.1.0 build refuses to open. Everything a 1.1.0 project holds is
+still read and rewritten in place.
+
 ### Added
 
 - **REST client.** A project can now hold **APIs** beside its SOAP interfaces, each with folders and
@@ -282,5 +288,6 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/wirebench/wirebench/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/wirebench/wirebench/releases/tag/v1.1.0

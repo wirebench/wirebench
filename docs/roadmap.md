@@ -1,12 +1,14 @@
 # Roadmap
 
-What Wirebench 1.1 deliberately leaves out, reorganised by what each item unlocks and in the order it is
+What Wirebench 2.0 deliberately leaves out, reorganised by what each item unlocks and in the order it is
 worth building. The v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`, §14) is
 the phase plan this page argues from; where the two differ, [Departures from the v1 spec](#departures-from-the-v1-spec)
 says so, and the spec stays authoritative until it is updated.
 
-**Where things stand (2026-09-12).** 1.0.0 (explore and send) was tagged and withdrawn unpublished;
-1.1.0 is the first published release. It adds workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
+**Where things stand (2026-09-14).** 2.0.0 adds the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
+ADR-0007) and moves the project format to version 3 — the major bump is that one-way door, not a
+rewrite. Before it: 1.0.0 (explore and send) was tagged and withdrawn unpublished;
+1.1.0 was the first published release. It added workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
 ADR-0006), the Environments view with per-variable enabling
 (`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`), manual saving with per-tab
 dirty marks (`docs/plans/2026-09-12-save-granularity-plan.md`), and OS- and arch-named release
