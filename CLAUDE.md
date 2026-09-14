@@ -1,5 +1,12 @@
 # Working in this repository
 
+## Git identity
+
+- Commits are made as **Mohammed Naami <m.naami@outlook.com>** — never as `Claude <noreply@anthropic.com>`.
+- In a Claude Code on the web session, `.claude/hooks/session-start.sh` sets this repository-locally at
+  start-up (and turns signing off, since the environment's signing key is registered to the other
+  address and would only produce an "Unverified" badge). Do not "fix" that identity back.
+
 ## Commit messages
 
 - Do **not** add a `Claude-Session:` trailer to commit messages.
