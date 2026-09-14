@@ -56,6 +56,39 @@ describe('useSyncStore', () => {
     expect(useSyncStore.getState().status).toEqual(GIT_STATUS);
   });
 
+  it('abortMerge() clears the conflicts once the merge is cancelled', async () => {
+    openWorkspace('w1');
+    useSyncStore.setState({ status: { ...GIT_STATUS, state: 'conflict' }, conflicts: [{ path: 'x' }] });
+    const abortMerge = vi.fn().mockResolvedValue({ ok: true, value: { ...GIT_STATUS, state: 'syncing' } });
+    installWirebenchApi({ sync: { abortMerge } });
+
+    await useSyncStore.getState().abortMerge();
+    expect(useSyncStore.getState().conflicts).toEqual([]);
+  });
+
+  it('an applied status that is neither conflict nor syncing clears the conflicts; syncing keeps them', () => {
+    openWorkspace('w1');
+    useSyncStore.setState({ status: { ...GIT_STATUS, state: 'conflict' }, conflicts: [{ path: 'x' }] });
+
+    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'syncing' });
+    expect(useSyncStore.getState().conflicts).toEqual([{ path: 'x' }]);
+
+    // An abort from outside the app (the terminal) shows up only as a status change.
+    useSyncStore.getState().applyStatus('w1', { ...GIT_STATUS, state: 'clean' });
+    expect(useSyncStore.getState().conflicts).toEqual([]);
+  });
+
+  it('refresh() loads the conflicts when the status it reads is conflict', async () => {
+    openWorkspace('w1');
+    const status = vi.fn().mockResolvedValue({ ok: true, value: { ...GIT_STATUS, state: 'conflict' } });
+    const conflicts = vi.fn().mockResolvedValue({ ok: true, value: { conflicts: [{ path: 'projects/calc/x.yaml' }] } });
+    installWirebenchApi({ sync: { status, conflicts } });
+
+    await useSyncStore.getState().refresh();
+    expect(conflicts).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().conflicts).toEqual([{ path: 'projects/calc/x.yaml' }]);
+  });
+
   it('reset() goes back to the synthetic local status with no conflicts', () => {
     useSyncStore.setState({ status: GIT_STATUS, conflicts: [{ path: 'x' }], identityNeeded: true });
     useSyncStore.getState().reset();

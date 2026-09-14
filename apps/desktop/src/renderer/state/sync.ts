@@ -48,6 +48,15 @@ function toastUnlessExpected(error: IpcError): void {
   }
 }
 
+/**
+ * The state change for a status that is being applied: conflicts only mean something while the
+ * workspace is in `conflict` (or `syncing` its way through one), so any other status — a merge
+ * finished, cancelled here, or aborted outside the app — clears them.
+ */
+function withStatus(status: SyncStatusWire): Partial<SyncSnapshot> {
+  return status.state === 'conflict' || status.state === 'syncing' ? { status } : { status, conflicts: [] };
+}
+
 /** The sync store's serialisable state. */
 export interface SyncSnapshot {
   readonly status: SyncStatusWire;
@@ -84,7 +93,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
   applyStatus: (workspaceId, status) => {
     if (workspaceId === useWorkspaceStore.getState().workspace?.id) {
-      set({ status });
+      set(withStatus(status));
     }
   },
 
@@ -95,7 +104,11 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   refresh: async () => {
     const result = await ipc().sync.status(undefined);
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
+      if (result.value.state === 'conflict') {
+        // A merge left open (by an earlier session, or the terminal): the resolver needs its list.
+        await get().loadConflicts();
+      }
     }
     // A failure here is not toasted: it usually just means no workspace is open yet.
   },
@@ -103,7 +116,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   fetch: async () => {
     const result = await ipc().sync.fetch(undefined);
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
@@ -112,7 +125,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   pull: async () => {
     const result = await ipc().sync.pull(undefined);
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
@@ -121,7 +134,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   push: async () => {
     const result = await ipc().sync.push(undefined);
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
@@ -130,7 +143,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   commit: async (message) => {
     const result = await ipc().sync.commit({ message });
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
@@ -149,7 +162,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   resolve: async (path, side) => {
     const result = await ipc().sync.resolve({ path, side });
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
@@ -158,7 +171,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   abortMerge: async () => {
     const result = await ipc().sync.abortMerge(undefined);
     if (result.ok) {
-      set({ status: result.value });
+      set({ ...withStatus(result.value), conflicts: [] });
     } else {
       toastUnlessExpected(result.error);
     }
@@ -176,7 +189,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
   updateSettings: async (patch) => {
     const result = await ipc().sync.updateSettings(patch);
     if (result.ok) {
-      set({ status: result.value });
+      set(withStatus(result.value));
     } else {
       toastUnlessExpected(result.error);
     }
