@@ -73,9 +73,13 @@ Wirebench Server does.** Concretely:
 - **Windows and CRLF edge cases become the app's problem to mitigate**, not eliminate:
   `.gitattributes` and `-c core.autocrlf=false` handle line endings; `core.longpaths` is a guide
   note, not something the app can set globally on the user's behalf.
-- **Repository hooks are a real capability of a cloned repository the app must neutralise**:
-  every git invocation the app makes uses `core.hooksPath=<empty directory>`, so joining, pulling
-  or committing in a hostile repository cannot execute code.
+- **Repository hooks and local config are real capabilities of a repository the app must
+  neutralise**: every git invocation the app makes uses `core.hooksPath=<empty directory>`, so
+  hostile *remote content* — hooks, or anything else a fetch, merge or clone brings in — cannot
+  execute code when joining, pulling or committing. A repository's *local config*
+  (`.git/config`) never travels with a clone, but a folder the user points the app at can carry
+  one; it is checked against a refused-key list (settings that name a program to run, or include
+  more config) before the app runs anything else in that repository, and at every open.
 
 ## Alternatives considered
 

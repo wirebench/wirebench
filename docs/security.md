@@ -122,7 +122,20 @@ runs the system `git`, never a bundled one, and only from the main process:
   themselves is used exactly as configured, never overridden.
 - **Hooks disabled.** Every invocation carries `-c core.hooksPath=<empty directory>`, so a cloned
   repository's hooks — `post-checkout`, `post-merge`, anything else a hostile remote could ship —
-  never execute, on join, pull, commit or any other command the app runs.
+  never execute, on join, pull, commit or any other command the app runs. Hostile *remote
+  content* therefore cannot execute code.
+- **A repository's local config is checked before use.** `.git/config` never arrives with a clone,
+  but a folder the user joins from (or a synced folder that turns out to hold `.git`) can carry
+  one, and settings there can name a program for git to run. Before the app runs any other git
+  command in such a repository — and again at every open of a git share — it lists the local
+  config keys (`git config --local --list --name-only`) and refuses with `git-config-refused`
+  when any matches (case-insensitively) `core.fsmonitor`, `core.sshCommand`, `core.askPass`,
+  `core.editor`, `core.pager`, `core.hooksPath`, `core.gitProxy`, `sequence.editor`,
+  `gpg.program`, `gpg.*.program`, `credential.helper`, `credential.*.helper`, `filter.*.clean`,
+  `filter.*.smudge`, `filter.*.process`, `diff.*.textconv`, `diff.*.command`, `diff.external`,
+  `merge.*.driver`, `remote.*.uploadpack`, `remote.*.receivepack`, `remote.*.vcs`,
+  `uploadpack.packObjectsHook`, `include.path` or `includeIf.*.path`. Global and system config are
+  the user's own and are not checked.
 - **A remote URL allow-list.** `assertRemoteUrl` accepts only `https://`, `ssh://`, `file://`, or
   `user@host:path`; refuses `ext::` (git's "run an arbitrary command" transport), values starting
   with `-` (parsed as a flag by git or by a transport helper's own shell), and a user or host
@@ -133,9 +146,13 @@ runs the system `git`, never a bundled one, and only from the main process:
   trailing `/`, `//`, and a path component starting with `.` — applied to every branch name the
   app writes into `share.yaml` or passes to git, whether it came from the Share/Join dialogs or
   the Sync settings.
-- **No URL in errors.** `git-auth-failed`, `git-offline` and `git-remote-refused` carry a code and
-  a generic message; the remote URL itself is never included, since it may embed a token or
-  password.
+- **No URL in error messages.** `git-auth-failed`, `git-offline` and `git-remote-refused` carry a
+  code and a generic message; the remote URL itself is never put in a message, since it may embed
+  a token or password. A failed git command's error `details` do carry its arguments (with any
+  `user:token@` stripped from an `https://` URL) and up to the last 2 KiB of git's stderr, which is
+  *not* redacted and can include whatever git printed, a remote URL among it. Those details travel
+  only inside the IPC error envelope to the renderer: toasts show the message alone, the sync
+  status keeps only the code and message, and the app writes no log of error details.
 - **`git.path` is main-only and marker-gated**, exactly like the TLS CA bundle path
   (`ssl.caBundlePath`): a path is honoured only when `git.pathPickedByMain` is `true`, set only
   when the user picked it through **Locate…** in Preferences → Git. A path hand-edited into

@@ -28,7 +28,9 @@ workspace:
 - **Git repository** (the default) — enter a remote URL (optional; you can add one later from the
   Sync panel) and a branch, which defaults to `main`. Wirebench moves the tree into place,
   initialises the repository, writes `.gitattributes`, makes the first commit, and pushes it if
-  you gave a remote.
+  you gave a remote. The remote must be **empty**: a repository that already has history of its
+  own is not merged into the new workspace, and the push is refused (git refuses unrelated
+  histories). Create an empty repository on your host for each shared workspace.
 - **Synced folder** — click **Choose folder…** and pick an empty folder (native dialog). Wirebench
   moves the tree there; nothing else changes hands.
 
@@ -46,9 +48,12 @@ From the workspace picker, choose **Join shared workspace…**:
   checkout or an existing synced folder containing a `workspace.yaml`. An existing clone must have
   an `origin` remote in one of the allowed forms (`https://`, `ssh://`, `file://`, or
   `user@host:path`) and must not be on a detached HEAD — check out a branch first if it is.
+  Before running anything else in a repository it did not create itself, Wirebench checks its
+  `.git/config` for settings that make git run programs, and refuses the folder if it finds any —
+  see `git-config-refused` under [Troubleshooting](#troubleshooting).
 
-Joining a workspace whose id is already on this machine is refused; the picker offers the one
-already there instead. In the picker, a shared workspace's row shows the remote's host (for a git
+Joining a workspace whose id is already on this machine is refused; the join dialog says so and
+offers **Open it** for the one already there instead. In the picker, a shared workspace's row shows the remote's host (for a git
 share) or "Synced folder".
 
 ## What travels and what stays
@@ -61,7 +66,9 @@ share) or "Synced folder".
 | `.gitattributes` | secret values, history, preferences, UI state |
 
 Only **internal** projects live inside a shared workspace's tree. *Link Project Folder…* is
-unavailable there (disabled, with a tooltip explaining why) — a linked project points at a path
+unavailable there, and a linked project that still appears in a shared `workspace.yaml` (edited
+by hand, or pulled from a teammate) is listed as an error and never opened — Wirebench does not
+read, watch or write that folder (disabled, with a tooltip explaining why) — a linked project points at a path
 outside the tree, which a teammate's machine cannot resolve. Use **Move to workspace…** (project
 context menu) instead: it copies the project's files into the target workspace, keeping its id
 unless that id already exists there, in which case the copy is re-identified. The move always
@@ -103,11 +110,12 @@ dismisses itself after a few seconds.
 
 ## Conflicts
 
-When a merge leaves conflicted files, the sync banner offers **Resolve…** and **Cancel merge**.
-The resolver lists each conflicted entity by name (for example `request: Ping`) with three
-choices: **Keep mine**, **Keep theirs**, and **Open file** to edit it by hand in your file manager
-and resolve it outside the app. **Cancel** aborts the whole merge (with a confirmation, since it
-discards every resolution made so far in this merge and the pull that started it).
+When a merge leaves conflicted files, the sync banner offers **Resolve…**, which opens the conflict
+resolver. The resolver lists each conflicted entity by name (for example `request: Ping`) with
+three choices: **Keep mine**, **Keep theirs**, and **Open file** to edit it by hand in your file
+manager and resolve it outside the app. **Cancel merge**, in the resolver, aborts the whole merge
+(with a confirmation, since it discards every resolution made so far in this merge and the pull
+that started it).
 
 While a conflict is open, conflicted requests are read-only in the editor and marked in the
 explorer — nothing in the app writes to a file mid-conflict. Once every conflicted file is
@@ -115,8 +123,9 @@ resolved, Wirebench commits the merge and reloads.
 
 ## First commit: setting your identity
 
-The first time a shared workspace needs to commit and the repository has no `user.name`/
-`user.email`, a dialog asks for your name and email once and writes them into the repository's
+The first time a shared workspace needs to commit and neither the repository nor your global git
+config sets both `user.name` and `user.email` (a name and address git would only guess from your
+account and computer name do not count), a dialog asks for your name and email once and writes them into the repository's
 own (local) git config — not a Wirebench-wide identity. There is no way to dismiss this dialog
 without answering it, since a commit cannot happen without an identity.
 
@@ -143,8 +152,9 @@ external git commands. Two people saving the same file at the same time race on 
 sync client does about it — usually last-write-wins, with a conflicted copy Wirebench does not
 know about and will not merge. **Use a git share for anything beyond a single person working
 across their own machines.** If a folder gains a `.git` directory (for example, because you ran
-`git init` in it yourself), Wirebench treats it as a git share automatically as soon as it detects
-git.
+`git init` in it yourself), Wirebench treats it as a git share the next time the workspace opens,
+provided git is found and the repository's `.git/config` passes the check described under
+`git-config-refused`.
 
 ## Stop sharing
 
@@ -216,6 +226,15 @@ length. If clone or checkout fails on long paths, run
 | `workspace-tree-missing` | The shared folder or its `workspace.yaml` could not be found | Reconnect the folder (for an external share) before trying to stop sharing |
 | `sync-uncommitted` | You have uncommitted changes and *Commit on save* is off | Commit or discard them before pulling |
 | `sync-no-remote` | This share has no remote configured yet | Add one from the Sync panel's *Remote* setting |
+| `workspace-already-shared` | *"&lt;name&gt;" is already shared.* | Nothing to do; use the Sync panel to change its settings, or **Stop sharing…** first |
+| `workspace-not-shared` | *"&lt;name&gt;" is not shared.* | Stop sharing and the Sync actions only apply to a shared workspace |
+| `workspace-already-present` | *"&lt;name&gt;" is already on this machine.* | Click **Open it** in the join dialog to open the copy already here |
+| `share-path-invalid` | *Choose a folder outside the app’s own data folder.* | Pick a folder that is not inside Wirebench's app-data folder |
+| `folder-not-empty` | *Choose an empty folder to share the workspace into.* — or, when stopping, *The workspace’s own folder already holds workspace files, so the shared files cannot be brought back.* | Pick an empty folder; when stopping, move the stray workspace files out of the workspace's app-data folder first |
+| `share-linked-project-refused` | *Shared workspaces hold their projects inside the workspace…* — sharing or linking was refused, or a linked project in a shared `workspace.yaml` was not opened | Remove the linked project, or use **Move to workspace…** from a local workspace to copy it in |
+| `git-identity-needed` | *Set the name and email your commits are recorded under.* | Enter your name and email in the dialog; the commit that asked is retried with its own message |
+| `workspace-move-incomplete` | *The files were copied, but the originals could not all be removed.* | The copy is complete; delete the leftover source files by hand |
+| `git-config-refused` | *This repository's .git/config sets &lt;keys&gt;, which could run programs on this machine…* — the repository's local config names a program to run (for example `core.fsmonitor`, `core.sshCommand`, `credential.helper`, a `filter.*` or `diff.*` driver, `include.path`) | Remove those keys from the repository's `.git/config`, or move them to your global git config (`git config --global …`), then open the workspace again |
 
 With git absent entirely, a `git` share still opens and works as a plain folder — the badge shows
 *No git* and the Sync panel explains what to install.
