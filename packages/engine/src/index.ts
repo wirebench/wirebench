@@ -9,6 +9,7 @@ export {
   ValidationError,
   WorkspaceError,
   OpenApiError,
+  PostmanError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -381,6 +382,36 @@ export type {
   OpenApiXml,
   ParameterLocation,
 } from './rest/openapi/model.js';
+// Postman: importing Postman Collection v2.0 and v2.1 exports into REST APIs.
+export {
+  apiFromPostmanCollection,
+  importPostmanCollection,
+  isPostmanCollection,
+  normalizePostmanPath,
+  parsePostmanCollection,
+  parsePostmanCollectionText,
+  translatePostmanVariables,
+} from './rest/postman/index.js';
+export type {
+  ImportPostmanOptions,
+  MapPostmanOptions,
+  MappedPostmanApi,
+  PostmanAuth,
+  PostmanAuthAttribute,
+  PostmanBody,
+  PostmanCollection,
+  PostmanFormDataParam,
+  PostmanHeader,
+  PostmanImportSummary,
+  PostmanInfo,
+  PostmanItem,
+  PostmanQueryParam,
+  PostmanRequest,
+  PostmanSource,
+  PostmanUrl,
+  PostmanUrlEncodedParam,
+  PostmanVariable,
+} from './rest/postman/index.js';
 export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
 export type {
   CreateApiInput,

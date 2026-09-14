@@ -91,6 +91,14 @@ export class OpenApiError extends WirebenchError {
   }
 }
 
+/** Thrown when a Postman collection cannot be read, or is structurally invalid. */
+export class PostmanError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'PostmanError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

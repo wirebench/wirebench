@@ -8,7 +8,7 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { WirebenchError } from '@wirebench/engine';
+import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
 import type { OpenApiSource } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { OpenApiSourceWire } from '../../shared/wire-types.js';
@@ -117,6 +117,50 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     try {
       const added = await router.addApi(projectId, place);
       return { ...added, projectId, summary };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  registerHandler(channels.api.importPostman, async (request) => {
+    let checkedSource:
+      { readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string };
+    if (request.source.kind === 'file') {
+      const checked = await checkedImportSource(deps.projectDirs(), deps.picks, {
+        kind: 'file',
+        path: request.source.path,
+      });
+      if (checked.kind !== 'file') {
+        throw new WirebenchError('invalid-argument', 'Expected a file source');
+      }
+      checkedSource = { kind: 'file', path: checked.path };
+    } else {
+      checkedSource = { kind: 'text', text: request.source.text };
+    }
+
+    const imported = await importPostmanCollection(checkedSource, {
+      ...(request.name !== undefined ? { name: request.name } : {}),
+      ...(request.baseUrl !== undefined ? { baseUrl: request.baseUrl } : {}),
+    });
+
+    const place = {
+      api: imported.api,
+      documents: [],
+      source: checkedSource.kind === 'file' ? checkedSource.path : 'inline:postman',
+      declaredVersion: 'postman-collection',
+      cache: false,
+    };
+
+    if ('projectId' in request.target) {
+      const added = await router.addApi(request.target.projectId, place);
+      return { ...added, projectId: request.target.projectId, summary: imported.summary };
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      const added = await router.addApi(projectId, place);
+      return { ...added, projectId, summary: imported.summary };
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;

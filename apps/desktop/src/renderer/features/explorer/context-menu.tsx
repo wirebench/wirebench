@@ -55,6 +55,11 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
           label: 'Import OpenAPI…',
           run: () => projectRowActions.importOpenApiInto(projectId),
         },
+        {
+          key: 'import-postman',
+          label: 'Import Postman Collection…',
+          run: () => projectRowActions.importPostmanInto(projectId),
+        },
         // §3.1 puts _New API…_ on the project row: an API is created in a project, and this is the
         // only row that names one.
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },

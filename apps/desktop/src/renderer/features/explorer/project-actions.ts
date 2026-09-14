@@ -52,6 +52,12 @@ export const projectRowActions = {
     useUiStore.getState().setImportOpenApiDialogOpen(true);
   },
 
+  /** Opens the Import Postman dialog with this project preselected as the target. */
+  importPostmanInto(projectId: string): void {
+    projectRowActions.select(projectId);
+    useUiStore.getState().setImportPostmanDialogOpen(true);
+  },
+
   /**
    * Opens a **linked** project's own environments editor. A linked project keeps its per-project
    * environments (they win over the workspace's on a shared slug), so the tab opens on the one

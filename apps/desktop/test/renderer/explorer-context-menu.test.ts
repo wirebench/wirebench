@@ -19,6 +19,8 @@ describe('explorerMenuItems', () => {
     useUiStore.setState({
       selection: undefined,
       importDialogOpen: false,
+      importOpenApiDialogOpen: false,
+      importPostmanDialogOpen: false,
       confirmRemoveProjectId: undefined,
       moveProjectDialog: null,
     });
@@ -30,6 +32,7 @@ describe('explorerMenuItems', () => {
     expect(items.map((item) => item.label)).toEqual([
       'Import WSDL…',
       'Import OpenAPI…',
+      'Import Postman Collection…',
       'New API…',
       'Settings…',
       REVEAL,
@@ -56,6 +59,7 @@ describe('explorerMenuItems', () => {
     expect(linked.map((item) => item.label)).toEqual([
       'Import WSDL…',
       'Import OpenAPI…',
+      'Import Postman Collection…',
       'New API…',
       'Settings…',
       'Project environments (linked project)',
@@ -129,7 +133,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'import-openapi', 'new-api'],
+      ['import', 'import-openapi', 'import-postman', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],
@@ -153,8 +157,19 @@ describe('explorerMenuItems', () => {
 
     expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
     expect(useUiStore.getState().importOpenApiDialogOpen).toBe(true);
-    // The two dialogs are independent: opening one must not open the other.
+    // The dialogs are independent: opening one must not open the other.
     expect(useUiStore.getState().importDialogOpen).toBe(false);
+    expect(useUiStore.getState().importPostmanDialogOpen).toBe(false);
+  });
+
+  it('Import Postman Collection… does the same for its own dialog', () => {
+    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    items.find((item) => item.label === 'Import Postman Collection…')?.run();
+
+    expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
+    expect(useUiStore.getState().importPostmanDialogOpen).toBe(true);
+    expect(useUiStore.getState().importDialogOpen).toBe(false);
+    expect(useUiStore.getState().importOpenApiDialogOpen).toBe(false);
   });
 
   it('Remove from workspace only opens the confirmation', () => {

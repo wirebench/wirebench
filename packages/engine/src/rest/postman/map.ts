@@ -1,0 +1,454 @@
+/**
+ * Pure mapping from Postman Collection v2.0/v2.1 documents to Wirebench REST entities.
+ *
+ * Recursively maps Postman items into `RestFolder` and `RestRequestDef` trees, preserving author
+ * order, variable substitutions (`${var}`), path parameter definitions, headers, query parameters,
+ * request bodies (raw, urlencoded, formdata, binary), and auth configurations.
+ */
+
+import type { AuthConfig, IdGenerator } from '../../project/model.js';
+import { generateId } from '../../project/model.js';
+import { slugify, uniqueSlug } from '../../project/paths.js';
+import type {
+  KeyValueEntry,
+  MultipartFormPart,
+  RawLanguage,
+  RestApi,
+  RestBody,
+  RestFolder,
+  RestRequestDef,
+  RestServer,
+} from '../model.js';
+import { createApi, createFolder, createRestRequest, entry, NO_BODY } from '../model.js';
+import { splitQuery } from '../url.js';
+import type {
+  PostmanAuth,
+  PostmanBody,
+  PostmanCollection,
+  PostmanHeader,
+  PostmanImportSummary,
+  PostmanItem,
+  PostmanQueryParam,
+  PostmanRequest,
+  PostmanUrl,
+  PostmanVariable,
+} from './model.js';
+
+export interface MapPostmanOptions {
+  /** The API's name. Defaults to collection `info.name`. */
+  readonly name?: string;
+  /** The base URL. Defaults to the inferred base URL, baseUrl variable, or empty. */
+  readonly baseUrl?: string;
+  /** Injectable id generator. */
+  readonly newId?: IdGenerator;
+  /** Order in project. */
+  readonly order?: number;
+}
+
+export interface MappedPostmanApi {
+  readonly api: RestApi;
+  readonly summary: PostmanImportSummary;
+}
+
+/**
+ * Maps a parsed Postman Collection into a Wirebench REST API and import summary.
+ */
+export function apiFromPostmanCollection(
+  collection: PostmanCollection,
+  options: MapPostmanOptions = {},
+): MappedPostmanApi {
+  const newId = options.newId ?? generateId;
+  const name = options.name?.trim() || collection.info.name || 'Imported Collection';
+
+  // Determine base URL: options.baseUrl -> collection variable baseUrl/base_url -> inferred from first request -> empty
+  let baseUrl = options.baseUrl?.trim();
+  if (baseUrl === undefined || baseUrl === '') {
+    const baseVar = collection.variable?.find(
+      (v) => v.key.toLowerCase() === 'baseurl' || v.key.toLowerCase() === 'base_url',
+    );
+    if (baseVar?.value !== undefined && String(baseVar.value).trim().length > 0) {
+      baseUrl = String(baseVar.value).trim();
+    } else {
+      baseUrl = inferBaseUrl(collection.item);
+    }
+  }
+
+  const servers: RestServer[] = baseUrl !== '' ? [{ url: baseUrl, description: 'Collection Base URL' }] : [];
+
+  const apiAuth = mapPostmanAuth(collection.auth, false);
+
+  let folderCount = 0;
+  let requestCount = 0;
+
+  const mapItems = (items: readonly PostmanItem[]): { folders: RestFolder[]; requests: RestRequestDef[] } => {
+    const folders: RestFolder[] = [];
+    const requests: RestRequestDef[] = [];
+    const folderSlugs = new Set<string>();
+    const requestSlugs = new Set<string>();
+
+    for (const item of items) {
+      if (Array.isArray(item.item)) {
+        // Folder item
+        folderCount += 1;
+        const slug = uniqueSlug(item.name, folderSlugs);
+        folderSlugs.add(slug);
+        const folderAuth = mapPostmanAuth(item.auth, false);
+        const children = mapItems(item.item);
+
+        folders.push(
+          createFolder(item.name, {
+            id: newId(),
+            slug,
+            order: folders.length,
+            ...(item.description !== undefined ? { description: item.description } : {}),
+            ...(folderAuth !== undefined ? { auth: folderAuth } : {}),
+            folders: children.folders,
+            requests: children.requests,
+          }),
+        );
+      } else if (item.request !== undefined) {
+        // Request item
+        requestCount += 1;
+        const slug = uniqueSlug(item.name, requestSlugs);
+        requestSlugs.add(slug);
+
+        const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl);
+        requests.push(mappedRequest);
+      }
+    }
+
+    return { folders, requests };
+  };
+
+  const root = mapItems(collection.item);
+
+  const api = createApi(name, {
+    id: newId(),
+    slug: slugify(name),
+    order: options.order ?? 0,
+    baseUrl,
+    servers,
+    ...(collection.info.description !== undefined ? { description: collection.info.description } : {}),
+    ...(apiAuth !== undefined ? { auth: apiAuth } : {}),
+    folders: root.folders,
+    requests: root.requests,
+  });
+
+  const summary: PostmanImportSummary = {
+    name,
+    ...(collection.info.description !== undefined ? { description: collection.info.description } : {}),
+    folders: folderCount,
+    requests: requestCount,
+    ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
+  };
+
+  return { api, summary };
+}
+
+function mapRequest(
+  name: string,
+  slug: string,
+  order: number,
+  item: PostmanItem,
+  newId: IdGenerator,
+  effectiveBaseUrl: string,
+): RestRequestDef {
+  const req: PostmanRequest =
+    typeof item.request === 'string' ? { method: 'GET', url: item.request } : (item.request ?? {});
+  const method = (req.method ?? 'GET').toUpperCase();
+
+  // Normalize URL and extract query and path params
+  const rawUrlObj: PostmanUrl = typeof req.url === 'string' ? { raw: req.url } : (req.url ?? {});
+  const rawUrlString = rawUrlObj.raw ?? '';
+  const { path: urlPath, query: inlineQuery } = splitQuery(rawUrlString);
+
+  // Relative URL with base URL stripped if it matches
+  let cleanUrl = urlPath;
+  if (effectiveBaseUrl !== '') {
+    if (cleanUrl === effectiveBaseUrl) {
+      cleanUrl = '/';
+    } else if (cleanUrl.startsWith(`${effectiveBaseUrl}/`)) {
+      cleanUrl = cleanUrl.slice(effectiveBaseUrl.length);
+    }
+  }
+  if (cleanUrl === '${baseUrl}' || cleanUrl === '${base_url}') {
+    cleanUrl = '/';
+  } else if (cleanUrl.startsWith('${baseUrl}/')) {
+    cleanUrl = cleanUrl.slice(10);
+  } else if (cleanUrl.startsWith('${base_url}/')) {
+    cleanUrl = cleanUrl.slice(11);
+  }
+
+  // Query parameters: prefer explicit query array from Postman, fallback to inline query from URL
+  const query: KeyValueEntry[] = [];
+  const rawQuery: readonly PostmanQueryParam[] = rawUrlObj.query ?? [];
+  if (rawQuery.length > 0) {
+    for (const q of rawQuery) {
+      if (q.key !== undefined) {
+        query.push(
+          entry(q.key, q.value ?? '', {
+            enabled: q.disabled !== true,
+            ...(q.description !== undefined ? { description: q.description } : {}),
+          }),
+        );
+      }
+    }
+  } else if (inlineQuery.length > 0) {
+    query.push(...inlineQuery);
+  }
+
+  // Path parameters: match {param} in cleanUrl (ignoring ${var} properties), populate from rawUrlObj.variable
+  const urlParamNames: string[] = [];
+  for (const match of cleanUrl.matchAll(/(?<!\$)\{([^{}/?#]+)\}/g)) {
+    const name = match[1]!;
+    if (!urlParamNames.includes(name)) {
+      urlParamNames.push(name);
+    }
+  }
+  const pathParams: KeyValueEntry[] = [];
+  const handledVariables = new Set<string>();
+
+  for (const paramName of urlParamNames) {
+    handledVariables.add(paramName);
+    const matched = rawUrlObj.variable?.find((v) => v.key === paramName);
+    pathParams.push(
+      entry(paramName, asText(matched?.value) ?? '', {
+        enabled: true,
+        ...(matched?.description !== undefined ? { description: matched.description } : {}),
+      }),
+    );
+  }
+
+  // Include any extra variables declared on the URL
+  const rawVariables: readonly PostmanVariable[] = rawUrlObj.variable ?? [];
+  for (const v of rawVariables) {
+    if (!handledVariables.has(v.key)) {
+      pathParams.push(
+        entry(v.key, asText(v.value) ?? '', {
+          enabled: false,
+          ...(v.description !== undefined ? { description: v.description } : {}),
+        }),
+      );
+    }
+  }
+
+  // Headers
+  const headers: KeyValueEntry[] = [];
+  const rawHeaders: readonly PostmanHeader[] = Array.isArray(req.header) ? req.header : [];
+  for (const h of rawHeaders) {
+    if (h.key.trim().length > 0) {
+      headers.push(
+        entry(h.key, h.value, {
+          enabled: h.disabled !== true,
+          ...(h.description !== undefined ? { description: h.description } : {}),
+        }),
+      );
+    }
+  }
+
+  // Body
+  const body = mapBody(req.body, rawHeaders);
+
+  // Auth: request-level auth, or item-level auth, or inherit
+  const auth = mapPostmanAuth(req.auth ?? item.auth, true) ?? { type: 'inherit' };
+
+  return createRestRequest(name, {
+    id: newId(),
+    slug,
+    order,
+    method,
+    url: cleanUrl,
+    ...(item.description !== undefined ? { description: item.description } : {}),
+    pathParams,
+    query,
+    headers,
+    body,
+    auth,
+  });
+}
+
+function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[]): RestBody {
+  if (body === undefined) {
+    return NO_BODY;
+  }
+
+  if (body.mode === 'raw') {
+    const rawText = body.raw ?? '';
+    const language = detectLanguage(body, headers, rawText);
+    return {
+      kind: 'raw',
+      language,
+      text: rawText,
+    };
+  }
+
+  if (body.mode === 'urlencoded') {
+    const fields: KeyValueEntry[] = (body.urlencoded ?? []).map((p) =>
+      entry(p.key, p.value, {
+        enabled: p.disabled !== true,
+        ...(p.description !== undefined ? { description: p.description } : {}),
+      }),
+    );
+    return { kind: 'form', fields };
+  }
+
+  if (body.mode === 'formdata') {
+    const parts: MultipartFormPart[] = (body.formdata ?? []).map((p) => {
+      if (p.type === 'file') {
+        return {
+          kind: 'file',
+          name: p.key,
+          source: { kind: 'path', path: typeof p.src === 'string' ? p.src : '' },
+          enabled: p.disabled !== true,
+          ...(p.contentType !== undefined ? { contentType: p.contentType } : {}),
+        };
+      }
+      return {
+        kind: 'text',
+        name: p.key,
+        value: p.value ?? '',
+        enabled: p.disabled !== true,
+        ...(p.contentType !== undefined ? { contentType: p.contentType } : {}),
+      };
+    });
+    return { kind: 'multipart', parts };
+  }
+
+  if (body.mode === 'file') {
+    const ctHeader = headers.find((h) => h.key.toLowerCase() === 'content-type')?.value;
+    return {
+      kind: 'binary',
+      source: { kind: 'path', path: body.file?.src ?? '' },
+      contentType: ctHeader ?? 'application/octet-stream',
+    };
+  }
+
+  return NO_BODY;
+}
+
+function detectLanguage(body: PostmanBody, headers: readonly PostmanHeader[], rawText: string): RawLanguage {
+  const optLang = body.options?.raw?.language?.toLowerCase();
+  if (optLang === 'json' || optLang === 'xml' || optLang === 'text' || optLang === 'html' || optLang === 'javascript') {
+    return optLang;
+  }
+
+  const ctHeader = headers.find((h) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase();
+  if (ctHeader?.includes('xml')) return 'xml';
+  if (ctHeader?.includes('html')) return 'html';
+  if (ctHeader?.includes('javascript')) return 'javascript';
+  if (ctHeader?.includes('text/plain')) return 'text';
+  if (ctHeader?.includes('json')) return 'json';
+
+  const trimmed = rawText.trim();
+  if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
+    return 'xml';
+  }
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    return 'json';
+  }
+
+  return trimmed.length > 0 ? 'text' : 'json';
+}
+
+function asText(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return undefined;
+}
+
+function mapPostmanAuth(auth: PostmanAuth | undefined, isRequest: boolean): AuthConfig | undefined {
+  if (auth === undefined) {
+    return isRequest ? { type: 'inherit' } : undefined;
+  }
+
+  const type = auth.type?.toLowerCase();
+
+  switch (type) {
+    case 'noauth':
+      return { type: 'none' };
+    case 'basic': {
+      const usernameAttr = auth.basic?.find((a) => a.key === 'username');
+      const username = asText(usernameAttr?.value);
+      return {
+        type: 'basic',
+        ...(username !== undefined ? { username } : {}),
+      };
+    }
+    case 'bearer':
+      return { type: 'bearer' };
+    case 'apikey': {
+      const keyAttr = auth.apikey?.find((a) => a.key === 'key' || a.key === 'name');
+      const inAttr = auth.apikey?.find((a) => a.key === 'in');
+      const inLoc = inAttr?.value === 'query' ? 'query' : 'header';
+      return {
+        type: 'api-key',
+        name: asText(keyAttr?.value) ?? 'api_key',
+        in: inLoc,
+      };
+    }
+    case 'oauth2': {
+      const grantAttr = auth.oauth2?.find((a) => a.key === 'grant_type');
+      const tokenUrlAttr = auth.oauth2?.find((a) => a.key === 'accessTokenUrl' || a.key === 'tokenUrl');
+      const authUrlAttr = auth.oauth2?.find((a) => a.key === 'authUrl' || a.key === 'authorizationUrl');
+      const clientIdAttr = auth.oauth2?.find((a) => a.key === 'clientId');
+      const scopeAttr = auth.oauth2?.find((a) => a.key === 'scope');
+      const isAuthCode = grantAttr?.value === 'authorization_code';
+      const authUrl = asText(authUrlAttr?.value);
+      const scopeText = asText(scopeAttr?.value);
+
+      return {
+        type: 'oauth2',
+        grant: isAuthCode ? 'authorization-code' : 'client-credentials',
+        tokenUrl: asText(tokenUrlAttr?.value) ?? '',
+        ...(authUrl !== undefined ? { authorizationUrl: authUrl } : {}),
+        clientId: asText(clientIdAttr?.value) ?? '',
+        scopes: scopeText !== undefined ? scopeText.split(/[\s,]+/).filter(Boolean) : [],
+        clientAuth: 'basic',
+        pkce: isAuthCode,
+      };
+    }
+    case 'inherit':
+      return isRequest ? { type: 'inherit' } : undefined;
+    default:
+      return isRequest ? { type: 'inherit' } : undefined;
+  }
+}
+
+/** Recursively looks for the first absolute URL to infer a collection base URL. */
+function inferBaseUrl(items: readonly PostmanItem[]): string {
+  for (const item of items) {
+    if (item.request !== undefined) {
+      const req = typeof item.request === 'string' ? { url: item.request } : item.request;
+      const rawUrl = typeof req.url === 'string' ? req.url : req.url?.raw;
+      if (rawUrl !== undefined && rawUrl.length > 0) {
+        if (/^https?:\/\//i.test(rawUrl)) {
+          try {
+            const parsed = new URL(rawUrl);
+            return parsed.origin;
+          } catch {
+            // If URL constructor fails (e.g. contains variables), extract up to the first single slash
+            const match = rawUrl.match(/^(https?:\/\/[^/?#]+)/i);
+            if (match) return match[1]!;
+          }
+        } else if (rawUrl.startsWith('${')) {
+          const closeIndex = rawUrl.indexOf('}');
+          if (closeIndex !== -1) {
+            return rawUrl.slice(0, closeIndex + 1);
+          }
+        }
+      }
+    }
+    if (Array.isArray(item.item)) {
+      const found = inferBaseUrl(item.item);
+      if (found !== '') return found;
+    }
+  }
+  return '';
+}

@@ -9,6 +9,8 @@ import {
   apiIdRequestSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
+  apiImportPostmanRequestSchema,
+  apiImportPostmanResponseSchema,
   oauth2OwnerRequestSchema,
   oauth2StatusSchema,
   requestPreflightRestRequestSchema,
@@ -355,6 +357,7 @@ export const channels = {
   // definition is read back from its cache on demand — and nothing here addresses an interface.
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
+    importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
     cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
     definitionDocuments: defineChannel(
       'api.definitionDocuments',

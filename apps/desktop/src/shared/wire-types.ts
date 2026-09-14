@@ -1916,6 +1916,41 @@ export const apiImportOpenApiResponseSchema = z.object({
 });
 export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
 
+/** Source for Postman collection import: file path or pasted JSON text. */
+export const postmanSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('text'), text: z.string() }),
+]);
+export type PostmanSourceWire = z.infer<typeof postmanSourceSchema>;
+
+/** Summary of imported Postman collection. */
+export const postmanImportSummarySchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  folders: z.number(),
+  requests: z.number(),
+  auth: z.string().optional(),
+});
+export type PostmanImportSummaryWire = z.infer<typeof postmanImportSummarySchema>;
+
+/** Request payload for `api.importPostman`. */
+export const apiImportPostmanRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  name: z.string().max(200).optional(),
+  baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+});
+export type ApiImportPostmanRequest = z.infer<typeof apiImportPostmanRequestSchema>;
+
+/** Response payload for `api.importPostman`. */
+export const apiImportPostmanResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: postmanImportSummarySchema,
+});
+export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
+
 /** Request/response for `api.cancelImport`, by the token the import was started with. */
 export const apiCancelImportRequestSchema = z.object({ token: z.string() });
 export const apiCancelImportResponseSchema = z.object({ cancelled: z.boolean() });

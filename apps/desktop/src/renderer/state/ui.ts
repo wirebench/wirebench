@@ -54,6 +54,8 @@ export interface UiStore extends UiSnapshot {
   readonly importDialogOpen: boolean;
   /** Whether the Import OpenAPI dialog is open. Its own flag: the two dialogs share no state. */
   readonly importOpenApiDialogOpen: boolean;
+  /** Whether the Import Postman dialog is open. */
+  readonly importPostmanDialogOpen: boolean;
   /** The folder whose credentials dialog is open, if any. A folder has no tab to put them on. */
   readonly folderAuthId: string | undefined;
   /**
@@ -96,6 +98,7 @@ export interface UiStore extends UiSnapshot {
   readonly setSelection: (selection: Selection | undefined) => void;
   readonly openImportDialog: () => void;
   readonly setImportOpenApiDialogOpen: (open: boolean) => void;
+  readonly setImportPostmanDialogOpen: (open: boolean) => void;
   readonly setFolderAuthId: (folderId: string | undefined) => void;
   readonly setImportCurlTarget: (target: RequestImportCurlTarget | undefined) => void;
   readonly setNewProjectDialogOpen: (open: boolean) => void;
@@ -186,6 +189,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     selection: undefined,
     importDialogOpen: false,
     importOpenApiDialogOpen: false,
+    importPostmanDialogOpen: false,
     folderAuthId: undefined,
     importCurlTarget: undefined,
     newProjectDialogOpen: false,
@@ -212,6 +216,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setImportOpenApiDialogOpen: (open) => {
       set({ importOpenApiDialogOpen: open });
+    },
+    setImportPostmanDialogOpen: (open) => {
+      set({ importPostmanDialogOpen: open });
     },
     setFolderAuthId: (folderId) => {
       set({ folderAuthId: folderId });
