@@ -337,9 +337,15 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
     const host = b.service.hostFor(PROJECT_ID);
     expect(host.snapshot()?.dirty).toBe(true);
     expect(host.requestSource(REQUEST_ID)?.envelopeXml).toBe('<Add>local</Add>');
-    expect(b.projectOnDisk).toEqual([
-      { projectId: PROJECT_ID, paths: expect.arrayContaining([expect.stringContaining('AddOne')]) as unknown },
-    ]);
+    // At least once, and only ever for this project and this request: Windows' file watcher can
+    // report the pull's one write twice, which reaches the host as a second identical notice.
+    expect(b.projectOnDisk.length).toBeGreaterThan(0);
+    for (const notice of b.projectOnDisk) {
+      expect(notice).toEqual({
+        projectId: PROJECT_ID,
+        paths: expect.arrayContaining([expect.stringContaining('AddOne')]) as unknown,
+      });
+    }
   });
 
   it('holds an outside edit while in conflict and applies it after abortMerge', async () => {
