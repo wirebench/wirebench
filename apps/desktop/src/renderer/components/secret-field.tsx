@@ -30,6 +30,10 @@ export function SecretField({ value, onChange, label, disabled, registerFlush }:
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  // Whether `value`'s secret has a value in this machine's local store. Kept 'unknown' (which
+  // renders exactly like 'present', to avoid flicker) until a probe confirms one way or the
+  // other — only a confirmed `exists → false` shows the "Not on this machine" state.
+  const [presence, setPresence] = useState<'unknown' | 'present' | 'missing'>('unknown');
   const inputId = useId();
   // `commit` is recreated every render (it closes over the draft), so the flush callback is
   // kept in a ref and re-pointed rather than re-registered on every keystroke.
@@ -47,6 +51,7 @@ export function SecretField({ value, onChange, label, disabled, registerFlush }:
           ? await ipc().secrets.replace({ ref: value, value: draft })
           : await ipc().secrets.set({ value: draft, label });
       if (result.ok) {
+        setPresence('present');
         onChange(result.value.ref);
         return result.value.ref;
       }
@@ -66,6 +71,29 @@ export function SecretField({ value, onChange, label, disabled, registerFlush }:
       registerFlush?.(undefined);
     };
   }, [registerFlush]);
+
+  // Probes whether `value`'s ref has a value on this machine. In a shared workspace a secret
+  // ref travels with the project files while the value itself stays in each member's local
+  // keychain-backed store, so a teammate who joins sees the ref with nothing behind it here.
+  useEffect(() => {
+    if (value === undefined || disabled === true) {
+      setPresence('unknown');
+      return;
+    }
+    let cancelled = false;
+    setPresence('unknown');
+    void ipc()
+      .secrets.exists({ ref: value })
+      .then((result) => {
+        if (cancelled) return;
+        // A failed probe is treated as present: it must never toast, and must never block
+        // editing by claiming a ref is missing when the check itself simply failed.
+        setPresence(result.ok && !result.value.exists ? 'missing' : 'present');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value, disabled]);
 
   function clear(): void {
     onChange(undefined);
@@ -112,16 +140,24 @@ export function SecretField({ value, onChange, label, disabled, registerFlush }:
     );
   }
 
+  const missing = value !== undefined && presence === 'missing';
+
   return (
     <div className="flex items-center gap-2">
       <span
         aria-label={label}
         className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-subtle"
       >
-        {value !== undefined ? '••••••••' : 'Not set'}
+        {missing ? (
+          <span data-testid="secret-missing">Not on this machine</span>
+        ) : value !== undefined ? (
+          '••••••••'
+        ) : (
+          'Not set'
+        )}
       </span>
       <Button disabled={disabled} onClick={() => setEditing(true)}>
-        {value !== undefined ? 'Replace…' : 'Set…'}
+        {missing ? 'Enter…' : value !== undefined ? 'Replace…' : 'Set…'}
       </Button>
       {value !== undefined && (
         <Button disabled={disabled} onClick={clear}>

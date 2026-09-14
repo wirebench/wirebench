@@ -175,4 +175,32 @@ describe('EngineService', () => {
     expect(schemaIdx).toBeGreaterThan(parseIdx);
     expect(doneIdx).toBeGreaterThan(schemaIdx);
   });
+
+  it('importing with Basic auth throws secret-missing naming the username when the ref has no value', async () => {
+    await expect(
+      service.importDefinition({
+        source: { kind: 'text', text: readPublicFixture('calculator'), location: `${server.url}/service.wsdl` },
+        options: { auth: { username: 'alice', passwordRef: 'sec_missing' } },
+      }),
+    ).rejects.toMatchObject({
+      code: 'secret-missing',
+      message: 'The password for "alice" is not on this machine — enter it in the authentication settings.',
+      details: { ref: 'sec_missing' },
+    });
+  });
+
+  it('importing with Basic auth falls back to a generic secret-missing message with no username', async () => {
+    await expect(
+      // The wire schema requires a username, but the resolver must still degrade gracefully if
+      // one is ever absent at this call site.
+      service.importDefinition({
+        source: { kind: 'text', text: readPublicFixture('calculator'), location: `${server.url}/service.wsdl` },
+        options: { auth: { passwordRef: 'sec_missing' } as unknown as { username: string; passwordRef: string } },
+      }),
+    ).rejects.toMatchObject({
+      code: 'secret-missing',
+      message: 'A saved password is not on this machine — enter it in the authentication settings.',
+      details: { ref: 'sec_missing' },
+    });
+  });
 });

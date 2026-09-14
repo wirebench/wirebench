@@ -31,7 +31,7 @@ import type {
   TlsOptions,
   WsaConfigPatch,
 } from '@wirebench/engine';
-import { resolveAuthConfig, resolveEndpointAuth, type ResolvedAuth } from './secret-resolver.js';
+import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import type { SendAuth } from '@wirebench/engine';
 import type {
   RestExchangeSummary,
@@ -280,7 +280,7 @@ export class EngineService {
     const wireAuth = request.options?.auth;
     const password = wireAuth !== undefined ? await this.getSecret?.(wireAuth.passwordRef) : undefined;
     if (wireAuth !== undefined && password === undefined) {
-      throw new WirebenchError('secret-missing', `Secret ${wireAuth.passwordRef} was not found in the secret store.`, {
+      throw new WirebenchError('secret-missing', secretMissingMessage(wireAuth.username), {
         details: { ref: wireAuth.passwordRef },
       });
     }

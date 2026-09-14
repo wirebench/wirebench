@@ -26,4 +26,26 @@ describe('resolveEndpointAuth', () => {
       resolveEndpointAuth({ type: 'basic', passwordRef: 'sec_missing' }, () => Promise.resolve(undefined)),
     ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'secret-missing');
   });
+
+  it('secret-missing names the username when one is known', async () => {
+    await expect(
+      resolveEndpointAuth({ type: 'basic', username: 'alice', passwordRef: 'sec_missing' }, () =>
+        Promise.resolve(undefined),
+      ),
+    ).rejects.toMatchObject({
+      code: 'secret-missing',
+      message: 'The password for "alice" is not on this machine — enter it in the authentication settings.',
+      details: { ref: 'sec_missing' },
+    });
+  });
+
+  it('secret-missing falls back to a generic message with no username', async () => {
+    await expect(
+      resolveEndpointAuth({ type: 'basic', passwordRef: 'sec_missing' }, () => Promise.resolve(undefined)),
+    ).rejects.toMatchObject({
+      code: 'secret-missing',
+      message: 'A saved password is not on this machine — enter it in the authentication settings.',
+      details: { ref: 'sec_missing' },
+    });
+  });
 });

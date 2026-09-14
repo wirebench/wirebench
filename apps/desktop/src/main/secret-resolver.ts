@@ -7,6 +7,19 @@
 import { WirebenchError } from '@wirebench/engine';
 import type { AuthConfig, EndpointAuth, SendAuth } from '@wirebench/engine';
 
+/**
+ * The message for a `secret-missing` error: in a shared workspace, secret refs travel with the
+ * project but values stay in each member's local keychain-backed store, so a teammate who joins
+ * sees a ref with nothing behind it on their machine. Named by username when one is known,
+ * otherwise a generic fallback — either way it tells the user where to act instead of merely
+ * naming the dangling ref.
+ */
+export function secretMissingMessage(username: string | undefined): string {
+  return username !== undefined
+    ? `The password for "${username}" is not on this machine — enter it in the authentication settings.`
+    : 'A saved password is not on this machine — enter it in the authentication settings.';
+}
+
 /** The engine-facing shape: a resolved password in place of a `passwordRef`. */
 export interface ResolvedAuth {
   readonly type: EndpointAuth['type'];
@@ -42,7 +55,7 @@ export async function resolveEndpointAuth(
   }
   const password = await getSecret(auth.passwordRef);
   if (password === undefined) {
-    throw new WirebenchError('secret-missing', `Secret ${auth.passwordRef} was not found in the secret store.`, {
+    throw new WirebenchError('secret-missing', secretMissingMessage(auth.username), {
       details: { ref: auth.passwordRef },
     });
   }
