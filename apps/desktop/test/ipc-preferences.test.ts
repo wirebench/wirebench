@@ -84,6 +84,23 @@ describe('preferences.* IPC', () => {
     expect(result.value.preferences.http.userAgent).toBe('Keep/1');
   });
 
+  it('resets the git section', async () => {
+    const preferences = new PreferencesService(dir);
+    registerPreferencesChannels(preferences);
+    // `git.path`/`pathPickedByMain` are main-only keys `preferences.update` refuses from the
+    // renderer (see `MAIN_ONLY_KEYS` below) — set directly through the service, exactly as
+    // `git.locate` would.
+    await preferences.update({ git: { path: '/opt/git', pathPickedByMain: true } });
+    await invoke('preferences.update', { patch: { http: { userAgent: 'Keep/1' } } });
+
+    const result = (await invoke('preferences.reset', { section: 'git' })) as {
+      value: { preferences: PreferencesWire };
+    };
+    expect(result.value.preferences.git.path).toBeUndefined();
+    expect(result.value.preferences.git.pathPickedByMain).toBeUndefined();
+    expect(result.value.preferences.http.userAgent).toBe('Keep/1');
+  });
+
   it('rejects an unknown section rather than resetting everything', async () => {
     registerPreferencesChannels(new PreferencesService(dir));
     expect(await invoke('preferences.reset', { section: 'nonsense' })).toMatchObject({
@@ -116,6 +133,30 @@ describe('preferences.* IPC', () => {
     expect(result).toMatchObject({ ok: false, error: { code: 'preference-read-only' } });
     expect(changed).toEqual([]);
     expect((await new PreferencesService(dir).ready()).ssl.caBundlePath).toBeUndefined();
+  });
+
+  /**
+   * `git.path` names an executable main *executes* on the tree it opens — a stricter reason
+   * than the CA bundle's "reads on every send" — so it is refused exactly the same way, and the
+   * path moves only through `git.locate`.
+   */
+  it.each([
+    ['path', { path: '/usr/bin/git' }],
+    ['pathPickedByMain', { pathPickedByMain: true }],
+    ['both', { path: '/usr/bin/git', pathPickedByMain: true }],
+  ])('refuses git.%s from the renderer, and writes nothing', async (_name, git) => {
+    const changed: PreferencesWire[] = [];
+    const service = new PreferencesService(dir);
+    registerPreferencesChannels(service, (next) => changed.push(next));
+
+    const result = (await invoke('preferences.update', { patch: { git } })) as {
+      ok: boolean;
+      error?: { code: string };
+    };
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'preference-read-only' } });
+    expect(changed).toEqual([]);
+    expect((await new PreferencesService(dir).ready()).git.path).toBeUndefined();
   });
 
   it('still accepts the ssl fields the renderer does own', async () => {

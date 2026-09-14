@@ -1,8 +1,15 @@
 # ADR-0006: Workspaces live in app data, not as a folder the user manages
 
-- Status: accepted
+- Status: accepted; superseded in part by [ADR-0008](0008-shared-workspaces-are-git-repositories.md)
 - Date: 2026-09-12
 - Context: `docs/specs/2026-09-11-wirebench-workspaces-design.md` (spec §1, §14, §16)
+
+**Superseded in part by ADR-0008 (2026-09-13).** A shared workspace's tree may now live outside
+the app-data directory: `share.yaml` (never itself inside the tree) can name an external folder —
+picked only through a native dialog, and refused if it lies inside `<userData>` — for a git clone
+or synced folder the user manages themselves. A *local* workspace is unaffected: its tree still
+lives entirely under `workspaces/<id>/` exactly as this ADR describes, and `share.yaml`'s absence
+is what "local" means.
 
 ## Context
 
@@ -81,9 +88,13 @@ workspaces/<id>/
   dialog to it *this session* — is unaffected either way.
 - **A user managing many workspaces manages them through the app**, not through a file manager;
   there is no folder to rename or move around outside Wirebench's own *Manage Workspaces* UI.
-- **Multi-window and workspace sync/sharing stay out of scope** (recorded on the roadmap): one
-  window holds one open workspace at a time, and nothing propagates a workspace's environments
-  or projects to another machine.
+- **Multi-window stays out of scope** (recorded on the roadmap): one window holds one open
+  workspace at a time.
+- **Workspace sync/sharing shipped in a later spec, not here.** A workspace can now be shared as a
+  git repository or a synced folder, with its environments and projects propagating to other
+  members' machines — see [ADR-0008](0008-shared-workspaces-are-git-repositories.md) and this
+  ADR's superseded-in-part note above. Live sync through a Wirebench-run server is still future
+  work (spec 2, tracked on the roadmap).
 
 **Update (2026-09-12, per-variable enabled flag): `formatVersion: 2`.** `workspace.yaml` and each
 workspace environment file gained the same `disabled:` sibling list ADR-0003 describes for the

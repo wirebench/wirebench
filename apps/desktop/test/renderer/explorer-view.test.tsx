@@ -1,12 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { InterfaceWire, WorkspaceProjectWire } from '../../src/shared/wire-types.js';
+import type { InterfaceWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
@@ -23,8 +26,8 @@ function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjec
 }
 
 /** Puts `projects` in the open workspace, which is where the tree's roots come from. */
-function openWorkspace(projects: readonly WorkspaceProjectWire[]): void {
-  useWorkspaceStore.setState({ workspace: workspaceWire({ projects }) });
+function openWorkspace(projects: readonly WorkspaceProjectWire[], share?: NonNullable<WorkspaceWire['share']>): void {
+  useWorkspaceStore.setState({ workspace: workspaceWire(share === undefined ? { projects } : { projects, share }) });
 }
 
 const summary: InterfaceWire = {
@@ -76,9 +79,11 @@ class ManualResizeObserver {
 
 describe('ExplorerView', () => {
   beforeEach(() => {
-    useProjectStore.setState({ projects: {}, interfaces: {}, requests: {}, order: [] });
+    installWirebenchApi();
+    useProjectStore.setState({ projects: {}, interfaces: {}, requests: {}, order: [], projectOf: {} });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
     useUiStore.setState({ selection: undefined, workspaces: {} });
+    useSyncStore.getState().reset();
     openWorkspace([wireProject()]);
     globalThis.ResizeObserver = ManualResizeObserver;
   });
@@ -114,6 +119,8 @@ describe('ExplorerView', () => {
           bindingName: '{tns}B',
           operationName: 'Add',
           name: 'Request 1',
+          slug: 'Request 1',
+          operationSlug: 'Add',
           envelopeXml: '<Envelope/>',
           soapVersion: '1.1',
           headers: [],
@@ -186,6 +193,73 @@ describe('ExplorerView', () => {
       expect.objectContaining({ id: 'project:p2', kind: 'project', projectId: 'p2', title: 'Billing' }),
     ]);
     expect(useEditorsStore.getState().activeId).toBe('project:p2');
+  });
+
+  it('badges a project and its conflicted request, but leaves an unrelated request unmarked', () => {
+    useProjectStore.setState({
+      interfaces: { [summary.id]: summary },
+      order: [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      projectOf: { [summary.id]: 'p1', 'req-1': 'p1', 'req-2': 'p1' },
+      requests: {
+        'req-1': {
+          properties: REQUEST_PROPERTIES,
+          attachments: [],
+          id: 'req-1',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 1',
+          slug: 'Request 1',
+          operationSlug: 'Add',
+          envelopeXml: '<Envelope/>',
+          soapVersion: '1.1',
+          headers: [],
+          order: 0,
+        },
+        'req-2': {
+          properties: REQUEST_PROPERTIES,
+          attachments: [],
+          id: 'req-2',
+          interfaceId: 'iface-1',
+          bindingName: '{tns}B',
+          operationName: 'Add',
+          name: 'Request 2',
+          slug: 'Request 2',
+          operationSlug: 'Add',
+          envelopeXml: '<Envelope/>',
+          soapVersion: '1.1',
+          headers: [],
+          order: 1,
+        },
+      },
+    });
+    useSyncStore.setState({
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Request 1.request.yaml', projectId: 'p1' },
+      ],
+    });
+    useUiStore.setState({
+      workspaces: {
+        w1: {
+          tabs: [],
+          explorerOpen: { 'iface:iface-1': true, 'operations:iface-1': true, 'op:iface-1:{tns}B:Add': true },
+        },
+      },
+    });
+
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+
+    const badges = screen.getAllByTestId('explorer-conflict-badge');
+    // One on the project row, one on the conflicted request row — never on the unrelated one.
+    expect(badges).toHaveLength(2);
+    const conflictedRequestRow = screen.getByText('Request 1').closest('[data-testid="explorer-tree-row"]');
+    expect(conflictedRequestRow?.querySelector('[data-testid="explorer-conflict-badge"]')).toBeTruthy();
+    const otherRequestRow = screen.getByText('Request 2').closest('[data-testid="explorer-tree-row"]');
+    expect(otherRequestRow?.querySelector('[data-testid="explorer-conflict-badge"]')).toBeNull();
   });
 
   it('offers Locate… and Remove on a project whose folder is missing', () => {
@@ -261,6 +335,42 @@ describe('ExplorerView', () => {
       </TooltipPrimitive.Provider>,
     );
     expect(screen.getByText('Operations')).toBeTruthy();
+  });
+
+  describe('Link Project Folder…', () => {
+    it('is enabled in a local workspace, and links a project folder when clicked', async () => {
+      const linkProject = vi
+        .fn()
+        .mockResolvedValue({ ok: true, value: { workspace: workspaceWire({ projects: [wireProject()] }) } });
+      installWirebenchApi({ workspace: { linkProject } });
+      render(
+        <TooltipPrimitive.Provider>
+          <ExplorerView />
+        </TooltipPrimitive.Provider>,
+      );
+
+      const button = screen.getByTestId('explorer-link-project');
+      expect(button.hasAttribute('disabled')).toBe(false);
+
+      await userEvent.click(button);
+
+      await waitFor(() => expect(linkProject).toHaveBeenCalledTimes(1));
+    });
+
+    it('is disabled in a shared workspace, with the explanation as its accessible name', () => {
+      openWorkspace([wireProject()], { kind: 'git', managed: true });
+      render(
+        <TooltipPrimitive.Provider>
+          <ExplorerView />
+        </TooltipPrimitive.Provider>,
+      );
+
+      const button = screen.getByTestId('explorer-link-project');
+      expect(button.hasAttribute('disabled')).toBe(true);
+      expect(button.getAttribute('aria-label')).toBe(
+        'Shared workspaces hold their projects inside the workspace; use Move to workspace…',
+      );
+    });
   });
 });
 

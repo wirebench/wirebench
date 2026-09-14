@@ -32,6 +32,12 @@ export interface ProjectWatcherOptions {
   readonly selfWriteTtlMs?: number;
   /** Injectable clock, so tests can drive the self-write TTL deterministically. */
   readonly now?: () => number;
+  /**
+   * Which paths under `dir` are worth reporting. Defaults to {@link isManagedPath} (a project
+   * folder); the workspace-level watcher passes {@link isWorkspaceManagedPath} instead, since it
+   * watches the tree root and must ignore everything under `projects/**`.
+   */
+  readonly isManaged?: (path: string) => boolean;
 }
 
 /**
@@ -85,6 +91,19 @@ export function isManagedPath(path: string): boolean {
 }
 
 /**
+ * True when `path` is one of the files the workspace format itself owns at the tree root:
+ * `workspace.yaml`, or one `environments/<name>.yaml` file (one path segment, so a project's own
+ * `projects/<slug>/environments/<name>.yaml` — which shares the same suffix — does not match).
+ */
+export function isWorkspaceManagedPath(path: string): boolean {
+  if (path === 'workspace.yaml') {
+    return true;
+  }
+  const parts = path.split('/');
+  return parts.length === 2 && parts[0] === 'environments' && parts[1] !== undefined && parts[1].endsWith('.yaml');
+}
+
+/**
  * The path to hand `fs.watch`, resolved with the OS's own idea of the name. On Windows the
  * path the app was given may be a short (8.3) or differently-cased form of the directory
  * libuv later reports events under, which trips an assertion inside libuv's `fs-event.c`
@@ -99,6 +118,21 @@ function watchableDir(dir: string): string {
   }
 }
 
+/**
+ * A pending self-write announcement, returned by {@link ProjectWatcher.announce} and consumed
+ * exactly once by {@link ProjectWatcher.release}. Opaque to callers — everything on it is
+ * `ProjectWatcher`'s own bookkeeping for the paths that one `announce()` call covered.
+ */
+export class AnnouncementToken {
+  /** Each announced path's self-write expiry from *before* this announcement, or `undefined`
+   * when it was not marked at all — what `release()` restores for a path it does not `keep`. */
+  readonly priorMarks = new Map<string, number | undefined>();
+  /** Announced paths whose event arrived (and was dropped) while owned by *this* announcement —
+   * see {@link ProjectWatcher.record}. A drop that happened before this announcement started, or
+   * under a different announcement, is never attributed here. */
+  readonly dropped = new Set<string>();
+}
+
 /** Watches one project folder; created per open project and disposed on close. */
 export class ProjectWatcher {
   private readonly options: Required<Omit<ProjectWatcherOptions, 'onChange'>> & Pick<ProjectWatcherOptions, 'onChange'>;
@@ -106,6 +140,15 @@ export class ProjectWatcher {
   private readonly pending = new Set<string>();
   /** Relative path to the timestamp after which it is no longer treated as a self-write. */
   private readonly selfWrites = new Map<string, number>();
+  /**
+   * Which {@link AnnouncementToken} currently owns each announced path — at most one at a time,
+   * since usage is always `announce()` then `release()` in sequence. `record()` consults this to
+   * route a drop to the right announcement's own `dropped` set; `release()` consults it to know
+   * whether it is still the path's owner (an `expect()` call, TTL expiry, or a newer `announce()`
+   * of the same path can all take ownership away first, in which case `release()` leaves that
+   * path alone entirely).
+   */
+  private readonly announcedBy = new Map<string, AnnouncementToken>();
   private timer: NodeJS.Timeout | undefined;
 
   constructor(options: ProjectWatcherOptions) {
@@ -115,6 +158,7 @@ export class ProjectWatcher {
       debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       selfWriteTtlMs: options.selfWriteTtlMs ?? SELF_WRITE_TTL_MS,
       now: options.now ?? Date.now,
+      isManaged: options.isManaged ?? isManagedPath,
     };
   }
 
@@ -157,16 +201,87 @@ export class ProjectWatcher {
       this.timer = undefined;
     }
     this.pending.clear();
+    this.announcedBy.clear();
   }
 
   /**
    * Marks `paths` (relative to the project folder) as written by the app itself, so the
    * events they are about to produce are ignored for the next `selfWriteTtlMs`.
+   *
+   * A direct call like this always wins over whatever announcement (see {@link announce}) may
+   * currently own one of `paths`: that announcement's eventual {@link release} will find this
+   * fresher mark already in place and leave the path alone, rather than restoring or re-delivering
+   * anything for it.
    */
   expect(paths: readonly string[]): void {
     const until = this.options.now() + this.options.selfWriteTtlMs;
-    for (const path of paths) {
-      this.selfWrites.set(this.normalise(path), until);
+    for (const rawPath of paths) {
+      const path = this.normalise(rawPath);
+      this.selfWrites.set(path, until);
+      this.announcedBy.delete(path);
+    }
+  }
+
+  /**
+   * Marks `paths` self-write *before* a write that covers (a superset of) them runs — see
+   * {@link WorkspaceService}'s `candidateWorkspacePaths`, a conservative superset of what a write
+   * might touch, announced ahead of time because the write's own atomic renames are each
+   * individually visible to `fs.watch` before the write itself returns.
+   *
+   * Pair every `announce()` with exactly one {@link release} of the token it returns — in a
+   * `finally`, so a write that throws still releases. Until then, a genuine outside edit to one
+   * of `paths` is provisionally dropped, but remembered (scoped to this announcement only) so
+   * `release()` can re-deliver it once the write is known not to have touched it.
+   */
+  announce(paths: readonly string[]): AnnouncementToken {
+    const token = new AnnouncementToken();
+    const until = this.options.now() + this.options.selfWriteTtlMs;
+    for (const rawPath of paths) {
+      const path = this.normalise(rawPath);
+      token.priorMarks.set(path, this.selfWrites.get(path));
+      this.selfWrites.set(path, until);
+      this.announcedBy.set(path, token);
+    }
+    return token;
+  }
+
+  /**
+   * Resolves one {@link announce}'d batch now that the write it covered is known to have finished
+   * (successfully or not — call this from a `finally`). `keep` is the subset actually touched
+   * (typically a `SaveResult`'s `written ∪ removed`): those paths are (re-)marked self-write with
+   * a fresh `selfWriteTtlMs`, exactly as a plain {@link expect} would. Every other announced path
+   * has its *prior* mark restored — still self-write if it already was (under whatever TTL that
+   * mark had left), otherwise not marked at all — and, only for a path this announcement is still
+   * the owner of (see {@link announcedBy}), a dropped event *from this announcement* is fed back
+   * into the pending batch, unless the restored prior mark still covers it.
+   */
+  release(token: AnnouncementToken, keep: readonly string[]): void {
+    const keepSet = new Set(keep.map((path) => this.normalise(path)));
+    const until = this.options.now() + this.options.selfWriteTtlMs;
+    let revived = false;
+    for (const [path, priorUntil] of token.priorMarks) {
+      // Ownership already moved on (a plain `expect()`, TTL expiry, or a newer `announce()` of
+      // the same path) — nothing here belongs to this announcement any more.
+      if (this.announcedBy.get(path) !== token) {
+        continue;
+      }
+      this.announcedBy.delete(path);
+      if (keepSet.has(path)) {
+        this.selfWrites.set(path, until);
+        continue;
+      }
+      if (priorUntil === undefined) {
+        this.selfWrites.delete(path);
+      } else {
+        this.selfWrites.set(path, priorUntil);
+      }
+      if (token.dropped.has(path) && !this.isSelfWrite(path)) {
+        this.pending.add(path);
+        revived = true;
+      }
+    }
+    if (revived) {
+      this.schedule();
     }
   }
 
@@ -181,6 +296,7 @@ export class ProjectWatcher {
     }
     if (this.options.now() > until) {
       this.selfWrites.delete(path);
+      this.announcedBy.delete(path);
       return false;
     }
     return true;
@@ -191,7 +307,11 @@ export class ProjectWatcher {
       return;
     }
     const path = this.normalise(typeof filename === 'string' ? filename : filename.toString('utf8'));
-    if (!isManagedPath(path) || this.isSelfWrite(path)) {
+    if (!this.options.isManaged(path)) {
+      return;
+    }
+    if (this.isSelfWrite(path)) {
+      this.announcedBy.get(path)?.dropped.add(path);
       return;
     }
     this.pending.add(path);

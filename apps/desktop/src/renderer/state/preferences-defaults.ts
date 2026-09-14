@@ -24,6 +24,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
   },
   proxy: { mode: 'none', excludes: [] },
   ssl: { minVersion: 'TLSv1.2', trustAll: false },
+  git: {},
   wsdl: {
     cacheDefinitions: true,
     prettyPrint: true,

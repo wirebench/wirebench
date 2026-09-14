@@ -66,9 +66,11 @@ That is the whole loop. From here: a workspace holds any number of projects, wit
 evaluates XPath 3.1 and XQuery 3.1 over the response, plus JSONPath when the body is JSON; the request editor's
 inspector strip carries _Details_,
 _Properties_, _Headers_, _Attachments_, _Auth_, _WS-A_ and _SSL_, one inspector each; `Mod+K` opens the command
-palette; and **Environments**, reached from the
+palette; **Environments**, reached from the
 activity bar, is workspace-wide — one set of environments and endpoint overrides shared by every project, switched
-without touching a request, with a per-variable checkbox to disable a value without deleting it.
+without touching a request, with a per-variable checkbox to disable a value without deleting it; and a workspace can
+be **shared with a team** over git or a synced folder, with an in-app Sync control and conflict resolver — see
+[Collaborate on a shared workspace](docs/collaborate.md).
 
 ## Keyboard shortcuts
 
@@ -166,7 +168,7 @@ repository. It is what the opt-in update feed is derived from.
 
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
-- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0007
+- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
 - [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it
 - [Release checklist](docs/release.md)
 - [Roadmap](docs/roadmap.md) — what 2.0 leaves out, in the order it is worth building, and what each item unlocks
@@ -178,6 +180,9 @@ repository. It is what the opt-in update feed is derived from.
 - [REST client design spec](docs/specs/2026-09-13-wirebench-rest-client-design.md) and
   [implementation plan](docs/plans/2026-09-13-wirebench-rest-client-plan.md) — APIs, folders and requests beside
   SOAP interfaces, OpenAPI import, OAuth2, and what it fixes now so gRPC can follow
+- [Collaborate on a shared workspace](docs/collaborate.md) — sharing, syncing and resolving
+  conflicts as a team, and
+  [shared-workspaces design spec](docs/specs/2026-09-13-wirebench-shared-workspaces-design.md)
 - [Changelog](CHANGELOG.md)
 
 ## Roadmap
@@ -195,8 +200,8 @@ the [full roadmap](docs/roadmap.md) has the reasoning, sizes, and the detail per
 6. **gRPC client** — a third container beside APIs and interfaces, on the shape ADR-0007 was written to survive.
 7. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
 8. **MCP server** — the engine driven by coding agents.
-9. **Teams and sign-in** — git-linked project folders shipped in 1.1; next a sync design, then a self-hosted
-   server with SSO. The app stays fully usable without an account.
+9. **Teams and sign-in** — git-native shared workspaces shipped; next a self-hosted server with SSO. The app
+   stays fully usable without an account.
 10. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
 
 Deferred: load testing, WSDL coverage and refactoring, code generation, a TCP monitor.

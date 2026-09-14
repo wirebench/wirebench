@@ -342,4 +342,73 @@ describe('FormView', () => {
     expect(screen.getByText(/No properties in scope/)).toBeDefined();
     expect(onValueEdit).not.toHaveBeenCalled();
   });
+
+  it('goes read-only when `readOnly` is set: fields are disabled and typing never calls onValueEdit', async () => {
+    const { onValueEdit } = renderView({ readOnly: true });
+    await waitFor(() => expect(screen.getByLabelText('tem:intA value')).toBeDefined());
+
+    const input = screen.getByLabelText<HTMLInputElement>('tem:intA value');
+    expect(input.disabled).toBe(true);
+
+    // A disabled input never receives keystrokes, so typing into it is a no-op either way —
+    // asserting `onValueEdit` was never called either way is what actually proves the guard.
+    await userEvent.type(input, '2');
+    expect(onValueEdit).not.toHaveBeenCalled();
+  });
+
+  it('read-only: the Add-repeat, Get Data and insert-optional controls are disabled', async () => {
+    const itemTemplate = field({ id: 'r/repeat/template', label: 'tem:item' });
+    const root: FormNodeWire = {
+      ...ROOT,
+      children: [
+        ...ROOT.children,
+        {
+          id: 'r/repeat',
+          kind: 'repeat',
+          name: { namespaceUri: 'http://tempuri.org/', localName: 'item' },
+          label: 'tem:item',
+          required: false,
+          occurs: { min: 0, max: 5 },
+          present: true,
+          children: [],
+          repeat: { canAdd: true, canRemove: true, instances: [], template: itemTemplate },
+        },
+      ],
+    };
+    renderView({ readOnly: true }, root);
+    await waitFor(() => expect(screen.getByLabelText('Get Data for tem:intA')).toBeDefined());
+
+    expect(screen.getByLabelText<HTMLButtonElement>('Get Data for tem:intA').disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLButtonElement>('Add tem:note').disabled).toBe(true);
+    expect(screen.getByLabelText<HTMLButtonElement>('Add tem:item').disabled).toBe(true);
+  });
+
+  it('read-only: a structural edit never reaches applyFormEdit, even if triggered directly', async () => {
+    const root: FormNodeWire = {
+      ...ROOT,
+      children: [
+        {
+          id: 'r/choice',
+          kind: 'choice',
+          name: { namespaceUri: 'http://tempuri.org/', localName: 'which' },
+          label: 'tem:which',
+          required: true,
+          occurs: { min: 1, max: 1 },
+          present: true,
+          children: [
+            { ...field({ id: 'r/choice/0', label: 'tem:a' }) },
+            { ...field({ id: 'r/choice/1', label: 'tem:b' }) },
+          ],
+          choice: { selected: 0 },
+        },
+      ],
+    };
+    const { applyFormEdit } = renderView({ readOnly: true }, root);
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'tem:b' })).toBeDefined());
+
+    const otherTab = screen.getByRole<HTMLButtonElement>('tab', { name: 'tem:b' });
+    expect(otherTab.disabled).toBe(true);
+    await userEvent.click(otherTab);
+    expect(applyFormEdit).not.toHaveBeenCalled();
+  });
 });

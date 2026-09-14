@@ -16,12 +16,19 @@ import { subscribeToHistory } from '../state/history.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
+import { subscribeToSync } from '../state/sync.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
 import { PreferencesDialog } from '../features/preferences/preferences-dialog.js';
 import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
+import { ShareDialog } from '../features/workspace/share-dialog.js';
+import { JoinDialog } from '../features/workspace/join-dialog.js';
+import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
+import { SyncPanel } from '../features/sync/sync-panel.js';
+import { ConflictResolver } from '../features/sync/conflict-resolver.js';
+import { IdentityDialog } from '../features/sync/identity-dialog.js';
 import { ActivityBar } from './activity-bar.js';
 import { subscribeToMenuCommands, syncAppMenu } from './app-menu.js';
 import { CodePanel } from './code-panel.js';
@@ -239,6 +246,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => subscribeToWorkspace(), []);
+  useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToPreferences(), []);
@@ -413,6 +421,12 @@ export function AppShell() {
       <WorkspaceManageDialog />
       <PreferencesDialog />
       <RemoveProjectDialog />
+      <ShareDialog />
+      <JoinDialog />
+      <MoveProjectDialog />
+      <SyncPanel />
+      <ConflictResolver />
+      <IdentityDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

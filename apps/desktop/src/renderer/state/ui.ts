@@ -79,6 +79,16 @@ export interface UiStore extends UiSnapshot {
   readonly workspaceManageOpen: boolean;
   /** Whether the Create workspace dialog (a name, nothing else) is open. Transient. */
   readonly workspaceCreateOpen: boolean;
+  /** Whether the Sync panel is open. Transient — never persisted. */
+  readonly syncPanelOpen: boolean;
+  /** Whether the conflict resolver (Task 11) is open. Transient — never persisted. */
+  readonly conflictResolverOpen: boolean;
+  /** Whether the Share Workspace dialog is open. Transient — never persisted. */
+  readonly shareDialogOpen: boolean;
+  /** Whether the Join Shared Workspace dialog is open. Transient — never persisted. */
+  readonly joinDialogOpen: boolean;
+  /** The project id the Move to Workspace dialog is open for, or `null` when it is closed. */
+  readonly moveProjectDialog: string | null;
   /** Whether the Settings dialog is open, and which section it should land on. Transient. */
   readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
@@ -98,6 +108,11 @@ export interface UiStore extends UiSnapshot {
   readonly setWorkspaceSwitcherOpen: (open: boolean) => void;
   readonly setWorkspaceManageOpen: (open: boolean) => void;
   readonly setWorkspaceCreateOpen: (open: boolean) => void;
+  readonly setSyncPanelOpen: (open: boolean) => void;
+  readonly setConflictResolverOpen: (open: boolean) => void;
+  readonly setShareDialogOpen: (open: boolean) => void;
+  readonly setJoinDialogOpen: (open: boolean) => void;
+  readonly setMoveProjectDialog: (projectId: string | null) => void;
   /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
   readonly openPreferences: (section?: PreferencesSectionWire) => void;
   readonly setPreferencesOpen: (open: boolean) => void;
@@ -182,6 +197,11 @@ export const useUiStore = create<UiStore>((set, get) => {
     workspaceManageOpen: false,
     preferences: { open: false, section: undefined },
     workspaceCreateOpen: false,
+    syncPanelOpen: false,
+    conflictResolverOpen: false,
+    shareDialogOpen: false,
+    joinDialogOpen: false,
+    moveProjectDialog: null,
     confirmRemoveProjectId: undefined,
 
     setSelection: (selection) => {
@@ -225,6 +245,21 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setWorkspaceCreateOpen: (open) => {
       set({ workspaceCreateOpen: open });
+    },
+    setSyncPanelOpen: (open) => {
+      set({ syncPanelOpen: open });
+    },
+    setConflictResolverOpen: (open) => {
+      set({ conflictResolverOpen: open });
+    },
+    setShareDialogOpen: (open) => {
+      set({ shareDialogOpen: open });
+    },
+    setJoinDialogOpen: (open) => {
+      set({ joinDialogOpen: open });
+    },
+    setMoveProjectDialog: (projectId) => {
+      set({ moveProjectDialog: projectId });
     },
     openPreferences: (section) => {
       set({ preferences: { open: true, section } });

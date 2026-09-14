@@ -147,3 +147,21 @@ describe('autosave is opt-in', () => {
     expect(await nameOnDisk(dir)).toBe('Renamed');
   });
 });
+
+describe('the project manifest does not record why it was saved', () => {
+  it('a manual save followed by an autosave of the same model leaves wirebench.yaml byte-identical', async () => {
+    const dir = join(root!, 'Stable');
+    const { host } = hostWith(false);
+    await host.create({ dir, name: 'Stable' });
+    await host.mutate({ kind: 'rename-project', name: 'Renamed' });
+
+    await host.save({ reason: 'manual' });
+    const afterManual = await readFile(join(dir, 'wirebench.yaml'));
+    const result = await host.save({ reason: 'autosave' });
+    const afterAutosave = await readFile(join(dir, 'wirebench.yaml'));
+
+    expect(afterAutosave.equals(afterManual)).toBe(true);
+    expect(result.written).toBe(0);
+    await host.close();
+  });
+});

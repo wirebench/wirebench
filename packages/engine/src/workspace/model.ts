@@ -20,7 +20,7 @@ import { generateId } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
 
 /** The on-disk format version written to (and required by) `workspace.yaml`. */
-export const WORKSPACE_FORMAT_VERSION = 2;
+export const WORKSPACE_FORMAT_VERSION = 3;
 
 /**
  * A pointer to one project inside a workspace. `internal` projects live under
@@ -71,7 +71,11 @@ export interface Workspace {
   readonly properties: PropertyMap;
   /** Names of {@link properties} entries switched off; see {@link WorkspaceEnvironment.disabledProperties}. */
   readonly disabledProperties: readonly string[];
-  /** Id of the environment currently active for this workspace, if any. */
+  /**
+   * Id of the environment currently active for this workspace, if any. Machine-local: kept only
+   * in memory while a workspace is open, and never serialised into `workspace.yaml` — see
+   * `local-state.ts`, which is where it actually lives on disk.
+   */
   readonly activeEnvironmentId?: string;
   readonly projects: readonly WorkspaceProjectRef[];
   readonly environments: readonly WorkspaceEnvironment[];

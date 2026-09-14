@@ -85,6 +85,9 @@ export interface RequestPaneProps {
   /** Clark-notation binding QName; with `operationName` it tells the Form view which body to model. */
   readonly bindingName: string;
   readonly operationName: string;
+  /** Whether this request has an unresolved sync conflict (Task 11): the Outline and XML views
+   *  both go read-only, and a note says why. Defaults to `false`. */
+  readonly conflicted?: boolean;
 }
 
 /** Imperative escape hatch for callers that must flush a pending debounced edit synchronously. */
@@ -97,7 +100,16 @@ export interface RequestPaneHandle {
 
 /** The request half: the editable SOAP envelope, plus the (mostly future) view strip. */
 export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(function RequestPane(
-  { requestId, envelopeXml, onEnvelopeChange, onSend, interfaceId, bindingName, operationName }: RequestPaneProps,
+  {
+    requestId,
+    envelopeXml,
+    onEnvelopeChange,
+    onSend,
+    interfaceId,
+    bindingName,
+    operationName,
+    conflicted = false,
+  }: RequestPaneProps,
   ref,
 ) {
   const [local, setLocal] = useState(envelopeXml);
@@ -321,6 +333,15 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           <OverflowMenu currentText={local} onLoaded={commitNow} />
         </div>
       </div>
+      {conflicted && (
+        <div
+          data-testid="request-conflict-note"
+          role="status"
+          className="shrink-0 border-b border-hairline bg-surface-sunken px-3 py-1 text-xs text-fg-subtle"
+        >
+          Read-only until the conflict is resolved
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <Suspense fallback={<ViewFallback />}>
           {view === 'form' ? (
@@ -333,12 +354,13 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
               onEnvelopeReplace={commitNow}
               viewType={formViewType}
               onViewTypeChange={(next) => setFormViewType(requestId, next)}
+              readOnly={conflicted}
             />
           ) : view === 'outline' ? (
             <OutlineView
               xml={local}
               interfaceId={interfaceId}
-              readOnly={false}
+              readOnly={conflicted}
               onEdit={handleOutlineEdit}
               onSelectRange={handleOutlineSelectRange}
             />
@@ -357,6 +379,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
               onMount={handleMount}
               lineNumbers={lineNumbers}
               contextMenu={false}
+              readOnly={conflicted}
             />
           )}
         </Suspense>

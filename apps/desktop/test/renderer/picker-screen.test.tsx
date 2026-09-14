@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkspacePicker } from '../../src/renderer/features/workspace/picker-screen.js';
+import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -166,5 +167,43 @@ describe('WorkspacePicker', () => {
     await userEvent.click(await screen.findByTitle('/old/Billing'));
 
     await waitFor(() => expect(importSuggestion).toHaveBeenCalledWith({ index: 1 }));
+  });
+
+  it('opens the join dialog from the top action row', async () => {
+    installWirebenchApi({ workspace: { list: listing([]) } });
+    render(<WorkspacePicker />);
+
+    await userEvent.click(screen.getByTestId('workspace-join'));
+
+    expect(useUiStore.getState().joinDialogOpen).toBe(true);
+    useUiStore.setState({ joinDialogOpen: false });
+  });
+
+  it('shows a git share row with its remote host, never the full URL', async () => {
+    const shared: WorkspaceSummaryWire = {
+      ...ROWS[0]!,
+      id: 'shared',
+      name: 'Shared',
+      share: { kind: 'git', managed: true, remote: 'https://gitlab.example.com/team/workspace.git', branch: 'main' },
+    };
+    installWirebenchApi({ workspace: { list: listing([shared]) } });
+    render(<WorkspacePicker />);
+
+    const glyph = await screen.findByTestId('workspace-picker-share');
+    expect(glyph.textContent).toContain('gitlab.example.com');
+    expect(glyph.textContent).not.toContain('workspace.git');
+  });
+
+  it('shows a folder share row as a synced folder', async () => {
+    const shared: WorkspaceSummaryWire = {
+      ...ROWS[0]!,
+      id: 'shared',
+      name: 'Shared',
+      share: { kind: 'folder', managed: false },
+    };
+    installWirebenchApi({ workspace: { list: listing([shared]) } });
+    render(<WorkspacePicker />);
+
+    expect((await screen.findByTestId('workspace-picker-share')).textContent).toContain('Synced folder');
   });
 });

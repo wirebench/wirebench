@@ -41,6 +41,13 @@ export interface LoadWorkspaceOptions {
 export interface LoadWorkspaceResult {
   readonly workspace: Workspace;
   readonly problems: readonly WorkspaceProblem[];
+  /**
+   * Whatever the migration pulled out of an older manifest because it no longer belongs there —
+   * today, a v1/v2 `activeEnvironmentId`. `workspace.activeEnvironmentId` is always left
+   * `undefined` by this function; the caller (main's `WorkspaceService`) is the one that decides
+   * whether to adopt this into `local.yaml`.
+   */
+  readonly legacy: { readonly activeEnvironmentId?: string };
 }
 
 function abs(root: string, relative: string): string {
@@ -175,7 +182,7 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
       details: { file: WORKSPACE_MANIFEST, root },
     });
   }
-  const migrated = migrateWorkspace(manifestDocument, WORKSPACE_MANIFEST);
+  const { manifest: migrated, legacy } = migrateWorkspace(manifestDocument, WORKSPACE_MANIFEST);
 
   const problems: WorkspaceProblem[] = [];
   const projects = loadProjectRefs(migrated['projects'], problems);
@@ -190,9 +197,8 @@ export async function loadWorkspace(root: string, options?: LoadWorkspaceOptions
     createdAt: manifest.createdAt,
     properties: manifest.properties,
     disabledProperties: manifest.disabled ?? [],
-    ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     projects,
     environments: await loadEnvironments(fs, root, problems),
   };
-  return { workspace, problems };
+  return { workspace, problems, legacy };
 }

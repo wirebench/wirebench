@@ -5,6 +5,7 @@ import { RequestEditor } from '../../src/renderer/features/request-editor/reques
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { makeDraft, makeExchange, makeInterface } from '../mocks/exchange-fixtures.js';
@@ -47,6 +48,7 @@ describe('RequestEditor', () => {
     // The pane's selected view lives in the editors store now, so it outlives a `cleanup()`.
     useEditorsStore.setState({ requestViewTypes: {}, responseViewTypes: {}, responseViewPinned: {} });
     useRequestDialogsStore.getState().close();
+    useSyncStore.getState().reset();
   });
 
   afterEach(() => {
@@ -322,6 +324,91 @@ describe('RequestEditor', () => {
 
     expect(await screen.findByRole('dialog')).toBeDefined();
     expect(useRequestDialogsStore.getState()).toMatchObject({ kind: 'import-curl', requestId: 'req-1' });
+  });
+
+  it('goes read-only with a note while its request is conflicted', async () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal', dir: '/w/Demo', status: 'ready' }],
+      }),
+    });
+    useSyncStore.setState({
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Request 1.request.yaml', projectId: 'p1' },
+      ],
+    });
+    const form = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        root: {
+          id: 'r',
+          kind: 'group',
+          name: { namespaceUri: 'http://tempuri.org/', localName: 'Add' },
+          label: 'tem:Add',
+          required: true,
+          occurs: { min: 1, max: 1 },
+          present: true,
+          children: [
+            {
+              id: 'r/0',
+              kind: 'field',
+              name: { namespaceUri: 'http://tempuri.org/', localName: 'intA' },
+              label: 'tem:intA',
+              required: true,
+              occurs: { min: 1, max: 1 },
+              type: { name: 'xs:int', base: 'integer' },
+              present: true,
+              value: '1',
+              valueRange: { start: 0, end: 1 },
+              children: [],
+            },
+          ],
+        },
+        bodyRange: { start: 0, end: 0 },
+        problems: [],
+      },
+    });
+    installWirebenchApi({
+      request: { send, cancel },
+      project: {
+        mutate: vi.fn().mockResolvedValue({ ok: false, error: { code: 'ignored', message: 'not asserted here' } }),
+      },
+      xml: { form, applyFormEdit: vi.fn() },
+    });
+
+    render(<RequestEditor requestId="req-1" />);
+
+    expect(screen.getByTestId('request-conflict-note').textContent).toBe('Read-only until the conflict is resolved');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Request envelope XML').readOnly).toBe(true);
+
+    const outlineTabs = screen.getAllByRole('tab', { name: 'Outline' });
+    await userEvent.click(outlineTabs[0] as HTMLElement);
+    const tree = screen.getByRole('tree');
+    expect(tree.querySelectorAll('input')).toHaveLength(0);
+
+    const formTabs = screen.getAllByRole('tab', { name: 'Form' });
+    await userEvent.click(formTabs[0] as HTMLElement);
+    await waitFor(() => {
+      expect(screen.getByLabelText('tem:intA value')).toBeTruthy();
+    });
+    expect(screen.getByLabelText<HTMLInputElement>('tem:intA value').disabled).toBe(true);
+  });
+
+  it('stays editable, with no conflict note, when its request has no conflict', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        projects: [{ id: 'p1', name: 'Demo', slug: 'Demo', source: 'internal', dir: '/w/Demo', status: 'ready' }],
+      }),
+    });
+    useSyncStore.setState({
+      conflicts: [
+        { path: 'projects/Demo/interfaces/Calculator/operations/Add/Some-other-request.request.yaml', projectId: 'p1' },
+      ],
+    });
+    render(<RequestEditor requestId="req-1" />);
+
+    expect(screen.queryByTestId('request-conflict-note')).toBeNull();
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Request envelope XML').readOnly).toBe(false);
   });
 
   it('the response Outline renders no editable inputs', async () => {

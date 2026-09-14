@@ -16,12 +16,6 @@ import { compact, stringifyYaml } from '../project/yaml.js';
 /** A workspace's files, keyed by path relative to the workspace root (always `/`-separated). */
 export type WorkspaceFiles = ReadonlyMap<string, string>;
 
-/** Options for {@link workspaceFiles}. */
-export interface WorkspaceFilesOptions {
-  /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
-  readonly writer?: string;
-}
-
 function projectRefDocument(ref: WorkspaceProjectRef): Record<string, unknown> {
   return compact({ id: ref.id, slug: ref.slug, source: ref.source, path: ref.path });
 }
@@ -44,10 +38,12 @@ function disabledList(disabled: readonly string[], properties: PropertyMap): rea
  * any path is built, so a corrupted slug throws
  * `WorkspaceError('workspace-path-invalid')` here — before `saveWorkspace`
  * ever touches the file system.
+ *
+ * `activeEnvironmentId` (machine-local, see `model.ts`) and `writtenBy` (dropped outright) never
+ * appear in the written manifest — see `local-state.ts` for where the former actually lives.
  */
-export function workspaceFiles(workspace: Workspace, options?: WorkspaceFilesOptions): WorkspaceFiles {
+export function workspaceFiles(workspace: Workspace): WorkspaceFiles {
   const files = new Map<string, string>();
-  const writer = options?.writer ?? 'wirebench';
 
   files.set(
     WORKSPACE_MANIFEST,
@@ -60,9 +56,7 @@ export function workspaceFiles(workspace: Workspace, options?: WorkspaceFilesOpt
         createdAt: workspace.createdAt,
         properties: { ...workspace.properties },
         disabled: disabledList(workspace.disabledProperties, workspace.properties),
-        activeEnvironmentId: workspace.activeEnvironmentId,
         projects: workspace.projects.map((ref) => projectRefDocument(ref)),
-        writtenBy: writer,
       }),
     ),
   );

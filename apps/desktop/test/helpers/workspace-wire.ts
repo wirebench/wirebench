@@ -1,4 +1,9 @@
-import type { WorkspaceEnvironmentWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
+import type {
+  WorkspaceEnvironmentWire,
+  WorkspaceProjectWire,
+  WorkspaceShareWire,
+  WorkspaceWire,
+} from '../../src/shared/wire-types.js';
 
 /**
  * The smallest open workspace a renderer test needs: an id, a name, and whichever environments
@@ -14,6 +19,7 @@ export function workspaceWire(
     readonly disabled?: readonly string[];
     readonly name?: string;
     readonly id?: string;
+    readonly share?: WorkspaceShareWire;
   } = {},
 ): WorkspaceWire {
   return {
@@ -25,5 +31,6 @@ export function workspaceWire(
     environments: [...(patch.environments ?? [])],
     ...(patch.activeEnvironmentId !== undefined ? { activeEnvironmentId: patch.activeEnvironmentId } : {}),
     projects: [...(patch.projects ?? [])],
+    ...(patch.share !== undefined ? { share: patch.share } : {}),
   };
 }

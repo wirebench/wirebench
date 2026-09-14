@@ -6,6 +6,24 @@ function report(error: unknown, fallback: string): void {
   showToast(error instanceof Error ? error.message : fallback);
 }
 
+/** A join refused because the workspace is already on this machine: the one to offer instead. */
+export interface AlreadyPresent {
+  readonly workspaceId: string;
+  readonly message: string;
+}
+
+/** The `workspace-already-present` refusal (with the id main puts in its details), if that is what `error` is. */
+function alreadyPresent(error: unknown): AlreadyPresent | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const { code, details } = error as Error & { code?: unknown; details?: { workspaceId?: unknown } };
+  if (code !== 'workspace-already-present' || typeof details?.workspaceId !== 'string') {
+    return undefined;
+  }
+  return { workspaceId: details.workspaceId, message: error.message };
+}
+
 /**
  * The workspace actions shared by the picker, the explorer toolbar, the command palette and
  * (later) the explorer's project context menu, so those can never drift. Each one reports its
@@ -159,6 +177,70 @@ export const workspaceActions = {
     } catch (error) {
       report(error, 'Could not create the project');
       return undefined;
+    }
+  },
+
+  /** Shares the open local workspace as a git repository. `false` when main refused. */
+  async share(remote?: string, branch?: string): Promise<boolean> {
+    try {
+      await useWorkspaceStore.getState().share(remote, branch);
+      return true;
+    } catch (error) {
+      report(error, 'Could not share the workspace');
+      return false;
+    }
+  },
+
+  /** Shares the open local workspace to a folder the user picks. `false` when cancelled/refused. */
+  async shareToFolder(): Promise<boolean> {
+    try {
+      return await useWorkspaceStore.getState().shareToFolder();
+    } catch (error) {
+      report(error, 'Could not share the workspace to a folder');
+      return false;
+    }
+  },
+
+  /**
+   * Clones a shared workspace from `remote` and opens it. `false` when main refused (already
+   * reported); the workspace to offer instead, unreported, when it is already on this machine.
+   */
+  async join(remote: string, branch?: string): Promise<boolean | AlreadyPresent> {
+    try {
+      await useWorkspaceStore.getState().join(remote, branch);
+      return true;
+    } catch (error) {
+      return alreadyPresent(error) ?? (report(error, 'Could not join the shared workspace'), false);
+    }
+  },
+
+  /**
+   * Joins a shared workspace from an existing clone/folder the user picks. `false` when cancelled
+   * or refused (already reported); the workspace to offer instead when it is already here.
+   */
+  async joinFromFolder(): Promise<boolean | AlreadyPresent> {
+    try {
+      return await useWorkspaceStore.getState().joinFromFolder();
+    } catch (error) {
+      return alreadyPresent(error) ?? (report(error, 'Could not join the shared workspace'), false);
+    }
+  },
+
+  /** Makes the open shared workspace local again. */
+  async stopSharing(): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().stopSharing();
+    } catch (error) {
+      report(error, 'Could not stop sharing the workspace');
+    }
+  },
+
+  /** Moves a project from the open workspace into another one, closed or not. */
+  async moveProject(projectId: string, workspaceId: string): Promise<void> {
+    try {
+      await useWorkspaceStore.getState().moveProject(projectId, workspaceId);
+    } catch (error) {
+      report(error, 'Could not move the project');
     }
   },
 };

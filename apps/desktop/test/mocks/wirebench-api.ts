@@ -72,6 +72,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       save: fail('project.save'),
       addInterface: fail('project.addInterface'),
       reload: fail('project.reload'),
+      moveToWorkspace: fail('project.moveToWorkspace'),
     },
     // `list` and `snapshot` resolve rather than fail: the shell asks for both on mount, so
     // every renderer test would otherwise have to stub channels it does not care about.
@@ -95,10 +96,39 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       removeProject: fail('workspace.removeProject'),
       setActiveEnvironment: fail('workspace.setActiveEnvironment'),
       mutate: fail('workspace.mutate'),
+      share: fail('workspace.share'),
+      shareToFolder: fail('workspace.shareToFolder'),
+      join: fail('workspace.join'),
+      joinFromFolder: fail('workspace.joinFromFolder'),
+      stopSharing: fail('workspace.stopSharing'),
+    },
+    // `status` resolves rather than fails: the badge and the sync store's `workspace.changed`
+    // handler call it unconditionally, so every renderer test would otherwise have to stub it.
+    sync: {
+      status: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { kind: 'local', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 },
+      }),
+      fetch: fail('sync.fetch'),
+      pull: fail('sync.pull'),
+      push: fail('sync.push'),
+      commit: fail('sync.commit'),
+      conflicts: fail('sync.conflicts'),
+      resolve: fail('sync.resolve'),
+      abortMerge: fail('sync.abortMerge'),
+      log: fail('sync.log'),
+      updateSettings: fail('sync.updateSettings'),
+      setIdentity: fail('sync.setIdentity'),
+      revealTree: fail('sync.revealTree'),
     },
     dialogs: {
       openFile: fail('dialogs.openFile'),
       saveFile: fail('dialogs.saveFile'),
+    },
+    git: {
+      detect: fail('git.detect'),
+      locate: fail('git.locate'),
+      clearPath: fail('git.clearPath'),
     },
     // Preferences resolve to the defaults rather than a failure: the shell loads them on mount,
     // so every renderer test would otherwise have to stub a channel it does not care about.

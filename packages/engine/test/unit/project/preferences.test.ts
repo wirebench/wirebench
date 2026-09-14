@@ -127,3 +127,21 @@ describe('network preference defaults', () => {
     expect(merged.ssl.trustAll).toBe(false);
   });
 });
+
+describe('git preferences', () => {
+  it('defaults to no configured path', () => {
+    expect(DEFAULT_PREFERENCES.git).toEqual({});
+  });
+
+  it('merges the configured path and its picked-by-main marker like the section resets', () => {
+    const merged = mergePreferences({ git: { path: '/usr/local/bin/git', pathPickedByMain: true } });
+    expect(merged.git.path).toBe('/usr/local/bin/git');
+    expect(merged.git.pathPickedByMain).toBe(true);
+  });
+
+  it('resets the git section, leaving the others alone', () => {
+    const current = mergePreferences({ git: { path: '/usr/bin/git', pathPickedByMain: true } });
+    const reset = resetPreferences(current, 'git');
+    expect(reset.git).toEqual(DEFAULT_PREFERENCES.git);
+  });
+});

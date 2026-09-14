@@ -17,6 +17,7 @@ import { RequestBreadcrumb } from './request-breadcrumb.js';
 import { RequestContextMenu } from './request-context-menu.js';
 import { useRequestDialogsStore } from './request-dialogs.js';
 import { RequestPane, type RequestPaneHandle } from './request-pane.js';
+import { useConflictTargets } from '../sync/use-conflict-targets.js';
 import { ViewTabs } from './view-tabs.js';
 import { WssUsernameTokenDialog, WsTimestampDialog } from './wss-entry-dialogs.js';
 import { ResponsePane } from './response-pane.js';
@@ -62,6 +63,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
   const exchange = useExchangesStore((state) => state.byRequest[requestId]);
   const send = useExchangesStore((state) => state.send);
   const cancel = useExchangesStore((state) => state.cancel);
+  const conflicted = useConflictTargets().requestIds.has(requestId);
 
   // Clone and Import cURL are opened from the pane's context menu, the Code panel and the
   // palette, so the flag lives in a store; this editor owns the mounting for its own request.
@@ -162,6 +164,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
                   interfaceId={draft.interfaceId}
                   bindingName={draft.bindingName}
                   operationName={draft.operationName}
+                  conflicted={conflicted}
                 />
               </RequestContextMenu>
             ) : (
@@ -185,6 +188,7 @@ export function RequestEditor({ requestId }: RequestEditorProps) {
                 interfaceId={draft.interfaceId}
                 bindingName={draft.bindingName}
                 operationName={draft.operationName}
+                conflicted={conflicted}
               />
             </RequestContextMenu>
           </Panel>

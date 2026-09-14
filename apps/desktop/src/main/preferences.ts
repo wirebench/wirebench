@@ -20,6 +20,7 @@ import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences } from '@wirebe
 import type { Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
 
 import type { PreferencesWire } from '../shared/wire-types.js';
+import type { findGit } from './sync/git-cli.js';
 
 /**
  * The JSON-plain, mutable mirror of a {@link Preferences} document. A structural clone rather
@@ -55,6 +56,70 @@ export function rememberPickedCaBundle(
   }
   picks.rememberRead(caBundlePath);
   return caBundlePath;
+}
+
+/**
+ * Re-records a git executable the user picked in an earlier session as a read pick for this
+ * one. Mirrors {@link rememberPickedCaBundle} exactly, including the reason: only a path
+ * carrying `git.pathPickedByMain` qualifies, so a `preferences.yaml` edited by hand — or a path
+ * that reached the file some other way — gets no pick and no trust until it is picked again.
+ *
+ * @param preferences the loaded preferences document
+ * @param picks the session's picked-path memory
+ * @returns the path that was re-recorded, or `undefined` when none was
+ */
+export function rememberPickedGit(
+  preferences: Preferences,
+  picks: { rememberRead(path: string): void },
+): string | undefined {
+  const path = configuredGitPath(preferences);
+  if (path === undefined) {
+    return undefined;
+  }
+  picks.rememberRead(path);
+  return path;
+}
+
+/**
+ * The `git.path` preference, but only when main itself set it (see {@link rememberPickedGit}):
+ * an unmarked path — one with no `pathPickedByMain: true`, however it got into
+ * `preferences.yaml` — is never treated as "configured", the same containment reasoning that
+ * makes `caBundlePickedByMain` a precondition for the CA bundle, applied to an executable main
+ * is about to *run*. An empty string (`git.clearPath`'s tombstone value) also counts as unset,
+ * so a cleared preference falls straight through to `findGit`'s own discovery.
+ *
+ * Every reader of the git path preference (`git.detect`, `gitLocator`) must go through this —
+ * reading `preferences.git.path` directly would let a hand-edited `preferences.yaml` point main
+ * at an arbitrary executable without ever having been picked.
+ */
+export function configuredGitPath(preferences: Preferences): string | undefined {
+  const { path, pathPickedByMain } = preferences.git;
+  return pathPickedByMain === true && path !== undefined && path.length > 0 ? path : undefined;
+}
+
+/**
+ * The `findGit` options `gitLocator` (and `git.detect`, when no marked path is configured)
+ * should call discovery with — the full precedence in one place: an e2e override
+ * (`WIREBENCH_E2E_GIT_PATH`, honoured only when the app is unpackaged), then a `git.path` main
+ * itself picked ({@link configuredGitPath}), then plain discovery.
+ *
+ * The override is not merely "try this one first" — a candidate `findGit` cannot spawn or that
+ * reports too old a version must not fall through to `PATH` or the platform defaults, or the
+ * override cannot simulate "no git installed" on a machine (or CI runner) that has a real one.
+ * `exists` is `findGit`'s existing candidate filter: restricting it to the override alone means
+ * every other candidate is skipped before a process is ever spawned for it.
+ */
+export function gitLocatorOptions(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly isPackaged: boolean;
+  readonly preferences: Preferences;
+}): Parameters<typeof findGit>[0] {
+  const override = input.isPackaged ? undefined : input.env['WIREBENCH_E2E_GIT_PATH'];
+  if (override !== undefined && override.length > 0) {
+    return { configuredPath: override, exists: (candidate) => candidate === override };
+  }
+  const configuredPath = configuredGitPath(input.preferences);
+  return configuredPath !== undefined ? { configuredPath } : {};
 }
 
 /** File name (inside `userData`) the preferences are persisted to. */

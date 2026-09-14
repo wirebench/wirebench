@@ -27,8 +27,6 @@ export interface SaveWorkspaceOptions {
    */
   readonly previous?: WorkspaceFiles;
   readonly fs?: FsLike;
-  /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
-  readonly writer?: string;
 }
 
 function toAbsolute(root: string, relative: string): string {
@@ -65,7 +63,7 @@ export async function saveWorkspace(
   options?: SaveWorkspaceOptions,
 ): Promise<SaveResult> {
   const fs = options?.fs ?? nodeFs;
-  const desired = workspaceFiles(workspace, options?.writer !== undefined ? { writer: options.writer } : undefined);
+  const desired = workspaceFiles(workspace);
   const existing = await listManagedFiles(fs, root);
 
   const written: string[] = [];

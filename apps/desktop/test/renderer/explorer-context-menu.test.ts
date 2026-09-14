@@ -16,7 +16,12 @@ const REVEAL = /mac/i.test(navigator.userAgent)
 
 describe('explorerMenuItems', () => {
   beforeEach(() => {
-    useUiStore.setState({ selection: undefined, importDialogOpen: false, confirmRemoveProjectId: undefined });
+    useUiStore.setState({
+      selection: undefined,
+      importDialogOpen: false,
+      confirmRemoveProjectId: undefined,
+      moveProjectDialog: null,
+    });
   });
 
   it('offers the project operations on a project root', () => {
@@ -29,9 +34,17 @@ describe('explorerMenuItems', () => {
       'Settings…',
       REVEAL,
       'Export project…',
+      'Move to workspace…',
       'Rename',
       'Remove from workspace',
     ]);
+  });
+
+  it('opens the Move to Workspace dialog for the right project', () => {
+    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
+    items.find((item) => item.label === 'Move to workspace…')?.run();
+
+    expect(useUiStore.getState().moveProjectDialog).toBe('p1');
   });
 
   it('offers a linked project its own environments, and neither project a way to remove files', () => {
@@ -48,6 +61,7 @@ describe('explorerMenuItems', () => {
       'Project environments (linked project)',
       REVEAL,
       'Export project…',
+      'Move to workspace…',
       'Rename',
       'Remove from workspace',
     ]);
@@ -118,6 +132,7 @@ describe('explorerMenuItems', () => {
       ['import', 'import-openapi', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
+      ['move-to-workspace'],
       ['rename', 'remove'],
     ]);
     // Only the second group differs — the linked project's own environments join Settings.

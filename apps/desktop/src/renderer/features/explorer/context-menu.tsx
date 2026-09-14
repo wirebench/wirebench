@@ -80,6 +80,13 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'export', label: 'Export project…', run: () => projectRowActions.export(projectId) },
       ],
       [
+        {
+          key: 'move-to-workspace',
+          label: 'Move to workspace…',
+          run: () => projectRowActions.moveToWorkspace(projectId),
+        },
+      ],
+      [
         { key: 'rename', label: 'Rename', run: () => projectRowActions.rename(projectId) },
         { key: 'remove', label: 'Remove from workspace', run: () => projectRowActions.remove(projectId) },
       ],

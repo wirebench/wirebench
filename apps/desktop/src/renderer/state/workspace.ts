@@ -27,7 +27,10 @@ import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
 
 function asError(error: IpcError): Error {
-  return Object.assign(new Error(error.message), { code: error.code });
+  return Object.assign(new Error(error.message), {
+    code: error.code,
+    ...(error.details !== undefined ? { details: error.details } : {}),
+  });
 }
 
 /** The workspace store's serialisable state. */
@@ -95,6 +98,18 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
    * environment serialise rather than race — see `environment-queue.ts`.
    */
   readonly updateEnvironment: (environmentId: string, patch: WorkspaceEnvironmentPatchWire) => Promise<void>;
+  /** Shares the open local workspace as a git repository (remote/branch validated and trimmed in main). */
+  readonly share: (remote?: string, branch?: string) => Promise<void>;
+  /** Shares the open local workspace to an empty folder the user picks. `false` when cancelled. */
+  readonly shareToFolder: () => Promise<boolean>;
+  /** Clones a shared workspace from `remote` and opens it. */
+  readonly join: (remote: string, branch?: string) => Promise<void>;
+  /** Joins a shared workspace from an existing clone or synced folder the user picks. `false` when cancelled. */
+  readonly joinFromFolder: () => Promise<boolean>;
+  /** Makes the open shared workspace local again. */
+  readonly stopSharing: () => Promise<void>;
+  /** Moves a project from the open workspace into another one. */
+  readonly moveProject: (projectId: string, workspaceId: string) => Promise<void>;
 }
 
 /** Projects whose `project.snapshot` pull is in flight, so a burst of workspace updates asks once. */
@@ -381,6 +396,50 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
 
     updateEnvironment: async (environmentId, patch) => {
       await queueEnvironmentPatch(environmentId, () => patch);
+    },
+
+    share: async (remote, branch) => {
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.share({ remote, branch })).workspace);
+    },
+
+    shareToFolder: async () => {
+      const sentIn = generation;
+      const { workspace } = unwrap(await ipc().workspace.shareToFolder(undefined));
+      if (workspace === null) {
+        return false;
+      }
+      applyReply(sentIn, workspace);
+      return true;
+    },
+
+    join: async (remote, branch) => {
+      await handOverDrafts();
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.join({ remote, branch })).workspace);
+      await get().list();
+    },
+
+    joinFromFolder: async () => {
+      await handOverDrafts();
+      const sentIn = generation;
+      const { workspace } = unwrap(await ipc().workspace.joinFromFolder(undefined));
+      if (workspace === null) {
+        return false;
+      }
+      applyReply(sentIn, workspace);
+      await get().list();
+      return true;
+    },
+
+    stopSharing: async () => {
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.stopSharing(undefined)).workspace);
+    },
+
+    moveProject: async (projectId, workspaceId) => {
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().project.moveToWorkspace({ projectId, workspaceId })).workspace);
     },
   };
 });

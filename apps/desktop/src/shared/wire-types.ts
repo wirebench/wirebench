@@ -1041,6 +1041,15 @@ export const requestWireSchema = z.object({
   bindingName: z.string(),
   operationName: z.string(),
   name: z.string(),
+  /**
+   * The on-disk file-system name (without the `.request.yaml` / `.xml` suffix) — `RequestDef.slug`.
+   * Sync conflict matching (Task 11) keys off this, `operationSlug` and the interface/project
+   * slugs to rebuild the exact tree path a conflict names, rather than a display name that
+   * `uniqueSlug` may have suffixed to stay unique on disk.
+   */
+  slug: z.string(),
+  /** The owning operation's file-system name (`OperationDef.slug`) — see {@link slug}. */
+  operationSlug: z.string(),
   envelopeXml: z.string(),
   soapVersion: z.enum(['1.1', '1.2']),
   soapAction: z.string().optional(),
@@ -2659,6 +2668,11 @@ export const preferencesWireSchema = z.object({
     clientKeystoreRef: z.string().optional(),
     trustAll: z.literal(false),
   }),
+  git: z.object({
+    path: z.string().optional(),
+    /** True when main set `path` through `git.locate`; see `GitPreferences`. */
+    pathPickedByMain: z.boolean().optional(),
+  }),
   wsdl: z.object({
     cacheDefinitions: z.boolean(),
     prettyPrint: z.boolean(),
@@ -2707,6 +2721,7 @@ export const preferencesSectionSchema = z.enum([
   'proxy',
   'ssl',
   'rest',
+  'git',
   'wsdl',
   'wsi',
   'editor',
@@ -2725,6 +2740,7 @@ export const preferencesPatchWireSchema = z.object({
   http: z.record(z.string(), z.unknown()).optional(),
   proxy: z.record(z.string(), z.unknown()).optional(),
   ssl: z.record(z.string(), z.unknown()).optional(),
+  git: z.record(z.string(), z.unknown()).optional(),
   wsdl: z.record(z.string(), z.unknown()).optional(),
   wsi: z.record(z.string(), z.unknown()).optional(),
   rest: z.record(z.string(), z.unknown()).optional(),
@@ -2762,6 +2778,167 @@ export const sslPickCaBundleResponseSchema = z.object({
 export type SslPickCaBundleResponse = z.infer<typeof sslPickCaBundleResponseSchema>;
 export const sslClearCaBundleRequestSchema = z.object({});
 export const sslClearCaBundleResponseSchema = z.object({ preferences: preferencesWireSchema });
+
+/** A located, usable git executable — mirrors `GitLocation` from `main/sync/git-cli.ts`. */
+export const gitLocationWireSchema = z.object({ path: z.string(), version: z.string() });
+export type GitLocationWire = z.infer<typeof gitLocationWireSchema>;
+
+/**
+ * `git.detect` / `git.locate` / `git.clearPath`: like `ssl.pickCaBundle`/`clearCaBundle`, the
+ * only ways the `git.path` preference changes. The renderer never names the git executable
+ * itself — main runs it — so the path is set only by picking a file through `git.locate`, and
+ * `preferences.update` refuses a patch carrying `git.path`/`git.pathPickedByMain`.
+ */
+export const gitDetectRequestSchema = z.object({});
+export const gitDetectResponseSchema = z.object({ location: gitLocationWireSchema.nullable() });
+export type GitDetectResponse = z.infer<typeof gitDetectResponseSchema>;
+
+export const gitLocateRequestSchema = z.object({});
+export const gitLocateResponseSchema = z.object({
+  /** The located git, absent when the user cancelled the dialog (nothing changes then). */
+  location: gitLocationWireSchema.optional(),
+  preferences: preferencesWireSchema,
+});
+export type GitLocateResponse = z.infer<typeof gitLocateResponseSchema>;
+
+export const gitClearPathRequestSchema = z.object({});
+export const gitClearPathResponseSchema = z.object({ preferences: preferencesWireSchema });
+
+/** Payload for `git.identityNeeded`: the open workspace's sync needs `user.name`/`user.email`. */
+export const gitIdentityNeededEventSchema = z.object({ workspaceId: z.string() });
+export type GitIdentityNeededEvent = z.infer<typeof gitIdentityNeededEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Sync (Task 9). `SyncStatusWire`/`SyncConflictWire`/`SyncLogEntryWire` are defined here
+// verbatim from `main/sync/types.ts` (which now re-exports the inferred types below, so no
+// main-process import changes). The one path a `sync.*` channel may carry is `revealTree`'s,
+// and it is tree-relative and containment-checked in main — never a filesystem path the
+// renderer made up.
+// ---------------------------------------------------------------------------
+
+/** Where a workspace's sync currently stands relative to its remote (or synced folder). */
+export const syncStateSchema = z.enum([
+  'clean',
+  'ahead',
+  'behind',
+  'diverged',
+  'conflict',
+  'syncing',
+  'offline',
+  'error',
+]);
+export type SyncState = z.infer<typeof syncStateSchema>;
+
+/** A backend's current status, as reported to the renderer's status-bar badge and Sync panel. */
+export const syncStatusWireSchema = z.object({
+  kind: z.enum(['local', 'folder', 'git', 'server']),
+  gitAvailable: z.boolean(),
+  state: syncStateSchema,
+  ahead: z.number(),
+  behind: z.number(),
+  uncommitted: z.number(),
+  remote: z.string().optional(),
+  branch: z.string().optional(),
+  lastSyncAt: z.string().optional(),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+});
+export type SyncStatusWire = z.infer<typeof syncStatusWireSchema>;
+
+/** One unresolved conflict, as the conflict resolver lists it. `projectId` is filled in by main. */
+export const syncConflictWireSchema = z.object({
+  path: z.string(),
+  projectId: z.string().optional(),
+  entity: z.object({ kind: z.string(), name: z.string() }).optional(),
+});
+export type SyncConflictWire = z.infer<typeof syncConflictWireSchema>;
+
+/** One entry of a backend's commit history, newest first. */
+export const syncLogEntryWireSchema = z.object({
+  id: z.string(),
+  subject: z.string(),
+  author: z.string(),
+  at: z.string(),
+});
+export type SyncLogEntryWire = z.infer<typeof syncLogEntryWireSchema>;
+
+/** A patch over a git share's settings; every field optional (only what the dialog changed). */
+export const syncSettingsPatchWireSchema = z.object({
+  /** Bounded to a whole number of seconds, at most a day — a fractional or huge value would
+   * either busy-loop the fetch timer (`setTimeout` clamps to 1ms) or never fire in practice. */
+  autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
+  commitOnSave: z.boolean().optional(),
+  pushOnSave: z.boolean().optional(),
+  remote: z.string().optional(),
+  branch: z.string().optional(),
+});
+export type SyncSettingsPatchWire = z.infer<typeof syncSettingsPatchWireSchema>;
+
+/** How the open workspace (or a picker row) is shared; `managed` means its tree lives in app data.
+ * `autoFetchSeconds`/`commitOnSave`/`pushOnSave` are present only for `kind === 'git'` — the
+ * persisted `GitShareSettings`, so the Sync panel can show them without guessing a default. */
+export const workspaceShareWireSchema = z.object({
+  kind: z.enum(['folder', 'git', 'server']),
+  managed: z.boolean(),
+  remote: z.string().optional(),
+  branch: z.string().optional(),
+  autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
+  commitOnSave: z.boolean().optional(),
+  pushOnSave: z.boolean().optional(),
+});
+export type WorkspaceShareWire = z.infer<typeof workspaceShareWireSchema>;
+
+/** Raised after a pull (or a finished merge) has been applied to the open workspace. */
+export const syncPulledEventSchema = z.object({
+  workspaceId: z.string(),
+  /** Projects whose files the pull changed (reloaded, or told their files changed on disk). */
+  projectIds: z.array(z.string()),
+  /** Whether `workspace.yaml` or an `environments/*.yaml` file changed. */
+  workspaceChanged: z.boolean(),
+  /** Distinct entities changed (a request's `.request.yaml` and `.xml` count once). */
+  entityCount: z.number(),
+});
+export type SyncPulledEvent = z.infer<typeof syncPulledEventSchema>;
+
+/** Request/response for `sync.status`/`sync.fetch`/`sync.pull`/`sync.push`/`sync.abortMerge`. */
+export const syncCommitRequestSchema = z.object({ message: z.string().optional() });
+export const syncConflictsResponseSchema = z.object({ conflicts: z.array(syncConflictWireSchema) });
+export const syncResolveRequestSchema = z.object({ path: z.string(), side: z.enum(['mine', 'theirs']) });
+export const syncLogRequestSchema = z.object({ limit: z.number().int().min(1).max(200) });
+export const syncLogResponseSchema = z.object({ entries: z.array(syncLogEntryWireSchema) });
+export const syncSetIdentityRequestSchema = z.object({
+  name: z.string().trim().min(1),
+  email: z.string().trim().min(1),
+});
+export const syncSetIdentityResponseSchema = z.object({});
+/** `path` is tree-relative and produced by main itself (a conflict entry); absent → the tree root. */
+export const syncRevealTreeRequestSchema = z.object({ path: z.string().optional() });
+export const syncRevealTreeResponseSchema = z.object({});
+
+/** Payload for `sync.statusChanged`. */
+export const syncStatusChangedEventSchema = z.object({ workspaceId: z.string(), status: syncStatusWireSchema });
+export type SyncStatusChangedEvent = z.infer<typeof syncStatusChangedEventSchema>;
+
+/** Payload for `sync.conflict`. */
+export const syncConflictEventSchema = z.object({
+  workspaceId: z.string(),
+  conflicts: z.array(syncConflictWireSchema),
+});
+export type SyncConflictEvent = z.infer<typeof syncConflictEventSchema>;
+
+/** Request/response for `workspace.share` / `workspace.join`. */
+export const workspaceShareRequestSchema = z.object({ remote: z.string().optional(), branch: z.string().optional() });
+export const workspaceJoinRequestSchema = z.object({ remote: z.string(), branch: z.string().optional() });
+
+/** Request for `project.moveToWorkspace`. */
+export const projectMoveToWorkspaceRequestSchema = z.object({ projectId: z.string(), workspaceId: z.string() });
+
+/** Payload for `workspace.changedOnDisk`: a T4 load-failure reported instead of `workspace.changed`. */
+export const workspaceChangedOnDiskEventSchema = z.object({
+  workspaceId: z.string(),
+  paths: z.array(z.string()),
+  message: z.string(),
+});
+export type WorkspaceChangedOnDiskEvent = z.infer<typeof workspaceChangedOnDiskEventSchema>;
 
 /**
  * The largest single file a drag-and-drop may add (32 MiB).
@@ -2965,6 +3142,7 @@ export const workspaceSummaryWireSchema = z.object({
   /** From `workspace-state.json`; absent until the workspace has been opened at least once. */
   lastOpenedAt: z.string().optional(),
   unreadable: z.boolean().optional(),
+  share: workspaceShareWireSchema.optional(),
 });
 export type WorkspaceSummaryWire = z.infer<typeof workspaceSummaryWireSchema>;
 
@@ -3016,6 +3194,7 @@ export const workspaceWireSchema = z.object({
   /** The environment endpoints/properties resolve against, or absent when none is active. */
   activeEnvironmentId: z.string().optional(),
   projects: z.array(workspaceProjectWireSchema),
+  share: workspaceShareWireSchema.optional(),
 });
 export type WorkspaceWire = z.infer<typeof workspaceWireSchema>;
 

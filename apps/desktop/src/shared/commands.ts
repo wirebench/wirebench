@@ -108,6 +108,17 @@ export const COMMAND_IDS = [
   'history.compare',
   'history.clear',
   'request.exportWsiReport',
+  'sync.pull',
+  'sync.push',
+  'sync.fetch',
+  'sync.commit',
+  'sync.resolveConflicts',
+  'sync.openPanel',
+  'sync.revealTree',
+  'workspace.share',
+  'workspace.join',
+  'workspace.stopSharing',
+  'project.moveToWorkspace',
 ] as const;
 
 /** Every addressable action. Derived from {@link COMMAND_IDS} so the two can never drift. */
@@ -125,7 +136,8 @@ export type CommandCategory =
   | 'Request'
   | 'Secrets'
   | 'Editor'
-  | 'History';
+  | 'History'
+  | 'Sync';
 
 /**
  * The named conditions a command's `when` gate can stand for, and how each reads in a sentence.
@@ -153,6 +165,7 @@ export const COMMAND_WHEN_SCOPES = {
   'wsi.report': 'a WS-I report has been run',
   'history.entries': 'the history has entries',
   'history.pair': 'the history has two or more entries',
+  'workspace.shared': 'the open workspace is shared',
 } as const;
 
 /** The key half of {@link COMMAND_WHEN_SCOPES}. */

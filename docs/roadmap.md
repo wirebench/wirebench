@@ -27,14 +27,14 @@ v1 spec puts the item in; the spec's "1.1" list is not the 1.1.0 release, which 
 | 1   | Signed and notarised releases                                        | Ent  | XS                   | follow-up      | Managed Macs and Windows fleets block unsigned apps. Nothing else matters if IT cannot install it.                                          |
 | 2   | Documentation site                                                   | Both | S tooling, M content | new            | A release that people can install but cannot learn sends every question to the issue tracker.                                              |
 | 3   | CLI runner with basic assertions and JUnit output                    | Ent  | M                    | phase 2 subset | "Runs in CI" is a procurement checkbox, and it turns a manual tool into a pipeline step.                                                   |
-| 4   | Sync protocol design                                                 | Ent  | S (a spec)           | new            | Settles change sets, merge rules and the on-disk journal so a server can be added later without reworking the shipped workspace format.   |
+| 4   | Sync protocol design                                                 | Ent  | S (a spec)           | shipped        | Done by `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`: a shared workspace is a git repository, synced by system git, behind one `SyncBackend` interface the server (#9) reuses. |
 | 5   | Kerberos/SPNEGO                                                      | Ent  | M                    | spec 1.1       | Windows-integrated auth fronts most internal SOAP services in large organisations. Needs a native module, so it needs an explicit ruling.   |
 | —   | REST client, minimum viable                                          | Dev  | L                    | **shipped on `main`** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import; the follow-ups below are what it left out. |
 | 6   | REST follow-ups                                                      | Dev  | S–M each             | new            | Each is a gap a user hits within a day of real use; none needed a format change, which is why they were cut from the first pass.            |
 | 6b  | gRPC client                                                          | Dev  | L                    | reserved       | The third container, on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive. `kind: grpc` is already reserved and refused by name. |
 | 7   | Mock services with record-from-live                                  | Both | L                    | phase 3        | The upstream test system being down is the most common blocker a team has. Recording is the differentiator.                                |
 | 8   | MCP server over the engine                                           | Dev  | S                    | idea           | The engine is pure Node with no Electron imports, so this is cheap, and it lets coding agents drive Wirebench.                             |
-| 9   | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | OIDC first, SCIM and audit second. The enterprise offer, with data inside their own network.                                               |
+| 9   | Self-hosted Wirebench Server: sign-in, teams, SSO                    | Ent  | XL                   | new            | Spec 2 of `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (§5.4): the same shared-workspace repository, with the server running git, live updates over a socket, presence, and OIDC-first sign-in. |
 | 10  | JKS keystores, SAML tokens, WS-ReliableMessaging                     | Ent  | S each               | spec 1.1       | Build when a customer asks; each is a niche.                                                                                               |
 | 11  | Full functional testing: suites, assertion catalogue, scripting, data | Both | XL                   | phase 2        | After the runner has proved the CI story.                                                                                                  |
 | —   | Load testing, WSDL coverage and refactoring, code generation, TCP monitor | —    | XL                   | phase 4        | Deferred indefinitely; other tools do these better.                                                                                        |
@@ -78,19 +78,22 @@ Shipped in 1.1.0 (`docs/specs/2026-09-11-wirebench-workspaces-design.md`,
 `docs/plans/2026-09-11-wirebench-workspaces-plan.md`, `docs/adr/0006-workspaces-in-app-data.md`). A
 workspace groups projects, owns environments and a shared property scope, and removed folder picking
 from the normal flow. Linking a project folder that lives in git, and exporting an internal project to a
-folder, are the bridges to teams that need no server. Still parked:
+folder, are the bridges to teams that need no server.
+
+**Workspace sharing/syncing shipped** (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`,
+[ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`). A whole
+workspace — its projects and its environments — can now be shared as a git repository or a synced
+folder; members join by URL or by pointing at an existing clone, and Sync pulls, merges, pushes and
+resolves conflicts in the app. Still parked:
 
 - **Multi-window.** The workspaces design (`docs/specs/2026-09-11-wirebench-workspaces-design.md`
   §1, assumption 7) deliberately keeps one window holding one open workspace at a time. Several
   workspaces open at once, each in its own window, is a natural next step but changes how main's
   singletons (the open `WorkspaceService`, dialog picks) are scoped, so it is left as a
   follow-up rather than folded into workspaces v1.
-- **Workspace sharing/syncing.** Nothing propagates a workspace's projects or environments to
-  another machine or another person today — a workspace is one user's local app-data folder.
-  Export/link/import are the only way a project crosses machines, one project at a time. Sharing
-  a whole workspace (its environments, its project set) is a deliberately deferred idea, not a
-  gap in what shipped (`docs/adr/0006-workspaces-in-app-data.md`, Consequences); see
-  [Teams and sign-in](#teams-and-sign-in) for the networked version of this.
+- **Shared, encrypted secret values.** Secret refs travel with a shared workspace; values stay per
+  member for now (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` §1). A team
+  secrets vault is Wirebench Server's job — see [Teams and sign-in](#teams-and-sign-in).
 
 ### Environments
 
@@ -199,8 +202,8 @@ Wirebench does not have. Four principles bound the design:
 
 | Route                       | What it is                                                                                                                                                        | Size            |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Git-native teams            | Project folders kept in a git repository and linked into each member's workspace. Roles are repository permissions, history is git history, each member supplies their own secrets. The linking, importing and exporting shipped in 1.1.0; what remains is a documented recipe and a way to share the workspace-level environments that sit beside those projects. | S remaining     |
-| Self-hosted Wirebench Server | An open-source service (Node, Postgres): accounts and organisations, roles, shared workspaces with sync, a secrets vault, OIDC and SAML SSO, SCIM, an audit log. | XL              |
+| Git-native teams            | **Shipped** (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md)): a whole workspace — projects and environments — shared as a git repository on the team's own hosting (GitHub, GitLab, Azure DevOps, Gitea, or a bare repository on a network share) or a synced folder, with an in-app Sync control, conflict resolver, and per-member secrets. Roles are repository permissions, history is git history. | Shipped         |
+| Self-hosted Wirebench Server | An open-source service (Node, Postgres): accounts and organisations, roles, real-time sync (the same `SyncBackend` interface git-native teams use, spec §5.4), a secrets vault, OIDC and SAML SSO, SCIM, an audit log. | XL              |
 | Hosted cloud                | The same server run as a service: billing, uptime, support, and eventually a SOC 2 report.                                                                        | a business      |
 
 ### Deferred (phase 4)
@@ -238,7 +241,7 @@ wizard; code generation; a TCP monitor proxy.
 | Audience   | Already there                                                                                                                                                                                                                                                                 | Missing                                                                                                                          |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Developer  | Schema-aware XML editing with go-to-definition; XPath 3.1 and XQuery 3.1 on responses; persistent searchable history with diff; cURL both ways; workspaces with shared environments and one environment switch; property expansion across every scope; manual save with per-tab dirty marks; generated documentation; keyboard-first shell. | REST in the same project; scripting; the MCP surface; a user guide.                                                              |
-| Enterprise | Secrets in the OS keychain and never in project files; git-friendly project folders that link into a workspace; TLS verification on by default with a persistent badge when bypassed; complete WS-Security both ways; NTLMv2, client certificates, authenticated proxies, custom CA bundle; no telemetry; consent-gated updates; Apache-2.0; axe and contrast gates. | Signed builds; Kerberos; a CI runner; MSI and silent install; SBOM and attestations; managed preferences; SSO and team sharing. |
+| Enterprise | Secrets in the OS keychain and never in project files; git-friendly project folders that link into a workspace; **whole-workspace sharing over git or a synced folder, with an in-app Sync control and conflict resolver**; TLS verification on by default with a persistent badge when bypassed; complete WS-Security both ways; NTLMv2, client certificates, authenticated proxies, custom CA bundle; no telemetry; consent-gated updates; Apache-2.0; axe and contrast gates. | Signed builds; Kerberos; a CI runner; MSI and silent install; SBOM and attestations; managed preferences; SSO and a shared secrets vault. |
 
 ## Departures from the v1 spec
 

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  loadLocalState,
   loadWorkspace,
   saveWorkspace,
   workspaceDir,
@@ -662,4 +663,151 @@ describe('WorkspaceService saving', () => {
 
     await service.close();
   }, 60_000);
+});
+
+describe('active environment: machine-local, via local.yaml', () => {
+  it('setActiveEnvironment writes local.yaml and leaves workspace.yaml bytes unchanged', async () => {
+    const service = newService();
+    const created = await service.create('Envs');
+    const dir = workspaceDir(root, created.id);
+    const manifestBefore = await readFile(workspaceManifestFile(dir), 'utf8');
+
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    // Adding an environment does touch the manifest (it holds the environments list), so re-snapshot
+    // the manifest bytes right before the call under test.
+    const manifestBeforeActivate = await readFile(workspaceManifestFile(dir), 'utf8');
+
+    await service.setActiveEnvironment(createdEnvironmentId as string);
+
+    const manifestAfter = await readFile(workspaceManifestFile(dir), 'utf8');
+    expect(manifestAfter).toBe(manifestBeforeActivate);
+    expect(manifestAfter).not.toContain('activeEnvironmentId');
+    expect(manifestBefore).not.toContain('activeEnvironmentId');
+
+    const local = await loadLocalState(dir);
+    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(service.snapshot()?.activeEnvironmentId).toBe(createdEnvironmentId);
+
+    await service.close();
+  });
+
+  it('reopening the workspace restores the active environment from local.yaml', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Envs');
+    const { createdEnvironmentId } = await bootstrap.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await bootstrap.setActiveEnvironment(createdEnvironmentId as string);
+    await bootstrap.close();
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+
+    await reopened.close();
+  });
+
+  it('opens a v2 workspace.yaml with activeEnvironmentId active, creating local.yaml', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    // Hand-write a v2 manifest carrying activeEnvironmentId, as an older build would have.
+    const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
+    const v2Text = manifestText
+      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
+    await writeFile(workspaceManifestFile(dir), v2Text);
+    expect(existsSync(join(dir, 'local.yaml'))).toBe(false);
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+    expect(existsSync(join(dir, 'local.yaml'))).toBe(true);
+    const local = await loadLocalState(dir);
+    expect(local.activeEnvironmentId).toBe(createdEnvironmentId);
+
+    await reopened.close();
+  });
+
+  it('renaming a closed v2 workspace keeps its active environment in local.yaml', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
+    const v2Text = manifestText
+      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
+    await writeFile(workspaceManifestFile(dir), v2Text);
+
+    // Rewrites the manifest at v3 while closed, which drops the key from it.
+    await newService().rename(created.id, 'Renamed legacy');
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.name).toBe('Renamed legacy');
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+    await reopened.close();
+  });
+
+  it('finishes the v2->v3 migration on open: the manifest is rewritten at v3 with the key gone, so a later clear sticks', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    const { createdEnvironmentId } = await service.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
+    const v2Text = manifestText
+      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace(/\nprojects:/, `\nactiveEnvironmentId: ${createdEnvironmentId as string}\nprojects:`);
+    await writeFile(workspaceManifestFile(dir), v2Text);
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBe(createdEnvironmentId);
+
+    // The migration is finished on disk immediately: no more legacy key to resurrect later.
+    const migratedManifest = await readFile(workspaceManifestFile(dir), 'utf8');
+    expect(migratedManifest).toContain('formatVersion: 3');
+    expect(migratedManifest).not.toContain('activeEnvironmentId');
+
+    // Explicitly clearing it must stick across a close/reopen — nothing on disk can bring it back.
+    await reopened.setActiveEnvironment(null);
+    await reopened.close();
+
+    const relaunched = newService();
+    const snapshotAfterClear = await relaunched.open(created.id);
+    expect(snapshotAfterClear.activeEnvironmentId).toBeUndefined();
+
+    await relaunched.close();
+  });
+
+  it('a v2 activeEnvironmentId naming a missing environment writes no local.yaml and activates nothing', async () => {
+    const service = newService();
+    const created = await service.create('Legacy');
+    await service.close();
+
+    const dir = workspaceDir(root, created.id);
+    const manifestText = await readFile(workspaceManifestFile(dir), 'utf8');
+    const v2Text = manifestText
+      .replace('formatVersion: 3', 'formatVersion: 2')
+      .replace(/\nprojects:/, `\nactiveEnvironmentId: 01JGHOSTGHOSTGHOSTGHOSTGH\nprojects:`);
+    await writeFile(workspaceManifestFile(dir), v2Text);
+
+    const reopened = newService();
+    const snapshot = await reopened.open(created.id);
+    expect(snapshot.activeEnvironmentId).toBeUndefined();
+    expect(existsSync(join(dir, 'local.yaml'))).toBe(false);
+
+    // The stale manifest key is still cleaned up on disk, even though it named nothing real.
+    const migratedManifest = await readFile(workspaceManifestFile(dir), 'utf8');
+    expect(migratedManifest).toContain('formatVersion: 3');
+    expect(migratedManifest).not.toContain('activeEnvironmentId');
+
+    await reopened.close();
+  });
 });

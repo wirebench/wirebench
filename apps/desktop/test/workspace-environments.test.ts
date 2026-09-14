@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadWorkspace } from '@wirebench/engine';
+import { loadLocalState, loadWorkspace } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -290,11 +290,15 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
     const dir = service.snapshot()?.dir as string;
     const reload = async (): Promise<Awaited<ReturnType<typeof loadWorkspace>>['workspace']> =>
       (await loadWorkspace(dir)).workspace;
+    const reloadLocal = async (): Promise<string | undefined> => (await loadLocalState(dir)).activeEnvironmentId;
 
     const saved = await reload();
     expect(saved.name).toBe('Renamed');
     expect(saved.properties).toEqual({ region: 'emea' });
-    expect(saved.activeEnvironmentId).toBe(dev);
+    // activeEnvironmentId is machine-local now — it never lands in workspace.yaml, so it is
+    // checked through local.yaml (loadWorkspace always resolves it to undefined; see spec §4.1).
+    expect(saved.activeEnvironmentId).toBeUndefined();
+    expect(await reloadLocal()).toBe(dev);
     expect(saved.environments.map((environment) => environment.name)).toEqual(['Development', 'prod']);
     expect(saved.environments[0]).toMatchObject({
       slug: 'dev',
@@ -313,13 +317,13 @@ describe('WorkspaceService.mutate and setActiveEnvironment', () => {
     // Removing the active environment clears the pointer rather than dangling it.
     await service.mutate({ kind: 'remove-workspace-environment', environmentId: dev as string });
     const afterRemoval = await reload();
-    expect(afterRemoval.activeEnvironmentId).toBeUndefined();
+    expect(service.snapshot()?.activeEnvironmentId).toBeUndefined();
     expect(afterRemoval.environments.map((environment) => environment.id)).toEqual([prod]);
 
     await service.setActiveEnvironment(prod as string);
-    expect((await reload()).activeEnvironmentId).toBe(prod);
+    expect(await reloadLocal()).toBe(prod);
     await service.setActiveEnvironment(null);
-    expect((await reload()).activeEnvironmentId).toBeUndefined();
+    expect(await reloadLocal()).toBeUndefined();
 
     await service.close();
   }, 60_000);

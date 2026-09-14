@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
@@ -11,7 +12,14 @@ import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
 import { HistoryService } from './history-service.js';
-import { PreferencesService, rememberPickedCaBundle, toPreferencesWire } from './preferences.js';
+import {
+  gitLocatorOptions,
+  PreferencesService,
+  rememberPickedCaBundle,
+  rememberPickedGit,
+  toPreferencesWire,
+} from './preferences.js';
+import { findGit, GitCli } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { events } from '../shared/ipc.js';
@@ -42,6 +50,8 @@ import { OpenApiImportService } from './openapi-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
+import { registerGitChannels } from './ipc/git.js';
+import { registerSyncChannels } from './ipc/sync.js';
 import { registerThemeChannels } from './ipc/theme.js';
 import { createMainWindow } from './windows.js';
 import { createUpdateController } from './update-service.js';
@@ -142,8 +152,30 @@ async function trashFolder(target: string): Promise<void> {
  * `register*Channels` call is handed, so a channel addressed at an entity reaches that entity's
  * own project rather than a single ambient one.
  */
+// `core.hooksPath` for every `GitCli.run` call points here: an empty, writable directory, so
+// a cloned or joined tree's own `.git/hooks` (or any hook a remote's push tries to install)
+// never runs. Created once in `whenReady`, before any workspace (and so any sync) can open.
+const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
+
+// e2e cannot install a real git on every runner, so this simulates "git missing"/"git found
+// at this exact path" instead. Honoured only in an unpackaged run, for the same reason every
+// other `WIREBENCH_E2E_*` override is: a packaged build must not let an environment variable
+// redirect which executable main runs. Precedence (see `gitLocatorOptions`): the e2e override,
+// restricted to that path alone (so it can simulate "no git installed" even on a machine or CI
+// runner that has a real one), then a git.path preference main itself picked (`configuredGitPath`
+// — an unmarked or cleared value never counts), then plain discovery.
+const gitLocator = (): ReturnType<typeof findGit> =>
+  findGit(gitLocatorOptions({ env: process.env, isPackaged: app.isPackaged, preferences: preferencesService.get() }));
+
 const workspaceService = new WorkspaceService({
   userDataDir: app.getPath('userData'),
+  // Located afresh for each shared workspace that opens, so a git installed (or picked in
+  // Settings) since the last open is found without a restart.
+  git: async () => {
+    const location = await gitLocator();
+    return location === undefined ? undefined : new GitCli(location, { hooksDir });
+  },
+  hooksDir,
   engine: engineService,
   globals: globalProperties,
   secrets: secretStore,
@@ -171,6 +203,21 @@ const workspaceService = new WorkspaceService({
     onProgress: (progress) => {
       broadcast(events.engine.progress, progress);
     },
+    onWorkspaceChangedOnDisk: (workspaceId, paths, message) => {
+      broadcast(events.workspace.changedOnDisk, { workspaceId, paths: [...paths], message });
+    },
+    onSyncStatus: (workspaceId, status) => {
+      broadcast(events.sync.statusChanged, { workspaceId, status });
+    },
+    onSyncPulled: (event) => {
+      broadcast(events.sync.pulled, event);
+    },
+    onSyncConflict: (workspaceId, conflicts) => {
+      broadcast(events.sync.conflict, { workspaceId, conflicts: [...conflicts] });
+    },
+    onGitIdentityNeeded: (workspaceId) => {
+      broadcast(events.git.identityNeeded, { workspaceId });
+    },
   },
 });
 
@@ -187,6 +234,9 @@ void app.whenReady().then(() => {
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window);
   });
+
+  // Created once, up front, so it exists before any sync operation can start (see `hooksDir`).
+  mkdirSync(hooksDir, { recursive: true });
 
   const updates = createUpdateController((status) => {
     broadcast(events.app.updateStatus, { status });
@@ -288,6 +338,24 @@ void app.whenReady().then(() => {
       broadcast(events.preferences.changed, { preferences });
     },
   });
+  registerGitChannels({
+    preferences: preferencesService,
+    picks: dialogPicks,
+    // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
+    // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
+    // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
+    // directly (its own explicit candidate) via the default `findGit`.
+    locate: gitLocator,
+    onChanged: (preferences) => {
+      broadcast(events.preferences.changed, { preferences });
+    },
+  });
+  registerSyncChannels({
+    service: workspaceService,
+    reveal: (path) => {
+      shell.showItemInFolder(path);
+    },
+  });
   registerThemeChannels((payload) => {
     broadcast(events.theme.changed, payload);
   });
@@ -352,6 +420,8 @@ void app.whenReady().then(() => {
     // file cannot smuggle a path into the read-pick set. It has to happen after the load
     // resolves: before it, the in-memory document is still the defaults.
     rememberPickedCaBundle(preferences, dialogPicks);
+    // Same evidence, same reason, for a git executable main itself picked (`git.pathPickedByMain`).
+    rememberPickedGit(preferences, dialogPicks);
     broadcast(events.preferences.changed, { preferences: toPreferencesWire(preferences) });
   });
   createMainWindow();

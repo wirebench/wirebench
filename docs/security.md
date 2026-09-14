@@ -103,6 +103,71 @@ Fetching what the document points at is the whole of what "import this WSDL" mea
 user chose that URL; the reachable surface is a GET with no credentials attached unless the
 user configured Basic auth for the import.
 
+## Git execution for shared workspaces
+
+Sharing a workspace (`docs/collaborate.md`, [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md))
+runs the system `git`, never a bundled one, and only from the main process:
+
+- **`execFile` with argument arrays, never a shell.** Every call goes through one `GitCli.run`,
+  `cwd` pinned to the workspace's tree. There is no code path that concatenates git arguments into
+  a command string.
+- **A subcommand allow-list.** Only the git subcommands the sync engine actually needs
+  (`GIT_SUBCOMMANDS` in `apps/desktop/src/main/sync/git-cli.ts`) can be invoked; anything else is
+  refused with `git-failed` before a process is spawned.
+- **No prompts, ever.** `GIT_TERMINAL_PROMPT=0` and an empty `GIT_ASKPASS` mean git can never block
+  waiting for a password typed at a terminal the user cannot see. `GIT_SSH_COMMAND=ssh -o
+  BatchMode=yes` is set by default so SSH cannot prompt for a passphrase or a host-key
+  confirmation either — but only when the user has not already configured `GIT_SSH_COMMAND`,
+  `GIT_SSH`, or a repository/global `core.sshCommand`: a custom SSH transport the user set up
+  themselves is used exactly as configured, never overridden.
+- **Hooks disabled.** Every invocation carries `-c core.hooksPath=<empty directory>`, so a cloned
+  repository's hooks — `post-checkout`, `post-merge`, anything else a hostile remote could ship —
+  never execute, on join, pull, commit or any other command the app runs. Hostile *remote
+  content* therefore cannot execute code.
+- **A repository's local config must pass an allow-list.** `.git/config` never arrives with a
+  clone, but a folder the user joins from (or a synced folder that turns out to hold `.git`) can
+  carry one, and git has many settings that name a program to run — too many for a list of refused
+  keys to be trusted. Before the app runs any other git command in such a repository, and again at
+  every open of a git share, it lists the local config keys (`git config --local --list
+  --name-only -z`) and refuses with `git-config-refused` unless every key (case-insensitively; `*`
+  is any subsection) is one of: `core.repositoryformatversion`, `core.filemode`, `core.bare`,
+  `core.logallrefupdates`, `core.ignorecase`, `core.precomposeunicode`, `core.symlinks`,
+  `core.autocrlf`, `core.safecrlf`, `core.eol`, `core.quotepath`, `core.longpaths`,
+  `core.checkstat`, `core.trustctime`, `user.name`, `user.email`, `remote.*.url`,
+  `remote.*.fetch`, `remote.*.tagopt`, `remote.*.prune`, `branch.*.remote`, `branch.*.merge`,
+  `branch.*.rebase`, `pull.rebase`, `pull.ff`, `fetch.prune`, `init.defaultbranch`, `gc.auto`.
+  That covers everything `git init`/`git clone` and the app itself write. Every `remote.*.url`
+  value must also pass the remote URL allow-list below; a refusal names the key, never the URL.
+  Anything else — `extensions.*`, `include.*`, `includeIf.*`, `url.*`, `protocol.*`, `gpg.*`,
+  `commit.gpgsign`, `remote.*.pushurl`, any other `core.*` — is refused. Global and system config
+  are the user's own and are not checked. Clones the app makes itself are safe by construction.
+- **A remote URL allow-list.** `assertRemoteUrl` accepts only `https://`, `ssh://`, `file://`, or
+  `user@host:path`; refuses `ext::` (git's "run an arbitrary command" transport), values starting
+  with `-` (parsed as a flag by git or by a transport helper's own shell), and a user or host
+  component starting with `-` even once decoded out of a URL's authority. The failure never echoes
+  the URL back — only its scheme — since a remote URL can carry embedded credentials.
+- **A branch-name allow-list.** `assertBranchName` refuses empty names, a leading `-`, whitespace
+  or control characters, `..`, `@{`, backslash, `~^:?*[`, a trailing `/` or `.lock`, a leading or
+  trailing `/`, `//`, and a path component starting with `.` — applied to every branch name the
+  app writes into `share.yaml` or passes to git, whether it came from the Share/Join dialogs or
+  the Sync settings.
+- **No URL in error messages.** `git-auth-failed`, `git-offline` and `git-remote-refused` carry a
+  code and a generic message; the remote URL itself is never put in a message, since it may embed
+  a token or password. A failed git command's error `details` do carry its arguments (with any
+  `user:token@` stripped from an `https://` URL) and up to the last 2 KiB of git's stderr, which is
+  *not* redacted and can include whatever git printed, a remote URL among it. Those details travel
+  only inside the IPC error envelope to the renderer: toasts show the message alone, the sync
+  status keeps only the code and message, and the app writes no log of error details.
+- **`git.path` is main-only and marker-gated**, exactly like the TLS CA bundle path
+  (`ssl.caBundlePath`): a path is honoured only when `git.pathPickedByMain` is `true`, set only
+  when the user picked it through **Locate…** in Preferences → Git. A path hand-edited into
+  `preferences.yaml` is inert — the renderer cannot make main run an arbitrary binary by writing
+  to a file main will read.
+- **The tree stays free of anything machine-local.** `local.yaml`, `share.yaml`, `unsaved/`,
+  secret values and history never enter the shared tree; an external `share.path` that resolves
+  inside `<userData>` is refused (`share-path-invalid`), so a share can never be pointed at
+  another workspace's own app-data directory.
+
 ## TLS
 
 Certificate verification is on by default, everywhere. Turning it off is per endpoint

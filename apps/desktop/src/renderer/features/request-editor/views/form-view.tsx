@@ -69,6 +69,13 @@ export interface FormViewProps {
   readonly onEnvelopeReplace: (xml: string) => void;
   readonly viewType: FormViewType;
   readonly onViewTypeChange: (viewType: FormViewType) => void;
+  /**
+   * True while this request has an unresolved sync conflict (Task 11): every field is disabled
+   * and every structural control too, and neither {@link onValueEdit} nor {@link onEnvelopeReplace}
+   * can fire — guarded here as well as by disabling the controls, so a caller that fakes a click
+   * past a disabled attribute still cannot edit anything. Defaults to `false`.
+   */
+  readonly readOnly?: boolean;
   /** `window.wirebench.xml` by default; injectable for tests. */
   readonly source?: FormSource;
 }
@@ -148,6 +155,7 @@ export function FormView({
   onEnvelopeReplace,
   viewType,
   onViewTypeChange,
+  readOnly = false,
   source,
 }: FormViewProps) {
   const [root, setRoot] = useState<FormNodeWire | undefined>(undefined);
@@ -194,6 +202,12 @@ export function FormView({
 
   const structuralEdit = useCallback(
     (edit: FormEditWire) => {
+      if (readOnly) {
+        // Belt and braces: every control that calls this is also disabled, but a caller that
+        // fakes a click past a disabled attribute must still never reach main or replace the
+        // envelope.
+        return;
+      }
       void api.applyFormEdit({ interfaceId, bindingName, operationName, envelopeXml: xml, edit }).then((result) => {
         if (result.ok) {
           // Deliberately not marked as an own edit: a structural change alters
@@ -210,11 +224,14 @@ export function FormView({
         );
       });
     },
-    [api, xml, interfaceId, bindingName, operationName, onEnvelopeReplace],
+    [api, xml, interfaceId, bindingName, operationName, onEnvelopeReplace, readOnly],
   );
 
   const setValue = useCallback(
     (node: FormNodeWire, value: string) => {
+      if (readOnly) {
+        return;
+      }
       if (node.valueRange === undefined) {
         // Not in the text yet (an omitted optional, or a self-closing element):
         // main must write the element before the value can be spliced.
@@ -242,7 +259,7 @@ export function FormView({
       ownEditRef.current = xml.slice(0, range.start) + escaped + xml.slice(range.end);
       onValueEdit(range, value);
     },
-    [xml, onValueEdit, structuralEdit],
+    [xml, onValueEdit, structuralEdit, readOnly],
   );
 
   const toggleCollapsed = useCallback((id: string) => {
@@ -317,6 +334,7 @@ export function FormView({
           onSetValue={setValue}
           onEdit={structuralEdit}
           onGetData={setGetDataFor}
+          readOnly={readOnly}
         />
       </div>
       <GetDataDialog
@@ -348,11 +366,13 @@ interface RowsProps {
   readonly onSetValue: (node: FormNodeWire, value: string) => void;
   readonly onEdit: (edit: FormEditWire) => void;
   readonly onGetData: (node: FormNodeWire) => void;
+  /** Disables every field and structural control under this node (Task 11). */
+  readonly readOnly: boolean;
 }
 
 /** Renders one node and, unless collapsed, everything under it. */
 function NodeRows(props: RowsProps) {
-  const { node, depth, viewType, collapsed, onToggleCollapsed, onSetValue, onEdit, onGetData } = props;
+  const { node, depth, viewType, collapsed, onToggleCollapsed, onSetValue, onEdit, onGetData, readOnly } = props;
   if (!visibleUnder(node, viewType)) {
     return null;
   }
@@ -376,7 +396,7 @@ function NodeRows(props: RowsProps) {
           <NodeBadges node={node} />
           <button
             type="button"
-            disabled={repeat?.canAdd !== true}
+            disabled={readOnly || repeat?.canAdd !== true}
             aria-label={`Add ${node.label}`}
             className="rounded-sm px-1 text-xs text-accent hover:bg-surface-hover disabled:opacity-40"
             onClick={() => onEdit({ kind: 'add-repeat', nodeId: node.id })}
@@ -390,7 +410,7 @@ function NodeRows(props: RowsProps) {
               <span className="text-xs text-fg-faint">#{index + 1}</span>
               <button
                 type="button"
-                disabled={repeat?.canRemove !== true}
+                disabled={readOnly || repeat?.canRemove !== true}
                 aria-label={`Remove ${node.label} ${index + 1}`}
                 className="rounded-sm px-1 text-xs text-fg-subtle hover:bg-surface-hover disabled:opacity-40"
                 onClick={() => onEdit({ kind: 'remove-repeat', nodeId: node.id, index })}
@@ -415,9 +435,10 @@ function NodeRows(props: RowsProps) {
               key={branch.id}
               type="button"
               role="tab"
+              disabled={readOnly}
               aria-selected={index === selected}
               onClick={() => onEdit({ kind: 'select-choice', nodeId: node.id, index })}
-              className={`rounded-sm px-2 text-xs ${
+              className={`rounded-sm px-2 text-xs disabled:opacity-40 ${
                 index === selected ? 'bg-surface-active text-fg-default' : 'text-fg-subtle hover:bg-surface-hover'
               }`}
             >
@@ -442,12 +463,13 @@ function NodeRows(props: RowsProps) {
           </span>
           <NodeBadges node={node} />
           {node.present ? (
-            <FieldEditor node={node} onChange={(value) => onSetValue(node, value)} />
+            <FieldEditor node={node} onChange={(value) => onSetValue(node, value)} disabled={readOnly} />
           ) : (
             <button
               type="button"
+              disabled={readOnly}
               aria-label={`Add ${node.label}`}
-              className="rounded-sm border border-dashed border-hairline px-2 text-xs text-fg-subtle hover:bg-surface-hover"
+              className="rounded-sm border border-dashed border-hairline px-2 text-xs text-fg-subtle hover:bg-surface-hover disabled:opacity-40"
               onClick={() => onEdit({ kind: 'insert-optional', nodeId: node.id })}
             >
               Add
@@ -455,8 +477,9 @@ function NodeRows(props: RowsProps) {
           )}
           <button
             type="button"
+            disabled={readOnly}
             aria-label={`Get Data for ${node.label}`}
-            className="shrink-0 rounded-sm px-1 text-xs text-fg-subtle hover:bg-surface-hover"
+            className="shrink-0 rounded-sm px-1 text-xs text-fg-subtle hover:bg-surface-hover disabled:opacity-40"
             onClick={() => onGetData(node)}
           >
             Get Data…
@@ -494,8 +517,9 @@ function NodeRows(props: RowsProps) {
         {!node.present && (
           <button
             type="button"
+            disabled={readOnly}
             aria-label={`Add ${node.label}`}
-            className="rounded-sm border border-dashed border-hairline px-2 text-xs text-fg-subtle hover:bg-surface-hover"
+            className="rounded-sm border border-dashed border-hairline px-2 text-xs text-fg-subtle hover:bg-surface-hover disabled:opacity-40"
             onClick={() => onEdit({ kind: 'insert-optional', nodeId: node.id })}
           >
             Add

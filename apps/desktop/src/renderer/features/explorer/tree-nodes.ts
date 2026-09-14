@@ -81,7 +81,22 @@ export interface ExplorerNode {
    * which ones no longer correspond to anything the service offers.
    */
   readonly orphaned?: boolean;
+  /**
+   * Set on `project` and `request` nodes an unresolved sync conflict touches (Task 11):
+   * {@link conflictTargets}'s `projectIds`/`requestIds`, joined into the tree so
+   * `explorer-view.tsx` badges the row without recomputing the match itself.
+   */
+  readonly conflicted?: boolean;
 }
+
+/** {@link buildExplorerTree}'s conflict marks — the ids `conflictTargets` (Task 11) produced. */
+export interface ExplorerConflictTargets {
+  readonly projectIds: ReadonlySet<string>;
+  readonly requestIds: ReadonlySet<string>;
+}
+
+/** No conflicts — the default so every existing call site (and test) needs no change. */
+const NO_CONFLICTS: ExplorerConflictTargets = { projectIds: new Set(), requestIds: new Set() };
 
 function endpointsNode(interfaceId: string, summary: InterfaceSummary): ExplorerNode {
   const children: ExplorerNode[] = summary.services.flatMap((service) =>
@@ -99,6 +114,7 @@ function requestNodes(
   interfaceId: string,
   operation: OperationSummaryWire,
   requests: readonly RequestDraft[],
+  conflicted: ExplorerConflictTargets,
 ): ExplorerNode[] {
   return requests
     .filter(
@@ -110,6 +126,7 @@ function requestNodes(
       label: r.name,
       requestId: r.id,
       ...(r.orphaned === true ? { orphaned: true } : {}),
+      ...(conflicted.requestIds.has(r.id) ? { conflicted: true } : {}),
     }));
 }
 
@@ -117,6 +134,7 @@ function operationNode(
   interfaceId: string,
   operation: OperationSummaryWire,
   requests: readonly RequestDraft[],
+  conflicted: ExplorerConflictTargets,
 ): ExplorerNode {
   return {
     id: `op:${interfaceId}:${operation.binding}:${operation.name}`,
@@ -126,7 +144,7 @@ function operationNode(
     bindingName: operation.binding,
     operationName: operation.name,
     ...(operation.soapAction !== undefined ? { soapAction: operation.soapAction } : {}),
-    children: requestNodes(interfaceId, operation, requests),
+    children: requestNodes(interfaceId, operation, requests, conflicted),
   };
 }
 
@@ -138,11 +156,14 @@ function operationsNode(
   interfaceId: string,
   summary: InterfaceSummary,
   requests: readonly RequestDraft[],
+  conflicted: ExplorerConflictTargets,
 ): ExplorerNode {
   const bindings = [...new Set(summary.operations.map((op) => op.binding))];
 
   if (bindings.length <= 1) {
-    const children = sortedOperations(summary.operations).map((op) => operationNode(interfaceId, op, requests));
+    const children = sortedOperations(summary.operations).map((op) =>
+      operationNode(interfaceId, op, requests, conflicted),
+    );
     return { id: `operations:${interfaceId}`, kind: 'operations', label: 'Operations', children };
   }
 
@@ -153,21 +174,25 @@ function operationsNode(
       id: `binding:${interfaceId}:${binding}`,
       kind: 'binding' as const,
       label: bindingLocal,
-      children: opsForBinding.map((op) => operationNode(interfaceId, op, requests)),
+      children: opsForBinding.map((op) => operationNode(interfaceId, op, requests, conflicted)),
     };
   });
 
   return { id: `operations:${interfaceId}`, kind: 'operations', label: 'Operations', children };
 }
 
-function interfaceNode(summary: InterfaceSummary, requests: readonly RequestDraft[]): ExplorerNode {
+function interfaceNode(
+  summary: InterfaceSummary,
+  requests: readonly RequestDraft[],
+  conflicted: ExplorerConflictTargets,
+): ExplorerNode {
   return {
     id: `iface:${summary.id}`,
     kind: 'interface',
     label: summary.name,
     interfaceId: summary.id,
     ...(summary.problems.length > 0 ? { problemCount: summary.problems.length } : {}),
-    children: [endpointsNode(summary.id, summary), operationsNode(summary.id, summary, requests)],
+    children: [endpointsNode(summary.id, summary), operationsNode(summary.id, summary, requests, conflicted)],
   };
 }
 
@@ -264,6 +289,8 @@ export interface ExplorerRestData {
  * @param requests every open project's SOAP requests.
  * @param rest each project's APIs, folders and REST requests, by project id. Omitted for a caller
  * that has no REST data yet, which then gets exactly the tree it got before APIs existed.
+ * @param conflicted ids of the projects/requests an unresolved sync conflict touches; defaults to
+ *   none, so every caller unaware of sync gets an unmarked tree.
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -271,6 +298,7 @@ export function buildExplorerTree(
   interfaces: Readonly<Record<string, InterfaceSummary>>,
   requests: readonly RequestDraft[],
   rest: Readonly<Record<string, ExplorerRestData>> = {},
+  conflicted: ExplorerConflictTargets = NO_CONFLICTS,
 ): ExplorerNode[] {
   return projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
@@ -292,6 +320,7 @@ export function buildExplorerTree(
             .filter((summary): summary is InterfaceSummary => summary !== undefined),
           rest[project.id],
           requests,
+          conflicted,
         );
 
     return {
@@ -302,6 +331,7 @@ export function buildExplorerTree(
       dir: project.dir,
       ...(project.source === 'linked' ? { linked: true } : {}),
       ...(project.status === 'loading' ? { loading: true } : {}),
+      ...(conflicted.projectIds.has(project.id) ? { conflicted: true } : {}),
       children,
     };
   });
@@ -318,10 +348,11 @@ function orderedChildren(
   interfaces: readonly InterfaceSummary[],
   rest: ExplorerRestData | undefined,
   requests: readonly RequestDraft[],
+  conflicted: ExplorerConflictTargets,
 ): ExplorerNode[] {
   const nodes = interfaces.map((summary, index) => ({
     order: index,
-    node: interfaceNode(summary, requests),
+    node: interfaceNode(summary, requests, conflicted),
   }));
   const apis = [...(rest?.apis ?? [])].map((api) => ({
     order: api.order,

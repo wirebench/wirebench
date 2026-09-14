@@ -51,6 +51,8 @@ function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
     bindingName: '{tns}CalculatorSoap',
     operationName: 'Add',
     name: 'Request 1',
+    slug: 'Request 1',
+    operationSlug: 'Add',
     envelopeXml: '<Envelope/>',
     soapVersion: '1.1',
     headers: [],
@@ -233,6 +235,37 @@ describe('buildExplorerTree', () => {
 
     const again = interfacesOf([summary], []);
     expect(again[0]?.id).toBe(tree[0]?.id);
+  });
+
+  it('marks a project root and its conflicted request, leaving everything else unmarked', () => {
+    const summary = iface();
+    const req1 = request({ id: 'req-1', name: 'Request 1' });
+    const req2 = request({ id: 'req-2', name: 'Request 2' });
+    const tree = buildExplorerTree(
+      [{ id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/projects/demo', status: 'ready' }],
+      [{ projectId: 'p1', interfaceIds: [summary.id] }],
+      { [summary.id]: summary },
+      [req1, req2],
+      {},
+      { projectIds: new Set(['p1']), requestIds: new Set(['req-1']) },
+    );
+
+    expect(tree[0]?.conflicted).toBe(true);
+    const interfaceNode = tree[0]?.children?.[0];
+    const operations = interfaceNode?.children?.find((node) => node.kind === 'operations');
+    const operation = operations?.children?.[0];
+    const [conflictedReq, otherReq] = operation?.children ?? [];
+    expect(conflictedReq).toMatchObject({ requestId: 'req-1', conflicted: true });
+    expect(otherReq).toMatchObject({ requestId: 'req-2' });
+    expect(otherReq?.conflicted).toBeUndefined();
+  });
+
+  it('leaves conflicted unset when no conflict targets are given', () => {
+    const summary = iface();
+    const tree = interfacesOf([summary], [request()]);
+    const operations = tree[0]?.children?.find((node) => node.kind === 'operations');
+    const operation = operations?.children?.[0];
+    expect(operation?.children?.[0]?.conflicted).toBeUndefined();
   });
 });
 
