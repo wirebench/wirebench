@@ -340,10 +340,11 @@ void app.whenReady().then(() => {
   registerGitChannels({
     preferences: preferencesService,
     picks: dialogPicks,
-    // `git.detect` finds a git with no configured preference through `gitLocator` (so the e2e
-    // "git missing" override applies there); `git.locate` already has an explicit picked path
-    // to verify and must not have that overridden.
-    findGit: (options) => (options.configuredPath !== undefined ? findGit(options) : gitLocator()),
+    // `git.detect` uses exactly `gitLocator`'s precedence (e2e override, then a marked
+    // `git.path`, then discovery) — no configured-path logic of its own, so a marked preference
+    // can never bypass the e2e "no git" override. `git.locate` keeps probing the picked file
+    // directly (its own explicit candidate) via the default `findGit`.
+    locate: gitLocator,
     onChanged: (preferences) => {
       broadcast(events.preferences.changed, { preferences });
     },

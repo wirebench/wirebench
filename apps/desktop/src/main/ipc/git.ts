@@ -17,7 +17,7 @@ import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { pickFile } from '../native-dialogs.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
-import { configuredGitPath, toPreferencesWire } from '../preferences.js';
+import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-types.js';
 import { findGit as defaultFindGit } from '../sync/git-cli.js';
@@ -30,7 +30,19 @@ export interface GitChannelDeps {
   readonly preferences: Pick<PreferencesService, 'get' | 'update'>;
   /** The session's picked-path memory, the only evidence `GitCli` needs beyond the preference. */
   readonly picks: RecordsReadPicks;
-  /** Injectable so tests never spawn a real process; defaults to the real `findGit`. */
+  /**
+   * Finds a git executable for `git.detect` — exactly `main/index.ts`'s `gitLocator`, built from
+   * `gitLocatorOptions` (e2e override, then a marked `git.path`, then discovery). `git.detect`
+   * must apply no configured-path logic of its own: doing so previously let a *marked*
+   * `git.path` preference bypass the e2e override entirely, since `configuredGitPath` was
+   * resolved here and handed straight to `findGit` without going through the locator at all.
+   */
+  readonly locate: () => Promise<GitLocation | undefined>;
+  /**
+   * Probes an explicit candidate for `git.locate` (the native-dialog picker) — a user's pick is
+   * itself an explicit candidate, independent of `locate`'s precedence. Injectable so tests never
+   * spawn a real process; defaults to the real `findGit`.
+   */
   readonly findGit?: typeof defaultFindGit;
   /** Called after each change so main can broadcast `preferences.changed` to every window. */
   readonly onChanged?: (preferences: PreferencesWire) => void;
@@ -45,10 +57,9 @@ export function registerGitChannels(deps: GitChannelDeps): void {
   const findGit = deps.findGit ?? defaultFindGit;
 
   registerHandler(channels.git.detect, async () => {
-    // Only a path main itself picked counts as "configured" — an unmarked or cleared (`''`)
-    // preference value is never passed to `findGit`, and discovery runs instead.
-    const configuredPath = configuredGitPath(deps.preferences.get());
-    const location = await findGit(configuredPath !== undefined ? { configuredPath } : {});
+    // `deps.locate` (main's `gitLocator`) owns the whole precedence — no configured-path logic
+    // lives here, so a marked `git.path` can never bypass the e2e "no git" override.
+    const location = await deps.locate();
     return { location: location === undefined ? null : toWire(location) };
   });
 

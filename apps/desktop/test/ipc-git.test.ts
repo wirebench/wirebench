@@ -60,24 +60,22 @@ afterEach(() => {
 });
 
 describe('git.detect', () => {
-  it('answers with the location findGit reports, using a preference path main itself picked', async () => {
+  it('answers with whatever the injected locator reports', async () => {
     const location: GitLocation = { path: '/usr/bin/git', version: '2.40.0' };
-    const findGit = vi.fn().mockResolvedValue(location);
-    const preferences = new PreferencesService(dir);
-    await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
+    const locate = vi.fn().mockResolvedValue(location);
 
-    registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
+    registerGitChannels({ preferences: new PreferencesService(dir), picks: new DialogPicks(), locate });
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
     expect(result.value.location).toEqual(location);
-    expect(findGit).toHaveBeenCalledWith({ configuredPath: '/configured/git' });
+    expect(locate).toHaveBeenCalledWith();
   });
 
-  it('answers with null when no usable git is found', async () => {
+  it('answers with null when the locator finds nothing', async () => {
     registerGitChannels({
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
-      findGit: vi.fn().mockResolvedValue(undefined),
+      locate: vi.fn().mockResolvedValue(undefined),
     });
 
     const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
@@ -85,30 +83,37 @@ describe('git.detect', () => {
   });
 
   /**
-   * The controller ruling this fixes: a configured `git.path` is only ever passed to `findGit`
-   * when `pathPickedByMain === true` and the path is non-empty. A hand-edited or otherwise
-   * unmarked preference — or a cleared (`''`) one — must fall straight through to discovery.
+   * The bug fix round 2 caught: `git.detect` used to resolve `configuredGitPath` itself and pass
+   * it straight to `findGit`, which bypasses whatever precedence (including the e2e "no git"
+   * override) the injected locator applies. `git.detect` must apply no configured-path logic of
+   * its own — the locator is the *only* discovery path it calls, marked preference or not.
    */
-  it('never passes an unmarked git.path preference to findGit', async () => {
-    const findGit = vi.fn().mockResolvedValue(undefined);
+  it('uses only the injected locator, never findGit directly, even with a marked preference configured', async () => {
+    const overrideResult: GitLocation = { path: '/nonexistent/git-does-not-resolve', version: '0.0.0-override' };
+    const locate = vi.fn().mockResolvedValue(overrideResult);
+    const findGit = vi.fn().mockResolvedValue({ path: '/configured/git', version: '2.40.0' });
     const preferences = new PreferencesService(dir);
-    await preferences.update({ git: { path: '/hand/edited/git' } });
+    // A marked preference is configured — the very case the bug let bypass the locator.
+    await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
 
-    registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
-    await invoke('git.detect', {});
+    registerGitChannels({ preferences, picks: new DialogPicks(), locate, findGit });
 
-    expect(findGit).toHaveBeenCalledWith({});
+    const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
+    expect(result.value.location).toEqual(overrideResult);
+    expect(locate).toHaveBeenCalledTimes(1);
+    expect(findGit).not.toHaveBeenCalled();
   });
 
-  it('falls through to discovery when the preference is cleared', async () => {
-    const findGit = vi.fn().mockResolvedValue(undefined);
+  it('still returns a marked path when the locator itself resolves it (no override configured)', async () => {
+    const markedLocation: GitLocation = { path: '/configured/git', version: '2.41.0' };
+    const locate = vi.fn().mockResolvedValue(markedLocation);
     const preferences = new PreferencesService(dir);
-    await preferences.update({ git: { path: '', pathPickedByMain: false } });
+    await preferences.update({ git: { path: '/configured/git', pathPickedByMain: true } });
 
-    registerGitChannels({ preferences, picks: new DialogPicks(), findGit });
-    await invoke('git.detect', {});
+    registerGitChannels({ preferences, picks: new DialogPicks(), locate });
 
-    expect(findGit).toHaveBeenCalledWith({});
+    const result = (await invoke('git.detect', {})) as { value: { location: GitLocation | null } };
+    expect(result.value.location).toEqual(markedLocation);
   });
 });
 
@@ -122,6 +127,7 @@ describe('git.locate', () => {
     registerGitChannels({
       preferences: new PreferencesService(dir),
       picks,
+      locate: vi.fn(),
       findGit: vi.fn().mockResolvedValue(location),
       onChanged: (next) => changed.push(next),
     });
@@ -146,6 +152,7 @@ describe('git.locate', () => {
     registerGitChannels({
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
+      locate: vi.fn(),
       findGit: vi.fn().mockResolvedValue(undefined),
       onChanged: (next) => changed.push(next),
     });
@@ -163,6 +170,7 @@ describe('git.locate', () => {
     registerGitChannels({
       preferences: new PreferencesService(dir),
       picks: new DialogPicks(),
+      locate: vi.fn(),
       findGit,
       onChanged: (next) => changed.push(next),
     });
@@ -184,6 +192,7 @@ describe('git.clearPath', () => {
     registerGitChannels({
       preferences,
       picks: new DialogPicks(),
+      locate: vi.fn(),
       findGit: vi.fn().mockResolvedValue({ path: picked, version: '2.40.0' }),
       onChanged: (next) => changed.push(next),
     });
