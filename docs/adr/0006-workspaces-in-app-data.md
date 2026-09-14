@@ -88,9 +88,13 @@ workspaces/<id>/
   dialog to it *this session* — is unaffected either way.
 - **A user managing many workspaces manages them through the app**, not through a file manager;
   there is no folder to rename or move around outside Wirebench's own *Manage Workspaces* UI.
-- **Multi-window and workspace sync/sharing stay out of scope** (recorded on the roadmap): one
-  window holds one open workspace at a time, and nothing propagates a workspace's environments
-  or projects to another machine.
+- **Multi-window stays out of scope** (recorded on the roadmap): one window holds one open
+  workspace at a time.
+- **Workspace sync/sharing shipped in a later spec, not here.** A workspace can now be shared as a
+  git repository or a synced folder, with its environments and projects propagating to other
+  members' machines — see [ADR-0007](0007-shared-workspaces-are-git-repositories.md) and this
+  ADR's superseded-in-part note above. Live sync through a Wirebench-run server is still future
+  work (spec 2, tracked on the roadmap).
 
 **Update (2026-09-12, per-variable enabled flag): `formatVersion: 2`.** `workspace.yaml` and each
 workspace environment file gained the same `disabled:` sibling list ADR-0003 describes for the
