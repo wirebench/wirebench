@@ -93,12 +93,12 @@ describe('parseOpenApi', () => {
     ).rejects.toMatchObject({ code: 'openapi-source-invalid' });
   });
 
-  it('refuses Swagger 2.0 and a document that is not OpenAPI', async () => {
+  it('refuses unsupported Swagger versions and a document that is not OpenAPI', async () => {
     const fetch = ((location: string) =>
       Promise.resolve({
         location,
         bytes: new Uint8Array(),
-        text: location.endsWith('swagger.json') ? '{"swagger":"2.0"}' : 'name: not-openapi\n',
+        text: location.endsWith('swagger.json') ? '{"swagger":"1.2"}' : 'name: not-openapi\n',
       })) as FetchDocument;
 
     await expect(
@@ -216,5 +216,37 @@ paths:
     const itemsReq = allRequests.find((req) => req.name === 'List Items');
     expect(itemsReq).toBeDefined();
     expect(itemsReq?.method).toBe('GET');
+  });
+
+  it('imports a document declaring swagger: 2.0', async () => {
+    const path = pathToFileURL(`${craftedDir}v20/swagger.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('2.0');
+    expect(imported.summary.declaredVersion).toBe('Swagger 2.0');
+    expect(imported.api.name).toBe('Swagger Petstore');
+    expect(imported.api.baseUrl).toBe('https://api.petstore.test:8443/api/v2');
+    expect(imported.summary.servers).toEqual([
+      { url: 'https://api.petstore.test:8443/api/v2' },
+      { url: 'http://api.petstore.test:8443/api/v2' },
+    ]);
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const listPets = allRequests.find((req) => req.name === 'List all pets');
+    expect(listPets).toBeDefined();
+    expect(listPets?.method).toBe('GET');
+    expect(listPets?.url).toContain('/pets');
+
+    const createPet = allRequests.find((req) => req.name === 'Create a pet');
+    expect(createPet).toBeDefined();
+    expect(createPet?.method).toBe('POST');
+    expect(createPet?.body.kind).toBe('raw');
+
+    const uploadPhoto = allRequests.find((req) => req.name === 'Upload photo for pet');
+    expect(uploadPhoto).toBeDefined();
+    expect(uploadPhoto?.method).toBe('POST');
+    expect(uploadPhoto?.body.kind).toBe('multipart');
+
+    expect(imported.summary.securitySchemes.map((s) => s.name)).toEqual(['api_key', 'basic_auth', 'petstore_auth']);
   });
 });

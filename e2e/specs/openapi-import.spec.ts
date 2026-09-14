@@ -209,10 +209,25 @@ test.describe('OpenAPI import', () => {
     await expect(apiRow(page, 'From disk')).toBeVisible({ timeout: 20_000 });
   });
 
-  test('refuses Swagger 2.0 by saying so, leaving the project alone', async () => {
+  test('imports a Swagger 2.0 document by URL', async () => {
     server = await startTestRestServer({
       documents: {
-        '/swagger.json': { body: '{"swagger":"2.0","info":{"title":"Old"}}', contentType: 'application/json' },
+        '/swagger.json': {
+          body: JSON.stringify({
+            swagger: '2.0',
+            info: { title: 'Old Petstore', version: '1.0' },
+            host: 'api.test',
+            paths: {
+              '/pets': {
+                get: {
+                  summary: 'Get Pets',
+                  responses: { 200: { description: 'OK' } },
+                },
+              },
+            },
+          }),
+          contentType: 'application/json',
+        },
       },
     });
     launched = await launchApp();
@@ -224,7 +239,9 @@ test.describe('OpenAPI import', () => {
     await page.getByTestId('import-openapi-url').fill(`${server.url}/swagger.json`);
     await page.getByTestId('import-openapi-submit').click();
 
-    await expect(page.getByTestId('import-openapi-error')).toContainText('2.0', { timeout: 30_000 });
-    await expect(page.getByTestId('import-openapi-summary')).toBeHidden();
+    await expect(page.getByTestId('import-openapi-summary')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('import-openapi-summary')).toContainText('Swagger 2.0');
+    await page.getByTestId('import-openapi-done').click();
+    await expect(apiRow(page, 'Old Petstore')).toBeVisible({ timeout: 20_000 });
   });
 });

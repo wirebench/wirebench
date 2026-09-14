@@ -105,6 +105,9 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
   }
   const swagger = asString(root['swagger']);
   if (swagger !== undefined) {
+    if (swagger === '2.0' || swagger.startsWith('2.')) {
+      return { version: '2.0', declared: `Swagger ${swagger}` };
+    }
     if (swagger.startsWith('3.0')) {
       return { version: '3.0', declared: `Swagger ${swagger}` };
     }
@@ -116,7 +119,7 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
     }
     throw new OpenApiError(
       'openapi-unsupported-version',
-      `This is a Swagger ${swagger} document. Wirebench imports OpenAPI 3.0, 3.1 and 3.2; convert it first.`,
+      `This is a Swagger ${swagger} document. Wirebench imports Swagger 2.0, 3.x and OpenAPI 3.0, 3.1, 3.2; convert it first.`,
       { details: { declared: swagger } },
     );
   }
@@ -159,6 +162,9 @@ const IGNORED_ROOT_KEYS: Readonly<Record<string, string>> = {
 export function parseOpenApiDocument(root: unknown): OpenApiDocument {
   const { version, declared } = versionOf(root);
   const document = root as Record_;
+  if (version === '2.0') {
+    return parseSwagger2Document(document, declared);
+  }
   const skipped: OpenApiSkipped[] = [];
 
   const info = isRecord(document['info']) ? document['info'] : {};
@@ -637,4 +643,388 @@ function parseTags(value: unknown): readonly OpenApiTag[] {
     });
   }
   return tags;
+}
+
+/**
+ * Reads a resolved Swagger 2.0 document into the internal OpenApiDocument representation.
+ */
+function parseSwagger2Document(document: Record_, declared: string): OpenApiDocument {
+  const skipped: OpenApiSkipped[] = [];
+
+  const info = isRecord(document['info']) ? document['info'] : {};
+  const title = asString(info['title']) ?? 'Imported API';
+
+  for (const key of Object.keys(document)) {
+    if (key.startsWith('x-')) {
+      skipped.push({ kind: 'extension', where: `/${key}`, reason: 'vendor extensions are not imported' });
+    }
+  }
+
+  return {
+    version: '2.0',
+    declaredVersion: declared,
+    info: {
+      title,
+      ...(asString(info['version']) !== undefined ? { version: asString(info['version']) as string } : {}),
+      ...(asString(info['description']) !== undefined ? { description: asString(info['description']) as string } : {}),
+    },
+    servers: parseSwagger2Servers(document),
+    operations: parseSwagger2Operations(document, skipped),
+    securitySchemes: parseSwagger2SecuritySchemes(document['securityDefinitions'], skipped),
+    ...(parseSecurityRequirements(document['security']) !== undefined
+      ? { security: parseSecurityRequirements(document['security']) as readonly OpenApiSecurityRequirement[] }
+      : {}),
+    tags: parseTags(document['tags']),
+    skipped,
+  };
+}
+
+function parseSwagger2Servers(document: Record_): readonly OpenApiServer[] {
+  const host = asString(document['host']);
+  let basePath = asString(document['basePath']);
+  if (basePath !== undefined && basePath !== '') {
+    if (!basePath.startsWith('/')) {
+      basePath = `/${basePath}`;
+    }
+  } else {
+    basePath = '';
+  }
+
+  const rawSchemes = asStringArray(document['schemes']);
+  const schemes = rawSchemes && rawSchemes.length > 0 ? rawSchemes : ['https'];
+
+  if (host !== undefined && host !== '') {
+    const cleanHost = host.replace(/\/+$/, '');
+    return schemes.map((scheme) => ({
+      url: `${scheme}://${cleanHost}${basePath}`,
+    }));
+  }
+
+  if (basePath !== '' && basePath !== '/') {
+    return [{ url: basePath }];
+  }
+
+  return [{ url: '/' }];
+}
+
+function parseSwagger2SecuritySchemes(
+  definitions: unknown,
+  skipped: OpenApiSkipped[],
+): readonly OpenApiSecurityScheme[] {
+  if (!isRecord(definitions)) {
+    return [];
+  }
+  const parsed: OpenApiSecurityScheme[] = [];
+  for (const [name, entry] of Object.entries(definitions)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const type = asString(entry['type']);
+    if (type === undefined) {
+      skipped.push({ kind: 'securityScheme', where: `/securityDefinitions/${name}`, reason: 'no type' });
+      continue;
+    }
+    const description = asString(entry['description']);
+
+    if (type === 'basic') {
+      parsed.push({
+        name,
+        type: 'http',
+        scheme: 'basic',
+        ...(description !== undefined ? { description } : {}),
+      });
+      continue;
+    }
+
+    if (type === 'apiKey') {
+      const inLoc = asString(entry['in']);
+      const keyName = asString(entry['name']);
+      if (inLoc !== 'header' && inLoc !== 'query') {
+        skipped.push({
+          kind: 'securityScheme',
+          where: `/securityDefinitions/${name}`,
+          reason: `unsupported apiKey location "${inLoc ?? ''}"`,
+        });
+        continue;
+      }
+      parsed.push({
+        name,
+        type: 'apiKey',
+        in: inLoc,
+        keyName: keyName ?? name,
+        ...(description !== undefined ? { description } : {}),
+      });
+      continue;
+    }
+
+    if (type === 'oauth2') {
+      const rawFlow = asString(entry['flow']);
+      const authorizationUrl = asString(entry['authorizationUrl']);
+      const tokenUrl = asString(entry['tokenUrl']);
+      const scopes = isRecord(entry['scopes'])
+        ? Object.fromEntries(Object.entries(entry['scopes']).map(([scope, desc]) => [scope, asString(desc) ?? '']))
+        : undefined;
+
+      const flowObj: OpenApiOAuthFlow = {
+        ...(authorizationUrl !== undefined ? { authorizationUrl } : {}),
+        ...(tokenUrl !== undefined ? { tokenUrl } : {}),
+        ...(scopes !== undefined ? { scopes } : {}),
+      };
+
+      let flowName: string;
+      if (rawFlow === 'implicit') {
+        flowName = 'implicit';
+      } else if (rawFlow === 'password') {
+        flowName = 'password';
+      } else if (rawFlow === 'application') {
+        flowName = 'clientCredentials';
+      } else if (rawFlow === 'accessCode') {
+        flowName = 'authorizationCode';
+      } else {
+        flowName = rawFlow ?? 'implicit';
+      }
+
+      parsed.push({
+        name,
+        type: 'oauth2',
+        flows: { [flowName]: flowObj },
+        ...(description !== undefined ? { description } : {}),
+      });
+      continue;
+    }
+
+    skipped.push({
+      kind: 'securityScheme',
+      where: `/securityDefinitions/${name}`,
+      reason: `unknown type "${type}"`,
+    });
+  }
+  return parsed;
+}
+
+function synthesizeSwagger2ParamSchema(param: Record_): JsonSchema {
+  const type = asString(param['type']);
+  const format = asString(param['format']);
+  const items = isRecord(param['items']) ? synthesizeSwagger2ParamSchema(param['items']) : undefined;
+  const enumVals = Array.isArray(param['enum']) ? (param['enum'] as readonly JsonValue[]) : undefined;
+  const defaultVal = asJson(param['default']);
+  return {
+    ...(type !== undefined ? { type } : {}),
+    ...(format !== undefined ? { format } : {}),
+    ...(items !== undefined ? { items } : {}),
+    ...(enumVals !== undefined ? { enum: enumVals } : {}),
+    ...(defaultVal !== undefined ? { default: defaultVal } : {}),
+  };
+}
+
+function swagger2CollectionFormatToStyle(collectionFormat: string | undefined): { style?: string; explode?: boolean } {
+  if (collectionFormat === 'multi') {
+    return { style: 'form', explode: true };
+  }
+  if (collectionFormat === 'ssv') {
+    return { style: 'spaceDelimited', explode: false };
+  }
+  if (collectionFormat === 'tsv') {
+    return { style: 'pipeDelimited', explode: false };
+  }
+  if (collectionFormat === 'pipes') {
+    return { style: 'pipeDelimited', explode: false };
+  }
+  if (collectionFormat === 'csv') {
+    return { style: 'form', explode: false };
+  }
+  return {};
+}
+
+function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): readonly OpenApiOperation[] {
+  const paths = document['paths'];
+  if (!isRecord(paths)) {
+    return [];
+  }
+  const rootConsumes = asStringArray(document['consumes']);
+  const operations: OpenApiOperation[] = [];
+
+  for (const [path, item] of Object.entries(paths)) {
+    if (path.startsWith('x-')) {
+      skipped.push({ kind: 'extension', where: `/paths/${path}`, reason: 'vendor extensions are not imported' });
+      continue;
+    }
+    if (!isRecord(item)) {
+      skipped.push({ kind: 'path', where: `/paths/${path}`, reason: 'not a path item' });
+      continue;
+    }
+
+    const sharedRaw = Array.isArray(item['parameters']) ? item['parameters'].filter(isRecord) : [];
+
+    for (const [key, operation] of Object.entries(item)) {
+      if (!HTTP_METHODS.includes(key.toLowerCase())) {
+        continue;
+      }
+      if (!isRecord(operation)) {
+        skipped.push({ kind: 'operation', where: `${key.toUpperCase()} ${path}`, reason: 'not an object' });
+        continue;
+      }
+
+      const where = `${key.toUpperCase()} ${path}`;
+      const ownRaw = Array.isArray(operation['parameters']) ? operation['parameters'].filter(isRecord) : [];
+
+      const paramMap = new Map<string, Record_>();
+      for (const p of sharedRaw) {
+        const name = asString(p['name']);
+        const location = asString(p['in']);
+        if (name !== undefined && location !== undefined) {
+          paramMap.set(`${location}:${name}`, p);
+        }
+      }
+      for (const p of ownRaw) {
+        const name = asString(p['name']);
+        const location = asString(p['in']);
+        if (name !== undefined && location !== undefined) {
+          paramMap.set(`${location}:${name}`, p);
+        }
+      }
+      const allParams = [...paramMap.values()];
+
+      let bodyParam: Record_ | undefined;
+      const formDataParams: Record_[] = [];
+      const standardParams: OpenApiParameter[] = [];
+
+      for (const p of allParams) {
+        const name = asString(p['name']);
+        const location = asString(p['in']);
+        if (name === undefined || location === undefined) {
+          skipped.push({
+            kind: 'parameter',
+            where,
+            reason: p['$ref'] !== undefined ? 'its $ref could not be resolved' : 'no name or location',
+          });
+          continue;
+        }
+
+        if (location === 'body') {
+          bodyParam = p;
+          continue;
+        }
+
+        if (location === 'formData') {
+          formDataParams.push(p);
+          continue;
+        }
+
+        if (!['path', 'query', 'header'].includes(location)) {
+          skipped.push({ kind: 'parameter', where: `${where} ${name}`, reason: `unknown location "${location}"` });
+          continue;
+        }
+
+        const formatStyle = swagger2CollectionFormatToStyle(asString(p['collectionFormat']));
+        standardParams.push({
+          name,
+          in: location as ParameterLocation,
+          ...(asBoolean(p['required']) !== undefined ? { required: asBoolean(p['required']) as boolean } : {}),
+          ...(asBoolean(p['deprecated']) === true ? { deprecated: true } : {}),
+          ...(asString(p['description']) !== undefined ? { description: asString(p['description']) as string } : {}),
+          schema: synthesizeSwagger2ParamSchema(p),
+          ...(p['default'] !== undefined ? { example: asJson(p['default']) as JsonValue } : {}),
+          ...(formatStyle.style !== undefined ? { style: formatStyle.style } : {}),
+          ...(formatStyle.explode !== undefined ? { explode: formatStyle.explode } : {}),
+        });
+      }
+
+      let requestBody: OpenApiRequestBody | undefined;
+      const opConsumes = asStringArray(operation['consumes']);
+      const effectiveConsumes = opConsumes ?? rootConsumes ?? ['application/json'];
+
+      if (bodyParam !== undefined) {
+        const schema = isRecord(bodyParam['schema']) ? parseSchema(bodyParam['schema']) : undefined;
+        const content: Record<string, OpenApiMediaType> = {};
+        for (const mt of effectiveConsumes) {
+          content[mt] = {
+            ...(schema !== undefined ? { schema } : {}),
+          };
+        }
+        requestBody = {
+          content,
+          ...(asBoolean(bodyParam['required']) !== undefined
+            ? { required: asBoolean(bodyParam['required']) as boolean }
+            : {}),
+          ...(asString(bodyParam['description']) !== undefined
+            ? { description: asString(bodyParam['description']) as string }
+            : {}),
+        };
+      } else if (formDataParams.length > 0) {
+        const hasFile = formDataParams.some((p) => asString(p['type']) === 'file');
+        const defaultMt = hasFile ? 'multipart/form-data' : 'application/x-www-form-urlencoded';
+        const matchedConsumes = effectiveConsumes.filter(
+          (mt) => mt === 'multipart/form-data' || mt === 'application/x-www-form-urlencoded',
+        );
+        const formMediaTypes = matchedConsumes.length > 0 ? matchedConsumes : [defaultMt];
+
+        const properties: Record<string, JsonSchema> = {};
+        const required: string[] = [];
+
+        for (const p of formDataParams) {
+          const name = asString(p['name']);
+          if (!name) continue;
+          if (asBoolean(p['required']) === true) {
+            required.push(name);
+          }
+          if (asString(p['type']) === 'file') {
+            properties[name] = {
+              type: 'string',
+              format: 'binary',
+              ...(asString(p['description']) !== undefined
+                ? { description: asString(p['description']) as string }
+                : {}),
+            };
+          } else {
+            properties[name] = synthesizeSwagger2ParamSchema(p);
+          }
+        }
+
+        const schema: JsonSchema = {
+          type: 'object',
+          properties,
+          ...(required.length > 0 ? { required } : {}),
+        };
+
+        const content: Record<string, OpenApiMediaType> = {};
+        for (const mt of formMediaTypes) {
+          content[mt] = { schema };
+        }
+        requestBody = {
+          content,
+          required: required.length > 0,
+        };
+      }
+
+      for (const opKey of Object.keys(operation)) {
+        if (opKey.startsWith('x-')) {
+          skipped.push({ kind: 'extension', where: `${where} ${opKey}`, reason: 'vendor extensions are not imported' });
+        }
+      }
+
+      const security = parseSecurityRequirements(operation['security']);
+
+      operations.push({
+        method: key.toLowerCase(),
+        path,
+        parameters: standardParams,
+        ...(asString(operation['operationId']) !== undefined
+          ? { operationId: asString(operation['operationId']) as string }
+          : {}),
+        ...(asString(operation['summary']) !== undefined ? { summary: asString(operation['summary']) as string } : {}),
+        ...(asString(operation['description']) !== undefined
+          ? { description: asString(operation['description']) as string }
+          : {}),
+        ...(asStringArray(operation['tags']) !== undefined
+          ? { tags: asStringArray(operation['tags']) as string[] }
+          : {}),
+        ...(asBoolean(operation['deprecated']) === true ? { deprecated: true } : {}),
+        ...(requestBody !== undefined ? { requestBody } : {}),
+        ...(security !== undefined ? { security } : {}),
+      });
+    }
+  }
+
+  return operations;
 }

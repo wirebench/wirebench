@@ -51,13 +51,18 @@ describe('versionOf', () => {
     expect(versionOf({ swagger: '3.2.0' })).toEqual({ version: '3.2', declared: 'Swagger 3.2.0' });
   });
 
-  it('refuses Swagger 2.0 by name, and says what to do about it', () => {
-    expect(() => versionOf({ swagger: '2.0' })).toThrowError(/Swagger 2\.0/);
+  it('accepts documents declaring Swagger 2.0 and 2.x', () => {
+    expect(versionOf({ swagger: '2.0' })).toEqual({ version: '2.0', declared: 'Swagger 2.0' });
+    expect(versionOf({ swagger: '2.0.1' })).toEqual({ version: '2.0', declared: 'Swagger 2.0.1' });
+  });
+
+  it('refuses unsupported Swagger versions (e.g. 1.2)', () => {
+    expect(() => versionOf({ swagger: '1.2' })).toThrowError(/Swagger 1\.2/);
     try {
-      versionOf({ swagger: '2.0' });
+      versionOf({ swagger: '1.2' });
     } catch (error) {
       expect(error).toMatchObject({ code: 'openapi-unsupported-version' });
-      expect((error as Error).message).toContain('OpenAPI 3.0, 3.1 and 3.2');
+      expect((error as Error).message).toContain('Swagger 2.0, 3.x and OpenAPI 3.0, 3.1, 3.2');
     }
   });
 
@@ -344,5 +349,276 @@ describe('tolerance', () => {
   it('takes a document with no title, no servers and no paths', () => {
     const document = parseOpenApiDocument({ openapi: '3.0.3' });
     expect(document).toMatchObject({ info: { title: 'Imported API' }, servers: [], operations: [] });
+  });
+
+  describe('Swagger 2.0 documents', () => {
+    it('derives server URLs from schemes, host, and basePath', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Test' },
+        host: 'api.example.com',
+        basePath: '/v1',
+        schemes: ['https', 'http'],
+      });
+      expect(doc.servers).toEqual([{ url: 'https://api.example.com/v1' }, { url: 'http://api.example.com/v1' }]);
+    });
+
+    it('defaults to https when host is given without schemes', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Test' },
+        host: 'api.example.com',
+      });
+      expect(doc.servers).toEqual([{ url: 'https://api.example.com' }]);
+    });
+
+    it('uses basePath when host is absent, or falls back to /', () => {
+      const withBase = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Test' },
+        basePath: '/api',
+      });
+      expect(withBase.servers).toEqual([{ url: '/api' }]);
+
+      const bare = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Test' },
+      });
+      expect(bare.servers).toEqual([{ url: '/' }]);
+    });
+
+    it('converts primitive path, query, and header parameters to schemas', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Params' },
+        paths: {
+          '/users/{id}': {
+            get: {
+              parameters: [
+                { name: 'id', in: 'path', required: true, type: 'integer', format: 'int64' },
+                { name: 'filter', in: 'query', type: 'string', default: 'active' },
+                {
+                  name: 'roles',
+                  in: 'query',
+                  type: 'array',
+                  items: { type: 'string' },
+                  collectionFormat: 'multi',
+                },
+                { name: 'X-Tenant', in: 'header', type: 'string', required: true },
+              ],
+            },
+          },
+        },
+      });
+
+      const op = doc.operations[0];
+      expect(op?.parameters).toHaveLength(4);
+
+      const [id, filter, roles, tenant] = op!.parameters;
+      expect(id).toMatchObject({
+        name: 'id',
+        in: 'path',
+        required: true,
+        schema: { type: 'integer', format: 'int64' },
+      });
+      expect(filter).toMatchObject({
+        name: 'filter',
+        in: 'query',
+        schema: { type: 'string', default: 'active' },
+        example: 'active',
+      });
+      expect(roles).toMatchObject({
+        name: 'roles',
+        in: 'query',
+        schema: { type: 'array', items: { type: 'string' } },
+        style: 'form',
+        explode: true,
+      });
+      expect(tenant).toMatchObject({
+        name: 'X-Tenant',
+        in: 'header',
+        required: true,
+        schema: { type: 'string' },
+      });
+    });
+
+    it('converts in: "body" parameter into requestBody', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Body' },
+        consumes: ['application/json', 'application/xml'],
+        paths: {
+          '/items': {
+            post: {
+              parameters: [
+                {
+                  name: 'item',
+                  in: 'body',
+                  required: true,
+                  description: 'New item',
+                  schema: {
+                    type: 'object',
+                    properties: { name: { type: 'string' } },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const op = doc.operations[0];
+      expect(op?.requestBody).toBeDefined();
+      expect(op?.requestBody?.required).toBe(true);
+      expect(op?.requestBody?.description).toBe('New item');
+      expect(Object.keys(op?.requestBody?.content ?? {})).toEqual(['application/json', 'application/xml']);
+      expect(op?.requestBody?.content['application/json']?.schema).toMatchObject({
+        type: 'object',
+        properties: { name: { type: 'string' } },
+      });
+    });
+
+    it('converts in: "formData" parameters to urlencoded and multipart requestBody', () => {
+      const formDoc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Form' },
+        paths: {
+          '/login': {
+            post: {
+              parameters: [
+                { name: 'username', in: 'formData', type: 'string', required: true },
+                { name: 'password', in: 'formData', type: 'string', required: true },
+              ],
+            },
+          },
+        },
+      });
+
+      const formOp = formDoc.operations[0];
+      expect(formOp?.requestBody).toBeDefined();
+      expect(Object.keys(formOp?.requestBody?.content ?? {})).toEqual(['application/x-www-form-urlencoded']);
+      expect(formOp?.requestBody?.content['application/x-www-form-urlencoded']?.schema).toMatchObject({
+        type: 'object',
+        properties: {
+          username: { type: 'string' },
+          password: { type: 'string' },
+        },
+        required: ['username', 'password'],
+      });
+
+      const multiDoc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Upload' },
+        paths: {
+          '/upload': {
+            post: {
+              parameters: [
+                { name: 'file', in: 'formData', type: 'file', required: true, description: 'File to upload' },
+                { name: 'description', in: 'formData', type: 'string' },
+              ],
+            },
+          },
+        },
+      });
+
+      const multiOp = multiDoc.operations[0];
+      expect(multiOp?.requestBody).toBeDefined();
+      expect(Object.keys(multiOp?.requestBody?.content ?? {})).toEqual(['multipart/form-data']);
+      expect(multiOp?.requestBody?.content['multipart/form-data']?.schema).toMatchObject({
+        type: 'object',
+        properties: {
+          file: { type: 'string', format: 'binary', description: 'File to upload' },
+          description: { type: 'string' },
+        },
+      });
+    });
+
+    it('converts securityDefinitions to OpenApiSecurityScheme entries', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Security' },
+        securityDefinitions: {
+          basicAuth: {
+            type: 'basic',
+            description: 'HTTP Basic',
+          },
+          apiKeyAuth: {
+            type: 'apiKey',
+            name: 'api_key',
+            in: 'header',
+          },
+          oauthClient: {
+            type: 'oauth2',
+            flow: 'application',
+            tokenUrl: 'https://auth.test/token',
+            scopes: { 'read:all': 'Read everything' },
+          },
+          oauthCode: {
+            type: 'oauth2',
+            flow: 'accessCode',
+            authorizationUrl: 'https://auth.test/auth',
+            tokenUrl: 'https://auth.test/token',
+            scopes: { 'write:all': 'Write everything' },
+          },
+        },
+      });
+
+      expect(doc.securitySchemes).toHaveLength(4);
+      expect(doc.securitySchemes.find((s) => s.name === 'basicAuth')).toMatchObject({
+        type: 'http',
+        scheme: 'basic',
+        description: 'HTTP Basic',
+      });
+      expect(doc.securitySchemes.find((s) => s.name === 'apiKeyAuth')).toMatchObject({
+        type: 'apiKey',
+        in: 'header',
+        keyName: 'api_key',
+      });
+      expect(doc.securitySchemes.find((s) => s.name === 'oauthClient')).toMatchObject({
+        type: 'oauth2',
+        flows: {
+          clientCredentials: {
+            tokenUrl: 'https://auth.test/token',
+            scopes: { 'read:all': 'Read everything' },
+          },
+        },
+      });
+      expect(doc.securitySchemes.find((s) => s.name === 'oauthCode')).toMatchObject({
+        type: 'oauth2',
+        flows: {
+          authorizationCode: {
+            authorizationUrl: 'https://auth.test/auth',
+            tokenUrl: 'https://auth.test/token',
+            scopes: { 'write:all': 'Write everything' },
+          },
+        },
+      });
+    });
+
+    it('merges path and operation parameters with operation winning', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        info: { title: 'Merge' },
+        paths: {
+          '/items/{id}': {
+            parameters: [
+              { name: 'id', in: 'path', required: true, type: 'integer' },
+              { name: 'detail', in: 'query', type: 'boolean', default: false },
+            ],
+            get: {
+              parameters: [
+                { name: 'detail', in: 'query', type: 'boolean', default: true },
+                { name: 'extra', in: 'query', type: 'string' },
+              ],
+            },
+          },
+        },
+      });
+
+      const params = doc.operations[0]?.parameters;
+      expect(params).toHaveLength(3);
+      const detail = params?.find((p) => p.name === 'detail');
+      expect(detail?.schema?.default).toBe(true);
+    });
   });
 });
