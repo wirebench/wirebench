@@ -8,16 +8,33 @@ import { GitBackend } from '../../src/main/sync/git-backend.js';
 import { GitCli } from '../../src/main/sync/git-cli.js';
 import type { Runner } from '../../src/main/sync/git-cli.js';
 
-/** A `GitCli` whose `config --local --list --name-only` answers `names`; every other call is recorded and succeeds. */
-function gitWithLocalConfig(names: string, seen: string[][] = []): GitCli {
+/**
+ * A `GitCli` whose local-config listing answers `names` (newline-separated here, NUL-terminated on
+ * the wire) and whose `remote.*.url` read answers an allowed URL; every call is recorded.
+ */
+function gitWithLocalConfig(
+  names: string,
+  seen: string[][] = [],
+  listing: { exitCode: number; stderr: string } = { exitCode: 0, stderr: '' },
+): GitCli {
   const run: Runner = (_file, fullArgs) => {
     if (fullArgs.includes('core.sshCommand')) {
       return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
     }
     const args = fullArgs.slice(6);
     seen.push([...args]);
-    const listing = args[0] === 'config' && args.includes('--local');
-    return Promise.resolve({ stdout: listing ? names : '', stderr: '', exitCode: 0 });
+    if (args.includes('--list')) {
+      const stdout = names
+        .split('\n')
+        .filter((name) => name.length > 0)
+        .map((name) => `${name}\0`)
+        .join('');
+      return Promise.resolve({ stdout, ...listing });
+    }
+    if (args.includes('--get-regexp')) {
+      return Promise.resolve({ stdout: 'remote.origin.url\nhttps://example.test/team.git\0', stderr: '', exitCode: 0 });
+    }
+    return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
   };
   return new GitCli({ path: '/usr/bin/git', version: '2.45.0' }, { hooksDir: '/nonexistent-hooks', run });
 }
@@ -92,7 +109,7 @@ describe('createSyncBackend', () => {
       state: 'error',
       error: { code: 'git-config-refused' },
     });
-    expect(seen).toEqual([['config', '--local', '--list', '--name-only']]);
+    expect(seen).toEqual([['config', '--local', '--list', '--name-only', '-z']]);
   });
 
   it('a folder share holding a repository with a refused key is not upgraded to git', async () => {
@@ -107,6 +124,26 @@ describe('createSyncBackend', () => {
 
     expect(backend).toBeInstanceOf(FolderBackend);
     await expect(backend.probe()).resolves.toMatchObject({ state: 'error', error: { code: 'git-config-refused' } });
+  });
+
+  it('a git share whose tree is not a repository reports git-not-a-repository', async () => {
+    const notARepo = gitWithLocalConfig('', [], {
+      exitCode: 128,
+      stderr: 'fatal: --local can only be used inside a git repository',
+    });
+    const backend = await createSyncBackend({
+      share: gitShare,
+      tree: '/t',
+      git: () => Promise.resolve(notARepo),
+      settings,
+    });
+
+    expect(backend).toBeInstanceOf(FolderBackend);
+    await expect(backend.probe()).resolves.toMatchObject({
+      kind: 'git',
+      state: 'error',
+      error: { code: 'git-not-a-repository', message: 'This folder is not a git repository.' },
+    });
   });
 
   it('a server share is a FolderBackend placeholder reporting kind server', async () => {

@@ -573,7 +573,11 @@ describeGit('WorkspaceService — join', () => {
     const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({ code: 'git-config-refused', details: { keys: ['core.fsmonitor'] } });
-    expect(calls).toEqual([['config', '--local', '--list', '--name-only']]);
+    // Only the local-config reads: the key listing, then the remote URL values.
+    expect(calls).toEqual([
+      ['config', '--local', '--list', '--name-only', '-z'],
+      ['config', '--local', '-z', '--get-regexp', '^remote\\..*\\.url$'],
+    ]);
     expect(existsSync(join(clone, 'pwned'))).toBe(false);
     expect(await service.list()).toEqual([]);
   });
@@ -615,7 +619,8 @@ describeGit('WorkspaceService — join', () => {
 
     const error = await service.joinFromFolder(sender).catch((caught: unknown) => caught);
 
-    expect(error).toMatchObject({ code: 'git-remote-refused' });
+    // Refused by the local-config check, before anything else runs in the clone.
+    expect(error).toMatchObject({ code: 'git-config-refused', details: { keys: ['remote.origin.url'] } });
     expect((error as WirebenchError).message).toContain('file://');
     expect((error as WirebenchError).message).not.toContain(remote.dir);
     expect(await service.list()).toEqual([]);

@@ -539,63 +539,123 @@ export class GitCli {
 }
 
 /**
- * Local config keys that make git run a program, load more config, or rewrite file content, as
- * lower-case patterns (`*` is one subsection, which may itself contain dots). A repository the app
- * did not create itself can carry any of them in `.git/config`; the `-c` overrides `run` adds do
- * not cover them, so such a repository is refused before git runs in it.
+ * The only keys a repository's local config (`.git/config`) may set before the app runs git in a
+ * repository it did not create itself: what `init`/`clone` write, what the app writes (`remote add`,
+ * the identity dialog's `user.name`/`user.email`) and a few harmless line-ending/fetch/pull settings.
+ * Lower-case; `*` is a subsection, any non-empty string (it may contain dots). Everything else —
+ * `extensions.*`, `include*`, `url.*`, `protocol.*`, `gpg.*`, `commit.gpgsign`, `remote.*.pushurl`,
+ * any `core.*` not named here — is refused: git has too many ways to run a program for a list of
+ * refused keys to be trusted.
  */
-const REFUSED_LOCAL_CONFIG_PATTERNS: readonly RegExp[] = [
-  'core.fsmonitor',
-  'core.sshcommand',
-  'core.askpass',
-  'core.editor',
-  'core.pager',
-  'core.hookspath',
-  'core.gitproxy',
-  'sequence.editor',
-  'gpg.program',
-  'gpg.*.program',
-  'credential.helper',
-  'credential.*.helper',
-  'filter.*.clean',
-  'filter.*.smudge',
-  'filter.*.process',
-  'diff.*.textconv',
-  'diff.*.command',
-  'diff.external',
-  'merge.*.driver',
-  'remote.*.uploadpack',
-  'remote.*.receivepack',
-  'remote.*.vcs',
-  'uploadpack.packobjectshook',
-  'include.path',
-  'includeif.*.path',
-].map((pattern) => new RegExp(`^${pattern.replaceAll('.', '\\.').replaceAll('*', '.+')}$`));
+const ALLOWED_LOCAL_CONFIG_KEYS: readonly string[] = [
+  'core.repositoryformatversion',
+  'core.filemode',
+  'core.bare',
+  'core.logallrefupdates',
+  'core.ignorecase',
+  'core.precomposeunicode',
+  'core.symlinks',
+  'core.autocrlf',
+  'core.safecrlf',
+  'core.eol',
+  'core.quotepath',
+  'core.longpaths',
+  'core.checkstat',
+  'core.trustctime',
+  'user.name',
+  'user.email',
+  'remote.*.url',
+  'remote.*.fetch',
+  'remote.*.tagopt',
+  'remote.*.prune',
+  'branch.*.remote',
+  'branch.*.merge',
+  'branch.*.rebase',
+  'pull.rebase',
+  'pull.ff',
+  'fetch.prune',
+  'init.defaultbranch',
+  'gc.auto',
+];
 
-/** The keys of `names` (git config key names) that {@link assertSafeLocalConfig} refuses, case-insensitively. */
+const ALLOWED_LOCAL_CONFIG_PATTERNS: readonly RegExp[] = ALLOWED_LOCAL_CONFIG_KEYS.map(
+  (key) => new RegExp(`^${key.replaceAll('.', '\\.').replaceAll('*', '.+')}$`, 's'),
+);
+
+/** A `remote.<name>.url` key, whose value is checked with {@link assertRemoteUrl} as well. */
+const REMOTE_URL_KEY = /^remote\..+\.url$/is;
+
+/** The keys of `names` (git config key names) off the local-config allow-list, compared case-insensitively. */
 export function refusedLocalConfigKeys(names: readonly string[]): string[] {
   return names.filter((name) => {
-    const key = name.trim().toLowerCase();
-    return REFUSED_LOCAL_CONFIG_PATTERNS.some((pattern) => pattern.test(key));
+    const key = name.toLowerCase();
+    return !ALLOWED_LOCAL_CONFIG_PATTERNS.some((pattern) => pattern.test(key));
   });
 }
 
+/** Splits git's `-z` output into its NUL-terminated records. */
+function nulRecords(stdout: string): string[] {
+  return stdout.split('\0').filter((record) => record.length > 0);
+}
+
+/** Whether `error` is git refusing to run a `--local` read outside a repository. */
+function isNotARepository(error: unknown): boolean {
+  if (!(error instanceof WirebenchError)) {
+    return false;
+  }
+  const details = error.details as { exitCode?: unknown; stderr?: unknown } | undefined;
+  return (
+    details?.exitCode === 128 &&
+    typeof details.stderr === 'string' &&
+    /not a git repository|can only be used inside a git repository/i.test(details.stderr)
+  );
+}
+
 /**
- * Refuses a repository whose `.git/config` sets a key from the refused list (see
- * {@link refusedLocalConfigKeys}) with `git-config-refused`, `details.keys` naming them. Run
- * before any other git command in a repository the app did not `clone` or `init` itself.
+ * Refuses a repository whose `.git/config` sets any key off the allow-list (see
+ * {@link refusedLocalConfigKeys}), or a `remote.*.url` value {@link assertRemoteUrl} refuses, with
+ * `git-config-refused` and `details.keys` naming the keys (never a URL). A folder that is not a
+ * repository is `git-not-a-repository`. Run before any other git command in a repository the app
+ * did not `clone` or `init` itself.
  */
 export async function assertSafeLocalConfig(git: GitCli, cwd: string): Promise<void> {
-  const { stdout } = await git.run(cwd, ['config', '--local', '--list', '--name-only']);
-  const names = stdout.split('\n').filter((line) => line.trim().length > 0);
-  const keys = [...new Set(refusedLocalConfigKeys(names))];
-  if (keys.length > 0) {
+  let names: string[];
+  try {
+    names = nulRecords((await git.run(cwd, ['config', '--local', '--list', '--name-only', '-z'])).stdout);
+  } catch (error) {
+    if (isNotARepository(error)) {
+      throw new WirebenchError('git-not-a-repository', 'This folder is not a git repository.', { cause: error });
+    }
+    throw error;
+  }
+  const keys = refusedLocalConfigKeys(names);
+  /** `assertRemoteUrl`'s own messages, which never echo the URL (they may suggest its file:// form). */
+  const urlHints: string[] = [];
+  if (names.some((name) => REMOTE_URL_KEY.test(name))) {
+    const { stdout } = await git.run(cwd, ['config', '--local', '-z', '--get-regexp', '^remote\\..*\\.url$']);
+    for (const record of nulRecords(stdout)) {
+      const newline = record.indexOf('\n');
+      const key = newline === -1 ? record : record.slice(0, newline);
+      const value = newline === -1 ? '' : record.slice(newline + 1);
+      try {
+        assertRemoteUrl(value);
+      } catch (error) {
+        keys.push(key);
+        if (error instanceof Error && !urlHints.includes(error.message)) {
+          urlHints.push(error.message);
+        }
+      }
+    }
+  }
+  const unique = [...new Set(keys)];
+  if (unique.length > 0) {
+    const them = unique.length === 1 ? 'it' : 'them';
     throw new WirebenchError(
       'git-config-refused',
-      `This repository's .git/config sets ${keys.join(', ')}, which could run programs on this machine. Remove ${
-        keys.length === 1 ? 'it' : 'them'
-      } from the repository's .git/config, or move ${keys.length === 1 ? 'it' : 'them'} to your global git config.`,
-      { details: { keys } },
+      `This repository's .git/config sets ${unique.join(', ')}, which Wirebench does not allow in a repository it did not create. Remove ${them} from the repository's .git/config, or move ${them} to your global git config.${
+        urlHints.length > 0 ? ` ${urlHints.join(' ')}` : ''
+      }`,
+      { details: { keys: unique } },
     );
   }
 }
