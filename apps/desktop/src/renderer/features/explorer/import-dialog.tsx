@@ -98,7 +98,12 @@ function selectedProjectId(): string | undefined {
 }
 
 export type UnifiedImportResult =
-  | { readonly kind: 'wsdl'; readonly interfaceId: string; readonly name: string; readonly problems: ImportProblemWire[] }
+  | {
+      readonly kind: 'wsdl';
+      readonly interfaceId: string;
+      readonly name: string;
+      readonly problems: ImportProblemWire[];
+    }
   | { readonly kind: 'openapi'; readonly apiId: string; readonly summary: OpenApiImportSummaryWire }
   | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire };
 
@@ -179,13 +184,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   // Real-time format detection
   const detected: DetectedImportFormat = useMemo(() => {
     const currentText = tab === 'paste' ? pasted : tab === 'file' ? dropped?.text : undefined;
-    const currentFilename = tab === 'file' ? dropped?.name ?? (filePath.length > 0 ? filePath : undefined) : undefined;
+    const currentFilename =
+      tab === 'file' ? (dropped?.name ?? (filePath.length > 0 ? filePath : undefined)) : undefined;
     const currentUrl = tab === 'url' && url.length > 0 ? url : undefined;
     return detectImportFormat({ text: currentText, filename: currentFilename, url: currentUrl });
   }, [tab, pasted, dropped, filePath, url]);
 
-  const effectiveFormat: ImportFormatKind =
-    format !== 'auto' ? format : detected.kind;
+  const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
 
   const reset = useCallback((): void => {
     setImportError(undefined);
@@ -230,7 +235,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               { name: 'All Files', extensions: ['*'] },
             ]
           : [
-              { name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)', extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'] },
+              {
+                name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+              },
               { name: 'All Files', extensions: ['*'] },
             ];
     const title =
@@ -328,8 +336,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setImporting(true);
 
     const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
-    const into: ProjectAddInterfaceTarget =
-      chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
+    const into: ProjectAddInterfaceTarget = chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
 
     try {
       if (targetFormat === 'wsdl') {
@@ -364,7 +371,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? { kind: 'url', url: source.url }
             : source.kind === 'file'
               ? { kind: 'file', path: source.path }
-              : { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
+              : {
+                  kind: 'text',
+                  text: source.text,
+                  ...(source.location !== undefined ? { location: source.location } : {}),
+                };
 
         const imported = await useProjectStore.getState().importOpenApi({
           target: into,
@@ -387,14 +398,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       } else {
         // Postman import
         if (source.kind === 'url') {
-          setImportError('Postman import via URL is not supported yet. Please download the collection file or paste its JSON.');
+          setImportError(
+            'Postman import via URL is not supported yet. Please download the collection file or paste its JSON.',
+          );
           return;
         }
 
         const postmanSource: PostmanSourceWire =
-          source.kind === 'file'
-            ? { kind: 'file', path: source.path }
-            : { kind: 'text', text: source.text };
+          source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text };
 
         const res = await ipc().api.importPostman({
           target: into,
@@ -435,8 +446,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     if (token !== undefined) {
       cancelledTokensRef.current.add(token);
       await Promise.all([
-        ipc().definition.cancelImport({ token }).catch(() => undefined),
-        ipc().api.cancelImport({ token }).catch(() => undefined),
+        ipc()
+          .definition.cancelImport({ token })
+          .catch(() => undefined),
+        ipc()
+          .api.cancelImport({ token })
+          .catch(() => undefined),
       ]);
     }
     setImporting(false);
@@ -458,7 +473,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/40" />
         <Dialog.Content
-          data-testid={format === 'postman' ? 'import-postman-dialog' : format === 'openapi' ? 'import-openapi-dialog' : 'import-dialog'}
+          data-testid={
+            format === 'postman'
+              ? 'import-postman-dialog'
+              : format === 'openapi'
+                ? 'import-openapi-dialog'
+                : 'import-dialog'
+          }
           className="fixed top-1/2 left-1/2 w-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <div className="flex items-center justify-between">
@@ -591,17 +612,31 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <div className="flex gap-2">
                       <input
                         aria-label={format === 'postman' ? 'Postman collection file path' : 'File path'}
-                        data-testid={format === 'postman' ? 'import-postman-file-input' : format === 'openapi' ? 'import-openapi-path' : 'import-file-input'}
+                        data-testid={
+                          format === 'postman'
+                            ? 'import-postman-file-input'
+                            : format === 'openapi'
+                              ? 'import-openapi-path'
+                              : 'import-file-input'
+                        }
                         value={filePath}
                         onChange={(e) => {
                           setDropped(undefined);
                           setFilePath(e.target.value);
                         }}
-                        placeholder={format === 'postman' ? 'Path to collection.json' : '/path/to/spec.json, .yaml, or .wsdl'}
+                        placeholder={
+                          format === 'postman' ? 'Path to collection.json' : '/path/to/spec.json, .yaml, or .wsdl'
+                        }
                         className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
                       />
                       <Button
-                        data-testid={format === 'postman' ? 'import-postman-browse' : format === 'openapi' ? 'import-openapi-browse' : 'import-browse'}
+                        data-testid={
+                          format === 'postman'
+                            ? 'import-postman-browse'
+                            : format === 'openapi'
+                              ? 'import-openapi-browse'
+                              : 'import-browse'
+                        }
                         onClick={() => void browseForFile()}
                       >
                         Browse…
@@ -622,7 +657,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 {tab === 'paste' && (
                   <textarea
                     aria-label={format === 'postman' ? 'Pasted Postman collection' : 'Pasted specification'}
-                    data-testid={format === 'postman' ? 'import-postman-paste' : format === 'openapi' ? 'import-openapi-paste' : 'import-paste'}
+                    data-testid={
+                      format === 'postman'
+                        ? 'import-postman-paste'
+                        : format === 'openapi'
+                          ? 'import-openapi-paste'
+                          : 'import-paste'
+                    }
                     value={pasted}
                     onChange={(e) => setPasted(e.target.value)}
                     rows={8}
@@ -643,7 +684,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </label>
                 <select
                   id="import-target-project"
-                  data-testid={format === 'postman' ? 'import-postman-target-project' : format === 'openapi' ? 'import-openapi-target-project' : 'import-target-project'}
+                  data-testid={
+                    format === 'postman'
+                      ? 'import-postman-target-project'
+                      : format === 'openapi'
+                        ? 'import-openapi-target-project'
+                        : 'import-target-project'
+                  }
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
@@ -666,7 +713,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     </label>
                     <input
                       id="import-name-override"
-                      data-testid={format === 'postman' ? 'import-postman-name' : format === 'openapi' ? 'import-openapi-name' : 'import-name-input'}
+                      data-testid={
+                        format === 'postman'
+                          ? 'import-postman-name'
+                          : format === 'openapi'
+                            ? 'import-openapi-name'
+                            : 'import-name-input'
+                      }
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder={sourceName}
@@ -680,7 +733,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     </label>
                     <input
                       id="import-base-url-override"
-                      data-testid={format === 'postman' ? 'import-postman-base-url' : format === 'openapi' ? 'import-openapi-base-url' : 'import-base-url-input'}
+                      data-testid={
+                        format === 'postman'
+                          ? 'import-postman-base-url'
+                          : format === 'openapi'
+                            ? 'import-openapi-base-url'
+                            : 'import-base-url-input'
+                      }
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
                       placeholder="https://api.example.com"
@@ -710,7 +769,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               {importError !== undefined && (
                 <p
                   role="alert"
-                  data-testid={format === 'postman' ? 'import-postman-error' : format === 'openapi' ? 'import-openapi-error' : 'import-error'}
+                  data-testid={
+                    format === 'postman'
+                      ? 'import-postman-error'
+                      : format === 'openapi'
+                        ? 'import-openapi-error'
+                        : 'import-error'
+                  }
                   className="mt-3 text-sm text-status-danger"
                 >
                   {importError}
@@ -720,7 +785,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               <div className="mt-4 flex justify-end gap-2">
                 {importing ? (
                   <Button
-                    data-testid={format === 'postman' ? 'import-postman-cancel' : format === 'openapi' ? 'import-openapi-cancel' : 'import-cancel'}
+                    data-testid={
+                      format === 'postman'
+                        ? 'import-postman-cancel'
+                        : format === 'openapi'
+                          ? 'import-openapi-cancel'
+                          : 'import-cancel'
+                    }
                     onClick={() => void onCancel()}
                   >
                     Cancel
@@ -731,7 +802,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       <Button>Cancel</Button>
                     </Dialog.Close>
                     <Button
-                      data-testid={format === 'postman' ? 'import-postman-submit' : format === 'openapi' ? 'import-openapi-submit' : 'import-submit'}
+                      data-testid={
+                        format === 'postman'
+                          ? 'import-postman-submit'
+                          : format === 'openapi'
+                            ? 'import-openapi-submit'
+                            : 'import-submit'
+                      }
                       variant="primary"
                       onClick={() => void onImport()}
                     >
@@ -756,13 +833,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   );
 }
 
-function UnifiedSummary({
-  result,
-  onDone,
-}: {
-  readonly result: UnifiedImportResult;
-  readonly onDone: () => void;
-}) {
+function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResult; readonly onDone: () => void }) {
   const updateApi = useProjectStore((state) => state.updateApi);
   const openApiSummary = result.kind === 'openapi' ? result.summary : undefined;
   const [applied, setApplied] = useState<string | undefined>(
@@ -772,7 +843,13 @@ function UnifiedSummary({
 
   return (
     <div
-      data-testid={result.kind === 'postman' ? 'import-postman-summary' : result.kind === 'openapi' ? 'import-openapi-summary' : 'import-summary'}
+      data-testid={
+        result.kind === 'postman'
+          ? 'import-postman-summary'
+          : result.kind === 'openapi'
+            ? 'import-openapi-summary'
+            : 'import-summary'
+      }
       className="mt-3 flex flex-col gap-3"
     >
       {result.kind === 'openapi' && (
@@ -781,10 +858,12 @@ function UnifiedSummary({
             <p className="font-medium">{result.summary.name}</p>
             <p className="text-xs text-fg-subtle">
               OpenAPI {result.summary.declaredVersion}
-              {result.summary.apiVersion !== undefined ? ` · API version ${result.summary.apiVersion}` : ''} · {result.summary.baseUrl}
+              {result.summary.apiVersion !== undefined ? ` · API version ${result.summary.apiVersion}` : ''} ·{' '}
+              {result.summary.baseUrl}
             </p>
             <p data-testid="import-openapi-counts" className="mt-1 text-sm">
-              {result.summary.requests} request{result.summary.requests === 1 ? '' : 's'} in {result.summary.folders} folder
+              {result.summary.requests} request{result.summary.requests === 1 ? '' : 's'} in {result.summary.folders}{' '}
+              folder
               {result.summary.folders === 1 ? '' : 's'}
               {result.summary.deprecated > 0 ? `, ${result.summary.deprecated} deprecated` : ''}.
             </p>
@@ -857,8 +936,8 @@ function UnifiedSummary({
             <p className="mt-1 text-xs text-fg-subtle">{result.summary.description}</p>
           )}
           <p data-testid="import-postman-counts" className="mt-2 text-sm text-fg-default">
-            {result.summary.requests} request{result.summary.requests === 1 ? '' : 's'} in{' '}
-            {result.summary.folders} folder{result.summary.folders === 1 ? '' : 's'}.
+            {result.summary.requests} request{result.summary.requests === 1 ? '' : 's'} in {result.summary.folders}{' '}
+            folder{result.summary.folders === 1 ? '' : 's'}.
           </p>
           {result.summary.auth !== undefined && (
             <p className="mt-1 text-xs text-fg-subtle">
@@ -897,7 +976,13 @@ function UnifiedSummary({
 
       <div className="flex justify-end">
         <Button
-          data-testid={result.kind === 'postman' ? 'import-postman-done' : result.kind === 'openapi' ? 'import-openapi-done' : 'import-done'}
+          data-testid={
+            result.kind === 'postman'
+              ? 'import-postman-done'
+              : result.kind === 'openapi'
+                ? 'import-openapi-done'
+                : 'import-done'
+          }
           variant="primary"
           onClick={onDone}
         >

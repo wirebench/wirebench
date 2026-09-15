@@ -665,7 +665,13 @@ describe('tolerance', () => {
                 nickname: 'getPet',
                 parameters: [
                   { name: 'id', paramType: 'path', required: true, type: 'integer', format: 'int64' },
-                  { name: 'status', paramType: 'query', type: 'string', defaultValue: 'active', enum: ['active', 'sold'] },
+                  {
+                    name: 'status',
+                    paramType: 'query',
+                    type: 'string',
+                    defaultValue: 'active',
+                    enum: ['active', 'sold'],
+                  },
                   { name: 'tags', paramType: 'query', type: 'string', allowMultiple: true },
                   { name: 'X-Key', paramType: 'header', type: 'string', required: true },
                 ],
@@ -802,12 +808,8 @@ describe('tolerance', () => {
                 summary: 'Get user',
                 responseClass: 'User',
                 nickname: 'getUser',
-                parameters: [
-                  { name: 'id', paramType: 'path', dataType: 'Long' },
-                ],
-                errorResponses: [
-                  { code: 404, reason: 'Not found' },
-                ],
+                parameters: [{ name: 'id', paramType: 'path', dataType: 'Long' }],
+                errorResponses: [{ code: 404, reason: 'Not found' }],
               },
             ],
           },
@@ -841,9 +843,7 @@ describe('tolerance', () => {
           },
           oauthCode: {
             type: 'oauth2',
-            scopes: [
-              { scope: 'write:all', description: 'Write everything' },
-            ],
+            scopes: [{ scope: 'write:all', description: 'Write everything' }],
             grantTypes: {
               authorization_code: {
                 authorizationEndpoint: { url: 'https://auth.test/auth' },

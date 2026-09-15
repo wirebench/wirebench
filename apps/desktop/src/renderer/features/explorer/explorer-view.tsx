@@ -371,7 +371,9 @@ export function ExplorerView() {
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
-            <p className="text-sm text-fg-subtle">Create a project, or import an API or service definition into a new one.</p>
+            <p className="text-sm text-fg-subtle">
+              Create a project, or import an API or service definition into a new one.
+            </p>
             <div className="mt-1 flex gap-2">
               <Button
                 onClick={() => {
@@ -414,20 +416,23 @@ export function ExplorerView() {
               disableDrag={(node) => node.kind !== 'rest-request' && node.kind !== 'folder'}
               // Reordering and moving happen inside the same API: a request or folder belongs to its
               // own API definition, and cannot move into another API or project.
-              disableDrop={({ parentNode, dragNodes }) => {
+              disableDrop={({ parentNode, dragNodes, index }) => {
                 const dragged = dragNodes[0]?.data;
                 if (dragged === undefined) return true;
                 if (dragged.kind !== 'rest-request' && dragged.kind !== 'folder') return true;
 
                 const parent = parentNode?.data;
                 if (parent === undefined) return true;
+                if (parent.kind !== 'api' && parent.kind !== 'folder') return true;
 
-                if (parent.kind === 'api') {
-                  return parent.apiId !== dragged.apiId;
-                }
-                if (parent.kind === 'folder') {
-                  if (parent.apiId !== dragged.apiId) return true;
-                  if (dragged.kind === 'folder') {
+                // Disallow cross-project drops
+                if (!sameProject(parent, dragged)) return true;
+
+                // Disallow cross-API drops
+                if (parent.apiId !== dragged.apiId) return true;
+
+                if (dragged.kind === 'folder') {
+                  if (parent.kind === 'folder') {
                     if (parent.folderId === dragged.folderId) return true;
                     let ancestor: NodeApi<ExplorerNode> | null = parentNode;
                     while (ancestor !== null) {
@@ -437,12 +442,21 @@ export function ExplorerView() {
                       ancestor = ancestor.parent;
                     }
                   }
-                  return false;
                 }
 
-                return true;
+                // Check folder vs request drop zones (3.24)
+                const childNodes = parentNode.children ?? [];
+                const folderCount = childNodes.filter((c) => c.data?.kind === 'folder').length;
+                if (dragged.kind === 'folder' && index > folderCount) {
+                  return true;
+                }
+                if (dragged.kind === 'rest-request' && index < folderCount) {
+                  return true;
+                }
+
+                return false;
               }}
-              onMove={({ dragNodes, parentNode, index }) => {
+              onMove={async ({ dragNodes, parentNode, index }) => {
                 if (parentNode === null) return;
                 const parent = parentNode.data;
                 if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
@@ -451,25 +465,44 @@ export function ExplorerView() {
                 const childNodes = parentNode.children ?? [];
                 const folderCount = childNodes.filter((c) => c.data?.kind === 'folder').length;
 
-                for (const dragNode of dragNodes) {
+                for (let i = 0; i < dragNodes.length; i++) {
+                  const dragNode = dragNodes[i];
+                  if (!dragNode) continue;
                   const nodeData = dragNode.data;
                   if (nodeData === undefined) continue;
                   const entityId = restEntityId(nodeData);
                   if (entityId === undefined) continue;
 
+                  const sourceParentNode = dragNode.parent;
+                  const sourceParent = sourceParentNode?.data;
+                  const isSameParent =
+                    (parent.kind === 'api' && sourceParent?.kind === 'api' && parent.apiId === sourceParent.apiId) ||
+                    (parent.kind === 'folder' &&
+                      sourceParent?.kind === 'folder' &&
+                      parent.folderId === sourceParent.folderId);
+
+                  const sourceIndex = dragNode.childIndex;
+
                   let targetIndex: number;
                   if (nodeData.kind === 'folder') {
-                    targetIndex = Math.min(index, folderCount);
+                    let rawIdx = index + i;
+                    if (isSameParent && sourceIndex < rawIdx) {
+                      rawIdx -= 1;
+                    }
+                    targetIndex = Math.min(Math.max(0, rawIdx), folderCount);
                   } else {
-                    targetIndex = Math.max(0, index - folderCount);
+                    let rawIdx = index - folderCount + i;
+                    if (isSameParent && sourceIndex < index + i) {
+                      rawIdx -= 1;
+                    }
+                    targetIndex = Math.max(0, rawIdx);
                   }
 
-                  void useProjectStore
-                    .getState()
-                    .moveNode(entityId, targetFolderId, targetIndex)
-                    .catch((error: unknown) => {
-                      showToast(error instanceof Error ? error.message : 'Could not move it');
-                    });
+                  try {
+                    await useProjectStore.getState().moveNode(entityId, targetFolderId, targetIndex);
+                  } catch (error: unknown) {
+                    showToast(error instanceof Error ? error.message : 'Could not move it');
+                  }
                 }
               }}
               aria-label="Explorer"
@@ -543,7 +576,10 @@ export function ExplorerView() {
                   void useProjectStore.getState().updateApi(node.apiId, { name: trimmed }).catch(reportRenameFailure);
                 }
                 if (node.kind === 'folder' && node.folderId !== undefined) {
-                  void useProjectStore.getState().updateFolder(node.folderId, { name: trimmed }).catch(reportRenameFailure);
+                  void useProjectStore
+                    .getState()
+                    .updateFolder(node.folderId, { name: trimmed })
+                    .catch(reportRenameFailure);
                 }
                 if (node.kind === 'rest-request' && node.requestId !== undefined) {
                   void useProjectStore
@@ -667,7 +703,7 @@ function flatten(node: ExplorerNode): ExplorerNode[] {
 }
 
 /** Whether a drop target and the node being dragged live in the same project. */
-function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
+export function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
   const projectOf = useProjectStore.getState().projectOf;
   const into = nodeProjectId(target, projectOf);
   const from = nodeProjectId(dragged, projectOf);

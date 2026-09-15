@@ -120,4 +120,39 @@ paths: {}
     expect(detected.kind).toBe('unknown');
     expect(detected.confidence).toBe('unknown');
   });
+
+  it('treats empty string filename as absent and falls back to URL (3.13)', () => {
+    const detected = detectImportFormat({ filename: '   ', url: 'https://example.com/api/openapi.yaml' });
+    expect(detected.kind).toBe('openapi');
+    expect(detected.confidence).toBe('probable');
+  });
+
+  it('reports probable confidence on regex-only text fallback (3.12)', () => {
+    // Unparseable JSON/YAML with swagger: 2.0 indicator
+    const partialSnippet = '!!invalid-syntax\n  swagger: 2.0\n';
+    const detected = detectImportFormat({ text: partialSnippet });
+    expect(detected.kind).toBe('openapi');
+    expect(detected.label).toBe('Swagger');
+    expect(detected.confidence).toBe('probable');
+  });
+
+  it('keeps no Node-only imports in import-detect.ts for browser safety (1.1)', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const filePath = path.resolve(import.meta.dirname, '../../src/import-detect.ts');
+    const content = await fs.readFile(filePath, 'utf8');
+
+    // Matches `import ... from '...'`
+    const importRegex = /import\s+(?:(?:[\w*\s{},]+)\s+from\s+)?['"]([^'"]+)['"]/g;
+    const imports: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(content)) !== null) {
+      imports.push(match[1]!);
+    }
+
+    for (const specifier of imports) {
+      expect(specifier.startsWith('node:')).toBe(false);
+      expect(['fs', 'path', 'os', 'child_process', 'crypto', 'net', 'http', 'https']).not.toContain(specifier);
+    }
+  });
 });

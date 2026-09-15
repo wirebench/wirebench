@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useRef, type ReactNode } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { recreateRequest, type RecreateMode } from '../request-editor/request-actions.js';
 import { explorerActions } from './explorer-actions.js';
@@ -258,6 +258,8 @@ export function explorerMenuItems(node: ExplorerNode): readonly ExplorerMenuItem
 export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps) {
   const menuGroups = explorerMenuGroups(node);
 
+  const isRenamingRef = useRef(false);
+
   if (menuGroups.length === 0) {
     return <>{children}</>;
   }
@@ -269,14 +271,26 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
         <ContextMenu.Content
           className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
           onCloseAutoFocus={(event) => {
-            event.preventDefault();
+            if (isRenamingRef.current) {
+              event.preventDefault();
+              isRenamingRef.current = false;
+            }
           }}
         >
           {menuGroups.map((group, index) => (
             <Fragment key={group[0]?.key ?? index}>
               {index > 0 && <ContextMenu.Separator className="my-1 h-px bg-hairline" />}
               {group.map((item) => (
-                <ContextMenu.Item key={item.key} className={ITEM_CLASS} onSelect={item.run}>
+                <ContextMenu.Item
+                  key={item.key}
+                  className={ITEM_CLASS}
+                  onSelect={() => {
+                    if (item.key === 'rename') {
+                      isRenamingRef.current = true;
+                    }
+                    item.run();
+                  }}
+                >
                   {item.label}
                 </ContextMenu.Item>
               ))}

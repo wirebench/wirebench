@@ -1152,11 +1152,7 @@ function normalizeSwagger1Type(rawType: string | undefined): { type?: string; fo
   }
 }
 
-function resolveSwagger1Model(
-  name: string,
-  ctx: Swagger1ModelContext,
-  visiting = new Set<string>(),
-): JsonSchema {
+function resolveSwagger1Model(name: string, ctx: Swagger1ModelContext, visiting = new Set<string>()): JsonSchema {
   if (visiting.has(name)) {
     return { type: 'object', properties: {} };
   }
@@ -1184,11 +1180,7 @@ function resolveSwagger1Model(
   return schema;
 }
 
-function convertSwagger1Property(
-  prop: Record_,
-  ctx: Swagger1ModelContext,
-  visiting: Set<string>,
-): JsonSchema {
+function convertSwagger1Property(prop: Record_, ctx: Swagger1ModelContext, visiting: Set<string>): JsonSchema {
   const ref = asString(prop['$ref']);
   const rawType = asString(prop['type']) ?? asString(prop['dataType']);
   const format = asString(prop['format']);

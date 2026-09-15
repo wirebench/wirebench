@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
+import { ExplorerView, sameProject } from '../../src/renderer/features/explorer/explorer-view.js';
 import { startRenamingNode } from '../../src/renderer/features/explorer/explorer-api.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -507,9 +507,7 @@ describe('ExplorerView with APIs', () => {
     mount();
 
     startRenamingNode('rest-request', 'rest-root');
-    await new Promise((resolve) => setTimeout(resolve, 60));
-
-    const input = screen.getByDisplayValue('At root');
+    const input = await waitFor(() => screen.getByDisplayValue('At root'));
     expect(input).toBeDefined();
 
     fireEvent.change(input, { target: { value: 'Renamed root' } });
@@ -535,9 +533,7 @@ describe('ExplorerView with APIs', () => {
     const renameOption = await screen.findByText('Rename…');
     fireEvent.click(renameOption);
 
-    await new Promise((resolve) => setTimeout(resolve, 60));
-
-    const input = screen.getByDisplayValue('At root');
+    const input = await waitFor(() => screen.getByDisplayValue('At root'));
     expect(input).toBeDefined();
 
     fireEvent.change(input, { target: { value: 'Renamed from menu' } });
@@ -551,5 +547,45 @@ describe('ExplorerView with APIs', () => {
         patch: { name: 'Renamed from menu' },
       },
     });
+  });
+
+  it('checks whether drop target and dragged node belong to the same project (1.3)', () => {
+    useProjectStore.setState({
+      projectOf: {
+        'api-1': 'p1',
+        'api-2': 'p2',
+        'folder-1': 'p1',
+        'folder-2': 'p2',
+        'req-1': 'p1',
+        'req-2': 'p2',
+      },
+    });
+
+    const nodeA = {
+      id: 'rest:req-1',
+      kind: 'rest-request',
+      label: 'Req 1',
+      requestId: 'req-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeB = {
+      id: 'folder:folder-1',
+      kind: 'folder',
+      label: 'Folder 1',
+      folderId: 'folder-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeC = {
+      id: 'rest:req-2',
+      kind: 'rest-request',
+      label: 'Req 2',
+      requestId: 'req-2',
+      apiId: 'api-2',
+    } as const;
+
+    expect(sameProject(nodeB, nodeA)).toBe(true);
+    expect(sameProject(nodeB, nodeC)).toBe(false);
+    expect(sameProject(undefined, nodeA)).toBe(false);
+    expect(sameProject(nodeA, undefined)).toBe(false);
   });
 });

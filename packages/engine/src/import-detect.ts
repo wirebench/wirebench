@@ -24,6 +24,10 @@ export interface ImportDetectInput {
 const WSDL_XML_REGEX = /<(?:[a-zA-Z0-9_-]+:)?definitions[\s>]/i;
 const WSDL_NS_REGEX = /xmlns(?::[a-zA-Z0-9_-]+)?=["']http:\/\/(?:schemas\.xmlsoap\.org\/wsdl|www\.w3\.org\/ns\/wsdl)/i;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Detects the API definition format from text content, filename, or URL.
  */
@@ -38,106 +42,94 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
       }
     }
 
-    // 2. Check for JSON formats (Postman, OpenAPI/Swagger JSON)
+    // 2. Try JSON or YAML parsing once (avoiding duplicate parsing work)
+    let parsed: unknown;
+    let didParse = false;
+
     if (text.startsWith('{') || text.startsWith('[')) {
       try {
-        const json = JSON.parse(text) as unknown;
-        if (typeof json === 'object' && json !== null) {
-          if (isPostmanCollection(json)) {
-            const schema = (json as Record<string, any>).info?.schema;
-            const isV21 = typeof schema === 'string' && schema.includes('v2.1');
-            return {
-              kind: 'postman',
-              label: isV21 ? 'Postman Collection v2.1' : 'Postman Collection',
-              confidence: 'definite',
-            };
-          }
-
-          const record = json as Record<string, unknown>;
-          if (typeof record['openapi'] === 'string') {
-            return {
-              kind: 'openapi',
-              label: `OpenAPI ${record['openapi']}`,
-              confidence: 'definite',
-            };
-          }
-          if (typeof record['swagger'] === 'string') {
-            return {
-              kind: 'openapi',
-              label: `Swagger ${record['swagger']}`,
-              confidence: 'definite',
-            };
-          }
-          if (typeof record['swaggerVersion'] === 'string') {
-            return {
-              kind: 'openapi',
-              label: `Swagger ${record['swaggerVersion']}`,
-              confidence: 'definite',
-            };
-          }
-        }
+        parsed = JSON.parse(text);
+        didParse = true;
       } catch {
-        // Fall through to regex-based detection
+        // Fall through to YAML parse or regex
       }
     }
 
-    // 3. Check for YAML / general text OpenAPI or Swagger
-    try {
-      const parsed = parseYamlDocument(text);
-      if (typeof parsed === 'object' && parsed !== null) {
-        const record = parsed as Record<string, unknown>;
-        if (typeof record['openapi'] === 'string') {
-          return {
-            kind: 'openapi',
-            label: `OpenAPI ${record['openapi']}`,
-            confidence: 'definite',
-          };
-        }
-        if (typeof record['swagger'] === 'string') {
-          return {
-            kind: 'openapi',
-            label: `Swagger ${record['swagger']}`,
-            confidence: 'definite',
-          };
-        }
-        if (typeof record['swaggerVersion'] === 'string') {
-          return {
-            kind: 'openapi',
-            label: `Swagger ${record['swaggerVersion']}`,
-            confidence: 'definite',
-          };
-        }
-        if (isPostmanCollection(record)) {
-          return {
-            kind: 'postman',
-            label: 'Postman Collection',
-            confidence: 'definite',
-          };
-        }
+    if (!didParse) {
+      try {
+        parsed = parseYamlDocument(text);
+        didParse = true;
+      } catch {
+        // Fall through to pattern matching
       }
-    } catch {
-      // Fall through to pattern matching
     }
 
-    // 4. Pattern matching fallback on text
+    if (didParse && isRecord(parsed)) {
+      if (isPostmanCollection(parsed)) {
+        const info = isRecord(parsed['info']) ? parsed['info'] : undefined;
+        const schema = typeof info?.['schema'] === 'string' ? info['schema'] : undefined;
+        const isV21 = schema?.includes('v2.1') ?? false;
+        return {
+          kind: 'postman',
+          label: isV21 ? 'Postman Collection v2.1' : 'Postman Collection',
+          confidence: 'definite',
+        };
+      }
+
+      if (typeof parsed['openapi'] === 'string') {
+        return {
+          kind: 'openapi',
+          label: `OpenAPI ${parsed['openapi']}`,
+          confidence: 'definite',
+        };
+      }
+      if (typeof parsed['swagger'] === 'string') {
+        return {
+          kind: 'openapi',
+          label: `Swagger ${parsed['swagger']}`,
+          confidence: 'definite',
+        };
+      }
+      if (typeof parsed['swaggerVersion'] === 'string') {
+        return {
+          kind: 'openapi',
+          label: `Swagger ${parsed['swaggerVersion']}`,
+          confidence: 'definite',
+        };
+      }
+    }
+
+    // 3. Pattern matching fallback on raw text
     if (/^\s*openapi\s*:\s*['"]?3\.[012]/m.test(text)) {
-      return { kind: 'openapi', label: 'OpenAPI 3.x', confidence: 'definite' };
+      return { kind: 'openapi', label: 'OpenAPI 3.x', confidence: 'probable' };
     }
     if (/^\s*swagger(?:Version)?\s*:\s*['"]?[123]\./m.test(text)) {
-      return { kind: 'openapi', label: 'Swagger', confidence: 'definite' };
+      return { kind: 'openapi', label: 'Swagger', confidence: 'probable' };
     }
     if (text.includes('schema.getpostman.com/json/collection')) {
-      return { kind: 'postman', label: 'Postman Collection', confidence: 'definite' };
+      return { kind: 'postman', label: 'Postman Collection', confidence: 'probable' };
     }
     if (WSDL_XML_REGEX.test(text) || WSDL_NS_REGEX.test(text)) {
       return { kind: 'wsdl', label: 'WSDL / SOAP', confidence: 'definite' };
     }
   }
 
-  // Check by filename or URL
-  const target = (input.filename ?? input.url ?? '').toLowerCase();
-  if (target.length > 0) {
-    if (target.endsWith('.wsdl') || target.includes('?wsdl') || target.includes('&wsdl') || target.endsWith('.wsdl.xml')) {
+  // Check by filename or URL (treating empty string as absent)
+  const candidate =
+    input.filename !== undefined && input.filename.trim().length > 0
+      ? input.filename.trim()
+      : input.url !== undefined && input.url.trim().length > 0
+        ? input.url.trim()
+        : undefined;
+
+  if (candidate !== undefined) {
+    const target = candidate.toLowerCase();
+    if (
+      target.endsWith('.wsdl') ||
+      target.includes('?wsdl') ||
+      target.includes('&wsdl') ||
+      target.endsWith('.wsdl.xml')
+    ) {
       return { kind: 'wsdl', label: 'WSDL / SOAP', confidence: 'probable' };
     }
     if (target.includes('postman_collection') || target.endsWith('.postman.json')) {

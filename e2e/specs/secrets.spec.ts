@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace, expandExplorer, saveAll, workspaceProjectDir } from '../helpers/project.js';
+import {
+  createProject,
+  createWorkspace,
+  expandExplorer,
+  openImportDialog,
+  saveAll,
+  workspaceProjectDir,
+} from '../helpers/project.js';
 import {
   apiRow,
   createApi,
@@ -77,7 +84,7 @@ test.describe('secrets', () => {
     await createWorkspace(page);
     await createProject(page, 'Secrets');
 
-    await page.getByRole('button', { name: 'Import WSDL…' }).click();
+    await openImportDialog(page, 'wsdl');
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
     await page.getByLabel('Use Basic auth').check();
     await page.getByLabel('Username').fill('alice');
@@ -142,7 +149,7 @@ test.describe('secrets', () => {
     await createWorkspace(page);
     await createProject(page, 'Secrets');
 
-    await page.getByRole('button', { name: 'Import WSDL…' }).click();
+    await openImportDialog(page, 'wsdl');
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
     await page.getByLabel('Use Basic auth').check();
     await page.getByLabel('Username').fill('alice');
