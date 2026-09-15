@@ -507,19 +507,20 @@ describe('ExplorerView with APIs', () => {
     mount();
 
     startRenamingNode('rest-request', 'rest-root');
-    const input = await waitFor(() => screen.getByDisplayValue('At root'));
-    expect(input).toBeDefined();
+    const input = await screen.findByDisplayValue('At root');
 
     fireEvent.change(input, { target: { value: 'Renamed root' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(mutate).toHaveBeenCalledWith({
-      projectId: 'p1',
-      change: {
-        kind: 'update-rest-request',
-        requestId: 'rest-root',
-        patch: { name: 'Renamed root' },
-      },
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed root' },
+        },
+      });
     });
   });
 
@@ -533,19 +534,20 @@ describe('ExplorerView with APIs', () => {
     const renameOption = await screen.findByText('Rename…');
     fireEvent.click(renameOption);
 
-    const input = await waitFor(() => screen.getByDisplayValue('At root'));
-    expect(input).toBeDefined();
+    const input = await screen.findByDisplayValue('At root');
 
     fireEvent.change(input, { target: { value: 'Renamed from menu' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(mutate).toHaveBeenCalledWith({
-      projectId: 'p1',
-      change: {
-        kind: 'update-rest-request',
-        requestId: 'rest-root',
-        patch: { name: 'Renamed from menu' },
-      },
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed from menu' },
+        },
+      });
     });
   });
 

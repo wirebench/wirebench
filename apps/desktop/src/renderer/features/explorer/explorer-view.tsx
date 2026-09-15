@@ -29,9 +29,10 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
+import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
-import { buildExplorerTree, nodeProjectId, restEntityId } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -417,89 +418,32 @@ export function ExplorerView() {
               // Reordering and moving happen inside the same API: a request or folder belongs to its
               // own API definition, and cannot move into another API or project.
               disableDrop={({ parentNode, dragNodes, index }) => {
-                const dragged = dragNodes[0]?.data;
-                if (dragged === undefined) return true;
-                if (dragged.kind !== 'rest-request' && dragged.kind !== 'folder') return true;
-
-                const parent = parentNode?.data;
-                if (parent === undefined) return true;
-                if (parent.kind !== 'api' && parent.kind !== 'folder') return true;
-
-                // Disallow cross-project drops
-                if (!sameProject(parent, dragged)) return true;
-
-                // Disallow cross-API drops
-                if (parent.apiId !== dragged.apiId) return true;
-
-                if (dragged.kind === 'folder') {
-                  if (parent.kind === 'folder') {
-                    if (parent.folderId === dragged.folderId) return true;
-                    let ancestor: NodeApi<ExplorerNode> | null = parentNode;
-                    while (ancestor !== null) {
-                      if (ancestor.data?.kind === 'folder' && ancestor.data.folderId === dragged.folderId) {
-                        return true;
-                      }
-                      ancestor = ancestor.parent;
-                    }
-                  }
+                const ancestors: ExplorerNode[] = [];
+                for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
+                  if (node.data !== undefined) ancestors.push(node.data);
                 }
-
-                // Check folder vs request drop zones (3.24)
-                const childNodes = parentNode.children ?? [];
-                const folderCount = childNodes.filter((c) => c.data?.kind === 'folder').length;
-                if (dragged.kind === 'folder' && index > folderCount) {
-                  return true;
-                }
-                if (dragged.kind === 'rest-request' && index < folderCount) {
-                  return true;
-                }
-
-                return false;
+                return isDropDisabled({
+                  parent: parentNode?.data,
+                  children: (parentNode?.children ?? []).map((child) => child.data),
+                  dragged: dragNodes[0]?.data,
+                  index,
+                  sameProject: sameProject(parentNode?.data, dragNodes[0]?.data),
+                  ancestors,
+                });
               }}
               onMove={async ({ dragNodes, parentNode, index }) => {
-                if (parentNode === null) return;
-                const parent = parentNode.data;
+                const parent = parentNode?.data;
                 if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
-
                 const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
-                const childNodes = parentNode.children ?? [];
-                const folderCount = childNodes.filter((c) => c.data?.kind === 'folder').length;
-
-                for (let i = 0; i < dragNodes.length; i++) {
-                  const dragNode = dragNodes[i];
-                  if (!dragNode) continue;
-                  const nodeData = dragNode.data;
-                  if (nodeData === undefined) continue;
-                  const entityId = restEntityId(nodeData);
-                  if (entityId === undefined) continue;
-
-                  const sourceParentNode = dragNode.parent;
-                  const sourceParent = sourceParentNode?.data;
-                  const isSameParent =
-                    (parent.kind === 'api' && sourceParent?.kind === 'api' && parent.apiId === sourceParent.apiId) ||
-                    (parent.kind === 'folder' &&
-                      sourceParent?.kind === 'folder' &&
-                      parent.folderId === sourceParent.folderId);
-
-                  const sourceIndex = dragNode.childIndex;
-
-                  let targetIndex: number;
-                  if (nodeData.kind === 'folder') {
-                    let rawIdx = index + i;
-                    if (isSameParent && sourceIndex < rawIdx) {
-                      rawIdx -= 1;
-                    }
-                    targetIndex = Math.min(Math.max(0, rawIdx), folderCount);
-                  } else {
-                    let rawIdx = index - folderCount + i;
-                    if (isSameParent && sourceIndex < index + i) {
-                      rawIdx -= 1;
-                    }
-                    targetIndex = Math.max(0, rawIdx);
-                  }
-
+                const plan = planMoves(
+                  (parentNode?.children ?? []).map((child) => child.data),
+                  dragNodes.map((node) => node.data),
+                  index,
+                );
+                // One at a time and in order: each move's index assumes the previous one landed.
+                for (const move of plan) {
                   try {
-                    await useProjectStore.getState().moveNode(entityId, targetFolderId, targetIndex);
+                    await useProjectStore.getState().moveNode(move.entityId, targetFolderId, move.index);
                   } catch (error: unknown) {
                     showToast(error instanceof Error ? error.message : 'Could not move it');
                   }

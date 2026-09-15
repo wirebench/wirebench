@@ -227,14 +227,16 @@ export const useUiStore = create<UiStore>((set, get) => {
     setImportOpenApiDialogOpen: (open) => {
       if (open) {
         get().openImportDialog('openapi');
-      } else {
+      } else if (get().importDialogFormat === 'openapi') {
+        // Closing is only this format's to do: the one dialog may be open for another format.
         get().closeImportDialog();
       }
     },
     setImportPostmanDialogOpen: (open) => {
       if (open) {
         get().openImportDialog('postman');
-      } else {
+      } else if (get().importDialogFormat === 'postman') {
+        // Closing is only this format's to do: the one dialog may be open for another format.
         get().closeImportDialog();
       }
     },

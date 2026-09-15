@@ -333,14 +333,19 @@ describe('buildExplorerTree with APIs', () => {
   it('renders folders first then requests, sorted by order within each kind', () => {
     const children = treeWith({
       apis: [restApiWire()],
-      folders: [restFolderWire({ name: 'Second', order: 1 })],
+      // The folder's order is higher than the first request's, yet it still sorts first.
+      folders: [restFolderWire({ name: 'Folder (order 1)', order: 1 })],
       requests: [
-        restRequestWire({ id: 'r-first', name: 'First', order: 0 }),
-        restRequestWire({ id: 'r-third', name: 'Third', order: 2 }),
+        restRequestWire({ id: 'r-late', name: 'Request (order 2)', order: 2 }),
+        restRequestWire({ id: 'r-early', name: 'Request (order 0)', order: 0 }),
       ],
     });
 
-    expect(children[0]?.children?.map((node) => node.label)).toEqual(['Second', 'First', 'Third']);
+    expect(children[0]?.children?.map((node) => node.label)).toEqual([
+      'Folder (order 1)',
+      'Request (order 0)',
+      'Request (order 2)',
+    ]);
   });
 
   it('interleaves interfaces and APIs by order under the project', () => {
