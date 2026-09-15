@@ -161,8 +161,12 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             autoFocus
             defaultValue={node.data.label}
             className="min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onFocus={(e) => e.currentTarget.select()}
             onBlur={(e) => node.submit(e.currentTarget.value)}
             onKeyDown={(e) => {
+              e.stopPropagation();
               if (e.key === 'Enter') node.submit(e.currentTarget.value);
               if (e.key === 'Escape') node.reset();
             }}
@@ -524,22 +528,27 @@ export function ExplorerView() {
               }}
               onRename={({ id, name }) => {
                 const node = data.flatMap(flatten).find((n) => n.id === id);
-                if (node?.kind === 'request' && node.requestId !== undefined) {
-                  useProjectStore.getState().updateRequest(node.requestId, { name });
+                if (node === undefined) return;
+                const trimmed = name.trim();
+                if (trimmed.length === 0 || trimmed === node.label) {
+                  return;
                 }
-                if (node?.kind === 'project' && node.projectId !== undefined) {
-                  projectRowActions.commitRename(node.projectId, name);
+                if (node.kind === 'request' && node.requestId !== undefined) {
+                  useProjectStore.getState().updateRequest(node.requestId, { name: trimmed });
                 }
-                if (node?.kind === 'api' && node.apiId !== undefined) {
-                  void useProjectStore.getState().updateApi(node.apiId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'project' && node.projectId !== undefined) {
+                  projectRowActions.commitRename(node.projectId, trimmed);
                 }
-                if (node?.kind === 'folder' && node.folderId !== undefined) {
-                  void useProjectStore.getState().updateFolder(node.folderId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'api' && node.apiId !== undefined) {
+                  void useProjectStore.getState().updateApi(node.apiId, { name: trimmed }).catch(reportRenameFailure);
                 }
-                if (node?.kind === 'rest-request' && node.requestId !== undefined) {
+                if (node.kind === 'folder' && node.folderId !== undefined) {
+                  void useProjectStore.getState().updateFolder(node.folderId, { name: trimmed }).catch(reportRenameFailure);
+                }
+                if (node.kind === 'rest-request' && node.requestId !== undefined) {
                   void useProjectStore
                     .getState()
-                    .updateRestRequest(node.requestId, { name })
+                    .updateRestRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
               }}

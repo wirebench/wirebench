@@ -266,7 +266,12 @@ export function ExplorerContextMenu({ node, children }: ExplorerContextMenuProps
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Content className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg">
+        <ContextMenu.Content
+          className="min-w-40 rounded-md border border-hairline bg-surface-raised p-1 shadow-lg"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+          }}
+        >
           {menuGroups.map((group, index) => (
             <Fragment key={group[0]?.key ?? index}>
               {index > 0 && <ContextMenu.Separator className="my-1 h-px bg-hairline" />}

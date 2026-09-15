@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
+import { startRenamingNode } from '../../src/renderer/features/explorer/explorer-api.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -497,5 +498,58 @@ describe('ExplorerView with APIs', () => {
 
     // The click opened the tab and folded the row shut; the fold state records it per workspace.
     expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
+  });
+
+  it('enters inline rename mode and commits the rename', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    startRenamingNode('rest-request', 'rest-root');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const input = screen.getByDisplayValue('At root');
+    expect(input).toBeDefined();
+
+    fireEvent.change(input, { target: { value: 'Renamed root' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
+      change: {
+        kind: 'update-rest-request',
+        requestId: 'rest-root',
+        patch: { name: 'Renamed root' },
+      },
+    });
+  });
+
+  it('triggers inline rename from right-click context menu Rename option', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    fireEvent.contextMenu(screen.getByText('At root'));
+    const renameOption = await screen.findByText('Rename…');
+    fireEvent.click(renameOption);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const input = screen.getByDisplayValue('At root');
+    expect(input).toBeDefined();
+
+    fireEvent.change(input, { target: { value: 'Renamed from menu' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
+      change: {
+        kind: 'update-rest-request',
+        requestId: 'rest-root',
+        patch: { name: 'Renamed from menu' },
+      },
+    });
   });
 });

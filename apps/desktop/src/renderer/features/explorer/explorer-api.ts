@@ -34,9 +34,13 @@ export function startRenamingProject(projectId: string): void {
 }
 
 function startRenaming(nodeId: string): void {
-  const tree = treeApi;
-  if (tree === null) {
-    return;
-  }
-  void tree.get(nodeId)?.edit();
+  // Scheduling this allows Radix context menu closing/focus-restoration cycles to settle
+  // before Arborist enters edit mode and focuses the inline input.
+  setTimeout(() => {
+    const tree = treeApi;
+    if (tree === null) {
+      return;
+    }
+    void tree.get(nodeId)?.edit();
+  }, 50);
 }
