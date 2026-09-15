@@ -16,7 +16,7 @@
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 /** Which specification version a document declares. */
-export type OpenApiVersion = '1.2' | '2.0' | '3.0' | '3.1' | '3.2';
+export type OpenApiVersion = '1.0' | '1.1' | '1.2' | '2.0' | '3.0' | '3.1' | '3.2';
 
 /** `info`: what the API is called, and which version of *it* this document describes. */
 export interface OpenApiInfo {

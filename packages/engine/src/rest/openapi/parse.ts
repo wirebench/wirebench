@@ -93,32 +93,73 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function asVersionString(v: unknown): string | undefined {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') {
+    return Number.isInteger(v) ? `${v}.0` : String(v);
+  }
+  return undefined;
+}
+
+function nullRecord<V>(): Record<string, V> {
+  return Object.create(null) as Record<string, V>;
+}
+
 /**
  * The version a document declares, as a major-minor this client supports.
  *
- * @throws OpenApiError `openapi-unsupported-version` for Swagger 2.0 or an OpenAPI major this client
+ * @throws OpenApiError `openapi-unsupported-version` for an OpenAPI major this client
  * does not read, and `openapi-not-a-document` when there is no version at all.
  */
 export function versionOf(root: unknown): { readonly version: OpenApiVersion; readonly declared: string } {
   if (!isRecord(root)) {
     throw new OpenApiError('openapi-not-a-document', 'This file does not contain an OpenAPI document');
   }
-  const swaggerVersion = asString(root['swaggerVersion']) ?? asString(root['swagger']);
+
+  // 3.1: Check openapi BEFORE swagger/swaggerVersion
+  const declared = asVersionString(root['openapi']);
+  if (declared !== undefined) {
+    if (declared.startsWith('3.0')) {
+      return { version: '3.0', declared };
+    }
+    if (declared.startsWith('3.1')) {
+      return { version: '3.1', declared };
+    }
+    if (declared.startsWith('3.2')) {
+      return { version: '3.2', declared };
+    }
+    throw new OpenApiError(
+      'openapi-unsupported-version',
+      `OpenAPI ${declared} is not supported. Wirebench imports OpenAPI 3.0, 3.1 and 3.2.`,
+      { details: { declared } },
+    );
+  }
+
+  // 3.2: Accept numeric versions for swagger/swaggerVersion as well
+  const swaggerVersion = asVersionString(root['swaggerVersion']) ?? asVersionString(root['swagger']);
   if (swaggerVersion !== undefined) {
-    if (swaggerVersion === '1.2' || swaggerVersion.startsWith('1.')) {
+    // 3.10: report 1.0/1.1 as exact version, remove redundant === '1.2'
+    if (swaggerVersion.startsWith('1.0')) {
+      return { version: '1.0', declared: `Swagger ${swaggerVersion}` };
+    }
+    if (swaggerVersion.startsWith('1.1')) {
+      return { version: '1.1', declared: `Swagger ${swaggerVersion}` };
+    }
+    if (swaggerVersion.startsWith('1.')) {
       return { version: '1.2', declared: `Swagger ${swaggerVersion}` };
     }
-    if (swaggerVersion === '2.0' || swaggerVersion.startsWith('2.')) {
+    if (swaggerVersion.startsWith('2.')) {
       return { version: '2.0', declared: `Swagger ${swaggerVersion}` };
     }
+    // 3.3: Swagger 3.x is labeled as OpenAPI 3.x.y
     if (swaggerVersion.startsWith('3.0')) {
-      return { version: '3.0', declared: `Swagger ${swaggerVersion}` };
+      return { version: '3.0', declared: `OpenAPI ${swaggerVersion}` };
     }
     if (swaggerVersion.startsWith('3.1')) {
-      return { version: '3.1', declared: `Swagger ${swaggerVersion}` };
+      return { version: '3.1', declared: `OpenAPI ${swaggerVersion}` };
     }
     if (swaggerVersion.startsWith('3.2')) {
-      return { version: '3.2', declared: `Swagger ${swaggerVersion}` };
+      return { version: '3.2', declared: `OpenAPI ${swaggerVersion}` };
     }
     throw new OpenApiError(
       'openapi-unsupported-version',
@@ -126,26 +167,10 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
       { details: { declared: swaggerVersion } },
     );
   }
-  const declared = asString(root['openapi']);
-  if (declared === undefined) {
-    throw new OpenApiError(
-      'openapi-not-a-document',
-      'This file has no "openapi" or "swaggerVersion" field, so it is not an OpenAPI or Swagger document',
-    );
-  }
-  if (declared.startsWith('3.0')) {
-    return { version: '3.0', declared };
-  }
-  if (declared.startsWith('3.1')) {
-    return { version: '3.1', declared };
-  }
-  if (declared.startsWith('3.2')) {
-    return { version: '3.2', declared };
-  }
+
   throw new OpenApiError(
-    'openapi-unsupported-version',
-    `OpenAPI ${declared} is not supported. Wirebench imports OpenAPI 3.0, 3.1 and 3.2.`,
-    { details: { declared } },
+    'openapi-not-a-document',
+    'This file has no "openapi" or "swaggerVersion" field, so it is not an OpenAPI or Swagger document',
   );
 }
 
@@ -165,13 +190,21 @@ const IGNORED_ROOT_KEYS: Readonly<Record<string, string>> = {
 export function parseOpenApiDocument(root: unknown): OpenApiDocument {
   const { version, declared } = versionOf(root);
   const document = root as Record_;
-  if (version === '1.2') {
-    return parseSwagger1Document(document, declared);
+  if (version === '1.0' || version === '1.1' || version === '1.2') {
+    return parseSwagger1Document(document, declared, version);
   }
   if (version === '2.0') {
     return parseSwagger2Document(document, declared);
   }
   const skipped: OpenApiSkipped[] = [];
+
+  const rawSwagger = asVersionString(document['swagger']);
+  if (
+    rawSwagger !== undefined &&
+    (rawSwagger.startsWith('3.0') || rawSwagger.startsWith('3.1') || rawSwagger.startsWith('3.2'))
+  ) {
+    skipped.push({ kind: 'info', where: '/swagger', reason: `declared as swagger: ${rawSwagger}` });
+  }
 
   const info = isRecord(document['info']) ? document['info'] : {};
   const title = asString(info['title']) ?? 'Imported API';
@@ -259,6 +292,9 @@ function parseServerVariables(value: unknown): Readonly<Record<string, OpenApiSe
   return Object.keys(variables).length === 0 ? undefined : variables;
 }
 
+const RFC_9110_METHOD_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const FIXED_PATH_ITEM_METHODS = new Set(HTTP_METHODS);
+
 function parseOperations(value: unknown, skipped: OpenApiSkipped[]): readonly OpenApiOperation[] {
   if (!isRecord(value)) {
     return [];
@@ -286,11 +322,23 @@ function parseOperations(value: unknown, skipped: OpenApiSkipped[]): readonly Op
     }
     if (isRecord(item['additionalOperations'])) {
       for (const [key, operation] of Object.entries(item['additionalOperations'])) {
-        if (!isRecord(operation)) {
-          skipped.push({ kind: 'operation', where: `${key.toUpperCase()} ${path}`, reason: 'not an object' });
+        if (key.startsWith('x-')) {
+          skipped.push({ kind: 'extension', where: `${key} ${path}`, reason: 'vendor extensions are not imported' });
           continue;
         }
-        operations.push(parseOperation(key.toLowerCase(), path, operation, shared, skipped));
+        if (FIXED_PATH_ITEM_METHODS.has(key.toLowerCase())) {
+          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'use the fixed field' });
+          continue;
+        }
+        if (!RFC_9110_METHOD_TOKEN.test(key)) {
+          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'invalid HTTP method name' });
+          continue;
+        }
+        if (!isRecord(operation)) {
+          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'not an object' });
+          continue;
+        }
+        operations.push(parseOperation(key, path, operation, shared, skipped));
       }
     }
   }
@@ -389,19 +437,18 @@ function parseExamples(value: unknown): Readonly<Record<string, OpenApiExample>>
   if (!isRecord(value)) {
     return undefined;
   }
-  const examples: Record<string, OpenApiExample> = {};
+  const examples = nullRecord<OpenApiExample>();
   for (const [name, entry] of Object.entries(value)) {
     if (!isRecord(entry)) {
       continue;
     }
-    const val = entry['value'] !== undefined ? asJson(entry['value']) : asJson(entry['dataValue']);
+    const val = asJson(entry['value'] ?? entry['dataValue'] ?? entry['serializedValue']);
     const dataValue = asJson(entry['dataValue']);
+    const serializedValue = asString(entry['serializedValue']);
     examples[name] = {
       ...(val !== undefined ? { value: val } : {}),
       ...(dataValue !== undefined ? { dataValue } : {}),
-      ...(asString(entry['serializedValue']) !== undefined
-        ? { serializedValue: asString(entry['serializedValue']) as string }
-        : {}),
+      ...(serializedValue !== undefined ? { serializedValue } : {}),
       ...(asString(entry['summary']) !== undefined ? { summary: asString(entry['summary']) as string } : {}),
       ...(asString(entry['externalValue']) !== undefined
         ? { externalValue: asString(entry['externalValue']) as string }
@@ -423,7 +470,7 @@ function parseRequestBody(value: unknown, where: string, skipped: OpenApiSkipped
     });
     return undefined;
   }
-  const content: Record<string, OpenApiMediaType> = {};
+  const content = nullRecord<OpenApiMediaType>();
   for (const [mediaType, entry] of Object.entries(value['content'])) {
     if (!isRecord(entry)) {
       continue;
@@ -477,13 +524,15 @@ export function parseSchema(value: Record_): JsonSchema {
 
 /** The body of {@link parseSchema}, without the memo. */
 function parseSchemaFields(value: Record_): JsonSchema {
-  const properties = isRecord(value['properties'])
-    ? Object.fromEntries(
-        Object.entries(value['properties'])
-          .filter((entry): entry is [string, Record_] => isRecord(entry[1]))
-          .map(([name, entry]) => [name, parseSchema(entry)]),
-      )
-    : undefined;
+  let properties: Record<string, JsonSchema> | undefined;
+  if (isRecord(value['properties'])) {
+    properties = nullRecord<JsonSchema>();
+    for (const [name, entry] of Object.entries(value['properties'])) {
+      if (isRecord(entry)) {
+        properties[name] = parseSchema(entry);
+      }
+    }
+  }
   const branches = (key: 'allOf' | 'oneOf' | 'anyOf'): readonly JsonSchema[] | undefined => {
     const list = value[key];
     return Array.isArray(list) ? list.filter(isRecord).map(parseSchema) : undefined;
@@ -589,16 +638,19 @@ function parseFlows(value: unknown): Readonly<Record<string, OpenApiOAuthFlow>> 
   if (!isRecord(value)) {
     return undefined;
   }
-  const flows: Record<string, OpenApiOAuthFlow> = {};
+  const flows = nullRecord<OpenApiOAuthFlow>();
   for (const [name, entry] of Object.entries(value)) {
     if (!isRecord(entry)) {
       continue;
     }
-    const scopes = isRecord(entry['scopes'])
-      ? Object.fromEntries(
-          Object.entries(entry['scopes']).map(([scope, description]) => [scope, asString(description) ?? '']),
-        )
-      : undefined;
+    let scopes: Record<string, string> | undefined;
+    if (isRecord(entry['scopes'])) {
+      const scopesRecord = nullRecord<string>();
+      for (const [scope, description] of Object.entries(entry['scopes'])) {
+        scopesRecord[scope] = asString(description) ?? '';
+      }
+      scopes = scopesRecord;
+    }
     flows[name] = {
       ...(asString(entry['authorizationUrl']) !== undefined
         ? { authorizationUrl: asString(entry['authorizationUrl']) as string }
@@ -621,11 +673,13 @@ function parseSecurityRequirements(value: unknown): readonly OpenApiSecurityRequ
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return value
-    .filter(isRecord)
-    .map((entry) =>
-      Object.fromEntries(Object.entries(entry).map(([name, scopes]) => [name, asStringArray(scopes) ?? []])),
-    );
+  return value.filter(isRecord).map((entry) => {
+    const req = nullRecord<readonly string[]>();
+    for (const [name, scopes] of Object.entries(entry)) {
+      req[name] = asStringArray(scopes) ?? [];
+    }
+    return req;
+  });
 }
 
 function parseTags(value: unknown): readonly OpenApiTag[] {
@@ -665,6 +719,12 @@ function parseSwagger2Document(document: Record_, declared: string): OpenApiDocu
       skipped.push({ kind: 'extension', where: `/${key}`, reason: 'vendor extensions are not imported' });
     }
   }
+  if (document['produces'] !== undefined) {
+    skipped.push({ kind: 'produces', where: '/produces', reason: 'produces are not imported' });
+  }
+  if (document['responses'] !== undefined) {
+    skipped.push({ kind: 'responses', where: '/responses', reason: 'responses are not imported' });
+  }
 
   return {
     version: '2.0',
@@ -697,10 +757,27 @@ function parseSwagger2Servers(document: Record_): readonly OpenApiServer[] {
   }
 
   const rawSchemes = asStringArray(document['schemes']);
-  const schemes = rawSchemes && rawSchemes.length > 0 ? rawSchemes : ['https'];
+  const validSchemes = (rawSchemes?.filter((s) => s.toLowerCase() === 'http' || s.toLowerCase() === 'https') ?? []).map(
+    (s) => s.toLowerCase(),
+  );
 
   if (host !== undefined && host !== '') {
-    const cleanHost = host.replace(/\/+$/, '');
+    const schemeMatch = host.match(/^([a-z][a-z0-9+.-]*):\/\/(.*)$/i);
+    let effectiveHost = host;
+    let schemeFromHost: string | undefined;
+    if (schemeMatch) {
+      schemeFromHost = schemeMatch[1]?.toLowerCase();
+      effectiveHost = schemeMatch[2] ?? '';
+    }
+    const cleanHost = effectiveHost.replace(/\/+$/, '');
+    let schemes: string[];
+    if (schemeFromHost) {
+      schemes = [schemeFromHost, ...validSchemes.filter((s) => s !== schemeFromHost)];
+    } else if (validSchemes.length > 0) {
+      schemes = validSchemes;
+    } else {
+      schemes = ['https'];
+    }
     return schemes.map((scheme) => ({
       url: `${scheme}://${cleanHost}${basePath}`,
     }));
@@ -767,9 +844,14 @@ function parseSwagger2SecuritySchemes(
       const rawFlow = asString(entry['flow']);
       const authorizationUrl = asString(entry['authorizationUrl']);
       const tokenUrl = asString(entry['tokenUrl']);
-      const scopes = isRecord(entry['scopes'])
-        ? Object.fromEntries(Object.entries(entry['scopes']).map(([scope, desc]) => [scope, asString(desc) ?? '']))
-        : undefined;
+      let scopes: Record<string, string> | undefined;
+      if (isRecord(entry['scopes'])) {
+        const scopesRecord = nullRecord<string>();
+        for (const [scope, desc] of Object.entries(entry['scopes'])) {
+          scopesRecord[scope] = asString(desc) ?? '';
+        }
+        scopes = scopesRecord;
+      }
 
       const flowObj: OpenApiOAuthFlow = {
         ...(authorizationUrl !== undefined ? { authorizationUrl } : {}),
@@ -829,9 +911,6 @@ function swagger2CollectionFormatToStyle(collectionFormat: string | undefined): 
   }
   if (collectionFormat === 'ssv') {
     return { style: 'spaceDelimited', explode: false };
-  }
-  if (collectionFormat === 'tsv') {
-    return { style: 'pipeDelimited', explode: false };
   }
   if (collectionFormat === 'pipes') {
     return { style: 'pipeDelimited', explode: false };
@@ -922,11 +1001,26 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
           continue;
         }
 
-        const formatStyle = swagger2CollectionFormatToStyle(asString(p['collectionFormat']));
+        const collectionFormat = asString(p['collectionFormat']);
+        if (collectionFormat === 'tsv') {
+          skipped.push({
+            kind: 'parameter',
+            where: `${where} ${name}`,
+            reason: 'collectionFormat: tsv is not supported',
+          });
+          continue;
+        }
+
+        const formatStyle = swagger2CollectionFormatToStyle(collectionFormat);
+        const isPath = location === 'path';
         standardParams.push({
           name,
           in: location as ParameterLocation,
-          ...(asBoolean(p['required']) !== undefined ? { required: asBoolean(p['required']) as boolean } : {}),
+          ...(isPath
+            ? { required: true }
+            : asBoolean(p['required']) !== undefined
+              ? { required: asBoolean(p['required']) as boolean }
+              : {}),
           ...(asBoolean(p['deprecated']) === true ? { deprecated: true } : {}),
           ...(asString(p['description']) !== undefined ? { description: asString(p['description']) as string } : {}),
           schema: synthesizeSwagger2ParamSchema(p),
@@ -939,10 +1033,18 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
       let requestBody: OpenApiRequestBody | undefined;
       const opConsumes = asStringArray(operation['consumes']);
       const effectiveConsumes = opConsumes ?? rootConsumes ?? ['application/json'];
+      const normalizeMediaType = (mt: string) => mt.split(';')[0]?.trim().toLowerCase() ?? '';
 
       if (bodyParam !== undefined) {
+        if (formDataParams.length > 0) {
+          skipped.push({
+            kind: 'parameter',
+            where,
+            reason: 'formData ignored because operation already has a body parameter',
+          });
+        }
         const schema = isRecord(bodyParam['schema']) ? parseSchema(bodyParam['schema']) : undefined;
-        const content: Record<string, OpenApiMediaType> = {};
+        const content = nullRecord<OpenApiMediaType>();
         for (const mt of effectiveConsumes) {
           content[mt] = {
             ...(schema !== undefined ? { schema } : {}),
@@ -960,12 +1062,13 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
       } else if (formDataParams.length > 0) {
         const hasFile = formDataParams.some((p) => asString(p['type']) === 'file');
         const defaultMt = hasFile ? 'multipart/form-data' : 'application/x-www-form-urlencoded';
-        const matchedConsumes = effectiveConsumes.filter(
-          (mt) => mt === 'multipart/form-data' || mt === 'application/x-www-form-urlencoded',
-        );
+        const matchedConsumes = effectiveConsumes.filter((mt) => {
+          const norm = normalizeMediaType(mt);
+          return norm === 'multipart/form-data' || norm === 'application/x-www-form-urlencoded';
+        });
         const formMediaTypes = matchedConsumes.length > 0 ? matchedConsumes : [defaultMt];
 
-        const properties: Record<string, JsonSchema> = {};
+        const properties = nullRecord<JsonSchema>();
         const required: string[] = [];
 
         for (const p of formDataParams) {
@@ -993,7 +1096,7 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
           ...(required.length > 0 ? { required } : {}),
         };
 
-        const content: Record<string, OpenApiMediaType> = {};
+        const content = nullRecord<OpenApiMediaType>();
         for (const mt of formMediaTypes) {
           content[mt] = { schema };
         }
@@ -1005,7 +1108,21 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
 
       for (const opKey of Object.keys(operation)) {
         if (opKey.startsWith('x-')) {
-          skipped.push({ kind: 'extension', where: `${where} ${opKey}`, reason: 'vendor extensions are not imported' });
+          if (opKey === 'x-example') {
+            skipped.push({ kind: 'example', where: `${where} x-example`, reason: 'examples are not imported' });
+          } else {
+            skipped.push({
+              kind: 'extension',
+              where: `${where} ${opKey}`,
+              reason: 'vendor extensions are not imported',
+            });
+          }
+        } else if (opKey === 'produces') {
+          skipped.push({ kind: 'produces', where: `${where} produces`, reason: 'produces are not imported' });
+        } else if (opKey === 'responses') {
+          skipped.push({ kind: 'responses', where: `${where} responses`, reason: 'responses are not imported' });
+        } else if (opKey === 'example') {
+          skipped.push({ kind: 'example', where: `${where} example`, reason: 'examples are not imported' });
         }
       }
 
@@ -1039,7 +1156,7 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
  * Reads a Swagger 1.0, 1.1, or 1.2 document (API Declaration or Resource Listing) into the internal
  * OpenApiDocument representation.
  */
-function parseSwagger1Document(document: Record_, declared: string): OpenApiDocument {
+function parseSwagger1Document(document: Record_, declared: string, version: OpenApiVersion = '1.2'): OpenApiDocument {
   const skipped: OpenApiSkipped[] = [];
 
   const info = isRecord(document['info']) ? document['info'] : {};
@@ -1061,11 +1178,17 @@ function parseSwagger1Document(document: Record_, declared: string): OpenApiDocu
 
   const servers = parseSwagger1Servers(document);
   const operations = parseSwagger1Operations(document, modelCtx, skipped);
+  if (operations.length === 0 && Array.isArray(document['apis']) && document['apis'].length > 0) {
+    throw new OpenApiError(
+      'openapi-resource-listing-not-inlined',
+      'Swagger 1.2 Resource Listing contains external API declarations that are not inlined and yielded no operations',
+    );
+  }
   const securitySchemes = parseSwagger1SecuritySchemes(document['authorizations'], skipped);
   const tags = parseSwagger1Tags(document);
 
   return {
-    version: '1.2',
+    version,
     declaredVersion: declared,
     info: {
       title,
@@ -1146,10 +1269,12 @@ function normalizeSwagger1Type(rawType: string | undefined): { type?: string; fo
       return { type: 'string', format: 'binary' };
     case 'array':
     case 'list':
+    case 'set':
       return { type: 'array' };
     case 'void':
       return {};
     default:
+      // An unknown type name (typically an undeclared model) is not a JSON Schema type.
       return {};
   }
 }
@@ -1173,7 +1298,7 @@ function resolveSwagger1Model(name: string, ctx: Swagger1ModelContext, visiting 
   }
   const required = asStringArray(raw['required']);
   const propertiesRaw = isRecord(raw['properties']) ? raw['properties'] : {};
-  const properties: Record<string, JsonSchema> = {};
+  const properties = nullRecord<JsonSchema>();
 
   for (const [propName, propVal] of Object.entries(propertiesRaw)) {
     if (!isRecord(propVal)) continue;
@@ -1357,7 +1482,7 @@ function parseSwagger1Operations(
         } else if (bodyType !== undefined) {
           bodySchema = synthesizeSwagger1ParamPrimitiveSchema(bodyParam);
         }
-        const content: Record<string, OpenApiMediaType> = {};
+        const content = nullRecord<OpenApiMediaType>();
         for (const mt of effectiveConsumes) {
           content[mt] = {
             ...(bodySchema !== undefined ? { schema: bodySchema } : {}),
@@ -1373,7 +1498,7 @@ function parseSwagger1Operations(
             : {}),
         };
       } else if (formDataParams.length > 0) {
-        const properties: Record<string, JsonSchema> = {};
+        const properties = nullRecord<JsonSchema>();
         const required: string[] = [];
         let hasFile = false;
 
@@ -1408,7 +1533,7 @@ function parseSwagger1Operations(
       // Security requirements
       const security: OpenApiSecurityRequirement[] = [];
       if (isRecord(op['authorizations'])) {
-        const req: Record<string, string[]> = {};
+        const req = nullRecord<string[]>();
         for (const [schemeName, scopesRaw] of Object.entries(op['authorizations'])) {
           const scopes: string[] = [];
           if (Array.isArray(scopesRaw)) {
@@ -1512,7 +1637,7 @@ function parseSwagger1SecuritySchemes(
     }
 
     if (type === 'oauth2') {
-      const scopesMap: Record<string, string> = {};
+      const scopesMap = nullRecord<string>();
       if (Array.isArray(entry['scopes'])) {
         for (const s of entry['scopes']) {
           if (isRecord(s) && typeof s['scope'] === 'string') {

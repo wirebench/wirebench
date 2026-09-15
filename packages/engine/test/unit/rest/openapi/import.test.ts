@@ -208,7 +208,7 @@ paths:
     const imported = await importOpenApi({ kind: 'text', text: swaggerDoc }, { fetchDocument: fileFetcher() });
 
     expect(imported.document.version).toBe('3.0');
-    expect(imported.summary.declaredVersion).toBe('Swagger 3.0.3');
+    expect(imported.summary.declaredVersion).toBe('OpenAPI 3.0.3');
     expect(imported.api.name).toBe('Swagger 3 Sample');
     expect(imported.api.baseUrl).toBe('https://swagger3.test');
 
@@ -283,7 +283,7 @@ paths:
     const path = pathToFileURL(`${craftedDir}v11/swagger11-sample.json`).href;
     const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
 
-    expect(imported.document.version).toBe('1.2');
+    expect(imported.document.version).toBe('1.1');
     expect(imported.summary.declaredVersion).toBe('Swagger 1.1');
     expect(imported.api.baseUrl).toBe('http://example.com/api');
 

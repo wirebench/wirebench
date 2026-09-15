@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { parseDocumentText, parseOpenApiDocument, versionOf } from '../../../../src/rest/openapi/parse.js';
+import { OpenApiError } from '../../../../src/errors.js';
 import { serverUrl } from '../../../../src/rest/openapi/model.js';
 import type { OpenApiDocument } from '../../../../src/rest/openapi/model.js';
 
@@ -45,10 +46,10 @@ describe('versionOf', () => {
   });
 
   it('accepts documents declaring Swagger 3.0.x, 3.1.x and 3.2.0', () => {
-    expect(versionOf({ swagger: '3.0.0' })).toEqual({ version: '3.0', declared: 'Swagger 3.0.0' });
-    expect(versionOf({ swagger: '3.0.3' })).toEqual({ version: '3.0', declared: 'Swagger 3.0.3' });
-    expect(versionOf({ swagger: '3.1.0' })).toEqual({ version: '3.1', declared: 'Swagger 3.1.0' });
-    expect(versionOf({ swagger: '3.2.0' })).toEqual({ version: '3.2', declared: 'Swagger 3.2.0' });
+    expect(versionOf({ swagger: '3.0.0' })).toEqual({ version: '3.0', declared: 'OpenAPI 3.0.0' });
+    expect(versionOf({ swagger: '3.0.3' })).toEqual({ version: '3.0', declared: 'OpenAPI 3.0.3' });
+    expect(versionOf({ swagger: '3.1.0' })).toEqual({ version: '3.1', declared: 'OpenAPI 3.1.0' });
+    expect(versionOf({ swagger: '3.2.0' })).toEqual({ version: '3.2', declared: 'OpenAPI 3.2.0' });
   });
 
   it('accepts documents declaring Swagger 2.0 and 2.x', () => {
@@ -58,8 +59,8 @@ describe('versionOf', () => {
 
   it('accepts documents declaring Swagger 1.0, 1.1, and 1.2', () => {
     expect(versionOf({ swaggerVersion: '1.2' })).toEqual({ version: '1.2', declared: 'Swagger 1.2' });
-    expect(versionOf({ swaggerVersion: '1.1' })).toEqual({ version: '1.2', declared: 'Swagger 1.1' });
-    expect(versionOf({ swaggerVersion: '1.0' })).toEqual({ version: '1.2', declared: 'Swagger 1.0' });
+    expect(versionOf({ swaggerVersion: '1.1' })).toEqual({ version: '1.1', declared: 'Swagger 1.1' });
+    expect(versionOf({ swaggerVersion: '1.0' })).toEqual({ version: '1.0', declared: 'Swagger 1.0' });
     expect(versionOf({ swagger: '1.2' })).toEqual({ version: '1.2', declared: 'Swagger 1.2' });
   });
 
@@ -283,7 +284,7 @@ describe('parsing the 3.2 fixture', () => {
     expect(document.declaredVersion).toBe('3.2.0');
   });
 
-  it('reads additionalOperations, importing non-standard methods like QUERY', () => {
+  it('reads the 3.2 query fixed field', () => {
     const queryOp = document.operations.find((op) => op.operationId === 'searchPets');
     expect(queryOp).toBeDefined();
     expect(queryOp).toMatchObject({
@@ -816,7 +817,7 @@ describe('tolerance', () => {
         ],
       });
 
-      expect(doc.version).toBe('1.2');
+      expect(doc.version).toBe('1.1');
       expect(doc.declaredVersion).toBe('Swagger 1.1');
       const op = doc.operations[0];
       expect(op?.method).toBe('get');
@@ -925,6 +926,168 @@ describe('tolerance', () => {
 
       expect(duration).toBeLessThan(500);
       expect(doc.operations[0]?.requestBody).toBeDefined();
+    });
+
+    it('checks openapi before swagger/swaggerVersion (3.1)', () => {
+      const v = versionOf({ openapi: '3.1.0', swagger: '2.0' });
+      expect(v).toEqual({ version: '3.1', declared: '3.1.0' });
+    });
+
+    it('accepts numeric versions in versionOf (3.2)', () => {
+      expect(versionOf({ swagger: 2 })).toEqual({ version: '2.0', declared: 'Swagger 2.0' });
+      expect(versionOf({ openapi: 3 })).toEqual({ version: '3.0', declared: '3.0' });
+    });
+
+    it('labels Swagger 3.x as OpenAPI and adds skipped/info note (3.3)', () => {
+      const v = versionOf({ swagger: '3.0.3' });
+      expect(v).toEqual({ version: '3.0', declared: 'OpenAPI 3.0.3' });
+
+      const doc = parseOpenApiDocument({ swagger: '3.0.3', info: { title: 'Test' }, paths: {} });
+      expect(doc.skipped.some((s) => s.reason.includes('declared as swagger: 3.0.3'))).toBe(true);
+    });
+
+    it('validates additionalOperations and preserves method case (3.4)', () => {
+      const doc = parseOpenApiDocument({
+        openapi: '3.2.0',
+        paths: {
+          '/items': {
+            additionalOperations: {
+              'x-extension': { operationId: 'ext' },
+              get: { operationId: 'collidingGet' },
+              QUERY: { operationId: 'collidingQuery' },
+              'm-SEARCH': {
+                operationId: 'msearch',
+                responses: { '200': { description: 'ok' } },
+              },
+              'invalid method': { operationId: 'invalid' },
+            },
+          },
+        },
+      });
+
+      expect(doc.skipped.some((s) => s.kind === 'extension')).toBe(true);
+      expect(doc.skipped.some((s) => s.reason.includes('use the fixed field'))).toBe(true);
+      expect(doc.skipped.some((s) => s.reason.includes('invalid HTTP method name'))).toBe(true);
+      const op = doc.operations.find((o) => o.operationId === 'msearch');
+      expect(op?.method).toBe('m-SEARCH');
+      expect(doc.operations.some((o) => o.operationId === 'collidingQuery')).toBe(false);
+    });
+
+    it('handles Swagger 2.0 conversion edge cases (3.5)', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        host: 'https://api.example.com',
+        basePath: '/v1',
+        schemes: ['ftp', 'http', 'https'],
+        definitions: { Unused: { type: 'object' } },
+        produces: ['application/json'],
+        responses: { NotFound: { description: 'not found' } },
+        paths: {
+          '/files/{id}': {
+            post: {
+              consumes: ['application/x-www-form-urlencoded; charset=utf-8'],
+              parameters: [
+                { name: 'id', in: 'path', type: 'string' },
+                { name: 'tsvParam', in: 'query', type: 'array', collectionFormat: 'tsv' },
+                { name: 'body', in: 'body', schema: { type: 'string' } },
+                { name: 'formField', in: 'formData', type: 'string' },
+              ],
+              responses: { '200': { description: 'ok' } },
+              example: { foo: 'bar' },
+            },
+          },
+        },
+      });
+
+      expect(doc.servers[0]?.url).toBe('https://api.example.com/v1');
+      expect(doc.servers.every((s) => s.url.startsWith('http://') || s.url.startsWith('https://'))).toBe(true);
+
+      const op = doc.operations[0]!;
+      const pathParam = op.parameters.find((p) => p.name === 'id');
+      expect(pathParam?.required).toBe(true);
+
+      expect(doc.skipped.some((s) => s.reason.includes('tsv'))).toBe(true);
+      expect(
+        op.requestBody?.content['application/x-www-form-urlencoded; charset=utf-8'] ??
+          op.requestBody?.content['application/x-www-form-urlencoded'],
+      ).toBeDefined();
+      expect(doc.skipped.some((s) => s.reason.includes('formData ignored'))).toBe(true);
+
+      // definitions stay reachable through $ref, so they are not reported as skipped
+      expect(doc.skipped.some((s) => s.kind === 'definitions')).toBe(false);
+      expect(doc.skipped.some((s) => s.kind === 'produces')).toBe(true);
+      expect(doc.skipped.some((s) => s.kind === 'responses')).toBe(true);
+    });
+
+    it('throws OpenApiError when Swagger 1.2 Resource Listing has 0 operations (3.6)', () => {
+      const text = readFileSync(`${craftedDir}v12/swagger12-resource-listing.json`, 'utf-8');
+      expect(() => parseOpenApiDocument(parseDocumentText(text))).toThrow(OpenApiError);
+    });
+
+    it('untrusted keys: __proto__ formData survives and toString does not resolve (3.7)', () => {
+      const doc = parseOpenApiDocument({
+        swagger: '2.0',
+        paths: {
+          '/test': {
+            post: {
+              parameters: [{ name: '__proto__', in: 'formData', type: 'string' }],
+            },
+          },
+        },
+      });
+      const schema = doc.operations[0]?.requestBody?.content['application/x-www-form-urlencoded']?.schema;
+      expect(schema?.properties).toHaveProperty('__proto__');
+
+      const doc1x = parseOpenApiDocument({
+        swaggerVersion: '1.2',
+        basePath: 'http://example.com/api',
+        apis: [
+          {
+            path: '/test',
+            operations: [
+              {
+                method: 'POST',
+                nickname: 'testOp',
+                parameters: [{ name: 'body', paramType: 'body', type: 'toString' }],
+              },
+            ],
+          },
+        ],
+      });
+      // "toString" is not a declared model: it must not resolve through Object.prototype, so the body falls
+      // back to a plain string rather than an empty model or an invalid "toString" type
+      expect(doc1x.operations[0]?.requestBody?.content['application/json']?.schema?.type).toBe('string');
+    });
+
+    it('falls back from value to dataValue to serializedValue (3.8)', () => {
+      const doc = parseOpenApiDocument({
+        openapi: '3.2.0',
+        paths: {
+          '/test': {
+            post: {
+              requestBody: {
+                content: {
+                  'application/json': {
+                    examples: {
+                      onlySerialized: {
+                        serializedValue: '{"data":42}',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      const ex = doc.operations[0]?.requestBody?.content['application/json']?.examples?.['onlySerialized'];
+      expect(ex?.value).toBe('{"data":42}');
+    });
+
+    it('reports Swagger 1.0/1.1 with exact version not 1.2 (3.10)', () => {
+      expect(versionOf({ swaggerVersion: '1.0' })).toEqual({ version: '1.0', declared: 'Swagger 1.0' });
+      expect(versionOf({ swaggerVersion: '1.1' })).toEqual({ version: '1.1', declared: 'Swagger 1.1' });
+      expect(versionOf({ swaggerVersion: '1.2' })).toEqual({ version: '1.2', declared: 'Swagger 1.2' });
     });
   });
 });
