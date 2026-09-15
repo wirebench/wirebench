@@ -95,7 +95,11 @@ function Row({
           {/* A REST row carries its method; a SOAP row its version. Both are the one thing that
               says what kind of send this was, so the column is never empty. */}
           {entry.kind === 'rest' && entry.method !== undefined ? (
-            <MethodBadge method={entry.method} title={`${entry.method} ${entry.requestName}`} />
+            <MethodBadge
+              method={entry.method}
+              title={`${entry.method} ${entry.requestName}`}
+              className="w-12 text-left"
+            />
           ) : (
             <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
               {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}

@@ -42,7 +42,7 @@ export function RedirectsView({ exchange }: RedirectsViewProps) {
         ))}
       </ol>
       <p className="flex items-center gap-1.5 px-1 text-xs text-fg-muted">
-        Arrived as <MethodBadge method={exchange.method} />
+        Arrived as <MethodBadge method={exchange.method} className="w-auto" />
         {exchange.methodChanged && (
           <span className="text-status-warning">— a redirect changed the method, so the body was not resent.</span>
         )}

@@ -271,6 +271,16 @@ describe('the import summary', () => {
     expect(screen.getByTestId('import-openapi-counts').textContent).toBe('1 request in 1 folder.');
   });
 
+  it('displays OpenAPI 3.2 or Swagger 3.x declared versions in the summary header', async () => {
+    await importAndSummarise(summary({ declaredVersion: '3.2.0' }));
+    expect(screen.getByTestId('import-openapi-summary').textContent).toContain('OpenAPI 3.2.0');
+  });
+
+  it('displays Swagger 3.x declared version in the summary header', async () => {
+    await importAndSummarise(summary({ declaredVersion: 'Swagger 3.0.3' }));
+    expect(screen.getByTestId('import-openapi-summary').textContent).toContain('Swagger 3.0.3');
+  });
+
   it('lists what was not imported, and why', async () => {
     await importAndSummarise(
       summary({

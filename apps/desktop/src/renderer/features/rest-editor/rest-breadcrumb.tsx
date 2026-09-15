@@ -41,7 +41,7 @@ export function RestBreadcrumb({ requestId }: RestBreadcrumbProps) {
       onRename={(name) => {
         void useProjectStore.getState().updateRestRequest(requestId, { name });
       }}
-      badge={<MethodBadge method={request.method} />}
+      badge={<MethodBadge method={request.method} className="w-auto" />}
     />
   );
 }

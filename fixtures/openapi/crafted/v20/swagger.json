@@ -1,0 +1,170 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Swagger Petstore",
+    "version": "2.0.0",
+    "description": "A sample Swagger 2.0 API definition"
+  },
+  "host": "api.petstore.test:8443",
+  "basePath": "/api/v2",
+  "schemes": ["https", "http"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "tags": [
+    {
+      "name": "pets",
+      "description": "Pet operations"
+    }
+  ],
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "name": "X-API-KEY",
+      "in": "header"
+    },
+    "basic_auth": {
+      "type": "basic",
+      "description": "Basic authentication"
+    },
+    "petstore_auth": {
+      "type": "oauth2",
+      "flow": "accessCode",
+      "authorizationUrl": "https://auth.petstore.test/oauth/authorize",
+      "tokenUrl": "https://auth.petstore.test/oauth/token",
+      "scopes": {
+        "write:pets": "modify pets",
+        "read:pets": "read pets"
+      }
+    }
+  },
+  "security": [
+    {
+      "api_key": []
+    }
+  ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "summary": "List all pets",
+        "operationId": "listPets",
+        "tags": ["pets"],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "format": "int32",
+            "default": 20,
+            "required": false
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paged array of pets"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a pet",
+        "operationId": "createPet",
+        "tags": ["pets"],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Pet to add",
+            "schema": {
+              "$ref": "#/definitions/NewPet"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "parameters": [
+        {
+          "name": "petId",
+          "in": "path",
+          "required": true,
+          "type": "integer",
+          "format": "int64"
+        }
+      ],
+      "get": {
+        "summary": "Info for a specific pet",
+        "operationId": "showPetById",
+        "tags": ["pets"],
+        "responses": {
+          "200": {
+            "description": "Expected response to a valid request"
+          }
+        }
+      }
+    },
+    "/pets/{petId}/photo": {
+      "post": {
+        "summary": "Upload photo for pet",
+        "operationId": "uploadPhoto",
+        "tags": ["pets"],
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "file",
+            "in": "formData",
+            "required": true,
+            "type": "file",
+            "description": "The photo to upload"
+          },
+          {
+            "name": "note",
+            "in": "formData",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uploaded"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "NewPet": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Fido"
+        },
+        "tag": {
+          "type": "string",
+          "example": "dog"
+        }
+      }
+    }
+  }
+}

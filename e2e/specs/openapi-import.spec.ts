@@ -209,10 +209,25 @@ test.describe('OpenAPI import', () => {
     await expect(apiRow(page, 'From disk')).toBeVisible({ timeout: 20_000 });
   });
 
-  test('refuses Swagger 2.0 by saying so, leaving the project alone', async () => {
+  test('imports a Swagger 2.0 document by URL', async () => {
     server = await startTestRestServer({
       documents: {
-        '/swagger.json': { body: '{"swagger":"2.0","info":{"title":"Old"}}', contentType: 'application/json' },
+        '/swagger.json': {
+          body: JSON.stringify({
+            swagger: '2.0',
+            info: { title: 'Old Petstore', version: '1.0' },
+            host: 'api.test',
+            paths: {
+              '/pets': {
+                get: {
+                  summary: 'Get Pets',
+                  responses: { 200: { description: 'OK' } },
+                },
+              },
+            },
+          }),
+          contentType: 'application/json',
+        },
       },
     });
     launched = await launchApp();
@@ -224,7 +239,38 @@ test.describe('OpenAPI import', () => {
     await page.getByTestId('import-openapi-url').fill(`${server.url}/swagger.json`);
     await page.getByTestId('import-openapi-submit').click();
 
-    await expect(page.getByTestId('import-openapi-error')).toContainText('2.0', { timeout: 30_000 });
+    await expect(page.getByTestId('import-openapi-summary')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('import-openapi-summary')).toContainText('Swagger 2.0');
+    await page.getByTestId('import-openapi-done').click();
+    await expect(apiRow(page, 'Old Petstore')).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('refuses a document of an unsupported version, and imports nothing', async () => {
+    server = await startTestRestServer({
+      documents: {
+        '/future.json': {
+          body: JSON.stringify({
+            openapi: '9.0.0',
+            info: { title: 'From The Future', version: '1.0' },
+            paths: { '/pets': { get: { responses: { 200: { description: 'OK' } } } } },
+          }),
+          contentType: 'application/json',
+        },
+      },
+    });
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'OpenAPI');
+    await createProject(page, 'Future');
+
+    await openImportOpenApi(page);
+    await page.getByTestId('import-openapi-url').fill(`${server.url}/future.json`);
+    await page.getByTestId('import-openapi-submit').click();
+
+    // The error is shown in the dialog, which stays open, and no summary or API row appears.
+    await expect(page.getByTestId('import-openapi-error')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('import-openapi-summary')).toBeHidden();
+    await expect(page.getByTestId('import-openapi-dialog')).toBeVisible();
+    await expect(page.getByTestId('api-row')).toHaveCount(0);
   });
 });

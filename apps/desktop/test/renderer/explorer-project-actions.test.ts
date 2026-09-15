@@ -130,3 +130,23 @@ describe('projectRowActions', () => {
     useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
 });
+
+describe('projectRowActions import presets', () => {
+  beforeEach(() => {
+    useProjectStore.getState().reset();
+    useProjectStore.getState().applySnapshot(project.id, project);
+    useUiStore.setState({ selection: undefined, importDialogOpen: false, importDialogFormat: 'auto' });
+  });
+
+  it('opens the Import dialog preset to OpenAPI', () => {
+    projectRowActions.importOpenApiInto('p1');
+
+    expect(useUiStore.getState()).toMatchObject({ importDialogOpen: true, importDialogFormat: 'openapi' });
+  });
+
+  it('opens the Import dialog preset to Postman', () => {
+    projectRowActions.importPostmanInto('p1');
+
+    expect(useUiStore.getState()).toMatchObject({ importDialogOpen: true, importDialogFormat: 'postman' });
+  });
+});

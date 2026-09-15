@@ -206,15 +206,17 @@ function restChildren(
   folders: readonly RestFolderWire[],
   requests: readonly RestRequestWire[],
 ): ExplorerNode[] {
-  const here: { readonly order: number; readonly node: ExplorerNode }[] = [
-    ...folders
-      .filter((folder) => folder.apiId === api.id && folder.parentId === parentId)
-      .map((folder) => ({ order: folder.order, node: folderNode(api, folder, folders, requests) })),
-    ...requests
-      .filter((request) => request.apiId === api.id && request.folderId === parentId)
-      .map((request) => ({ order: request.order, node: restRequestNode(api, request) })),
-  ];
-  return here.sort((a, b) => a.order - b.order).map((entry) => entry.node);
+  const folderNodes = folders
+    .filter((folder) => folder.apiId === api.id && folder.parentId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((folder) => folderNode(api, folder, folders, requests));
+
+  const requestNodes = requests
+    .filter((request) => request.apiId === api.id && request.folderId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((request) => restRequestNode(api, request));
+
+  return [...folderNodes, ...requestNodes];
 }
 
 function folderNode(

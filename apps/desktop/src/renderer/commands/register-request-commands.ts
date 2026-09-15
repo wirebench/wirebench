@@ -257,6 +257,14 @@ export function registerRequestCommands(): void {
       useUiStore.getState().setImportOpenApiDialogOpen(true);
     },
   });
+  registerCommand({
+    id: 'rest.importPostman',
+    label: 'REST: Import Postman Collection…',
+    category: 'Definition',
+    run: () => {
+      useUiStore.getState().setImportPostmanDialogOpen(true);
+    },
+  });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.
   registerCommand({

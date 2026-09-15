@@ -29,9 +29,10 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
+import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
-import { buildExplorerTree, nodeProjectId, restEntityId } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -161,8 +162,14 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             autoFocus
             defaultValue={node.data.label}
             className="min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onFocus={(e) => e.currentTarget.select()}
             onBlur={(e) => node.submit(e.currentTarget.value)}
             onKeyDown={(e) => {
+              // Keep typing inside the rename field away from the tree's own keys, but let chords
+              // (⌘⏎ send, ⌘S save…) reach the window-level keybindings.
+              if (!e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation();
               if (e.key === 'Enter') node.submit(e.currentTarget.value);
               if (e.key === 'Escape') node.reset();
             }}
@@ -335,7 +342,7 @@ export function ExplorerView() {
         >
           <FolderPlus size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Import WSDL…" onClick={openImportDialog}>
+        <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
@@ -367,7 +374,9 @@ export function ExplorerView() {
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
-            <p className="text-sm text-fg-subtle">Create a project, or import a WSDL into a new one.</p>
+            <p className="text-sm text-fg-subtle">
+              Create a project, or import an API or service definition into a new one.
+            </p>
             <div className="mt-1 flex gap-2">
               <Button
                 onClick={() => {
@@ -376,8 +385,8 @@ export function ExplorerView() {
               >
                 New project
               </Button>
-              <Button variant="primary" onClick={openImportDialog}>
-                Import WSDL…
+              <Button variant="primary" onClick={() => openImportDialog()}>
+                Import…
               </Button>
             </div>
           </div>
@@ -407,25 +416,39 @@ export function ExplorerView() {
                 node.kind !== 'folder' &&
                 node.kind !== 'rest-request'
               }
-              // Reordering and moving happen inside one project: a request belongs to the API it
-              // was made in, and dragging it into another project would mean moving it between two
-              // folders on disk, which `move-node` deliberately does not do.
-              disableDrop={({ parentNode, dragNodes }) => !sameProject(parentNode.data, dragNodes[0]?.data)}
-              onMove={({ dragIds, parentNode, index }) => {
-                const nodes = data.flatMap(flatten);
-                for (const dragId of dragIds) {
-                  const node = nodes.find((candidate) => candidate.id === dragId);
-                  const entityId = restEntityId(node);
-                  if (entityId === undefined) {
-                    continue;
+              disableDrag={(node) => node.kind !== 'rest-request' && node.kind !== 'folder'}
+              // Reordering and moving happen inside the same API: a request or folder belongs to its
+              // own API definition, and cannot move into another API or project.
+              disableDrop={({ parentNode, dragNodes, index }) => {
+                const ancestors: ExplorerNode[] = [];
+                for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
+                  if (node.data !== undefined) ancestors.push(node.data);
+                }
+                return isDropDisabled({
+                  parent: parentNode?.data,
+                  children: (parentNode?.children ?? []).map((child) => child.data),
+                  dragged: dragNodes[0]?.data,
+                  index,
+                  sameProject: sameProject(parentNode?.data, dragNodes[0]?.data),
+                  ancestors,
+                });
+              }}
+              onMove={async ({ dragNodes, parentNode, index }) => {
+                const parent = parentNode?.data;
+                if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
+                const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
+                const plan = planMoves(
+                  (parentNode?.children ?? []).map((child) => child.data),
+                  dragNodes.map((node) => node.data),
+                  index,
+                );
+                // One at a time and in order: each move's index assumes the previous one landed.
+                for (const move of plan) {
+                  try {
+                    await useProjectStore.getState().moveNode(move.entityId, targetFolderId, move.index);
+                  } catch (error: unknown) {
+                    showToast(error instanceof Error ? error.message : 'Could not move it');
                   }
-                  const parent = parentNode?.data;
-                  void useProjectStore
-                    .getState()
-                    .moveNode(entityId, parent?.kind === 'folder' ? parent.folderId : undefined, index)
-                    .catch((error: unknown) => {
-                      showToast(error instanceof Error ? error.message : 'Could not move it');
-                    });
                 }
               }}
               aria-label="Explorer"
@@ -484,22 +507,30 @@ export function ExplorerView() {
               }}
               onRename={({ id, name }) => {
                 const node = data.flatMap(flatten).find((n) => n.id === id);
-                if (node?.kind === 'request' && node.requestId !== undefined) {
-                  useProjectStore.getState().updateRequest(node.requestId, { name });
+                if (node === undefined) return;
+                const trimmed = name.trim();
+                if (trimmed.length === 0 || trimmed === node.label) {
+                  return;
                 }
-                if (node?.kind === 'project' && node.projectId !== undefined) {
-                  projectRowActions.commitRename(node.projectId, name);
+                if (node.kind === 'request' && node.requestId !== undefined) {
+                  useProjectStore.getState().updateRequest(node.requestId, { name: trimmed });
                 }
-                if (node?.kind === 'api' && node.apiId !== undefined) {
-                  void useProjectStore.getState().updateApi(node.apiId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'project' && node.projectId !== undefined) {
+                  projectRowActions.commitRename(node.projectId, trimmed);
                 }
-                if (node?.kind === 'folder' && node.folderId !== undefined) {
-                  void useProjectStore.getState().updateFolder(node.folderId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'api' && node.apiId !== undefined) {
+                  void useProjectStore.getState().updateApi(node.apiId, { name: trimmed }).catch(reportRenameFailure);
                 }
-                if (node?.kind === 'rest-request' && node.requestId !== undefined) {
+                if (node.kind === 'folder' && node.folderId !== undefined) {
                   void useProjectStore
                     .getState()
-                    .updateRestRequest(node.requestId, { name })
+                    .updateFolder(node.folderId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
+                if (node.kind === 'rest-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateRestRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
               }}
@@ -618,7 +649,7 @@ function flatten(node: ExplorerNode): ExplorerNode[] {
 }
 
 /** Whether a drop target and the node being dragged live in the same project. */
-function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
+export function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
   const projectOf = useProjectStore.getState().projectOf;
   const into = nodeProjectId(target, projectOf);
   const from = nodeProjectId(dragged, projectOf);

@@ -73,7 +73,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate font-medium text-fg-default">
             {entry.kind === 'rest' && entry.method !== undefined ? (
-              <MethodBadge method={entry.method} />
+              <MethodBadge method={entry.method} className="w-auto" />
             ) : (
               <span className="text-xs text-fg-faint">SOAP</span>
             )}

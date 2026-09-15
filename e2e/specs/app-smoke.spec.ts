@@ -23,14 +23,14 @@ test.describe('app smoke', () => {
     await expect(window.locator('[data-testid="status-bar"]')).toBeVisible();
   });
 
-  test('command palette opens, lists Import WSDL, and closes on Escape', async () => {
+  test('command palette opens, lists Import…, and closes on Escape', async () => {
     launched = await launchApp();
     const { window, app } = launched;
 
     const isMac = await app.evaluate(() => process.platform === 'darwin');
     await window.keyboard.press(isMac ? 'Meta+k' : 'Control+k');
 
-    const paletteOption = window.getByRole('option').filter({ hasText: 'Import WSDL' });
+    const paletteOption = window.getByRole('option').filter({ hasText: 'Import…' });
     await expect(paletteOption).toBeVisible();
 
     await window.keyboard.press('Escape');

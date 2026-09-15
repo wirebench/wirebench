@@ -23,12 +23,15 @@ The engine runs **in the main process in v1**, reached only through an `EngineSe
 interface that the IPC handlers call. No renderer code imports the engine; no engine code
 knows that Electron exists.
 
-**Superseded in part (2026-09-11).** "No renderer code imports the engine" now has exactly one
-exception: the browser-safe `@wirebench/engine/xml` subpath, which the Monaco XML language
-service imports so the editor tokenises and reports positions with the same parser main uses.
-That subpath is pure, DOM-free XML code with no Node, Electron or file-system reach; nothing
-else in the engine may be imported from the renderer, and ESLint enforces the line
-(`no-restricted-imports` in `eslint.config.js`, keyed to this ADR).
+**Superseded in part (2026-09-11, 2026-09-14, 2026-09-15).** "No renderer code imports the engine"
+now has three tightly scoped exceptions: the browser-safe `@wirebench/engine/xml`,
+`@wirebench/engine/rest`, and `@wirebench/engine/detect` subpaths. The Monaco XML language service
+imports `/xml` to tokenize and report positions with the same parser main uses; the REST editor
+imports `/rest` for shared URL escaping and query-param helpers; and the unified import dialog
+imports `/detect` for zero-latency client-side format classification (WSDL vs. OpenAPI/Swagger vs.
+Postman) as the user types, pastes, or drops files. All three subpaths are pure text algorithms with
+no Node, Electron, or file-system dependencies, ensuring the renderer sandbox is never compromised.
+ESLint strictly enforces this boundary (`no-restricted-imports` in `eslint.config.js`, keyed to this ADR).
 
 The interface is the point: every entry point is `async` and takes an `AbortSignal`, and no
 caller depends on the engine being in-process. Moving it into a `utilityProcess` later is an
@@ -55,8 +58,9 @@ implementation change behind that interface, not a redesign of the app.
   (`evaluateWithTimeout`).
 - An engine crash takes the app with it. Accepted for v1: the engine is pure computation over
   data the user supplied, and it throws typed `WirebenchError`s rather than aborting.
-- The `@wirebench/engine/xml` exception has to stay browser-safe: adding a Node import to that
-  subpath would break the renderer bundle, so it is treated as public, sandboxed API.
+- The `@wirebench/engine/xml`, `/rest`, and `/detect` exceptions have to stay browser-safe:
+  adding a Node import to any of those subpaths would break the renderer bundle, so they are
+  treated as public, sandboxed APIs.
 - The `EngineService` boundary must not leak. Any API that only works because both sides share
   a heap — passing a callback, handing out a mutable object — would quietly make the
   utility-process move impossible; the interface is stated in terms of data and signals only.

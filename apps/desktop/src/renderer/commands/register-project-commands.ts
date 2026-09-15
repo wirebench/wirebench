@@ -21,7 +21,7 @@ export function registerProjectCommands(): void {
   });
   registerCommand({
     id: 'definition.import',
-    label: 'Import WSDL…',
+    label: 'Import…',
     category: 'Definition',
     shortcut: 'Mod+I',
     run: () => {

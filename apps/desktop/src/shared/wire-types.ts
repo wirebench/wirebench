@@ -12,6 +12,10 @@ import { z } from 'zod';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
+/** Longest pasted OpenAPI or Postman document an import accepts, in characters. */
+export const MAX_IMPORT_TEXT_CHARS = 50_000_000;
+/** Longest name override an OpenAPI or Postman import accepts. */
+export const MAX_IMPORT_NAME_CHARS = 200;
 
 /**
  * Where a WSDL definition comes from — mirrors the engine's `ImportSource`.
@@ -1840,7 +1844,7 @@ export const openApiSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
   z.object({
     kind: z.literal('text'),
-    text: z.string(),
+    text: z.string().max(MAX_IMPORT_TEXT_CHARS),
     location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
   }),
 ]);
@@ -1895,7 +1899,7 @@ export const apiImportOpenApiRequestSchema = z.object({
   target: projectAddInterfaceTargetSchema,
   source: openApiSourceSchema,
   /** Overrides `info.title` as the API's name; the dialog offers it for editing. */
-  name: z.string().max(200).optional(),
+  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
   /** Overrides the first server's URL as the base URL. */
   baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
   /** The security scheme, by its name in the document, to use as the API's own credentials. */
@@ -1915,6 +1919,43 @@ export const apiImportOpenApiResponseSchema = z.object({
   summary: openApiImportSummarySchema,
 });
 export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
+
+/** Source for Postman collection import: file path or pasted JSON text. */
+export const postmanSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('text'), text: z.string().max(MAX_IMPORT_TEXT_CHARS) }),
+]);
+export type PostmanSourceWire = z.infer<typeof postmanSourceSchema>;
+
+/** Summary of imported Postman collection. */
+export const postmanImportSummarySchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  folders: z.number(),
+  requests: z.number(),
+  auth: z.string().optional(),
+  warnings: z.array(z.string()).readonly().optional(),
+  skipped: z.array(z.string()).readonly().optional(),
+});
+export type PostmanImportSummaryWire = z.infer<typeof postmanImportSummarySchema>;
+
+/** Request payload for `api.importPostman`. */
+export const apiImportPostmanRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+  baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+});
+export type ApiImportPostmanRequest = z.infer<typeof apiImportPostmanRequestSchema>;
+
+/** Response payload for `api.importPostman`. */
+export const apiImportPostmanResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: postmanImportSummarySchema,
+});
+export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
 
 /** Request/response for `api.cancelImport`, by the token the import was started with. */
 export const apiCancelImportRequestSchema = z.object({ token: z.string() });

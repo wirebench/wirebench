@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
+import { ExplorerView, sameProject } from '../../src/renderer/features/explorer/explorer-view.js';
+import { startRenamingNode } from '../../src/renderer/features/explorer/explorer-api.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -103,7 +104,7 @@ describe('ExplorerView', () => {
     expect(screen.getByText('No projects yet')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
     // Two of them: the toolbar's icon button, and the empty state's own.
-    expect(screen.getAllByRole('button', { name: 'Import WSDL…' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Import…' })).toHaveLength(2);
   });
 
   it('renders the tree and opens an editor tab on double-click of a request', () => {
@@ -497,5 +498,96 @@ describe('ExplorerView with APIs', () => {
 
     // The click opened the tab and folded the row shut; the fold state records it per workspace.
     expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
+  });
+
+  it('enters inline rename mode and commits the rename', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    startRenamingNode('rest-request', 'rest-root');
+    const input = await screen.findByDisplayValue('At root');
+
+    fireEvent.change(input, { target: { value: 'Renamed root' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed root' },
+        },
+      });
+    });
+  });
+
+  it('triggers inline rename from right-click context menu Rename option', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    fireEvent.contextMenu(screen.getByText('At root'));
+    const renameOption = await screen.findByText('Rename…');
+    fireEvent.click(renameOption);
+
+    const input = await screen.findByDisplayValue('At root');
+
+    fireEvent.change(input, { target: { value: 'Renamed from menu' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed from menu' },
+        },
+      });
+    });
+  });
+
+  it('checks whether drop target and dragged node belong to the same project (1.3)', () => {
+    useProjectStore.setState({
+      projectOf: {
+        'api-1': 'p1',
+        'api-2': 'p2',
+        'folder-1': 'p1',
+        'folder-2': 'p2',
+        'req-1': 'p1',
+        'req-2': 'p2',
+      },
+    });
+
+    const nodeA = {
+      id: 'rest:req-1',
+      kind: 'rest-request',
+      label: 'Req 1',
+      requestId: 'req-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeB = {
+      id: 'folder:folder-1',
+      kind: 'folder',
+      label: 'Folder 1',
+      folderId: 'folder-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeC = {
+      id: 'rest:req-2',
+      kind: 'rest-request',
+      label: 'Req 2',
+      requestId: 'req-2',
+      apiId: 'api-2',
+    } as const;
+
+    expect(sameProject(nodeB, nodeA)).toBe(true);
+    expect(sameProject(nodeB, nodeC)).toBe(false);
+    expect(sameProject(undefined, nodeA)).toBe(false);
+    expect(sameProject(nodeA, undefined)).toBe(false);
   });
 });
