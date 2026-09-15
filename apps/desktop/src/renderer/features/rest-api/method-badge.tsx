@@ -69,7 +69,7 @@ export function MethodBadge({ method, title, className, variant = 'text' }: Meth
       data-testid="method-badge"
       data-method={label}
       {...(title !== undefined ? { title } : {})}
-      className={`shrink-0 font-mono text-[10.5px] font-bold leading-none ${methodColorClass(method)} ${className ?? ''}`}
+      className={`shrink-0 font-mono text-xs font-bold leading-none ${methodColorClass(method)} ${className ?? ''}`}
     >
       {truncatedLabel}
     </span>

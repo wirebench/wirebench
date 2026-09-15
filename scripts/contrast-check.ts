@@ -104,6 +104,28 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-method-delete', bg: '--wb-bg-base', kind: 'text', where: 'DELETE method text (editor)' },
   { fg: '--wb-method-other', bg: '--wb-bg-base', kind: 'text', where: 'custom method text (editor)' },
 
+  { fg: '--wb-method-get', bg: '--wb-accent-muted', kind: 'text', where: 'GET method text (selected explorer row)' },
+  { fg: '--wb-method-post', bg: '--wb-accent-muted', kind: 'text', where: 'POST method text (selected explorer row)' },
+  { fg: '--wb-method-put', bg: '--wb-accent-muted', kind: 'text', where: 'PUT method text (selected explorer row)' },
+  {
+    fg: '--wb-method-patch',
+    bg: '--wb-accent-muted',
+    kind: 'text',
+    where: 'PATCH method text (selected explorer row)',
+  },
+  {
+    fg: '--wb-method-delete',
+    bg: '--wb-accent-muted',
+    kind: 'text',
+    where: 'DELETE method text (selected explorer row)',
+  },
+  {
+    fg: '--wb-method-other',
+    bg: '--wb-accent-muted',
+    kind: 'text',
+    where: 'custom method text (selected explorer row)',
+  },
+
   // Status text: response codes in the status bar, problem rows, keystore chips.
   { fg: '--wb-status-success', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar 2xx' },
   { fg: '--wb-status-success', bg: '--wb-bg-raised', kind: 'text', where: 'keystore "Loaded" chip' },
