@@ -797,3 +797,6 @@ export type {
 } from './validate/wsi/index.js';
 export { renderWsiAssertionsMarkdown, WSI_PLANNED_ASSERTIONS } from './validate/wsi/index.js';
 export type { PlannedAssertion } from './validate/wsi/index.js';
+
+export { detectImportFormat } from './import-detect.js';
+export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';

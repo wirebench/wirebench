@@ -3,7 +3,7 @@ import { openEnvironmentTab } from '../environments/environment-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import { useUiStore } from '../../state/ui.js';
+import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { startRenamingProject } from './explorer-api.js';
 
@@ -40,22 +40,20 @@ export const projectRowActions = {
     useUiStore.getState().setSelection({ kind: 'project', id: projectId });
   },
 
-  /** Opens the Import WSDL dialog with this project preselected as the target. */
-  importInto(projectId: string): void {
+  /** Opens the unified Import dialog with this project preselected as the target. */
+  importInto(projectId: string, format?: ImportDialogFormat): void {
     projectRowActions.select(projectId);
-    useUiStore.getState().openImportDialog();
+    useUiStore.getState().openImportDialog(format);
   },
 
-  /** Opens the Import OpenAPI dialog with this project preselected as the target. */
+  /** Opens the Import dialog preselected to OpenAPI. */
   importOpenApiInto(projectId: string): void {
-    projectRowActions.select(projectId);
-    useUiStore.getState().setImportOpenApiDialogOpen(true);
+    projectRowActions.importInto(projectId, 'openapi');
   },
 
-  /** Opens the Import Postman dialog with this project preselected as the target. */
+  /** Opens the Import dialog preselected to Postman. */
   importPostmanInto(projectId: string): void {
-    projectRowActions.select(projectId);
-    useUiStore.getState().setImportPostmanDialogOpen(true);
+    projectRowActions.importInto(projectId, 'postman');
   },
 
   /**

@@ -47,14 +47,18 @@ export interface PendingNodeDeletion {
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
+export type ImportDialogFormat = 'auto' | 'openapi' | 'postman' | 'wsdl';
+
 export interface UiStore extends UiSnapshot {
   /** The explorer's current selection, if any. Transient — never persisted. */
   readonly selection: Selection | undefined;
-  /** Whether the Import WSDL dialog is open. Transient — never persisted. */
+  /** Whether the unified Import dialog is open. Transient — never persisted. */
   readonly importDialogOpen: boolean;
-  /** Whether the Import OpenAPI dialog is open. Its own flag: the two dialogs share no state. */
+  /** The format to pre-select when opening the import dialog. */
+  readonly importDialogFormat: ImportDialogFormat;
+  /** Whether the Import OpenAPI dialog is open. Maintained for compatibility. */
   readonly importOpenApiDialogOpen: boolean;
-  /** Whether the Import Postman dialog is open. */
+  /** Whether the Import Postman dialog is open. Maintained for compatibility. */
   readonly importPostmanDialogOpen: boolean;
   /** The folder whose credentials dialog is open, if any. A folder has no tab to put them on. */
   readonly folderAuthId: string | undefined;
@@ -96,7 +100,7 @@ export interface UiStore extends UiSnapshot {
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
   readonly confirmRemoveProjectId: string | undefined;
   readonly setSelection: (selection: Selection | undefined) => void;
-  readonly openImportDialog: () => void;
+  readonly openImportDialog: (initialFormat?: ImportDialogFormat) => void;
   readonly setImportOpenApiDialogOpen: (open: boolean) => void;
   readonly setImportPostmanDialogOpen: (open: boolean) => void;
   readonly setFolderAuthId: (folderId: string | undefined) => void;
@@ -188,6 +192,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     ...DEFAULT_UI_STATE,
     selection: undefined,
     importDialogOpen: false,
+    importDialogFormat: 'auto',
     importOpenApiDialogOpen: false,
     importPostmanDialogOpen: false,
     folderAuthId: undefined,
@@ -211,14 +216,27 @@ export const useUiStore = create<UiStore>((set, get) => {
     setSelection: (selection) => {
       set({ selection });
     },
-    openImportDialog: () => {
-      set({ importDialogOpen: true });
+    openImportDialog: (initialFormat = 'auto') => {
+      set({
+        importDialogOpen: true,
+        importDialogFormat: initialFormat,
+        importOpenApiDialogOpen: initialFormat === 'openapi',
+        importPostmanDialogOpen: initialFormat === 'postman',
+      });
     },
     setImportOpenApiDialogOpen: (open) => {
-      set({ importOpenApiDialogOpen: open });
+      if (open) {
+        get().openImportDialog('openapi');
+      } else {
+        get().closeImportDialog();
+      }
     },
     setImportPostmanDialogOpen: (open) => {
-      set({ importPostmanDialogOpen: open });
+      if (open) {
+        get().openImportDialog('postman');
+      } else {
+        get().closeImportDialog();
+      }
     },
     setFolderAuthId: (folderId) => {
       set({ folderAuthId: folderId });
@@ -230,7 +248,12 @@ export const useUiStore = create<UiStore>((set, get) => {
       set({ newProjectDialogOpen: open });
     },
     closeImportDialog: () => {
-      set({ importDialogOpen: false });
+      set({
+        importDialogOpen: false,
+        importDialogFormat: 'auto',
+        importOpenApiDialogOpen: false,
+        importPostmanDialogOpen: false,
+      });
     },
     requestRemoveInterface: (interfaceId) => {
       set({ confirmRemoveInterfaceId: interfaceId });

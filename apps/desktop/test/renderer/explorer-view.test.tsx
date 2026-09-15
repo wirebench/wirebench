@@ -103,7 +103,7 @@ describe('ExplorerView', () => {
     expect(screen.getByText('No projects yet')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
     // Two of them: the toolbar's icon button, and the empty state's own.
-    expect(screen.getAllByRole('button', { name: 'Import WSDL…' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Import…' })).toHaveLength(2);
   });
 
   it('renders the tree and opens an editor tab on double-click of a request', () => {

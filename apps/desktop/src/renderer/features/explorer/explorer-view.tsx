@@ -335,7 +335,7 @@ export function ExplorerView() {
         >
           <FolderPlus size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Import WSDL…" onClick={openImportDialog}>
+        <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
@@ -367,7 +367,7 @@ export function ExplorerView() {
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
-            <p className="text-sm text-fg-subtle">Create a project, or import a WSDL into a new one.</p>
+            <p className="text-sm text-fg-subtle">Create a project, or import an API or service definition into a new one.</p>
             <div className="mt-1 flex gap-2">
               <Button
                 onClick={() => {
@@ -376,8 +376,8 @@ export function ExplorerView() {
               >
                 New project
               </Button>
-              <Button variant="primary" onClick={openImportDialog}>
-                Import WSDL…
+              <Button variant="primary" onClick={() => openImportDialog()}>
+                Import…
               </Button>
             </div>
           </div>

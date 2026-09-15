@@ -30,9 +30,7 @@ describe('explorerMenuItems', () => {
     const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
 
     expect(items.map((item) => item.label)).toEqual([
-      'Import WSDL…',
-      'Import OpenAPI…',
-      'Import Postman Collection…',
+      'Import…',
       'New API…',
       'Settings…',
       REVEAL,
@@ -57,9 +55,7 @@ describe('explorerMenuItems', () => {
     // The one difference between the two menus: only a linked project has environments of its
     // own — an internal project's environments are the workspace's, edited in the grid.
     expect(linked.map((item) => item.label)).toEqual([
-      'Import WSDL…',
-      'Import OpenAPI…',
-      'Import Postman Collection…',
+      'Import…',
       'New API…',
       'Settings…',
       'Project environments (linked project)',
@@ -133,7 +129,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'import-openapi', 'import-postman', 'new-api'],
+      ['import', 'new-api'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],
@@ -143,33 +139,12 @@ describe('explorerMenuItems', () => {
     expect(linked[1]?.map((i) => i.key)).toEqual(['settings', 'project-environments']);
   });
 
-  it('Import WSDL… selects the project first, so the dialog opens on it', () => {
+  it('Import… selects the project first, so the dialog opens on it', () => {
     const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
-    items.find((item) => item.label === 'Import WSDL…')?.run();
+    items.find((item) => item.label === 'Import…')?.run();
 
     expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
     expect(useUiStore.getState().importDialogOpen).toBe(true);
-  });
-
-  it('Import OpenAPI… does the same for its own dialog', () => {
-    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
-    items.find((item) => item.label === 'Import OpenAPI…')?.run();
-
-    expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
-    expect(useUiStore.getState().importOpenApiDialogOpen).toBe(true);
-    // The dialogs are independent: opening one must not open the other.
-    expect(useUiStore.getState().importDialogOpen).toBe(false);
-    expect(useUiStore.getState().importPostmanDialogOpen).toBe(false);
-  });
-
-  it('Import Postman Collection… does the same for its own dialog', () => {
-    const items = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' }));
-    items.find((item) => item.label === 'Import Postman Collection…')?.run();
-
-    expect(useUiStore.getState().selection).toEqual({ kind: 'project', id: 'p1' });
-    expect(useUiStore.getState().importPostmanDialogOpen).toBe(true);
-    expect(useUiStore.getState().importDialogOpen).toBe(false);
-    expect(useUiStore.getState().importOpenApiDialogOpen).toBe(false);
   });
 
   it('Remove from workspace only opens the confirmation', () => {

@@ -37,8 +37,6 @@ import type { PaletteMode } from './command-palette.js';
 import { ConsolePanel } from './console-panel.js';
 import { EditorArea } from './editor-area.js';
 import { ImportDialog } from '../features/explorer/import-dialog.js';
-import { ImportOpenApiDialog } from '../features/explorer/import-openapi-dialog.js';
-import { ImportPostmanDialog } from '../features/explorer/import-postman-dialog.js';
 import { FolderAuthDialog } from '../features/rest-api/folder-auth-dialog.js';
 import { ImportCurlFromTarget } from '../features/request-editor/import-curl-from-target.js';
 import { PanelHandle } from './panel-handle.js';
@@ -98,8 +96,6 @@ export function AppShell() {
   const toggleCode = useUiStore((state) => state.toggleCode);
   const closeCode = useUiStore((state) => state.closeCode);
   const importDialogOpen = useUiStore((state) => state.importDialogOpen);
-  const importOpenApiDialogOpen = useUiStore((state) => state.importOpenApiDialogOpen);
-  const importPostmanDialogOpen = useUiStore((state) => state.importPostmanDialogOpen);
   const closeImportDialog = useUiStore((state) => state.closeImportDialog);
 
   // The row the sidebar and the editor/console column share, and the column the editor area and
@@ -411,14 +407,6 @@ export function AppShell() {
       <ImportDialog
         open={importDialogOpen}
         onOpenChange={(next) => (next ? useUiStore.getState().openImportDialog() : closeImportDialog())}
-      />
-      <ImportOpenApiDialog
-        open={importOpenApiDialogOpen}
-        onOpenChange={(next) => useUiStore.getState().setImportOpenApiDialogOpen(next)}
-      />
-      <ImportPostmanDialog
-        open={importPostmanDialogOpen}
-        onOpenChange={(next) => useUiStore.getState().setImportPostmanDialogOpen(next)}
       />
       <ImportCurlFromTarget />
       <FolderAuthDialog />
