@@ -141,7 +141,9 @@ export async function saveRequest(page: Page): Promise<void> {
 export async function openImportOpenApi(page: Page): Promise<void> {
   const projectRow = page.getByTestId('explorer-project-row').first();
   await expect(projectRow).toBeVisible({ timeout: 20_000 });
-  await chooseContextMenuItem(page, projectRow, 'Import OpenAPI…');
+  // One Import… entry opens the unified dialog; choosing the OpenAPI format gives it its OpenAPI face.
+  await chooseContextMenuItem(page, projectRow, 'Import…');
+  await page.getByTestId('import-format-select').selectOption('openapi');
   await expect(page.getByTestId('import-openapi-dialog')).toBeVisible({ timeout: 20_000 });
 }
 
