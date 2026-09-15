@@ -34,6 +34,7 @@ import type {
   ParameterLocation,
 } from './model.js';
 import { HTTP_METHODS } from './model.js';
+import { trimTrailingSlashes } from '../url.js';
 
 /** A plain object, which is all this parser ever walks into. */
 type Record_ = Readonly<Record<string, unknown>>;
@@ -769,7 +770,7 @@ function parseSwagger2Servers(document: Record_): readonly OpenApiServer[] {
       schemeFromHost = schemeMatch[1]?.toLowerCase();
       effectiveHost = schemeMatch[2] ?? '';
     }
-    const cleanHost = effectiveHost.replace(/\/+$/, '');
+    const cleanHost = trimTrailingSlashes(effectiveHost);
     let schemes: string[];
     if (schemeFromHost) {
       schemes = [schemeFromHost, ...validSchemes.filter((s) => s !== schemeFromHost)];

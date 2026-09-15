@@ -973,6 +973,13 @@ describe('tolerance', () => {
       expect(doc.operations.some((o) => o.operationId === 'collidingQuery')).toBe(false);
     });
 
+    it('trims a Swagger 2.0 host full of trailing slashes in linear time', () => {
+      const started = performance.now();
+      const doc = parseOpenApiDocument({ swagger: '2.0', host: `api.example.com${'/'.repeat(100_000)}`, paths: {} });
+      expect(doc.servers[0]?.url).toBe('https://api.example.com');
+      expect(performance.now() - started).toBeLessThan(500);
+    });
+
     it('handles Swagger 2.0 conversion edge cases (3.5)', () => {
       const doc = parseOpenApiDocument({
         swagger: '2.0',
