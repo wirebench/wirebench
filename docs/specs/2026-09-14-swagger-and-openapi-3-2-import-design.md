@@ -1,6 +1,6 @@
 # Spec: Swagger 3.x and OpenAPI 3.2 Import Support
 
-- Status: **draft** (under review)
+- Status: **shipped**
 - Date: 2026-09-14
 - Builds on: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (§3 OpenAPI 3 import, §15 decisions), ADR-0003 (project format), ADR-0005 (path and reference safety), and `docs/roadmap.md`.
 - Decisions this spec needs from the owner are collected in §9, each with the default the rest of the document assumes.
@@ -9,8 +9,8 @@
 
 1. **"Swagger 3.0.x, 3.1.x, and 3.2.0" refers to documents using the `swagger` property with 3.x versions.**
    In the wild, users and certain code generators mistakenly author OpenAPI 3.x documents using `"swagger": "3.0.0"`, `"swagger": "3.1.0"`, or `"swagger": "3.2.0"` instead of `"openapi": "3.x.y"`. Wirebench will accept these documents, interpret them according to the corresponding OpenAPI 3.x specification, and preserve the declared version string (e.g. `swagger: 3.0.3` or `3.0.3`) in the API definition.
-2. **Swagger 2.0 remains rejected with a clear message.**
-   Swagger 2.0 (`"swagger": "2.0"`) describes bodies (`in: body` parameters vs. `requestBody`), base URLs (`host` + `basePath` + `schemes` vs. `servers`), response schemas, and security differently enough that clean-room translation is a distinct converter step (as documented in `docs/roadmap.md`). This spec explicitly keeps the refusal for Swagger 2.0.
+2. **Swagger 2.0 and 1.x conversion are implemented as clean-room converters.**
+   Originally planned as a rejection directing users to convert documents first, Wirebench has implemented direct clean-room conversion of Swagger 2.0 and Swagger 1.x documents into the intermediate `OpenApiDocument` representation (see `docs/specs/2026-09-14-swagger-2-import-design.md` and `docs/specs/2026-09-15-swagger-1x-import-design.md`).
 3. **OpenAPI 3.2 is fully backward-compatible with 3.1.**
    OpenAPI Specification 3.2.0 is a minor version bump over 3.1. The existing JSON Schema Draft 2020-12 dialect, parameter model, and body preference work without breaking changes.
 4. **OpenAPI 3.2 additions are consumed where they influence requests; otherwise skipped and counted.**
@@ -58,8 +58,7 @@
     - Update `versionOf`:
       - Accept `openapi` starting with `3.0`, `3.1`, or `3.2`.
       - Accept `swagger` starting with `3.0`, `3.1`, or `3.2`, mapping to versions `'3.0'`, `'3.1'`, and `'3.2'` respectively, while preserving the declared string.
-      - Reject `swagger: 2.x` with an updated message: `This is a Swagger ${swagger} document. Wirebench imports OpenAPI 3.0, 3.1 and 3.2; convert it first.`
-      - Reject unsupported versions with clear diagnostics.
+      - Reject unsupported Swagger versions (e.g. `swagger: 9.x`) with message: `This is a Swagger ${swagger} document. Wirebench imports Swagger 1.x, 2.0, 3.x and OpenAPI 3.0, 3.1, 3.2.`
     - Support OpenAPI 3.2 Path Item `additionalOperations`:
       - Parse operations from `item.additionalOperations` where keys define HTTP methods (e.g. `query`).
     - Support OpenAPI 3.2 Example Object `dataValue` and `serializedValue`:
@@ -204,7 +203,7 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
 - [ ] `versionOf({ swagger: '3.0.0' })` returns `{ version: '3.0', declared: 'Swagger 3.0.0' }` (or similar clean label).
 - [ ] `versionOf({ swagger: '3.1.0' })` returns `{ version: '3.1', declared: 'Swagger 3.1.0' }`.
 - [ ] `versionOf({ swagger: '3.2.0' })` returns `{ version: '3.2', declared: 'Swagger 3.2.0' }`.
-- [ ] `versionOf({ swagger: '2.0' })` throws `openapi-unsupported-version` mentioning that OpenAPI 3.0, 3.1, and 3.2 are supported.
+- [x] `versionOf({ swagger: '2.0' })` returns `{ version: '2.0', declared: 'Swagger 2.0' }` (superseded by Swagger 2.0 converter implementation).
 - [ ] Operations defined under OpenAPI 3.2 `additionalOperations` are imported into requests.
 - [ ] Example values using `dataValue` or `serializedValue` are parsed and used in sample request bodies.
 - [ ] All 110+ existing engine openapi tests and desktop tests continue to pass.
@@ -223,4 +222,4 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
    - *Option B*: Restrict to a known set (e.g. `query`) and skip unknown ones.
    - *Default assumed*: Option A (Wirebench's HTTP transport and request model already support arbitrary HTTP method strings).
 3. **Swagger 2.0 Scope**:
-   - *Assumption*: Swagger 2.0 remains rejected with a clear message, as the user specifically requested support for "swagger 3.0.x and 3.1.x and 3.2.0, OpenAPI 3.2".
+   - *Status*: Swagger 2.0 is supported and converted natively as specified in `docs/specs/2026-09-14-swagger-2-import-design.md`.

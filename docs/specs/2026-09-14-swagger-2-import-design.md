@@ -1,6 +1,6 @@
 # Spec: Swagger 2.0 (OpenAPI 2.0) Import Support
 
-- Status: **draft** (under review)
+- Status: **shipped**
 - Date: 2026-09-14
 - Builds on: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (§3.6 OpenAPI import, §15.6 OpenAPI 2.0 converter roadmap item), `docs/specs/2026-09-14-swagger-and-openapi-3-2-import-design.md`, ADR-0003 (project format), ADR-0005 (path and reference safety), and `docs/roadmap.md`.
 - Decisions this spec needs from the owner are collected in §9, each with the default the rest of the document assumes.
@@ -134,9 +134,9 @@ pnpm check:banned-terms
 
 ## 7. Success Criteria
 
-- [ ] `versionOf({ swagger: '2.0' })` returns `{ version: '2.0', declared: 'Swagger 2.0' }`.
-- [ ] Swagger 2.0 documents import into valid `RestApi` models with correct base URLs.
-- [ ] Both body parameter and form data parameter bodies are imported as valid REST request bodies.
-- [ ] Security schemes from `securityDefinitions` are mapped and selectable.
-- [ ] All 5,000+ existing tests pass with 0 regressions.
-- [ ] `WIREBENCH_SKIP_PERF=1 pnpm check` passes with 0 warnings/errors.
+- [x] `versionOf({ swagger: '2.0' })` returns `{ version: '2.0', declared: 'Swagger 2.0' }`.
+- [x] Swagger 2.0 documents import into valid `RestApi` models with correct base URLs.
+- [x] Both body parameter and form data parameter bodies are imported as valid REST request bodies.
+- [x] Security schemes from `securityDefinitions` are mapped and selectable.
+- [x] All 5,000+ existing tests pass with 0 regressions.
+- [x] `WIREBENCH_SKIP_PERF=1 pnpm check` passes with 0 warnings/errors.
