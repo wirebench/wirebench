@@ -405,27 +405,48 @@ function parseAuth(raw: Record_): PostmanAuth {
   const type = asString(raw['type'])?.toLowerCase();
   const extractAttributes = (field: string): readonly PostmanAuthAttribute[] | undefined => {
     const list = raw[field];
-    if (!Array.isArray(list)) return undefined;
-    const attrs: PostmanAuthAttribute[] = [];
-    for (const entry of list) {
-      if (!isRecord(entry)) continue;
-      const key = asString(entry['key']);
-      const attrType = asString(entry['type']);
-      if (key !== undefined) {
-        attrs.push({
-          key,
-          value: entry['value'],
-          ...(attrType !== undefined ? { type: attrType } : {}),
-        });
+    if (Array.isArray(list)) {
+      const attrs: PostmanAuthAttribute[] = [];
+      for (const entry of list) {
+        if (!isRecord(entry)) continue;
+        const key = asString(entry['key']);
+        const attrType = asString(entry['type']);
+        if (key !== undefined) {
+          attrs.push({
+            key,
+            value: entry['value'],
+            ...(attrType !== undefined ? { type: attrType } : {}),
+          });
+        }
       }
+      return attrs.length > 0 ? attrs : undefined;
     }
-    return attrs.length > 0 ? attrs : undefined;
+    if (isRecord(list)) {
+      const attrs: PostmanAuthAttribute[] = [];
+      for (const [key, val] of Object.entries(list)) {
+        if (isRecord(val) && 'value' in val) {
+          attrs.push({
+            key,
+            value: val['value'],
+            ...(typeof val['type'] === 'string' ? { type: val['type'] } : {}),
+          });
+        } else {
+          attrs.push({
+            key,
+            value: val,
+          });
+        }
+      }
+      return attrs.length > 0 ? attrs : undefined;
+    }
+    return undefined;
   };
 
   const basic = extractAttributes('basic');
   const bearer = extractAttributes('bearer');
   const apikey = extractAttributes('apikey');
   const oauth2 = extractAttributes('oauth2');
+  const ntlm = extractAttributes('ntlm');
 
   return {
     ...(type !== undefined ? { type } : {}),
@@ -433,6 +454,7 @@ function parseAuth(raw: Record_): PostmanAuth {
     ...(bearer !== undefined ? { bearer } : {}),
     ...(apikey !== undefined ? { apikey } : {}),
     ...(oauth2 !== undefined ? { oauth2 } : {}),
+    ...(ntlm !== undefined ? { ntlm } : {}),
   };
 }
 

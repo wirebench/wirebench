@@ -73,9 +73,10 @@ export function apiFromPostmanCollection(
     }
   }
 
+  const warnings: string[] = [];
   const servers: RestServer[] = baseUrl !== '' ? [{ url: baseUrl, description: 'Collection Base URL' }] : [];
 
-  const apiAuth = mapPostmanAuth(collection.auth, false);
+  const apiAuth = mapPostmanAuth(collection.auth, false, warnings);
 
   let folderCount = 0;
   let requestCount = 0;
@@ -92,7 +93,7 @@ export function apiFromPostmanCollection(
         folderCount += 1;
         const slug = uniqueSlug(item.name, folderSlugs);
         folderSlugs.add(slug);
-        const folderAuth = mapPostmanAuth(item.auth, false);
+        const folderAuth = mapPostmanAuth(item.auth, false, warnings);
         const children = mapItems(item.item);
 
         folders.push(
@@ -112,7 +113,7 @@ export function apiFromPostmanCollection(
         const slug = uniqueSlug(item.name, requestSlugs);
         requestSlugs.add(slug);
 
-        const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl);
+        const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings);
         requests.push(mappedRequest);
       }
     }
@@ -140,6 +141,7 @@ export function apiFromPostmanCollection(
     folders: folderCount,
     requests: requestCount,
     ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 
   return { api, summary };
@@ -152,6 +154,7 @@ function mapRequest(
   item: PostmanItem,
   newId: IdGenerator,
   effectiveBaseUrl: string,
+  warnings?: string[],
 ): RestRequestDef {
   const req: PostmanRequest =
     typeof item.request === 'string' ? { method: 'GET', url: item.request } : (item.request ?? {});
@@ -250,7 +253,7 @@ function mapRequest(
   const body = mapBody(req.body, rawHeaders);
 
   // Auth: request-level auth, or item-level auth, or inherit
-  const auth = mapPostmanAuth(req.auth ?? item.auth, true) ?? { type: 'inherit' };
+  const auth = mapPostmanAuth(req.auth ?? item.auth, true, warnings) ?? { type: 'inherit' };
 
   return createRestRequest(name, {
     id: newId(),
@@ -363,7 +366,11 @@ function asText(value: unknown): string | undefined {
   return undefined;
 }
 
-function mapPostmanAuth(auth: PostmanAuth | undefined, isRequest: boolean): AuthConfig | undefined {
+function mapPostmanAuth(
+  auth: PostmanAuth | undefined,
+  isRequest: boolean,
+  warnings?: string[],
+): AuthConfig | undefined {
   if (auth === undefined) {
     return isRequest ? { type: 'inherit' } : undefined;
   }
@@ -414,10 +421,27 @@ function mapPostmanAuth(auth: PostmanAuth | undefined, isRequest: boolean): Auth
         pkce: isAuthCode,
       };
     }
+    case 'ntlm': {
+      const userAttr = auth.ntlm?.find((a) => a.key === 'username');
+      const domainAttr = auth.ntlm?.find((a) => a.key === 'domain');
+      const workstationAttr = auth.ntlm?.find((a) => a.key === 'workstation');
+      const username = asText(userAttr?.value);
+      const domain = asText(domainAttr?.value);
+      const workstation = asText(workstationAttr?.value);
+      return {
+        type: 'ntlm',
+        ...(username !== undefined ? { username } : {}),
+        ...(domain !== undefined ? { domain } : {}),
+        ...(workstation !== undefined ? { workstation } : {}),
+      };
+    }
     case 'inherit':
       return isRequest ? { type: 'inherit' } : undefined;
     default:
-      return isRequest ? { type: 'inherit' } : undefined;
+      if (type !== undefined) {
+        warnings?.push(`Authentication type "${type}" is not supported; set to "none"`);
+      }
+      return { type: 'none' };
   }
 }
 

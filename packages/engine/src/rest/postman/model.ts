@@ -34,6 +34,7 @@ export interface PostmanAuth {
   readonly bearer?: readonly PostmanAuthAttribute[];
   readonly apikey?: readonly PostmanAuthAttribute[];
   readonly oauth2?: readonly PostmanAuthAttribute[];
+  readonly ntlm?: readonly PostmanAuthAttribute[];
   readonly noauth?: unknown;
 }
 
@@ -123,4 +124,6 @@ export interface PostmanImportSummary {
   readonly folders: number;
   readonly requests: number;
   readonly auth?: AuthConfig['type'];
+  readonly warnings?: readonly string[];
+  readonly skipped?: readonly string[];
 }

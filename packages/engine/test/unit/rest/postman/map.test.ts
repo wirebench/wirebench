@@ -181,4 +181,39 @@ describe('Postman entity mapping (map.ts)', () => {
       ],
     });
   });
+
+  it('maps Postman v2.0 object-based auth and unsupported auth (2.4, 2.5)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const fixturePath = fileURLToPath(
+      new URL('../../../../../../fixtures/postman/crafted/v20/sample-collection.json', import.meta.url),
+    );
+    const json = readFileSync(fixturePath, 'utf-8');
+    const { parsePostmanCollectionText } = await import('../../../../src/rest/postman/parse.js');
+    const collection = parsePostmanCollectionText(json);
+
+    const { api, summary } = apiFromPostmanCollection(collection);
+
+    // 2.4: Basic auth with object structure on collection
+    expect(api.auth).toEqual({
+      type: 'basic',
+      username: 'admin',
+    });
+    expect(summary.auth).toBe('basic');
+
+    // 2.5: NTLM auth on folder
+    const folder = api.folders[0]!;
+    expect(folder.auth).toEqual({
+      type: 'ntlm',
+      username: 'domainuser',
+      domain: 'DOMAIN',
+      workstation: 'WS01',
+    });
+
+    // 2.5: Unsupported digest auth on request maps to 'none' and generates warning
+    const digestReq = folder.requests[1]!;
+    expect(digestReq.auth).toEqual({ type: 'none' });
+    expect(summary.warnings).toBeDefined();
+    expect(summary.warnings?.some((w) => w.includes('digest'))).toBe(true);
+  });
 });

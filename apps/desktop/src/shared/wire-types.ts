@@ -1930,6 +1930,8 @@ export const postmanImportSummarySchema = z.object({
   folders: z.number(),
   requests: z.number(),
   auth: z.string().optional(),
+  warnings: z.array(z.string()).readonly().optional(),
+  skipped: z.array(z.string()).readonly().optional(),
 });
 export type PostmanImportSummaryWire = z.infer<typeof postmanImportSummarySchema>;
 
