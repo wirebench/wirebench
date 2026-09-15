@@ -115,6 +115,8 @@ export interface PostmanCollection {
   readonly item: readonly PostmanItem[];
   readonly auth?: PostmanAuth;
   readonly variable?: readonly PostmanVariable[];
+  /** Problems found while parsing that the import summary should report. */
+  readonly warnings?: readonly string[];
 }
 
 /** Summary of what the Postman import produced, for the import summary display. */

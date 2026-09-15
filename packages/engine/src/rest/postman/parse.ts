@@ -36,14 +36,39 @@ function asBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-/** Translates Postman's `{{var}}` variable interpolation to Wirebench's `${var}` format. */
-export function translatePostmanVariables(text: string): string {
-  return text.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, '${$1}');
+/** Nesting deeper than this is refused rather than risking a stack overflow. */
+export const MAX_POSTMAN_DEPTH = 64;
+
+/** Mutable state collected while parsing one collection. */
+interface ParseContext {
+  readonly dynamic: Set<string>;
+  skippedItems: number;
+  scriptedItems: number;
+}
+
+function tv(ctx: ParseContext, text: string): string {
+  return translatePostmanVariables(text, ctx.dynamic);
+}
+
+/**
+ * Translates Postman's `{{var}}` variable interpolation to Wirebench's `${var}` format.
+ *
+ * A literal `${` already in the text is escaped to `$${` first so it stays literal. Names of
+ * dynamic variables (`{{$guid}}`) are added to `dynamic` when given; they are translated anyway.
+ */
+export function translatePostmanVariables(text: string, dynamic?: Set<string>): string {
+  return text
+    .replace(/\$\{/g, () => '$${')
+    .replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (match, name: string) => {
+      if (name.length === 0) return match;
+      if (name.startsWith('$')) dynamic?.add(name);
+      return `\${${name}}`;
+    });
 }
 
 /** Normalizes Postman's `:param` path segment syntax to Wirebench's `{param}` format. */
 export function normalizePostmanPath(path: string): string {
-  return path.replace(/(^|\/):([a-zA-Z0-9_-]+)(?=\/|\?|#|$)/g, '$1{$2}');
+  return path.replace(/(^|\/):([a-zA-Z0-9_-]+)(?=\/|\?|#|\.|$)/g, '$1{$2}');
 }
 
 export function extractDescription(desc: unknown): string | undefined {
@@ -101,6 +126,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
     );
   }
   const doc = root as Record_;
+  const ctx: ParseContext = { dynamic: new Set(), skippedItems: 0, scriptedItems: 0 };
   const rawInfo = doc['info'] as Record_;
 
   const desc = extractDescription(rawInfo['description']);
@@ -109,7 +135,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   const postmanId = asString(rawInfo['_postman_id']);
 
   const info: PostmanInfo = {
-    name: translatePostmanVariables(asString(rawInfo['name']) ?? 'Imported Collection'),
+    name: tv(ctx, asString(rawInfo['name']) ?? 'Imported Collection'),
     ...(desc !== undefined ? { description: desc } : {}),
     ...(version !== undefined ? { version } : {}),
     ...(schema !== undefined ? { schema } : {}),
@@ -117,27 +143,63 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   };
 
   const rawItems = Array.isArray(doc['item']) ? doc['item'] : [];
-  const item = rawItems.filter(isRecord).map(parseItem);
+  const item = parseItems(rawItems, ctx, 1);
   const auth = isRecord(doc['auth']) ? parseAuth(doc['auth']) : undefined;
-  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable']) : undefined;
+  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable'], ctx) : undefined;
+  if (hasEvents(doc)) ctx.scriptedItems += 1;
+
+  const warnings: string[] = [];
+  if (ctx.skippedItems > 0) {
+    warnings.push(`${ctx.skippedItems} items without a request were skipped`);
+  }
+  if (ctx.scriptedItems > 0) {
+    warnings.push(`Scripts on ${ctx.scriptedItems} items (pre-request and test) were not imported`);
+  }
+  if (ctx.dynamic.size > 0) {
+    warnings.push(
+      `Dynamic variables are not generated and must be defined as properties: ${[...ctx.dynamic].sort().join(', ')}`,
+    );
+  }
 
   return {
     info,
     item,
     ...(auth !== undefined ? { auth } : {}),
     ...(variable !== undefined ? { variable } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
-function parseItem(raw: Record_): PostmanItem {
-  const name = translatePostmanVariables(asString(raw['name']) ?? 'Request');
+function hasEvents(raw: Record_): boolean {
+  return Array.isArray(raw['event']) && raw['event'].length > 0;
+}
+
+function parseItems(raw: readonly unknown[], ctx: ParseContext, depth: number): PostmanItem[] {
+  if (depth > MAX_POSTMAN_DEPTH) {
+    throw new PostmanError(
+      'postman-too-deep',
+      `The collection nests folders more than ${MAX_POSTMAN_DEPTH} levels deep`,
+    );
+  }
+  const items: PostmanItem[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+    const item = parseItem(entry, ctx, depth);
+    if (item !== undefined) items.push(item);
+  }
+  return items;
+}
+
+function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem | undefined {
+  const name = tv(ctx, asString(raw['name']) ?? 'Request');
   const description = extractDescription(raw['description']);
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth']) : undefined;
-  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable']) : undefined;
+  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable'], ctx) : undefined;
+  if (hasEvents(raw)) ctx.scriptedItems += 1;
 
   if (Array.isArray(raw['item'])) {
     // Folder item
-    const children = raw['item'].filter(isRecord).map(parseItem);
+    const children = parseItems(raw['item'], ctx, depth + 1);
     return {
       name,
       item: children,
@@ -147,8 +209,12 @@ function parseItem(raw: Record_): PostmanItem {
     };
   }
 
-  // Request item
-  const request = parseRequest(raw['request']);
+  // Request item: anything that is neither a URL string nor a request object is skipped
+  if (typeof raw['request'] !== 'string' && !isRecord(raw['request'])) {
+    ctx.skippedItems += 1;
+    return undefined;
+  }
+  const request = parseRequest(raw['request'], ctx);
   return {
     name,
     request,
@@ -158,18 +224,22 @@ function parseItem(raw: Record_): PostmanItem {
   };
 }
 
-function parseRequest(raw: unknown): PostmanRequest | string {
+function parseRequest(raw: string | Record_, ctx: ParseContext): PostmanRequest | string {
   if (typeof raw === 'string') {
-    return normalizePostmanPath(translatePostmanVariables(raw));
-  }
-  if (!isRecord(raw)) {
-    return { method: 'GET', url: '' };
+    return normalizePostmanPath(tv(ctx, raw));
   }
 
   const method = asString(raw['method'])?.toUpperCase() ?? 'GET';
-  const url = parseUrl(raw['url']);
-  const header = parseHeaders(raw['header']);
-  const body = isRecord(raw['body']) ? parseBody(raw['body']) : undefined;
+  const url = parseUrl(raw['url'], ctx);
+  let header = parseHeaders(raw['header'], ctx);
+  const body = isRecord(raw['body']) ? parseBody(raw['body'], ctx) : undefined;
+  if (
+    isRecord(raw['body']) &&
+    raw['body']['mode'] === 'graphql' &&
+    !header.some((h) => h.disabled !== true && h.key.toLowerCase() === 'content-type')
+  ) {
+    header = [...header, { key: 'Content-Type', value: 'application/json' }];
+  }
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth']) : undefined;
   const description = extractDescription(raw['description']);
 
@@ -183,9 +253,9 @@ function parseRequest(raw: unknown): PostmanRequest | string {
   };
 }
 
-function parseUrl(raw: unknown): PostmanUrl {
+function parseUrl(raw: unknown, ctx: ParseContext): PostmanUrl {
   if (typeof raw === 'string') {
-    return { raw: normalizePostmanPath(translatePostmanVariables(raw)) };
+    return { raw: normalizePostmanPath(tv(ctx, raw)) };
   }
   if (!isRecord(raw)) {
     return { raw: '' };
@@ -194,7 +264,7 @@ function parseUrl(raw: unknown): PostmanUrl {
   const rawString = asString(raw['raw']);
   let rawUrl: string | undefined;
   if (rawString !== undefined) {
-    rawUrl = normalizePostmanPath(translatePostmanVariables(rawString));
+    rawUrl = normalizePostmanPath(tv(ctx, rawString));
   } else {
     // Construct raw URL from parts if raw is omitted
     const protocol = asString(raw['protocol']) ? `${asString(raw['protocol'])}://` : '';
@@ -211,7 +281,7 @@ function parseUrl(raw: unknown): PostmanUrl {
     } else if (typeof raw['path'] === 'string') {
       path = raw['path'].startsWith('/') ? raw['path'] : `/${raw['path']}`;
     }
-    rawUrl = normalizePostmanPath(translatePostmanVariables(`${protocol}${host}${port}${path}`));
+    rawUrl = normalizePostmanPath(tv(ctx, `${protocol}${host}${port}${path}`));
   }
 
   const query: PostmanQueryParam[] = [];
@@ -223,8 +293,8 @@ function parseUrl(raw: unknown): PostmanUrl {
       const desc = extractDescription(q['description']);
       if (key !== undefined) {
         query.push({
-          key: translatePostmanVariables(key),
-          value: value !== undefined ? translatePostmanVariables(value) : '',
+          key: tv(ctx, key),
+          value: value !== undefined ? tv(ctx, value) : '',
           ...(desc !== undefined ? { description: desc } : {}),
           ...(asBoolean(q['disabled']) === true ? { disabled: true } : {}),
         });
@@ -244,7 +314,7 @@ function parseUrl(raw: unknown): PostmanUrl {
         const desc = extractDescription(v['description']);
         variable.push({
           key: cleanKey,
-          value: val !== undefined ? translatePostmanVariables(val) : '',
+          value: val !== undefined ? tv(ctx, val) : '',
           ...(desc !== undefined ? { description: desc } : {}),
         });
       }
@@ -258,7 +328,7 @@ function parseUrl(raw: unknown): PostmanUrl {
   };
 }
 
-function parseHeaders(raw: unknown): readonly PostmanHeader[] {
+function parseHeaders(raw: unknown, ctx: ParseContext): readonly PostmanHeader[] {
   if (typeof raw === 'string') {
     // Parse raw newline-delimited headers
     const lines = raw.split(/\r?\n/);
@@ -270,8 +340,8 @@ function parseHeaders(raw: unknown): readonly PostmanHeader[] {
       const value = line.slice(colon + 1).trim();
       if (key.length > 0) {
         headers.push({
-          key: translatePostmanVariables(key),
-          value: translatePostmanVariables(value),
+          key: tv(ctx, key),
+          value: tv(ctx, value),
         });
       }
     }
@@ -290,8 +360,8 @@ function parseHeaders(raw: unknown): readonly PostmanHeader[] {
     const desc = extractDescription(h['description']);
     if (key !== undefined && key.length > 0) {
       headers.push({
-        key: translatePostmanVariables(key),
-        value: translatePostmanVariables(value),
+        key: tv(ctx, key),
+        value: tv(ctx, value),
         ...(desc !== undefined ? { description: desc } : {}),
         ...(asBoolean(h['disabled']) === true ? { disabled: true } : {}),
       });
@@ -300,7 +370,7 @@ function parseHeaders(raw: unknown): readonly PostmanHeader[] {
   return headers;
 }
 
-function parseBody(raw: Record_): PostmanBody {
+function parseBody(raw: Record_, ctx: ParseContext): PostmanBody {
   const mode = asString(raw['mode']);
 
   if (mode === 'raw') {
@@ -316,7 +386,7 @@ function parseBody(raw: Record_): PostmanBody {
     }
     return {
       mode: 'raw',
-      raw: translatePostmanVariables(rawText),
+      raw: tv(ctx, rawText),
       ...(options !== undefined ? { options } : {}),
     };
   }
@@ -330,8 +400,8 @@ function parseBody(raw: Record_): PostmanBody {
         const desc = extractDescription(p['description']);
         if (key !== undefined) {
           params.push({
-            key: translatePostmanVariables(key),
-            value: translatePostmanVariables(asString(p['value']) ?? ''),
+            key: tv(ctx, key),
+            value: tv(ctx, asString(p['value']) ?? ''),
             ...(desc !== undefined ? { description: desc } : {}),
             ...(asBoolean(p['disabled']) === true ? { disabled: true } : {}),
           });
@@ -353,14 +423,16 @@ function parseBody(raw: Record_): PostmanBody {
         if (key !== undefined) {
           const type = asString(p['type']) === 'file' ? 'file' : 'text';
           const value = asString(p['value']);
-          const src = asString(p['src']);
+          const src = Array.isArray(p['src'])
+            ? p['src'].filter((x): x is string => typeof x === 'string')
+            : asString(p['src']);
           const contentType = asString(p['contentType']);
           const desc = extractDescription(p['description']);
           const disabled = asBoolean(p['disabled']);
           parts.push({
-            key: translatePostmanVariables(key),
+            key: tv(ctx, key),
             type,
-            ...(value !== undefined ? { value: translatePostmanVariables(value) } : {}),
+            ...(value !== undefined ? { value: tv(ctx, value) } : {}),
             ...(src !== undefined ? { src } : {}),
             ...(contentType !== undefined ? { contentType } : {}),
             ...(desc !== undefined ? { description: desc } : {}),
@@ -389,16 +461,27 @@ function parseBody(raw: Record_): PostmanBody {
   if (mode === 'graphql') {
     const gql = isRecord(raw['graphql']) ? raw['graphql'] : {};
     const query = asString(gql['query']) ?? '';
-    const variables = asString(gql['variables']) ?? '';
+    const variables = parseGraphqlVariables(gql['variables']);
     const graphqlJson = JSON.stringify({ query, variables });
     return {
       mode: 'raw',
-      raw: translatePostmanVariables(graphqlJson),
+      raw: tv(ctx, graphqlJson),
       options: { raw: { language: 'json' } },
     };
   }
 
   return { mode: 'raw', raw: '' };
+}
+
+function parseGraphqlVariables(raw: unknown): unknown {
+  if (isRecord(raw)) return raw;
+  if (typeof raw !== 'string' || raw.trim() === '') return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseAuth(raw: Record_): PostmanAuth {
@@ -469,7 +552,7 @@ function asVariableValue(value: unknown): string | number | boolean | null | und
   return undefined;
 }
 
-function parseVariables(raw: readonly unknown[]): readonly PostmanVariable[] {
+function parseVariables(raw: readonly unknown[], ctx: ParseContext): readonly PostmanVariable[] {
   const vars: PostmanVariable[] = [];
   for (const v of raw) {
     if (!isRecord(v)) continue;
@@ -477,7 +560,8 @@ function parseVariables(raw: readonly unknown[]): readonly PostmanVariable[] {
     if (key !== undefined) {
       const varType = asString(v['type']);
       const desc = extractDescription(v['description']);
-      const val = asVariableValue(v['value']);
+      const rawVal = asVariableValue(v['value']);
+      const val = typeof rawVal === 'string' ? tv(ctx, rawVal) : rawVal;
       vars.push({
         key,
         ...(val !== undefined ? { value: val } : {}),

@@ -6,6 +6,7 @@
  * request bodies (raw, urlencoded, formdata, binary), and auth configurations.
  */
 
+import { PostmanError } from '../../errors.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
@@ -31,8 +32,23 @@ import type {
   PostmanQueryParam,
   PostmanRequest,
   PostmanUrl,
-  PostmanVariable,
 } from './model.js';
+import { MAX_POSTMAN_DEPTH } from './parse.js';
+
+/** Matches a leading `${baseUrl}` / `${base_url}` reference in any letter case. */
+const BASE_URL_REFERENCE = /^\$\{(baseurl|base_url)\}/i;
+
+function isBaseUrlKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower === 'baseurl' || lower === 'base_url';
+}
+
+function tooDeep(): PostmanError {
+  return new PostmanError(
+    'postman-too-deep',
+    `The collection nests folders more than ${MAX_POSTMAN_DEPTH} levels deep`,
+  );
+}
 
 export interface MapPostmanOptions {
   /** The API's name. Defaults to collection `info.name`. */
@@ -63,17 +79,19 @@ export function apiFromPostmanCollection(
   // Determine base URL: options.baseUrl -> collection variable baseUrl/base_url -> inferred from first request -> empty
   let baseUrl = options.baseUrl?.trim();
   if (baseUrl === undefined || baseUrl === '') {
-    const baseVar = collection.variable?.find(
-      (v) => v.key.toLowerCase() === 'baseurl' || v.key.toLowerCase() === 'base_url',
-    );
+    const baseVar = collection.variable?.find((v) => isBaseUrlKey(v.key));
     if (baseVar?.value !== undefined && String(baseVar.value).trim().length > 0) {
       baseUrl = String(baseVar.value).trim();
     } else {
-      baseUrl = inferBaseUrl(collection.item);
+      baseUrl = inferBaseUrl(collection.item, 1);
     }
   }
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...(collection.warnings ?? [])];
+  const unmappedVariables = new Set<string>(
+    (collection.variable ?? []).map((v) => v.key).filter((key) => !isBaseUrlKey(key)),
+  );
+  const credentialCount = { value: hasCredentials(collection.auth) ? 1 : 0 };
   const servers: RestServer[] = baseUrl !== '' ? [{ url: baseUrl, description: 'Collection Base URL' }] : [];
 
   const apiAuth = mapPostmanAuth(collection.auth, false, warnings);
@@ -81,20 +99,29 @@ export function apiFromPostmanCollection(
   let folderCount = 0;
   let requestCount = 0;
 
-  const mapItems = (items: readonly PostmanItem[]): { folders: RestFolder[]; requests: RestRequestDef[] } => {
+  const mapItems = (
+    items: readonly PostmanItem[],
+    depth: number,
+  ): { folders: RestFolder[]; requests: RestRequestDef[] } => {
+    if (depth > MAX_POSTMAN_DEPTH) {
+      throw tooDeep();
+    }
     const folders: RestFolder[] = [];
     const requests: RestRequestDef[] = [];
     const folderSlugs = new Set<string>();
     const requestSlugs = new Set<string>();
 
     for (const item of items) {
+      for (const v of item.variable ?? []) unmappedVariables.add(v.key);
+      if (hasCredentials(item.auth)) credentialCount.value += 1;
+      if (typeof item.request === 'object' && hasCredentials(item.request.auth)) credentialCount.value += 1;
       if (Array.isArray(item.item)) {
         // Folder item
         folderCount += 1;
         const slug = uniqueSlug(item.name, folderSlugs);
         folderSlugs.add(slug);
         const folderAuth = mapPostmanAuth(item.auth, false, warnings);
-        const children = mapItems(item.item);
+        const children = mapItems(item.item, depth + 1);
 
         folders.push(
           createFolder(item.name, {
@@ -121,7 +148,17 @@ export function apiFromPostmanCollection(
     return { folders, requests };
   };
 
-  const root = mapItems(collection.item);
+  const root = mapItems(collection.item, 1);
+  if (unmappedVariables.size > 0) {
+    warnings.push(
+      `Collection and folder variables were not imported; define them as properties: ${[...unmappedVariables].sort().join(', ')}`,
+    );
+  }
+  if (credentialCount.value > 0) {
+    warnings.push(
+      `Credentials are not copied from the collection; re-enter them for ${credentialCount.value} auth configurations`,
+    );
+  }
 
   const api = createApi(name, {
     id: newId(),
@@ -174,12 +211,14 @@ function mapRequest(
       cleanUrl = cleanUrl.slice(effectiveBaseUrl.length);
     }
   }
-  if (cleanUrl === '${baseUrl}' || cleanUrl === '${base_url}') {
-    cleanUrl = '/';
-  } else if (cleanUrl.startsWith('${baseUrl}/')) {
-    cleanUrl = cleanUrl.slice(10);
-  } else if (cleanUrl.startsWith('${base_url}/')) {
-    cleanUrl = cleanUrl.slice(11);
+  const baseReference = BASE_URL_REFERENCE.exec(cleanUrl)?.[0];
+  if (baseReference !== undefined) {
+    const rest = cleanUrl.slice(baseReference.length);
+    if (rest === '') {
+      cleanUrl = '/';
+    } else if (rest.startsWith('/')) {
+      cleanUrl = rest;
+    }
   }
 
   // Query parameters: prefer explicit query array from Postman, fallback to inline query from URL
@@ -209,10 +248,7 @@ function mapRequest(
     }
   }
   const pathParams: KeyValueEntry[] = [];
-  const handledVariables = new Set<string>();
-
   for (const paramName of urlParamNames) {
-    handledVariables.add(paramName);
     const matched = rawUrlObj.variable?.find((v) => v.key === paramName);
     pathParams.push(
       entry(paramName, asText(matched?.value) ?? '', {
@@ -220,19 +256,6 @@ function mapRequest(
         ...(matched?.description !== undefined ? { description: matched.description } : {}),
       }),
     );
-  }
-
-  // Include any extra variables declared on the URL
-  const rawVariables: readonly PostmanVariable[] = rawUrlObj.variable ?? [];
-  for (const v of rawVariables) {
-    if (!handledVariables.has(v.key)) {
-      pathParams.push(
-        entry(v.key, asText(v.value) ?? '', {
-          enabled: false,
-          ...(v.description !== undefined ? { description: v.description } : {}),
-        }),
-      );
-    }
   }
 
   // Headers
@@ -250,10 +273,15 @@ function mapRequest(
   }
 
   // Body
-  const body = mapBody(req.body, rawHeaders);
+  const body = mapBody(
+    req.body,
+    rawHeaders.filter((h) => h.disabled !== true),
+  );
 
   // Auth: request-level auth, or item-level auth, or inherit
   const auth = mapPostmanAuth(req.auth ?? item.auth, true, warnings) ?? { type: 'inherit' };
+
+  const description = item.description ?? req.description;
 
   return createRestRequest(name, {
     id: newId(),
@@ -261,7 +289,7 @@ function mapRequest(
     order,
     method,
     url: cleanUrl,
-    ...(item.description !== undefined ? { description: item.description } : {}),
+    ...(description !== undefined ? { description } : {}),
     pathParams,
     query,
     headers,
@@ -296,23 +324,26 @@ function mapBody(body: PostmanBody | undefined, headers: readonly PostmanHeader[
   }
 
   if (body.mode === 'formdata') {
-    const parts: MultipartFormPart[] = (body.formdata ?? []).map((p) => {
+    const parts: MultipartFormPart[] = (body.formdata ?? []).flatMap((p): MultipartFormPart[] => {
       if (p.type === 'file') {
-        return {
+        const paths = typeof p.src === 'string' ? [p.src] : p.src !== undefined && p.src.length > 0 ? p.src : [''];
+        return paths.map((path) => ({
           kind: 'file',
           name: p.key,
-          source: { kind: 'path', path: typeof p.src === 'string' ? p.src : '' },
+          source: { kind: 'path', path },
           enabled: p.disabled !== true,
           ...(p.contentType !== undefined ? { contentType: p.contentType } : {}),
-        };
+        }));
       }
-      return {
-        kind: 'text',
-        name: p.key,
-        value: p.value ?? '',
-        enabled: p.disabled !== true,
-        ...(p.contentType !== undefined ? { contentType: p.contentType } : {}),
-      };
+      return [
+        {
+          kind: 'text',
+          name: p.key,
+          value: p.value ?? '',
+          enabled: p.disabled !== true,
+          ...(p.contentType !== undefined ? { contentType: p.contentType } : {}),
+        },
+      ];
     });
     return { kind: 'multipart', parts };
   }
@@ -353,6 +384,26 @@ function detectLanguage(body: PostmanBody, headers: readonly PostmanHeader[], ra
   return trimmed.length > 0 ? 'text' : 'json';
 }
 
+/** Secret attribute keys per auth type; a non-empty value means the user must re-enter it. */
+const SECRET_KEYS: Readonly<Record<string, readonly string[]>> = {
+  basic: ['password'],
+  bearer: ['token'],
+  apikey: ['value'],
+  oauth2: ['clientSecret', 'accessToken', 'password', 'refreshToken'],
+  ntlm: ['password'],
+};
+
+function hasCredentials(auth: PostmanAuth | undefined): boolean {
+  const type = auth?.type?.toLowerCase();
+  if (auth === undefined || type === undefined) return false;
+  const keys = SECRET_KEYS[type];
+  const attrs = (auth as Readonly<Record<string, unknown>>)[type];
+  if (keys === undefined || !Array.isArray(attrs)) return false;
+  return (attrs as readonly { key: string; value: unknown }[]).some(
+    (a) => keys.includes(a.key) && a.value !== undefined && a.value !== null && a.value !== '',
+  );
+}
+
 function asText(value: unknown): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -371,11 +422,10 @@ function mapPostmanAuth(
   isRequest: boolean,
   warnings?: string[],
 ): AuthConfig | undefined {
-  if (auth === undefined) {
+  const type = auth?.type?.toLowerCase();
+  if (auth === undefined || type === 'inherit') {
     return isRequest ? { type: 'inherit' } : undefined;
   }
-
-  const type = auth.type?.toLowerCase();
 
   switch (type) {
     case 'noauth':
@@ -435,8 +485,6 @@ function mapPostmanAuth(
         ...(workstation !== undefined ? { workstation } : {}),
       };
     }
-    case 'inherit':
-      return isRequest ? { type: 'inherit' } : undefined;
     default:
       if (type !== undefined) {
         warnings?.push(`Authentication type "${type}" is not supported; set to "none"`);
@@ -446,7 +494,10 @@ function mapPostmanAuth(
 }
 
 /** Recursively looks for the first absolute URL to infer a collection base URL. */
-function inferBaseUrl(items: readonly PostmanItem[]): string {
+function inferBaseUrl(items: readonly PostmanItem[], depth: number): string {
+  if (depth > MAX_POSTMAN_DEPTH) {
+    throw tooDeep();
+  }
   for (const item of items) {
     if (item.request !== undefined) {
       const req = typeof item.request === 'string' ? { url: item.request } : item.request;
@@ -470,7 +521,7 @@ function inferBaseUrl(items: readonly PostmanItem[]): string {
       }
     }
     if (Array.isArray(item.item)) {
-      const found = inferBaseUrl(item.item);
+      const found = inferBaseUrl(item.item, depth + 1);
       if (found !== '') return found;
     }
   }

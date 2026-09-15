@@ -14,7 +14,7 @@
 3. **Path parameter normalization (`:param` → `{param}`).**
    Postman uses `:param` in path segments (e.g. `/users/:userId`). Wirebench represents path parameters with `{param}` and a corresponding entry in `request.pathParams`. The importer normalizes `:param` to `{param}` and populates `pathParams` using Postman's `url.variable` definitions.
 4. **Nested folders and items.**
-   Postman collections organize requests using recursive `item` arrays. Items with an `item` array become `RestFolder`s; items with a `request` object become `RestRequestDef`s. Arbitrary nesting depth is preserved.
+   Postman collections organize requests using recursive `item` arrays. Items with an `item` array become `RestFolder`s; items with a `request` object become `RestRequestDef`s. Nesting is preserved up to 64 levels; deeper collections (and inputs over 50 MB) are rejected with a `PostmanError` (`postman-too-deep`, `postman-too-large`). Items with no usable `request` are skipped and counted in a summary warning.
 5. **Request bodies:**
    - `raw`: Maps to `RestBody` `{ kind: 'raw', text, language, contentType }`. The language is determined by `options.raw.language` (`json`, `xml`, `html`, `javascript`, `text`) or inferred from headers (defaulting to `json`).
    - `urlencoded`: Maps to `RestBody` `{ kind: 'form', fields: KeyValueEntry[] }`.
@@ -25,9 +25,10 @@
    - Collection-level or folder-level `auth` maps to `RestApi.auth` or `RestFolder.auth`.
    - Request-level `auth`:
      - If absent or `type: "inherit"`: `{ type: 'inherit' }`.
-     - `basic`: username and password map to `AuthConfig` `{ type: 'basic', username, password }`.
-     - `bearer`: token maps to `AuthConfig` `{ type: 'bearer', token }`.
-     - `apikey`: key, value, and in (`header` or `query`) map to `AuthConfig` `{ type: 'api-key', in, keyName: key, value }`.
+     - Credentials (passwords, tokens, API key values, client secrets) are keychain references in Wirebench and are **not copied**; the import summary warns that they must be re-entered.
+     - `basic`: username maps to `AuthConfig` `{ type: 'basic', username }`.
+     - `bearer`: maps to `AuthConfig` `{ type: 'bearer' }`.
+     - `apikey`: key and in (`header` or `query`) map to `AuthConfig` `{ type: 'api-key', in, name: key }`.
      - `oauth2`: maps available flow tokens and URLs to `AuthConfig` `{ type: 'oauth2', ... }`.
      - `noauth`: maps to `AuthConfig` `{ type: 'none' }`.
 7. **Desktop UI Integration:**
