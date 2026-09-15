@@ -876,5 +876,55 @@ describe('tolerance', () => {
         },
       });
     });
+
+    it('resolves N=40 Swagger 1.x model chain in < 500ms without exponential blowup (2.2)', () => {
+      const models: Record<string, unknown> = {
+        M0: {
+          id: 'M0',
+          properties: {
+            leaf: { type: 'string' },
+          },
+        },
+      };
+
+      for (let i = 1; i <= 40; i++) {
+        models[`M${i}`] = {
+          id: `M${i}`,
+          properties: {
+            left: { $ref: `M${i - 1}` },
+            right: { $ref: `M${i - 1}` },
+          },
+        };
+      }
+
+      const start = performance.now();
+      const doc = parseOpenApiDocument({
+        swaggerVersion: '1.2',
+        basePath: 'http://example.com/api',
+        apis: [
+          {
+            path: '/chain',
+            operations: [
+              {
+                method: 'POST',
+                nickname: 'postChain',
+                parameters: [
+                  {
+                    name: 'body',
+                    paramType: 'body',
+                    type: 'M40',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        models,
+      });
+      const duration = performance.now() - start;
+
+      expect(duration).toBeLessThan(500);
+      expect(doc.operations[0]?.requestBody).toBeDefined();
+    });
   });
 });

@@ -1056,6 +1056,7 @@ function parseSwagger1Document(document: Record_, declared: string): OpenApiDocu
 
   const modelCtx: Swagger1ModelContext = {
     rawModels: isRecord(document['models']) ? (document['models'] as Record<string, Record_>) : {},
+    memo: new Map(),
   };
 
   const servers = parseSwagger1Servers(document);
@@ -1107,6 +1108,7 @@ function parseSwagger1Tags(document: Record_): readonly OpenApiTag[] {
 
 interface Swagger1ModelContext {
   readonly rawModels: Record<string, Record_>;
+  readonly memo: Map<string, JsonSchema>;
 }
 
 function normalizeSwagger1Type(rawType: string | undefined): { type?: string; format?: string } {
@@ -1156,9 +1158,17 @@ function resolveSwagger1Model(name: string, ctx: Swagger1ModelContext, visiting 
   if (visiting.has(name)) {
     return { type: 'object', properties: {} };
   }
+  const cached = ctx.memo.get(name);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (!Object.hasOwn(ctx.rawModels, name)) {
+    return { type: 'object' };
+  }
   visiting.add(name);
   const raw = ctx.rawModels[name];
   if (!raw) {
+    visiting.delete(name);
     return { type: 'object' };
   }
   const required = asStringArray(raw['required']);
@@ -1177,6 +1187,7 @@ function resolveSwagger1Model(name: string, ctx: Swagger1ModelContext, visiting 
     properties,
   };
   visiting.delete(name);
+  ctx.memo.set(name, schema);
   return schema;
 }
 
@@ -1188,8 +1199,10 @@ function convertSwagger1Property(prop: Record_, ctx: Swagger1ModelContext, visit
   const enumVals = Array.isArray(prop['enum']) ? (prop['enum'] as readonly JsonValue[]) : undefined;
   const defaultVal = asJson(prop['defaultValue'] ?? prop['default']);
 
-  const modelRefName = ref ?? (rawType !== undefined && ctx.rawModels[rawType] !== undefined ? rawType : undefined);
-  if (modelRefName !== undefined && ctx.rawModels[modelRefName] !== undefined) {
+  const hasRef = ref !== undefined && Object.hasOwn(ctx.rawModels, ref);
+  const hasRawType = rawType !== undefined && Object.hasOwn(ctx.rawModels, rawType);
+  const modelRefName = hasRef ? ref : hasRawType ? rawType : undefined;
+  if (modelRefName !== undefined) {
     return {
       ...resolveSwagger1Model(modelRefName, ctx, visiting),
       ...(description !== undefined ? { description } : {}),
@@ -1339,7 +1352,7 @@ function parseSwagger1Operations(
       if (bodyParam !== undefined) {
         const bodyType = asString(bodyParam['type']) ?? asString(bodyParam['dataType']);
         let bodySchema: JsonSchema | undefined;
-        if (bodyType !== undefined && modelCtx.rawModels[bodyType] !== undefined) {
+        if (bodyType !== undefined && Object.hasOwn(modelCtx.rawModels, bodyType)) {
           bodySchema = resolveSwagger1Model(bodyType, modelCtx);
         } else if (bodyType !== undefined) {
           bodySchema = synthesizeSwagger1ParamPrimitiveSchema(bodyParam);
