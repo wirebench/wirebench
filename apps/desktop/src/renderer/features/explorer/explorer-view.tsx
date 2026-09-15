@@ -407,22 +407,62 @@ export function ExplorerView() {
                 node.kind !== 'folder' &&
                 node.kind !== 'rest-request'
               }
-              // Reordering and moving happen inside one project: a request belongs to the API it
-              // was made in, and dragging it into another project would mean moving it between two
-              // folders on disk, which `move-node` deliberately does not do.
-              disableDrop={({ parentNode, dragNodes }) => !sameProject(parentNode.data, dragNodes[0]?.data)}
-              onMove={({ dragIds, parentNode, index }) => {
-                const nodes = data.flatMap(flatten);
-                for (const dragId of dragIds) {
-                  const node = nodes.find((candidate) => candidate.id === dragId);
-                  const entityId = restEntityId(node);
-                  if (entityId === undefined) {
-                    continue;
+              disableDrag={(node) => node.kind !== 'rest-request' && node.kind !== 'folder'}
+              // Reordering and moving happen inside the same API: a request or folder belongs to its
+              // own API definition, and cannot move into another API or project.
+              disableDrop={({ parentNode, dragNodes }) => {
+                const dragged = dragNodes[0]?.data;
+                if (dragged === undefined) return true;
+                if (dragged.kind !== 'rest-request' && dragged.kind !== 'folder') return true;
+
+                const parent = parentNode?.data;
+                if (parent === undefined) return true;
+
+                if (parent.kind === 'api') {
+                  return parent.apiId !== dragged.apiId;
+                }
+                if (parent.kind === 'folder') {
+                  if (parent.apiId !== dragged.apiId) return true;
+                  if (dragged.kind === 'folder') {
+                    if (parent.folderId === dragged.folderId) return true;
+                    let ancestor: NodeApi<ExplorerNode> | null = parentNode;
+                    while (ancestor !== null) {
+                      if (ancestor.data?.kind === 'folder' && ancestor.data.folderId === dragged.folderId) {
+                        return true;
+                      }
+                      ancestor = ancestor.parent;
+                    }
                   }
-                  const parent = parentNode?.data;
+                  return false;
+                }
+
+                return true;
+              }}
+              onMove={({ dragNodes, parentNode, index }) => {
+                if (parentNode === null) return;
+                const parent = parentNode.data;
+                if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
+
+                const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
+                const childNodes = parentNode.children ?? [];
+                const folderCount = childNodes.filter((c) => c.data?.kind === 'folder').length;
+
+                for (const dragNode of dragNodes) {
+                  const nodeData = dragNode.data;
+                  if (nodeData === undefined) continue;
+                  const entityId = restEntityId(nodeData);
+                  if (entityId === undefined) continue;
+
+                  let targetIndex: number;
+                  if (nodeData.kind === 'folder') {
+                    targetIndex = Math.min(index, folderCount);
+                  } else {
+                    targetIndex = Math.max(0, index - folderCount);
+                  }
+
                   void useProjectStore
                     .getState()
-                    .moveNode(entityId, parent?.kind === 'folder' ? parent.folderId : undefined, index)
+                    .moveNode(entityId, targetFolderId, targetIndex)
                     .catch((error: unknown) => {
                       showToast(error instanceof Error ? error.message : 'Could not move it');
                     });

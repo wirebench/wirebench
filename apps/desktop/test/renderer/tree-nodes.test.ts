@@ -330,7 +330,7 @@ describe('buildExplorerTree with APIs', () => {
     expect(folder?.children?.[0]?.children?.[0]).toMatchObject({ requestId: 'rest-deep', folderId: 'folder-2' });
   });
 
-  it('interleaves folders and requests by order, rather than grouping by kind', () => {
+  it('renders folders first then requests, sorted by order within each kind', () => {
     const children = treeWith({
       apis: [restApiWire()],
       folders: [restFolderWire({ name: 'Second', order: 1 })],
@@ -340,7 +340,7 @@ describe('buildExplorerTree with APIs', () => {
       ],
     });
 
-    expect(children[0]?.children?.map((node) => node.label)).toEqual(['First', 'Second', 'Third']);
+    expect(children[0]?.children?.map((node) => node.label)).toEqual(['Second', 'First', 'Third']);
   });
 
   it('interleaves interfaces and APIs by order under the project', () => {
