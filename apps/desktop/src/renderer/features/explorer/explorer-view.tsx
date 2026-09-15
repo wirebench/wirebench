@@ -167,7 +167,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             onFocus={(e) => e.currentTarget.select()}
             onBlur={(e) => node.submit(e.currentTarget.value)}
             onKeyDown={(e) => {
-              e.stopPropagation();
+              // Keep typing inside the rename field away from the tree's own keys, but let chords
+              // (⌘⏎ send, ⌘S save…) reach the window-level keybindings.
+              if (!e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation();
               if (e.key === 'Enter') node.submit(e.currentTarget.value);
               if (e.key === 'Escape') node.reset();
             }}
