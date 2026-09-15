@@ -20,6 +20,11 @@
       "types": "./dist/rest/browser.d.ts",
       "default": "./dist/rest/browser.js"
     },
+    "./detect": {
+      "development": "./src/import-detect.ts",
+      "types": "./dist/import-detect.d.ts",
+      "default": "./dist/import-detect.js"
+    },
     "./test-helpers": "./test/helpers/index.ts"
   },
   "scripts": {

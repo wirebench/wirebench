@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
-import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine';
+import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
   EngineProgressEvent,
   ImportProblemWire,
