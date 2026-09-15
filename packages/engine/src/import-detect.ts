@@ -68,6 +68,13 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
               confidence: 'definite',
             };
           }
+          if (typeof record['swaggerVersion'] === 'string') {
+            return {
+              kind: 'openapi',
+              label: `Swagger ${record['swaggerVersion']}`,
+              confidence: 'definite',
+            };
+          }
         }
       } catch {
         // Fall through to regex-based detection
@@ -93,6 +100,13 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
             confidence: 'definite',
           };
         }
+        if (typeof record['swaggerVersion'] === 'string') {
+          return {
+            kind: 'openapi',
+            label: `Swagger ${record['swaggerVersion']}`,
+            confidence: 'definite',
+          };
+        }
         if (isPostmanCollection(record)) {
           return {
             kind: 'postman',
@@ -109,7 +123,7 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     if (/^\s*openapi\s*:\s*['"]?3\.[012]/m.test(text)) {
       return { kind: 'openapi', label: 'OpenAPI 3.x', confidence: 'definite' };
     }
-    if (/^\s*swagger\s*:\s*['"]?[23]\./m.test(text)) {
+    if (/^\s*swagger(?:Version)?\s*:\s*['"]?[123]\./m.test(text)) {
       return { kind: 'openapi', label: 'Swagger', confidence: 'definite' };
     }
     if (text.includes('schema.getpostman.com/json/collection')) {

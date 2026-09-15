@@ -98,7 +98,7 @@ describe('parseOpenApi', () => {
       Promise.resolve({
         location,
         bytes: new Uint8Array(),
-        text: location.endsWith('swagger.json') ? '{"swagger":"1.2"}' : 'name: not-openapi\n',
+        text: location.endsWith('swagger.json') ? '{"swagger":"9.0"}' : 'name: not-openapi\n',
       })) as FetchDocument;
 
     await expect(
@@ -248,5 +248,53 @@ paths:
     expect(uploadPhoto?.body.kind).toBe('multipart');
 
     expect(imported.summary.securitySchemes.map((s) => s.name)).toEqual(['api_key', 'basic_auth', 'petstore_auth']);
+  });
+
+  it('imports a document declaring swaggerVersion: 1.2', async () => {
+    const path = pathToFileURL(`${craftedDir}v12/swagger12-petstore.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('1.2');
+    expect(imported.summary.declaredVersion).toBe('Swagger 1.2');
+    expect(imported.api.name).toBe('Swagger 1.2 Petstore');
+    expect(imported.api.baseUrl).toBe('https://api.petstore.test:8443/api/v1');
+    expect(imported.summary.servers).toEqual([{ url: 'https://api.petstore.test:8443/api/v1' }]);
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const listPets = allRequests.find((req) => req.name === 'List all pets');
+    expect(listPets).toBeDefined();
+    expect(listPets?.method).toBe('GET');
+    expect(listPets?.url).toContain('/pets');
+
+    const createPet = allRequests.find((req) => req.name === 'Create a pet');
+    expect(createPet).toBeDefined();
+    expect(createPet?.method).toBe('POST');
+    expect(createPet?.body.kind).toBe('raw');
+
+    const uploadFile = allRequests.find((req) => req.name === 'Uploads an image');
+    expect(uploadFile).toBeDefined();
+    expect(uploadFile?.method).toBe('POST');
+    expect(uploadFile?.body.kind).toBe('multipart');
+
+    expect(imported.summary.securitySchemes.map((s) => s.name)).toEqual(['api_key', 'basic_auth', 'petstore_auth']);
+  });
+
+  it('imports a document declaring swaggerVersion: 1.1 with legacy properties', async () => {
+    const path = pathToFileURL(`${craftedDir}v11/swagger11-sample.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('1.2');
+    expect(imported.summary.declaredVersion).toBe('Swagger 1.1');
+    expect(imported.api.baseUrl).toBe('http://example.com/api');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const getUser = allRequests.find((req) => req.name === 'Get user by name');
+    expect(getUser).toBeDefined();
+    expect(getUser?.method).toBe('GET');
+
+    const createUser = allRequests.find((req) => req.name === 'Create user');
+    expect(createUser).toBeDefined();
+    expect(createUser?.method).toBe('POST');
+    expect(createUser?.body.kind).toBe('raw');
   });
 });

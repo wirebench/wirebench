@@ -67,6 +67,32 @@ paths: {}
     expect(detected.confidence).toBe('definite');
   });
 
+  it('detects Swagger 1.2 from JSON text with swaggerVersion', () => {
+    const swaggerJson = JSON.stringify({
+      swaggerVersion: '1.2',
+      basePath: 'http://example.com/api',
+      apis: [],
+    });
+
+    const detected = detectImportFormat({ text: swaggerJson });
+    expect(detected.kind).toBe('openapi');
+    expect(detected.label).toBe('Swagger 1.2');
+    expect(detected.confidence).toBe('definite');
+  });
+
+  it('detects Swagger 1.1 from JSON text with swaggerVersion', () => {
+    const swaggerJson = JSON.stringify({
+      swaggerVersion: '1.1',
+      basePath: 'http://example.com/api',
+      apis: [],
+    });
+
+    const detected = detectImportFormat({ text: swaggerJson });
+    expect(detected.kind).toBe('openapi');
+    expect(detected.label).toBe('Swagger 1.1');
+    expect(detected.confidence).toBe('definite');
+  });
+
   it('detects Postman Collection v2.1 from JSON text', () => {
     const postmanJson = JSON.stringify({
       info: {

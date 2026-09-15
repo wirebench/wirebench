@@ -2,7 +2,7 @@
  * The Unified Import Dialog.
  *
  * Supports importing API definitions from:
- * - OpenAPI 3.0, 3.1, 3.2 and Swagger 2.0 / 3.x (YAML / JSON)
+ * - OpenAPI 3.0, 3.1, 3.2 and Swagger 1.x / 2.0 / 3.x (YAML / JSON)
  * - Postman Collections (v2.0, v2.1 JSON)
  * - WSDL 1.1 / 2.0 (SOAP XML)
  *
