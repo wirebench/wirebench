@@ -84,13 +84,25 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-fg-on-accent', bg: '--wb-status-danger', kind: 'text', where: 'destructive buttons, problem badges' },
   { fg: '--wb-fg-on-accent', bg: '--wb-status-warning', kind: 'text', where: 'orphaned-node badge' },
 
-  // The method badge: a filled chip, so each method colour answers for the label on top of it.
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-get', kind: 'text', where: 'GET badge' },
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-post', kind: 'text', where: 'POST badge' },
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-put', kind: 'text', where: 'PUT badge' },
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-patch', kind: 'text', where: 'PATCH badge' },
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-delete', kind: 'text', where: 'DELETE badge' },
-  { fg: '--wb-fg-on-accent', bg: '--wb-method-other', kind: 'text', where: 'badge for any other method' },
+  // The method badge: both as a filled chip (when variant="chip") and Postman-style colored text.
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-get', kind: 'text', where: 'GET badge chip' },
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-post', kind: 'text', where: 'POST badge chip' },
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-put', kind: 'text', where: 'PUT badge chip' },
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-patch', kind: 'text', where: 'PATCH badge chip' },
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-delete', kind: 'text', where: 'DELETE badge chip' },
+  { fg: '--wb-fg-on-accent', bg: '--wb-method-other', kind: 'text', where: 'custom method badge chip' },
+  { fg: '--wb-method-get', bg: '--wb-bg-raised', kind: 'text', where: 'GET method text (sidebar)' },
+  { fg: '--wb-method-post', bg: '--wb-bg-raised', kind: 'text', where: 'POST method text (sidebar)' },
+  { fg: '--wb-method-put', bg: '--wb-bg-raised', kind: 'text', where: 'PUT method text (sidebar)' },
+  { fg: '--wb-method-patch', bg: '--wb-bg-raised', kind: 'text', where: 'PATCH method text (sidebar)' },
+  { fg: '--wb-method-delete', bg: '--wb-bg-raised', kind: 'text', where: 'DELETE method text (sidebar)' },
+  { fg: '--wb-method-other', bg: '--wb-bg-raised', kind: 'text', where: 'custom method text (sidebar)' },
+  { fg: '--wb-method-get', bg: '--wb-bg-base', kind: 'text', where: 'GET method text (editor)' },
+  { fg: '--wb-method-post', bg: '--wb-bg-base', kind: 'text', where: 'POST method text (editor)' },
+  { fg: '--wb-method-put', bg: '--wb-bg-base', kind: 'text', where: 'PUT method text (editor)' },
+  { fg: '--wb-method-patch', bg: '--wb-bg-base', kind: 'text', where: 'PATCH method text (editor)' },
+  { fg: '--wb-method-delete', bg: '--wb-bg-base', kind: 'text', where: 'DELETE method text (editor)' },
+  { fg: '--wb-method-other', bg: '--wb-bg-base', kind: 'text', where: 'custom method text (editor)' },
 
   // Status text: response codes in the status bar, problem rows, keystore chips.
   { fg: '--wb-status-success', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar 2xx' },
