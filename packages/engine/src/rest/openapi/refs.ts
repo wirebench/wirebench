@@ -155,18 +155,42 @@ export async function resolveRefs(
   rootBytes?: Uint8Array,
 ): Promise<ResolvedRefs> {
   const root = parseDocumentText(rootText);
+  const byLocation = new Map<string, unknown>([[rootLocation, root]]);
+  const rawSelf =
+    typeof (root as Record<string, unknown>)?.$self === 'string'
+      ? ((root as Record<string, unknown>).$self as string).trim()
+      : undefined;
+
+  if (rawSelf) {
+    const resolvedSelf = absolute(rawSelf, rootLocation);
+    if (resolvedSelf !== undefined) {
+      try {
+        const normalizedSelf = new URL(resolvedSelf).toString();
+        const rootUrl = new URL(rootLocation);
+        const selfUrl = new URL(normalizedSelf);
+        const isSameOrigin =
+          rootUrl.origin !== 'null' && selfUrl.origin !== 'null'
+            ? rootUrl.origin === selfUrl.origin
+            : rootUrl.protocol === selfUrl.protocol;
+
+        if (isSameOrigin) {
+          const policy = referencePolicyFor(rootLocation);
+          const refusal = await policy.allows(normalizedSelf);
+          if (refusal === undefined) {
+            byLocation.set(normalizedSelf, root);
+          }
+        }
+      } catch {
+        // Invalid URL; do not alias
+      }
+    }
+  }
+
   const walk: Walk = {
     root,
     rootLocation,
     options,
-    byLocation: new Map(
-      typeof (root as Record<string, unknown>)?.$self === 'string'
-        ? [
-            [rootLocation, root],
-            [(root as Record<string, unknown>).$self as string, root],
-          ]
-        : [[rootLocation, root]],
-    ),
+    byLocation,
     documents: [
       {
         location: rootLocation,
