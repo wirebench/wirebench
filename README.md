@@ -187,24 +187,32 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Roadmap
 
-Explore-and-send works across workspaces, for SOAP and for REST. What comes next, in the order it is worth building;
-the [full roadmap](docs/roadmap.md) has the reasoning, sizes, and the detail per theme.
+Explore-and-send works across workspaces, for SOAP and for REST, and a workspace can be shared with a team.
+What comes next, in the order it is worth building; the [full roadmap](docs/roadmap.md) has the reasoning,
+sizes, the detail per theme, and what a review of the surrounding tools changed on 2026-09-13.
 
-1. **Signed and notarised releases** — managed Macs and Windows fleets block unsigned apps.
-2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference.
-3. **CLI runner** — `wirebench run` with assertions and JUnit output, for CI.
-4. **Kerberos/SPNEGO** — Windows-integrated authentication.
-5. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response preview,
-   OpenAPI 2.0 (Swagger) import, _Update Definition_ for an API, response validation against the document, and the
-   three token-style auth kinds offered to SOAP owners too.
-6. **gRPC client** — a third container beside APIs and interfaces, on the shape ADR-0007 was written to survive.
-7. **Mock services** — generated from a WSDL, scripted dispatch, recording from live traffic.
-8. **MCP server** — the engine driven by coding agents.
-9. **Teams and sign-in** — git-native shared workspaces shipped; next a self-hosted server with SSO. The app
-   stays fully usable without an account.
-10. **Full functional testing** — suites, the assertion catalogue, sandboxed scripting, data-driven runs.
+1. **Signed and notarised releases** — plus an MSI with silent install and an SBOM; managed fleets block unsigned apps.
+2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference, a
+   switching guide and a published benchmark.
+3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
+   compares responses with committed golden files.
+4. **MCP server** — the engine driven by coding agents, with CLI parity and no AI inside the app.
+5. **Snapshot regression** — send to several environments at once, diff semantically, replay baselines in CI.
+6. **Secrets** — resolved from external secret managers at send time; encrypted team secrets in shared workspaces.
+7. **Enterprise authentication** — Kerberos/SPNEGO and WS-Trust for STS-issued SAML tokens.
+8. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response
+   preview, _Update Definition_ for an API, response validation against the contract, and the token-style
+   auth kinds for SOAP owners. The importers shipped in 2.1.0.
+9. **Contract diff** — two WSDLs or OpenAPI documents compared, breaking changes classified, runnable in CI.
+10. **WS-Security debugger** — why a signature or decryption failed, and configuration proposed from the WSDL's policy.
+11. **Mock services** — generated from the contract, validating requests, recorded from live traffic, stored as files.
+12. **Functional testing in three slices** — Sequences with declarative assertions, TypeScript typed from the
+    contract, then suites with data-driven runs and a callback listener.
+13. **Wirebench Server** — self-hosted sign-in, teams and SSO, on top of the shipped git-native shared workspaces.
+    The app stays fully usable without an account.
 
-Deferred: load testing, WSDL coverage and refactoring, code generation, a TCP monitor.
+After these, on demand: gRPC (already reserved, per ADR-0007) and GraphQL; JKS keystores and WS-ReliableMessaging.
+Deferred: load testing, WSDL coverage and refactoring, code generation. Watched only: MQTT, Kafka and JMS.
 
 ## License
 
