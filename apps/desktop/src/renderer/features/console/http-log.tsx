@@ -80,7 +80,10 @@ export function HttpLog() {
     overscan: 12,
   });
 
-  const selected = log.find((entry) => sendIdOf(entry) === selectedId);
+  // Looked up in `visible`, not `log`, so a row hidden by the filter closes its detail pane
+  // rather than keeping a stale one open; `selectedId` itself is untouched, so the detail
+  // reappears once the filter is cleared.
+  const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
 
   // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
   // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has

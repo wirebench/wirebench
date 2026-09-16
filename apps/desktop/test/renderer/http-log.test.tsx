@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpLog } from '../../src/renderer/features/console/http-log.js';
 import { EMPTY_FILTER, useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -252,5 +252,23 @@ describe('HttpLog', () => {
 
     expect(screen.getByTestId('log-detail-request-headers').textContent).toContain('<redacted>');
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('closes the detail when a filter hides the selected row, and reopens it when the filter is cleared', async () => {
+    useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' })), failure] });
+    render(<HttpLog />);
+
+    await userEvent.click(rows()[0]!);
+    expect(screen.getByTestId('log-detail')).toBeDefined();
+
+    act(() => {
+      useExchangesStore.getState().setFilter({ protocols: ['rest'] });
+    });
+    expect(screen.queryByTestId('log-detail')).toBeNull();
+
+    act(() => {
+      useExchangesStore.getState().resetFilter();
+    });
+    expect(screen.getByTestId('log-detail')).toBeDefined();
   });
 });
