@@ -412,10 +412,11 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               rowHeight={26}
-              // Half react-arborist's 24px default: this tree nests project › API › folder ›
+              // A third of react-arborist's 24px default: this tree nests project › API › folder ›
               // request, and four levels of the default step pushed a request's name off to the
-              // right with nothing but blank gutter in front of it.
-              indent={12}
+              // right with nothing but blank gutter in front of it. The twisty column still marks
+              // each level, so 8px is enough to read the nesting.
+              indent={8}
               outerElementType={FocusableListOuter}
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
