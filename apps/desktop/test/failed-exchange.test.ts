@@ -21,6 +21,12 @@ function input(overrides: Partial<Parameters<typeof failedExchangeOf>[0]> = {}) 
 }
 
 describe('failedExchangeOf', () => {
+  it('masks the password in a URL userinfo so it never reaches the wire payload', () => {
+    const failure = failedExchangeOf(input({ url: 'http://user:s3cret@host/x' }));
+
+    expect(JSON.stringify(failure)).not.toContain('s3cret');
+  });
+
   it('copies the identity, the timing and the request as sent', () => {
     const failure = failedExchangeOf(input());
 

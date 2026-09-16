@@ -1,7 +1,14 @@
 // @vitest-environment node
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { containsRedaction, redactHeaders, REDACTED_MARKER, redactRawHttp, redactXml } from '../src/main/redact.js';
+import {
+  containsRedaction,
+  redactHeaders,
+  REDACTED_MARKER,
+  redactRawHttp,
+  redactUrl,
+  redactXml,
+} from '../src/main/redact.js';
 
 describe('containsRedaction', () => {
   it('is true when the text contains the redaction marker', () => {
@@ -34,6 +41,26 @@ describe('redactHeaders', () => {
   it('bypasses redaction when show is true', () => {
     const result = redactHeaders({ Authorization: 'Basic xyz' }, { show: true });
     expect(result['Authorization']).toBe('Basic xyz');
+  });
+});
+
+describe('redactUrl userinfo', () => {
+  it('masks a non-empty password, leaving the username as is', () => {
+    expect(redactUrl('http://user:pass@host/path')).toBe(
+      `http://user:${encodeURIComponent(REDACTED_MARKER)}@host/path`,
+    );
+  });
+
+  it('bypasses redaction when show is true', () => {
+    expect(redactUrl('http://user:pass@host/path', { show: true })).toBe('http://user:pass@host/path');
+  });
+
+  it('leaves a URL with no userinfo unchanged', () => {
+    expect(redactUrl('http://host/path')).toBe('http://host/path');
+  });
+
+  it('leaves a username-only URL unchanged', () => {
+    expect(redactUrl('http://user@host/path')).toBe('http://user@host/path');
   });
 });
 
