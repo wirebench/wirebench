@@ -24,14 +24,8 @@ import type {
   SoapRequestDef,
   WssRef,
 } from './model.js';
-import type {
-  KeyValueEntry,
-  RestApi,
-  RestBody,
-  RestFolder,
-  RestRequestDef,
-  RestRequestSettings,
-} from '../rest/model.js';
+import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSettings } from '../rest/model.js';
+import type { GrpcApi, GrpcRequestDef, GrpcRequestSettings } from '../grpc/model.js';
 import { FORMAT_VERSION } from './model.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
@@ -52,7 +46,10 @@ import {
 import type { KeyValueEntryFile } from './schema.js';
 import {
   apiFileSchema,
+  apiKindOf,
   assertSupportedKind,
+  grpcApiFileSchema,
+  grpcRequestFileSchema,
   environmentFileSchema,
   interfaceFileSchema,
   keystoresFileSchema,
@@ -331,15 +328,109 @@ async function loadBody(
 /** The `body` field of a parsed REST request document. */
 type RestRequestFileBody = ReturnType<typeof restRequestFileSchema.parse>['body'];
 
+/** A folder of either protocol's tree: the same node, holding one kind of request. */
+interface FolderNode<R> {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly order: number;
+  readonly description?: string;
+  readonly auth?: AuthConfig;
+  readonly folders: readonly FolderNode<R>[];
+  readonly requests: readonly R[];
+}
+
 /** What one directory of an API's request tree holds. */
-interface FolderContents {
-  readonly folders: RestFolder[];
-  readonly requests: RestRequestDef[];
+interface FolderContents<R> {
+  readonly folders: FolderNode<R>[];
+  readonly requests: R[];
 }
 
 /**
- * Loads one directory of an API's request tree: its `*.request.yaml` files as requests, its
- * subdirectories as folders, recursively.
+ * Reads one `*.request.yaml` of a tree into a request of the API's protocol, claiming the files it
+ * owns (its own, and its body file) out of `unclaimed` so they are not reported as orphans.
+ */
+type RequestReader<R> = (dir: string, fileName: string, unclaimed: Set<string>) => Promise<R>;
+
+/** Reads a REST request and its raw body file. */
+function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<RestRequestDef> {
+  return async (dir, fileName, unclaimed) => {
+    const relative = `${dir}/${fileName}`;
+    const document = await readYaml(fs, root, relative);
+    assertSupportedKind(document, relative);
+    const parsed = parseFile(restRequestFileSchema, document, relative);
+    unclaimed.delete(fileName);
+    if (parsed.body.kind === 'raw') {
+      unclaimed.delete(parsed.body.file);
+    }
+    return {
+      kind: 'rest',
+      id: parsed.id,
+      name: parsed.name,
+      slug: fileName.slice(0, -REQUEST_SUFFIX.length),
+      order: parsed.order,
+      ...optional('description', parsed.description),
+      method: parsed.method,
+      url: parsed.url,
+      pathParams: keyValueEntries(parsed.pathParams),
+      query: keyValueEntries(parsed.query),
+      headers: keyValueEntries(parsed.headers),
+      body: await loadBody(fs, root, dir, parsed.body, parsed.name, problems),
+      auth: authConfig(parsed.auth),
+      settings: exact<RestRequestSettings>(parsed.settings),
+      ...(parsed.orphaned === true ? { orphaned: true } : {}),
+    };
+  };
+}
+
+/**
+ * Reads a gRPC request and its message file. A request whose message file is gone loads with an
+ * empty message and a `missing-body` problem, exactly as a REST raw body does.
+ */
+function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<GrpcRequestDef> {
+  return async (dir, fileName, unclaimed) => {
+    const relative = `${dir}/${fileName}`;
+    const document = await readYaml(fs, root, relative);
+    assertSupportedKind(document, relative);
+    const parsed = parseFile(grpcRequestFileSchema, document, relative);
+    unclaimed.delete(fileName);
+    let message = '';
+    if (parsed.message !== undefined) {
+      unclaimed.delete(parsed.message);
+      const messageRelative = `${dir}/${parsed.message}`;
+      const text = await readFileIfExists(fs, abs(root, messageRelative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${parsed.name}" has no message file; loaded with an empty message`,
+          file: messageRelative,
+        });
+      } else {
+        message = text.toString('utf8');
+      }
+    }
+    return {
+      kind: 'grpc',
+      id: parsed.id,
+      name: parsed.name,
+      slug: fileName.slice(0, -REQUEST_SUFFIX.length),
+      order: parsed.order,
+      ...optional('description', parsed.description),
+      service: parsed.service,
+      method: parsed.method,
+      methodKind: parsed.methodKind,
+      metadata: keyValueEntries(parsed.metadata),
+      message,
+      auth: authConfig(parsed.auth),
+      settings: exact<GrpcRequestSettings>(parsed.settings),
+      ...(parsed.orphaned === true ? { orphaned: true } : {}),
+    };
+  };
+}
+
+/**
+ * Loads one directory of an API's request tree: its `*.request.yaml` files as requests (through
+ * the protocol's reader), its subdirectories as folders, recursively.
  *
  * A directory with no `folder.yaml` is still a folder — named after the directory, ordered after
  * the ones that do have a file, and given a file of its own on the next save — because a folder
@@ -347,45 +438,22 @@ interface FolderContents {
  * deeper than {@link MAX_FOLDER_DEPTH} becomes a problem and is skipped whole, so nothing is ever
  * written to a path that might not open on Windows.
  */
-async function loadFolderContents(
+async function loadFolderContents<R extends { readonly order: number; readonly name: string }>(
   fs: FsLike,
   root: string,
   dir: string,
   depth: number,
   problems: ProjectProblem[],
-): Promise<FolderContents> {
+  readRequest: RequestReader<R>,
+): Promise<FolderContents<R>> {
   const entries = await readdirIfExists(fs, abs(root, dir));
   const unclaimed = new Set(entries.filter((e) => e.isFile && e.name !== FOLDER_FILE).map((e) => e.name));
-  const requests: RestRequestDef[] = [];
-  const folders: RestFolder[] = [];
+  const requests: R[] = [];
+  const folders: FolderNode<R>[] = [];
 
   for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.isFile && entry.name.endsWith(REQUEST_SUFFIX)) {
-      const relative = `${dir}/${entry.name}`;
-      const document = await readYaml(fs, root, relative);
-      assertSupportedKind(document, relative);
-      const parsed = parseFile(restRequestFileSchema, document, relative);
-      unclaimed.delete(entry.name);
-      if (parsed.body.kind === 'raw') {
-        unclaimed.delete(parsed.body.file);
-      }
-      requests.push({
-        kind: 'rest',
-        id: parsed.id,
-        name: parsed.name,
-        slug: entry.name.slice(0, -REQUEST_SUFFIX.length),
-        order: parsed.order,
-        ...optional('description', parsed.description),
-        method: parsed.method,
-        url: parsed.url,
-        pathParams: keyValueEntries(parsed.pathParams),
-        query: keyValueEntries(parsed.query),
-        headers: keyValueEntries(parsed.headers),
-        body: await loadBody(fs, root, dir, parsed.body, parsed.name, problems),
-        auth: authConfig(parsed.auth),
-        settings: exact<RestRequestSettings>(parsed.settings),
-        ...(parsed.orphaned === true ? { orphaned: true } : {}),
-      });
+      requests.push(await readRequest(dir, entry.name, unclaimed));
       continue;
     }
     if (!entry.isDirectory) {
@@ -400,7 +468,7 @@ async function loadFolderContents(
       });
       continue;
     }
-    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems);
+    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems, readRequest);
     const relative = `${childDir}/${FOLDER_FILE}`;
     const document = await readYaml(fs, root, relative);
     const parsed = document === undefined ? undefined : parseFile(restFolderFileSchema, document, relative);
@@ -426,13 +494,16 @@ async function loadFolderContents(
   return { folders: folders.sort(byOrder), requests: requests.sort(byOrder) };
 }
 
+/** One `apis/<slug>/` directory as loaded: a REST or a gRPC API, whichever its `api.yaml` says. */
+type LoadedApi = { readonly kind: 'rest'; readonly api: RestApi } | { readonly kind: 'grpc'; readonly api: GrpcApi };
+
 /** Loads one `apis/<slug>/` directory, or records a problem and returns nothing. */
 async function loadApi(
   fs: FsLike,
   root: string,
   slug: string,
   problems: ProjectProblem[],
-): Promise<RestApi | undefined> {
+): Promise<LoadedApi | undefined> {
   const relative = `${APIS_DIR}/${slug}/${API_FILE}`;
   const document = await readYaml(fs, root, relative);
   if (document === undefined) {
@@ -444,29 +515,70 @@ async function loadApi(
     return undefined;
   }
   assertSupportedKind(document, relative);
+  const requestsDir = `${APIS_DIR}/${slug}/${REQUESTS_DIR}`;
+  if (apiKindOf(document) === 'grpc') {
+    const parsed = parseFile(grpcApiFileSchema, document, relative);
+    const contents = await loadFolderContents(
+      fs,
+      root,
+      requestsDir,
+      0,
+      problems,
+      grpcRequestReader(fs, root, problems),
+    );
+    return {
+      kind: 'grpc',
+      api: {
+        kind: 'grpc',
+        id: parsed.id,
+        name: parsed.name,
+        slug,
+        order: parsed.order,
+        ...optional('description', parsed.description),
+        target: parsed.target,
+        tls: parsed.tls,
+        metadata: keyValueEntries(parsed.metadata),
+        ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+        ...(parsed.definition !== undefined
+          ? {
+              definition: {
+                source: parsed.definition.source,
+                cache: parsed.definition.cache,
+                roots: parsed.definition.roots,
+              },
+            }
+          : {}),
+        folders: contents.folders,
+        requests: contents.requests,
+      },
+    };
+  }
   const parsed = parseFile(apiFileSchema, document, relative);
-  const contents = await loadFolderContents(fs, root, `${APIS_DIR}/${slug}/${REQUESTS_DIR}`, 0, problems);
+  const contents = await loadFolderContents(fs, root, requestsDir, 0, problems, restRequestReader(fs, root, problems));
   return {
     kind: 'rest',
-    id: parsed.id,
-    name: parsed.name,
-    slug,
-    order: parsed.order,
-    ...optional('description', parsed.description),
-    baseUrl: parsed.baseUrl,
-    servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
-    ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
-    ...(parsed.definition !== undefined
-      ? {
-          definition: {
-            source: parsed.definition.source,
-            cache: parsed.definition.cache,
-            version: parsed.definition.version,
-          },
-        }
-      : {}),
-    folders: contents.folders,
-    requests: contents.requests,
+    api: {
+      kind: 'rest',
+      id: parsed.id,
+      name: parsed.name,
+      slug,
+      order: parsed.order,
+      ...optional('description', parsed.description),
+      baseUrl: parsed.baseUrl,
+      servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
+      ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+      ...(parsed.definition !== undefined
+        ? {
+            definition: {
+              source: parsed.definition.source,
+              cache: parsed.definition.cache,
+              version: parsed.definition.version,
+            },
+          }
+        : {}),
+      folders: contents.folders,
+      requests: contents.requests,
+    },
   };
 }
 
@@ -537,25 +649,31 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
 
   const interfaceSlugs = new Set(interfaces.map((iface) => iface.slug.toLowerCase()));
   const apis: RestApi[] = [];
+  const grpcApis: GrpcApi[] = [];
   for (const entry of await readdirIfExists(fs, abs(root, APIS_DIR))) {
     if (!entry.isDirectory) {
       continue;
     }
-    const api = await loadApi(fs, root, entry.name, problems);
-    if (api === undefined) {
+    const loaded = await loadApi(fs, root, entry.name, problems);
+    if (loaded === undefined) {
       continue;
     }
     // An environment's endpoint overrides are keyed by slug, so two entities sharing one would
-    // make the override ambiguous. The folders never collide; the override key would.
-    if (interfaceSlugs.has(api.slug.toLowerCase())) {
+    // make the override ambiguous. The folders never collide; the override key would. REST and
+    // gRPC APIs share one directory, so their slugs cannot collide with each other.
+    if (interfaceSlugs.has(loaded.api.slug.toLowerCase())) {
       problems.push({
         code: 'api-slug-conflict',
-        message: `API "${api.name}" and an interface share the slug "${api.slug}"; the API was skipped`,
-        file: `${APIS_DIR}/${api.slug}/${API_FILE}`,
+        message: `API "${loaded.api.name}" and an interface share the slug "${loaded.api.slug}"; the API was skipped`,
+        file: `${APIS_DIR}/${loaded.api.slug}/${API_FILE}`,
       });
       continue;
     }
-    apis.push(api);
+    if (loaded.kind === 'grpc') {
+      grpcApis.push(loaded.api);
+    } else {
+      apis.push(loaded.api);
+    }
   }
 
   const keystoresDocument = await readYaml(fs, root, KEYSTORES_PATH);
@@ -579,6 +697,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     ...optional('activeEnvironmentId', manifest.activeEnvironmentId),
     interfaces: interfaces.sort(byOrder),
     apis: apis.sort(byOrder),
+    grpcApis: grpcApis.sort(byOrder),
     environments: await loadEnvironments(fs, root),
     wss: {
       outgoing: await loadWssRefs(fs, root, 'outgoing'),

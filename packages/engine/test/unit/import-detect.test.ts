@@ -155,4 +155,23 @@ paths: {}
       expect(['fs', 'path', 'os', 'child_process', 'crypto', 'net', 'http', 'https']).not.toContain(specifier);
     }
   });
+
+  it('detects a .proto file from its syntax statement, its keywords, or its file name', () => {
+    expect(detectImportFormat({ text: 'syntax = "proto3";\npackage a;\nmessage A {}' })).toEqual({
+      kind: 'proto',
+      label: 'Protocol Buffers (proto3)',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: '// licence\n\nsyntax = "proto2";\nmessage A {}' }).label).toBe(
+      'Protocol Buffers (proto2)',
+    );
+    expect(detectImportFormat({ text: 'edition = "2023";\nmessage A {}' }).label).toBe('Protocol Buffers (editions)');
+    expect(detectImportFormat({ text: 'package a.b;\nservice S { rpc M (A) returns (B); }' })).toMatchObject({
+      kind: 'proto',
+      confidence: 'probable',
+    });
+    expect(detectImportFormat({ filename: 'greeter.proto' })).toMatchObject({ kind: 'proto', confidence: 'probable' });
+    expect(detectImportFormat({ url: 'https://example.com/api/greeter.proto' }).kind).toBe('proto');
+    expect(detectImportFormat({ text: '{"openapi": "3.1.0"}' }).kind).toBe('openapi');
+  });
 });

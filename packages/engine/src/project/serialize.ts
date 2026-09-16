@@ -8,7 +8,8 @@
 
 import { ProjectError } from '../errors.js';
 import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
-import type { KeyValueEntry, RestApi, RestBody, RestFolder, RestRequestDef } from '../rest/model.js';
+import type { KeyValueEntry, RestApi, RestBody, RestRequestDef } from '../rest/model.js';
+import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
 import {
   API_FILE,
@@ -174,6 +175,59 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
   });
 }
 
+/** A folder of either protocol's tree, for the writer that handles both. */
+interface FolderNode<R> {
+  readonly id: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly order: number;
+  readonly description?: string;
+  readonly auth?: AuthConfig;
+  readonly folders: readonly FolderNode<R>[];
+  readonly requests: readonly R[];
+}
+
+/** Writes one request's files into `files` under `dir`: its document, and any sibling the body needs. */
+type RequestWriter<R> = (files: Map<string, string>, dir: string, request: R) => void;
+
+const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, request) => {
+  const body = bodyDocument(request.body, request.slug);
+  files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(restRequestDocument(request)));
+  if (body.file !== undefined) {
+    files.set(`${dir}/${body.file[0]}`, body.file[1]);
+  }
+};
+
+/**
+ * A gRPC request as written: the message text goes to `<slug>.body.json` beside the document, the
+ * same convention as a REST raw body, so a message is a JSON file in git.
+ */
+const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) => {
+  const messageFile = restBodyFileName(request.slug, 'json');
+  assertPathSegment(messageFile);
+  files.set(
+    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
+    stringifyYaml(
+      compact({
+        kind: request.kind,
+        id: request.id,
+        name: request.name,
+        order: request.order,
+        description: request.description,
+        service: request.service,
+        method: request.method,
+        methodKind: request.methodKind,
+        metadata: request.metadata.length > 0 ? keyValueDocuments(request.metadata) : undefined,
+        message: messageFile,
+        auth: authDocument(request.auth),
+        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+        orphaned: request.orphaned === true ? true : undefined,
+      }),
+    ),
+  );
+  files.set(`${dir}/${messageFile}`, request.message);
+};
+
 /**
  * Adds one folder's own file, its requests (and their body files) and, recursively, the folders
  * below it.
@@ -181,19 +235,16 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
  * @throws ProjectError `project-path-invalid` for an unsafe slug, `project-folder-too-deep` for a
  * tree deeper than {@link MAX_FOLDER_DEPTH} — before any path is built, never after.
  */
-function addFolderFiles(
+function addFolderFiles<R extends { readonly slug: string }>(
   files: Map<string, string>,
   dir: string,
-  node: { readonly folders: readonly RestFolder[]; readonly requests: readonly RestRequestDef[] },
+  node: FolderNode<R>,
   depth: number,
+  writeRequest: RequestWriter<R>,
 ): void {
   for (const request of node.requests) {
     assertPathSegment(request.slug);
-    const body = bodyDocument(request.body, request.slug);
-    files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(restRequestDocument(request)));
-    if (body.file !== undefined) {
-      files.set(`${dir}/${body.file[0]}`, body.file[1]);
-    }
+    writeRequest(files, dir, request);
   }
   for (const folder of node.folders) {
     assertPathSegment(folder.slug);
@@ -217,11 +268,11 @@ function addFolderFiles(
         }),
       ),
     );
-    addFolderFiles(files, childDir, folder, depth + 1);
+    addFolderFiles(files, childDir, folder, depth + 1, writeRequest);
   }
 }
 
-/** Every file one API occupies, keyed by path relative to the project root. */
+/** Every file one REST API occupies, keyed by path relative to the project root. */
 function addApiFiles(files: Map<string, string>, api: RestApi): void {
   assertPathSegment(api.slug);
   const base = `${APIS_DIR}/${api.slug}`;
@@ -241,7 +292,34 @@ function addApiFiles(files: Map<string, string>, api: RestApi): void {
       }),
     ),
   );
-  addFolderFiles(files, `${base}/${REQUESTS_DIR}`, api, 0);
+  addFolderFiles<RestRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeRestRequest);
+}
+
+/** Every file one gRPC API occupies. It shares `apis/` with the REST ones; its `kind` says which it is. */
+function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        target: api.target,
+        tls: api.tls,
+        metadata: api.metadata.length > 0 ? keyValueDocuments(api.metadata) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition:
+          api.definition === undefined
+            ? undefined
+            : compact({ source: api.definition.source, cache: api.definition.cache, roots: [...api.definition.roots] }),
+      }),
+    ),
+  );
+  addFolderFiles<GrpcRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeGrpcRequest);
 }
 
 function wssDocument(ref: WssRef): string {
@@ -332,6 +410,9 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
 
   for (const api of project.apis) {
     addApiFiles(files, api);
+  }
+  for (const api of project.grpcApis) {
+    addGrpcApiFiles(files, api);
   }
 
   for (const [direction, refs] of [

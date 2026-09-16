@@ -1,0 +1,84 @@
+// A small service exercising every message shape the client has to handle.
+syntax = "proto3";
+
+package wirebench.greet;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "wirebench/common/address.proto";
+
+option java_package = "dev.wirebench.greet";
+
+// The mood a greeting is delivered in.
+enum Mood {
+  MOOD_UNSPECIFIED = 0;
+  CHEERFUL = 1;
+  FORMAL = 2;
+}
+
+// A greeting request.
+message HelloRequest {
+  // Who to greet.
+  string name = 1;
+  int64 big_number = 2;
+  repeated string tags = 3;
+  map<string, int32> counts = 4;
+  Mood mood = 5;
+  google.protobuf.Timestamp at = 6;
+  wirebench.common.Address address = 7;
+  oneof extra {
+    string note = 8;
+    int32 priority = 9;
+  }
+  bytes blob = 10;
+  optional string nickname = 11;
+  google.protobuf.Duration patience = 12;
+  google.protobuf.Struct details = 13;
+  google.protobuf.StringValue label = 14;
+  google.protobuf.Any payload = 15;
+  google.protobuf.FieldMask mask = 16;
+}
+
+// A greeting.
+message HelloReply {
+  string message = 1;
+  HelloRequest echo = 2;
+  // The `x-` request metadata the server saw.
+  map<string, string> metadata = 3;
+  int32 sequence = 4;
+}
+
+message StreamRequest {
+  int32 count = 1;
+  int32 delay_ms = 2;
+}
+
+message FailRequest {
+  int32 code = 1;
+  string message = 2;
+  bool trailers_only = 3;
+}
+
+// Greets people, in every streaming shape.
+service Greeter {
+  // Says hello once.
+  rpc SayHello(HelloRequest) returns (HelloReply);
+  // Says hello `count` times.
+  rpc LotsOfReplies(StreamRequest) returns (stream HelloReply);
+  // Counts the greetings it was sent.
+  rpc LotsOfGreetings(stream HelloRequest) returns (HelloReply);
+  // Answers each greeting as it arrives.
+  rpc Chat(stream HelloRequest) returns (stream HelloReply);
+  // Fails with the status the request names.
+  rpc Fail(FailRequest) returns (google.protobuf.Empty);
+  // Answers after `delay_ms`.
+  rpc Slow(StreamRequest) returns (HelloReply);
+  rpc Deprecated(HelloRequest) returns (HelloReply) {
+    option deprecated = true;
+  }
+}

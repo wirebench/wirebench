@@ -20,6 +20,11 @@
       "types": "./dist/rest/browser.d.ts",
       "default": "./dist/rest/browser.js"
     },
+    "./grpc": {
+      "development": "./src/grpc/browser.ts",
+      "types": "./dist/grpc/browser.d.ts",
+      "default": "./dist/grpc/browser.js"
+    },
     "./detect": {
       "development": "./src/import-detect.ts",
       "types": "./dist/import-detect.d.ts",
@@ -38,6 +43,7 @@
     "fontoxpath": "^3.34.0",
     "jsonpath-plus": "^10.4.0",
     "node-forge": "^1.3.1",
+    "protobufjs": "^8.8.0",
     "ulidx": "^2.4.1",
     "undici": "^8",
     "xml-crypto": "^6.1.2",

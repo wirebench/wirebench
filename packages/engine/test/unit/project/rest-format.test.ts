@@ -410,26 +410,26 @@ describe('problems a damaged apis/ folder reports', () => {
 });
 
 describe('a kind this build does not support', () => {
-  it('refuses a grpc request file by name instead of guessing', async () => {
+  it('refuses a request file of an unknown kind by name instead of guessing', async () => {
     const dir = await tempProjectDir();
     await saveProject(apiProject(), dir);
     const file = join(dir, APIS_DIR, 'Orders', 'requests', 'List orders.request.yaml');
-    await writeFile(file, (await readFile(file, 'utf8')).replace('kind: rest', 'kind: grpc'));
+    await writeFile(file, (await readFile(file, 'utf8')).replace('kind: rest', 'kind: graphql'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
 
     expect(error).toBeInstanceOf(ProjectError);
     expect(error.code).toBe('project-kind-not-supported');
-    expect(error.message).toContain('"grpc"');
-    expect(error.details).toMatchObject({ kind: 'grpc', supported: ['soap', 'rest'] });
+    expect(error.message).toContain('"graphql"');
+    expect(error.details).toMatchObject({ kind: 'graphql', supported: ['soap', 'rest', 'grpc'] });
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('refuses a grpc api.yaml the same way', async () => {
+  it('refuses an api.yaml of an unknown kind the same way', async () => {
     const dir = await tempProjectDir();
     await saveProject(apiProject(), dir);
     const file = join(dir, APIS_DIR, 'Orders', 'api.yaml');
-    await writeFile(file, (await readFile(file, 'utf8')).replace('kind: rest', 'kind: grpc'));
+    await writeFile(file, (await readFile(file, 'utf8')).replace('kind: rest', 'kind: graphql'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
 

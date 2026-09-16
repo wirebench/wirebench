@@ -10,6 +10,8 @@ export {
   WorkspaceError,
   OpenApiError,
   PostmanError,
+  ProtoError,
+  GrpcError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -480,6 +482,11 @@ export {
   apiDefinitionCacheManifestSchema,
   restFolderFileSchema,
   restRequestFileSchema,
+  grpcApiFileSchema,
+  grpcRequestFileSchema,
+  grpcMethodKindSchema,
+  protoDefinitionCacheManifestSchema,
+  apiKindOf,
   wssIncomingFileSchema,
   wssEntrySchema,
   wssOutgoingFileSchema,
@@ -497,6 +504,9 @@ export type {
   RequestFile,
   RestFolderFile,
   RestRequestFile,
+  GrpcApiFile,
+  GrpcRequestFile,
+  ProtoDefinitionCacheManifest,
 } from './project/schema.js';
 export { DEFAULT_PREFERENCES, mergePreferences, preferencesSchema, resetPreferences } from './project/preferences.js';
 export type {
@@ -514,11 +524,13 @@ export type {
   RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toRestSendInput, toSendInput } from './send-options.js';
+export { toGrpcSendInput, toRestSendInput, toSendInput } from './send-options.js';
 export type {
   AttachmentResolvers,
+  GrpcSendRequestInput,
   RestSendRequestInput,
   SendRequestInput,
+  ToGrpcSendInputArgs,
   ToRestSendInputArgs,
   ToSendInputArgs,
 } from './send-options.js';
@@ -551,6 +563,7 @@ export type {
   HistoryError,
   HistoryFault,
   HistoryFile,
+  HistoryGrpc,
   HistoryHeader,
   HistoryListQuery,
   HistoryOptions,
@@ -800,3 +813,74 @@ export type { PlannedAssertion } from './validate/wsi/index.js';
 
 export { detectImportFormat } from './import-detect.js';
 export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from './import-detect.js';
+
+// gRPC: the third protocol, a sibling container to a SOAP interface and a REST API (ADR-0007).
+export {
+  clientStreams,
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  defaultTlsFor,
+  grpcApiFolders,
+  grpcApiRequests,
+  grpcFolderRequests,
+  grpcMethodPath,
+  serverStreams,
+} from './grpc/model.js';
+export type {
+  CreateGrpcApiInput,
+  CreateGrpcFolderInput,
+  CreateGrpcRequestInput,
+  GrpcApi,
+  GrpcDefinitionRef,
+  GrpcFolder,
+  GrpcMethodKind,
+  GrpcRequestDef,
+  GrpcRequestSettings,
+} from './grpc/model.js';
+export {
+  GRPC_STATUS_NAMES,
+  decodeGrpcMessage,
+  encodeGrpcMessage,
+  formatGrpcTimeout,
+  grpcStatusName,
+} from './grpc/status.js';
+export { encodeGrpcFrame, GrpcFrameParser } from './grpc/framing.js';
+export type { GrpcFrame } from './grpc/framing.js';
+export { loadProtoSet } from './grpc/proto/load.js';
+export type { LoadProtoOptions, ProtoSet, ProtoSources } from './grpc/proto/load.js';
+export {
+  describeMessage,
+  describeMethod,
+  describeServices,
+  lookupMessageType,
+  lookupMethod,
+  qualifiedName,
+} from './grpc/proto/describe.js';
+export type {
+  FieldValueKind,
+  GrpcMethodDescriptor,
+  GrpcServiceDescriptor,
+  MessageDescriptor,
+  MessageFieldDescriptor,
+} from './grpc/proto/describe.js';
+export { sampleMessage, sampleMessageText } from './grpc/proto/sample.js';
+export type { SampleMessageOptions } from './grpc/proto/sample.js';
+export { WELL_KNOWN_TYPES, isWrapperType } from './grpc/proto/well-known.js';
+export { decodeMessage, encodeMessage, parseMessageText } from './grpc/codec.js';
+export { buildGrpcHeaders, parseGrpcTarget, sendGrpc } from './grpc/send.js';
+export type { GrpcExchange, GrpcSendInput, GrpcStatusSource, GrpcTarget } from './grpc/send.js';
+export { callGrpc, decodeResponseMessage } from './grpc/call.js';
+export type { GrpcCallInput, GrpcCallResult, GrpcResponseMessage } from './grpc/call.js';
+export { expandGrpcInput } from './grpc/expand.js';
+export type { ExpandGrpcOptions, GrpcExpandable } from './grpc/expand.js';
+export { apiFromProtoSet, importProto } from './grpc/import.js';
+export type { ImportProtoOptions, ImportedProto, ProtoImportSummary } from './grpc/import.js';
+export { PROTOS_DIR, protoPathSegments, readProtoDefinitionCache, writeProtoDefinitionCache } from './grpc/cache.js';
+export type {
+  CachedProtoDefinition,
+  ProtoDefinitionCacheOptions,
+  WriteProtoDefinitionCacheOptions,
+} from './grpc/cache.js';
+export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
+export type { GrpcToCommandOptions } from './grpc/command.js';

@@ -23,6 +23,14 @@ export {
   type TestRestServerTls,
   type RecordedRestRequest,
 } from './test-rest-server.js';
+export {
+  startTestGrpcServer,
+  type RecordedGrpcCall,
+  type TestGrpcServer,
+  type TestGrpcServerOptions,
+  type TestGrpcServerTls,
+} from './test-grpc-server.js';
+export { readProtoFixture, protoFixtureDir } from './proto-fixtures.js';
 export { startTestProxy, type ProxiedRequest, type TestProxy, type TestProxyOptions } from './test-proxy.js';
 export { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 export {
