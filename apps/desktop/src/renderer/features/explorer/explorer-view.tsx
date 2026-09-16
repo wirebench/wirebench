@@ -142,18 +142,20 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
-        {/* The twisty's width is reserved on every row, open or leaf, so a folder's name and the
-            name of a request beside it start at the same x. */}
-        <span
-          className="w-3 shrink-0 text-fg-subtle"
-          onClick={(e) => {
-            if (!node.isInternal) return;
-            e.stopPropagation();
-            node.toggle();
-          }}
-        >
-          {node.isInternal ? (node.isOpen ? '▾' : '▸') : ''}
-        </span>
+        {/* Only a row that folds carries a twisty. Reserving its width on leaves too would line a
+            request's name up with the folder names beside it, but every leaf in the tree — most of
+            it — would pay 14px of blank gutter for that. */}
+        {node.isInternal && (
+          <span
+            className="w-3 shrink-0 text-fg-subtle"
+            onClick={(e) => {
+              e.stopPropagation();
+              node.toggle();
+            }}
+          >
+            {node.isOpen ? '▾' : '▸'}
+          </span>
+        )}
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}

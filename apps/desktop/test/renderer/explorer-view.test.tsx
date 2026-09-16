@@ -450,12 +450,12 @@ describe('ExplorerView with APIs', () => {
     expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
   });
 
-  it('lines every name up by giving each row the same leading gutter, methods right-aligned', () => {
+  it('gives every row the same method gutter, right-aligned', () => {
     seedRest();
     mount();
 
-    // Folder and request rows alike: one twisty slot, then one gutter of the same fixed width, so
-    // the names after them begin at the same x whatever the method label is.
+    // Folder and request rows alike carry one gutter of the same fixed width, so a GET row's name
+    // and a DELETE row's name begin at the same x. Only folding rows carry a twisty before it.
     const gutters = screen.getAllByTestId('explorer-row-gutter');
     expect(gutters.length).toBeGreaterThan(1);
     for (const gutter of gutters) {
