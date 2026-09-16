@@ -27,6 +27,28 @@ const METHOD_CHIP_CLASS: Readonly<Record<string, string>> = {
 /** How much of a custom method the badge shows before it is cut short. */
 const MAX_LABEL = 7;
 
+/**
+ * The short forms the explorer's narrow method column uses, so a name never starts three
+ * characters further right on a DELETE row than on a GET row. The row's title still carries the
+ * method in full, as does `data-method`.
+ */
+const SHORT_LABEL: Readonly<Record<string, string>> = {
+  DELETE: 'DEL',
+  OPTIONS: 'OPT',
+  CONNECT: 'CONN',
+};
+
+/** The longest label the compact column shows before it is cut short. */
+const MAX_COMPACT_LABEL = 5;
+
+/** One method as the compact column spells it: `DELETE` is `DEL`, `GET` and `PATCH` unchanged. */
+export function compactMethodLabel(method: string): string {
+  const label = method.toUpperCase();
+  const short = SHORT_LABEL[label];
+  if (short !== undefined) return short;
+  return label.length > MAX_COMPACT_LABEL ? `${label.slice(0, 4)}…` : label;
+}
+
 export interface MethodBadgeProps {
   readonly method: string;
   /** Adds the method to the accessible name, for a row whose text alone would not carry it. */
@@ -34,6 +56,8 @@ export interface MethodBadgeProps {
   readonly className?: string;
   /** Visual variant: 'text' (Postman-style, default) or 'chip' (filled pill). */
   readonly variant?: 'text' | 'chip';
+  /** Spells long methods short, for the explorer's fixed-width method column. */
+  readonly compact?: boolean;
 }
 
 /** The colour class for one method, exported so the tests can pin the mapping without the DOM. */
@@ -47,9 +71,13 @@ export function methodChipClass(method: string): string {
 }
 
 /** One method badge. */
-export function MethodBadge({ method, title, className, variant = 'text' }: MethodBadgeProps) {
+export function MethodBadge({ method, title, className, variant = 'text', compact = false }: MethodBadgeProps) {
   const label = method.toUpperCase();
-  const truncatedLabel = label.length > MAX_LABEL ? `${label.slice(0, MAX_LABEL)}…` : label;
+  const truncatedLabel = compact
+    ? compactMethodLabel(label)
+    : label.length > MAX_LABEL
+      ? `${label.slice(0, MAX_LABEL)}…`
+      : label;
 
   if (variant === 'chip') {
     return (

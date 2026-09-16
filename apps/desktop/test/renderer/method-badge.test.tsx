@@ -60,6 +60,27 @@ describe('MethodBadge', () => {
     expect(screen.getByTestId('method-badge').getAttribute('title')).toBe('GET Get pet');
   });
 
+  it('spells long methods short in the compact column, and leaves the short ones alone', () => {
+    render(<MethodBadge method="delete" compact />);
+    expect(screen.getByTestId('method-badge').textContent).toBe('DEL');
+    // The method itself is never lost: the attribute and the title still carry it in full.
+    expect(screen.getByTestId('method-badge').getAttribute('data-method')).toBe('DELETE');
+    cleanup();
+
+    for (const [method, shown] of [
+      ['GET', 'GET'],
+      ['POST', 'POST'],
+      ['PUT', 'PUT'],
+      ['PATCH', 'PATCH'],
+      ['OPTIONS', 'OPT'],
+      ['PROPFIND', 'PROP…'],
+    ] as const) {
+      render(<MethodBadge method={method} compact />);
+      expect(screen.getByTestId('method-badge').textContent).toBe(shown);
+      cleanup();
+    }
+  });
+
   it('renders a filled chip when variant="chip" is requested', () => {
     render(<MethodBadge method="post" variant="chip" />);
 

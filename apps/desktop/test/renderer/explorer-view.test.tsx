@@ -459,7 +459,7 @@ describe('ExplorerView with APIs', () => {
     const gutters = screen.getAllByTestId('explorer-row-gutter');
     expect(gutters.length).toBeGreaterThan(1);
     for (const gutter of gutters) {
-      expect(gutter.className).toContain('w-12');
+      expect(gutter.className).toContain('w-10');
       expect(gutter.className).toContain('justify-end');
     }
 
