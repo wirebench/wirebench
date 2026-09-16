@@ -470,6 +470,24 @@ describe('ExplorerView with APIs', () => {
     expect(folderRow.querySelector('[data-testid="explorer-row-gutter"]')).not.toBeNull();
   });
 
+  it('opens a project tab and folds the project under the same single click', () => {
+    seedRest();
+    mount();
+
+    const before = useEditorsStore.getState().tabs.length;
+    fireEvent.click(screen.getByText('Demo'));
+
+    // The tab opens...
+    expect(useEditorsStore.getState().tabs.length).toBeGreaterThan(before);
+    expect(useEditorsStore.getState().tabs.some((tab) => tab.kind === 'project')).toBe(true);
+    // ...and the click also folds the row, so its children go with it.
+    expect(screen.queryByTestId('api-row')).toBeNull();
+
+    // A second click unfolds it again.
+    fireEvent.click(screen.getByText('Demo'));
+    expect(screen.getByTestId('api-row')).not.toBeNull();
+  });
+
   it('opens a REST request tab on a single click, and the same tab on a second click', () => {
     seedRest();
     mount();

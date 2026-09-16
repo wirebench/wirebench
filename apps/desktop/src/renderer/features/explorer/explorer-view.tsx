@@ -128,9 +128,10 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             // and credentials live, and the row is also the container the user is about to expand.
             node.activate();
             node.toggle();
-          } else if (node.isInternal && node.data.kind !== 'project') {
-            // A project row opens its tab from `onSelect` (see below) and must not also fold
-            // itself shut under the very click that opened it.
+          } else if (node.isInternal) {
+            // A project row opens its tab from `onSelect` (see below) and folds under the same
+            // click, like an API row: the row is both the thing the tab is about and the container
+            // the user is reaching into.
             node.toggle();
           }
         }}
