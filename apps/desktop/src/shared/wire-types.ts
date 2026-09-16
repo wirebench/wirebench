@@ -635,6 +635,33 @@ const httpExchangeWireSchema = z.object({
 });
 export type HttpExchangeWire = z.infer<typeof httpExchangeWireSchema>;
 
+/**
+ * A send that never produced a response, as the console's HTTP Log records it. Built in main
+ * (`failed-exchange.ts`) from the same catch block that writes History, with `request.headers`
+ * redacted once and for good: a failure is never held in the unredacted `ExchangeCache`, so the
+ * show-secrets toggle cannot reveal them later, and the detail pane says so.
+ */
+export const failedExchangeWireSchema = z.object({
+  /** The id the renderer generated for the send — the log dedupes on it. */
+  sendId: z.string(),
+  protocol: z.enum(['soap', 'rest']),
+  /** Absent for an ad-hoc resend of an orphaned History entry. */
+  requestId: z.string().optional(),
+  /** The same shape as `httpExchangeWireSchema.request`; headers already redacted. */
+  request: httpRequestSummarySchema,
+  /** Wall-clock start, ISO 8601 — as `timingsWireSchema.startedAt`. */
+  startedAt: z.string(),
+  /** Start to failure. */
+  durationMs: z.number(),
+  /** The engine's `HttpErrorCode`, another `WirebenchError` code, or `internal-error`. */
+  error: z.object({ code: z.string(), message: z.string() }),
+});
+export type FailedExchangeWire = z.infer<typeof failedExchangeWireSchema>;
+
+/** Payload for the `exchange.failed` event: one send that failed before a response arrived. */
+export const exchangeFailedEventSchema = z.object({ failure: failedExchangeWireSchema });
+export type ExchangeFailedEvent = z.infer<typeof exchangeFailedEventSchema>;
+
 /** Wire projection of `SoapFault`: the DOM `element` is dropped (not serialisable). */
 const faultWireSchema = z.object({
   version: z.enum(['1.1', '1.2']),

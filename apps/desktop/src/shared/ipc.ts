@@ -89,6 +89,7 @@ import {
   workspaceChangedOnDiskEventSchema,
   projectMoveToWorkspaceRequestSchema,
   engineProgressEventSchema,
+  exchangeFailedEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
   exchangesSaveRestBodyRequestSchema,
@@ -691,6 +692,10 @@ export const events = {
   },
   history: {
     appended: defineEvent('history.appended', historyAppendedEventSchema),
+  },
+  exchange: {
+    /** A send failed before a response arrived; the console's HTTP Log records it as a failure row. */
+    failed: defineEvent('exchange.failed', exchangeFailedEventSchema),
   },
   git: {
     /** The open workspace's sync needs `user.name`/`user.email` before it can commit. */
