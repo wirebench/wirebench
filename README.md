@@ -1,12 +1,13 @@
 # Wirebench
 
-Wirebench is an open-source desktop **SOAP and REST** workbench with a modern IDE shell, built on Electron,
+Wirebench is an open-source desktop **SOAP, REST and gRPC** workbench with a modern IDE shell, built on Electron,
 TypeScript and React. Import a WSDL, get a request generated from the contract, send it, and read the response — with
 WS-Security, WS-Addressing, MTOM/SwA attachments, schema and WS-I validation, environments, property expansion and
 searchable history along the way. Or import an OpenAPI document (or start from a URL and a method) and get the same
 shell for REST: folders of requests, every body kind, Basic/NTLM/Bearer/API-key/OAuth2 auth, cookies, redirects and a
-response pane with pretty, raw, headers, timing and TLS. Both protocols share one project, one set of environments,
-one history and one HTTP stack; gRPC is the next one to slot in.
+response pane with pretty, raw, headers, timing and TLS. Or import a `.proto` set and call a gRPC method — unary or
+streaming — with the message as JSON and the status, replies and trailers in the same pane. All three protocols
+share one project, one set of environments, one history and one HTTP stack.
 
 Projects are folders of small YAML and XML files, made to live in git. Credentials never go in them.
 
@@ -179,7 +180,10 @@ repository. It is what the opt-in update feed is derived from.
   [implementation plan](docs/plans/2026-09-11-wirebench-workspaces-plan.md)
 - [REST client design spec](docs/specs/2026-09-13-wirebench-rest-client-design.md) and
   [implementation plan](docs/plans/2026-09-13-wirebench-rest-client-plan.md) — APIs, folders and requests beside
-  SOAP interfaces, OpenAPI import, OAuth2, and what it fixes now so gRPC can follow
+  SOAP interfaces, OpenAPI import, OAuth2, and what it fixed so gRPC could follow
+- [gRPC client design spec](docs/specs/2026-09-16-wirebench-grpc-client-design.md) and
+  [implementation plan](docs/plans/2026-09-16-wirebench-grpc-client-plan.md) — `.proto` import, the JSON message
+  editor, every streaming shape over HTTP/2, and the status-first response pane
 - [Collaborate on a shared workspace](docs/collaborate.md) — sharing, syncing and resolving
   conflicts as a team, and
   [shared-workspaces design spec](docs/specs/2026-09-13-wirebench-shared-workspaces-design.md)
@@ -187,7 +191,7 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Roadmap
 
-Explore-and-send works across workspaces, for SOAP and for REST, and a workspace can be shared with a team.
+Explore-and-send works across workspaces, for SOAP, REST and gRPC, and a workspace can be shared with a team.
 What comes next, in the order it is worth building; the [full roadmap](docs/roadmap.md) has the reasoning,
 sizes, the detail per theme, and what a review of the surrounding tools changed on 2026-09-13.
 
@@ -211,7 +215,8 @@ sizes, the detail per theme, and what a review of the surrounding tools changed 
 13. **Wirebench Server** — self-hosted sign-in, teams and SSO, on top of the shipped git-native shared workspaces.
     The app stays fully usable without an account.
 
-After these, on demand: gRPC (already reserved, per ADR-0007) and GraphQL; JKS keystores and WS-ReliableMessaging.
+After these, on demand: GraphQL, and the gRPC follow-ups (server reflection, interactive bidirectional streams);
+JKS keystores and WS-ReliableMessaging.
 Deferred: load testing, WSDL coverage and refactoring, code generation. Watched only: MQTT, Kafka and JMS.
 
 ## License

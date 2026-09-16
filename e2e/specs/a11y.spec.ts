@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { importProto, openGrpcRequest, placeGreeterProtos, sendGrpc, setMessage } from '../helpers/grpc.js';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProject,
@@ -10,6 +11,7 @@ import {
   createWorkspace,
   dismissChangedOnDiskBanners,
   openFirstRequest,
+  workspaceProjectDir,
 } from '../helpers/project.js';
 import {
   createApi,
@@ -20,8 +22,10 @@ import {
   setMethodAndUrl,
 } from '../helpers/rest.js';
 import {
+  startTestGrpcServer,
   startTestRestServer,
   startTestSoapServer,
+  type TestGrpcServer,
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
@@ -129,8 +133,18 @@ test.describe('accessibility and theming', () => {
   let launched: LaunchedApp | undefined;
   let server: TestSoapServer | undefined;
   let restServer: TestRestServer | undefined;
+  let grpcServer: TestGrpcServer | undefined;
+  let grpcUserDataDir: string | undefined;
 
   test.afterEach(async () => {
+    if (grpcServer) {
+      await grpcServer.close();
+      grpcServer = undefined;
+    }
+    if (grpcUserDataDir !== undefined) {
+      removeDirSync(grpcUserDataDir);
+      grpcUserDataDir = undefined;
+    }
     if (launched) {
       await launched.close();
       launched = undefined;
@@ -228,6 +242,29 @@ test.describe('accessibility and theming', () => {
 
       await setTheme(window, theme);
       await expectNoSeriousViolations(window, `REST editor (${theme})`);
+    });
+
+    test(`a11y: the gRPC editor with a response has no serious violations (${theme})`, async () => {
+      grpcServer = await startTestGrpcServer();
+      grpcUserDataDir = mkdtempSync(join(tmpdir(), 'wirebench-a11y-grpc-'));
+      launched = await launchApp({ userDataDir: grpcUserDataDir });
+      const { window } = launched;
+
+      await createWorkspace(window, 'gRPC');
+      await createProject(window, 'Greet');
+      await importProto(
+        window,
+        placeGreeterProtos(workspaceProjectDir(grpcUserDataDir, 'Greet')),
+        'Greeter',
+        grpcServer.target,
+      );
+      await openGrpcRequest(window, 'SayHello');
+      await setMessage(window, '{"name":"Ada"}');
+      await sendGrpc(window);
+      await expect(window.getByTestId('grpc-response-status')).toContainText('OK (0)', { timeout: 20_000 });
+
+      await setTheme(window, theme);
+      await expectNoSeriousViolations(window, `gRPC editor (${theme})`);
     });
 
     test(`a11y: the import dialog and the API tab have no serious violations (${theme})`, async () => {
