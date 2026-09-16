@@ -6,7 +6,9 @@ import { showToast } from '../components/toast.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type {
+  ExchangeFailedEvent,
   ExchangeSummary,
+  FailedExchangeWire,
   GrpcExchangeSummary,
   RestExchangeSummary,
   UnresolvedRefWire,
@@ -22,6 +24,47 @@ import { useDraftsStore } from './drafts.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
 const LOG_CAP = 500;
+
+/**
+ * One row of the HTTP Log: a finished exchange of either protocol, or a send that never produced
+ * a response. The two are kept as separate shapes so the response pane, the inspectors, the status
+ * bar and History keep consuming `ExchangeSummary` / `RestExchangeSummary` exactly as before.
+ */
+export type LogEntry =
+  | { readonly kind: 'exchange'; readonly exchange: AnyExchangeSummary }
+  | { readonly kind: 'failure'; readonly failure: FailedExchangeWire };
+
+/** The HTTP status classes the filter bar offers, plus `failed` for a send that produced none. */
+export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
+
+/** What narrows the HTTP Log; every list empty means "all". Lives here so it survives switching console tabs. */
+export interface LogFilter {
+  /** Case-insensitive substring of the request URL. */
+  readonly text: string;
+  /** Upper-case method names. */
+  readonly methods: readonly string[];
+  readonly statuses: readonly StatusClass[];
+  readonly protocols: readonly ('soap' | 'rest')[];
+}
+
+/** The filter that shows every row. */
+export const EMPTY_FILTER: LogFilter = { text: '', methods: [], statuses: [], protocols: [] };
+
+/** The send id either kind of entry carries. */
+export function sendIdOf(entry: LogEntry): string {
+  return entry.kind === 'exchange' ? entry.exchange.sendId : entry.failure.sendId;
+}
+
+/** The newest finished exchange in the log, skipping failures — what the status bar's "last:" reads. */
+export function lastExchangeOf(log: readonly LogEntry[]): AnyExchangeSummary | undefined {
+  for (let index = log.length - 1; index >= 0; index -= 1) {
+    const entry = log[index];
+    if (entry !== undefined && entry.kind === 'exchange') {
+      return entry.exchange;
+    }
+  }
+  return undefined;
+}
 
 /** The send lifecycle for one request draft. */
 export type ExchangeStatus = 'idle' | 'sending' | 'done' | 'error';
@@ -65,11 +108,13 @@ export interface ExchangesSnapshot {
   /** The gRPC third, keyed by gRPC request id, apart for the same reason. */
   readonly grpcByRequest: Record<string, GrpcExchangeState>;
   /**
-   * Newest-last log of every completed exchange, SOAP and REST alike: the console's HTTP Log is a
-   * protocol-neutral surface, and a REST send that never reached it left the log and the status
-   * bar's "last:" indicator claiming nothing had been sent.
+   * Newest-last log of every send this session, SOAP and REST alike, finished or failed: the
+   * console's HTTP Log is a protocol-neutral surface, and a send that never produced a response
+   * belongs in it as much as one that did.
    */
-  readonly log: readonly AnyExchangeSummary[];
+  readonly log: readonly LogEntry[];
+  /** The HTTP Log's filter. Not persisted; dropped with the log on `reset`. */
+  readonly filter: LogFilter;
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -90,6 +135,12 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
+  /** Appends a failed send's row. A `sendId` already in the log (either kind) is ignored. */
+  readonly appendFailure: (failure: FailedExchangeWire) => void;
+  /** Merges a patch into the HTTP Log filter. */
+  readonly setFilter: (patch: Partial<LogFilter>) => void;
+  /** Shows every row again. Distinct from `clearLog`, which empties the log. */
+  readonly resetFilter: () => void;
   /**
    * Re-reads one exchange from main (`exchanges.get`), which re-redacts it against the
    * show-secrets flag as it stands now, and swaps the fresher copy into the log and the
@@ -143,9 +194,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     restByRequest: {},
     grpcByRequest: {},
     log: [],
+    filter: EMPTY_FILTER,
 
     reset: () => {
-      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [] });
+      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER });
     },
 
     sendGrpc: async (requestId) => {
@@ -198,7 +250,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       }
       update((draft) => {
         draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push(result.value);
+        draft.log.push({ kind: 'exchange', exchange: result.value });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -280,7 +332,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
         // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
         // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
-        draft.log.push(result.value);
+        draft.log.push({ kind: 'exchange', exchange: result.value });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -423,7 +475,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       update((draft) => {
         draft.byRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push(result.value);
+        draft.log.push({ kind: 'exchange', exchange: result.value });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -445,9 +497,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       }
       const fresh = result.value;
       update((draft) => {
-        const index = draft.log.findIndex((entry) => entry.sendId === sendId);
+        const index = draft.log.findIndex((entry) => entry.kind === 'exchange' && entry.exchange.sendId === sendId);
         if (index >= 0) {
-          draft.log[index] = fresh;
+          draft.log[index] = { kind: 'exchange', exchange: fresh };
         }
         for (const [requestId, state] of Object.entries(draft.byRequest)) {
           if (state.sendId === sendId && state.exchange !== undefined) {
@@ -463,6 +515,26 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    appendFailure: (failure) => {
+      update((draft) => {
+        if (draft.log.some((entry) => sendIdOf(entry) === failure.sendId)) {
+          return;
+        }
+        draft.log.push({ kind: 'failure', failure });
+        if (draft.log.length > LOG_CAP) {
+          draft.log.splice(0, draft.log.length - LOG_CAP);
+        }
+      });
+    },
+
+    setFilter: (patch) => {
+      set((state) => ({ filter: { ...state.filter, ...patch } }));
+    },
+
+    resetFilter: () => {
+      set({ filter: EMPTY_FILTER });
+    },
+
     clearRequest: (requestId) => {
       update((draft) => {
         delete draft.byRequest[requestId];
@@ -470,3 +542,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
   };
 });
+
+/**
+ * Subscribes the log to `exchange.failed`. Called once from the shell, beside `subscribeToHistory`;
+ * returns the unsubscribe for symmetry with React effects.
+ */
+export function subscribeToExchangeFailures(): () => void {
+  return window.wirebench.on('exchange.failed', ((payload: ExchangeFailedEvent) => {
+    useExchangesStore.getState().appendFailure(payload.failure);
+  }) as (payload: unknown) => void);
+}

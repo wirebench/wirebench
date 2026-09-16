@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
 import {
@@ -89,7 +89,9 @@ function Detail({ exchange }: { readonly exchange: ExchangeSummary }) {
  * raw request/response of whichever row is selected shown underneath.
  */
 export function HttpLog() {
-  const log = useExchangesStore((state) => state.log);
+  const entries = useExchangesStore((state) => state.log);
+  // Task 8 renders LogEntry rows; until then the table shows exchanges only.
+  const log = useMemo(() => entries.flatMap((entry) => (entry.kind === 'exchange' ? [entry.exchange] : [])), [entries]);
   const clearLog = useExchangesStore((state) => state.clearLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);

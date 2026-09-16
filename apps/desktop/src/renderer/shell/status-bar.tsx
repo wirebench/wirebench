@@ -8,7 +8,7 @@ import { responseSize, toneFor } from '../features/request-editor/response-statu
 import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { SyncBadge } from '../features/sync/sync-badge.js';
 import { useEditorsStore } from '../state/editors.js';
-import { useExchangesStore } from '../state/exchanges.js';
+import { lastExchangeOf, useExchangesStore } from '../state/exchanges.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useProblemsStore } from '../state/problems.js';
@@ -58,7 +58,7 @@ function formatClock(iso: string): string {
 export function StatusBar() {
   const version = useAppVersion();
   const updateLabel = updateStatusLabel(useUpdateStatus());
-  const last = useExchangesStore((state) => state.log.at(-1));
+  const last = useExchangesStore((state) => lastExchangeOf(state.log));
   // One label for every open project: `project.save` saves them all, so "saving" is true while
   // any of them is, and the strip must not sprout one row per project.
   const saving = useProjectStore((state) => Object.values(state.saveStatus).some((status) => status === 'saving'));

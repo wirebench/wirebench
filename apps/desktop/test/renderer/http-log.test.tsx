@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpLog } from '../../src/renderer/features/console/http-log.js';
-import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
+import { EMPTY_FILTER, useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
-import { b64, makeExchange } from '../mocks/exchange-fixtures.js';
+import { b64, logExchange, makeExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 describe('HttpLog', () => {
   beforeEach(() => {
-    useExchangesStore.setState({ byRequest: {}, log: [] });
+    useExchangesStore.setState({ byRequest: {}, log: [], filter: EMPTY_FILTER });
     useSecretsVisibilityStore.setState({ show: false });
     installWirebenchApi();
   });
@@ -25,7 +25,7 @@ describe('HttpLog', () => {
 
   it('renders one row per exchange, newest last', () => {
     useExchangesStore.setState({
-      log: [makeExchange({ sendId: 'a' }), makeExchange({ sendId: 'b', durationMs: 12 })],
+      log: [logExchange(makeExchange({ sendId: 'a' })), logExchange(makeExchange({ sendId: 'b', durationMs: 12 }))],
     });
     render(<HttpLog />);
 
@@ -39,7 +39,7 @@ describe('HttpLog', () => {
   it('colours a failing status red', () => {
     const base = makeExchange();
     useExchangesStore.setState({
-      log: [makeExchange({ http: { ...base.http, status: 500, statusText: 'Internal Server Error' } })],
+      log: [logExchange(makeExchange({ http: { ...base.http, status: 500, statusText: 'Internal Server Error' } }))],
     });
     render(<HttpLog />);
 
@@ -47,7 +47,7 @@ describe('HttpLog', () => {
   });
 
   it('shows the raw request and response of the row that is clicked', async () => {
-    useExchangesStore.setState({ log: [makeExchange()] });
+    useExchangesStore.setState({ log: [logExchange(makeExchange())] });
     render(<HttpLog />);
 
     expect(screen.queryByLabelText('Raw request')).toBeNull();
@@ -58,7 +58,7 @@ describe('HttpLog', () => {
   });
 
   it('breaks the selected exchange down into a timings bar with a total', async () => {
-    useExchangesStore.setState({ log: [makeExchange()] });
+    useExchangesStore.setState({ log: [logExchange(makeExchange())] });
     render(<HttpLog />);
 
     await userEvent.click(screen.getByRole('button', { name: /POST/ }));
@@ -71,7 +71,7 @@ describe('HttpLog', () => {
   it('summarises a binary payload by size instead of dumping bytes', async () => {
     const base = makeExchange();
     useExchangesStore.setState({
-      log: [makeExchange({ http: { ...base.http, rawResponseBase64: b64('\u0000\u0001\u0002\u0003') } })],
+      log: [logExchange(makeExchange({ http: { ...base.http, rawResponseBase64: b64('\u0000\u0001\u0002\u0003') } }))],
     });
     render(<HttpLog />);
 
@@ -80,7 +80,7 @@ describe('HttpLog', () => {
   });
 
   it('empties the log on Clear', async () => {
-    useExchangesStore.setState({ log: [makeExchange()] });
+    useExchangesStore.setState({ log: [logExchange(makeExchange())] });
     render(<HttpLog />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
@@ -109,7 +109,7 @@ describe('HttpLog', () => {
       exchanges: { get },
       secrets: { setShowSecrets: vi.fn().mockResolvedValue({ ok: true, value: { show: true } }) },
     });
-    useExchangesStore.setState({ log: [redacted] });
+    useExchangesStore.setState({ log: [logExchange(redacted)] });
 
     render(<HttpLog />);
     await userEvent.click(screen.getAllByTestId('http-log-row')[0]!);
