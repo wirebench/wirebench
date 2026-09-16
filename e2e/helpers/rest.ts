@@ -37,11 +37,14 @@ export async function createApi(page: Page, name: string, baseUrl: string): Prom
 export async function chooseContextMenuItem(page: Page, target: Locator, item: string): Promise<void> {
   await expect(target).toBeVisible({ timeout: 20_000 });
   const menuItem = page.getByRole('menuitem', { name: item });
+  // The click is part of the retried gesture: a row re-rendering after the menu opened replaces the
+  // menu's items, and a click still waiting on the detached one would otherwise spend its whole
+  // timeout retrying a node that will never come back.
   await expect(async () => {
     await target.click({ button: 'right' });
     await expect(menuItem).toBeVisible({ timeout: 2_000 });
+    await menuItem.click({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
-  await menuItem.click();
 }
 
 /** The explorer row for one API. */
@@ -141,7 +144,9 @@ export async function saveRequest(page: Page): Promise<void> {
 export async function openImportOpenApi(page: Page): Promise<void> {
   const projectRow = page.getByTestId('explorer-project-row').first();
   await expect(projectRow).toBeVisible({ timeout: 20_000 });
-  await chooseContextMenuItem(page, projectRow, 'Import OpenAPI…');
+  // One Import… entry opens the unified dialog; choosing the OpenAPI format gives it its OpenAPI face.
+  await chooseContextMenuItem(page, projectRow, 'Import…');
+  await page.getByTestId('import-format-select').selectOption('openapi');
   await expect(page.getByTestId('import-openapi-dialog')).toBeVisible({ timeout: 20_000 });
 }
 

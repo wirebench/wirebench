@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace, expandExplorer } from '../helpers/project.js';
+import { createProject, createWorkspace, expandExplorer, openImportDialog } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 test.describe('walking skeleton: import -> open request -> send -> response', () => {
@@ -32,7 +32,7 @@ test.describe('walking skeleton: import -> open request -> send -> response', ()
     await window.keyboard.press(isMac ? 'Meta+i' : 'Control+i');
     const urlInput = window.locator('[data-testid="import-url-input"]');
     if (!(await urlInput.isVisible().catch(() => false))) {
-      await window.getByRole('button', { name: 'Import WSDL…' }).click();
+      await openImportDialog(window, 'wsdl');
     }
     await expect(urlInput).toBeVisible();
 

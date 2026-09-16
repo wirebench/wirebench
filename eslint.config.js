@@ -18,12 +18,13 @@ const MONACO_PATH = {
  * `/xml` carries the parser Monaco's XML language service needs; `/rest` carries the URL helpers the
  * REST editor's query table and URL field share with the send path — the one thing that must not be
  * reimplemented in the renderer, since two sets of escaping rules would eventually disagree about
- * what is being sent. Both are pure text code with no Node dependency.
+ * what is being sent; `/detect` carries pure-text format detection for the unified import dialog.
+ * All three are pure text code with no Node dependency.
  */
 const ENGINE_PATTERN = {
-  regex: '^@wirebench/engine(?!/(xml|rest)$)(/.*)?$',
+  regex: '^@wirebench/engine(?!/(xml|rest|detect)$)(/.*)?$',
   message:
-    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml and /rest subpaths may be imported (ADR-0002)',
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, and /detect subpaths may be imported (ADR-0002)',
 };
 
 export default tseslint.config(

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { ExplorerView } from '../../src/renderer/features/explorer/explorer-view.js';
+import { ExplorerView, sameProject } from '../../src/renderer/features/explorer/explorer-view.js';
+import { startRenamingNode } from '../../src/renderer/features/explorer/explorer-api.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
@@ -103,7 +104,7 @@ describe('ExplorerView', () => {
     expect(screen.getByText('No projects yet')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New project' })).toBeTruthy();
     // Two of them: the toolbar's icon button, and the empty state's own.
-    expect(screen.getAllByRole('button', { name: 'Import WSDL…' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Import…' })).toHaveLength(2);
   });
 
   it('renders the tree and opens an editor tab on double-click of a request', () => {
@@ -449,6 +450,77 @@ describe('ExplorerView with APIs', () => {
     expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
   });
 
+  it('reserves the chevron column on leaves, so request names line up with folder names', () => {
+    seedRest();
+    mount();
+
+    // A leaf has no fold marker to show, but it keeps the slot: without it, every request name
+    // would start 10px left of the folder names beside it.
+    const folderTwisty = screen.getByTestId('folder-row').querySelector('[data-testid="explorer-row-twisty"]');
+    const requestTwisty = screen
+      .getAllByTestId('rest-request-row')[0]
+      ?.querySelector('[data-testid="explorer-row-twisty"]');
+    expect(folderTwisty).not.toBeNull();
+    expect(requestTwisty).not.toBeNull();
+    expect(requestTwisty?.className).toBe(folderTwisty?.className);
+    // The folder's slot carries the marker; the request's is empty.
+    expect(folderTwisty?.childElementCount ?? 0).toBeGreaterThan(0);
+    expect(requestTwisty?.childElementCount).toBe(0);
+  });
+
+  it('pads every row away from the sidebar edge, on top of the tree indent', () => {
+    seedRest();
+    mount();
+
+    // The padding rides on the inline style, because the tree writes paddingLeft there for its
+    // indent and an inline value beats any class. A root row is the one that proves it: its indent
+    // is 0, so whatever shows up is the padding itself.
+    const projectRow = screen.getByTestId('explorer-project-row');
+    expect(projectRow.style.paddingLeft).toBe('6px');
+
+    // A nested row keeps its indent and carries the same padding on top of it.
+    const requestRow = screen.getAllByTestId('rest-request-row')[0];
+    expect(Number.parseFloat(requestRow?.style.paddingLeft ?? '0')).toBeGreaterThan(6);
+  });
+
+  it('gives every row the same method gutter, right-aligned', () => {
+    seedRest();
+    mount();
+
+    // Folder and request rows alike carry one gutter of the same fixed width, so a GET row's name
+    // and a DELETE row's name begin at the same x. Only folding rows carry a twisty before it.
+    const gutters = screen.getAllByTestId('explorer-row-gutter');
+    expect(gutters.length).toBeGreaterThan(1);
+    for (const gutter of gutters) {
+      expect(gutter.className).toContain('w-6');
+      expect(gutter.className).toContain('justify-end');
+    }
+
+    const badge = screen.getAllByTestId('method-badge')[0];
+    expect(badge?.parentElement?.getAttribute('data-testid')).toBe('explorer-row-gutter');
+
+    const folderRow = screen.getByTestId('folder-row');
+    expect(folderRow.querySelector('[data-testid="explorer-row-gutter"]')).not.toBeNull();
+  });
+
+  it('opens a project tab and folds the project under the same single click', () => {
+    seedRest();
+    mount();
+
+    const before = useEditorsStore.getState().tabs.length;
+    fireEvent.click(screen.getByText('Demo'));
+
+    // The tab opens...
+    expect(useEditorsStore.getState().tabs.length).toBeGreaterThan(before);
+    expect(useEditorsStore.getState().tabs.some((tab) => tab.kind === 'project')).toBe(true);
+    // ...and the click also folds the row, so its children go with it.
+    expect(screen.queryByTestId('api-row')).toBeNull();
+
+    // A second click unfolds it again.
+    fireEvent.click(screen.getByText('Demo'));
+    expect(screen.getByTestId('api-row')).not.toBeNull();
+  });
+
   it('opens a REST request tab on a single click, and the same tab on a second click', () => {
     seedRest();
     mount();
@@ -497,5 +569,96 @@ describe('ExplorerView with APIs', () => {
 
     // The click opened the tab and folded the row shut; the fold state records it per workspace.
     expect(useUiStore.getState().workspaces['w1']?.explorerOpen?.['api:api-1']).toBe(false);
+  });
+
+  it('enters inline rename mode and commits the rename', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    startRenamingNode('rest-request', 'rest-root');
+    const input = await screen.findByDisplayValue('At root');
+
+    fireEvent.change(input, { target: { value: 'Renamed root' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed root' },
+        },
+      });
+    });
+  });
+
+  it('triggers inline rename from right-click context menu Rename option', async () => {
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: undefined });
+    installWirebenchApi({ project: { mutate } });
+    seedRest();
+    mount();
+
+    fireEvent.contextMenu(screen.getByText('At root'));
+    const renameOption = await screen.findByText('Rename…');
+    fireEvent.click(renameOption);
+
+    const input = await screen.findByDisplayValue('At root');
+
+    fireEvent.change(input, { target: { value: 'Renamed from menu' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        projectId: 'p1',
+        change: {
+          kind: 'update-rest-request',
+          requestId: 'rest-root',
+          patch: { name: 'Renamed from menu' },
+        },
+      });
+    });
+  });
+
+  it('checks whether drop target and dragged node belong to the same project (1.3)', () => {
+    useProjectStore.setState({
+      projectOf: {
+        'api-1': 'p1',
+        'api-2': 'p2',
+        'folder-1': 'p1',
+        'folder-2': 'p2',
+        'req-1': 'p1',
+        'req-2': 'p2',
+      },
+    });
+
+    const nodeA = {
+      id: 'rest:req-1',
+      kind: 'rest-request',
+      label: 'Req 1',
+      requestId: 'req-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeB = {
+      id: 'folder:folder-1',
+      kind: 'folder',
+      label: 'Folder 1',
+      folderId: 'folder-1',
+      apiId: 'api-1',
+    } as const;
+    const nodeC = {
+      id: 'rest:req-2',
+      kind: 'rest-request',
+      label: 'Req 2',
+      requestId: 'req-2',
+      apiId: 'api-2',
+    } as const;
+
+    expect(sameProject(nodeB, nodeA)).toBe(true);
+    expect(sameProject(nodeB, nodeC)).toBe(false);
+    expect(sameProject(undefined, nodeA)).toBe(false);
+    expect(sameProject(nodeA, undefined)).toBe(false);
   });
 });

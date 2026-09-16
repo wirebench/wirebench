@@ -1,0 +1,65 @@
+{
+  "swaggerVersion": "1.1",
+  "basePath": "http://example.com/api",
+  "resourcePath": "/users",
+  "apis": [
+    {
+      "path": "/users/{username}",
+      "operations": [
+        {
+          "httpMethod": "GET",
+          "summary": "Get user by name",
+          "notes": "Returns a user object",
+          "responseClass": "User",
+          "nickname": "getUserByName",
+          "parameters": [
+            {
+              "name": "username",
+              "description": "The name that needs to be fetched",
+              "required": true,
+              "dataType": "String",
+              "paramType": "path"
+            }
+          ],
+          "errorResponses": [
+            {
+              "code": 404,
+              "reason": "User not found"
+            }
+          ]
+        },
+        {
+          "httpMethod": "POST",
+          "summary": "Create user",
+          "responseClass": "void",
+          "nickname": "createUser",
+          "parameters": [
+            {
+              "name": "body",
+              "description": "Created user object",
+              "required": true,
+              "dataType": "User",
+              "paramType": "body"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "models": {
+    "User": {
+      "id": "User",
+      "properties": {
+        "id": {
+          "type": "Long"
+        },
+        "username": {
+          "type": "String"
+        },
+        "isActive": {
+          "type": "Boolean"
+        }
+      }
+    }
+  }
+}

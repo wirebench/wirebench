@@ -12,6 +12,7 @@ import {
   createWorkspace,
   expandExplorer,
   openFirstRequest,
+  openImportDialog,
   saveAll,
 } from '../helpers/project.js';
 import { createApi, createRestRequest, sendRest, setMethodAndUrl } from '../helpers/rest.js';
@@ -193,7 +194,7 @@ test.describe('README screenshots', () => {
     // The import dialog, filled in but not yet submitted — the first thing a new user does.
     await createWorkspace(window);
     await createProject(window, 'Calculator Project');
-    await window.getByRole('button', { name: 'Import WSDL…' }).click();
+    await openImportDialog(window, 'wsdl');
     await window.getByTestId('import-url-input').fill(server.wsdlUrl);
     await capture(window, 'import-wsdl');
 

@@ -86,10 +86,10 @@ test.describe('keyboard', () => {
       timeout: 20_000,
     });
 
-    // ⌘⇧P — the palette's second chord — then run Import WSDL from it.
+    // ⌘⇧P — the palette's second chord — then run Import… from it.
     await page.keyboard.press(`${MOD}+Shift+P`);
     await expect(page.getByTestId('command-palette-input')).toBeVisible({ timeout: 20_000 });
-    await page.keyboard.type('Import WSDL');
+    await page.keyboard.type('Import…');
     await page.keyboard.press('Enter');
 
     const urlInput = page.getByTestId('import-url-input');

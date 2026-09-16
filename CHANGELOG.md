@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-16
+
 ### Added
 
 - **Shared workspaces.** A workspace can now be shared with a team: *Share this workspace…* turns
@@ -332,6 +334,7 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/wirebench/wirebench/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/wirebench/wirebench/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/wirebench/wirebench/releases/tag/v1.1.0

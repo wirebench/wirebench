@@ -28,6 +28,7 @@ import {
   expectReopenedWorkspace,
   importCalculator,
   openFirstRequest,
+  openImportDialog,
   openRequestByQuickOpen,
 } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
@@ -97,7 +98,7 @@ test.describe('workspaces', () => {
     // --- the second fixture, imported as a project of its own ---------------------------
     // The dialog's *Into project* picker is the only place that choice is made; its
     // `New project` option is the empty value.
-    await page.getByRole('button', { name: 'Import WSDL…' }).click();
+    await openImportDialog(page, 'wsdl');
     await page.getByTestId('import-url-input').fill(addressing.wsdlUrl);
     await page.getByTestId('import-target-project').selectOption('');
     await page.getByTestId('import-submit').click();

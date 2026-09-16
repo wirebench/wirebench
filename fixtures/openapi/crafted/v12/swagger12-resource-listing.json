@@ -1,0 +1,18 @@
+{
+  "swaggerVersion": "1.2",
+  "basePath": "http://example.com/api",
+  "apis": [
+    {
+      "path": "/users",
+      "description": "Operations about users"
+    },
+    {
+      "path": "/pets",
+      "description": "Operations about pets"
+    }
+  ],
+  "info": {
+    "title": "Resource Listing Sample",
+    "description": "Swagger 1.2 Resource Listing referencing external declarations"
+  }
+}

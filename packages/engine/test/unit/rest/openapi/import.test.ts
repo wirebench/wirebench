@@ -93,12 +93,12 @@ describe('parseOpenApi', () => {
     ).rejects.toMatchObject({ code: 'openapi-source-invalid' });
   });
 
-  it('refuses Swagger 2.0 and a document that is not OpenAPI', async () => {
+  it('refuses unsupported Swagger versions and a document that is not OpenAPI', async () => {
     const fetch = ((location: string) =>
       Promise.resolve({
         location,
         bytes: new Uint8Array(),
-        text: location.endsWith('swagger.json') ? '{"swagger":"2.0"}' : 'name: not-openapi\n',
+        text: location.endsWith('swagger.json') ? '{"swagger":"9.0"}' : 'name: not-openapi\n',
       })) as FetchDocument;
 
     await expect(
@@ -159,5 +159,142 @@ describe('importOpenApi', () => {
     expect(request?.headers).toEqual([{ name: 'X-Trace', value: 'local-ref', enabled: false }]);
     expect(request?.query.map((row) => row.name)).toEqual(['pageSize']);
     expect(request?.body.kind).toBe('raw');
+  });
+
+  it('imports an OpenAPI 3.2 document with additionalOperations and streaming media types', async () => {
+    const imported = await importOpenApi(
+      { kind: 'file', path: pathToFileURL(`${craftedDir}v32/openapi.yaml`).href },
+      { fetchDocument: fileFetcher() },
+    );
+
+    expect(imported.document.version).toBe('3.2');
+    expect(imported.summary.declaredVersion).toBe('3.2.0');
+    expect(imported.api.name).toBe('OAS 3.2 Features');
+
+    const searchFolder = imported.api.folders.find((folder) => folder.name === 'Search');
+    const queryReq = searchFolder?.requests.find((req) => req.name === 'Search pets via QUERY');
+    expect(queryReq).toBeDefined();
+    expect(queryReq?.method).toBe('QUERY');
+    expect(queryReq?.url).toBe('/search');
+    expect(queryReq?.body).toMatchObject({
+      kind: 'raw',
+      language: 'json',
+    });
+    expect((queryReq?.body as { text: string }).text).toContain('"term": "beagle"');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const streamReq = allRequests.find((req) => req.name === 'Send event stream');
+    expect(streamReq).toBeDefined();
+    expect(streamReq?.method).toBe('POST');
+    expect(streamReq?.url).toBe('/stream');
+  });
+
+  it('imports a document declaring swagger: 3.0.3', async () => {
+    const swaggerDoc = `
+swagger: 3.0.3
+info:
+  title: Swagger 3 Sample
+  version: 1.0.0
+servers:
+  - url: https://swagger3.test
+paths:
+  /items:
+    get:
+      summary: List Items
+      responses:
+        '200':
+          description: OK
+`;
+    const imported = await importOpenApi({ kind: 'text', text: swaggerDoc }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('3.0');
+    expect(imported.summary.declaredVersion).toBe('OpenAPI 3.0.3');
+    expect(imported.api.name).toBe('Swagger 3 Sample');
+    expect(imported.api.baseUrl).toBe('https://swagger3.test');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const itemsReq = allRequests.find((req) => req.name === 'List Items');
+    expect(itemsReq).toBeDefined();
+    expect(itemsReq?.method).toBe('GET');
+  });
+
+  it('imports a document declaring swagger: 2.0', async () => {
+    const path = pathToFileURL(`${craftedDir}v20/swagger.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('2.0');
+    expect(imported.summary.declaredVersion).toBe('Swagger 2.0');
+    expect(imported.api.name).toBe('Swagger Petstore');
+    expect(imported.api.baseUrl).toBe('https://api.petstore.test:8443/api/v2');
+    expect(imported.summary.servers).toEqual([
+      { url: 'https://api.petstore.test:8443/api/v2' },
+      { url: 'http://api.petstore.test:8443/api/v2' },
+    ]);
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const listPets = allRequests.find((req) => req.name === 'List all pets');
+    expect(listPets).toBeDefined();
+    expect(listPets?.method).toBe('GET');
+    expect(listPets?.url).toContain('/pets');
+
+    const createPet = allRequests.find((req) => req.name === 'Create a pet');
+    expect(createPet).toBeDefined();
+    expect(createPet?.method).toBe('POST');
+    expect(createPet?.body.kind).toBe('raw');
+
+    const uploadPhoto = allRequests.find((req) => req.name === 'Upload photo for pet');
+    expect(uploadPhoto).toBeDefined();
+    expect(uploadPhoto?.method).toBe('POST');
+    expect(uploadPhoto?.body.kind).toBe('multipart');
+
+    expect(imported.summary.securitySchemes.map((s) => s.name)).toEqual(['api_key', 'basic_auth', 'petstore_auth']);
+  });
+
+  it('imports a document declaring swaggerVersion: 1.2', async () => {
+    const path = pathToFileURL(`${craftedDir}v12/swagger12-petstore.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('1.2');
+    expect(imported.summary.declaredVersion).toBe('Swagger 1.2');
+    expect(imported.api.name).toBe('Swagger 1.2 Petstore');
+    expect(imported.api.baseUrl).toBe('https://api.petstore.test:8443/api/v1');
+    expect(imported.summary.servers).toEqual([{ url: 'https://api.petstore.test:8443/api/v1' }]);
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const listPets = allRequests.find((req) => req.name === 'List all pets');
+    expect(listPets).toBeDefined();
+    expect(listPets?.method).toBe('GET');
+    expect(listPets?.url).toContain('/pets');
+
+    const createPet = allRequests.find((req) => req.name === 'Create a pet');
+    expect(createPet).toBeDefined();
+    expect(createPet?.method).toBe('POST');
+    expect(createPet?.body.kind).toBe('raw');
+
+    const uploadFile = allRequests.find((req) => req.name === 'Uploads an image');
+    expect(uploadFile).toBeDefined();
+    expect(uploadFile?.method).toBe('POST');
+    expect(uploadFile?.body.kind).toBe('multipart');
+
+    expect(imported.summary.securitySchemes.map((s) => s.name)).toEqual(['api_key', 'basic_auth', 'petstore_auth']);
+  });
+
+  it('imports a document declaring swaggerVersion: 1.1 with legacy properties', async () => {
+    const path = pathToFileURL(`${craftedDir}v11/swagger11-sample.json`).href;
+    const imported = await importOpenApi({ kind: 'file', path }, { fetchDocument: fileFetcher() });
+
+    expect(imported.document.version).toBe('1.1');
+    expect(imported.summary.declaredVersion).toBe('Swagger 1.1');
+    expect(imported.api.baseUrl).toBe('http://example.com/api');
+
+    const allRequests = [...imported.api.requests, ...imported.api.folders.flatMap((f) => f.requests)];
+    const getUser = allRequests.find((req) => req.name === 'Get user by name');
+    expect(getUser).toBeDefined();
+    expect(getUser?.method).toBe('GET');
+
+    const createUser = allRequests.find((req) => req.name === 'Create user');
+    expect(createUser).toBeDefined();
+    expect(createUser?.method).toBe('POST');
+    expect(createUser?.body.kind).toBe('raw');
   });
 });

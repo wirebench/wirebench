@@ -37,7 +37,7 @@ import type {
   OpenApiSecurityScheme,
   OpenApiSkipped,
 } from './model.js';
-import { serverUrl } from './model.js';
+import { HTTP_METHODS, serverUrl } from './model.js';
 import { sampleFromSchema, sampleXml } from './sample.js';
 
 /** How the caller wants the document read. Every field has a documented default. */
@@ -450,7 +450,10 @@ function requestName(operation: OpenApiOperation): string {
   if (operation.operationId !== undefined && operation.operationId.length > 0) {
     return operation.operationId;
   }
-  return `${operation.method.toUpperCase()} ${operation.path}`;
+  const method = HTTP_METHODS.includes(operation.method.toLowerCase())
+    ? operation.method.toUpperCase()
+    : operation.method;
+  return `${method} ${operation.path}`;
 }
 
 /** A request's description, with a deprecation marked where the operation says so. */
@@ -526,7 +529,7 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       id: newId(),
       slug: uniqueSlug(label, taken),
       order,
-      method: operation.method.toUpperCase(),
+      method: HTTP_METHODS.includes(operation.method.toLowerCase()) ? operation.method.toUpperCase() : operation.method,
       url: operation.path,
       ...(description !== undefined ? { description } : {}),
       pathParams: parameterRows(operation, 'path', options, skipped),

@@ -16,7 +16,7 @@
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 /** Which specification version a document declares. */
-export type OpenApiVersion = '3.0' | '3.1';
+export type OpenApiVersion = '1.0' | '1.1' | '1.2' | '2.0' | '3.0' | '3.1' | '3.2';
 
 /** `info`: what the API is called, and which version of *it* this document describes. */
 export interface OpenApiInfo {
@@ -68,11 +68,17 @@ export interface OpenApiExample {
   readonly value?: JsonValue;
   readonly summary?: string;
   readonly externalValue?: string;
+  /** OpenAPI 3.2: structured data value, distinct from raw/serialized format. */
+  readonly dataValue?: JsonValue;
+  /** OpenAPI 3.2: serialized string representation of the example. */
+  readonly serializedValue?: string;
 }
 
 /** One media type of a request or response body. */
 export interface OpenApiMediaType {
   readonly schema?: JsonSchema;
+  /** OpenAPI 3.2: item schema for sequential/streaming media types (e.g. text/event-stream). */
+  readonly itemSchema?: JsonSchema;
   readonly example?: JsonValue;
   readonly examples?: Readonly<Record<string, OpenApiExample>>;
 }
@@ -205,7 +211,17 @@ export interface OpenApiDocument {
 }
 
 /** The HTTP methods an operation key may name, per OpenAPI's Path Item Object. */
-export const HTTP_METHODS: readonly string[] = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+export const HTTP_METHODS: readonly string[] = [
+  'get',
+  'put',
+  'post',
+  'delete',
+  'options',
+  'head',
+  'patch',
+  'trace',
+  'query',
+];
 
 /**
  * The base URL a server entry resolves to, with each `{variable}` replaced by its default.

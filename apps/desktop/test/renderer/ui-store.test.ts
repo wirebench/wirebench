@@ -300,3 +300,36 @@ describe('useUiStore', () => {
     useUiStore.getState().persistTo(undefined);
   });
 });
+
+describe('import dialog format', () => {
+  beforeEach(() => {
+    useUiStore.setState(structuredClone(DEFAULT_UI_STATE));
+  });
+
+  it('presets the format openImportDialog is given', () => {
+    useUiStore.getState().openImportDialog('postman');
+
+    expect(useUiStore.getState()).toMatchObject({ importDialogOpen: true, importDialogFormat: 'postman' });
+  });
+
+  it('does not close a dialog opened for another format through the OpenAPI setter', () => {
+    useUiStore.getState().openImportDialog('postman');
+    useUiStore.getState().setImportOpenApiDialogOpen(false);
+
+    expect(useUiStore.getState()).toMatchObject({ importDialogOpen: true, importDialogFormat: 'postman' });
+  });
+
+  it('does not close a dialog opened for another format through the Postman setter', () => {
+    useUiStore.getState().openImportDialog('openapi');
+    useUiStore.getState().setImportPostmanDialogOpen(false);
+
+    expect(useUiStore.getState()).toMatchObject({ importDialogOpen: true, importDialogFormat: 'openapi' });
+  });
+
+  it('closes the dialog through the setter of the format it was opened for', () => {
+    useUiStore.getState().setImportOpenApiDialogOpen(true);
+    useUiStore.getState().setImportOpenApiDialogOpen(false);
+
+    expect(useUiStore.getState().importDialogOpen).toBe(false);
+  });
+});

@@ -4,16 +4,18 @@ import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
   Box,
+  ChevronDown,
+  ChevronRight,
   FileDown,
   Folder,
-  Globe,
   FolderPlus,
+  FoldVertical,
+  Globe,
   Link2,
   Loader2,
   Network,
   Plug,
   RefreshCw,
-  FoldVertical,
   UnfoldVertical,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
@@ -29,9 +31,10 @@ import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
+import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
 import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
-import { buildExplorerTree, nodeProjectId, restEntityId } from './tree-nodes.js';
+import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -97,13 +100,25 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
 const INLINE_BUTTON_CLASS =
   'shrink-0 rounded px-1.5 py-0.5 text-xs text-fg-default ring-1 ring-hairline-strong hover:bg-surface-base';
 
+/**
+ * The gap between the sidebar's edge and a row's chevron.
+ *
+ * It has to ride on the inline style rather than a `pl-*` class: react-arborist hands every row
+ * `style.paddingLeft` (its per-level indent), and an inline padding beats any class we set — a
+ * class here is silently dropped, and at the root level, where the indent is 0, it looks like no
+ * padding was ever asked for.
+ */
+const ROW_PADDING_LEFT = 6;
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
+  const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
+  const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
   return (
     <ExplorerContextMenu node={node.data}>
       <div
         ref={dragHandle}
-        style={style}
+        style={rowStyle}
         data-testid={ROW_TESTID[node.data.kind] ?? 'explorer-tree-row'}
         data-tree-id={node.id}
         {...(node.data.projectId !== undefined ? { 'data-project-id': node.data.projectId } : {})}
@@ -125,9 +140,10 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             // and credentials live, and the row is also the container the user is about to expand.
             node.activate();
             node.toggle();
-          } else if (node.isInternal && node.data.kind !== 'project') {
-            // A project row opens its tab from `onSelect` (see below) and must not also fold
-            // itself shut under the very click that opened it.
+          } else if (node.isInternal) {
+            // A project row opens its tab from `onSelect` (see below) and folds under the same
+            // click, like an API row: the row is both the thing the tab is about and the container
+            // the user is reaching into.
             node.toggle();
           }
         }}
@@ -137,39 +153,64 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
-        className={`flex h-full items-center gap-1.5 px-1 text-sm ${
+        className={`flex h-full items-center pr-1 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
-        {node.isInternal && (
-          <span
-            className="w-3 shrink-0 text-fg-subtle"
-            onClick={(e) => {
-              e.stopPropagation();
-              node.toggle();
-            }}
-          >
-            {node.isOpen ? '▾' : '▸'}
-          </span>
-        )}
-        {Icon !== undefined && <Icon size={13} />}
-        {node.data.kind === 'rest-request' && node.data.method !== undefined && (
-          <MethodBadge method={node.data.method} title={`${node.data.method} ${node.data.label}`} />
-        )}
+        {/* The chevron's width is reserved on leaves as well, so a request's name lines up with the
+            folder names around it: the fold marker is what differs between those rows, not the
+            column their names start in. */}
+        <span
+          className="flex w-2.5 shrink-0 items-center text-fg-subtle"
+          data-testid="explorer-row-twisty"
+          onClick={(e) => {
+            if (!node.isInternal) return;
+            e.stopPropagation();
+            node.toggle();
+          }}
+        >
+          {node.isInternal &&
+            (node.isOpen ? (
+              <ChevronDown size={11} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={11} aria-hidden="true" />
+            ))}
+        </span>
+        {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
+            hard against the name. Right-aligning it lines the method labels up with each other and
+            every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
+        <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
+          {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
+            <MethodBadge
+              method={node.data.method}
+              title={`${node.data.method} ${node.data.label}`}
+              compact
+              className="w-auto"
+            />
+          ) : (
+            Icon !== undefined && <Icon size={13} />
+          )}
+        </span>
         {node.isEditing ? (
           <input
             autoFocus
             defaultValue={node.data.label}
-            className="min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
+            className="ml-1 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onFocus={(e) => e.currentTarget.select()}
             onBlur={(e) => node.submit(e.currentTarget.value)}
             onKeyDown={(e) => {
+              // Keep typing inside the rename field away from the tree's own keys, but let chords
+              // (⌘⏎ send, ⌘S save…) reach the window-level keybindings.
+              if (!e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation();
               if (e.key === 'Enter') node.submit(e.currentTarget.value);
               if (e.key === 'Escape') node.reset();
             }}
           />
         ) : (
           <span
-            className={`min-w-0 flex-1 truncate ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
+            className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
           >
             {node.data.label}
           </span>
@@ -335,7 +376,7 @@ export function ExplorerView() {
         >
           <FolderPlus size={14} aria-hidden="true" />
         </IconButton>
-        <IconButton label="Import WSDL…" onClick={openImportDialog}>
+        <IconButton label="Import…" onClick={() => openImportDialog()}>
           <FileDown size={14} aria-hidden="true" />
         </IconButton>
         <IconButton
@@ -367,7 +408,9 @@ export function ExplorerView() {
         {data.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-md text-fg-muted">No projects yet</p>
-            <p className="text-sm text-fg-subtle">Create a project, or import a WSDL into a new one.</p>
+            <p className="text-sm text-fg-subtle">
+              Create a project, or import an API or service definition into a new one.
+            </p>
             <div className="mt-1 flex gap-2">
               <Button
                 onClick={() => {
@@ -376,8 +419,8 @@ export function ExplorerView() {
               >
                 New project
               </Button>
-              <Button variant="primary" onClick={openImportDialog}>
-                Import WSDL…
+              <Button variant="primary" onClick={() => openImportDialog()}>
+                Import…
               </Button>
             </div>
           </div>
@@ -391,6 +434,10 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               rowHeight={26}
+              // Half react-arborist's 24px default: enough that a subfolder reads as sitting inside
+              // its folder at a glance, without the four levels of this tree — project › API ›
+              // folder › request — marching a request off to the right.
+              indent={12}
               outerElementType={FocusableListOuter}
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}
@@ -407,25 +454,39 @@ export function ExplorerView() {
                 node.kind !== 'folder' &&
                 node.kind !== 'rest-request'
               }
-              // Reordering and moving happen inside one project: a request belongs to the API it
-              // was made in, and dragging it into another project would mean moving it between two
-              // folders on disk, which `move-node` deliberately does not do.
-              disableDrop={({ parentNode, dragNodes }) => !sameProject(parentNode.data, dragNodes[0]?.data)}
-              onMove={({ dragIds, parentNode, index }) => {
-                const nodes = data.flatMap(flatten);
-                for (const dragId of dragIds) {
-                  const node = nodes.find((candidate) => candidate.id === dragId);
-                  const entityId = restEntityId(node);
-                  if (entityId === undefined) {
-                    continue;
+              disableDrag={(node) => node.kind !== 'rest-request' && node.kind !== 'folder'}
+              // Reordering and moving happen inside the same API: a request or folder belongs to its
+              // own API definition, and cannot move into another API or project.
+              disableDrop={({ parentNode, dragNodes, index }) => {
+                const ancestors: ExplorerNode[] = [];
+                for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
+                  if (node.data !== undefined) ancestors.push(node.data);
+                }
+                return isDropDisabled({
+                  parent: parentNode?.data,
+                  children: (parentNode?.children ?? []).map((child) => child.data),
+                  dragged: dragNodes[0]?.data,
+                  index,
+                  sameProject: sameProject(parentNode?.data, dragNodes[0]?.data),
+                  ancestors,
+                });
+              }}
+              onMove={async ({ dragNodes, parentNode, index }) => {
+                const parent = parentNode?.data;
+                if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
+                const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
+                const plan = planMoves(
+                  (parentNode?.children ?? []).map((child) => child.data),
+                  dragNodes.map((node) => node.data),
+                  index,
+                );
+                // One at a time and in order: each move's index assumes the previous one landed.
+                for (const move of plan) {
+                  try {
+                    await useProjectStore.getState().moveNode(move.entityId, targetFolderId, move.index);
+                  } catch (error: unknown) {
+                    showToast(error instanceof Error ? error.message : 'Could not move it');
                   }
-                  const parent = parentNode?.data;
-                  void useProjectStore
-                    .getState()
-                    .moveNode(entityId, parent?.kind === 'folder' ? parent.folderId : undefined, index)
-                    .catch((error: unknown) => {
-                      showToast(error instanceof Error ? error.message : 'Could not move it');
-                    });
                 }
               }}
               aria-label="Explorer"
@@ -484,22 +545,30 @@ export function ExplorerView() {
               }}
               onRename={({ id, name }) => {
                 const node = data.flatMap(flatten).find((n) => n.id === id);
-                if (node?.kind === 'request' && node.requestId !== undefined) {
-                  useProjectStore.getState().updateRequest(node.requestId, { name });
+                if (node === undefined) return;
+                const trimmed = name.trim();
+                if (trimmed.length === 0 || trimmed === node.label) {
+                  return;
                 }
-                if (node?.kind === 'project' && node.projectId !== undefined) {
-                  projectRowActions.commitRename(node.projectId, name);
+                if (node.kind === 'request' && node.requestId !== undefined) {
+                  useProjectStore.getState().updateRequest(node.requestId, { name: trimmed });
                 }
-                if (node?.kind === 'api' && node.apiId !== undefined) {
-                  void useProjectStore.getState().updateApi(node.apiId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'project' && node.projectId !== undefined) {
+                  projectRowActions.commitRename(node.projectId, trimmed);
                 }
-                if (node?.kind === 'folder' && node.folderId !== undefined) {
-                  void useProjectStore.getState().updateFolder(node.folderId, { name }).catch(reportRenameFailure);
+                if (node.kind === 'api' && node.apiId !== undefined) {
+                  void useProjectStore.getState().updateApi(node.apiId, { name: trimmed }).catch(reportRenameFailure);
                 }
-                if (node?.kind === 'rest-request' && node.requestId !== undefined) {
+                if (node.kind === 'folder' && node.folderId !== undefined) {
                   void useProjectStore
                     .getState()
-                    .updateRestRequest(node.requestId, { name })
+                    .updateFolder(node.folderId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
+                if (node.kind === 'rest-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateRestRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
               }}
@@ -618,7 +687,7 @@ function flatten(node: ExplorerNode): ExplorerNode[] {
 }
 
 /** Whether a drop target and the node being dragged live in the same project. */
-function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
+export function sameProject(target: ExplorerNode | undefined, dragged: ExplorerNode | undefined): boolean {
   const projectOf = useProjectStore.getState().projectOf;
   const into = nodeProjectId(target, projectOf);
   const from = nodeProjectId(dragged, projectOf);

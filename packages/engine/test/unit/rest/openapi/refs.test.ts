@@ -233,4 +233,61 @@ describe('resolveRefs', () => {
       resolveRefs(text, 'https://remote.test/openapi.json', { fetchDocument: fetch, signal: controller.signal }),
     ).rejects.toThrow();
   });
+
+  describe('$self handling (2.3)', () => {
+    it('aliases root for relative $self', async () => {
+      const text = JSON.stringify({
+        $self: 'canonical.json',
+        openapi: '3.2.0',
+        paths: { '/a': { get: { parameters: [{ $ref: 'canonical.json#/components/parameters/P' }] } } },
+        components: { parameters: { P: { name: 'p', in: 'query' } } },
+      });
+      const fetch = fetcherFor({});
+      const resolved = await resolveRefs(text, 'https://example.com/api/openapi.json', { fetchDocument: fetch });
+
+      const document = resolved.document as { paths: { '/a': { get: { parameters: unknown[] } } } };
+      expect(document.paths['/a'].get.parameters[0]).toEqual({ name: 'p', in: 'query' });
+      expect(fetch.asked).toEqual([]);
+      expect(resolved.problems).toEqual([]);
+    });
+
+    it('aliases root for absolute same-origin $self', async () => {
+      const text = JSON.stringify({
+        $self: 'https://example.com/api/canonical.json',
+        openapi: '3.2.0',
+        paths: {
+          '/a': {
+            get: { parameters: [{ $ref: 'https://example.com/api/canonical.json#/components/parameters/P' }] },
+          },
+        },
+        components: { parameters: { P: { name: 'p', in: 'query' } } },
+      });
+      const fetch = fetcherFor({});
+      const resolved = await resolveRefs(text, 'https://example.com/api/openapi.json', { fetchDocument: fetch });
+
+      const document = resolved.document as { paths: { '/a': { get: { parameters: unknown[] } } } };
+      expect(document.paths['/a'].get.parameters[0]).toEqual({ name: 'p', in: 'query' });
+      expect(fetch.asked).toEqual([]);
+      expect(resolved.problems).toEqual([]);
+    });
+
+    it('does not alias root for absolute foreign-origin $self', async () => {
+      const text = JSON.stringify({
+        $self: 'https://foreign.example/spec.json',
+        openapi: '3.2.0',
+        paths: {
+          '/a': {
+            get: { parameters: [{ $ref: 'https://foreign.example/spec.json#/components/parameters/P' }] },
+          },
+        },
+        components: { parameters: { P: { name: 'p', in: 'query' } } },
+      });
+      const fetch = fetcherFor({});
+      const resolved = await resolveRefs(text, 'https://example.com/api/openapi.json', { fetchDocument: fetch });
+
+      expect(fetch.asked).toEqual(['https://foreign.example/spec.json']);
+      expect(resolved.problems.length).toBeGreaterThan(0);
+      expect(resolved.problems[0]?.reason).toMatch(/could not be fetched/);
+    });
+  });
 });

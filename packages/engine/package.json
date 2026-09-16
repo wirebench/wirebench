@@ -1,6 +1,6 @@
 {
   "name": "@wirebench/engine",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -19,6 +19,11 @@
       "development": "./src/rest/browser.ts",
       "types": "./dist/rest/browser.d.ts",
       "default": "./dist/rest/browser.js"
+    },
+    "./detect": {
+      "development": "./src/import-detect.ts",
+      "types": "./dist/import-detect.d.ts",
+      "default": "./dist/import-detect.js"
     },
     "./test-helpers": "./test/helpers/index.ts"
   },

@@ -34,9 +34,17 @@ export function startRenamingProject(projectId: string): void {
 }
 
 function startRenaming(nodeId: string): void {
-  const tree = treeApi;
-  if (tree === null) {
-    return;
+  const trigger = () => {
+    const tree = treeApi;
+    if (tree === null) {
+      return;
+    }
+    void tree.get(nodeId)?.edit();
+  };
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(trigger);
+  } else {
+    trigger();
   }
-  void tree.get(nodeId)?.edit();
 }

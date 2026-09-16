@@ -73,9 +73,21 @@ export async function createProject(page: Page, name: string): Promise<void> {
   await expectExplorerRow(page.getByTestId('explorer-project-row').filter({ hasText: name }), page);
 }
 
+/** Opens the unified import dialog, optionally selecting a specific format. */
+export async function openImportDialog(page: Page, format?: 'wsdl' | 'openapi' | 'postman'): Promise<void> {
+  await page.getByRole('button', { name: 'Import…' }).first().click();
+  await expect(page.getByTestId('import-dialog')).toBeVisible();
+  if (format !== undefined) {
+    const select = page.getByTestId('import-format-select');
+    if (await select.isVisible().catch(() => false)) {
+      await select.selectOption(format);
+    }
+  }
+}
+
 /** Imports `server`'s WSDL through the explorer toolbar into the selected project. */
 export async function importCalculator(page: Page, server: TestSoapServer): Promise<void> {
-  await page.getByRole('button', { name: 'Import WSDL…' }).click();
+  await openImportDialog(page, 'wsdl');
   await page.getByTestId('import-url-input').fill(server.wsdlUrl);
   await page.getByTestId('import-submit').click();
   await expandExplorer(page, 'Request 1');
@@ -222,4 +234,23 @@ export async function saveAll(page: Page): Promise<void> {
   // earlier save it already matches and this assertion would pass before the Save All had
   // finished, leaving a caller free to read a half-written project folder.
   await expect(page.getByTestId('title-bar-dirty')).toHaveCount(0, { timeout: 20_000 });
+}
+
+/**
+ * Waits past the folder watcher's self-write window and dismisses any "changed on disk" banner
+ * that came up because of it, then asserts none remain.
+ *
+ * Writing a project folder — an import, a save — races the watcher: whether it attributes those
+ * writes to the app itself (and so suppresses the banner) is a matter of timing. The banner is not
+ * cosmetic for a test that reads the panes below it. It occupies vertical space and pushes
+ * everything down, and the response body virtualises its lines, so two rows of banner are two
+ * lines of response that never render.
+ */
+export async function dismissChangedOnDiskBanners(page: Page): Promise<void> {
+  await page.waitForTimeout(2_500);
+  const ignoreButtons = page.locator('[data-testid^="changed-on-disk-ignore"]');
+  while ((await ignoreButtons.count()) > 0) {
+    await ignoreButtons.first().click();
+  }
+  await expect(page.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
 }

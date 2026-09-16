@@ -32,6 +32,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     search: { query: vi.fn().mockResolvedValue({ ok: true, value: { matches: [], truncated: false } }) },
     api: {
       importOpenApi: fail('api.importOpenApi'),
+      importPostman: fail('api.importPostman'),
       cancelImport: fail('api.cancelImport'),
       definitionDocuments: fail('api.definitionDocuments'),
       definitionText: fail('api.definitionText'),

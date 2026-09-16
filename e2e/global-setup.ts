@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { assertRendererAssets } from '../apps/desktop/test/helpers/renderer-assets.ts';
 
@@ -20,4 +21,23 @@ export default function globalSetup(): void {
     throw new Error(`Wirebench desktop app is not built (missing ${MAIN_PATH}). Run \`pnpm build\` first.`);
   }
   assertRendererAssets();
+  ensureElectronBinary();
+}
+
+/**
+ * Downloads Electron's binary now, once, if the install has not already done it.
+ *
+ * Electron ships no `postinstall` since v43: `require('electron')` fetches the binary the first
+ * time it is asked for the path. Every worker asks at the same moment, so on a cold `node_modules`
+ * five downloads unzip into the same `dist/` and trip over each other — `spawn ETXTBSY` on the
+ * half-written binary, `File exists` from the extractor, and a launch failure on whichever specs
+ * happened to start first. Resolving the path here, in global setup, means the download happens
+ * before any worker exists; when the binary is already there this is a file check and nothing more.
+ *
+ * Electron is the desktop app's dependency, so it resolves from there rather than from `e2e`.
+ */
+function ensureElectronBinary(): void {
+  const require = createRequire(import.meta.url);
+  const fromDesktop = fileURLToPath(new URL('../apps/desktop/package.json', import.meta.url));
+  require(require.resolve('electron', { paths: [fromDesktop] }));
 }

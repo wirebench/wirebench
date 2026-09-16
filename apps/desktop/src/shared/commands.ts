@@ -55,6 +55,7 @@ export const COMMAND_IDS = [
   'rest.importCurl',
   'rest.getToken',
   'rest.importOpenApi',
+  'rest.importPostman',
   'rest.newApi',
   'rest.newFolder',
   'rest.newRequest',

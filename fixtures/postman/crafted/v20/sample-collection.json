@@ -1,0 +1,57 @@
+{
+  "info": {
+    "_postman_id": "8a0e8bb9-63a2-4a7b-a0de-8c887413645b",
+    "name": "Postman v2.0 Sample Collection",
+    "description": "Crafted Postman v2.0 collection with object-based auth structures.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.example.com",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "basic",
+    "basic": {
+      "username": "admin",
+      "password": "secretpassword"
+    }
+  },
+  "item": [
+    {
+      "name": "Users",
+      "auth": {
+        "type": "ntlm",
+        "ntlm": {
+          "username": "domainuser",
+          "domain": "DOMAIN",
+          "workstation": "WS01"
+        }
+      },
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/profile"
+          }
+        },
+        {
+          "name": "Unsupported Digest Request",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/digest-protected",
+            "auth": {
+              "type": "digest",
+              "digest": {
+                "username": "digestuser"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

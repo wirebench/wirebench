@@ -7,7 +7,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createWorkspace } from '../helpers/project.js';
+import { createProject, createWorkspace, dismissChangedOnDiskBanners } from '../helpers/project.js';
 import {
   addHeader,
   apiRow,
@@ -101,6 +101,10 @@ test.describe('cURL', () => {
     await sendRest(page);
 
     await expect(responseStatus(page)).toContainText('200');
+    // The import wrote the project folder, so the watcher may have raised a "changed on disk"
+    // banner above the editor. It is two rows tall, and the body pane virtualises: with the banner
+    // up, the echoed header falls off the bottom of what is rendered.
+    await dismissChangedOnDiskBanners(page);
     // The echoed header sits near the top of the response, so it is reliably on screen.
     await expect(page.getByTestId('rest-response-body')).toContainText('x-from', { timeout: 20_000 });
     // The body is checked against the server's own record, not the response pane. That pane

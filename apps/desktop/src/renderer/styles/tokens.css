@@ -61,12 +61,12 @@
      each colour answers for one contrast pair rather than one per row surface. Read-only methods
      are calm, writes are warm, a delete is the danger red, and anything else is grey: the colour
      is there to say how much a request changes, not to decorate the tree. */
-  --wb-method-get: #6fbf8f;
-  --wb-method-post: #d9a441;
-  --wb-method-put: #7fa6dd;
-  --wb-method-patch: #b79ae0;
-  --wb-method-delete: #e0685f;
-  --wb-method-other: #a49d93;
+  --wb-method-get: #b4dec5;
+  --wb-method-post: #ecd19e;
+  --wb-method-put: #c4d6ef;
+  --wb-method-patch: #ddcff0;
+  --wb-method-delete: #f4cbc8;
+  --wb-method-other: #d7d4d0;
 
   /* Spacing: a 2px-rooted scale; IDE chrome lives in the first four steps. */
   --wb-space-1: 2px;
@@ -84,6 +84,9 @@
 
   --wb-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, 'Helvetica Neue', sans-serif;
   --wb-font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  /* One step below xs, for the explorer's method column: small enough that the column costs a
+     name almost nothing, still legible because the labels are short and bold. */
+  --wb-font-size-2xs: 10px;
   --wb-font-size-xs: 12px;
   --wb-font-size-sm: 13px;
   --wb-font-size-md: 14px;
@@ -131,12 +134,12 @@
   --wb-status-danger: #b23b33;
   --wb-status-info: #3d6ba8;
 
-  --wb-method-get: #2b7550;
-  --wb-method-post: #8b6010;
-  --wb-method-put: #3d6ba8;
-  --wb-method-patch: #6b4aa0;
-  --wb-method-delete: #b23b33;
-  --wb-method-other: #5c564e;
+  --wb-method-get: #1d4e35;
+  --wb-method-post: #5d400b;
+  --wb-method-put: #294770;
+  --wb-method-patch: #51387a;
+  --wb-method-delete: #7c2924;
+  --wb-method-other: #4a453f;
 
   --wb-shadow-overlay: 0 16px 48px rgb(40 30 20 / 18%);
 }

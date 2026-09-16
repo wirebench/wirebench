@@ -3,7 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { modClickToken, monacoEditor } from '../helpers/editor.js';
-import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
+import {
+  createProject,
+  createProjectWithCalculator,
+  createWorkspace,
+  openFirstRequest,
+  openImportDialog,
+} from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -145,7 +151,7 @@ test.describe('Interface editor', () => {
     await createWorkspace(page);
     await createProject(page, 'Nested Imports');
 
-    await page.getByRole('button', { name: 'Import WSDL…' }).click();
+    await openImportDialog(page, 'wsdl');
     await page.getByRole('tab', { name: 'File' }).click();
     await page.getByRole('button', { name: 'Browse…' }).click();
     await expect(page.getByLabel('File path')).toHaveValue(/service\.wsdl$/);
