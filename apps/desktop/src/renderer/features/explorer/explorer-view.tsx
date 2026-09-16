@@ -138,7 +138,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
-        className={`flex h-full items-center gap-1 px-1 text-sm ${
+        className={`flex h-full items-center gap-0.5 px-1 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
@@ -157,7 +157,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
-        <span className="flex w-10 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
+        <span className="flex w-8 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
           {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
             <MethodBadge
               method={node.data.method}

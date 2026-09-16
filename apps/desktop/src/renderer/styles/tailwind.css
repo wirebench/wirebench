@@ -45,6 +45,7 @@
   --font-ui: var(--wb-font-ui);
   --font-mono: var(--wb-font-mono);
 
+  --text-2xs: var(--wb-font-size-2xs);
   --text-xs: var(--wb-font-size-xs);
   --text-sm: var(--wb-font-size-sm);
   --text-md: var(--wb-font-size-md);
