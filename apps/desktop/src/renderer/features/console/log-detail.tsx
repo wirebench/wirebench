@@ -186,7 +186,7 @@ function ExchangeConnection({ entry }: { readonly entry: Extract<LogEntry, { kin
 }
 
 function FailureConnection({ failure }: { readonly failure: FailedExchangeWire }) {
-  const peer = failure.error.code.startsWith('tls') ? peerSubjectOf(failure.error.message) : undefined;
+  const peer = failure.error.code === 'tls-untrusted' ? peerSubjectOf(failure.error.message) : undefined;
   return (
     <dl data-testid="log-detail-connection" className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2 gap-y-1 p-2 text-xs">
       <dt className="text-fg-subtle">URL</dt>
