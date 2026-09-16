@@ -10,6 +10,7 @@ import {
   createProject,
   createProjectWithCalculator,
   createWorkspace,
+  dismissChangedOnDiskBanners,
   expandExplorer,
   openFirstRequest,
   openImportDialog,
@@ -125,6 +126,17 @@ function shownRemoteEnv(remoteUrl: string): Record<string, string> {
 async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
   // A toast ("Saved", "Pulled 3 changes…") is passing chrome, not part of the screen documented.
   await expect(page.getByTestId('toast-viewport').locator(':scope > div')).toHaveCount(0, { timeout: 15_000 });
+  // Nor is the watcher's "changed on disk" banner: writing the fixture project races the watcher,
+  // so whether it shows is a matter of timing. A README picture should not document a bar the
+  // reader will never see, and the banner pushes everything below it down by two rows.
+  //
+  // Not while a dialog is up, though: its overlay covers the banner in the picture and swallows
+  // the click that would dismiss it, so the attempt would spend its whole timeout on a button no
+  // pointer can reach.
+  const modalOverlay = page.locator('[data-state="open"][aria-hidden="true"]');
+  if ((await modalOverlay.count()) === 0) {
+    await dismissChangedOnDiskBanners(page);
+  }
   // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
   // otherwise a Retina machine produces a 2560x1600 file (and a different one from a non-Retina
   // machine), which is both heavier than a README wants and not reproducible across developers.
