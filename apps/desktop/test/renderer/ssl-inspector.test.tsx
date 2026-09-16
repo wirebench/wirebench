@@ -44,7 +44,7 @@ function withTls(tls?: SslInfoWire): ExchangeSummary {
 }
 
 function renderInspector(exchange?: ExchangeSummary): void {
-  render(<SslInspector exchange={exchange} />);
+  render(<SslInspector http={exchange?.http} />);
 }
 
 describe('SslInspector', () => {

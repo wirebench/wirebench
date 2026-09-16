@@ -397,7 +397,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
           ) : inspector === 'headers' ? (
             <HeadersInspector requestId={requestId} />
           ) : inspector === 'ssl' ? (
-            <SslInspector exchange={exchange} />
+            <SslInspector http={exchange?.http} />
           ) : inspector === 'attachments' ? (
             <AttachmentsInspector requestId={requestId} />
           ) : inspector === 'auth' ? (

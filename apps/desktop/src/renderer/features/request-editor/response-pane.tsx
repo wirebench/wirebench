@@ -222,7 +222,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
           inspector === 'headers' ? (
             <ResponseHeadersInspector exchange={exchange} />
           ) : inspector === 'ssl' ? (
-            <SslInspector exchange={exchange} />
+            <SslInspector http={exchange?.http} />
           ) : inspector === 'attachments' ? (
             <ResponseAttachmentsInspector exchange={exchange} />
           ) : (

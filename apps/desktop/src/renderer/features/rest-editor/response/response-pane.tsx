@@ -102,7 +102,9 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
             {tab === 'body' && <BodyView exchange={exchange} />}
             {tab === 'headers' && <ResponseHeadersView exchange={exchange} />}
             {tab === 'cookies' && <CookiesView exchange={exchange} />}
-            {tab === 'redirects' && <RedirectsView exchange={exchange} />}
+            {tab === 'redirects' && (
+              <RedirectsView http={exchange.http} method={exchange.method} methodChanged={exchange.methodChanged} />
+            )}
             {tab === 'timing' && (
               <div data-testid="rest-response-timing" className="overflow-auto">
                 <TimingsBar timings={exchange.http.timings} />
@@ -112,7 +114,7 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
               <div data-testid="rest-response-tls" className="overflow-auto">
                 {/* The SSL inspector reads only `http`, which both protocols' exchanges share, so a
                     REST exchange is accepted as it is. */}
-                <SslInspector exchange={exchange} />
+                <SslInspector http={exchange.http} />
               </div>
             )}
             {tab === 'raw' && <RawExchange exchange={exchange} />}

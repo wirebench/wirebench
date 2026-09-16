@@ -1,12 +1,12 @@
 import { Copy } from 'lucide-react';
-import type { ExchangeSummary, PeerCertWire, SslInfoWire } from '../../../../shared/wire-types.js';
+import type { HttpExchangeWire, PeerCertWire, SslInfoWire } from '../../../../shared/wire-types.js';
 import { InspectorIconButton } from './inspector-strip.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface SslInspectorProps {
-  /** The exchange whose connection to describe; absent before the first send. */
-  readonly exchange: ExchangeSummary | undefined;
+  /** The `http` projection of the exchange whose connection to describe; absent before the first send. */
+  readonly http: HttpExchangeWire | undefined;
 }
 
 /** How long this certificate has left, as a phrase — or that it is already past its `validTo`. */
@@ -122,11 +122,11 @@ function TlsDetails({ tls }: { readonly tls: SslInfoWire }) {
  * connection this exchange travelled over, and the certificate chain the peer presented.
  * A plain-HTTP exchange says so rather than showing an empty table.
  */
-export function SslInspector({ exchange }: SslInspectorProps) {
-  if (exchange === undefined) {
+export function SslInspector({ http }: SslInspectorProps) {
+  if (http === undefined) {
     return <p className="p-3 text-sm text-fg-subtle">No exchange yet. Send this request to inspect its connection.</p>;
   }
-  const tls = exchange.http.tls;
+  const tls = http.tls;
   if (tls === undefined) {
     return <p className="p-3 text-sm text-fg-subtle">No TLS — plain HTTP. Send over https:// to see certificates.</p>;
   }
