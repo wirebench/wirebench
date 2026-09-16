@@ -72,6 +72,7 @@ test.describe('Inspectors (Headers, timings)', () => {
 
     // The HTTP log's detail breaks the exchange down into a timings bar with a total.
     await page.locator('[data-testid="http-log-row"]').first().click();
+    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Timing' }).click();
     await expect(page.getByTestId('timings-total')).toContainText(/total \d+ ms/, { timeout: 10_000 });
     await expect(page.getByTestId('timings-legend')).toContainText('ttfb');
     expect(await page.locator('[data-testid="timings-segment"]').count()).toBeGreaterThan(0);

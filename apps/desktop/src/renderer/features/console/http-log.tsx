@@ -1,121 +1,97 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
-import {
-  base64ByteLength,
-  decodeBase64Text,
-  formatBytes,
-  formatClockTime,
-  formatDuration,
-} from '../../lib/format-size.js';
+import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
-import { useExchangesStore } from '../../state/exchanges.js';
-import { TimingsBar } from './timings-bar.js';
+import type { LogEntry } from '../../state/exchanges.js';
+import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
-import type { ExchangeSummary } from '../../../shared/wire-types.js';
+import { LogDetail, type LogDetailTab } from './log-detail.js';
+import { LogFilterBar } from './log-filter-bar.js';
+import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, urlOf } from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
 const ROW_HEIGHT = 22;
 
-const COLUMNS = 'grid-cols-[5rem_4rem_minmax(0,1fr)_5rem_4rem_5rem]';
-
-/** Matches C0 control characters other than tab/CR/LF — the cheap "this is not text" signal. */
-const BINARY_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
-
-function rawText(base64: string): string {
-  const text = decodeBase64Text(base64);
-  if (text === undefined || BINARY_PATTERN.test(text)) {
-    return `<${String(base64ByteLength(base64))} bytes>`;
-  }
-  return text;
-}
+/** time · proto · method · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
+const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(0,1fr)_8rem_4rem_5rem]';
 
 interface RowProps {
-  readonly exchange: ExchangeSummary;
+  readonly entry: LogEntry;
   readonly selected: boolean;
   readonly onSelect: () => void;
 }
 
-function LogRow({ exchange, selected, onSelect }: RowProps) {
-  const bad = toneFor(exchange) === 'bad';
+function LogRow({ entry, selected, onSelect }: RowProps) {
+  const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
       type="button"
       data-testid="http-log-row"
+      data-kind={entry.kind}
       onClick={onSelect}
       aria-pressed={selected}
+      title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
       className={`grid ${COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
         selected ? 'bg-surface-selected text-fg-default' : 'text-fg-muted hover:bg-surface-hover'
       }`}
       style={{ height: ROW_HEIGHT }}
     >
-      <span>{formatClockTime(exchange.http.timings.startedAt)}</span>
-      <span>{exchange.http.request.method}</span>
-      <span className="truncate" title={exchange.http.request.url}>
-        {exchange.http.request.url}
+      <span>{formatClockTime(startedAtOf(entry))}</span>
+      <span>{protocolOf(entry)}</span>
+      <span>{methodOf(entry)}</span>
+      <span className="truncate" title={urlOf(entry)}>
+        {urlOf(entry)}
       </span>
-      <span className={bad ? 'text-status-danger' : 'text-status-success'}>{exchange.http.status}</span>
-      <span>{formatDuration(exchange.durationMs)}</span>
-      <span>{formatBytes(responseSize(exchange))}</span>
+      <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
+        {entry.kind === 'failure' ? entry.failure.error.code : entry.exchange.http.status}
+      </span>
+      <span>{formatDuration(durationOf(entry))}</span>
+      <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>
     </button>
   );
 }
 
-function Detail({ exchange }: { readonly exchange: ExchangeSummary }) {
-  return (
-    <div className="min-h-0 shrink-0 basis-1/2 overflow-auto border-t border-hairline">
-      <TimingsBar timings={exchange.http.timings} />
-      <div className="grid grid-cols-2 gap-2 p-2">
-        <section aria-label="Raw request">
-          <h3 className="mb-1 text-xs text-fg-subtle">Raw request</h3>
-          <pre className="max-h-48 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
-            {rawText(exchange.http.rawRequestBase64)}
-          </pre>
-        </section>
-        <section aria-label="Raw response">
-          <h3 className="mb-1 text-xs text-fg-subtle">Raw response</h3>
-          <pre className="max-h-48 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
-            {rawText(exchange.http.rawResponseBase64)}
-          </pre>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 /**
- * The console's HTTP Log tab: one row per finished exchange, newest at the bottom, with the
- * raw request/response of whichever row is selected shown underneath.
+ * The console's HTTP Log tab: one row per send this session — finished or failed — newest at the
+ * bottom, narrowed by the filter bar, with the selected row's detail underneath in tabs.
  */
 export function HttpLog() {
-  const entries = useExchangesStore((state) => state.log);
-  // Task 8 renders LogEntry rows; until then the table shows exchanges only.
-  const log = useMemo(() => entries.flatMap((entry) => (entry.kind === 'exchange' ? [entry.exchange] : [])), [entries]);
+  const log = useExchangesStore((state) => state.log);
+  const filter = useExchangesStore((state) => state.filter);
   const clearLog = useExchangesStore((state) => state.clearLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  // Owned here rather than in the detail so it survives selecting another row.
+  const [tab, setTab] = useState<LogDetailTab>('headers');
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
 
-  const virtualised = log.length > VIRTUALISE_ABOVE;
+  const visible = useMemo(() => log.filter((entry) => matchesFilter(entry, filter)), [log, filter]);
+
+  const virtualised = visible.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
-    count: virtualised ? log.length : 0,
+    count: virtualised ? visible.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
 
-  // Redaction is applied in main, once, at send time — so when the flag flips, the entry the
-  // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. Only the
-  // detail pane shows headers/raw bytes; the row columns carry nothing sensitive.
+  const selected = log.find((entry) => sendIdOf(entry) === selectedId);
+
+  // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
+  // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
+  // no unredacted copy to fetch: it was redacted at emit and stays so, and main is not asked.
+  // Keyed on the id, not the entry: the refresh swaps in a new entry object, which must not re-fire it.
+  const selectedExchangeId = selected?.kind === 'exchange' ? selected.exchange.sendId : undefined;
   useEffect(() => {
-    if (selectedId !== undefined) {
-      void refreshExchange(selectedId);
+    if (selectedExchangeId !== undefined) {
+      void refreshExchange(selectedExchangeId);
     }
-  }, [showSecrets, selectedId, refreshExchange]);
+  }, [showSecrets, selectedExchangeId, refreshExchange]);
 
   // Newest is at the bottom, so follow it — but only while the user has not scrolled away.
   useEffect(() => {
@@ -125,7 +101,23 @@ export function HttpLog() {
     }
   }, [log.length]);
 
-  const selected = log.find((entry) => entry.sendId === selectedId);
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0 || visible.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const index = visible.findIndex((entry) => sendIdOf(entry) === selectedId);
+    const next =
+      index === -1 ? (step === 1 ? 0 : visible.length - 1) : Math.min(visible.length - 1, Math.max(0, index + step));
+    const entry = visible[next];
+    if (entry !== undefined) {
+      setSelectedId(sendIdOf(entry));
+      if (virtualised) {
+        virtualizer.scrollToIndex(next);
+      }
+    }
+  }
 
   if (log.length === 0) {
     return <p className="p-1 text-sm text-fg-subtle">Sent requests appear here with their raw exchange and timings.</p>;
@@ -133,9 +125,15 @@ export function HttpLog() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <LogFilterBar shown={visible.length} total={log.length} />
+
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
-        <div className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}>
+        <div
+          data-testid="http-log-header"
+          className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
+        >
           <span>time</span>
+          <span>proto</span>
           <span>method</span>
           <span>URL</span>
           <span>status</span>
@@ -161,26 +159,30 @@ export function HttpLog() {
       <div
         ref={scrollRef}
         aria-label="HTTP log"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
         className="min-h-0 flex-1 overflow-auto"
         onScroll={(event) => {
           const element = event.currentTarget;
           pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;
         }}
       >
-        {virtualised ? (
+        {visible.length === 0 ? (
+          <p className="p-1 text-sm text-fg-subtle">No rows match the filter.</p>
+        ) : virtualised ? (
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((item) => {
-              const exchange = log[item.index];
-              return exchange === undefined ? null : (
+              const entry = visible[item.index];
+              return entry === undefined ? null : (
                 <div
-                  key={exchange.sendId}
+                  key={sendIdOf(entry)}
                   style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
                 >
                   <LogRow
-                    exchange={exchange}
-                    selected={exchange.sendId === selectedId}
+                    entry={entry}
+                    selected={sendIdOf(entry) === selectedId}
                     onSelect={() => {
-                      setSelectedId(exchange.sendId);
+                      setSelectedId(sendIdOf(entry));
                     }}
                   />
                 </div>
@@ -188,20 +190,20 @@ export function HttpLog() {
             })}
           </div>
         ) : (
-          log.map((exchange) => (
+          visible.map((entry) => (
             <LogRow
-              key={exchange.sendId}
-              exchange={exchange}
-              selected={exchange.sendId === selectedId}
+              key={sendIdOf(entry)}
+              entry={entry}
+              selected={sendIdOf(entry) === selectedId}
               onSelect={() => {
-                setSelectedId(exchange.sendId);
+                setSelectedId(sendIdOf(entry));
               }}
             />
           ))
         )}
       </div>
 
-      {selected !== undefined && <Detail exchange={selected} />}
+      {selected !== undefined && <LogDetail entry={selected} tab={tab} onTabChange={setTab} />}
     </div>
   );
 }

@@ -171,6 +171,7 @@ test.describe('secrets', () => {
     await expect(page.locator('[data-testid="response-status"]')).toContainText(/\d{3}/, { timeout: 15_000 });
 
     await page.locator('[data-testid="http-log-row"]').first().click();
+    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('Authorization: <redacted>');
     await expect(rawRequest).not.toContainText('Basic ');
@@ -274,6 +275,7 @@ test.describe('secrets', () => {
     await sendRest(page);
     await expect(responseStatus(page)).toContainText(/\d{3}/, { timeout: 20_000 });
     await page.locator('[data-testid="http-log-row"]').first().click();
+    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('X-Api-Key: <redacted>');
     await expect(rawRequest).not.toContainText(KEY);
