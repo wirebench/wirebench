@@ -157,20 +157,25 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
-        {/* Only a row that folds carries a twisty. Reserving its width on leaves too would line a
-            request's name up with the folder names beside it, but every leaf in the tree — most of
-            it — would pay 14px of blank gutter for that. */}
-        {node.isInternal && (
-          <span
-            className="flex w-2.5 shrink-0 items-center text-fg-subtle"
-            onClick={(e) => {
-              e.stopPropagation();
-              node.toggle();
-            }}
-          >
-            {node.isOpen ? <ChevronDown size={11} aria-hidden="true" /> : <ChevronRight size={11} aria-hidden="true" />}
-          </span>
-        )}
+        {/* The chevron's width is reserved on leaves as well, so a request's name lines up with the
+            folder names around it: the fold marker is what differs between those rows, not the
+            column their names start in. */}
+        <span
+          className="flex w-2.5 shrink-0 items-center text-fg-subtle"
+          data-testid="explorer-row-twisty"
+          onClick={(e) => {
+            if (!node.isInternal) return;
+            e.stopPropagation();
+            node.toggle();
+          }}
+        >
+          {node.isInternal &&
+            (node.isOpen ? (
+              <ChevronDown size={11} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={11} aria-hidden="true" />
+            ))}
+        </span>
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
@@ -429,11 +434,10 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               rowHeight={26}
-              // A sixth of react-arborist's 24px default: this tree nests project › API › folder ›
-              // request, and four levels of the default step pushed a request's name off to the
-              // right with nothing but blank gutter in front of it. The chevron column marks each
-              // level on its own, so the step only has to nudge.
-              indent={4}
+              // Half react-arborist's 24px default: enough that a subfolder reads as sitting inside
+              // its folder at a glance, without the four levels of this tree — project › API ›
+              // folder › request — marching a request off to the right.
+              indent={12}
               outerElementType={FocusableListOuter}
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}

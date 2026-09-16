@@ -450,6 +450,24 @@ describe('ExplorerView with APIs', () => {
     expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
   });
 
+  it('reserves the chevron column on leaves, so request names line up with folder names', () => {
+    seedRest();
+    mount();
+
+    // A leaf has no fold marker to show, but it keeps the slot: without it, every request name
+    // would start 10px left of the folder names beside it.
+    const folderTwisty = screen.getByTestId('folder-row').querySelector('[data-testid="explorer-row-twisty"]');
+    const requestTwisty = screen
+      .getAllByTestId('rest-request-row')[0]
+      ?.querySelector('[data-testid="explorer-row-twisty"]');
+    expect(folderTwisty).not.toBeNull();
+    expect(requestTwisty).not.toBeNull();
+    expect(requestTwisty?.className).toBe(folderTwisty?.className);
+    // The folder's slot carries the marker; the request's is empty.
+    expect(folderTwisty?.childElementCount ?? 0).toBeGreaterThan(0);
+    expect(requestTwisty?.childElementCount).toBe(0);
+  });
+
   it('pads every row away from the sidebar edge, on top of the tree indent', () => {
     seedRest();
     mount();
