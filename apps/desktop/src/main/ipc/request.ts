@@ -16,6 +16,7 @@ import {
   soapToCurl,
   WirebenchError,
   writeFileAtomic,
+  joinBase,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -37,7 +38,8 @@ import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
-import { sendAndRecordHistory } from '../send-with-history.js';
+import { failedExchangeOf } from '../failed-exchange.js';
+import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
@@ -52,6 +54,7 @@ import type {
   RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
+  FailedExchangeWire,
   RequestSendRequest,
   ResolvedSendRequest,
   RequestCurlRequest,
@@ -135,6 +138,12 @@ export interface RequestChannelDeps {
   readonly history?: HistoryService;
   /** Called with the entry a recorded send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
+  /**
+   * Called with the failure row of a send that threw, after History has recorded it, so main can
+   * broadcast `exchange.failed`. Shared with `sendAndRecordHistory`, which reads it off this same
+   * object for the SOAP path.
+   */
+  readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   /**
    * The user's preferences: the WSDL section supplies the generation defaults and the Editor
    * section the indent a recreated envelope is formatted with. Omitted in tests, which then get
@@ -748,7 +757,30 @@ async function sendRestRequest(
     await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt);
     return summary;
   } catch (error) {
-    await recordRest(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    const durationMs = Date.now() - startedAt;
+    await recordRest(deps, request.requestId, resolved, undefined, durationMs, error);
+    // The failure row for the console's HTTP Log. The URL is the base joined with the request's
+    // path (no summary exists to read it from); the headers are the request's enabled rows —
+    // credentials are applied inside the engine, so none is here to leak, and what is here is
+    // redacted anyway. `keyParams` masks the query parameter an API key was configured to use.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'rest',
+        requestId: request.requestId,
+        url: joinBase(resolved.input.baseUrl, resolved.input.request.url),
+        method: resolved.input.request.method,
+        headers: Object.fromEntries(
+          resolved.input.request.headers
+            .filter((header) => header.enabled)
+            .map((header) => [header.name, header.value]),
+        ),
+        startedAt,
+        durationMs,
+        error,
+        keyParams,
+      }),
+    );
     throw error;
   }
 }

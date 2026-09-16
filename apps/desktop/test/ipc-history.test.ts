@@ -293,4 +293,25 @@ describe('registerHistoryChannels', () => {
     expect(sentRequest.input.envelopeXml).toBe('<Envelope>plain</Envelope>');
     expect(sentRequest.input.headers).toEqual({ 'X-Foo': 'bar' });
   });
+
+  it('history.resend reports a failed resend to onSendFailed as a soap failure row', async () => {
+    const entries = [makeEntry({ id: 'dead', endpoint: 'http://127.0.0.1:1/nope' })];
+    const history = fakeHistory(entries);
+    const onSendFailed = vi.fn();
+    registerHistoryChannels(new EngineService(), history as never, {
+      project: noLiveRequests(),
+      onSendFailed,
+    });
+
+    const result = await invoke('history.resend', { id: 'dead' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'connection-refused' } });
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+    expect(onSendFailed.mock.calls[0]?.[0]).toMatchObject({
+      protocol: 'soap',
+      request: { url: 'http://127.0.0.1:1/nope', method: 'POST' },
+      error: { code: 'connection-refused' },
+    });
+    expect(onSendFailed.mock.calls[0]?.[0]).not.toHaveProperty('requestId');
+  });
 });

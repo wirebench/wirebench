@@ -264,6 +264,7 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
+    onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,
@@ -288,6 +289,7 @@ void app.whenReady().then(() => {
     },
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
+    onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
   });
   registerProjectChannels({
     router: workspaceService,

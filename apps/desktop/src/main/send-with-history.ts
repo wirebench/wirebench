@@ -7,10 +7,16 @@
 
 import { isWirebenchError } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
+import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
 import type { ProjectRouter } from './project-router.js';
 import type { PropertyScopes } from '@wirebench/engine';
-import type { ExchangeSummary, HistoryEntryWire, ResolvedSendRequest } from '../shared/wire-types.js';
+import type {
+  ExchangeSummary,
+  FailedExchangeWire,
+  HistoryEntryWire,
+  ResolvedSendRequest,
+} from '../shared/wire-types.js';
 
 /** What an ad-hoc send with no `adHocScopes` expands against: nothing but the process env. */
 const EMPTY_SCOPES: PropertyScopes = { project: {}, global: {}, system: process.env };
@@ -38,6 +44,11 @@ export interface SendWithHistoryDeps {
   readonly history?: HistoryService;
   /** Called with the entry a successful record produced, so the caller can broadcast it. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
+  /**
+   * Called with the failure row of a send that threw, after History has recorded it, so the
+   * caller can broadcast `exchange.failed`. Omitted in tests that don't care.
+   */
+  readonly onSendFailed?: (failure: FailedExchangeWire) => void;
 }
 
 /** The label used when the send's `requestId` is unknown or no longer exists. */
@@ -97,11 +108,42 @@ export async function sendAndRecordHistory(
     await record(service, deps, request, fallback, { durationMs: Date.now() - startedAt });
     return result;
   } catch (error) {
-    await record(service, deps, request, fallback, {
-      durationMs: Date.now() - startedAt,
-      error: errorDetail(error),
-    });
+    const durationMs = Date.now() - startedAt;
+    await record(service, deps, request, fallback, { durationMs, error: errorDetail(error) });
+    // The failure row for the console's HTTP Log: the resolved headers the send went out with,
+    // redacted for good inside `failedExchangeOf`. A SOAP send is always a POST.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'soap',
+        requestId,
+        url: request.input.endpoint,
+        method: 'POST',
+        headers: request.input.headers ?? {},
+        startedAt,
+        durationMs,
+        error,
+      }),
+    );
     throw error;
+  }
+}
+
+/**
+ * Hands a failure row to `onSendFailed`, if one is wired. Anything the row builder or the listener
+ * throws is swallowed: the send's own error is what the caller rethrows and the user must see.
+ */
+export function reportSendFailed(
+  onSendFailed: ((failure: FailedExchangeWire) => void) | undefined,
+  failure: () => FailedExchangeWire,
+): void {
+  if (onSendFailed === undefined) {
+    return;
+  }
+  try {
+    onSendFailed(failure());
+  } catch {
+    // Deliberately ignored — see above.
   }
 }
 
