@@ -4,16 +4,18 @@ import { forwardRef } from 'react';
 import { ListOuterElement, Tree } from 'react-arborist';
 import {
   Box,
+  ChevronDown,
+  ChevronRight,
   FileDown,
   Folder,
-  Globe,
   FolderPlus,
+  FoldVertical,
+  Globe,
   Link2,
   Loader2,
   Network,
   Plug,
   RefreshCw,
-  FoldVertical,
   UnfoldVertical,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
@@ -138,7 +140,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
-        className={`flex h-full items-center gap-0.5 px-1 text-sm ${
+        className={`flex h-full items-center pr-1 pl-0.5 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
@@ -147,19 +149,19 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             it — would pay 14px of blank gutter for that. */}
         {node.isInternal && (
           <span
-            className="w-3 shrink-0 text-fg-subtle"
+            className="flex w-2.5 shrink-0 items-center text-fg-subtle"
             onClick={(e) => {
               e.stopPropagation();
               node.toggle();
             }}
           >
-            {node.isOpen ? '▾' : '▸'}
+            {node.isOpen ? <ChevronDown size={11} aria-hidden="true" /> : <ChevronRight size={11} aria-hidden="true" />}
           </span>
         )}
         {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
-        <span className="flex w-8 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
+        <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
           {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
             <MethodBadge
               method={node.data.method}
@@ -175,7 +177,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           <input
             autoFocus
             defaultValue={node.data.label}
-            className="min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
+            className="ml-1 min-w-0 flex-1 rounded bg-surface-base px-1 text-sm outline-none ring-1 ring-accent"
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onFocus={(e) => e.currentTarget.select()}
@@ -190,7 +192,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           />
         ) : (
           <span
-            className={`min-w-0 flex-1 truncate ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
+            className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
           >
             {node.data.label}
           </span>
@@ -414,11 +416,11 @@ export function ExplorerView() {
               width={size.width}
               height={size.height}
               rowHeight={26}
-              // A third of react-arborist's 24px default: this tree nests project › API › folder ›
+              // A sixth of react-arborist's 24px default: this tree nests project › API › folder ›
               // request, and four levels of the default step pushed a request's name off to the
-              // right with nothing but blank gutter in front of it. The twisty column still marks
-              // each level, so 8px is enough to read the nesting.
-              indent={8}
+              // right with nothing but blank gutter in front of it. The chevron column marks each
+              // level on its own, so the step only has to nudge.
+              indent={4}
               outerElementType={FocusableListOuter}
               openByDefault={false}
               initialOpenState={{ ...Object.fromEntries(data.map((root) => [root.id, true])), ...storedOpen() }}

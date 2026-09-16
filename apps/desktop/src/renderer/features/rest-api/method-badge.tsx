@@ -35,18 +35,19 @@ const MAX_LABEL = 7;
 const SHORT_LABEL: Readonly<Record<string, string>> = {
   DELETE: 'DEL',
   OPTIONS: 'OPT',
-  CONNECT: 'CONN',
+  CONNECT: 'CON',
+  PATCH: 'PAT',
 };
 
 /** The longest label the compact column shows before it is cut short. */
-const MAX_COMPACT_LABEL = 5;
+const MAX_COMPACT_LABEL = 4;
 
 /** One method as the compact column spells it: `DELETE` is `DEL`, `GET` and `PATCH` unchanged. */
 export function compactMethodLabel(method: string): string {
   const label = method.toUpperCase();
   const short = SHORT_LABEL[label];
   if (short !== undefined) return short;
-  return label.length > MAX_COMPACT_LABEL ? `${label.slice(0, 4)}…` : label;
+  return label.length > MAX_COMPACT_LABEL ? `${label.slice(0, 3)}…` : label;
 }
 
 export interface MethodBadgeProps {

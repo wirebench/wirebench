@@ -71,9 +71,9 @@ describe('MethodBadge', () => {
       ['GET', 'GET'],
       ['POST', 'POST'],
       ['PUT', 'PUT'],
-      ['PATCH', 'PATCH'],
+      ['PATCH', 'PAT'],
       ['OPTIONS', 'OPT'],
-      ['PROPFIND', 'PROP…'],
+      ['PROPFIND', 'PRO…'],
     ] as const) {
       render(<MethodBadge method={method} compact />);
       expect(screen.getByTestId('method-badge').textContent).toBe(shown);
