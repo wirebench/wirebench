@@ -100,13 +100,25 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
 const INLINE_BUTTON_CLASS =
   'shrink-0 rounded px-1.5 py-0.5 text-xs text-fg-default ring-1 ring-hairline-strong hover:bg-surface-base';
 
+/**
+ * The gap between the sidebar's edge and a row's chevron.
+ *
+ * It has to ride on the inline style rather than a `pl-*` class: react-arborist hands every row
+ * `style.paddingLeft` (its per-level indent), and an inline padding beats any class we set — a
+ * class here is silently dropped, and at the root level, where the indent is 0, it looks like no
+ * padding was ever asked for.
+ */
+const ROW_PADDING_LEFT = 6;
+
 function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
   const Icon = NODE_ICON[node.data.kind];
+  const indent = typeof style.paddingLeft === 'number' ? style.paddingLeft : 0;
+  const rowStyle = { ...style, paddingLeft: indent + ROW_PADDING_LEFT };
   return (
     <ExplorerContextMenu node={node.data}>
       <div
         ref={dragHandle}
-        style={style}
+        style={rowStyle}
         data-testid={ROW_TESTID[node.data.kind] ?? 'explorer-tree-row'}
         data-tree-id={node.id}
         {...(node.data.projectId !== undefined ? { 'data-project-id': node.data.projectId } : {})}
@@ -141,7 +153,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
-        className={`flex h-full items-center pr-1 pl-1.5 text-sm ${
+        className={`flex h-full items-center pr-1 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >

@@ -450,6 +450,21 @@ describe('ExplorerView with APIs', () => {
     expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
   });
 
+  it('pads every row away from the sidebar edge, on top of the tree indent', () => {
+    seedRest();
+    mount();
+
+    // The padding rides on the inline style, because the tree writes paddingLeft there for its
+    // indent and an inline value beats any class. A root row is the one that proves it: its indent
+    // is 0, so whatever shows up is the padding itself.
+    const projectRow = screen.getByTestId('explorer-project-row');
+    expect(projectRow.style.paddingLeft).toBe('6px');
+
+    // A nested row keeps its indent and carries the same padding on top of it.
+    const requestRow = screen.getAllByTestId('rest-request-row')[0];
+    expect(Number.parseFloat(requestRow?.style.paddingLeft ?? '0')).toBeGreaterThan(6);
+  });
+
   it('gives every row the same method gutter, right-aligned', () => {
     seedRest();
     mount();
