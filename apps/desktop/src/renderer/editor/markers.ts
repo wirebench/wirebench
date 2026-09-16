@@ -87,6 +87,11 @@ function monacoHandleAllowed(): boolean {
  * loaded — no privileged API, nothing the page could not reach on its own — but a real user's
  * build never sets it at all.
  */
+/** The Monaco namespace registered so far, if an editor has mounted. */
+export function getMarkerApi(): MarkerApi | undefined {
+  return markerApi;
+}
+
 export function setMarkerApi(api: MarkerApi | undefined): void {
   markerApi = api;
   if (monacoHandleAllowed()) {

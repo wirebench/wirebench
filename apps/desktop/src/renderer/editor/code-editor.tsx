@@ -8,7 +8,9 @@
 import { Editor } from '@monaco-editor/react';
 import type { OnMount } from '@monaco-editor/react';
 import { useMemo } from 'react';
+import type * as Monaco from 'monaco-editor';
 import { useResolvedTheme } from '../lib/theme.js';
+import { getMarkerApi, setMarkerApi } from './markers.js';
 import { usePreferencesStore } from '../state/preferences.js';
 import { useUiStore } from '../state/ui.js';
 import { BASE_EDITOR_OPTIONS, configureMonaco, monacoThemeName, XML_LANGUAGE_ID } from './monaco.js';
@@ -90,7 +92,15 @@ export function CodeEditor({
       value={value}
       options={options}
       {...(onChange !== undefined ? { onChange: (next?: string) => onChange(next ?? '') } : {})}
-      {...(onMount !== undefined ? { onMount } : {})}
+      onMount={(editor, monacoNS) => {
+        // The first editor to mount hands the Monaco namespace to `editor/markers.ts`, so the
+        // Problems view and the e2e handle work whichever protocol's editor opened first — the SOAP
+        // request pane used to be the only one that did, and a REST or gRPC session had none.
+        if (getMarkerApi() === undefined) {
+          setMarkerApi(monacoNS as typeof Monaco);
+        }
+        onMount?.(editor, monacoNS);
+      }}
       loading={<span className="p-3 text-sm text-fg-subtle">Loading editor…</span>}
     />
   );
