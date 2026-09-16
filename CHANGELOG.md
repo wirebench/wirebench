@@ -20,10 +20,20 @@ All notable changes to this project are documented here. The format follows
   [`docs/specs/2026-09-16-wirebench-grpc-client-design.md`](docs/specs/2026-09-16-wirebench-grpc-client-design.md)
   and the update to [ADR-0007](docs/adr/0007-apis-beside-interfaces.md).
 
+- **HTTP Log: failed sends, a filter bar and detail tabs.** A send that fails before a response
+  arrives (DNS, refused connection, TLS, proxy, timeout, abort, too many redirects) now gets a row
+  in the console's HTTP Log, with the error code in the status column, the time it took to fail,
+  and the request headers it was built with — redacted when recorded and kept so. The log gained a
+  *proto* column, a filter bar (URL text; method, status-class and protocol chips, with *failed*
+  among the classes; an "n of m" count; *Reset*), ↑/↓ row selection, and a detail pane in five
+  tabs: Headers, Request, Response, Timing (each unmeasured phase says why) and Connection
+  (redirect hops and the TLS peer). The response pane header and Problems behave as before.
+
 ### Changed
 
 - **Dependencies.** The engine now depends on `protobufjs` (BSD-3-Clause) for `.proto` parsing and message
   encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
+
 
 ## [2.1.1] - 2026-09-16
 
