@@ -11,7 +11,7 @@
 
 - Commit messages are conventional-commit style (`feat(log): …`, `test(e2e): …`, `docs: …`) with NO `Co-Authored-By:` trailer and NO `Claude-Session:` trailer.
 - Run `WIREBENCH_SKIP_PERF=1 pnpm check` before every commit; every task's commit step is preceded by that step and the commit only happens when it is green.
-- Never name SoapUI, ReadyAPI, SmartBear, or any product as the inspiration for a feature, in code, comments, tests or docs; `pnpm check:banned-terms` (part of `pnpm check`) enforces it. Describe behaviours neutrally.
+- Never name any product as the inspiration for a feature (the banned-term list is in the check script), in code, comments, tests or docs; `pnpm check:banned-terms` (part of `pnpm check`) enforces it. Describe behaviours neutrally.
 - Every shape that crosses IPC is plain JSON defined as a zod schema in `apps/desktop/src/shared/wire-types.ts`; events are declared with `defineEvent` in `apps/desktop/src/shared/ipc.ts` and broadcast from `apps/desktop/src/main/index.ts` via `broadcast(events.x.y, payload)`. The preload bridge flattens `events` automatically, so no preload change is needed.
 - Failure request headers are redacted with `redactHeaders(headers, { show: false })` from `apps/desktop/src/main/redact.ts` at emit time, always, regardless of the show-secrets flag; the URL goes through `redactUrl` the same way. A failure is never put in the unredacted `ExchangeCache`.
 - The rethrow in every catch block is unchanged: the response pane header and Problems keep their existing error path.
