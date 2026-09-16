@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
-import { createProject, createProjectWithCalculator, createWorkspace, openFirstRequest } from '../helpers/project.js';
+import {
+  createProject,
+  createProjectWithCalculator,
+  createWorkspace,
+  dismissChangedOnDiskBanners,
+  openFirstRequest,
+} from '../helpers/project.js';
 import {
   createApi,
   createRestRequest,
@@ -73,24 +79,6 @@ function dynamicRegions(page: Page): Locator[] {
     page.locator('[data-testid="http-log-row"]'),
     page.locator('[data-testid="history-row"]'),
   ];
-}
-
-/**
- * Waits past the folder watcher's self-write window and dismisses any "changed on disk"
- * banner that came up because of it, then asserts none remain.
- *
- * Importing the fixture writes the project folder, and whether the watcher attributes those
- * writes to the app itself (and so suppresses the banner) or not is a matter of timing. Masking
- * the banner only paints over its content — the banner still occupies vertical space and shifts
- * everything below it, so a shell screenshot must instead ensure no banner is showing at all.
- */
-async function dismissChangedOnDiskBanners(page: Page): Promise<void> {
-  await page.waitForTimeout(2_500);
-  const ignoreButtons = page.locator('[data-testid^="changed-on-disk-ignore"]');
-  while ((await ignoreButtons.count()) > 0) {
-    await ignoreButtons.first().click();
-  }
-  await expect(page.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
 }
 
 /**

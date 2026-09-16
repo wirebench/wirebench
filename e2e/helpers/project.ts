@@ -235,3 +235,22 @@ export async function saveAll(page: Page): Promise<void> {
   // finished, leaving a caller free to read a half-written project folder.
   await expect(page.getByTestId('title-bar-dirty')).toHaveCount(0, { timeout: 20_000 });
 }
+
+/**
+ * Waits past the folder watcher's self-write window and dismisses any "changed on disk" banner
+ * that came up because of it, then asserts none remain.
+ *
+ * Writing a project folder — an import, a save — races the watcher: whether it attributes those
+ * writes to the app itself (and so suppresses the banner) is a matter of timing. The banner is not
+ * cosmetic for a test that reads the panes below it. It occupies vertical space and pushes
+ * everything down, and the response body virtualises its lines, so two rows of banner are two
+ * lines of response that never render.
+ */
+export async function dismissChangedOnDiskBanners(page: Page): Promise<void> {
+  await page.waitForTimeout(2_500);
+  const ignoreButtons = page.locator('[data-testid^="changed-on-disk-ignore"]');
+  while ((await ignoreButtons.count()) > 0) {
+    await ignoreButtons.first().click();
+  }
+  await expect(page.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
+}
