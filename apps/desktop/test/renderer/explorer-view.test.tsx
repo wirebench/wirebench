@@ -450,6 +450,26 @@ describe('ExplorerView with APIs', () => {
     expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['GET', 'POST']);
   });
 
+  it('lines every name up by giving each row the same leading gutter, methods right-aligned', () => {
+    seedRest();
+    mount();
+
+    // Folder and request rows alike: one twisty slot, then one gutter of the same fixed width, so
+    // the names after them begin at the same x whatever the method label is.
+    const gutters = screen.getAllByTestId('explorer-row-gutter');
+    expect(gutters.length).toBeGreaterThan(1);
+    for (const gutter of gutters) {
+      expect(gutter.className).toContain('w-12');
+      expect(gutter.className).toContain('justify-end');
+    }
+
+    const badge = screen.getAllByTestId('method-badge')[0];
+    expect(badge?.parentElement?.getAttribute('data-testid')).toBe('explorer-row-gutter');
+
+    const folderRow = screen.getByTestId('folder-row');
+    expect(folderRow.querySelector('[data-testid="explorer-row-gutter"]')).not.toBeNull();
+  });
+
   it('opens a REST request tab on a single click, and the same tab on a second click', () => {
     seedRest();
     mount();

@@ -142,21 +142,32 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
-        {node.isInternal && (
-          <span
-            className="w-3 shrink-0 text-fg-subtle"
-            onClick={(e) => {
-              e.stopPropagation();
-              node.toggle();
-            }}
-          >
-            {node.isOpen ? '▾' : '▸'}
-          </span>
-        )}
-        {Icon !== undefined && <Icon size={13} />}
-        {node.data.kind === 'rest-request' && node.data.method !== undefined && (
-          <MethodBadge method={node.data.method} title={`${node.data.method} ${node.data.label}`} />
-        )}
+        {/* The twisty's width is reserved on every row, open or leaf, so a folder's name and the
+            name of a request beside it start at the same x. */}
+        <span
+          className="w-3 shrink-0 text-fg-subtle"
+          onClick={(e) => {
+            if (!node.isInternal) return;
+            e.stopPropagation();
+            node.toggle();
+          }}
+        >
+          {node.isInternal ? (node.isOpen ? '▾' : '▸') : ''}
+        </span>
+        {/* One gutter of fixed width carries whatever marks the row — a kind icon or the method —
+            hard against the name. Right-aligning it lines the method labels up with each other and
+            every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
+        <span className="flex w-12 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
+          {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
+            <MethodBadge
+              method={node.data.method}
+              title={`${node.data.method} ${node.data.label}`}
+              className="w-auto"
+            />
+          ) : (
+            Icon !== undefined && <Icon size={13} />
+          )}
+        </span>
         {node.isEditing ? (
           <input
             autoFocus
