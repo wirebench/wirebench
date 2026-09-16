@@ -140,7 +140,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           e.stopPropagation();
           node.activate();
         }}
-        className={`flex h-full items-center pr-1 pl-0.5 text-sm ${
+        className={`flex h-full items-center pr-1 pl-1.5 text-sm ${
           node.isSelected ? 'bg-accent-muted text-fg-default' : 'text-fg-default hover:bg-surface-raised'
         }`}
       >
