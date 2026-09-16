@@ -200,9 +200,9 @@ sizes, the detail per theme, and what a review of the surrounding tools changed 
 5. **Snapshot regression** — send to several environments at once, diff semantically, replay baselines in CI.
 6. **Secrets** — resolved from external secret managers at send time; encrypted team secrets in shared workspaces.
 7. **Enterprise authentication** — Kerberos/SPNEGO and WS-Trust for STS-issued SAML tokens.
-8. **REST follow-ups and importers** — resend and diff a REST send from History, a shared cookie jar, an HTML
-   response preview, OpenAPI 2.0 (Swagger) import, _Update Definition_ for an API, response validation against the
-   contract, the token-style auth kinds for SOAP owners, and importers for existing collections.
+8. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response
+   preview, _Update Definition_ for an API, response validation against the contract, and the token-style
+   auth kinds for SOAP owners. The importers shipped in 2.1.0.
 9. **Contract diff** — two WSDLs or OpenAPI documents compared, breaking changes classified, runnable in CI.
 10. **WS-Security debugger** — why a signature or decryption failed, and configuration proposed from the WSDL's policy.
 11. **Mock services** — generated from the contract, validating requests, recorded from live traffic, stored as files.

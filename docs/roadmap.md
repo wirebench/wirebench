@@ -45,7 +45,8 @@ is picked up.
 | 6 | Secrets from external managers; encrypted team secrets | Ent | M | new | A secret scope resolved at send time from a vault, a cloud secret manager, a password manager's CLI or the keychain, so nothing sensitive is on disk anywhere; team secrets encrypted to member keys in a shared workspace. The follow-up the shared-workspaces spec names. |
 | 7 | Enterprise authentication: Kerberos/SPNEGO and WS-Trust (STS-issued SAML tokens) | Ent | M + M | spec 1.1 + new | Windows-integrated auth and a security token service front most internal SOAP estates, and the same buyer asks for both. Kerberos needs a native module, so it needs an explicit ruling. |
 | — | REST client, minimum viable | Dev | L | **shipped in 2.0.0** | Most estates are mixed; a SOAP-only tool loses the "one tool" argument. Done, with OpenAPI 3 import and OAuth2; item 8 is what it left out. |
-| 8 | REST follow-ups, importers and contract validation | Dev | S–M each, + S per importer | new | Each follow-up is a gap a user hits within a day of real use, and none needs a format change. Importers for existing collections decide whether anyone with saved requests tries it, and responses validated against the OpenAPI schema match what SOAP already does against XSD. |
+| — | Importers: OpenAPI 3.2, Swagger 1.x/2.0, Postman Collections | Dev | M | **shipped in 2.1.0** | Switching cost is the moat, and anyone with saved requests elsewhere judges a client by whether it can bring them along. One Import… dialog detects the format; what it cannot map is reported rather than dropped. |
+| 8 | REST follow-ups and contract validation | Dev | S–M each | new | Each follow-up is a gap a user hits within a day of real use, and none needs a format change. Responses validated against the OpenAPI schema match what SOAP already does against XSD. |
 | 9 | Contract diff and breaking-change report ✚ | Both | M | new | Two WSDLs or two OpenAPI documents compared per operation, each change classified breaking or compatible, exportable and runnable in CI. Builds on Update Definition's change report; both definition caches already exist. |
 | 10 | WS-Security debugger and policy-driven configuration ✚ | Ent | M | new | Explain a failed verify or decrypt — which reference, digest, canonicalisation, token or clock skew — and propose the configuration from the WSDL's security policy, as WS-Addressing is already enabled from policy. Engine-only work; can land at any time. |
 | 11 | Mock services: contract-validated, recorded, file-based | Both | L | phase 3 | The upstream test system being down is the most common blocker a team has. Mocks that validate requests against the contract, live as reviewable files in the project, and are recorded from live traffic are what other mocks lack. |
@@ -135,11 +136,12 @@ enabled checkbox, and the `disabled` list format bump
 
 ### Compatibility and adoption
 
-- **Importers and exporters** (item 8). In: Postman Collection v2.1 with its environment files, HAR 1.2,
-  `.http` request files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when
-  asked. Out: Postman Collection v2.1 and OpenCollection YAML. A published JSON Schema for Wirebench's own
-  project files, so any editor validates them. Switching cost is the moat the cloud platforms rely on;
-  every client that displaced one began as an importer.
+- **Importers and exporters.** In, shipped in 2.1.0: OpenAPI 3.0/3.1/3.2, Swagger 1.x and 2.0, and
+  Postman Collections v2.0/v2.1. Still wanted in: Postman environment files, HAR 1.2, `.http` request
+  files as the JetBrains and VS Code clients write them, OpenCollection YAML; others when asked. Out:
+  Postman Collection v2.1 and OpenCollection YAML, neither written yet. A published JSON Schema for
+  Wirebench's own project files, so any editor validates them. Switching cost is the moat the cloud
+  platforms rely on; every client that displaced one began as an importer.
 - **JKS keystores.** PKCS#12 and PEM are supported today.
 - **HTTP/2.** Evaluate making it the default once enough servers negotiate it cleanly.
 - **Same-host `http://` → `https://` 301 on a POST.** Wirebench does not follow redirects on send by
@@ -263,8 +265,6 @@ is a sibling container rather than a generalised interface. Evidence per criteri
   workspace-wide jar with a manager was deliberately deferred (spec §15.4).
 - **HTML response preview.** Needs a sandboxed frame and a CSP decision that deserves its own security
   review (spec §15.5). Pretty and Raw show the markup meanwhile.
-- **OpenAPI 2.0 (Swagger) import.** Refused today with a clear message; a converter step is the fix
-  (spec §15.6).
 - **_Update Definition_ for an API**, preserving edited values the way the WSDL one does (spec §15.7).
 - **Response validation against the OpenAPI response schema** — the functional-testing phase, with the
   `ajv` ask (spec §15.8).
@@ -273,9 +273,8 @@ is a sibling container rather than a generalised interface. Evidence per criteri
   REST row keeps the redaction it was given at send time instead of gaining the secret back. The row
   is never *wrong* — it is redacted, which is the safe direction — it just does not update.
 
-- **Importers for existing collections**, and the JSON form view — see [Compatibility and
-  adoption](#compatibility-and-adoption) and [Contracts](#contracts). Nobody with saved requests elsewhere
-  tries a client that cannot bring them along.
+- **The JSON form view** — see [Contracts](#contracts). The importers that used to sit beside it here
+  shipped in 2.1.0.
 
 The cookie jar and the initial/current value split go together. The test steps and assertions extend to
 REST in the functional-testing slices (items 12–14); JSONPath is already in the engine
@@ -369,7 +368,7 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
   runs — instead of one XL phase, so each slice ships value and runs in the CLI.
 - The MCP server moves from an idea to item 4, because it shares the runner's engine surface and because
   agent access is now expected of every client.
-- The 2026-09-13 review added items the spec never had — importers, contract diff, the WS-Security
+- The 2026-09-13 review added items the spec never had — importers (shipped in 2.1.0), contract diff, the WS-Security
   debugger and policy-driven configuration, snapshot regression, external secret managers and encrypted
   team secrets, WS-Trust, a portable build and a published benchmark. Each builds on something already in
   the engine; none adds AI to the product.
