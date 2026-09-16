@@ -53,6 +53,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         // §3.1 puts _New API…_ on the project row: an API is created in a project, and this is the
         // only row that names one.
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
+        { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
       ],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
@@ -202,13 +203,37 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
     );
   }
 
+  if (node.kind === 'grpc-api' && node.apiId !== undefined) {
+    const apiId = node.apiId;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openGrpcApi(apiId) },
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newGrpcRequest(apiId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-api', apiId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeGrpcApi(apiId) }],
+    );
+  }
+
   if (node.kind === 'folder' && node.apiId !== undefined && node.folderId !== undefined) {
     const { apiId, folderId } = { apiId: node.apiId, folderId: node.folderId };
+    const grpc = node.grpc === true;
     return groups(
       [
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
-        { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId, folderId) },
-        { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId, folderId) },
+        {
+          key: 'new-request',
+          label: 'New request',
+          run: () =>
+            grpc ? explorerActions.newGrpcRequest(apiId, folderId) : explorerActions.newRestRequest(apiId, folderId),
+        },
+        // A cURL line describes an HTTP request, which only a REST folder can hold.
+        ...(grpc
+          ? []
+          : [
+              { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId, folderId) },
+            ]),
       ],
       [
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('folder', folderId) },
@@ -228,6 +253,17 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
+    );
+  }
+
+  if (node.kind === 'grpc-request' && node.requestId !== undefined) {
+    const requestId = node.requestId;
+    return groups(
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateGrpcRequest(requestId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-request', requestId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteGrpcRequest(requestId) }],
     );
   }
 

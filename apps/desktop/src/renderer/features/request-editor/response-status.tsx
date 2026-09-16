@@ -1,4 +1,4 @@
-import type { ExchangeSummary, RestExchangeSummary } from '../../../shared/wire-types.js';
+import type { ExchangeSummary, GrpcExchangeSummary, RestExchangeSummary } from '../../../shared/wire-types.js';
 import type { IpcError } from '../../../shared/ipc.js';
 import { base64ByteLength, formatBytes, formatDuration } from '../../lib/format-size.js';
 
@@ -11,12 +11,13 @@ export type ExchangeTone = 'ok' | 'bad';
  * Both summaries carry the `http` exchange and the duration; only a SOAP one can carry a fault. The
  * log is a protocol-neutral surface, so the two helpers below take this rather than the SOAP shape.
  */
-export type AnyExchangeSummary = ExchangeSummary | RestExchangeSummary;
+export type AnyExchangeSummary = ExchangeSummary | RestExchangeSummary | GrpcExchangeSummary;
 
-/** A fault, a 4xx, or a 5xx is a failure regardless of what the other two say. */
+/** A fault, a 4xx, a 5xx, or a gRPC status other than OK is a failure regardless of what the rest says. */
 export function toneFor(exchange: AnyExchangeSummary): ExchangeTone {
   const fault = 'response' in exchange ? exchange.response?.fault : undefined;
-  return fault !== undefined || exchange.http.status >= 400 ? 'bad' : 'ok';
+  const grpcFailed = 'statusName' in exchange && exchange.status !== 0;
+  return fault !== undefined || grpcFailed || exchange.http.status >= 400 ? 'bad' : 'ok';
 }
 
 /** Decoded response body size in bytes — what the header line and the log's size column show. */

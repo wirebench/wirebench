@@ -14,6 +14,7 @@ import { normalizeHistoryEntry, assertPathSegment, generateHistoryId, openHistor
 import type { HistoryEntry, HistoryFile, HistoryListQuery } from '@wirebench/engine';
 import { redactHeaderPairs, redactHeaders, redactXml } from './redact.js';
 import type {
+  GrpcExchangeSummary,
   RestExchangeSummary,
   ExchangeSummary,
   HeaderEntryWire,
@@ -212,6 +213,95 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
   };
 }
 
+/** What `HistoryService.recordGrpcSend` needs to build one gRPC entry. */
+export interface RecordGrpcSendInput {
+  readonly requestId: string;
+  readonly requestName: string;
+  /** The API the request belongs to, in the interface name's slot. */
+  readonly apiName: string;
+  readonly folderPath: string;
+  /** The target as resolved, `host:port`. */
+  readonly target: string;
+  readonly service: string;
+  readonly method: string;
+  readonly methodKind: GrpcExchangeSummary['methodKind'];
+  /** The request metadata as sent, redacted here. */
+  readonly requestMetadata: Readonly<Record<string, string>>;
+  /** The request message text as sent. */
+  readonly requestMessage: string;
+  readonly exchange?: GrpcExchangeSummary;
+  readonly error?: { readonly code: string; readonly message: string };
+  readonly durationMs: number;
+  readonly tags?: readonly string[];
+}
+
+/**
+ * Builds one (already redacted) gRPC `HistoryEntry`.
+ *
+ * The SOAP-shaped fields carry what they can, as a REST entry's do: the API's name as the
+ * interface, the folder path as the operation, the target as the endpoint, the HTTP status as the
+ * status. The call itself — method, gRPC status, every message on both sides — is in `grpc`, the
+ * multi-message record ADR-0007 left room for; `ok` means the gRPC status was `OK`.
+ */
+export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendInput): HistoryEntry {
+  const headers: HeaderEntryWire[] = Object.entries(redactHeaders(record.requestMetadata, { show: false })).map(
+    ([name, value]) => ({ name, value }),
+  );
+  const exchange = record.exchange;
+  return {
+    id: generateHistoryId(),
+    kind: 'grpc',
+    at: new Date().toISOString(),
+    projectId,
+    requestId: record.requestId,
+    requestName: record.requestName,
+    interfaceName: record.apiName,
+    operationName: record.folderPath,
+    endpoint: record.target,
+    soapVersion: 'none',
+    ...(exchange !== undefined ? { status: exchange.http.status } : {}),
+    durationMs: record.durationMs,
+    ok: exchange !== undefined && exchange.status === 0,
+    request: { envelopeXml: storedBody(record.requestMessage), headers },
+    ...(exchange !== undefined
+      ? {
+          response: {
+            envelopeXml: storedBody(
+              exchange.responseMessages.map((message) => message.json ?? message.base64).join('\n'),
+            ),
+            rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
+            status: exchange.http.status,
+            statusText: exchange.statusName,
+          },
+        }
+      : {}),
+    ...(record.error !== undefined ? { error: record.error } : {}),
+    grpc: {
+      service: record.service,
+      method: record.method,
+      methodKind: record.methodKind,
+      ...(exchange !== undefined
+        ? {
+            status: exchange.status,
+            statusName: exchange.statusName,
+            ...(exchange.statusMessage !== undefined ? { statusMessage: exchange.statusMessage } : {}),
+          }
+        : {}),
+      requestMessages: exchange?.requestMessages.map(storedBody) ?? [storedBody(record.requestMessage)],
+      responseMessages: exchange?.responseMessages.map((message) => storedBody(message.json ?? message.base64)) ?? [],
+      trailers: Object.entries(redactHeaders(exchange?.trailers ?? {}, { show: false })).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    },
+    sizeBytes:
+      exchange === undefined
+        ? Buffer.byteLength(record.requestMessage, 'utf8')
+        : Buffer.from(exchange.http.rawResponseBase64, 'base64').byteLength,
+    ...(record.tags !== undefined ? { tags: record.tags } : {}),
+  };
+}
+
 /**
  * Owns one history file per open project, keyed by project id. Opening a second project does not
  * evict the first: every `list`/`get`/`clear` spans the open files unless a `projectId` narrows
@@ -279,6 +369,17 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildHistoryEntry(projectId, record);
+    await file.append(entry);
+    return toHistoryEntryWire(entry);
+  }
+
+  /** Appends one gRPC send's entry to its project's file, returning the wire shape it wrote. */
+  async recordGrpcSend(projectId: string, record: RecordGrpcSendInput): Promise<HistoryEntryWire | undefined> {
+    const file = this.files.get(projectId);
+    if (file === undefined) {
+      return undefined;
+    }
+    const entry = buildGrpcHistoryEntry(projectId, record);
     await file.append(entry);
     return toHistoryEntryWire(entry);
   }

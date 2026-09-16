@@ -159,15 +159,23 @@ describe('UnsavedStore', () => {
   it('round-trips drafts, and removes the file when none are left', async () => {
     const store = new UnsavedStore(dir);
     await store.writeDrafts({ r1: { envelopeXml: '<a/>' } });
-    expect(await store.readDrafts()).toEqual({ requests: { r1: { envelopeXml: '<a/>' } }, restRequests: {} });
+    expect(await store.readDrafts()).toEqual({
+      requests: { r1: { envelopeXml: '<a/>' } },
+      restRequests: {},
+      grpcRequests: {},
+    });
     await store.writeDrafts({});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {} });
+    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {} });
 
     // Both protocols' drafts live in one file, and either alone is enough to keep it.
     await store.writeDrafts({}, { rest1: { url: '/pets' } });
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: { rest1: { url: '/pets' } } });
+    expect(await store.readDrafts()).toEqual({
+      requests: {},
+      restRequests: { rest1: { url: '/pets' } },
+      grpcRequests: {},
+    });
     await store.writeDrafts({}, {});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {} });
+    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {} });
     expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
   });
 

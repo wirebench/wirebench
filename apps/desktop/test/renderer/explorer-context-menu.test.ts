@@ -32,6 +32,7 @@ describe('explorerMenuItems', () => {
     expect(items.map((item) => item.label)).toEqual([
       'Import…',
       'New API…',
+      'New gRPC API…',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -57,6 +58,7 @@ describe('explorerMenuItems', () => {
     expect(linked.map((item) => item.label)).toEqual([
       'Import…',
       'New API…',
+      'New gRPC API…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -129,7 +131,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api'],
+      ['import', 'new-api', 'new-grpc-api'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],
@@ -225,5 +227,33 @@ describe('explorerMenuItems on a REST row', () => {
     const folder = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
     folder.find((item) => item.label === 'Import cURL…')?.run();
     expect(useUiStore.getState().importCurlTarget).toEqual({ kind: 'rest', apiId: 'a1', folderId: 'f1' });
+  });
+});
+
+describe('explorerMenuItems on a gRPC row', () => {
+  it('offers a gRPC API its containers and its own lifecycle, and no cURL import', () => {
+    const items = explorerMenuItems(node({ kind: 'grpc-api', id: 'grpc-api:g1', apiId: 'g1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+  });
+
+  it('offers a folder inside a gRPC API the same entries as a REST folder, minus Import cURL…', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'g1', folderId: 'f1', grpc: true }));
+
+    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+  });
+
+  it('offers a gRPC request duplicate, rename and delete, and no Open', () => {
+    const items = explorerMenuItems(node({ kind: 'grpc-request', id: 'grpc:r1', apiId: 'g1', requestId: 'r1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    expect(
+      explorerMenuGroups(node({ kind: 'grpc-request', id: 'grpc:r1', apiId: 'g1', requestId: 'r1' })).at(-1),
+    ).toHaveLength(1);
+  });
+
+  it('offers nothing for a gRPC row whose ids are missing', () => {
+    expect(explorerMenuItems(node({ kind: 'grpc-api' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'grpc-request', apiId: 'g1' }))).toEqual([]);
   });
 });

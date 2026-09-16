@@ -30,6 +30,17 @@ const ApiTab = lazy(async () => {
   return { default: module.ApiTab };
 });
 
+// Split out like the REST editor: its message editor is Monaco.
+const GrpcEditor = lazy(async () => {
+  const module = await import('../features/grpc-editor/grpc-editor.js');
+  return { default: module.GrpcEditor };
+});
+
+const GrpcApiTab = lazy(async () => {
+  const module = await import('../features/grpc-api/grpc-api-tab.js');
+  return { default: module.GrpcApiTab };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: module.HistoryEntryView };
@@ -101,6 +112,7 @@ export function EditorArea() {
   const tabs = useEditorsStore((state) => state.tabs);
   const dirtyRequests = useDraftsStore((state) => state.requests);
   const dirtyRestRequests = useDraftsStore((state) => state.restRequests);
+  const dirtyGrpcRequests = useDraftsStore((state) => state.grpcRequests);
   const activeId = useEditorsStore((state) => state.activeId);
   const activate = useEditorsStore((state) => state.activate);
   const showStart = useEditorsStore((state) => state.showStart);
@@ -112,6 +124,8 @@ export function EditorArea() {
   const interfaces = useProjectStore((state) => state.interfaces);
   const apis = useProjectStore((state) => state.apis);
   const restRequests = useProjectStore((state) => state.restRequests);
+  const grpcApis = useProjectStore((state) => state.grpcApis);
+  const grpcRequests = useProjectStore((state) => state.grpcRequests);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -205,16 +219,19 @@ export function EditorArea() {
     (tab.kind === 'interface' && tab.interfaceId !== undefined ? interfaces[tab.interfaceId]?.name : undefined) ??
     (tab.kind === 'api' && tab.apiId !== undefined ? apis[tab.apiId]?.name : undefined) ??
     (tab.restRequestId !== undefined ? restRequests[tab.restRequestId]?.name : undefined) ??
+    (tab.kind === 'grpc-api' && tab.grpcApiId !== undefined ? grpcApis[tab.grpcApiId]?.name : undefined) ??
+    (tab.grpcRequestId !== undefined ? grpcRequests[tab.grpcRequestId]?.name : undefined) ??
     (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
     (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
     (tab.environmentId !== undefined
       ? environmentName(projects, workspaceEnvironments, tab.environmentId)
       : undefined) ??
     tab.title;
-  // Only the two request kinds carry drafts; every other kind still autosaves.
+  // Only the three request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean =>
     (tab.requestId !== undefined && dirtyRequests[tab.requestId] !== undefined) ||
-    (tab.restRequestId !== undefined && dirtyRestRequests[tab.restRequestId] !== undefined);
+    (tab.restRequestId !== undefined && dirtyRestRequests[tab.restRequestId] !== undefined) ||
+    (tab.grpcRequestId !== undefined && dirtyGrpcRequests[tab.grpcRequestId] !== undefined);
 
   const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     const current = order.indexOf(selectedId);
@@ -489,6 +506,14 @@ export function EditorArea() {
         ) : activeTab.kind === 'api' && activeTab.apiId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <ApiTab apiId={activeTab.apiId} />
+          </Suspense>
+        ) : activeTab.kind === 'grpc-request' && activeTab.grpcRequestId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <GrpcEditor requestId={activeTab.grpcRequestId} />
+          </Suspense>
+        ) : activeTab.kind === 'grpc-api' && activeTab.grpcApiId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <GrpcApiTab apiId={activeTab.grpcApiId} />
           </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

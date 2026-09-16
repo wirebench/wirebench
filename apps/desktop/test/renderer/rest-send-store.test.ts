@@ -171,6 +171,8 @@ describe('the REST save path', () => {
           apis: [restApiWire()],
           folders: [],
           restRequests: [restRequestWire({ url: '/pets' })],
+          grpcApis: [],
+          grpcRequests: [],
           properties: {},
           disabledProperties: [],
           environments: [],

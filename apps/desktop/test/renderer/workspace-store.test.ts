@@ -268,6 +268,7 @@ describe('useWorkspaceStore', () => {
       workspaceId: 'w1',
       requests: { r1: { envelopeXml: '<unsaved/>' } },
       restRequests: {},
+      grpcRequests: {},
     });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
@@ -287,6 +288,7 @@ describe('useWorkspaceStore', () => {
       workspaceId: 'w1',
       requests: { r1: { name: 'Renamed' } },
       restRequests: {},
+      grpcRequests: {},
     });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });

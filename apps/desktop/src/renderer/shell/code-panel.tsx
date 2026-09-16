@@ -12,7 +12,7 @@ import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.
 import { useEditorsStore } from '../state/editors.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
-import { restDraftPatch, useProjectStore } from '../state/project.js';
+import { grpcDraftPatch, restDraftPatch, useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { highlightCurl, type CurlTokenKind } from './curl-highlight.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
@@ -68,6 +68,15 @@ function useCodePanelRestRequestId(): string | undefined {
   return selected ?? active;
 }
 
+/** The gRPC request the panel would describe, on the same terms as the REST one. */
+function useCodePanelGrpcRequestId(): string | undefined {
+  const selected = useUiStore((state) =>
+    state.selection?.kind === 'grpc-request' ? state.selection.requestId : undefined,
+  );
+  const active = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.grpcRequestId);
+  return selected ?? active;
+}
+
 /** What the last `request.curl` call produced: the command, or the failure to show in its place. */
 interface Generated {
   readonly command: string;
@@ -79,6 +88,7 @@ interface Generated {
 export function CodePanel() {
   const requestId = useCodePanelRequestId();
   const restRequestId = useCodePanelRestRequestId();
+  const grpcRequestId = useCodePanelGrpcRequestId();
   // Persisted on `slideOver.codeShell`: the slide-over hosts only the Code panel, so its shell
   // choice is remembered there rather than in a per-tab slot.
   const shell = useUiStore((state) => state.slideOver.codeShell);
@@ -147,14 +157,33 @@ export function CodePanel() {
     environments,
   ]);
 
+  // And for a gRPC request: its own fields plus the API's target, which the command names.
+  const grpcDraft = useProjectStore((state) =>
+    grpcRequestId === undefined ? undefined : state.grpcRequests[grpcRequestId],
+  );
+  const grpcApiTarget = useProjectStore((state) =>
+    grpcDraft === undefined ? undefined : state.grpcApis[grpcDraft.apiId]?.target,
+  );
+  const grpcDraftKey = JSON.stringify([
+    grpcDraft?.service,
+    grpcDraft?.method,
+    grpcDraft?.metadata,
+    grpcDraft?.message,
+    grpcDraft?.auth,
+    grpcDraft?.settings,
+    grpcApiTarget,
+    activeEnvironmentId,
+    environments,
+  ]);
+
   // Answers can land out of order (a slow first call, a fast second); only the newest may win.
   const sequence = useRef(0);
   // The request the panel last generated for, so switching requests shows a command at once
   // rather than after the edit debounce.
   const generatedFor = useRef<string | undefined>(undefined);
 
-  // Either protocol's id, whichever the user is looking at: `request.curl` takes both.
-  const subject = requestId ?? restRequestId;
+  // Whichever protocol's id the user is looking at: `request.curl` takes all three.
+  const subject = requestId ?? restRequestId ?? grpcRequestId;
 
   useEffect(() => {
     if (subject === undefined) {
@@ -170,10 +199,12 @@ export function CodePanel() {
       // A REST request's staged edits travel with the call, so the command describes what is on
       // screen rather than what was last written. A SOAP draft reaches main through its own path.
       const draft = restRequestId === undefined ? undefined : restDraftPatch(restRequestId);
+      const grpcDraft = grpcRequestId === undefined ? undefined : grpcDraftPatch(grpcRequestId);
       const result = await ipc().request.curl({
         requestId: subject,
         shell,
         ...(draft !== undefined ? { draft } : {}),
+        ...(grpcDraft !== undefined ? { grpcDraft } : {}),
       });
       if (token !== sequence.current) {
         return;
@@ -198,12 +229,12 @@ export function CodePanel() {
     return () => {
       clearTimeout(timer);
     };
-  }, [subject, shell, draftKey, restDraftKey, showSecrets]);
+  }, [subject, shell, draftKey, restDraftKey, grpcDraftKey, showSecrets]);
 
   if (subject === undefined) {
     return (
       <div data-testid="code-panel">
-        <p className="text-md text-fg-muted">Open a request to see its cURL command</p>
+        <p className="text-md text-fg-muted">Open a request to see its command</p>
         <p className="mt-1 text-sm text-fg-subtle">
           The Code panel follows the request you are editing, or the one selected in the Explorer.
         </p>
@@ -218,11 +249,19 @@ export function CodePanel() {
     }
     try {
       await navigator.clipboard.writeText(generated.command);
-      showToast(shell === 'powershell' ? 'Copied as cURL (PowerShell)' : 'Copied as cURL');
+      showToast(
+        grpcRequestId !== undefined && requestId === undefined && restRequestId === undefined
+          ? 'Copied as command'
+          : shell === 'powershell'
+            ? 'Copied as cURL (PowerShell)'
+            : 'Copied as cURL',
+      );
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : 'Could not copy to the clipboard');
     }
   };
+  // A gRPC request has no cURL to import from: the command shown is a grpcurl-style one.
+  const importable = draft !== undefined || restDraft !== undefined;
 
   return (
     <div data-testid="code-panel" className="flex min-h-0 flex-col gap-2">
@@ -295,14 +334,16 @@ export function CodePanel() {
         >
           Copy
         </Button>
-        <Button
-          data-testid="code-panel-import"
-          onClick={() => {
-            setImportOpen(true);
-          }}
-        >
-          Import cURL…
-        </Button>
+        {importable && (
+          <Button
+            data-testid="code-panel-import"
+            onClick={() => {
+              setImportOpen(true);
+            }}
+          >
+            Import cURL…
+          </Button>
+        )}
       </div>
 
       {/* The import lands wherever the panel is pointed: the SOAP operation in front of the user, or

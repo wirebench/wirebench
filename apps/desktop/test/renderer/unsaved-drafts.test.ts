@@ -36,6 +36,7 @@ describe('unsaved request drafts across sessions', () => {
       workspaceId: 'w1',
       requests: { r1: { envelopeXml: '<unsaved/>' } },
       restRequests: { 'rest-1': { url: '/pets' } },
+      grpcRequests: {},
     });
   });
 
@@ -55,6 +56,7 @@ describe('unsaved request drafts across sessions', () => {
       workspaceId: 'w1',
       requests: { r1: { envelopeXml: '<ab/>' } },
       restRequests: {},
+      grpcRequests: {},
     });
 
     const flush = (on.mock.calls as [string, (payload: unknown) => void][]).find(
@@ -86,6 +88,7 @@ describe('unsaved request drafts across sessions', () => {
       workspaceId: 'w1',
       drafts: { r1: { envelopeXml: '<restored/>' }, gone: { envelopeXml: '<orphan/>' } },
       restDrafts: {},
+      grpcDrafts: {},
       notices: [],
     });
 
@@ -101,6 +104,7 @@ describe('unsaved request drafts across sessions', () => {
       workspaceId: 'w1',
       drafts: { r1: { envelopeXml: '<restored/>' } },
       restDrafts: {},
+      grpcDrafts: {},
       notices: [],
     });
 
@@ -113,6 +117,7 @@ describe('unsaved request drafts across sessions', () => {
       workspaceId: 'w1',
       drafts: {},
       restDrafts: {},
+      grpcDrafts: {},
       notices: [
         {
           projectId: 'p1',

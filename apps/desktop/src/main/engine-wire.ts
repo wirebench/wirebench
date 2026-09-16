@@ -16,6 +16,7 @@ import {
 import type {
   RestExchange,
   GeneratedRequest,
+  GrpcCallResult,
   HttpExchange,
   ImportResult,
   SoapExchange,
@@ -28,6 +29,7 @@ import type {
   RestExchangeSummary,
   ExchangeSummary,
   FaultWire,
+  GrpcExchangeSummary,
   HttpExchangeWire,
   ImportProblemWire,
   InterfaceSummary,
@@ -247,6 +249,76 @@ export function toRestExchangeSummary(
           },
         }
       : {}),
+  };
+}
+
+/**
+ * Converts one gRPC call's result plus its `sendId` into the `request.sendGrpc` response payload.
+ *
+ * The `http` projection is synthesised from the HTTP/2 exchange the call was: the same headers,
+ * raw bytes, timings and TLS the other protocols report, with the decoded response messages as the
+ * body so the HTTP log's size column and the status bar mean the same thing they do for a REST send.
+ * Metadata is redacted as headers are — `authorization` is `authorization` on any protocol.
+ */
+export function toGrpcExchangeSummary(
+  result: GrpcCallResult,
+  sendId: string,
+  context: { readonly show?: boolean },
+): GrpcExchangeSummary {
+  const show = context.show ?? false;
+  const exchange = result.exchange;
+  const bodyText = result.responseMessages
+    .map((message) => (message.json !== undefined ? JSON.stringify(message.json, null, 2) : message.base64))
+    .join('\n');
+  const http: HttpExchangeWire = {
+    status: exchange.httpStatus,
+    statusText: exchange.statusName,
+    headers: redactHeaders(exchange.headers, { show }),
+    rawHeaders: redactHeaderPairs(Object.entries(exchange.headers), { show }),
+    bodyBase64: toBase64(Buffer.from(bodyText, 'utf8')),
+    rawBodyBase64: toBase64(
+      exchange.messages.reduce<Uint8Array>((all, one) => Buffer.concat([all, one]), new Uint8Array()),
+    ),
+    rawRequestBase64: redactRawHttp(toBase64(exchange.rawRequest), { show, encoding: 'base64' }),
+    rawResponseBase64: redactRawHttp(toBase64(exchange.rawResponse), { show, encoding: 'base64' }),
+    truncated: exchange.truncated,
+    httpVersion: '2',
+    timings: { ...exchange.timings },
+    redirects: [],
+    ...(exchange.tls !== undefined ? { tls: toTlsWire(exchange.tls) } : {}),
+    request: {
+      url: `${exchange.request.headers[':scheme'] ?? 'http'}://${exchange.request.authority}${exchange.request.path}`,
+      method: 'POST',
+      headers: redactHeaders(
+        Object.fromEntries(Object.entries(exchange.request.headers).filter(([name]) => !name.startsWith(':'))),
+        { show },
+      ),
+    },
+  };
+  return {
+    sendId,
+    durationMs: exchange.durationMs,
+    http,
+    target: exchange.request.authority,
+    service: result.requestType === '' ? '' : (exchange.request.path.split('/')[1] ?? ''),
+    method: exchange.request.path.split('/')[2] ?? '',
+    methodKind: result.methodKind,
+    status: exchange.status,
+    statusName: exchange.statusName,
+    ...(exchange.statusMessage !== undefined ? { statusMessage: exchange.statusMessage } : {}),
+    statusSource: exchange.statusSource,
+    headers: redactHeaders(exchange.headers, { show }),
+    trailers: redactHeaders(exchange.trailers, { show }),
+    requestMessages: result.requestMessages.map((message) => JSON.stringify(message, null, 2)),
+    responseMessages: result.responseMessages.map((message) => ({
+      ...(message.json !== undefined ? { json: JSON.stringify(message.json, null, 2) } : {}),
+      base64: message.base64,
+      bytes: message.bytes,
+      ...(message.problem !== undefined ? { problem: message.problem } : {}),
+    })),
+    ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
+    truncated: exchange.truncated,
+    problems: [],
   };
 }
 

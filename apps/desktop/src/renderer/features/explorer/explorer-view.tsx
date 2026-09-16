@@ -15,6 +15,7 @@ import {
   Loader2,
   Network,
   Plug,
+  Radio,
   RefreshCw,
   UnfoldVertical,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { MethodBadge } from '../rest-api/method-badge.js';
+import { MethodKindBadge } from '../grpc-editor/method-kind-badge.js';
 import { ExplorerContextMenu } from './context-menu.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { explorerActions } from './explorer-actions.js';
@@ -69,6 +71,7 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   operations: Folder,
   binding: Network,
   api: Globe,
+  'grpc-api': Radio,
   folder: Folder,
 };
 
@@ -95,6 +98,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   api: 'api-row',
   folder: 'folder-row',
   'rest-request': 'rest-request-row',
+  'grpc-api': 'grpc-api-row',
+  'grpc-request': 'grpc-request-row',
 };
 
 const INLINE_BUTTON_CLASS =
@@ -133,9 +138,9 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
         onClick={(e) => {
           e.stopPropagation();
           node.select();
-          if (node.data.kind === 'request' || node.data.kind === 'rest-request') {
+          if (node.data.kind === 'request' || node.data.kind === 'rest-request' || node.data.kind === 'grpc-request') {
             node.activate();
-          } else if (node.data.kind === 'api') {
+          } else if (node.data.kind === 'api' || node.data.kind === 'grpc-api') {
             // An API opens its tab AND folds, unlike an interface: the tab is where its base URL
             // and credentials live, and the row is also the container the user is about to expand.
             node.activate();
@@ -187,6 +192,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
               compact
               className="w-auto"
             />
+          ) : node.data.kind === 'grpc-request' && node.data.methodKind !== undefined ? (
+            <MethodKindBadge kind={node.data.methodKind} compact />
           ) : (
             Icon !== undefined && <Icon size={13} />
           )}
@@ -239,12 +246,12 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             </button>
           </span>
         )}
-        {node.data.kind === 'api' && (
+        {(node.data.kind === 'api' || node.data.kind === 'grpc-api') && (
           <span
             data-testid="explorer-api-badge"
             className="shrink-0 rounded-full bg-surface-base px-1.5 text-xs text-fg-subtle"
           >
-            REST
+            {node.data.kind === 'api' ? 'REST' : 'gRPC'}
           </span>
         )}
         {node.data.kind === 'project' && node.data.linked === true && (
@@ -301,6 +308,7 @@ export function ExplorerView() {
   const order = useProjectStore((state) => state.order);
   const requests = useProjectStore((state) => state.requests);
   const rest = useProjectStore((state) => state.rest);
+  const grpc = useProjectStore((state) => state.grpc);
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
@@ -332,7 +340,7 @@ export function ExplorerView() {
     ...(project.message !== undefined ? { message: project.message } : {}),
   }));
   const conflicted = useConflictTargets();
-  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest, conflicted);
+  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest, conflicted, grpc);
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -452,9 +460,13 @@ export function ExplorerView() {
                 node.kind !== 'project' &&
                 node.kind !== 'api' &&
                 node.kind !== 'folder' &&
-                node.kind !== 'rest-request'
+                node.kind !== 'rest-request' &&
+                node.kind !== 'grpc-api' &&
+                node.kind !== 'grpc-request'
               }
-              disableDrag={(node) => node.kind !== 'rest-request' && node.kind !== 'folder'}
+              disableDrag={(node) =>
+                node.kind !== 'rest-request' && node.kind !== 'grpc-request' && node.kind !== 'folder'
+              }
               // Reordering and moving happen inside the same API: a request or folder belongs to its
               // own API definition, and cannot move into another API or project.
               disableDrop={({ parentNode, dragNodes, index }) => {
@@ -473,7 +485,12 @@ export function ExplorerView() {
               }}
               onMove={async ({ dragNodes, parentNode, index }) => {
                 const parent = parentNode?.data;
-                if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return;
+                if (
+                  parent === undefined ||
+                  (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'folder')
+                ) {
+                  return;
+                }
                 const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
                 const plan = planMoves(
                   (parentNode?.children ?? []).map((child) => child.data),
@@ -508,6 +525,14 @@ export function ExplorerView() {
                 }
                 if (node.data.kind === 'rest-request') {
                   explorerActions.openRestRequest(node.data.requestId);
+                  return;
+                }
+                if (node.data.kind === 'grpc-api') {
+                  explorerActions.openGrpcApi(node.data.apiId);
+                  return;
+                }
+                if (node.data.kind === 'grpc-request') {
+                  explorerActions.openGrpcRequest(node.data.requestId);
                   return;
                 }
                 explorerActions.openRequest(node.data.requestId);
@@ -571,6 +596,18 @@ export function ExplorerView() {
                     .updateRestRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
+                if (node.kind === 'grpc-api' && node.apiId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateGrpcApi(node.apiId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
+                if (node.kind === 'grpc-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateGrpcRequest(node.requestId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
               }}
               onDelete={({ nodes }) => {
                 for (const node of nodes) {
@@ -586,6 +623,10 @@ export function ExplorerView() {
                     explorerActions.removeFolder(node.data.folderId);
                   } else if (node.data.kind === 'rest-request') {
                     explorerActions.deleteRestRequest(node.data.requestId);
+                  } else if (node.data.kind === 'grpc-api') {
+                    explorerActions.removeGrpcApi(node.data.apiId);
+                  } else if (node.data.kind === 'grpc-request') {
+                    explorerActions.deleteGrpcRequest(node.data.requestId);
                   }
                 }
               }}
@@ -622,7 +663,7 @@ export function ExplorerView() {
           }
         }}
         title={
-          confirmDeleteNode?.kind === 'api'
+          confirmDeleteNode?.kind === 'api' || confirmDeleteNode?.kind === 'grpc-api'
             ? 'Delete API?'
             : confirmDeleteNode?.kind === 'folder'
               ? 'Delete folder?'
@@ -648,9 +689,13 @@ export function ExplorerView() {
           const done =
             kind === 'api'
               ? store.removeApi(id)
-              : kind === 'folder'
-                ? store.removeFolder(id)
-                : store.removeRestRequest(id);
+              : kind === 'grpc-api'
+                ? store.removeGrpcApi(id)
+                : kind === 'folder'
+                  ? store.removeFolder(id)
+                  : kind === 'grpc-request'
+                    ? store.removeGrpcRequest(id)
+                    : store.removeRestRequest(id);
           void done.catch((error: unknown) => {
             showToast(error instanceof Error ? error.message : 'Delete failed');
           });

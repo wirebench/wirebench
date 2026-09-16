@@ -37,7 +37,17 @@ function inspectorKey(requestId: string, pane: InspectorPane): string {
 /** One open editor tab. Task 15 extends this with real request-editor state. */
 export interface EditorTab {
   readonly id: string;
-  readonly kind: 'request' | 'environment' | 'history' | 'diff' | 'interface' | 'project' | 'rest-request' | 'api';
+  readonly kind:
+    | 'request'
+    | 'environment'
+    | 'history'
+    | 'diff'
+    | 'interface'
+    | 'project'
+    | 'rest-request'
+    | 'api'
+    | 'grpc-request'
+    | 'grpc-api';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -50,6 +60,10 @@ export interface EditorTab {
   readonly restRequestId?: string;
   /** Set when `kind` is `'api'`: the API this tab shows. */
   readonly apiId?: string;
+  /** Set when `kind` is `'grpc-request'`: the gRPC request this tab edits, its own field like `restRequestId`. */
+  readonly grpcRequestId?: string;
+  /** Set when `kind` is `'grpc-api'`: the gRPC API this tab shows. */
+  readonly grpcApiId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

@@ -16,6 +16,8 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  GrpcApi,
+  GrpcRequestDef,
   KeyValueEntry,
   RestApi,
   RestBody,
@@ -33,6 +35,8 @@ import type {
 } from '@wirebench/engine';
 import type {
   AuthConfigWire,
+  GrpcApiWire,
+  GrpcRequestWire,
   KeyValueWire,
   RestApiWire,
   RestBodyWire,
@@ -433,9 +437,81 @@ function toRestTreeWires(apis: readonly RestApi[]): {
   return { folders, requests };
 }
 
+/** A gRPC API's own row; its folders and requests travel flat beside it like a REST API's. */
+function toGrpcApiWire(api: GrpcApi): GrpcApiWire {
+  return {
+    kind: 'grpc',
+    id: api.id,
+    name: api.name,
+    slug: api.slug,
+    order: api.order,
+    ...(api.description !== undefined ? { description: api.description } : {}),
+    target: api.target,
+    tls: api.tls,
+    metadata: toKeyValueWires(api.metadata),
+    ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
+    ...(api.definition !== undefined
+      ? { definition: { source: api.definition.source, cache: api.definition.cache, roots: [...api.definition.roots] } }
+      : {}),
+  };
+}
+
+function toGrpcRequestWire(request: GrpcRequestDef, apiId: string, folderId: string | undefined): GrpcRequestWire {
+  return {
+    kind: 'grpc',
+    id: request.id,
+    apiId,
+    ...(folderId !== undefined ? { folderId } : {}),
+    name: request.name,
+    slug: request.slug,
+    order: request.order,
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    service: request.service,
+    method: request.method,
+    methodKind: request.methodKind,
+    metadata: toKeyValueWires(request.metadata),
+    message: request.message,
+    auth: toAuthConfigWire(request.auth),
+    settings: { ...request.settings },
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+  };
+}
+
+/** Every folder and gRPC request of every gRPC API, flattened; the folders join the REST ones. */
+function toGrpcTreeWires(apis: readonly GrpcApi[]): {
+  readonly folders: RestFolderWire[];
+  readonly requests: GrpcRequestWire[];
+} {
+  const folders: RestFolderWire[] = [];
+  const requests: GrpcRequestWire[] = [];
+  const walk = (api: GrpcApi, container: Pick<GrpcApi, 'folders' | 'requests'>, parentId?: string): void => {
+    for (const request of container.requests) {
+      requests.push(toGrpcRequestWire(request, api.id, parentId));
+    }
+    for (const folder of container.folders) {
+      folders.push({
+        id: folder.id,
+        apiId: api.id,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name: folder.name,
+        slug: folder.slug,
+        order: folder.order,
+        ...(folder.description !== undefined ? { description: folder.description } : {}),
+        ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+      });
+      walk(api, folder, folder.id);
+    }
+  };
+  for (const api of apis) {
+    walk(api, api);
+  }
+  return { folders, requests };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
   const restTree = toRestTreeWires(project.apis);
+  const grpcTree = toGrpcTreeWires(project.grpcApis);
   return {
     id: project.id,
     name: project.name,
@@ -445,8 +521,10 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
     apis: project.apis.map(toApiWire),
-    folders: restTree.folders,
+    folders: [...restTree.folders, ...grpcTree.folders],
     restRequests: restTree.requests,
+    grpcApis: project.grpcApis.map(toGrpcApiWire),
+    grpcRequests: grpcTree.requests,
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),

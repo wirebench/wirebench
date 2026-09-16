@@ -39,7 +39,7 @@ export interface Selection {
  * because the dialog only needs to name the thing and say how much goes with it.
  */
 export interface PendingNodeDeletion {
-  readonly kind: 'api' | 'folder' | 'rest-request';
+  readonly kind: 'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request';
   readonly id: string;
   readonly name: string;
   /** How many requests are inside it; `0` for an empty folder or API, and for a request. */
@@ -47,7 +47,7 @@ export interface PendingNodeDeletion {
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
-export type ImportDialogFormat = 'auto' | 'openapi' | 'postman' | 'wsdl';
+export type ImportDialogFormat = 'auto' | 'openapi' | 'postman' | 'wsdl' | 'proto';
 
 export interface UiStore extends UiSnapshot {
   /** The explorer's current selection, if any. Transient — never persisted. */

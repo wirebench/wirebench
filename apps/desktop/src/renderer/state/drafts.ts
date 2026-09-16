@@ -16,7 +16,7 @@
  * anything about drafts. This store answers one question: what has not been written yet.
  */
 import { create } from 'zustand';
-import type { RequestPatchWire, RestRequestPatchWire } from '../../shared/wire-types.js';
+import type { GrpcRequestPatchWire, RequestPatchWire, RestRequestPatchWire } from '../../shared/wire-types.js';
 
 interface DraftsState {
   /** Pending patch per request id. A request with no entry has nothing unsaved. */
@@ -47,6 +47,14 @@ interface DraftsState {
   readonly discardRestRequest: (requestId: string) => void;
   readonly isRestRequestDirty: (requestId: string) => boolean;
   readonly dirtyRestRequestIds: () => readonly string[];
+  /** Pending patch per gRPC request id, the third kind of draft, kept apart for the same reason. */
+  readonly grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>>;
+  readonly stageGrpcRequest: (requestId: string, patch: GrpcRequestPatchWire) => void;
+  readonly peekGrpcRequest: (requestId: string) => GrpcRequestPatchWire | undefined;
+  readonly clearGrpcRequestIfUnchanged: (requestId: string, committed: GrpcRequestPatchWire | undefined) => void;
+  readonly discardGrpcRequest: (requestId: string) => void;
+  readonly isGrpcRequestDirty: (requestId: string) => boolean;
+  readonly dirtyGrpcRequestIds: () => readonly string[];
   /**
    * Forgets every draft. Called when a workspace is left: its drafts have already been handed to
    * main, which keeps them with that workspace, and they name requests the next one does not have.
@@ -57,6 +65,7 @@ interface DraftsState {
 export const useDraftsStore = create<DraftsState>((set, get) => ({
   requests: {},
   restRequests: {},
+  grpcRequests: {},
 
   stageRequest: (requestId, patch) => {
     set((state) => ({
@@ -124,7 +133,38 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
 
   dirtyRestRequestIds: () => Object.keys(get().restRequests),
 
+  stageGrpcRequest: (requestId, patch) => {
+    set((state) => ({
+      grpcRequests: { ...state.grpcRequests, [requestId]: { ...state.grpcRequests[requestId], ...patch } },
+    }));
+  },
+
+  peekGrpcRequest: (requestId) => get().grpcRequests[requestId],
+
+  clearGrpcRequestIfUnchanged: (requestId, committed) => {
+    const pending = get().grpcRequests[requestId];
+    if (pending === undefined || JSON.stringify(pending) !== JSON.stringify(committed)) {
+      return;
+    }
+    get().discardGrpcRequest(requestId);
+  },
+
+  discardGrpcRequest: (requestId) => {
+    set((state) => {
+      if (!(requestId in state.grpcRequests)) {
+        return state;
+      }
+      const grpcRequests = { ...state.grpcRequests };
+      delete grpcRequests[requestId];
+      return { grpcRequests };
+    });
+  },
+
+  isGrpcRequestDirty: (requestId) => get().grpcRequests[requestId] !== undefined,
+
+  dirtyGrpcRequestIds: () => Object.keys(get().grpcRequests),
+
   reset: () => {
-    set({ requests: {}, restRequests: {} });
+    set({ requests: {}, restRequests: {}, grpcRequests: {} });
   },
 }));

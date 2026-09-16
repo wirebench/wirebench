@@ -1,4 +1,9 @@
-import type { ExchangeSummary, InterfaceWire, RestExchangeSummary } from '../../src/shared/wire-types.js';
+import type {
+  ExchangeSummary,
+  GrpcExchangeSummary,
+  InterfaceWire,
+  RestExchangeSummary,
+} from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
@@ -136,6 +141,44 @@ export function makeRestExchange(overrides: Partial<RestExchangeSummary> = {}): 
       timings: { startedAt: '2026-09-13T08:30:05.000Z', totalMs: 12, ttfbMs: 8 },
       redirects: [],
       request: { url: 'https://api.test/pet/1', method: 'GET', headers: {} },
+    },
+    ...overrides,
+  };
+}
+
+/** A successful unary gRPC exchange with one decoded reply; every field can be overridden per test. */
+export function makeGrpcExchange(overrides: Partial<GrpcExchangeSummary> = {}): GrpcExchangeSummary {
+  const reply = '{\n  "message": "Hello, Ada"\n}';
+  return {
+    sendId: 'send-1',
+    durationMs: 9,
+    target: '127.0.0.1:50051',
+    service: 'wirebench.greet.Greeter',
+    method: 'SayHello',
+    methodKind: 'unary',
+    status: 0,
+    statusName: 'OK',
+    statusSource: 'trailers',
+    headers: { 'content-type': 'application/grpc+proto', 'x-served-by': 'test-grpc-server' },
+    trailers: { 'grpc-status': '0' },
+    requestMessages: ['{"name":"Ada"}'],
+    responseMessages: [{ json: reply, base64: b64(reply), bytes: 12 }],
+    truncated: false,
+    problems: [],
+    http: {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/grpc+proto' },
+      rawHeaders: [['content-type', 'application/grpc+proto']],
+      bodyBase64: b64(reply),
+      rawBodyBase64: b64(reply),
+      rawRequestBase64: b64('POST /wirebench.greet.Greeter/SayHello HTTP/2\r\n\r\n'),
+      rawResponseBase64: b64(`HTTP/2 200\r\n\r\n${reply}`),
+      truncated: false,
+      httpVersion: '2',
+      timings: { startedAt: '2026-09-16T08:30:05.000Z', totalMs: 9, ttfbMs: 6 },
+      redirects: [],
+      request: { url: 'http://127.0.0.1:50051/wirebench.greet.Greeter/SayHello', method: 'POST', headers: {} },
     },
     ...overrides,
   };
