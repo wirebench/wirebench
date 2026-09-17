@@ -46,6 +46,8 @@ import {
   loadProtoSet,
   sampleMessageText,
   writeProtoDefinitionCache,
+  PROTOS_DIR,
+  protoPathSegments,
   resolveApiBaseUrl,
   resolveAuthEndpoint,
   resolveEndpoint,
@@ -1620,10 +1622,17 @@ export class ProjectHost {
     const slug = uniqueSlug(input.api.name, taken);
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
     if (cache) {
-      await writeProtoDefinitionCache(input.sources, apiDefinitionDir(open.dir, slug), {
+      const definitionDir = apiDefinitionDir(open.dir, slug);
+      const manifest = await writeProtoDefinitionCache(input.sources, definitionDir, {
         source: input.source,
         roots: input.roots,
       });
+      // The cache is this host's own write, so the watcher must not report it as an outside edit:
+      // an import would otherwise end with a "changed on disk — reload" banner over its own work.
+      this.expectOnDisk([
+        join(definitionDir, 'manifest.yaml'),
+        ...manifest.files.map((file) => join(definitionDir, PROTOS_DIR, ...protoPathSegments(file.path))),
+      ]);
     }
     const api: GrpcApi = {
       ...input.api,
