@@ -4,7 +4,7 @@ import { StatusBar } from '../../src/renderer/shell/status-bar.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import { makeExchange } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeExchange } from '../mocks/exchange-fixtures.js';
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -30,7 +30,7 @@ describe('StatusBar', () => {
   });
 
   it('summarises the last exchange', () => {
-    useExchangesStore.setState({ log: [makeExchange()] });
+    useExchangesStore.setState({ log: [logExchange(makeExchange())] });
     render(<StatusBar />);
 
     const summary = screen.getByTestId('status-bar').textContent ?? '';
@@ -42,7 +42,7 @@ describe('StatusBar', () => {
   it('colours a failing last exchange red', () => {
     const base = makeExchange();
     useExchangesStore.setState({
-      log: [makeExchange({ http: { ...base.http, status: 503, statusText: 'Unavailable' } })],
+      log: [logExchange(makeExchange({ http: { ...base.http, status: 503, statusText: 'Unavailable' } }))],
     });
     render(<StatusBar />);
 

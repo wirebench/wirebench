@@ -16,6 +16,9 @@ import {
   soapToCurl,
   WirebenchError,
   writeFileAtomic,
+  joinBase,
+  failedRequestOf,
+  grpcMethodPath,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -37,7 +40,8 @@ import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
-import { sendAndRecordHistory } from '../send-with-history.js';
+import { failedExchangeOf } from '../failed-exchange.js';
+import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
@@ -52,6 +56,7 @@ import type {
   RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
+  FailedExchangeWire,
   RequestSendRequest,
   ResolvedSendRequest,
   RequestCurlRequest,
@@ -135,6 +140,12 @@ export interface RequestChannelDeps {
   readonly history?: HistoryService;
   /** Called with the entry a recorded send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
+  /**
+   * Called with the failure row of a send that threw, after History has recorded it, so main can
+   * broadcast `exchange.failed`. Shared with `sendAndRecordHistory`, which reads it off this same
+   * object for the SOAP path.
+   */
+  readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   /**
    * The user's preferences: the WSDL section supplies the generation defaults and the Editor
    * section the indent a recreated envelope is formatted with. Omitted in tests, which then get
@@ -748,7 +759,31 @@ async function sendRestRequest(
     await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt);
     return summary;
   } catch (error) {
-    await recordRest(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    const durationMs = Date.now() - startedAt;
+    await recordRest(deps, request.requestId, resolved, undefined, durationMs, error);
+    // The failure row for the console's HTTP Log. When the transport got as far as building the
+    // request, the error carries it (final URL with path params and query, auth applied) and the
+    // row shows that; otherwise the base joined with the path and the enabled header rows. Either
+    // way it is redacted for good; `keyParams` masks the query parameter an API key travels in.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'rest',
+        requestId: request.requestId,
+        url: joinBase(resolved.input.baseUrl, resolved.input.request.url),
+        method: resolved.input.request.method,
+        headers: Object.fromEntries(
+          resolved.input.request.headers
+            .filter((header) => header.enabled)
+            .map((header) => [header.name, header.value]),
+        ),
+        startedAt,
+        durationMs,
+        error,
+        captured: failedRequestOf(error),
+        keyParams,
+      }),
+    );
     throw error;
   }
 }
@@ -952,7 +987,30 @@ async function sendGrpcRequest(
     await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
     return summary;
   } catch (error) {
-    await recordGrpc(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    const durationMs = Date.now() - startedAt;
+    await recordGrpc(deps, request.requestId, resolved, undefined, durationMs, error);
+    // The failure row for the console's HTTP Log. A gRPC call is an HTTP/2 POST to
+    // `/<service>/<method>`; when the transport built the request the error carries it and the row
+    // shows that instead. Redacted for good, like every other failure row.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'grpc',
+        requestId: request.requestId,
+        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
+          resolved.input.service,
+          resolved.input.method,
+        )}`,
+        method: 'POST',
+        headers: Object.fromEntries(
+          resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
+        ),
+        startedAt,
+        durationMs,
+        error,
+        captured: failedRequestOf(error),
+      }),
+    );
     throw error;
   }
 }

@@ -84,6 +84,10 @@ export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: re
   }
   const extra = new Set((opts?.extraParams ?? []).map((name) => name.toLowerCase()));
   let changed = false;
+  if (parsed.password !== '') {
+    parsed.password = REDACTED;
+    changed = true;
+  }
   for (const name of [...parsed.searchParams.keys()]) {
     const lower = name.toLowerCase();
     if (SENSITIVE_QUERY_PARAMS.has(lower) || extra.has(lower)) {

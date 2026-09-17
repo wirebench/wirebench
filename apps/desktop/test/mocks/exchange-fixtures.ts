@@ -1,9 +1,12 @@
 import type {
   ExchangeSummary,
+  FailedExchangeWire,
   GrpcExchangeSummary,
   InterfaceWire,
   RestExchangeSummary,
 } from '../../src/shared/wire-types.js';
+import type { LogEntry } from '../../src/renderer/state/exchanges.js';
+import type { AnyExchangeSummary } from '../../src/renderer/features/request-editor/response-status.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
@@ -37,6 +40,29 @@ export function makeExchange(overrides: Partial<ExchangeSummary> = {}): Exchange
     },
     response: { envelopeXml: body, version: '1.1', isSoap: true, attachments: [] },
     problems: [],
+    ...overrides,
+  };
+}
+
+/** Wraps an exchange of either protocol as the HTTP Log entry the store keeps. */
+export function logExchange(exchange: AnyExchangeSummary): LogEntry {
+  return { kind: 'exchange', exchange };
+}
+
+/** A send refused at the socket: the failure row the log shows; every field can be overridden. */
+export function makeFailure(overrides: Partial<FailedExchangeWire> = {}): FailedExchangeWire {
+  return {
+    sendId: 'send-fail-1',
+    protocol: 'rest',
+    requestId: 'rest-1',
+    request: {
+      url: 'http://127.0.0.1:1/nope',
+      method: 'GET',
+      headers: { Authorization: '<redacted>', 'X-Trace': 'abc' },
+    },
+    startedAt: '2026-09-16T08:30:05.000Z',
+    durationMs: 3,
+    error: { code: 'connection-refused', message: 'Connection refused.' },
     ...overrides,
   };
 }

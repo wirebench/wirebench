@@ -6,7 +6,7 @@
 
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
-import type { HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.js';
+import type { FailedExchangeWire, HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
@@ -27,6 +27,8 @@ export interface HistoryChannelDeps {
   readonly showSecrets?: { get(): boolean };
   /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
+  /** Called with the failure row of a resend that threw, so main can broadcast `exchange.failed`. */
+  readonly onSendFailed?: (failure: FailedExchangeWire) => void;
 }
 
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
@@ -109,6 +111,7 @@ export function registerHistoryChannels(
         ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
         history,
         ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
+        ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
       },
       {
         sendId: crypto.randomUUID(),

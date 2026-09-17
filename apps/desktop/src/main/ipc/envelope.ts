@@ -26,13 +26,26 @@ export function parseRequest<Req extends z.ZodType, Res extends z.ZodType>(
 }
 
 /**
+ * An error's details without the unredacted request a transport error carries (`failedRequestOf`):
+ * main redacts that request into the HTTP Log's failure row, and the raw copy must never reach the
+ * renderer through an error result.
+ */
+function wireSafeDetails(details: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'request'));
+}
+
+/**
  * Maps any thrown value to the wire-safe {@link IpcError} shape. A {@link WirebenchError}
  * (or subclass) keeps its own `code`/`message`/`details`; anything else becomes a generic
  * `internal-error` so no unexpected error detail (e.g. stack traces) leaks to the renderer.
  */
 export function toIpcError(err: unknown): IpcError {
   if (isWirebenchError(err)) {
-    return { code: err.code, message: err.message, details: err.details };
+    return {
+      code: err.code,
+      message: err.message,
+      ...(err.details !== undefined ? { details: wireSafeDetails(err.details) } : {}),
+    };
   }
   const message = err instanceof Error ? err.message : String(err);
   return { code: 'internal-error', message };

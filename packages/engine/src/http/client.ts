@@ -1,5 +1,6 @@
 import { Agent, ProxyAgent, request as undiciRequest, type buildConnector, type Dispatcher } from 'undici';
 import { decompressBody } from './decompress.js';
+import { failedRequestFor, withFailedRequest, type FailedRequest } from './failed-request.js';
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
@@ -330,6 +331,8 @@ export async function sendHttp(
   const signals = [deadlineController.signal, req.signal].filter((s): s is AbortSignal => s !== undefined);
   const combinedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
 
+  // The last attempt made, so a transport error can say what was about to go on the wire.
+  let lastAttempt: FailedRequest | undefined;
   try {
     let currentUrl = parsedUrl;
     let currentMethod: HttpRequest['method'] = req.method;
@@ -345,6 +348,7 @@ export async function sendHttp(
         currentUrl,
         currentBody,
       );
+      lastAttempt = failedRequestFor(currentUrl.toString(), currentMethod, finalHeaders, currentBody);
       const rawRequest = buildRawRequest(
         { ...req, url: currentUrl.toString(), method: currentMethod, headers: currentHeaders },
         finalHeaders,
@@ -473,6 +477,8 @@ export async function sendHttp(
       redirects,
       ...(tlsInfo !== undefined ? { tls: tlsInfo } : {}),
     };
+  } catch (err) {
+    throw lastAttempt === undefined ? err : withFailedRequest(err, lastAttempt);
   } finally {
     clearTimeout(timer);
     tracker.dispose();

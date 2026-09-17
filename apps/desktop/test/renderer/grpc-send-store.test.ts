@@ -76,7 +76,9 @@ describe('sendGrpc', () => {
     expect(useExchangesStore.getState().byRequest).toEqual({});
     expect(useExchangesStore.getState().restByRequest).toEqual({});
     expect(useExchangesStore.getState().log).toHaveLength(1);
-    expect(useExchangesStore.getState().log[0]?.http.httpVersion).toBe('2');
+    const entry = useExchangesStore.getState().log[0];
+    expect(entry?.kind).toBe('exchange');
+    expect(entry?.kind === 'exchange' ? entry.exchange.http.httpVersion : undefined).toBe('2');
   });
 
   it('records a transport failure as an error state and a Problems entry', async () => {

@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProjectWithCalculator, openFirstRequest } from '../helpers/project.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-server.js';
+import { selectLogRow } from '../helpers/http-log.js';
 
 /**
  * Inspector strip end-to-end. TLS is deliberately absent here: the SSL Info inspector needs a
@@ -71,7 +72,8 @@ test.describe('Inspectors (Headers, timings)', () => {
     await expect(page.getByText(/No TLS — plain HTTP/)).toBeVisible({ timeout: 10_000 });
 
     // The HTTP log's detail breaks the exchange down into a timings bar with a total.
-    await page.locator('[data-testid="http-log-row"]').first().click();
+    await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
+    await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Timing' }).click();
     await expect(page.getByTestId('timings-total')).toContainText(/total \d+ ms/, { timeout: 10_000 });
     await expect(page.getByTestId('timings-legend')).toContainText('ttfb');
     expect(await page.locator('[data-testid="timings-segment"]').count()).toBeGreaterThan(0);

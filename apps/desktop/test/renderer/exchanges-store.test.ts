@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExchangeSummary } from '../../src/shared/wire-types.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
+import {
+  EMPTY_FILTER,
+  lastExchangeOf,
+  sendIdOf,
+  subscribeToExchangeFailures,
+} from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { logExchange, makeFailure } from '../mocks/exchange-fixtures.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const draft: RequestDraft = {
@@ -232,7 +239,7 @@ describe('useExchangesStore', () => {
   it('caps the log at 500 entries', async () => {
     useExchangesStore.setState({
       byRequest: {},
-      log: Array.from({ length: 500 }, (_, i) => exchangeSummary(`old-${String(i)}`)),
+      log: Array.from({ length: 500 }, (_, i) => logExchange(exchangeSummary(`old-${String(i)}`))),
     });
     stubIpc({
       request: {
@@ -246,15 +253,15 @@ describe('useExchangesStore', () => {
 
     const { log } = useExchangesStore.getState();
     expect(log).toHaveLength(500);
-    expect(log.at(-1)?.sendId).toBe('new-1');
-    expect(log[0]?.sendId).toBe('old-1');
+    expect(sendIdOf(log.at(-1)!)).toBe('new-1');
+    expect(sendIdOf(log[0]!)).toBe('old-1');
   });
 
   it('clearRequest deletes the exchange entry but keeps the log', () => {
     const summary = exchangeSummary('send-1');
     useExchangesStore.setState({
       byRequest: { r1: { status: 'done', sendId: 'send-1', exchange: summary } },
-      log: [summary],
+      log: [logExchange(summary)],
     });
 
     useExchangesStore.getState().clearRequest('r1');
@@ -262,7 +269,7 @@ describe('useExchangesStore', () => {
     const state = useExchangesStore.getState();
     expect(state.byRequest['r1']).toBeUndefined();
     expect(state.log).toHaveLength(1);
-    expect(state.log[0]?.sendId).toBe('send-1');
+    expect(sendIdOf(state.log[0]!)).toBe('send-1');
   });
 
   it('send() preflights first, sends the endpoint it returns, and lists unresolved refs', async () => {
@@ -373,5 +380,94 @@ describe('useExchangesStore', () => {
       expect.objectContaining({ input: expect.objectContaining({ endpoint: draft.endpointUrl }) as unknown }),
     );
     expect(useProblemsStore.getState().items).toEqual([]);
+  });
+});
+
+describe('useExchangesStore: failures and the filter', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    stubIpc();
+  });
+
+  it('appendFailure appends a failure entry, newest last', () => {
+    useExchangesStore.setState({ log: [logExchange(exchangeSummary('send-1'))] });
+
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'send-2' }));
+
+    const { log } = useExchangesStore.getState();
+    expect(log.map(sendIdOf)).toEqual(['send-1', 'send-2']);
+    expect(log[1]?.kind).toBe('failure');
+  });
+
+  it('appendFailure ignores a sendId already in the log, whichever kind holds it', () => {
+    useExchangesStore.setState({ log: [logExchange(exchangeSummary('send-1'))] });
+
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'send-1' }));
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'send-2' }));
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'send-2' }));
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['send-1', 'send-2']);
+  });
+
+  it('appendFailure keeps the 500 cap, dropping the oldest', () => {
+    useExchangesStore.setState({
+      log: Array.from({ length: 500 }, (_, i) => logExchange(exchangeSummary(`old-${String(i)}`))),
+    });
+
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'new-1' }));
+
+    const { log } = useExchangesStore.getState();
+    expect(log).toHaveLength(500);
+    expect(sendIdOf(log[0]!)).toBe('old-1');
+    expect(sendIdOf(log.at(-1)!)).toBe('new-1');
+  });
+
+  it('setFilter merges a patch and resetFilter restores the empty filter', () => {
+    useExchangesStore.getState().setFilter({ text: 'pet' });
+    useExchangesStore.getState().setFilter({ statuses: ['4xx', 'failed'] });
+
+    expect(useExchangesStore.getState().filter).toEqual({
+      text: 'pet',
+      methods: [],
+      statuses: ['4xx', 'failed'],
+      protocols: [],
+    });
+
+    useExchangesStore.getState().resetFilter();
+    expect(useExchangesStore.getState().filter).toEqual(EMPTY_FILTER);
+  });
+
+  it('reset drops the filter with the log', () => {
+    useExchangesStore.getState().setFilter({ text: 'pet' });
+    useExchangesStore.getState().appendFailure(makeFailure());
+
+    useExchangesStore.getState().reset();
+
+    expect(useExchangesStore.getState().log).toEqual([]);
+    expect(useExchangesStore.getState().filter).toEqual(EMPTY_FILTER);
+  });
+
+  it('lastExchangeOf skips failures', () => {
+    const summary = exchangeSummary('send-1');
+    expect(lastExchangeOf([logExchange(summary), { kind: 'failure', failure: makeFailure() }])).toBe(summary);
+    expect(lastExchangeOf([{ kind: 'failure', failure: makeFailure() }])).toBeUndefined();
+  });
+
+  it('subscribeToExchangeFailures appends what exchange.failed carries and unsubscribes', () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const off = vi.fn();
+    installWirebenchApi({
+      on: vi.fn((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return off;
+      }) as never,
+    });
+
+    const unsubscribe = subscribeToExchangeFailures();
+    listeners.get('exchange.failed')?.({ failure: makeFailure({ sendId: 'evt-1' }) });
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
+    unsubscribe();
+    expect(off).toHaveBeenCalledTimes(1);
   });
 });

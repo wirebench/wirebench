@@ -4,18 +4,26 @@
  * The method-change note is the point of the tab: a 301, 302 or 303 turns a POST into a GET (the rule
  * browsers and curl follow), which means the request that finally arrived is not the one that was
  * written. A user debugging "my body vanished" needs to see exactly that.
+ *
+ * Takes the `http` projection both protocols share rather than a REST summary, so the console's HTTP
+ * Log can show hops for a SOAP exchange too; the arrival note needs the summary's `method` and
+ * `methodChanged`, which only a REST caller has, and is omitted without them.
  */
 import { MethodBadge } from '../../rest-api/method-badge.js';
 import { statusToneClass } from './status-line.js';
-import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
+import type { HttpExchangeWire } from '../../../../shared/wire-types.js';
 
 export interface RedirectsViewProps {
-  readonly exchange: RestExchangeSummary;
+  readonly http: HttpExchangeWire;
+  /** The method the request arrived as, when the caller knows it. */
+  readonly method?: string;
+  /** A redirect turned the request into a `GET`; only a REST summary reports it. */
+  readonly methodChanged?: boolean;
 }
 
 /** The Redirects tab. */
-export function RedirectsView({ exchange }: RedirectsViewProps) {
-  const hops = exchange.http.redirects ?? [];
+export function RedirectsView({ http, method, methodChanged = false }: RedirectsViewProps) {
+  const hops = http.redirects;
 
   if (hops.length === 0) {
     return (
@@ -41,12 +49,14 @@ export function RedirectsView({ exchange }: RedirectsViewProps) {
           </li>
         ))}
       </ol>
-      <p className="flex items-center gap-1.5 px-1 text-xs text-fg-muted">
-        Arrived as <MethodBadge method={exchange.method} className="w-auto" />
-        {exchange.methodChanged && (
-          <span className="text-status-warning">— a redirect changed the method, so the body was not resent.</span>
-        )}
-      </p>
+      {method !== undefined && (
+        <p className="flex items-center gap-1.5 px-1 text-xs text-fg-muted">
+          Arrived as <MethodBadge method={method} className="w-auto" />
+          {methodChanged && (
+            <span className="text-status-warning">— a redirect changed the method, so the body was not resent.</span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

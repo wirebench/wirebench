@@ -1,119 +1,110 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
-import {
-  base64ByteLength,
-  decodeBase64Text,
-  formatBytes,
-  formatClockTime,
-  formatDuration,
-} from '../../lib/format-size.js';
+import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
-import { useExchangesStore } from '../../state/exchanges.js';
-import { TimingsBar } from './timings-bar.js';
+import type { LogEntry } from '../../state/exchanges.js';
+import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
-import type { ExchangeSummary } from '../../../shared/wire-types.js';
+import { LogDetail, type LogDetailTab } from './log-detail.js';
+import { LogFilterBar } from './log-filter-bar.js';
+import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, urlOf } from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
 const ROW_HEIGHT = 22;
 
-const COLUMNS = 'grid-cols-[5rem_4rem_minmax(0,1fr)_5rem_4rem_5rem]';
-
-/** Matches C0 control characters other than tab/CR/LF — the cheap "this is not text" signal. */
-const BINARY_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
-
-function rawText(base64: string): string {
-  const text = decodeBase64Text(base64);
-  if (text === undefined || BINARY_PATTERN.test(text)) {
-    return `<${String(base64ByteLength(base64))} bytes>`;
-  }
-  return text;
-}
+/** time · proto · method · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
+const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(0,1fr)_8rem_4rem_5rem]';
+/**
+ * What is left when the detail pane takes half the width: proto, method, URL and status. The full
+ * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
+ * it and slide under the detail rather than truncate.
+ */
+const COLUMNS_COMPACT = 'grid-cols-[3rem_4rem_minmax(0,1fr)_8rem]';
 
 interface RowProps {
-  readonly exchange: ExchangeSummary;
+  readonly entry: LogEntry;
   readonly selected: boolean;
   readonly onSelect: () => void;
+  /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
+  readonly compact: boolean;
 }
 
-function LogRow({ exchange, selected, onSelect }: RowProps) {
-  const bad = toneFor(exchange) === 'bad';
+function LogRow({ entry, selected, onSelect, compact }: RowProps) {
+  const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
       type="button"
       data-testid="http-log-row"
+      data-kind={entry.kind}
       onClick={onSelect}
       aria-pressed={selected}
-      className={`grid ${COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
+      title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
+      className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
         selected ? 'bg-surface-selected text-fg-default' : 'text-fg-muted hover:bg-surface-hover'
       }`}
       style={{ height: ROW_HEIGHT }}
     >
-      <span>{formatClockTime(exchange.http.timings.startedAt)}</span>
-      <span>{exchange.http.request.method}</span>
-      <span className="truncate" title={exchange.http.request.url}>
-        {exchange.http.request.url}
+      {!compact && <span>{formatClockTime(startedAtOf(entry))}</span>}
+      <span>{protocolOf(entry)}</span>
+      <span>{methodOf(entry)}</span>
+      <span className="truncate" title={urlOf(entry)}>
+        {urlOf(entry)}
       </span>
-      <span className={bad ? 'text-status-danger' : 'text-status-success'}>{exchange.http.status}</span>
-      <span>{formatDuration(exchange.durationMs)}</span>
-      <span>{formatBytes(responseSize(exchange))}</span>
+      <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
+        {entry.kind === 'failure' ? entry.failure.error.code : entry.exchange.http.status}
+      </span>
+      {!compact && <span>{formatDuration(durationOf(entry))}</span>}
+      {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}
     </button>
   );
 }
 
-function Detail({ exchange }: { readonly exchange: ExchangeSummary }) {
-  return (
-    <div className="min-h-0 shrink-0 basis-1/2 overflow-auto border-t border-hairline">
-      <TimingsBar timings={exchange.http.timings} />
-      <div className="grid grid-cols-2 gap-2 p-2">
-        <section aria-label="Raw request">
-          <h3 className="mb-1 text-xs text-fg-subtle">Raw request</h3>
-          <pre className="max-h-48 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
-            {rawText(exchange.http.rawRequestBase64)}
-          </pre>
-        </section>
-        <section aria-label="Raw response">
-          <h3 className="mb-1 text-xs text-fg-subtle">Raw response</h3>
-          <pre className="max-h-48 overflow-auto rounded bg-surface-raised p-2 font-mono text-xs whitespace-pre-wrap text-fg-default">
-            {rawText(exchange.http.rawResponseBase64)}
-          </pre>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 /**
- * The console's HTTP Log tab: one row per finished exchange, newest at the bottom, with the
- * raw request/response of whichever row is selected shown underneath.
+ * The console's HTTP Log tab: one row per send this session — finished or failed — newest at the
+ * bottom, narrowed by the filter bar, with the selected row's detail underneath in tabs.
  */
 export function HttpLog() {
   const log = useExchangesStore((state) => state.log);
+  const filter = useExchangesStore((state) => state.filter);
   const clearLog = useExchangesStore((state) => state.clearLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  // Owned here rather than in the detail so it survives selecting another row.
+  const [tab, setTab] = useState<LogDetailTab>('headers');
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
 
-  const virtualised = log.length > VIRTUALISE_ABOVE;
+  const visible = useMemo(() => log.filter((entry) => matchesFilter(entry, filter)), [log, filter]);
+
+  const virtualised = visible.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
-    count: virtualised ? log.length : 0,
+    count: virtualised ? visible.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
 
-  // Redaction is applied in main, once, at send time — so when the flag flips, the entry the
-  // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. Only the
-  // detail pane shows headers/raw bytes; the row columns carry nothing sensitive.
+  // Looked up in `visible`, not `log`, so a row hidden by the filter closes its detail pane
+  // rather than keeping a stale one open; `selectedId` itself is untouched, so the detail
+  // reappears once the filter is cleared.
+  const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
+  // The detail shares the width with the table, so the row sheds the columns that do not fit.
+  const compact = selected !== undefined;
+
+  // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
+  // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
+  // no unredacted copy to fetch: it was redacted at emit and stays so, and main is not asked.
+  // Keyed on the id, not the entry: the refresh swaps in a new entry object, which must not re-fire it.
+  const selectedExchangeId = selected?.kind === 'exchange' ? selected.exchange.sendId : undefined;
   useEffect(() => {
-    if (selectedId !== undefined) {
-      void refreshExchange(selectedId);
+    if (selectedExchangeId !== undefined) {
+      void refreshExchange(selectedExchangeId);
     }
-  }, [showSecrets, selectedId, refreshExchange]);
+  }, [showSecrets, selectedExchangeId, refreshExchange]);
 
   // Newest is at the bottom, so follow it — but only while the user has not scrolled away.
   useEffect(() => {
@@ -123,7 +114,28 @@ export function HttpLog() {
     }
   }, [log.length]);
 
-  const selected = log.find((entry) => entry.sendId === selectedId);
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape' && selectedId !== undefined) {
+      event.preventDefault();
+      setSelectedId(undefined);
+      return;
+    }
+    const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0 || visible.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const index = visible.findIndex((entry) => sendIdOf(entry) === selectedId);
+    const next =
+      index === -1 ? (step === 1 ? 0 : visible.length - 1) : Math.min(visible.length - 1, Math.max(0, index + step));
+    const entry = visible[next];
+    if (entry !== undefined) {
+      setSelectedId(sendIdOf(entry));
+      if (virtualised) {
+        virtualizer.scrollToIndex(next);
+      }
+    }
+  }
 
   if (log.length === 0) {
     return <p className="p-1 text-sm text-fg-subtle">Sent requests appear here with their raw exchange and timings.</p>;
@@ -131,75 +143,109 @@ export function HttpLog() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
-        <div className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}>
-          <span>time</span>
-          <span>method</span>
-          <span>URL</span>
-          <span>status</span>
-          <span>ms</span>
-          <span>size</span>
-        </div>
-        <Button
-          variant="ghost"
-          aria-pressed={showSecrets}
-          title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
-          onClick={() => {
-            void toggleSecrets();
-          }}
-        >
-          <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
-          <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
-        </Button>
-        <Button variant="ghost" onClick={clearLog}>
-          Clear
-        </Button>
-      </div>
-
-      <div
-        ref={scrollRef}
-        aria-label="HTTP log"
-        className="min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;
-        }}
-      >
-        {virtualised ? (
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((item) => {
-              const exchange = log[item.index];
-              return exchange === undefined ? null : (
-                <div
-                  key={exchange.sendId}
-                  style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
-                >
-                  <LogRow
-                    exchange={exchange}
-                    selected={exchange.sendId === selectedId}
-                    onSelect={() => {
-                      setSelectedId(exchange.sendId);
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          log.map((exchange) => (
-            <LogRow
-              key={exchange.sendId}
-              exchange={exchange}
-              selected={exchange.sendId === selectedId}
-              onSelect={() => {
-                setSelectedId(exchange.sendId);
+      <LogFilterBar
+        shown={visible.length}
+        total={log.length}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              aria-pressed={showSecrets}
+              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
+              onClick={() => {
+                void toggleSecrets();
               }}
-            />
-          ))
+            >
+              <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
+              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+            </Button>
+            <Button variant="ghost" onClick={clearLog}>
+              Clear
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex min-h-0 flex-1">
+        <div className={`flex min-h-0 min-w-0 flex-col ${selected === undefined ? 'flex-1' : 'basis-[45%] shrink-0'}`}>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
+            <div
+              data-testid="http-log-header"
+              className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
+            >
+              {!compact && <span>time</span>}
+              <span>proto</span>
+              <span>method</span>
+              <span>URL</span>
+              <span>status</span>
+              {!compact && <span>ms</span>}
+              {!compact && <span>size</span>}
+            </div>
+          </div>
+
+          <div
+            ref={scrollRef}
+            aria-label="HTTP log"
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            /* Two rows at least: in a short console the panel scrolls rather than leaving the
+               table with no height at all. */
+            className="min-h-11 flex-1 overflow-auto"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;
+            }}
+          >
+            {visible.length === 0 ? (
+              <p className="p-1 text-sm text-fg-subtle">No rows match the filter.</p>
+            ) : virtualised ? (
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const entry = visible[item.index];
+                  return entry === undefined ? null : (
+                    <div
+                      key={sendIdOf(entry)}
+                      style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
+                    >
+                      <LogRow
+                        entry={entry}
+                        compact={compact}
+                        selected={sendIdOf(entry) === selectedId}
+                        onSelect={() => {
+                          setSelectedId(sendIdOf(entry));
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              visible.map((entry) => (
+                <LogRow
+                  key={sendIdOf(entry)}
+                  entry={entry}
+                  compact={compact}
+                  selected={sendIdOf(entry) === selectedId}
+                  onSelect={() => {
+                    setSelectedId(sendIdOf(entry));
+                  }}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        {selected !== undefined && (
+          <LogDetail
+            entry={selected}
+            tab={tab}
+            onTabChange={setTab}
+            onClose={() => {
+              setSelectedId(undefined);
+            }}
+          />
         )}
       </div>
-
-      {selected !== undefined && <Detail exchange={selected} />}
     </div>
   );
 }

@@ -60,7 +60,10 @@ describe('sendRest', () => {
 
     const { log } = useExchangesStore.getState();
     expect(log).toHaveLength(1);
-    expect(log.at(-1)).toBe(useExchangesStore.getState().restByRequest['rest-1']?.exchange);
+    const lastEntry = log.at(-1);
+    expect(lastEntry?.kind === 'exchange' ? lastEntry.exchange : undefined).toBe(
+      useExchangesStore.getState().restByRequest['rest-1']?.exchange,
+    );
     // `log.at(-1)` is also what the status bar's "last:" indicator reads, so a REST send that
     // never reached the log left it saying "no requests sent" beside a 200.
   });

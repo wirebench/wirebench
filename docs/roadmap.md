@@ -272,6 +272,13 @@ is a sibling container rather than a generalised interface. Evidence per criteri
   now, but `refreshExchange` re-fetches through `exchanges.get`, which only knows the SOAP cache, so a
   REST row keeps the redaction it was given at send time instead of gaining the secret back. The row
   is never *wrong* — it is redacted, which is the safe direction — it just does not update.
+- **Failed sends reach the HTTP Log — done 2026-09-16.** A send that fails at the network level
+  (DNS, refused connection, TLS, proxy, timeout, abort, too many redirects) now gets a row with its
+  error code, its duration and the request headers it was built with, redacted at emit and kept so;
+  the log also gained a filter bar and a five-tab detail pane. See
+  [`specs/2026-09-16-http-log-failures-filters-detail-design.md`](specs/2026-09-16-http-log-failures-filters-detail-design.md).
+  The re-redaction line above still stands for REST rows; a failure row is redacted by design and
+  the pane says so.
 
 - **The JSON form view** — see [Contracts](#contracts). The importers that used to sit beside it here
   shipped in 2.1.0.
