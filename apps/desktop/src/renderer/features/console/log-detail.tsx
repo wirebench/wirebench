@@ -209,13 +209,39 @@ export interface LogDetailProps {
   readonly entry: LogEntry;
   readonly tab: LogDetailTab;
   readonly onTabChange: (tab: LogDetailTab) => void;
+  /** Closes the pane (the × button and Escape); omitted, neither is offered. */
+  readonly onClose?: () => void;
 }
 
-/** The detail pane under the HTTP Log table. */
-export function LogDetail({ entry, tab, onTabChange }: LogDetailProps) {
+/** The detail pane beside the HTTP Log table, on its right. */
+export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) {
   return (
-    <div data-testid="log-detail" className="flex min-h-0 shrink-0 basis-1/2 flex-col border-t border-hairline">
-      <Tabs label="Log detail" items={TABS} active={tab} onSelect={onTabChange} />
+    <div
+      data-testid="log-detail"
+      className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-hairline"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && onClose !== undefined) {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <div className="flex shrink-0 items-center">
+        {onClose !== undefined && (
+          <button
+            type="button"
+            aria-label="Close detail"
+            title="Close (Esc)"
+            onClick={onClose}
+            className="px-2 text-sm text-fg-muted hover:text-fg-default"
+          >
+            ×
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
+          <Tabs label="Log detail" items={TABS} active={tab} onSelect={onTabChange} />
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {entry.kind === 'exchange' ? (
           <>

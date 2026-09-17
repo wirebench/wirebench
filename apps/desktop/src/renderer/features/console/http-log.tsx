@@ -105,6 +105,11 @@ export function HttpLog() {
   }, [log.length]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape' && selectedId !== undefined) {
+      event.preventDefault();
+      setSelectedId(undefined);
+      return;
+    }
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
     if (step === 0 || visible.length === 0) {
       return;
@@ -130,83 +135,96 @@ export function HttpLog() {
     <div className="flex h-full min-h-0 flex-col">
       <LogFilterBar shown={visible.length} total={log.length} />
 
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
-        <div
-          data-testid="http-log-header"
-          className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
-        >
-          <span>time</span>
-          <span>proto</span>
-          <span>method</span>
-          <span>URL</span>
-          <span>status</span>
-          <span>ms</span>
-          <span>size</span>
-        </div>
-        <Button
-          variant="ghost"
-          aria-pressed={showSecrets}
-          title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
-          onClick={() => {
-            void toggleSecrets();
-          }}
-        >
-          <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
-          <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
-        </Button>
-        <Button variant="ghost" onClick={clearLog}>
-          Clear
-        </Button>
-      </div>
-
-      <div
-        ref={scrollRef}
-        aria-label="HTTP log"
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        className="min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;
-        }}
-      >
-        {visible.length === 0 ? (
-          <p className="p-1 text-sm text-fg-subtle">No rows match the filter.</p>
-        ) : virtualised ? (
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((item) => {
-              const entry = visible[item.index];
-              return entry === undefined ? null : (
-                <div
-                  key={sendIdOf(entry)}
-                  style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
-                >
-                  <LogRow
-                    entry={entry}
-                    selected={sendIdOf(entry) === selectedId}
-                    onSelect={() => {
-                      setSelectedId(sendIdOf(entry));
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          visible.map((entry) => (
-            <LogRow
-              key={sendIdOf(entry)}
-              entry={entry}
-              selected={sendIdOf(entry) === selectedId}
-              onSelect={() => {
-                setSelectedId(sendIdOf(entry));
+      <div className="flex min-h-0 flex-1">
+        <div className={`flex min-h-0 min-w-0 flex-col ${selected === undefined ? 'flex-1' : 'basis-[45%] shrink-0'}`}>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
+            <div
+              data-testid="http-log-header"
+              className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
+            >
+              <span>time</span>
+              <span>proto</span>
+              <span>method</span>
+              <span>URL</span>
+              <span>status</span>
+              <span>ms</span>
+              <span>size</span>
+            </div>
+            <Button
+              variant="ghost"
+              aria-pressed={showSecrets}
+              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
+              onClick={() => {
+                void toggleSecrets();
               }}
-            />
-          ))
+            >
+              <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
+              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+            </Button>
+            <Button variant="ghost" onClick={clearLog}>
+              Clear
+            </Button>
+          </div>
+
+          <div
+            ref={scrollRef}
+            aria-label="HTTP log"
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            className="min-h-0 flex-1 overflow-auto"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;
+            }}
+          >
+            {visible.length === 0 ? (
+              <p className="p-1 text-sm text-fg-subtle">No rows match the filter.</p>
+            ) : virtualised ? (
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const entry = visible[item.index];
+                  return entry === undefined ? null : (
+                    <div
+                      key={sendIdOf(entry)}
+                      style={{ position: 'absolute', top: item.start, left: 0, right: 0, height: item.size }}
+                    >
+                      <LogRow
+                        entry={entry}
+                        selected={sendIdOf(entry) === selectedId}
+                        onSelect={() => {
+                          setSelectedId(sendIdOf(entry));
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              visible.map((entry) => (
+                <LogRow
+                  key={sendIdOf(entry)}
+                  entry={entry}
+                  selected={sendIdOf(entry) === selectedId}
+                  onSelect={() => {
+                    setSelectedId(sendIdOf(entry));
+                  }}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        {selected !== undefined && (
+          <LogDetail
+            entry={selected}
+            tab={tab}
+            onTabChange={setTab}
+            onClose={() => {
+              setSelectedId(undefined);
+            }}
+          />
         )}
       </div>
-
-      {selected !== undefined && <LogDetail entry={selected} tab={tab} onTabChange={setTab} />}
     </div>
   );
 }

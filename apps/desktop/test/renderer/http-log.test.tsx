@@ -271,4 +271,22 @@ describe('HttpLog', () => {
     });
     expect(screen.getByTestId('log-detail')).toBeDefined();
   });
+
+  it('opens the detail on the right of the table and closes it with × or Escape', async () => {
+    useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
+    render(<HttpLog />);
+
+    await userEvent.click(screen.getAllByTestId('http-log-row')[0]!);
+    const detail = screen.getByTestId('log-detail');
+    expect(detail.className).toContain('border-l');
+    expect(detail.previousElementSibling?.contains(screen.getByLabelText('HTTP log'))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close detail' }));
+    expect(screen.queryByTestId('log-detail')).toBeNull();
+
+    await userEvent.click(screen.getAllByTestId('http-log-row')[0]!);
+    screen.getByLabelText('HTTP log').focus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('log-detail')).toBeNull();
+  });
 });
