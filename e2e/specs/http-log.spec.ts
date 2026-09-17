@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
-import { createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
+import { addHeader, createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
 
 test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
@@ -37,6 +37,8 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     await createApi(page, 'Dead', 'http://127.0.0.1:1');
     await createRestRequest(page, 'Dead', 'Nope');
     await setMethodAndUrl(page, 'GET', '/nope');
+    // A credential header, so the row has something redacted and the Headers tab explains it.
+    await addHeader(page, 'Authorization', 'Bearer e2e-placeholder');
     await sendRest(page);
     await expect(responseStatus(page)).toContainText('connection-refused');
 
@@ -59,6 +61,8 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     await expect(page.getByTestId('log-detail-error')).toContainText('Connection refused');
     await tabs.getByRole('tab', { name: 'Headers' }).click();
     await expect(page.getByTestId('log-detail-redaction-note')).toBeVisible();
+    await expect(page.getByTestId('log-detail-request-headers')).toContainText('<redacted>');
+    await expect(page.getByTestId('log-detail-request-headers')).not.toContainText('e2e-placeholder');
 
     // The filter bar: `failed` narrows to the one row, the count says so, Reset brings both back.
     const bar = page.getByTestId('http-log-filter');

@@ -23,7 +23,8 @@ All notable changes to this project are documented here. The format follows
 - **HTTP Log: failed sends, a filter bar and detail tabs.** A send that fails before a response
   arrives (DNS, refused connection, TLS, proxy, timeout, abort, too many redirects) now gets a row
   in the console's HTTP Log, with the error code in the status column, the time it took to fail,
-  and the request headers it was built with — redacted when recorded and kept so. The log gained a
+  and the request as it was about to go on the wire (final URL, headers with auth applied, raw
+  request) — redacted when recorded and kept so. The log gained a
   *proto* column, a filter bar (URL text; method, status-class and protocol chips, with *failed*
   among the classes; an "n of m" count; *Reset*), ↑/↓ row selection, and a detail pane in five
   tabs: Headers, Request, Response, Timing (each unmeasured phase says why) and Connection

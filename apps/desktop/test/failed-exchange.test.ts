@@ -91,4 +91,49 @@ describe('failedExchangeOf', () => {
 
     expect(failure).not.toHaveProperty('requestId');
   });
+
+  describe('with the request the transport captured', () => {
+    const secretBody = '<Envelope><wsse:Password>hunter-two</wsse:Password></Envelope>';
+    const captured = {
+      url: 'https://api.test/pets/7?page=2&token=tok-secret',
+      method: 'PUT',
+      headers: { host: 'api.test', 'content-type': 'text/xml', authorization: 'Bearer tok-secret' },
+      bodyBase64: Buffer.from(secretBody).toString('base64'),
+      bodyTruncated: false,
+    };
+
+    it('overrides url, method and headers, redacted', () => {
+      const failure = failedExchangeOf(input({ captured }));
+
+      expect(failure.request).toEqual({
+        url: 'https://api.test/pets/7?page=2&token=%3Credacted%3E',
+        method: 'PUT',
+        headers: { host: 'api.test', 'content-type': 'text/xml', authorization: '<redacted>' },
+      });
+    });
+
+    it('carries a raw request whose request line, headers and XML body are redacted', () => {
+      const failure = failedExchangeOf(input({ captured }));
+      const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+
+      expect(raw.startsWith('PUT /pets/7?page=2&token=%3Credacted%3E HTTP/1.1\r\n')).toBe(true);
+      expect(raw).toContain('authorization: <redacted>');
+      expect(raw).toContain('<wsse:Password><redacted></wsse:Password>');
+      expect(JSON.stringify(failure)).not.toContain('tok-secret');
+      expect(raw).not.toContain('tok-secret');
+      expect(raw).not.toContain('hunter-two');
+    });
+
+    it('omits a truncated body rather than risk a half-masked secret', () => {
+      const failure = failedExchangeOf(input({ captured: { ...captured, bodyTruncated: true } }));
+      const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+
+      expect(raw.endsWith('\r\n\r\n')).toBe(true);
+      expect(raw).not.toContain('Envelope');
+    });
+
+    it('carries no raw request without a captured one', () => {
+      expect(failedExchangeOf(input())).not.toHaveProperty('rawRequestBase64');
+    });
+  });
 });

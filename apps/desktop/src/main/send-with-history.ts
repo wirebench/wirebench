@@ -5,7 +5,7 @@
  * behaviour.
  */
 
-import { isWirebenchError } from '@wirebench/engine';
+import { failedRequestOf, isWirebenchError } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
@@ -110,8 +110,9 @@ export async function sendAndRecordHistory(
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     await record(service, deps, request, fallback, { durationMs, error: errorDetail(error) });
-    // The failure row for the console's HTTP Log: the resolved headers the send went out with,
-    // redacted for good inside `failedExchangeOf`. A SOAP send is always a POST.
+    // The failure row for the console's HTTP Log: the request as the transport was about to send
+    // it when the error carries one, else the resolved input's headers — redacted for good inside
+    // `failedExchangeOf`. A SOAP send is always a POST.
     reportSendFailed(deps.onSendFailed, () =>
       failedExchangeOf({
         sendId: request.sendId,
@@ -123,6 +124,7 @@ export async function sendAndRecordHistory(
         startedAt,
         durationMs,
         error,
+        captured: failedRequestOf(error),
       }),
     );
     throw error;

@@ -115,6 +115,15 @@ function ExchangeHeaders({ http }: { readonly http: HttpExchangeWire }) {
   );
 }
 
+/** The marker every main-side redaction helper writes, raw or percent-encoded in a URL. */
+const REDACTION_MARKERS = ['<redacted>', '%3Credacted%3E'];
+
+/** Whether anything shown for a failure row was masked — the only case the redaction note is for. */
+function failureWasRedacted(failure: FailedExchangeWire): boolean {
+  const texts = [failure.request.url, ...Object.values(failure.request.headers)];
+  return texts.some((text) => REDACTION_MARKERS.some((marker) => text.includes(marker)));
+}
+
 function FailureHeaders({ failure }: { readonly failure: FailedExchangeWire }) {
   return (
     <div className="flex flex-col gap-2 p-2">
@@ -123,10 +132,12 @@ function FailureHeaders({ failure }: { readonly failure: FailedExchangeWire }) {
         testId="log-detail-request-headers"
         rows={Object.entries(failure.request.headers)}
       />
-      <p data-testid="log-detail-redaction-note" className="text-xs text-fg-subtle">
-        Headers of a failed send are redacted when they are recorded and stay redacted: no unredacted copy is kept, so
-        the show-secrets toggle does not reveal them.
-      </p>
+      {failureWasRedacted(failure) && (
+        <p data-testid="log-detail-redaction-note" className="text-xs text-fg-subtle">
+          Headers of a failed send are redacted when they are recorded and stay redacted: no unredacted copy is kept, so
+          the show-secrets toggle does not reveal them.
+        </p>
+      )}
     </div>
   );
 }
@@ -254,9 +265,12 @@ export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) 
         ) : (
           <>
             {tab === 'headers' && <FailureHeaders failure={entry.failure} />}
-            {tab === 'request' && (
-              <p className="p-3 text-sm text-fg-subtle">Raw request was not captured for a failed send.</p>
-            )}
+            {tab === 'request' &&
+              (entry.failure.rawRequestBase64 !== undefined ? (
+                <RawPane label="Raw request" base64={entry.failure.rawRequestBase64} />
+              ) : (
+                <p className="p-3 text-sm text-fg-subtle">Raw request was not captured for a failed send.</p>
+              ))}
             {tab === 'response' && (
               <div data-testid="log-detail-error" className="flex flex-col gap-1 p-3">
                 <p className="font-mono text-sm font-medium text-status-danger">{entry.failure.error.code}</p>

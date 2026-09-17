@@ -92,6 +92,14 @@ describe('sendAndRecordHistory → onSendFailed', () => {
     expect(failure.durationMs).toBeGreaterThanOrEqual(0);
     expect(Date.parse(failure.startedAt)).toBeGreaterThanOrEqual(before - 1);
     expect(JSON.stringify(failure)).not.toContain('dG9wc2VjcmV0');
+    // The headers are the ones the transport was about to send, not only the resolved input's.
+    const names = Object.fromEntries(Object.entries(failure.request.headers).map(([k, v]) => [k.toLowerCase(), v]));
+    expect(names['content-type']).toMatch(/text\/xml/);
+    expect(names).toHaveProperty('soapaction');
+    const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+    expect(raw).toContain('POST /nope HTTP/1.1');
+    expect(raw).toContain('<Envelope/>');
+    expect(raw).not.toContain('dG9wc2VjcmV0');
   });
 
   it('keeps the send error when onSendFailed itself throws', async () => {

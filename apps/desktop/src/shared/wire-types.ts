@@ -649,6 +649,11 @@ export const failedExchangeWireSchema = z.object({
   requestId: z.string().optional(),
   /** The same shape as `httpExchangeWireSchema.request`; headers already redacted. */
   request: httpRequestSummarySchema,
+  /**
+   * The request as it was about to go on the wire, already redacted; absent when the failure came
+   * before the transport built it (e.g. `invalid-url`) or from an older build.
+   */
+  rawRequestBase64: z.string().optional(),
   /** Wall-clock start, ISO 8601 — as `timingsWireSchema.startedAt`. */
   startedAt: z.string(),
   /** Start to failure. */

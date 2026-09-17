@@ -17,6 +17,7 @@ import {
   WirebenchError,
   writeFileAtomic,
   joinBase,
+  failedRequestOf,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -759,10 +760,10 @@ async function sendRestRequest(
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     await recordRest(deps, request.requestId, resolved, undefined, durationMs, error);
-    // The failure row for the console's HTTP Log. The URL is the base joined with the request's
-    // path (no summary exists to read it from); the headers are the request's enabled rows —
-    // credentials are applied inside the engine, so none is here to leak, and what is here is
-    // redacted anyway. `keyParams` masks the query parameter an API key was configured to use.
+    // The failure row for the console's HTTP Log. When the transport got as far as building the
+    // request, the error carries it (final URL with path params and query, auth applied) and the
+    // row shows that; otherwise the base joined with the path and the enabled header rows. Either
+    // way it is redacted for good; `keyParams` masks the query parameter an API key travels in.
     reportSendFailed(deps.onSendFailed, () =>
       failedExchangeOf({
         sendId: request.sendId,
@@ -778,6 +779,7 @@ async function sendRestRequest(
         startedAt,
         durationMs,
         error,
+        captured: failedRequestOf(error),
         keyParams,
       }),
     );

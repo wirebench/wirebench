@@ -124,6 +124,40 @@ describe('LogDetail for a failure', () => {
     expect(screen.getByText('Raw request was not captured for a failed send.')).toBeDefined();
   });
 
+  it('Request: the raw request as sent, when the failure row carries one', () => {
+    const raw = 'GET /nope?page=2 HTTP/1.1\r\nhost: 127.0.0.1:1\r\nauthorization: <redacted>\r\n\r\n';
+    renderDetail({ kind: 'failure', failure: makeFailure({ rawRequestBase64: b64(raw) }) }, 'request');
+
+    expect(screen.getByLabelText('Raw request').textContent).toContain('GET /nope?page=2 HTTP/1.1');
+    expect(screen.queryByText('Raw request was not captured for a failed send.')).toBeNull();
+  });
+
+  it('Headers: no redaction note when nothing was redacted', () => {
+    renderDetail(
+      {
+        kind: 'failure',
+        failure: makeFailure({
+          request: { url: 'http://127.0.0.1:1/nope', method: 'GET', headers: { 'X-Trace': 'abc' } },
+        }),
+      },
+      'headers',
+    );
+    expect(screen.queryByTestId('log-detail-redaction-note')).toBeNull();
+  });
+
+  it('Headers: the redaction note when only the URL was redacted', () => {
+    renderDetail(
+      {
+        kind: 'failure',
+        failure: makeFailure({
+          request: { url: 'http://127.0.0.1:1/nope?token=%3Credacted%3E', method: 'GET', headers: {} },
+        }),
+      },
+      'headers',
+    );
+    expect(screen.getByTestId('log-detail-redaction-note')).toBeDefined();
+  });
+
   it('Response: the error code and message, prominently', () => {
     renderDetail(failure, 'response');
 

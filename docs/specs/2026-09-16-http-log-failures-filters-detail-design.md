@@ -119,10 +119,12 @@ the start time and the error. Its callers:
 The rethrow is unchanged, so the renderer's existing error path (response pane header, Problems)
 keeps working.
 
-**Headers on a failure.** For SOAP the helper takes the resolved input's headers; for REST the
-resolved request's headers with auth applied where the resolver already applied it. Where a header
-was never materialised because the failure happened before the request was built (`invalid-url`),
-the map is empty — the row is still recorded.
+**Headers on a failure.** When the transport got as far as building the request, the engine's
+error carries it (`failedRequestOf`): the last attempt's final URL (path params and query applied),
+method, headers with auth applied, and at most 64 KiB of body. The row takes URL, method and headers
+from it and adds `rawRequestBase64`, all redacted with `show: false` (a truncated body is left out).
+Without one (`invalid-url`, or a failure before the send) the row falls back to the resolved input's
+URL and headers and has no raw request — the row is still recorded.
 
 ---
 

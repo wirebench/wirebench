@@ -35,9 +35,12 @@ function resolution() {
     baseUrl: 'http://127.0.0.1:1',
     request: {
       method: 'GET',
-      url: '/nope',
-      pathParams: [],
-      query: [],
+      url: '/nope/{id}',
+      pathParams: [{ name: 'id', value: '42', enabled: true }],
+      query: [
+        { name: 'page', value: '2', enabled: true },
+        { name: 'off', value: 'x', enabled: false },
+      ],
       headers: [
         { name: 'Authorization', value: 'Bearer plain-token', enabled: true },
         { name: 'X-Trace', value: 'abc', enabled: true },
@@ -88,14 +91,19 @@ describe('request.sendRest → onSendFailed', () => {
       protocol: 'rest',
       requestId: 'rest-1',
       request: {
-        url: 'http://127.0.0.1:1/nope',
+        url: 'http://127.0.0.1:1/nope/42?page=2',
         method: 'GET',
-        headers: { Authorization: '<redacted>', 'X-Trace': 'abc' },
+        headers: { Authorization: '<redacted>', 'X-Trace': 'abc', host: '127.0.0.1:1' },
       },
       error: { code: 'connection-refused' },
     });
     // Show-secrets is on for this session and it still does not matter: redacted at emit.
-    expect(JSON.stringify(onSendFailed.mock.calls[0]?.[0])).not.toContain('plain-token');
+    const failure = onSendFailed.mock.calls[0]![0];
+    expect(JSON.stringify(failure)).not.toContain('plain-token');
+    expect(failure.rawRequestBase64).toBeDefined();
+    const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+    expect(raw).toContain('GET /nope/42?page=2 HTTP/1.1');
+    expect(raw).not.toContain('plain-token');
     expect(onSendFailed.mock.calls[0]?.[0].request.headers).not.toHaveProperty('X-Off');
   });
 });

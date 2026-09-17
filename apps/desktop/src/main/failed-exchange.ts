@@ -9,9 +9,9 @@
  * what is emitted is what the log will ever show.
  */
 
-import { isWirebenchError } from '@wirebench/engine';
+import { isWirebenchError, type FailedRequest } from '@wirebench/engine';
 import type { FailedExchangeWire } from '../shared/wire-types.js';
-import { redactHeaders, redactUrl } from './redact.js';
+import { redactHeaders, redactRawHttp, redactUrl } from './redact.js';
 
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {
@@ -29,6 +29,12 @@ export interface FailedExchangeInput {
   readonly error: unknown;
   /** Query parameters an API key travels in, masked in the URL whatever they are called. */
   readonly keyParams?: readonly string[] | undefined;
+  /**
+   * The request the transport was about to put on the wire (`failedRequestOf(error)`), when the
+   * failure came after it was built. It overrides `url`, `method` and `headers`, and is the only
+   * source of the raw request.
+   */
+  readonly captured?: FailedRequest | undefined;
 }
 
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
@@ -39,17 +45,46 @@ function errorOf(error: unknown): { code: string; message: string } {
   return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
 }
 
+/**
+ * The raw request for a captured one, redacted with the same helper a finished exchange's raw
+ * request goes through (sensitive header lines, `wsse:Password` in an XML body). The request line
+ * is written from the already-redacted URL, since `redactRawHttp` does not look at it. A truncated
+ * body is left out: masking a cut-off XML body could miss a password whose closing tag was cut.
+ */
+function rawRequestOf(captured: FailedRequest, redactedUrl: string): string {
+  let target: string;
+  try {
+    const parsed = new URL(redactedUrl);
+    target = `${parsed.pathname}${parsed.search}` || '/';
+  } catch {
+    target = redactedUrl;
+  }
+  const lines = [`${captured.method} ${target} HTTP/1.1`];
+  for (const [name, value] of Object.entries(captured.headers)) {
+    lines.push(`${name}: ${value}`);
+  }
+  const head = Buffer.from(`${lines.join('\r\n')}\r\n\r\n`, 'latin1');
+  const body =
+    captured.bodyBase64 !== undefined && !captured.bodyTruncated
+      ? Buffer.from(captured.bodyBase64, 'base64')
+      : Buffer.alloc(0);
+  return redactRawHttp(Buffer.concat([head, body]).toString('base64'), { show: false, encoding: 'base64' });
+}
+
 /** The failure row for one send, redacted for good. */
 export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire {
+  const captured = input.captured;
+  const url = redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
   return {
     sendId: input.sendId,
     protocol: input.protocol,
     ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
     request: {
-      url: redactUrl(input.url, { extraParams: input.keyParams ?? [] }),
-      method: input.method,
-      headers: redactHeaders(input.headers, { show: false }),
+      url,
+      method: captured?.method ?? input.method,
+      headers: redactHeaders(captured?.headers ?? input.headers, { show: false }),
     },
+    ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url) } : {}),
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
     error: errorOf(input.error),
