@@ -342,7 +342,9 @@ describe('GitBackend (mocked runner)', () => {
   });
 });
 
-describeGit('GitBackend (real git)', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('GitBackend (real git)', { timeout: 30_000 }, () => {
   let root: string;
 
   afterEach(async () => {

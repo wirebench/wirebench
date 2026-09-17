@@ -152,7 +152,9 @@ afterEach(async () => {
   await removeTempDir(base);
 });
 
-describeGit('WorkspaceService — share as git', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — share as git', { timeout: 30_000 }, () => {
   it('moves the tree into <id>/tree, commits "Share workspace …", pushes, and keeps files and unsaved/ intact', async () => {
     const { root, service } = await newService('a');
     const { id, dir, projectId } = await seedLocal(service, root);
@@ -350,7 +352,9 @@ describeGit('WorkspaceService — share as git', () => {
   });
 });
 
-describeGit('WorkspaceService — share to folder', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — share to folder', { timeout: 30_000 }, () => {
   it('moves the tree to an empty picked folder and writes share.yaml with its path', async () => {
     const target = join(base, 'synced');
     await mkdir(target);
@@ -484,7 +488,9 @@ describeGit('WorkspaceService — share to folder', () => {
   });
 });
 
-describeGit('WorkspaceService — join', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — join', { timeout: 30_000 }, () => {
   async function sharedOnA(): Promise<{ id: string; projectId: string }> {
     const { root, service } = await newService('a');
     const { id, projectId } = await seedLocal(service, root);
@@ -652,7 +658,9 @@ describeGit('WorkspaceService — join', () => {
   });
 });
 
-describeGit('WorkspaceService — stop sharing', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — stop sharing', { timeout: 30_000 }, () => {
   it('moves a managed tree back to <dir>, keeps tree/.git, deletes share.yaml and opens as local', async () => {
     const { root, service } = await newService('a');
     const { dir, projectId } = await seedLocal(service, root);
@@ -737,7 +745,9 @@ describeGit('WorkspaceService — stop sharing', () => {
   });
 });
 
-describeGit('WorkspaceService — move project to workspace, delete', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — move project to workspace, delete', { timeout: 30_000 }, () => {
   it('copies into a closed git workspace keeping ids, appends the ref and removes the source', async () => {
     const { root, service, trashed } = await newService('a');
     const target = await seedLocal(service, root);
@@ -812,7 +822,9 @@ describeGit('WorkspaceService — move project to workspace, delete', () => {
   });
 });
 
-describeGit('WorkspaceService — sync settings and status', () => {
+// Each case runs dozens of real git processes; process start-up on hosted Windows runners
+// takes several times longer than elsewhere, well past the 5 s default.
+describeGit('WorkspaceService — sync settings and status', { timeout: 30_000 }, () => {
   it('validates branch/remote before saving, and refuses without touching share.yaml', async () => {
     const { root, service } = await newService('a');
     const { dir } = await seedLocal(service, root);
