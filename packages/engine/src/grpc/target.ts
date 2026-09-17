@@ -43,7 +43,15 @@ export function parseGrpcTarget(target: string, tls: boolean): GrpcTarget {
     }
     rest = trimmed.slice(scheme[0].length).replace(/^\/+/, '');
   }
-  rest = rest.replace(/[/?#].*$/, '');
+  // Cut at the first path, query or fragment character with a scan rather than a regex over the
+  // whole remainder.
+  for (let index = 0; index < rest.length; index += 1) {
+    const char = rest[index];
+    if (char === '/' || char === '?' || char === '#') {
+      rest = rest.slice(0, index);
+      break;
+    }
+  }
   let url: URL;
   try {
     url = new URL(`http://${rest}`);

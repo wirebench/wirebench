@@ -137,17 +137,18 @@ test.describe('accessibility and theming', () => {
   let grpcUserDataDir: string | undefined;
 
   test.afterEach(async () => {
+    if (launched) {
+      await launched.close();
+      launched = undefined;
+    }
     if (grpcServer) {
       await grpcServer.close();
       grpcServer = undefined;
     }
+    // After the app has closed: on Windows the profile folder is locked while it runs.
     if (grpcUserDataDir !== undefined) {
       removeDirSync(grpcUserDataDir);
       grpcUserDataDir = undefined;
-    }
-    if (launched) {
-      await launched.close();
-      launched = undefined;
     }
     if (server) {
       await server.close();
