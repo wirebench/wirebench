@@ -16,14 +16,22 @@ const ROW_HEIGHT = 22;
 
 /** time · proto · method · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
 const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(0,1fr)_8rem_4rem_5rem]';
+/**
+ * What is left when the detail pane takes half the width: proto, method, URL and status. The full
+ * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
+ * it and slide under the detail rather than truncate.
+ */
+const COLUMNS_COMPACT = 'grid-cols-[3rem_4rem_minmax(0,1fr)_8rem]';
 
 interface RowProps {
   readonly entry: LogEntry;
   readonly selected: boolean;
   readonly onSelect: () => void;
+  /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
+  readonly compact: boolean;
 }
 
-function LogRow({ entry, selected, onSelect }: RowProps) {
+function LogRow({ entry, selected, onSelect, compact }: RowProps) {
   const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
@@ -33,12 +41,12 @@ function LogRow({ entry, selected, onSelect }: RowProps) {
       onClick={onSelect}
       aria-pressed={selected}
       title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
-      className={`grid ${COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
+      className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
         selected ? 'bg-surface-selected text-fg-default' : 'text-fg-muted hover:bg-surface-hover'
       }`}
       style={{ height: ROW_HEIGHT }}
     >
-      <span>{formatClockTime(startedAtOf(entry))}</span>
+      {!compact && <span>{formatClockTime(startedAtOf(entry))}</span>}
       <span>{protocolOf(entry)}</span>
       <span>{methodOf(entry)}</span>
       <span className="truncate" title={urlOf(entry)}>
@@ -47,8 +55,8 @@ function LogRow({ entry, selected, onSelect }: RowProps) {
       <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
         {entry.kind === 'failure' ? entry.failure.error.code : entry.exchange.http.status}
       </span>
-      <span>{formatDuration(durationOf(entry))}</span>
-      <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>
+      {!compact && <span>{formatDuration(durationOf(entry))}</span>}
+      {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}
     </button>
   );
 }
@@ -84,6 +92,8 @@ export function HttpLog() {
   // rather than keeping a stale one open; `selectedId` itself is untouched, so the detail
   // reappears once the filter is cleared.
   const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
+  // The detail shares the width with the table, so the row sheds the columns that do not fit.
+  const compact = selected !== undefined;
 
   // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
   // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
@@ -161,15 +171,15 @@ export function HttpLog() {
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1">
             <div
               data-testid="http-log-header"
-              className={`grid ${COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
+              className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
             >
-              <span>time</span>
+              {!compact && <span>time</span>}
               <span>proto</span>
               <span>method</span>
               <span>URL</span>
               <span>status</span>
-              <span>ms</span>
-              <span>size</span>
+              {!compact && <span>ms</span>}
+              {!compact && <span>size</span>}
             </div>
           </div>
 
@@ -197,6 +207,7 @@ export function HttpLog() {
                     >
                       <LogRow
                         entry={entry}
+                        compact={compact}
                         selected={sendIdOf(entry) === selectedId}
                         onSelect={() => {
                           setSelectedId(sendIdOf(entry));
@@ -211,6 +222,7 @@ export function HttpLog() {
                 <LogRow
                   key={sendIdOf(entry)}
                   entry={entry}
+                  compact={compact}
                   selected={sendIdOf(entry) === selectedId}
                   onSelect={() => {
                     setSelectedId(sendIdOf(entry));

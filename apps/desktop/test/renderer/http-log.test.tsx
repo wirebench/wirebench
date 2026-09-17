@@ -300,4 +300,20 @@ describe('HttpLog', () => {
     const header = screen.getByTestId('http-log-header').parentElement!;
     expect(within(header).queryByRole('button')).toBeNull();
   });
+
+  it('sheds the time, ms and size columns while a detail pane shares the width', async () => {
+    useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
+    render(<HttpLog />);
+
+    const header = screen.getByTestId('http-log-header');
+    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+
+    await userEvent.click(rows()[0]!);
+    expect(header.textContent).toBe(['proto', 'method', 'URL', 'status'].join(''));
+    expect(rows()[0]?.textContent).not.toContain('143 ms');
+    expect(screen.getByTestId('http-log-status').textContent).toBe('200');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close detail' }));
+    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+  });
 });
