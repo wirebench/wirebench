@@ -3,6 +3,7 @@ import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
 import { addHeader, createApi, createRestRequest, responseStatus, sendRest, setMethodAndUrl } from '../helpers/rest.js';
 import { startTestRestServer, type TestRestServer } from '../helpers/test-server.js';
+import { selectLogRow } from '../helpers/http-log.js';
 
 test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
   let launched: LaunchedApp | undefined;
@@ -54,7 +55,7 @@ test.describe('HTTP Log: failed sends, filter bar and detail tabs', () => {
     await expect(failed).toContainText(/\d+(\.\d)? ms/);
 
     // The detail tabs: the engine's message on Response, the redaction note on Headers.
-    await failed.click();
+    await selectLogRow(failed);
     const tabs = page.getByRole('tablist', { name: 'Log detail' });
     await tabs.getByRole('tab', { name: 'Response' }).click();
     await expect(page.getByTestId('log-detail-error')).toContainText('connection-refused');

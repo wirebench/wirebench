@@ -31,6 +31,7 @@ import {
   type TestRestServer,
   type TestSoapServer,
 } from '../helpers/test-server.js';
+import { selectLogRow } from '../helpers/http-log.js';
 
 const PASSWORD = 's3cret!';
 
@@ -170,7 +171,7 @@ test.describe('secrets', () => {
     await page.locator('[data-testid="request-send"]').click();
     await expect(page.locator('[data-testid="response-status"]')).toContainText(/\d{3}/, { timeout: 15_000 });
 
-    await page.locator('[data-testid="http-log-row"]').first().click();
+    await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
     await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('Authorization: <redacted>');
@@ -274,7 +275,7 @@ test.describe('secrets', () => {
     // pins it, since routing REST into that log is what made the pane reachable for REST at all.
     await sendRest(page);
     await expect(responseStatus(page)).toContainText(/\d{3}/, { timeout: 20_000 });
-    await page.locator('[data-testid="http-log-row"]').first().click();
+    await selectLogRow(page.locator('[data-testid="http-log-row"]').first());
     await page.getByRole('tablist', { name: 'Log detail' }).getByRole('tab', { name: 'Request' }).click();
     const rawRequest = page.getByLabel('Raw request');
     await expect(rawRequest).toContainText('X-Api-Key: <redacted>');
