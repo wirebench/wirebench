@@ -2,7 +2,7 @@ import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
-import { validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
+import { toIpcError, validateEventPayload, wrapHandler } from '../src/main/ipc/envelope.js';
 import { emitEvent } from '../src/main/ipc/events.js';
 import { channels, defineEvent } from '../src/shared/ipc.js';
 
@@ -137,5 +137,19 @@ describe('emitEvent', () => {
       emitEvent(target as unknown as WebContents, testEvent, invalidPayload as unknown as { message: string }),
     ).toThrowError(WirebenchError);
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('never forwards the unredacted request a transport error carries to the renderer', () => {
+    const error = new WirebenchError('connection-refused', 'Connection refused.', {
+      details: {
+        request: { url: 'http://127.0.0.1:1/x', method: 'POST', headers: { authorization: 'Bearer plain-token' } },
+        peerSubject: 'CN=example',
+      },
+    });
+
+    const wire = toIpcError(error);
+
+    expect(JSON.stringify(wire)).not.toContain('plain-token');
+    expect(wire.details).toEqual({ peerSubject: 'CN=example' });
   });
 });
