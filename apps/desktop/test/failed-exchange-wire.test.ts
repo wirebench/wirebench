@@ -21,8 +21,9 @@ describe('failedExchangeWireSchema', () => {
     expect(failedExchangeWireSchema.safeParse(adHoc).success).toBe(true);
   });
 
-  it('rejects a protocol outside soap/rest and a missing error', () => {
-    expect(failedExchangeWireSchema.safeParse({ ...failure, protocol: 'grpc' }).success).toBe(false);
+  it('rejects a protocol it does not know and a missing error', () => {
+    expect(failedExchangeWireSchema.safeParse({ ...failure, protocol: 'grpc' }).success).toBe(true);
+    expect(failedExchangeWireSchema.safeParse({ ...failure, protocol: 'carrier-pigeon' }).success).toBe(false);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept only to drop the key
     const { error: _dropped, ...noError } = failure;
     expect(failedExchangeWireSchema.safeParse(noError).success).toBe(false);

@@ -8,12 +8,18 @@ import type { LogEntry, LogFilter, StatusClass } from '../../state/exchanges.js'
 
 export type { StatusClass } from '../../state/exchanges.js';
 
-export type LogProtocol = 'soap' | 'rest';
+export type LogProtocol = 'soap' | 'rest' | 'grpc';
 
-/** A REST summary is the one that reports `methodChanged`; a SOAP summary never does. */
+/**
+ * A gRPC summary is the one that reports `statusName`, a REST summary the one that reports
+ * `methodChanged`; a SOAP summary reports neither.
+ */
 export function protocolOf(entry: LogEntry): LogProtocol {
   if (entry.kind === 'failure') {
     return entry.failure.protocol;
+  }
+  if ('statusName' in entry.exchange) {
+    return 'grpc';
   }
   return 'methodChanged' in entry.exchange ? 'rest' : 'soap';
 }

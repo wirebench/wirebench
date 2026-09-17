@@ -18,6 +18,7 @@ import {
   writeFileAtomic,
   joinBase,
   failedRequestOf,
+  grpcMethodPath,
 } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -986,7 +987,30 @@ async function sendGrpcRequest(
     await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
     return summary;
   } catch (error) {
-    await recordGrpc(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    const durationMs = Date.now() - startedAt;
+    await recordGrpc(deps, request.requestId, resolved, undefined, durationMs, error);
+    // The failure row for the console's HTTP Log. A gRPC call is an HTTP/2 POST to
+    // `/<service>/<method>`; when the transport built the request the error carries it and the row
+    // shows that instead. Redacted for good, like every other failure row.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'grpc',
+        requestId: request.requestId,
+        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
+          resolved.input.service,
+          resolved.input.method,
+        )}`,
+        method: 'POST',
+        headers: Object.fromEntries(
+          resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
+        ),
+        startedAt,
+        durationMs,
+        error,
+        captured: failedRequestOf(error),
+      }),
+    );
     throw error;
   }
 }

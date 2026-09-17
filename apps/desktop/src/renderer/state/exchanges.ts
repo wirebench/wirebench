@@ -44,7 +44,7 @@ export interface LogFilter {
   /** Upper-case method names. */
   readonly methods: readonly string[];
   readonly statuses: readonly StatusClass[];
-  readonly protocols: readonly ('soap' | 'rest')[];
+  readonly protocols: readonly ('soap' | 'rest' | 'grpc')[];
 }
 
 /** The filter that shows every row. */
@@ -328,7 +328,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       }
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        // The same push the SOAP path does: the HTTP Log is one list across both protocols.
+        // The same push the SOAP path does: the HTTP Log is one list across every protocol.
         // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
         // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
         // stays correct; it just does not gain the secret back. Tracked on the roadmap.)

@@ -17,7 +17,7 @@ import { redactHeaders, redactRawHttp, redactUrl } from './redact.js';
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {
   readonly sendId: string;
-  readonly protocol: 'soap' | 'rest';
+  readonly protocol: 'soap' | 'rest' | 'grpc';
   /** Absent for an ad-hoc resend of an orphaned History entry. */
   readonly requestId?: string | undefined;
   readonly url: string;

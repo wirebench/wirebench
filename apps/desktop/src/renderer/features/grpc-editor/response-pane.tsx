@@ -144,7 +144,7 @@ export function GrpcResponsePane({ state }: GrpcResponsePaneProps) {
             )}
             {tab === 'tls' && (
               <div data-testid="grpc-response-tls" className="overflow-auto">
-                <SslInspector exchange={exchange} />
+                <SslInspector http={exchange.http} />
               </div>
             )}
             {tab === 'raw' && <RawExchange exchange={exchange} />}

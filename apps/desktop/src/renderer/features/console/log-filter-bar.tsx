@@ -13,6 +13,7 @@ const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx', 'fai
 const PROTOCOLS = [
   { id: 'soap', label: 'SOAP' },
   { id: 'rest', label: 'REST' },
+  { id: 'grpc', label: 'gRPC' },
 ] as const;
 /** Long enough to coalesce a burst of keystrokes, short enough to feel live. */
 const DEBOUNCE_MS = 100;

@@ -41,7 +41,7 @@ describe('LogFilterBar', () => {
       within(protocol)
         .getAllByRole('button')
         .map((chip) => chip.textContent),
-    ).toEqual(['SOAP', 'REST']);
+    ).toEqual(['SOAP', 'REST', 'gRPC']);
     expect(screen.getByTestId('http-log-count').textContent).toBe('3 of 3');
   });
 

@@ -644,7 +644,7 @@ export type HttpExchangeWire = z.infer<typeof httpExchangeWireSchema>;
 export const failedExchangeWireSchema = z.object({
   /** The id the renderer generated for the send — the log dedupes on it. */
   sendId: z.string(),
-  protocol: z.enum(['soap', 'rest']),
+  protocol: z.enum(['soap', 'rest', 'grpc']),
   /** Absent for an ad-hoc resend of an orphaned History entry. */
   requestId: z.string().optional(),
   /** The same shape as `httpExchangeWireSchema.request`; headers already redacted. */
