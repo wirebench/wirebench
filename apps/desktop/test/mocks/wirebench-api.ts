@@ -35,6 +35,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       importPostman: fail('api.importPostman'),
       importProto: fail('api.importProto'),
       grpcDefinition: fail('api.grpcDefinition'),
+      grpcRefresh: fail('api.grpcRefresh'),
       grpcSample: fail('api.grpcSample'),
       cancelImport: fail('api.cancelImport'),
       definitionDocuments: fail('api.definitionDocuments'),

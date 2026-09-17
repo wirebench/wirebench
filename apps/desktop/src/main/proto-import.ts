@@ -1,19 +1,30 @@
 /**
- * Running a `.proto` import in main: reading the files the user pointed at, in whichever of the
- * four ways they did, and handing the engine one import-path-keyed map.
+ * Running a gRPC schema import in main: reading what the user pointed at, in whichever of the five
+ * ways they did, and handing the engine either an import-path-keyed map of `.proto` text or the
+ * descriptors a server sent.
  *
  * A folder is walked for every `.proto` beneath it and each file keyed by its path relative to the
  * folder — the import root convention — so `import "a/b.proto"` resolves exactly as it would for a
  * compiler run from that folder. Picked files are keyed by their base name, and by their path
  * relative to their common ancestor when that differs. A URL fetches the root file and then every
  * relative import beside it, so a service that publishes its protos over HTTP imports in one step.
- * Nothing is written here: placing the API and caching the files is the project's job.
+ * A running server is asked to describe itself over server reflection, which is the one source with
+ * no `.proto` text at all: what comes back is the compiler's own output, and it is kept as such.
+ * Nothing is written here: placing the API and caching what it was built from is the project's job.
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { importProto, ProtoError, WirebenchError } from '@wirebench/engine';
-import type { ImportedProto, ProtoSources } from '@wirebench/engine';
+import {
+  apiFromProtoSet,
+  defaultTlsFor,
+  descriptorSetBytes,
+  importProto,
+  ProtoError,
+  reflectProtoSet,
+  WirebenchError,
+} from '@wirebench/engine';
+import type { ImportedProto, ProtoSet, ProtoSources, TlsOptions } from '@wirebench/engine';
 import type { EngineProgressEvent, ProtoSourceWire } from '../shared/wire-types.js';
 
 /** What one import needs beyond where to read from. */
@@ -30,17 +41,50 @@ export interface RunProtoImportHooks {
   readonly onProgress?: (event: EngineProgressEvent) => void;
 }
 
-/** The result of one import: the mapped API, the sources it was built from, and how it was named. */
-export interface ProtoImportRun {
+/** What one import produced besides the API: the form its definition is cached in. */
+export type ProtoImportDefinition =
+  | { readonly kind: 'proto'; readonly sources: ProtoSources }
+  | {
+      readonly kind: 'reflection';
+      /** The `FileDescriptorSet` the server described itself with, ready to cache byte for byte. */
+      readonly descriptors: Uint8Array;
+      /** The version that answered, which an `auto` discovery resolved to. */
+      readonly version: 'v1' | 'v1alpha';
+      readonly trustInvalid: boolean;
+    };
+
+/** The result of one import: the mapped API, what it was built from, and how it was named. */
+export type ProtoImportRun = {
   readonly imported: ImportedProto;
-  readonly sources: ProtoSources;
   readonly roots: readonly string[];
   /** Where the user pointed at, as they gave it, for the API's definition record. */
   readonly sourceLabel: string;
-}
+} & ProtoImportDefinition;
+
+/** What {@link ProtoImportService.read} found, before anything is mapped to an API. */
+type ProtoRead = { readonly roots: readonly string[]; readonly label: string; readonly count: number } & (
+  | { readonly kind: 'proto'; readonly sources: Map<string, string> }
+  | {
+      readonly kind: 'reflection';
+      readonly set: ProtoSet;
+      readonly descriptors: Uint8Array;
+      readonly version: 'v1' | 'v1alpha';
+      readonly trustInvalid: boolean;
+    }
+);
 
 /** Fetches one URL as text; injectable so tests need no network. */
 export type FetchText = (url: string, signal: AbortSignal) => Promise<string>;
+
+/**
+ * The TLS material a discovery should use, resolved in main: the configured trust anchors, and
+ * `rejectUnauthorized: false` when the user asked to reach a server whose certificate does not
+ * verify. Injectable so a test needs no preferences.
+ */
+export type GrpcDiscoveryTls = (options: { readonly trustInvalid: boolean }) => Promise<TlsOptions | undefined>;
+
+/** How long a discovery waits for the server to describe itself. */
+const REFLECTION_TIMEOUT_MS = 30_000;
 
 const defaultFetchText: FetchText = async (url, signal) => {
   const response = await fetch(url, { signal });
@@ -193,9 +237,11 @@ async function readUrl(url: string, fetchText: FetchText, signal: AbortSignal, p
 export class ProtoImportService {
   private readonly inFlight = new Map<string, AbortController>();
   private readonly fetchText: FetchText;
+  private readonly grpcTls: GrpcDiscoveryTls;
 
-  constructor(options?: { readonly fetchText?: FetchText }) {
+  constructor(options?: { readonly fetchText?: FetchText; readonly grpcTls?: GrpcDiscoveryTls }) {
     this.fetchText = options?.fetchText ?? defaultFetchText;
+    this.grpcTls = options?.grpcTls ?? (() => Promise.resolve(undefined));
   }
 
   /**
@@ -214,17 +260,33 @@ export class ProtoImportService {
       hooks.onProgress?.({ kind: 'import', phase, message, ...(token !== undefined ? { token } : {}) });
     };
     try {
-      progress('fetch', 'Reading .proto files');
+      progress('fetch', input.source.kind === 'reflection' ? 'Asking the server' : 'Reading .proto files');
       const read = await this.read(input.source, controller.signal, (message) => progress('fetch', message));
-      progress('parse', `Parsing ${String(read.sources.size)} file${read.sources.size === 1 ? '' : 's'}`);
-      const imported = importProto(read.sources, {
+      progress('parse', `Parsing ${String(read.count)} file${read.count === 1 ? '' : 's'}`);
+      const options = {
         roots: read.roots,
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.target !== undefined ? { target: input.target } : {}),
         ...(input.tls !== undefined ? { tls: input.tls } : {}),
-      });
-      progress('done', `Imported ${String(imported.summary.methods)} methods`);
-      return { imported, sources: read.sources, roots: read.roots, sourceLabel: read.label };
+      };
+      // A discovery has already resolved its schema; only an import still has text to parse.
+      const imported = read.kind === 'proto' ? importProto(read.sources, options) : apiFromProtoSet(read.set, options);
+      progress(
+        'done',
+        read.kind === 'proto'
+          ? `Imported ${String(imported.summary.methods)} methods`
+          : `Discovered ${String(imported.summary.methods)} methods`,
+      );
+      const definition: ProtoImportDefinition =
+        read.kind === 'proto'
+          ? { kind: 'proto', sources: read.sources }
+          : {
+              kind: 'reflection',
+              descriptors: read.descriptors,
+              version: read.version,
+              trustInvalid: read.trustInvalid,
+            };
+      return { imported, roots: read.roots, sourceLabel: read.label, ...definition };
     } finally {
       if (token !== undefined && this.inFlight.get(token) === controller) {
         this.inFlight.delete(token);
@@ -236,7 +298,7 @@ export class ProtoImportService {
     source: ProtoSourceWire,
     signal: AbortSignal,
     progress: (message: string) => void,
-  ): Promise<{ sources: Map<string, string>; roots: readonly string[]; label: string }> {
+  ): Promise<ProtoRead> {
     switch (source.kind) {
       case 'folder': {
         const dir = resolve(source.path);
@@ -249,24 +311,63 @@ export class ProtoImportService {
         // Every file that nothing else imports is a root, so a folder of independent services imports whole.
         const imported = new Set([...sources.values()].flatMap(importsOf));
         const roots = [...sources.keys()].filter((key) => !imported.has(key));
-        return { sources, roots: roots.length > 0 ? roots : [...sources.keys()], label: source.path };
+        return {
+          kind: 'proto',
+          sources,
+          roots: roots.length > 0 ? roots : [...sources.keys()],
+          label: source.path,
+          count: sources.size,
+        };
       }
       case 'files': {
         const { sources, roots } = await readFiles(source.paths);
         return {
+          kind: 'proto',
           sources,
           roots,
           label: source.paths.length === 1 ? source.paths[0]! : commonDir(source.paths.map((p) => resolve(p))),
+          count: sources.size,
         };
       }
       case 'text': {
         const name =
           source.filename !== undefined && source.filename !== '' ? basename(source.filename) : 'pasted.proto';
-        return { sources: new Map([[name, source.text]]), roots: [name], label: source.filename ?? 'inline:proto' };
+        return {
+          kind: 'proto',
+          sources: new Map([[name, source.text]]),
+          roots: [name],
+          label: source.filename ?? 'inline:proto',
+          count: 1,
+        };
       }
       case 'url': {
         const { sources, roots } = await readUrl(source.url, this.fetchText, signal, progress);
-        return { sources, roots, label: source.url };
+        return { kind: 'proto', sources, roots, label: source.url, count: sources.size };
+      }
+      case 'reflection': {
+        const trustInvalid = source.trustInvalid === true;
+        const tlsOptions = await this.grpcTls({ trustInvalid });
+        progress(`Asking ${source.target} to describe itself`);
+        const discovered = await reflectProtoSet({
+          target: source.target,
+          tls: source.tls ?? defaultTlsFor(source.target),
+          metadata: [],
+          timeoutMs: REFLECTION_TIMEOUT_MS,
+          signal,
+          ...(source.version !== undefined ? { version: source.version } : {}),
+          ...(tlsOptions !== undefined ? { tlsOptions } : {}),
+        });
+        return {
+          kind: 'reflection',
+          set: discovered.set,
+          // Cached exactly as the loaded set is ordered, so a reload resolves as this discovery did.
+          descriptors: descriptorSetBytes(discovered.files),
+          version: discovered.version,
+          trustInvalid,
+          roots: discovered.roots,
+          label: source.target,
+          count: discovered.files.size,
+        };
       }
     }
   }

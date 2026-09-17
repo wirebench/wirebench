@@ -13,8 +13,8 @@
 1. **gRPC is the third container, in the same project.** A gRPC API lives in `apis/<slug>/` beside REST APIs,
    with `kind: grpc` at the top of `api.yaml` and of every `*.request.yaml` under it, exactly as REST §8 anticipated.
    One workspace, one set of environments, one history, one search corpus, one shell.
-2. **The definition is a set of `.proto` files, cached with the project.** Server reflection and gRPC-Web are not
-   built (§9). The cache mirrors the import-path layout the compiler would see, so the same set reloads without a
+2. **The definition is a set of `.proto` files, cached with the project.** Server reflection (added 2026-09-17) and
+   gRPC-Web are not built (§9). The cache mirrors the import-path layout the compiler would see, so the same set reloads without a
    second resolution step.
 3. **Messages are edited as JSON**, in the protobuf JSON mapping (int64 as strings, enums by name, bytes as base64,
    `Timestamp`/`Duration`/`Struct`/wrappers/`Any`/`FieldMask` in their JSON forms). A schema-driven Form view is
@@ -151,8 +151,10 @@ on disk, and axe over the editor.
 
 ## 9. Boundaries
 
-Not built: server reflection, gRPC-Web, interactive bidirectional streaming, a schema-driven form view, streaming
-replies shown before the call ends, resend and diff from History for gRPC entries, a Query view over messages.
+Not built: ~~server reflection~~ (built 2026-09-17, see
+`docs/specs/2026-09-17-grpc-server-reflection-design.md`), gRPC-Web, interactive bidirectional streaming, a
+schema-driven form view, streaming replies shown before the call ends, resend and diff from History for gRPC
+entries, a Query view over messages.
 
 ## 10. Success criteria
 

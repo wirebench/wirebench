@@ -5,8 +5,8 @@
  * renderer never reimplements a rule the transport enforces.
  */
 
-export { clientStreams, defaultTlsFor, grpcMethodPath, serverStreams } from './model.js';
-export type { GrpcMethodKind } from './model.js';
+export { clientStreams, defaultTlsFor, GRPC_REFLECTION_VERSIONS, grpcMethodPath, serverStreams } from './model.js';
+export type { GrpcMethodKind, GrpcReflectionVersion } from './model.js';
 export { GRPC_STATUS_NAMES, grpcStatusName } from './status.js';
 export { parseGrpcTarget } from './target.js';
 export type { GrpcTarget } from './target.js';

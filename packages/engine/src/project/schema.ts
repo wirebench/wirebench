@@ -421,7 +421,15 @@ export const grpcApiFileSchema = z.looseObject({
   metadata: z.array(keyValueEntrySchema).default([]),
   auth: authConfigSchema.optional(),
   definition: z
-    .looseObject({ source: nonEmpty, cache: z.boolean().default(true), roots: z.array(nonEmpty).default([]) })
+    .looseObject({
+      // Absent in every project written before server reflection, which is an imported set.
+      kind: z.enum(['proto', 'reflection']).default('proto'),
+      source: nonEmpty,
+      cache: z.boolean().default(true),
+      roots: z.array(nonEmpty).default([]),
+      reflectionVersion: z.enum(['auto', 'v1', 'v1alpha']).optional(),
+      trustInvalid: z.boolean().optional(),
+    })
     .optional(),
 });
 
@@ -687,6 +695,28 @@ export const protoDefinitionCacheManifestSchema = z.looseObject({
 
 /** The proto definition cache manifest as persisted. */
 export type ProtoDefinitionCacheManifest = z.infer<typeof protoDefinitionCacheManifestSchema>;
+
+/**
+ * `apis/<slug>/definition/manifest.yaml` for a gRPC API discovered by server reflection: one binary
+ * `FileDescriptorSet` beside it, because a server describes itself in the compiler's own output and
+ * there is no `.proto` text to keep. The `kind` is what tells the two gRPC manifests apart.
+ */
+export const descriptorDefinitionCacheManifestSchema = z.looseObject({
+  formatVersion: z.literal(1),
+  kind: z.literal('descriptors'),
+  /** The target the server was asked at, as the user gave it. */
+  source: nonEmpty,
+  fetchedAt: nonEmpty,
+  /** The descriptor files declaring the services, which the set is loaded from. */
+  roots: z.array(nonEmpty).default([]),
+  /** The reflection protocol version that answered. */
+  reflectionVersion: z.enum(['v1', 'v1alpha']).optional(),
+  /** The descriptor set itself: its path under `definition/`, its SHA-256 and its size. */
+  file: protoDefinitionCacheFileSchema,
+});
+
+/** The descriptor definition cache manifest as persisted. */
+export type DescriptorDefinitionCacheManifest = z.infer<typeof descriptorDefinitionCacheManifestSchema>;
 
 /** The API definition cache manifest as persisted. */
 export type ApiDefinitionCacheManifest = z.infer<typeof apiDefinitionCacheManifestSchema>;

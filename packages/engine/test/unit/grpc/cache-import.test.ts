@@ -25,7 +25,7 @@ describe('importProto', () => {
       roots: ['greeter.proto'],
       target: 'localhost:50051',
       newId: () => `id-${String(++next)}`,
-      definition: { source: '/protos', cache: true, roots: ['greeter.proto'] },
+      definition: { kind: 'proto', source: '/protos', cache: true, roots: ['greeter.proto'] },
     });
     expect(imported.api).toMatchObject({
       kind: 'grpc',

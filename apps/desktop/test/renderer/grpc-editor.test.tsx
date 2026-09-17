@@ -57,7 +57,7 @@ function seed(
   request = grpcRequestWire({ service: 'wirebench.greet.Greeter', method: 'SayHello', message: '{"name":"Ada"}' }),
   api = grpcApiWire({
     tls: true,
-    definition: { source: '/protos/greeter.proto', cache: true, roots: ['greeter.proto'] },
+    definition: { kind: 'proto', source: '/protos/greeter.proto', cache: true, roots: ['greeter.proto'] },
   }),
 ): void {
   const folder = restFolderWire({ id: 'folder-g', apiId: api.id, name: 'Greetings' });

@@ -451,7 +451,17 @@ function toGrpcApiWire(api: GrpcApi): GrpcApiWire {
     metadata: toKeyValueWires(api.metadata),
     ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
     ...(api.definition !== undefined
-      ? { definition: { source: api.definition.source, cache: api.definition.cache, roots: [...api.definition.roots] } }
+      ? {
+          definition: {
+            kind: api.definition.kind,
+            source: api.definition.source,
+            cache: api.definition.cache,
+            roots: [...api.definition.roots],
+            ...(api.definition.reflectionVersion !== undefined
+              ? { reflectionVersion: api.definition.reflectionVersion }
+              : {}),
+          },
+        }
       : {}),
   };
 }

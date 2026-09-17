@@ -6,6 +6,10 @@
  * Hermetic like the REST fixture and shared with the desktop app's e2e suite through
  * `@wirebench/engine/test-helpers`. Every streaming shape is here, plus a method that fails with
  * whatever status a test asks for, a slow one for deadlines, and gzip on request.
+ *
+ * Dispatch is keyed by service so a second service can share the port: on request the server also
+ * hosts gRPC server reflection, in either protocol version or both, answering from the same
+ * `greeter` set read back out as descriptors.
  */
 
 import { Buffer } from 'node:buffer';
@@ -19,8 +23,15 @@ import { gzipSync } from 'node:zlib';
 import { decodeMessage, encodeMessage } from '../../src/grpc/codec.js';
 import { encodeGrpcFrame, GrpcFrameParser } from '../../src/grpc/framing.js';
 import { loadProtoSet, type ProtoSet } from '../../src/grpc/proto/load.js';
+import {
+  REFLECTION_METHOD,
+  reflectionPackage,
+  reflectionProtoSet,
+  reflectionServiceName,
+} from '../../src/grpc/reflection/proto.js';
 import { encodeGrpcMessage } from '../../src/grpc/status.js';
 import { readProtoFixture } from './proto-fixtures.js';
+import { reflectionCatalog, withDependencies } from './test-grpc-reflection.js';
 
 /** One call the server recorded, for assertions the response cannot carry. */
 export interface RecordedGrpcCall {
@@ -43,6 +54,16 @@ export interface TestGrpcServerOptions {
   readonly tls?: TestGrpcServerTls;
   /** Compress every response message with gzip and say so in `grpc-encoding`. */
   readonly gzip?: boolean;
+  /**
+   * The reflection protocol versions to serve. Empty by default, which is a server that refuses
+   * reflection altogether; `['v1alpha']` is a server that predates the stable package.
+   */
+  readonly reflection?: readonly ('v1' | 'v1alpha')[];
+  /**
+   * Answer `file_containing_symbol` with the file alone rather than its imports as well, as a
+   * server that leaves the client to chase dependencies by name does.
+   */
+  readonly reflectionOmitsDependencies?: boolean;
 }
 
 /** A running test server. */
@@ -100,6 +121,11 @@ function flatten(headers: IncomingHttpHeaders): Record<string, string> {
   return out;
 }
 
+/** The canonical JSON mapping spells a `bytes` field as base64, which is what the codec encodes. */
+function base64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64');
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -110,13 +136,38 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
   const calls: RecordedGrpcCall[] = [];
   const compress = options.gzip === true;
 
-  const respond = (stream: ServerHttp2Stream, type: string, json: unknown): void => {
-    const bytes = encodeMessage(set, type, json);
+  const writeMessage = (stream: ServerHttp2Stream, messageSet: ProtoSet, type: string, json: unknown): void => {
+    const bytes = encodeMessage(messageSet, type, json);
     stream.write(Buffer.from(compress ? encodeGrpcFrame(gzipSync(bytes), true) : encodeGrpcFrame(bytes)));
+  };
+  const respond = (stream: ServerHttp2Stream, type: string, json: unknown): void => {
+    writeMessage(stream, set, type, json);
   };
   // Node sends trailers only from a `wantTrailers` handler on a stream that responded with
   // `waitForTrailers`, so the status is parked here until the stream asks for it.
   const pendingTrailers = new WeakMap<ServerHttp2Stream, Record<string, string>>();
+  /** The response headers, sent once per stream however many messages follow. */
+  const responder = (stream: ServerHttp2Stream): (() => void) => {
+    let responded = false;
+    return () => {
+      if (responded) return;
+      responded = true;
+      stream.respond(
+        {
+          ':status': 200,
+          'content-type': 'application/grpc+proto',
+          'x-served-by': 'test-grpc-server',
+          ...(compress ? { 'grpc-encoding': 'gzip' } : {}),
+        },
+        { waitForTrailers: true },
+      );
+      stream.on('wantTrailers', () => {
+        stream.sendTrailers(
+          pendingTrailers.get(stream) ?? { 'grpc-status': '13', 'grpc-message': 'no status was set' },
+        );
+      });
+    };
+  };
   const finishWithStatus = (stream: ServerHttp2Stream, status: number, message?: string): void => {
     if (stream.closed || stream.destroyed) return;
     pendingTrailers.set(stream, {
@@ -124,6 +175,76 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
       ...(message !== undefined ? { 'grpc-message': encodeGrpcMessage(message) } : {}),
     });
     stream.end();
+  };
+
+  const reflectionVersions = options.reflection ?? [];
+  const catalog = reflectionCatalog(set);
+  /** What `list_services` answers: the fixture's own services and reflection itself, as a server does. */
+  const listedServices = [...catalog.services, ...reflectionVersions.map((version) => reflectionServiceName(version))];
+
+  /** One `ServerReflectionResponse` for one request, in the JSON shape the codec encodes. */
+  const reflectionResponse = (request: Record<string, unknown>): Record<string, unknown> => {
+    const base = { valid_host: '', original_request: request };
+    if (typeof request['list_services'] === 'string') {
+      return { ...base, list_services_response: { service: listedServices.map((name) => ({ name })) } };
+    }
+    const symbol = request['file_containing_symbol'];
+    if (typeof symbol === 'string') {
+      const file = catalog.symbols.get(symbol);
+      if (file === undefined) {
+        return { ...base, error_response: { error_code: 5, error_message: `symbol not found: ${symbol}` } };
+      }
+      const files =
+        options.reflectionOmitsDependencies === true
+          ? [catalog.files.get(file)!.bytes]
+          : withDependencies(catalog, file);
+      return { ...base, file_descriptor_response: { file_descriptor_proto: files.map(base64) } };
+    }
+    const filename = request['file_by_filename'];
+    if (typeof filename === 'string') {
+      const file = catalog.files.get(filename);
+      if (file === undefined) {
+        return { ...base, error_response: { error_code: 5, error_message: `file not found: ${filename}` } };
+      }
+      return { ...base, file_descriptor_response: { file_descriptor_proto: [base64(file.bytes)] } };
+    }
+    return { ...base, error_response: { error_code: 12, error_message: 'unsupported reflection request' } };
+  };
+
+  /**
+   * `ServerReflectionInfo`: a bidirectional stream answered message by message as the requests
+   * arrive, which is what the specification's own servers do and what lets a client that sends
+   * several requests on one stream read the answers back in order.
+   */
+  const handleReflection = async (
+    stream: ServerHttp2Stream,
+    flat: Readonly<Record<string, string>>,
+    path: string,
+    version: 'v1' | 'v1alpha',
+  ): Promise<void> => {
+    const reflectionSet = reflectionProtoSet(version);
+    const pkg = reflectionPackage(version);
+    const parser = new GrpcFrameParser();
+    const messages: unknown[] = [];
+    const respondHeaders = responder(stream);
+    await new Promise<void>((resolve) => {
+      stream.on('data', (chunk: Buffer) => {
+        for (const frame of parser.push(new Uint8Array(chunk))) {
+          const request = decodeMessage(reflectionSet, `${pkg}.ServerReflectionRequest`, frame.payload) as Record<
+            string,
+            unknown
+          >;
+          messages.push(request);
+          respondHeaders();
+          writeMessage(stream, reflectionSet, `${pkg}.ServerReflectionResponse`, reflectionResponse(request));
+        }
+      });
+      stream.on('end', resolve);
+      stream.on('error', resolve);
+    });
+    calls.push({ path, headers: flat, messages });
+    respondHeaders();
+    finishWithStatus(stream, 0);
   };
 
   const handle = async (stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> => {
@@ -135,6 +256,13 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
     if (!contentType.startsWith('application/grpc')) {
       stream.respond({ ':status': 415, 'content-type': 'text/plain' });
       stream.end('not grpc');
+      return;
+    }
+    const reflecting = reflectionVersions.find(
+      (version) => service === reflectionServiceName(version) && methodName === REFLECTION_METHOD,
+    );
+    if (reflecting !== undefined) {
+      await handleReflection(stream, flat, path, reflecting);
       return;
     }
     if (method === undefined) {
@@ -154,25 +282,7 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
     // except Chat, which answers as messages arrive.
     const parser = new GrpcFrameParser();
     const messages: unknown[] = [];
-    let responded = false;
-    const respondHeaders = (): void => {
-      if (responded) return;
-      responded = true;
-      stream.respond(
-        {
-          ':status': 200,
-          'content-type': 'application/grpc+proto',
-          'x-served-by': 'test-grpc-server',
-          ...(compress ? { 'grpc-encoding': 'gzip' } : {}),
-        },
-        { waitForTrailers: true },
-      );
-      stream.on('wantTrailers', () => {
-        stream.sendTrailers(
-          pendingTrailers.get(stream) ?? { 'grpc-status': '13', 'grpc-message': 'no status was set' },
-        );
-      });
-    };
+    const respondHeaders = responder(stream);
     const xMetadata = Object.fromEntries(
       Object.entries(flat).filter(([name]) => name.startsWith('x-') && name !== 'x-served-by'),
     );

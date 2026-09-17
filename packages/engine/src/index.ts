@@ -819,6 +819,7 @@ export type { ImportFormatKind, DetectedImportFormat, ImportDetectInput } from '
 // gRPC: the third protocol, a sibling container to a SOAP interface and a REST API (ADR-0007).
 export {
   clientStreams,
+  GRPC_REFLECTION_VERSIONS,
   createGrpcApi,
   createGrpcFolder,
   createGrpcRequest,
@@ -837,6 +838,7 @@ export type {
   GrpcDefinitionRef,
   GrpcFolder,
   GrpcMethodKind,
+  GrpcReflectionVersion,
   GrpcRequestDef,
   GrpcRequestSettings,
 } from './grpc/model.js';
@@ -877,12 +879,53 @@ export type { GrpcCallInput, GrpcCallResult, GrpcResponseMessage } from './grpc/
 export { expandGrpcInput } from './grpc/expand.js';
 export type { ExpandGrpcOptions, GrpcExpandable } from './grpc/expand.js';
 export { apiFromProtoSet, importProto } from './grpc/import.js';
+export { reconcileGrpcApi } from './grpc/reconcile.js';
+export type { GrpcReconcileResult, ReconcileGrpcApiOptions } from './grpc/reconcile.js';
 export type { ImportProtoOptions, ImportedProto, ProtoImportSummary } from './grpc/import.js';
-export { PROTOS_DIR, protoPathSegments, readProtoDefinitionCache, writeProtoDefinitionCache } from './grpc/cache.js';
+export {
+  DESCRIPTORS_FILE,
+  PROTOS_DIR,
+  protoPathSegments,
+  readDescriptorDefinitionCache,
+  readGrpcDefinitionCache,
+  readProtoDefinitionCache,
+  writeDescriptorDefinitionCache,
+  writeProtoDefinitionCache,
+} from './grpc/cache.js';
 export type {
+  CachedDescriptorDefinition,
+  CachedGrpcDefinition,
   CachedProtoDefinition,
   ProtoDefinitionCacheOptions,
+  WriteDescriptorDefinitionCacheOptions,
   WriteProtoDefinitionCacheOptions,
 } from './grpc/cache.js';
+export {
+  DESCRIPTOR_HEADER_TYPE,
+  DESCRIPTOR_SET_HEADER_TYPE,
+  REFLECTION_METHOD,
+  REFLECTION_VERSIONS,
+  descriptorHeaderProtoSet,
+  reflectionPackage,
+  reflectionProtoSet,
+  reflectionProtoSource,
+  reflectionServiceName,
+} from './grpc/reflection/proto.js';
+export {
+  descriptorHeader,
+  descriptorSetBytes,
+  descriptorSetHeaders,
+  encodeFileDescriptorSet,
+  orderDescriptors,
+  protoSetFromDescriptorSet,
+  protoSetFromDescriptors,
+} from './grpc/reflection/descriptors.js';
+export type {
+  DescriptorHeader,
+  ProtoSetFromDescriptorSetOptions,
+  ProtoSetFromDescriptorsInput,
+} from './grpc/reflection/descriptors.js';
+export { isReflectionService, reflectProtoSet, reflectServices } from './grpc/reflection/client.js';
+export type { GrpcReflectInput, GrpcReflectedProtoSet, GrpcReflectionResult } from './grpc/reflection/client.js';
 export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
 export type { GrpcToCommandOptions } from './grpc/command.js';

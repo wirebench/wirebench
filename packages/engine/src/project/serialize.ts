@@ -315,7 +315,14 @@ function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
         definition:
           api.definition === undefined
             ? undefined
-            : compact({ source: api.definition.source, cache: api.definition.cache, roots: [...api.definition.roots] }),
+            : compact({
+                kind: api.definition.kind,
+                source: api.definition.source,
+                cache: api.definition.cache,
+                roots: [...api.definition.roots],
+                reflectionVersion: api.definition.reflectionVersion,
+                trustInvalid: api.definition.trustInvalid,
+              }),
       }),
     ),
   );

@@ -1503,6 +1503,10 @@ export const grpcRequestWireSchema = z.object({
 export type GrpcRequestWire = z.infer<typeof grpcRequestWireSchema>;
 
 /** One gRPC API as the renderer sees it. Its folders share the project's `folders` list with REST. */
+/** Which reflection protocol version to ask a server with; `auto` tries v1 then v1alpha. */
+export const grpcReflectionVersionWireSchema = z.enum(['auto', 'v1', 'v1alpha']);
+export type GrpcReflectionVersionWire = z.infer<typeof grpcReflectionVersionWireSchema>;
+
 export const grpcApiWireSchema = z.object({
   kind: z.literal('grpc'),
   id: z.string(),
@@ -1514,7 +1518,17 @@ export const grpcApiWireSchema = z.object({
   tls: z.boolean(),
   metadata: z.array(keyValueWireSchema),
   auth: authConfigWireSchema.optional(),
-  definition: z.object({ source: z.string(), cache: z.boolean(), roots: z.array(z.string()) }).optional(),
+  definition: z
+    .object({
+      /** How the schema was obtained: imported `.proto` files, or a server that described itself. */
+      kind: z.enum(['proto', 'reflection']).default('proto'),
+      source: z.string(),
+      cache: z.boolean(),
+      roots: z.array(z.string()),
+      /** For a discovered definition, the version a refresh asks with. */
+      reflectionVersion: grpcReflectionVersionWireSchema.optional(),
+    })
+    .optional(),
 });
 export type GrpcApiWire = z.infer<typeof grpcApiWireSchema>;
 
@@ -2148,9 +2162,10 @@ export const apiImportPostmanResponseSchema = z.object({
 export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
 
 /**
- * Where a `.proto` set comes from. `folder` and `files` are paths the user picked in a native
+ * Where a gRPC API's schema comes from. `folder` and `files` are paths the user picked in a native
  * dialog (main refuses one that was neither picked nor inside a project folder); `text` is a paste
- * or a drop; `url` is one file fetched over HTTP, its relative imports fetched beside it.
+ * or a drop; `url` is one file fetched over HTTP, its relative imports fetched beside it;
+ * `reflection` is a running server asked to describe itself, so a user with no files can start.
  */
 export const protoSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('folder'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
@@ -2162,6 +2177,16 @@ export const protoSourceSchema = z.discriminatedUnion('kind', [
     filename: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
   }),
   z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('reflection'),
+    /** The server to ask, as `host:port` or a `grpc://`/`grpcs://` URL whose scheme decides TLS. */
+    target: z.string().max(MAX_IMPORT_LOCATION_CHARS),
+    /** Speak TLS to it. Absent lets the target's spelling decide, as a new API's does. */
+    tls: z.boolean().optional(),
+    version: grpcReflectionVersionWireSchema.optional(),
+    /** Ask even when the server's certificate does not verify, for a development server. */
+    trustInvalid: z.boolean().optional(),
+  }),
 ]);
 export type ProtoSourceWire = z.infer<typeof protoSourceSchema>;
 
@@ -2187,7 +2212,7 @@ export const grpcServiceDescriptorWireSchema = z.object({
 });
 export type GrpcServiceDescriptorWire = z.infer<typeof grpcServiceDescriptorWireSchema>;
 
-/** What a `.proto` import produced, for the summary step. */
+/** What a `.proto` import or a reflection discovery produced, for the summary step. */
 export const protoImportSummarySchema = z.object({
   name: z.string(),
   target: z.string(),
@@ -2196,6 +2221,10 @@ export const protoImportSummarySchema = z.object({
   methods: z.number(),
   deprecated: z.number(),
   roots: z.array(z.string()),
+  /** How the definition was obtained. */
+  kind: z.enum(['proto', 'reflection']).default('proto'),
+  /** The reflection protocol version that answered, for a discovered definition. */
+  reflectionVersion: z.enum(['v1', 'v1alpha']).optional(),
 });
 export type ProtoImportSummaryWire = z.infer<typeof protoImportSummarySchema>;
 
@@ -2230,8 +2259,37 @@ export const apiGrpcDefinitionResponseSchema = z.object({
   source: z.string(),
   fetchedAt: z.string(),
   roots: z.array(z.string()),
+  /** Which cache the definition is in: imported `.proto` files, or a discovered descriptor set. */
+  kind: z.enum(['proto', 'reflection']).default('proto'),
+  /** The reflection version that answered, for a discovered definition. */
+  reflectionVersion: z.enum(['v1', 'v1alpha']).optional(),
 });
 export type ApiGrpcDefinitionResponse = z.infer<typeof apiGrpcDefinitionResponseSchema>;
+
+/**
+ * Request/response for `api.grpcRefresh`: ask a reflection-sourced API's server to describe itself
+ * again. Nothing is deleted — a method the server no longer declares keeps its request, badged
+ * orphaned, and a method it has gained gets one.
+ */
+export const apiGrpcRefreshRequestSchema = z.object({
+  apiId: z.string(),
+  /** Overrides the version recorded on the API for this refresh, and is remembered.  */
+  version: grpcReflectionVersionWireSchema.optional(),
+  token: z.string().optional(),
+});
+export type ApiGrpcRefreshRequest = z.infer<typeof apiGrpcRefreshRequestSchema>;
+
+export const apiGrpcRefreshResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  summary: protoImportSummarySchema,
+  /** How many requests were created, badged orphaned, and un-badged. */
+  requestsAdded: z.number(),
+  requestsOrphaned: z.number(),
+  requestsRestored: z.number(),
+  foldersAdded: z.number(),
+});
+export type ApiGrpcRefreshResponse = z.infer<typeof apiGrpcRefreshResponseSchema>;
 
 /** Request/response for `api.grpcSample`: a sample message for one type of a gRPC API's definition. */
 export const apiGrpcSampleRequestSchema = z.object({ apiId: z.string(), type: z.string().max(1024) });

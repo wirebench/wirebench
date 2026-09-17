@@ -53,6 +53,7 @@ import type {
   GitShareSettings,
   Project,
   SaveResult,
+  TlsOptions,
   Workspace,
   WorkspaceEnvironment,
   WorkspaceProjectRef,
@@ -2408,6 +2409,27 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   grpcSample(...args: Parameters<ProjectRouter['grpcSample']>): ReturnType<ProjectRouter['grpcSample']> {
     return this.hostOfEntity(args[0]).grpcSample(...args);
+  }
+
+  /** @inheritdoc */
+  grpcRefresh(...args: Parameters<ProjectRouter['grpcRefresh']>): ReturnType<ProjectRouter['grpcRefresh']> {
+    return this.hostOfEntity(args[0]).refreshGrpcDefinition(...args);
+  }
+
+  /**
+   * The TLS material a discovery started from the Import dialog should use.
+   *
+   * An import may precede the project it will land in, so there is no host to ask; the open hosts
+   * share one preferences service, and the first that answers is the configured trust bundle.
+   */
+  async grpcDiscoveryTls(trustInvalid: boolean): Promise<TlsOptions | undefined> {
+    for (const host of this.hosts()) {
+      const resolved = await host.grpcDiscoveryTls(trustInvalid);
+      if (resolved !== undefined) {
+        return resolved;
+      }
+    }
+    return trustInvalid ? { rejectUnauthorized: false } : undefined;
   }
 
   /** @inheritdoc */

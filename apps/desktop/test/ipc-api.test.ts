@@ -141,6 +141,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       apiDefinitionText: vi.fn(),
       exportApiDefinitionTo: vi.fn(),
       grpcDefinition: vi.fn(),
+      grpcRefresh: vi.fn(),
       grpcSample: vi.fn(),
     },
     imports: { run, cancel: vi.fn().mockReturnValue({ cancelled: true }) },
@@ -375,5 +376,57 @@ describe("an API's cached definition", () => {
       apiId: 'api-1',
     });
     expect(exported).toEqual({ cancelled: false, dir: '/picked/out', files: ['openapi.yaml', 'schemas.yaml'] });
+  });
+});
+
+describe('api.grpcRefresh', () => {
+  it('asks the router to re-discover, and reports what changed as counts', async () => {
+    const grpcRefresh = vi.fn().mockResolvedValue({
+      project: {
+        ...PROJECT,
+        grpcApis: [
+          {
+            kind: 'grpc',
+            id: 'g-1',
+            name: 'Greeter',
+            slug: 'Greeter',
+            order: 0,
+            target: 'localhost:50051',
+            tls: false,
+            metadata: [],
+            definition: { kind: 'reflection', source: 'localhost:50051', cache: true, roots: ['greeter.proto'] },
+          },
+        ],
+      },
+      summary: { name: 'Greeter', target: 'localhost:50051', files: 3, services: 1, methods: 6, deprecated: 0 },
+      reconciled: {
+        requestsAdded: ['r-1'],
+        requestsOrphaned: ['r-2', 'r-3'],
+        requestsRestored: [],
+        requestsRetyped: [],
+        foldersAdded: ['f-1'],
+      },
+      version: 'v1alpha',
+    });
+    setup({ router: { grpcRefresh } as unknown as ApiChannelDeps['router'] });
+
+    const response = await value<{
+      projectId: string;
+      summary: { kind: string; reflectionVersion: string; roots: string[]; methods: number };
+      requestsAdded: number;
+      requestsOrphaned: number;
+      foldersAdded: number;
+    }>('api.grpcRefresh', { apiId: 'g-1', version: 'auto' });
+
+    expect(grpcRefresh).toHaveBeenCalledWith('g-1', { version: 'auto' });
+    expect(response.summary).toMatchObject({
+      kind: 'reflection',
+      reflectionVersion: 'v1alpha',
+      roots: ['greeter.proto'],
+      methods: 6,
+    });
+    expect(response.requestsAdded).toBe(1);
+    expect(response.requestsOrphaned).toBe(2);
+    expect(response.foldersAdded).toBe(1);
   });
 });

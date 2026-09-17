@@ -26,7 +26,7 @@ function greeter(): GrpcApi {
     tls: false,
     metadata: [entry('x-tenant', 'acme'), entry('x-debug', '1', { enabled: false })],
     auth: { type: 'bearer', tokenRef: 'sec_tok' },
-    definition: { source: '/home/me/protos', cache: true, roots: ['greeter.proto'] },
+    definition: { kind: 'proto', source: '/home/me/protos', cache: true, roots: ['greeter.proto'] },
     requests: [
       createGrpcRequest('Health', {
         id: 'Q0',
@@ -99,6 +99,7 @@ describe('the apis/ layout for a gRPC API', () => {
         '  type: bearer',
         'definition:',
         '  cache: true',
+        '  kind: proto',
         '  roots:',
         '    - greeter.proto',
         '  source: /home/me/protos',

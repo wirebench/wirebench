@@ -90,13 +90,41 @@ export interface GrpcFolder {
   readonly requests: readonly GrpcRequestDef[];
 }
 
-/** The `.proto` set an API was imported from, cached under `apis/<slug>/definition/`. */
+/**
+ * Which reflection protocol version to ask a server with. `auto` tries `grpc.reflection.v1` and
+ * falls back to `grpc.reflection.v1alpha`, which is what a server predating the stable package
+ * serves; pinning one is for a server that answers both and answers one of them badly.
+ */
+export type GrpcReflectionVersion = 'auto' | 'v1' | 'v1alpha';
+
+/** The versions a user can pick, in the order the selector offers them. */
+export const GRPC_REFLECTION_VERSIONS: readonly GrpcReflectionVersion[] = ['auto', 'v1', 'v1alpha'];
+
+/**
+ * Where an API's schema came from, cached under `apis/<slug>/definition/`.
+ *
+ * `proto` is an import of `.proto` files, cached byte-exact at their import paths. `reflection` is a
+ * server that described itself, cached as the descriptor set it sent. A project written before
+ * reflection existed has no `kind`, and reads as `proto`.
+ */
 export interface GrpcDefinitionRef {
-  /** Where the root file came from: a URL, or a path as the user gave it. */
+  /** How the definition was obtained. */
+  readonly kind: 'proto' | 'reflection';
+  /** Where it came from: a target for reflection, a URL or a path as the user gave it for an import. */
   readonly source: string;
   readonly cache: boolean;
-  /** The import paths of the files the import started from, relative to the proto root. */
+  /**
+   * For an import, the import paths of the files it started from. For reflection, the names of the
+   * descriptor files declaring the services.
+   */
   readonly roots: readonly string[];
+  /** For a reflection definition, the version to ask with when it is refreshed. Absent means `auto`. */
+  readonly reflectionVersion?: GrpcReflectionVersion;
+  /**
+   * For a reflection definition, ask again even when the server's certificate does not verify —
+   * remembered from the discovery so a refresh reaches the same development server it did.
+   */
+  readonly trustInvalid?: boolean;
 }
 
 /** A gRPC API: a `host:port` target, whether to speak TLS to it, and a tree of folders and requests. */

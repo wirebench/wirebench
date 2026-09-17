@@ -18,6 +18,7 @@ import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
   EngineProgressEvent,
+  GrpcReflectionVersionWire,
   ImportProblemWire,
   ImportSourceWire,
   OpenApiImportSummaryWire,
@@ -37,7 +38,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { getExplorerTree } from './explorer-api.js';
 
-export type SourceTab = 'url' | 'file' | 'paste';
+export type SourceTab = 'url' | 'file' | 'paste' | 'server';
 
 /** The `import-target-project` value standing for *New project "<name>"*. Never a project id. */
 export const NEW_PROJECT = '';
@@ -47,6 +48,16 @@ const TABS = [
   { id: 'file', label: 'File' },
   { id: 'paste', label: 'Paste' },
 ] as const satisfies readonly { id: SourceTab; label: string }[];
+
+/**
+ * gRPC has a fifth way in that the other formats do not: a running server, asked to describe itself
+ * over server reflection. It is offered only when the format is gRPC — auto-detection reads a
+ * document, and there is no document here.
+ */
+const PROTO_TABS = [...TABS, { id: 'server', label: 'Server' }] as const satisfies readonly {
+  id: SourceTab;
+  label: string;
+}[];
 
 /**
  * Derives a project/API name from the given source or file path.
@@ -131,6 +142,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [cache, setCache] = useState(true);
   // gRPC: whether the target speaks TLS. A `host:port` says nothing about it, unlike a URL.
   const [tls, setTls] = useState(false);
+  // gRPC server reflection: the server to ask, which version to ask with, and whether to insist.
+  const [serverTarget, setServerTarget] = useState('');
+  const [reflectionVersion, setReflectionVersion] = useState<GrpcReflectionVersionWire>('auto');
+  const [serverTrustInvalid, setServerTrustInvalid] = useState(false);
 
   // WSDL Basic Auth fields
   const [useAuth, setUseAuth] = useState(false);
@@ -210,6 +225,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setName('');
     setBaseUrl('');
     setTls(false);
+    setServerTarget('');
+    setReflectionVersion('auto');
+    setServerTrustInvalid(false);
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -309,11 +327,67 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const sourceName = nameFromSource(previewSource, defaultName);
   const newProjectName = name.trim().length > 0 ? name.trim() : sourceName;
 
+  /**
+   * The gRPC-only path: a running server asked to describe itself. It shares the import's token,
+   * progress and cancellation, but has no document to read, so it skips {@link buildSource}.
+   */
+  async function importFromServer(): Promise<void> {
+    const trimmed = serverTarget.trim();
+    if (trimmed === '') {
+      setImportError('Enter the server to ask, as host:port');
+      return;
+    }
+    const token = crypto.randomUUID();
+    tokenRef.current = token;
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    const into: ProjectAddInterfaceTarget = chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
+    try {
+      const imported = await useProjectStore.getState().importProto({
+        target: into,
+        source: {
+          kind: 'reflection',
+          target: trimmed,
+          tls,
+          version: reflectionVersion,
+          ...(serverTrustInvalid ? { trustInvalid: true } : {}),
+        },
+        cache,
+        tls,
+        token,
+        // The API is called at the same address it was discovered from unless the user said otherwise.
+        grpcTarget: baseUrl.trim().length > 0 ? baseUrl.trim() : trimmed,
+        ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+      });
+      if (cancelledTokensRef.current.has(token)) {
+        return;
+      }
+      getExplorerTree()?.open(`proj:${imported.projectId}`);
+      setResult({ kind: 'proto', apiId: imported.apiId, summary: imported.summary });
+    } catch (error) {
+      if (cancelledTokensRef.current.has(token)) {
+        return;
+      }
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      cancelledTokensRef.current.delete(token);
+      if (tokenRef.current === token) {
+        tokenRef.current = undefined;
+      }
+      setImporting(false);
+      setProgress(undefined);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
     }
     setImportError(undefined);
+    if (tab === 'server') {
+      await importFromServer();
+      return;
+    }
     const source = buildSource();
     if (source === undefined) {
       if (tab === 'url') {
@@ -565,7 +639,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     id="import-format-select"
                     data-testid="import-format-select"
                     value={format}
-                    onChange={(e) => setFormat(e.target.value as ImportDialogFormat)}
+                    onChange={(e) => {
+                      const next = e.target.value as ImportDialogFormat;
+                      setFormat(next);
+                      // Only gRPC can be imported from a running server; leaving it takes the tab with it.
+                      if (next !== 'proto' && tab === 'server') {
+                        setTab('url');
+                      }
+                    }}
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
                     <option value="auto">Auto-detect</option>
@@ -589,7 +670,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
               {/* Source tabs */}
               <div className="mt-3">
-                <Tabs label="Import source" items={TABS} active={tab} onSelect={setTab} />
+                <Tabs label="Import source" items={isProto ? PROTO_TABS : TABS} active={tab} onSelect={setTab} />
               </div>
 
               <div className="mt-3 flex flex-col gap-2">
@@ -738,6 +819,50 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     className="rounded border border-hairline-strong bg-surface-base p-2 font-mono text-xs text-fg-default outline-none"
                   />
                 )}
+
+                {tab === 'server' && (
+                  <>
+                    <label className="text-sm text-fg-subtle" htmlFor="import-reflection-target">
+                      Server address
+                    </label>
+                    <input
+                      id="import-reflection-target"
+                      data-testid="import-reflection-target"
+                      value={serverTarget}
+                      onChange={(e) => setServerTarget(e.target.value)}
+                      placeholder="host:port"
+                      className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <p className="text-xs text-fg-subtle">
+                      The server is asked to describe itself over gRPC server reflection. No .proto files are needed.
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <label className="text-xs text-fg-subtle" htmlFor="import-reflection-version">
+                        Reflection version
+                      </label>
+                      <select
+                        id="import-reflection-version"
+                        data-testid="import-reflection-version"
+                        value={reflectionVersion}
+                        onChange={(e) => setReflectionVersion(e.target.value as GrpcReflectionVersionWire)}
+                        className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                      >
+                        <option value="auto">Automatic (v1, then v1alpha)</option>
+                        <option value="v1">v1</option>
+                        <option value="v1alpha">v1alpha</option>
+                      </select>
+                    </div>
+                    <label className="mt-1 flex items-center gap-2 text-sm text-fg-subtle">
+                      <input
+                        type="checkbox"
+                        data-testid="import-reflection-trust-invalid"
+                        checked={serverTrustInvalid}
+                        onChange={(e) => setServerTrustInvalid(e.target.checked)}
+                      />
+                      Ask even if the certificate does not verify
+                    </label>
+                  </>
+                )}
               </div>
 
               {/* Target Project Selection */}
@@ -832,7 +957,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     onChange={(e) => setCache(e.target.checked)}
                   />
                   {isProto
-                    ? 'Cache the .proto files with the project'
+                    ? tab === 'server'
+                      ? 'Cache the discovered descriptors with the project'
+                      : 'Cache the .proto files with the project'
                     : 'Cache specification documents with the project'}
                 </label>
               )}
@@ -1030,6 +1157,11 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
           <p className="font-semibold text-base">{result.summary.name}</p>
           <p className="mt-1 text-xs text-fg-subtle">
             gRPC · {result.summary.target === '' ? 'no target yet — set one on the API tab' : result.summary.target}
+            {result.summary.kind === 'reflection'
+              ? ` · discovered by server reflection${
+                  result.summary.reflectionVersion !== undefined ? ` (${result.summary.reflectionVersion})` : ''
+                }`
+              : ''}
           </p>
           <p data-testid="import-proto-counts" className="mt-2 text-sm text-fg-default">
             {result.summary.methods} method{result.summary.methods === 1 ? '' : 's'} in {result.summary.services}{' '}

@@ -41,7 +41,6 @@ import {
   projectFiles,
   putAttachment,
   readApiDefinitionCache,
-  readProtoDefinitionCache,
   describeServices,
   loadProtoSet,
   sampleMessageText,
@@ -60,14 +59,26 @@ import {
   uniqueSlug,
   writeApiDefinitionCache,
   writeDefinitionCache,
+  writeDescriptorDefinitionCache,
   writeFileAtomic,
+  DESCRIPTORS_FILE,
+  descriptorSetBytes,
+  expand,
+  protoSetFromDescriptorSet,
+  readGrpcDefinitionCache,
+  reconcileGrpcApi,
+  reflectProtoSet,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
   GrpcApi,
+  GrpcReconcileResult,
+  GrpcReflectionVersion,
   GrpcServiceDescriptor,
+  ProtoImportSummary,
   ProtoSet,
   ProtoSources,
+  TlsOptions,
   ResolvedDocument,
   RestApi,
   RestFolder,
@@ -207,6 +218,22 @@ export interface ProjectHostHooks {
    */
   readonly onSaved?: (event: { reason: string; written: readonly string[]; removed: readonly string[] }) => void;
 }
+
+/**
+ * What a gRPC API's definition arrived as, which decides the cache it is written to: the `.proto`
+ * text of an import, or the descriptor set a server described itself with.
+ */
+export type GrpcDefinitionInput =
+  | { readonly kind: 'proto'; readonly sources: ProtoSources }
+  | {
+      readonly kind: 'reflection';
+      readonly descriptors: Uint8Array;
+      readonly version: 'v1' | 'v1alpha';
+      readonly trustInvalid?: boolean;
+    };
+
+/** How long a discovery waits for a server to describe itself. */
+const GRPC_REFLECTION_TIMEOUT_MS = 30_000;
 
 /** The mutable state of one open project. */
 interface OpenProject {
@@ -1555,8 +1582,10 @@ export class ProjectHost {
       return cached;
     }
     const dir = this.require().dir;
-    const loading = readProtoDefinitionCache(apiDefinitionDir(dir, api.slug)).then((cache) =>
-      loadProtoSet(cache.sources, { roots: cache.manifest.roots }),
+    const loading = readGrpcDefinitionCache(apiDefinitionDir(dir, api.slug)).then((cache) =>
+      cache.kind === 'proto'
+        ? loadProtoSet(cache.sources, { roots: cache.manifest.roots })
+        : protoSetFromDescriptorSet(cache.descriptors, { roots: cache.manifest.roots }),
     );
     // A failed load is not remembered: the user may fix the cache (a re-import) and try again.
     loading.catch(() => {
@@ -1573,16 +1602,27 @@ export class ProjectHost {
     readonly source: string;
     readonly fetchedAt: string;
     readonly roots: readonly string[];
+    readonly kind: 'proto' | 'reflection';
+    readonly reflectionVersion?: 'v1' | 'v1alpha';
   }> {
     const api = this.requireGrpcApi(apiId);
-    const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
     const set = await this.grpcProtoSetFor(apiId);
+    // A discovered definition is one binary file; an imported one is the `.proto` files themselves.
+    const files =
+      cache.kind === 'proto'
+        ? cache.manifest.files.map((file) => ({ path: file.path, size: file.bytes }))
+        : [{ path: cache.manifest.file.path, size: cache.manifest.file.bytes }];
     return {
       services: describeServices(set),
-      files: cache.manifest.files.map((file) => ({ path: file.path, size: file.bytes })),
+      files,
       source: cache.manifest.source,
       fetchedAt: cache.manifest.fetchedAt,
       roots: cache.manifest.roots,
+      kind: cache.kind === 'proto' ? 'proto' : 'reflection',
+      ...(cache.kind === 'descriptors' && cache.manifest.reflectionVersion !== undefined
+        ? { reflectionVersion: cache.manifest.reflectionVersion }
+        : {}),
     };
   }
 
@@ -1601,18 +1641,48 @@ export class ProjectHost {
   }
 
   /**
-   * Places an imported gRPC API in the project, caching the `.proto` files it was made of under
-   * its own folder once the slug is settled — as {@link addApi} does for an OpenAPI import.
+   * Writes a gRPC API's definition cache, in whichever of the two forms it arrived in, and tells the
+   * watcher the files are this host's own work — an import would otherwise end with a "changed on
+   * disk — reload" banner over its own write.
+   */
+  private async writeGrpcDefinition(
+    definitionDir: string,
+    source: string,
+    roots: readonly string[],
+    definition: GrpcDefinitionInput,
+  ): Promise<void> {
+    if (definition.kind === 'proto') {
+      const manifest = await writeProtoDefinitionCache(definition.sources, definitionDir, { source, roots });
+      this.expectOnDisk([
+        join(definitionDir, 'manifest.yaml'),
+        ...manifest.files.map((file) => join(definitionDir, PROTOS_DIR, ...protoPathSegments(file.path))),
+      ]);
+      return;
+    }
+    await writeDescriptorDefinitionCache(definition.descriptors, definitionDir, {
+      source,
+      roots,
+      reflectionVersion: definition.version,
+    });
+    this.expectOnDisk([join(definitionDir, 'manifest.yaml'), join(definitionDir, DESCRIPTORS_FILE)]);
+  }
+
+  /**
+   * Places an imported or discovered gRPC API in the project, caching what it was made of under its
+   * own folder once the slug is settled — as {@link addApi} does for an OpenAPI import.
    * Saves immediately: an import is never lost to a crash.
    */
-  async addGrpcApi(input: {
-    readonly api: GrpcApi;
-    readonly sources: ProtoSources;
-    readonly roots: readonly string[];
-    /** Where the user pointed at, recorded on the API as its definition's source. */
-    readonly source: string;
-    readonly cache?: boolean;
-  }): Promise<{ project: ProjectWire; apiId: string }> {
+  async addGrpcApi(
+    input: {
+      readonly api: GrpcApi;
+      readonly roots: readonly string[];
+      /** Where the user pointed at, recorded on the API as its definition's source. */
+      readonly source: string;
+      readonly cache?: boolean;
+      /** The version the user asked for, remembered so a refresh asks the same way. */
+      readonly requestedVersion?: GrpcReflectionVersion;
+    } & GrpcDefinitionInput,
+  ): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
     const taken = new Set([
       ...open.project.apis.map((api) => api.slug),
@@ -1622,31 +1692,134 @@ export class ProjectHost {
     const slug = uniqueSlug(input.api.name, taken);
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
     if (cache) {
-      const definitionDir = apiDefinitionDir(open.dir, slug);
-      const manifest = await writeProtoDefinitionCache(input.sources, definitionDir, {
-        source: input.source,
-        roots: input.roots,
-      });
-      // The cache is this host's own write, so the watcher must not report it as an outside edit:
-      // an import would otherwise end with a "changed on disk — reload" banner over its own work.
-      this.expectOnDisk([
-        join(definitionDir, 'manifest.yaml'),
-        ...manifest.files.map((file) => join(definitionDir, PROTOS_DIR, ...protoPathSegments(file.path))),
-      ]);
+      await this.writeGrpcDefinition(apiDefinitionDir(open.dir, slug), input.source, input.roots, input);
     }
     const api: GrpcApi = {
       ...input.api,
       slug,
       order: open.project.interfaces.length + open.project.apis.length + open.project.grpcApis.length,
-      definition: { source: input.source, cache, roots: [...input.roots] },
+      definition: {
+        kind: input.kind === 'proto' ? 'proto' : 'reflection',
+        source: input.source,
+        cache,
+        roots: [...input.roots],
+        ...(input.kind === 'reflection'
+          ? {
+              reflectionVersion: input.requestedVersion ?? 'auto',
+              ...(input.trustInvalid ? { trustInvalid: true } : {}),
+            }
+          : {}),
+      },
     };
     open.project = { ...open.project, grpcApis: [...open.project.grpcApis, api] };
     open.dirty = true;
     this.protoSets.delete(api.id);
-    // The set was just parsed for the import; keep it rather than re-reading the cache on the first send.
-    this.protoSets.set(api.id, Promise.resolve(loadProtoSet(input.sources, { roots: input.roots })));
+    // The schema was just resolved for the import; keep it rather than re-reading the cache on the
+    // first send.
+    this.protoSets.set(
+      api.id,
+      Promise.resolve(
+        input.kind === 'proto'
+          ? loadProtoSet(input.sources, { roots: input.roots })
+          : protoSetFromDescriptorSet(input.descriptors, { roots: input.roots }),
+      ),
+    );
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
+  }
+
+  /**
+   * Asks a reflection-sourced API's server to describe itself again, rewrites its cache and brings
+   * the request tree in line with what came back.
+   *
+   * Nothing is deleted: {@link reconcileGrpcApi} keeps a request whose method is gone and badges it
+   * orphaned instead, and adds one for a method the server has gained.
+   *
+   * @throws ProjectError `not-found` for an id no gRPC API owns, `definition-not-discovered` for an
+   * API that was imported from files rather than discovered
+   */
+  async refreshGrpcDefinition(
+    apiId: string,
+    options: { readonly version?: GrpcReflectionVersion; readonly signal?: AbortSignal } = {},
+  ): Promise<{
+    readonly project: ProjectWire;
+    readonly summary: ProtoImportSummary & { readonly name: string; readonly target: string };
+    readonly reconciled: GrpcReconcileResult;
+    readonly version: 'v1' | 'v1alpha';
+  }> {
+    const open = this.require();
+    const api = this.requireGrpcApi(apiId);
+    const definition = api.definition;
+    if (definition === undefined || definition.kind !== 'reflection') {
+      throw new ProjectError(
+        'definition-not-discovered',
+        `"${api.name}" was imported from .proto files; there is no server to ask`,
+        { details: { apiId } },
+      );
+    }
+    const version = options.version ?? definition.reflectionVersion ?? 'auto';
+    const trustInvalid = definition.trustInvalid === true;
+    const tlsOptions = await this.grpcDiscoveryTls(trustInvalid);
+    const expanded = expand(api.target, this.scopesFor()).text.trim();
+    const discovered = await reflectProtoSet({
+      // An API whose target is still blank is asked at the address it was discovered from.
+      target: expanded === '' ? definition.source : expanded,
+      tls: api.tls,
+      metadata: [],
+      timeoutMs: GRPC_REFLECTION_TIMEOUT_MS,
+      version,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      ...(tlsOptions !== undefined ? { tlsOptions } : {}),
+    });
+    const reconciled = reconcileGrpcApi(api, discovered.set);
+    const next: GrpcApi = {
+      ...reconciled.api,
+      definition: {
+        ...definition,
+        roots: [...discovered.roots],
+        reflectionVersion: version,
+      },
+    };
+    if (definition.cache) {
+      await this.writeGrpcDefinition(apiDefinitionDir(open.dir, api.slug), definition.source, discovered.roots, {
+        kind: 'reflection',
+        descriptors: descriptorSetBytes(discovered.files),
+        version: discovered.version,
+      });
+    }
+    open.project = {
+      ...open.project,
+      grpcApis: open.project.grpcApis.map((candidate) => (candidate.id === api.id ? next : candidate)),
+    };
+    open.dirty = true;
+    this.protoSets.set(api.id, Promise.resolve(discovered.set));
+    await this.save({ reason: 'import' });
+    const services = describeServices(discovered.set);
+    return {
+      project: this.snapshot() as ProjectWire,
+      summary: {
+        name: next.name,
+        target: next.target,
+        files: discovered.files.size,
+        services: services.length,
+        methods: services.reduce((total, service) => total + service.methods.length, 0),
+        deprecated: services.reduce(
+          (total, service) => total + service.methods.filter((method) => method.deprecated === true).length,
+          0,
+        ),
+      },
+      reconciled: { ...reconciled, api: next },
+      version: discovered.version,
+    };
+  }
+
+  /** The TLS material a discovery uses: the configured trust anchors, and the user's trust decision. */
+  async grpcDiscoveryTls(trustInvalid: boolean): Promise<TlsOptions | undefined> {
+    const ca = await this.trustAnchors();
+    if (ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return { ...(ca !== undefined ? { ca: [...ca] } : {}), ...(trustInvalid ? { rejectUnauthorized: false } : {}) };
   }
 
   async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
@@ -2401,12 +2574,15 @@ export class ProjectHost {
     // import path, and says `proto` where an OpenAPI card says the document's version.
     const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
-      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
       return {
-        documents: cache.manifest.files.map((file) => ({ location: file.path, size: file.bytes })),
+        documents:
+          cache.kind === 'proto'
+            ? cache.manifest.files.map((file) => ({ location: file.path, size: file.bytes }))
+            : [{ location: cache.manifest.file.path, size: cache.manifest.file.bytes }],
         rootLocation: cache.manifest.source,
         fetchedAt: cache.manifest.fetchedAt,
-        declaredVersion: 'proto',
+        declaredVersion: cache.kind === 'proto' ? 'proto' : 'descriptors',
       };
     }
     const api = this.requireApi(apiId);
@@ -2428,7 +2604,15 @@ export class ProjectHost {
   async apiDefinitionText(apiId: string, location: string): Promise<string> {
     const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
-      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      if (cache.kind === 'descriptors') {
+        // A discovered definition is a binary descriptor set, not text; there is nothing to show.
+        throw new ProjectError(
+          'definition-not-text',
+          'This API was discovered from a running server, so its definition is a binary descriptor set rather than .proto text',
+          { details: { apiId, location } },
+        );
+      }
       const text = cache.sources.get(location);
       if (text === undefined) {
         throw new ProjectError('not-found', `No file "${location}" in this API's definition`, {
@@ -2452,7 +2636,12 @@ export class ProjectHost {
   async exportApiDefinitionTo(apiId: string, dir: string): Promise<string[]> {
     const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
     if (grpc !== undefined) {
-      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      const cache = await readGrpcDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      if (cache.kind === 'descriptors') {
+        await mkdir(dir, { recursive: true });
+        await writeFileAtomic(nodeFs, join(dir, cache.manifest.file.path), Buffer.from(cache.descriptors));
+        return [cache.manifest.file.path];
+      }
       const written: string[] = [];
       for (const [path, text] of cache.sources) {
         // The import paths were validated as safe segments when the cache was written, so joining
