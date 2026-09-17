@@ -6,6 +6,8 @@
 
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES } from '@wirebench/engine';
 import type {
+  GrpcApiWire,
+  GrpcRequestWire,
   ProjectSettingsWire,
   ProjectWire,
   RequestPropertiesWire,
@@ -26,11 +28,48 @@ export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTIN
  * The REST halves of a `ProjectWire`, empty. Spread into a fixture that is about SOAP so the
  * snapshot stays complete without every such test having to mention APIs it does not use.
  */
-export const NO_REST: Pick<ProjectWire, 'apis' | 'folders' | 'restRequests'> = {
+export const NO_REST: Pick<ProjectWire, 'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests'> = {
   apis: [],
   folders: [],
   restRequests: [],
+  grpcApis: [],
+  grpcRequests: [],
 };
+
+/** One gRPC API on the wire. */
+export function grpcApiWire(overrides: Partial<GrpcApiWire> = {}): GrpcApiWire {
+  return {
+    kind: 'grpc',
+    id: 'grpc-api-1',
+    name: 'Greeter',
+    slug: 'greeter',
+    order: 0,
+    target: 'localhost:50051',
+    tls: false,
+    metadata: [],
+    ...overrides,
+  };
+}
+
+/** One gRPC request on the wire, a unary call with an empty message unless the caller says otherwise. */
+export function grpcRequestWire(overrides: Partial<GrpcRequestWire> = {}): GrpcRequestWire {
+  return {
+    kind: 'grpc',
+    id: 'grpc-1',
+    apiId: 'grpc-api-1',
+    name: 'SayHello',
+    slug: 'SayHello',
+    order: 0,
+    service: 'wirebench.greet.Greeter',
+    method: 'SayHello',
+    methodKind: 'unary',
+    metadata: [],
+    message: '{\n  "name": ""\n}\n',
+    auth: { type: 'inherit' },
+    settings: {},
+    ...overrides,
+  };
+}
 
 /** One REST API on the wire, with everything a fixture rarely cares about filled in. */
 export function restApiWire(overrides: Partial<RestApiWire> = {}): RestApiWire {

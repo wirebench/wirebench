@@ -31,6 +31,27 @@ export interface HistoryError {
 }
 
 /**
+ * The gRPC side of a history entry: the call and every message on both sides. The response is a
+ * list rather than one body because a server stream answers with several — the extension ADR-0007
+ * left room for — and the SOAP-shaped fields carry what they can (`interfaceName` the API, `endpoint`
+ * the target, `status` the HTTP status) so one history view serves all three protocols.
+ */
+export interface HistoryGrpc {
+  readonly service: string;
+  readonly method: string;
+  readonly methodKind: 'unary' | 'server-streaming' | 'client-streaming' | 'bidi-streaming';
+  /** The gRPC status code, absent when the call never produced one. */
+  readonly status?: number;
+  readonly statusName?: string;
+  readonly statusMessage?: string;
+  /** Request messages as canonical JSON text, in send order. */
+  readonly requestMessages: readonly string[];
+  /** Response messages as canonical JSON text (or base64 when one did not decode), in arrival order. */
+  readonly responseMessages: readonly string[];
+  readonly trailers: readonly HistoryHeader[];
+}
+
+/**
  * One recorded send. Stored **already redacted** by the caller — this module has no concept of
  * secrets and never inspects `request`/`response` bodies beyond storing and searching them.
  */
@@ -45,7 +66,7 @@ export interface HistoryEntry {
    * several — a gRPC server stream — extends this union with its own shape rather than bending
    * this one, which is why the field exists before there is a second value for it to hold.
    */
-  readonly kind?: 'soap' | 'rest';
+  readonly kind?: 'soap' | 'rest' | 'grpc';
   /** The HTTP method, for a REST send. A SOAP send is always a POST and does not record one. */
   readonly method?: string;
   /** ISO-8601 timestamp of the send. */
@@ -77,6 +98,8 @@ export interface HistoryEntry {
     readonly statusText: string;
   };
   readonly error?: HistoryError;
+  /** The call record of a gRPC send; absent for the other two protocols. */
+  readonly grpc?: HistoryGrpc;
   readonly sizeBytes: number;
   readonly tags?: readonly string[];
 }
@@ -133,6 +156,9 @@ function matches(entry: HistoryEntry, needle: string): boolean {
     entry.interfaceName,
     entry.endpoint,
     entry.method ?? '',
+    entry.grpc?.service ?? '',
+    entry.grpc?.method ?? '',
+    entry.grpc?.statusName ?? '',
     entry.status !== undefined ? String(entry.status) : '',
     entry.fault?.reason ?? '',
     ...(entry.tags ?? []),

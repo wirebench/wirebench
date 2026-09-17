@@ -6,6 +6,7 @@ import {
   CURL_REDACTED,
   fromCurl,
   fromRestCurl,
+  grpcToCommand,
   isWirebenchError,
   nodeFs,
   prettyPrint,
@@ -38,9 +39,13 @@ import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactXml } from '../redact.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
+import type { GrpcSendResolution } from '../grpc-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
 import { toUnresolvedRefWire } from '../engine-wire.js';
 import type {
+  GrpcExchangeSummary,
+  GrpcRequestPatchWire,
+  RequestSendGrpcRequest,
   RestRequestPatchWire,
   UnresolvedRefWire,
   RequestSendRestRequest,
@@ -94,6 +99,11 @@ export type RequestChannelProject = Pick<
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
+      // The gRPC third, optional for the same reason.
+      | 'grpcSend'
+      | 'grpcTlsFor'
+      | 'grpcMeta'
+      | 'grpcProtoSetFor'
     >
   >;
 
@@ -440,6 +450,10 @@ async function curl(
   const rest = deps.project.restSend?.(request.requestId, request.draft);
   if (rest !== undefined) {
     return await restCurl(deps, request, rest);
+  }
+  const grpc = deps.project.grpcSend?.(request.requestId, request.grpcDraft);
+  if (grpc !== undefined) {
+    return await grpcCommand(deps, request, grpc);
   }
   const live = deps.project.buildLiveSendInput(request.requestId);
   if (live === undefined) {
@@ -843,6 +857,163 @@ function preflightRest(
   };
 }
 
+/**
+ * The command-line form of a gRPC call: what a command-line gRPC client would be told to make the
+ * same call, credentials resolved and then masked unless the session shows secrets, the `.proto`
+ * files named from the API's cached roots.
+ */
+async function grpcCommand(
+  deps: RequestChannelDeps,
+  request: RequestCurlRequest,
+  resolved: GrpcSendResolution,
+): Promise<RequestCurlResponse> {
+  const show = deps.showSecrets?.get() ?? false;
+  const auth = await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  const command = grpcToCommand({ ...resolved.input, ...(auth !== undefined ? { auth } : {}) }, resolved.messageText, {
+    redactSecrets: !show,
+    shell: request.shell,
+    ...(resolved.api.definition !== undefined ? { protoFiles: [...resolved.api.definition.roots] } : {}),
+  });
+  const notes = [
+    'The .proto files are named by import path; pass their folder with -import-path.',
+    ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
+  ];
+  return { command, notes };
+}
+
+/**
+ * Makes one gRPC call.
+ *
+ * Everything the renderer did not send is resolved here: the API's target under the active
+ * environment, the properties, the credentials the folder chain lands on, the TLS identity, and the
+ * `.proto` set the message is encoded against. A call with an unresolved property is refused before
+ * it reaches the wire.
+ */
+async function sendGrpcRequest(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  request: RequestSendGrpcRequest,
+): Promise<GrpcExchangeSummary> {
+  const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    throw new ProjectError('unknown-entity', `No gRPC request with id "${request.requestId}"`, {
+      details: { requestId: request.requestId },
+    });
+  }
+  if (resolved.unresolved.length > 0) {
+    throw new WirebenchError('grpc-unresolved-properties', 'Some property references could not be resolved', {
+      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
+    });
+  }
+  if (resolved.request.service === '' || resolved.request.method === '') {
+    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
+      details: { requestId: request.requestId },
+    });
+  }
+  if (deps.project.grpcProtoSetFor === undefined) {
+    throw new ProjectError('unknown-entity', `No gRPC API owns "${request.requestId}"`, {
+      details: { requestId: request.requestId },
+    });
+  }
+  const set = await deps.project.grpcProtoSetFor(request.requestId);
+
+  const tls = await deps.project.grpcTlsFor?.(request.requestId);
+  const anchors = extraTrustAnchors();
+  const baseCa = tls?.ca ?? resolved.input.tlsOptions?.ca ?? [];
+  const tlsOptions = withoutUndefined<TlsOptions>({
+    ...resolved.input.tlsOptions,
+    ...tls,
+    ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+  });
+  const accessToken =
+    resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+      ? await deps.oauth2.accessToken(resolved.auth, {
+          credentials: await oauth2Credentials(deps, resolved.auth),
+          tls: tlsOptions,
+        })
+      : undefined;
+
+  const startedAt = Date.now();
+  try {
+    const summary = await service.sendGrpcRequest(
+      {
+        sendId: request.sendId,
+        requestId: request.requestId,
+        set,
+        input: { ...resolved.input, tlsOptions },
+        messageText: resolved.messageText,
+      },
+      {
+        showSecrets: deps.showSecrets?.get() ?? false,
+        auth: resolved.auth,
+        ...(accessToken !== undefined ? { accessToken } : {}),
+      },
+    );
+    await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
+    return summary;
+  } catch (error) {
+    await recordGrpc(deps, request.requestId, resolved, undefined, Date.now() - startedAt, error);
+    throw error;
+  }
+}
+
+/** Appends one gRPC send's history entry, successful or not. A no-op without a history service. */
+async function recordGrpc(
+  deps: RequestChannelDeps,
+  requestId: string,
+  resolved: GrpcSendResolution,
+  summary: GrpcExchangeSummary | undefined,
+  durationMs: number,
+  error?: unknown,
+): Promise<void> {
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.grpcMeta?.(requestId);
+  const entry = await deps.history.recordGrpcSend(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? resolved.request.name,
+    apiName: meta?.apiName ?? resolved.api.name,
+    folderPath: meta?.folderPath ?? '',
+    target: summary?.target ?? resolved.input.target,
+    service: resolved.request.service,
+    method: resolved.request.method,
+    methodKind: resolved.request.methodKind,
+    requestMetadata: Object.fromEntries(
+      resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
+    ),
+    requestMessage: resolved.messageText,
+    ...(summary !== undefined ? { exchange: summary } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    durationMs,
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/**
+ * The dry run of a gRPC call: the target it would go to and what would not expand. Nothing is sent
+ * and no secret is touched, so the editor can show the badge while the user types.
+ */
+function preflightGrpc(
+  deps: RequestChannelDeps,
+  request: { readonly requestId: string; readonly draft?: GrpcRequestPatchWire | undefined },
+): PreflightResult {
+  const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+  }
+  return {
+    endpoint: resolved.input.target,
+    endpointSource: resolved.targetSource === 'api' ? 'interface-default' : resolved.targetSource,
+    unresolved: resolved.unresolved.map(toUnresolvedRefWire),
+    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    wsa: { enabled: false },
+  };
+}
+
 /** One failure, as a history line records it. */
 function restErrorDetail(error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {
@@ -874,6 +1045,10 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.sendRest, (request) => sendRestRequest(service, deps, request));
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
+
+  registerHandler(channels.request.sendGrpc, (request) => sendGrpcRequest(service, deps, request));
+
+  registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

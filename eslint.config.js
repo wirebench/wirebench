@@ -22,9 +22,9 @@ const MONACO_PATH = {
  * All three are pure text code with no Node dependency.
  */
 const ENGINE_PATTERN = {
-  regex: '^@wirebench/engine(?!/(xml|rest|detect)$)(/.*)?$',
+  regex: '^@wirebench/engine(?!/(xml|rest|grpc|detect)$)(/.*)?$',
   message:
-    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, and /detect subpaths may be imported (ADR-0002)',
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, /grpc, and /detect subpaths may be imported (ADR-0002)',
 };
 
 export default tseslint.config(

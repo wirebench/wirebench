@@ -39,10 +39,44 @@ export async function setMonacoText(page: Page, testId: string, text: string): P
   await root.click({ position: { x: 8, y: 8 } });
   await editor.focus();
 
-  const isMac = process.platform === 'darwin';
-  const mod = isMac ? 'Meta' : 'Control';
-  await page.keyboard.press(`${mod}+a`);
-  await page.keyboard.insertText(text);
+  // Replace the whole document through Monaco itself when the e2e handle is there — one edit over
+  // the full range, on the undo stack like a paste. A document that starts non-empty (a sampled
+  // message) otherwise keeps its old text: the select-all chord and the insertion reach the edit
+  // context as separate events, and the insertion lands at the caret rather than over the selection.
+  const replaced = await page.evaluate(
+    ({ next, label }) => {
+      const monaco = (
+        globalThis as unknown as {
+          __wirebenchMonaco?: {
+            editor: {
+              getEditors(): {
+                getDomNode(): { querySelector(selector: string): unknown } | null;
+                getModel(): { getFullModelRange(): unknown } | null;
+                executeEdits(source: string, edits: { range: unknown; text: string }[]): boolean;
+              }[];
+            };
+          };
+        }
+      ).__wirebenchMonaco;
+      // The labelled input is inside the editor's own DOM node, which is how the right instance is
+      // told from the others on screen (a response pane's, a definition viewer's).
+      const target = monaco?.editor
+        .getEditors()
+        .find((candidate) => candidate.getDomNode()?.querySelector(`[aria-label="${label}"]`) != null);
+      const model = target?.getModel() ?? null;
+      if (target === undefined || model === null) {
+        return false;
+      }
+      return target.executeEdits('e2e', [{ range: model.getFullModelRange(), text: next }]);
+    },
+    { next: text, label: testId },
+  );
+  if (!replaced) {
+    const isMac = process.platform === 'darwin';
+    const mod = isMac ? 'Meta' : 'Control';
+    await page.keyboard.press(`${mod}+a`);
+    await page.keyboard.insertText(text);
+  }
 
   // A short, distinctive tail of the typed text — long enough to be unlikely to already appear
   // in the document, short enough to survive being split across `.view-line` elements is not a
@@ -59,7 +93,8 @@ export async function setMonacoText(page: Page, testId: string, text: string): P
     .poll(
       async () => {
         const lineTexts = await monacoRoot.locator('.view-line').allTextContents();
-        return lineTexts.join('\n');
+        // Monaco renders the spaces of a line as no-break spaces; the text typed has plain ones.
+        return lineTexts.join('\n').replaceAll('\u00a0', ' ');
       },
       { timeout: 10_000 },
     )

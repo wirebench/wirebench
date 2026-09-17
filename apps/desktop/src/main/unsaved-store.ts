@@ -18,8 +18,8 @@ import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { MANIFEST_PATH, nodeFs } from '@wirebench/engine';
 import type { DirEntry, FileStat, FsLike, ProjectFiles } from '@wirebench/engine';
-import { requestPatchSchema, restRequestPatchSchema } from '../shared/wire-types.js';
-import type { RequestPatchWire, RestRequestPatchWire } from '../shared/wire-types.js';
+import { grpcRequestPatchSchema, requestPatchSchema, restRequestPatchSchema } from '../shared/wire-types.js';
+import type { GrpcRequestPatchWire, RequestPatchWire, RestRequestPatchWire } from '../shared/wire-types.js';
 
 /** Folder, inside a workspace's own folder, that holds its recovery records. */
 export const UNSAVED_DIR = 'unsaved';
@@ -45,6 +45,8 @@ const draftsRecordSchema = z.object({
   requests: z.record(z.string(), requestPatchSchema),
   /** Absent in a file written before REST existed, which is read as "no REST drafts". */
   restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
+  /** Absent in a file written before gRPC existed. */
+  grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
 });
 
 /** One project's recovery record, as stored. */
@@ -358,23 +360,33 @@ export class UnsavedStore {
   async readDrafts(): Promise<{
     readonly requests: Record<string, RequestPatchWire>;
     readonly restRequests: Record<string, RestRequestPatchWire>;
+    readonly grpcRequests: Record<string, GrpcRequestPatchWire>;
   }> {
     const path = join(this.dir, DRAFTS_FILE);
     await this.queues.get(path);
     const record = await readJson(path, draftsRecordSchema);
-    return { requests: record?.requests ?? {}, restRequests: record?.restRequests ?? {} };
+    return {
+      requests: record?.requests ?? {},
+      restRequests: record?.restRequests ?? {},
+      grpcRequests: record?.grpcRequests ?? {},
+    };
   }
 
-  /** Replaces the stored drafts; an empty pair of maps removes the file. */
+  /** Replaces the stored drafts; three empty maps remove the file. */
   writeDrafts(
     requests: Readonly<Record<string, RequestPatchWire>>,
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
+    grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
   ): Promise<void> {
     const path = join(this.dir, DRAFTS_FILE);
-    if (Object.keys(requests).length === 0 && Object.keys(restRequests).length === 0) {
+    if (
+      Object.keys(requests).length === 0 &&
+      Object.keys(restRequests).length === 0 &&
+      Object.keys(grpcRequests).length === 0
+    ) {
       return this.enqueue(path, () => rm(path, { force: true }));
     }
-    const record = { version: UNSAVED_RECORD_VERSION, requests, restRequests };
+    const record = { version: UNSAVED_RECORD_VERSION, requests, restRequests, grpcRequests };
     return this.enqueue(path, () => writeAtomic(path, JSON.stringify(record)));
   }
 }

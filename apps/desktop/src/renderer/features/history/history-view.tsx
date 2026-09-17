@@ -100,6 +100,10 @@ function Row({
               title={`${entry.method} ${entry.requestName}`}
               className="w-12 text-left"
             />
+          ) : entry.kind === 'grpc' ? (
+            <span data-testid="history-grpc-badge" className="w-12 shrink-0 text-fg-faint">
+              gRPC
+            </span>
           ) : (
             <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
               {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}

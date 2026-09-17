@@ -136,9 +136,12 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
   const deps: ApiChannelDeps = {
     router: {
       addApi,
+      addGrpcApi: vi.fn(),
       apiDefinitionDocuments: vi.fn(),
       apiDefinitionText: vi.fn(),
       exportApiDefinitionTo: vi.fn(),
+      grpcDefinition: vi.fn(),
+      grpcSample: vi.fn(),
     },
     imports: { run, cancel: vi.fn().mockReturnValue({ cancelled: true }) },
     addProject: vi.fn().mockResolvedValue({ projectId: 'p-new' }),

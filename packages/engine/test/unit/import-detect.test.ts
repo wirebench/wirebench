@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectImportFormat } from '../../src/import-detect.js';
+import { detectImportFormat, stripLeadingProtoComments } from '../../src/import-detect.js';
 
 describe('detectImportFormat', () => {
   it('detects WSDL XML from text with definitions', () => {
@@ -154,5 +154,42 @@ paths: {}
       expect(specifier.startsWith('node:')).toBe(false);
       expect(['fs', 'path', 'os', 'child_process', 'crypto', 'net', 'http', 'https']).not.toContain(specifier);
     }
+  });
+
+  it('detects a .proto file from its syntax statement, its keywords, or its file name', () => {
+    expect(detectImportFormat({ text: 'syntax = "proto3";\npackage a;\nmessage A {}' })).toEqual({
+      kind: 'proto',
+      label: 'Protocol Buffers (proto3)',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: '// licence\n\nsyntax = "proto2";\nmessage A {}' }).label).toBe(
+      'Protocol Buffers (proto2)',
+    );
+    expect(detectImportFormat({ text: 'edition = "2023";\nmessage A {}' }).label).toBe('Protocol Buffers (editions)');
+    expect(detectImportFormat({ text: 'package a.b;\nservice S { rpc M (A) returns (B); }' })).toMatchObject({
+      kind: 'proto',
+      confidence: 'probable',
+    });
+    expect(detectImportFormat({ filename: 'greeter.proto' })).toMatchObject({ kind: 'proto', confidence: 'probable' });
+    expect(detectImportFormat({ url: 'https://example.com/api/greeter.proto' }).kind).toBe('proto');
+    expect(detectImportFormat({ text: '{"openapi": "3.1.0"}' }).kind).toBe('openapi');
+  });
+});
+
+describe('stripLeadingProtoComments', () => {
+  it('drops the comments and whitespace a .proto opens with, leaving its first statement', () => {
+    expect(stripLeadingProtoComments('// a\n/* b */\n  syntax = "proto3";')).toBe('syntax = "proto3";');
+    expect(stripLeadingProtoComments('syntax = "proto3";')).toBe('syntax = "proto3";');
+  });
+
+  it('is empty when the text is nothing but an unterminated comment', () => {
+    expect(stripLeadingProtoComments('/* never closed')).toBe('');
+    expect(stripLeadingProtoComments('// no newline')).toBe('');
+  });
+
+  it('runs in linear time on the repetition CodeQL flagged', () => {
+    const started = performance.now();
+    expect(stripLeadingProtoComments(`/*${'*//*'.repeat(20_000)}`)).toBe('');
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

@@ -1,4 +1,7 @@
 import type {
+  GrpcApiWire,
+  GrpcMethodKindWire,
+  GrpcRequestWire,
   InterfaceSummary,
   OperationSummaryWire,
   RestApiWire,
@@ -21,7 +24,9 @@ export type ExplorerNodeKind =
   | 'request'
   | 'api'
   | 'folder'
-  | 'rest-request';
+  | 'rest-request'
+  | 'grpc-api'
+  | 'grpc-request';
 
 /**
  * What the tree needs to know about one project in the open workspace. Structurally the subset
@@ -55,16 +60,25 @@ export interface ExplorerNode {
   readonly operationName?: string;
   readonly soapAction?: string;
   /**
-   * Set on `request` and `rest-request` nodes: the request's id. One field for both protocols —
-   * `kind` is what says which one it is, and every gate that cares already reads `kind`.
+   * Set on `request`, `rest-request` and `grpc-request` nodes: the request's id. One field for
+   * every protocol — `kind` is what says which one it is, and every gate that cares already reads
+   * `kind`.
    */
   readonly requestId?: string;
-  /** Set on `api` nodes, and on the `folder`/`rest-request` nodes beneath one. */
+  /** Set on `api`/`grpc-api` nodes, and on the `folder` and request nodes beneath one. */
   readonly apiId?: string;
   /** Set on `folder` nodes (the folder itself) and on nodes sitting inside one (their parent). */
   readonly folderId?: string;
   /** Set on `rest-request` nodes: the HTTP method its badge shows. */
   readonly method?: string;
+  /** Set on `grpc-request` nodes: the streaming shape its badge shows. */
+  readonly methodKind?: GrpcMethodKindWire;
+  /**
+   * Set on `folder` nodes that sit inside a gRPC API. A folder row is one kind for both protocols
+   * (it renames, moves and deletes the same way), but "New request" inside it has to know which
+   * kind of request to make.
+   */
+  readonly grpc?: boolean;
   /** Set on `project`/`project-missing` nodes: the project this root stands for. */
   readonly projectId?: string;
   /** Set on `project` nodes: whether the folder is linked from outside the workspace. */
@@ -266,6 +280,81 @@ function apiNode(
   };
 }
 
+/** The folders and requests directly inside one gRPC container, interleaved by `order` like REST. */
+function grpcChildren(
+  api: GrpcApiWire,
+  parentId: string | undefined,
+  folders: readonly RestFolderWire[],
+  requests: readonly GrpcRequestWire[],
+): ExplorerNode[] {
+  const folderNodes = folders
+    .filter((folder) => folder.apiId === api.id && folder.parentId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((folder) => grpcFolderNode(api, folder, folders, requests));
+
+  const requestNodes = requests
+    .filter((request) => request.apiId === api.id && request.folderId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((request) => grpcRequestNode(api, request));
+
+  return [...folderNodes, ...requestNodes];
+}
+
+function grpcFolderNode(
+  api: GrpcApiWire,
+  folder: RestFolderWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly GrpcRequestWire[],
+): ExplorerNode {
+  return {
+    id: `folder:${folder.id}`,
+    kind: 'folder',
+    label: folder.name,
+    apiId: api.id,
+    folderId: folder.id,
+    grpc: true,
+    children: grpcChildren(api, folder.id, folders, requests),
+  };
+}
+
+function grpcRequestNode(api: GrpcApiWire, request: GrpcRequestWire): ExplorerNode {
+  return {
+    id: `grpc:${request.id}`,
+    kind: 'grpc-request',
+    label: request.name,
+    requestId: request.id,
+    apiId: api.id,
+    methodKind: request.methodKind,
+    ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+  };
+}
+
+/** One gRPC API row and everything under it; folds like a REST API. */
+function grpcApiNode(
+  api: GrpcApiWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly GrpcRequestWire[],
+): ExplorerNode {
+  return {
+    id: `grpc-api:${api.id}`,
+    kind: 'grpc-api',
+    label: api.name,
+    apiId: api.id,
+    children: grpcChildren(api, undefined, folders, requests),
+  };
+}
+
+/**
+ * What one project contributes to the tree for gRPC. Folders are not here: a gRPC API's folders
+ * ride in {@link ExplorerRestData.folders} beside the REST ones (they are the same shape on the
+ * wire) and are told apart by their `apiId`.
+ */
+export interface ExplorerGrpcData {
+  readonly apis: readonly GrpcApiWire[];
+  readonly requests: readonly GrpcRequestWire[];
+}
+
 /** What one project contributes to the tree besides its interfaces. */
 export interface ExplorerRestData {
   readonly apis: readonly RestApiWire[];
@@ -293,6 +382,8 @@ export interface ExplorerRestData {
  * that has no REST data yet, which then gets exactly the tree it got before APIs existed.
  * @param conflicted ids of the projects/requests an unresolved sync conflict touches; defaults to
  *   none, so every caller unaware of sync gets an unmarked tree.
+ * @param grpc each project's gRPC APIs and requests, by project id. Omitted for a caller with no
+ *   gRPC data, which then gets the tree it got before gRPC existed.
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -301,6 +392,7 @@ export function buildExplorerTree(
   requests: readonly RequestDraft[],
   rest: Readonly<Record<string, ExplorerRestData>> = {},
   conflicted: ExplorerConflictTargets = NO_CONFLICTS,
+  grpc: Readonly<Record<string, ExplorerGrpcData>> = {},
 ): ExplorerNode[] {
   return projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
@@ -323,6 +415,7 @@ export function buildExplorerTree(
           rest[project.id],
           requests,
           conflicted,
+          grpc[project.id],
         );
 
     return {
@@ -351,6 +444,7 @@ function orderedChildren(
   rest: ExplorerRestData | undefined,
   requests: readonly RequestDraft[],
   conflicted: ExplorerConflictTargets,
+  grpc: ExplorerGrpcData | undefined,
 ): ExplorerNode[] {
   const nodes = interfaces.map((summary, index) => ({
     order: index,
@@ -360,27 +454,32 @@ function orderedChildren(
     order: api.order,
     node: apiNode(api, rest?.folders ?? [], rest?.requests ?? []),
   }));
+  const grpcApis = [...(grpc?.apis ?? [])].map((api) => ({
+    order: api.order,
+    node: grpcApiNode(api, rest?.folders ?? [], grpc?.requests ?? []),
+  }));
   // A stable sort keeps an interface and an API that claim the same index in a fixed order
-  // (interfaces first), rather than letting the tree reshuffle between snapshots.
-  return [...nodes, ...apis].sort((a, b) => a.order - b.order).map((entry) => entry.node);
+  // (interfaces first, then REST, then gRPC), rather than letting the tree reshuffle between
+  // snapshots.
+  return [...nodes, ...apis, ...grpcApis].sort((a, b) => a.order - b.order).map((entry) => entry.node);
 }
 
 /**
  * The entity id a `move-node` mutation addresses for one row, or `undefined` for a row that cannot
- * be moved — an interface, an operation, a project, or a SOAP request, none of which the REST
- * ordering applies to.
+ * be moved — an interface, an operation, a project, or a SOAP request, none of which the
+ * container ordering applies to.
  */
 export function restEntityId(node: ExplorerNode | undefined): string | undefined {
   if (node === undefined) {
     return undefined;
   }
-  if (node.kind === 'api') {
+  if (node.kind === 'api' || node.kind === 'grpc-api') {
     return node.apiId;
   }
   if (node.kind === 'folder') {
     return node.folderId;
   }
-  if (node.kind === 'rest-request') {
+  if (node.kind === 'rest-request' || node.kind === 'grpc-request') {
     return node.requestId;
   }
   return undefined;

@@ -85,6 +85,7 @@ export function sampleProject(): Project {
     properties: { region: 'eu-west-1', tier: 'gold' },
     disabledProperties: ['tier'],
     apis: [],
+    grpcApis: [],
     interfaces: [
       {
         kind: 'soap',

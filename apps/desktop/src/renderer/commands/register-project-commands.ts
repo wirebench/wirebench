@@ -6,7 +6,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
-import { activeRequestId, activeRestRequestId, ui } from './command-helpers.js';
+import { activeGrpcRequestId, activeRequestId, activeRestRequestId, ui } from './command-helpers.js';
 
 /** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
@@ -34,9 +34,15 @@ export function registerProjectCommands(): void {
     label: 'Save',
     category: 'Project',
     shortcut: 'Mod+S',
-    when: () => activeRequestId() !== undefined || activeRestRequestId() !== undefined,
+    when: () =>
+      activeRequestId() !== undefined || activeRestRequestId() !== undefined || activeGrpcRequestId() !== undefined,
     whenScope: 'project',
     run: () => {
+      const grpcRequestId = activeGrpcRequestId();
+      if (grpcRequestId !== undefined) {
+        void useProjectStore.getState().saveGrpcRequest(grpcRequestId);
+        return;
+      }
       // A REST tab saves the same way, minus the flush: its fields commit on Enter or blur, so
       // there is no debounce holding the last keystroke.
       const restRequestId = activeRestRequestId();

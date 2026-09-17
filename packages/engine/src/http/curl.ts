@@ -69,6 +69,11 @@ function powershellQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/** Quotes one argument for `shell`; shared with the gRPC command renderer so both quote alike. */
+export function quoteForShell(value: string, shell: 'posix' | 'powershell'): string {
+  return shell === 'powershell' ? powershellQuote(value) : posixQuote(value);
+}
+
 /** The path a `@file` argument names, or a placeholder when no file has been chosen yet. */
 function filePath(path: string): string {
   return path.length > 0 ? path : '/path/to/file';

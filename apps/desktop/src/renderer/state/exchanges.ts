@@ -5,7 +5,12 @@ import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
-import type { ExchangeSummary, RestExchangeSummary, UnresolvedRefWire } from '../../shared/wire-types.js';
+import type {
+  ExchangeSummary,
+  GrpcExchangeSummary,
+  RestExchangeSummary,
+  UnresolvedRefWire,
+} from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
 import type { Problem } from './problems.js';
@@ -39,6 +44,15 @@ export interface RestExchangeState {
   readonly startedAt?: string;
 }
 
+/** What is known about the most recent call of one gRPC request. */
+export interface GrpcExchangeState {
+  readonly status: ExchangeStatus;
+  readonly sendId?: string;
+  readonly exchange?: GrpcExchangeSummary;
+  readonly error?: IpcError;
+  readonly startedAt?: string;
+}
+
 /** The exchanges store's serialisable state. */
 export interface ExchangesSnapshot {
   readonly byRequest: Record<string, ExchangeState>;
@@ -48,6 +62,8 @@ export interface ExchangesSnapshot {
    * pane reading the wrong one would have to narrow on every field.
    */
   readonly restByRequest: Record<string, RestExchangeState>;
+  /** The gRPC third, keyed by gRPC request id, apart for the same reason. */
+  readonly grpcByRequest: Record<string, GrpcExchangeState>;
   /**
    * Newest-last log of every completed exchange, SOAP and REST alike: the console's HTTP Log is a
    * protocol-neutral surface, and a REST send that never reached it left the log and the status
@@ -90,6 +106,10 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancelRest: (requestId: string) => Promise<void>;
   /** Clears the REST exchange state for a removed request. */
   readonly clearRestRequest: (requestId: string) => void;
+  /** Makes one gRPC call, the request and its unsaved draft named; main resolves everything else. */
+  readonly sendGrpc: (requestId: string) => Promise<void>;
+  readonly cancelGrpc: (requestId: string) => Promise<void>;
+  readonly clearGrpcRequest: (requestId: string) => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -121,10 +141,82 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
   return {
     byRequest: {},
     restByRequest: {},
+    grpcByRequest: {},
     log: [],
 
     reset: () => {
-      set({ byRequest: {}, restByRequest: {}, log: [] });
+      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [] });
+    },
+
+    sendGrpc: async (requestId) => {
+      const request = useProjectStore.getState().grpcRequests[requestId];
+      if (request === undefined) {
+        update((draft) => {
+          draft.grpcByRequest[requestId] = {
+            status: 'error',
+            error: { code: 'unknown-request', message: `No gRPC request with id "${requestId}"` },
+          };
+        });
+        return;
+      }
+      useProblemsStore.getState().clearSource('expansion', requestId);
+      useProblemsStore.getState().clearSource('send', requestId);
+
+      const sendId = crypto.randomUUID();
+      update((draft) => {
+        draft.grpcByRequest[requestId] = { status: 'sending', sendId, startedAt: new Date().toISOString() };
+      });
+
+      const draftPatch = useDraftsStore.getState().peekGrpcRequest(requestId);
+      const result = await ipc().request.sendGrpc({
+        sendId,
+        requestId,
+        ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+      });
+
+      if (get().grpcByRequest[requestId]?.sendId !== sendId) {
+        return;
+      }
+      if (!result.ok) {
+        update((draft) => {
+          draft.grpcByRequest[requestId] = { status: 'error', sendId, error: result.error };
+        });
+        useProblemsStore.getState().add([
+          {
+            groupId: `send:${requestId}`,
+            source: 'send',
+            severity: 'error',
+            requestId,
+            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
+          },
+        ]);
+        return;
+      }
+      const unresolved = result.value.unresolved ?? [];
+      if (unresolved.length > 0) {
+        useProblemsStore.getState().add(expansionProblems(requestId, unresolved));
+      }
+      update((draft) => {
+        draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
+        draft.log.push(result.value);
+        if (draft.log.length > LOG_CAP) {
+          draft.log.splice(0, draft.log.length - LOG_CAP);
+        }
+      });
+    },
+
+    cancelGrpc: async (requestId) => {
+      const entry = get().grpcByRequest[requestId];
+      if (entry?.sendId === undefined) {
+        return;
+      }
+      await ipc().request.cancel({ sendId: entry.sendId });
+    },
+
+    clearGrpcRequest: (requestId) => {
+      update((draft) => {
+        delete draft.grpcByRequest[requestId];
+      });
     },
 
     sendRest: async (requestId) => {

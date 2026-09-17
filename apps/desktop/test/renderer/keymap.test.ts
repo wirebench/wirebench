@@ -110,7 +110,11 @@ describe('keymapRows', () => {
     const rows = keymapRows({ 'view.toggleSidebar': 'Mod+Enter' });
 
     // Both send commands carry ⌘⏎, and an ungated command overlaps either of them.
-    expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual(['Send Request', 'Send REST Request']);
+    expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual([
+      'Send gRPC Request',
+      'Send Request',
+      'Send REST Request',
+    ]);
     expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
     expect(rowFor(rows, 'rest.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
   });
@@ -120,7 +124,11 @@ describe('keymapRows', () => {
     // narrower condition inside it — whenever a request tab is active, a tab is open.
     const rows = keymapRows({ 'editor.closeTab': 'Mod+Enter' });
 
-    expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual(['Send Request', 'Send REST Request']);
+    expect(rowFor(rows, 'editor.closeTab')?.conflictsWith).toEqual([
+      'Send gRPC Request',
+      'Send Request',
+      'Send REST Request',
+    ]);
   });
 
   it('ignores an unparseable override rather than throwing', () => {

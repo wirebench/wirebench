@@ -110,6 +110,7 @@ import type {
   WorkspaceWire,
 } from '../shared/wire-types.js';
 import type {
+  GrpcRequestPatchWire,
   HydrationStatus,
   RequestPatchWire,
   RestRequestPatchWire,
@@ -431,6 +432,8 @@ export class WorkspaceService implements ProjectRouter {
   private drafts: Record<string, RequestPatchWire> = {};
   /** The REST editor's unsaved edits, kept beside {@link drafts} for the same reason. */
   private restDrafts: Record<string, RestRequestPatchWire> = {};
+  /** The gRPC editor's unsaved edits, the third of the same set. */
+  private grpcDrafts: Record<string, GrpcRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -629,6 +632,7 @@ export class WorkspaceService implements ProjectRouter {
     this.unsaved = new UnsavedStore(dir);
     this.drafts = {};
     this.restDrafts = {};
+    this.grpcDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -660,10 +664,12 @@ export class WorkspaceService implements ProjectRouter {
       const stashed = await this.unsaved.readDrafts();
       this.drafts = stashed.requests;
       this.restDrafts = stashed.restRequests;
+      this.grpcDrafts = stashed.grpcRequests;
       this.restored = {
         workspaceId: workspace.id,
         drafts: { ...this.drafts },
         restDrafts: { ...this.restDrafts },
+        grpcDrafts: { ...this.grpcDrafts },
         notices,
       };
 
@@ -895,6 +901,7 @@ export class WorkspaceService implements ProjectRouter {
     this.unsaved = undefined;
     this.drafts = {};
     this.restDrafts = {};
+    this.grpcDrafts = {};
     this.restored = undefined;
     this.deps.history.closeAll();
     this.index.clear();
@@ -1770,7 +1777,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts, this.restDrafts);
+    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
     await store.idle();
   }
 
@@ -1821,6 +1828,7 @@ export class WorkspaceService implements ProjectRouter {
     workspaceId: string,
     requests: Readonly<Record<string, RequestPatchWire>>,
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
+    grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
   ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
@@ -1830,7 +1838,8 @@ export class WorkspaceService implements ProjectRouter {
       }
       this.drafts = { ...requests };
       this.restDrafts = { ...restRequests };
-      await this.unsaved.writeDrafts(this.drafts, this.restDrafts);
+      this.grpcDrafts = { ...grpcRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -1857,7 +1866,15 @@ export class WorkspaceService implements ProjectRouter {
   takeRestored(): WorkspaceRestoredResponse {
     const restored = this.restored;
     this.restored = undefined;
-    return restored ?? { workspaceId: this.current?.workspace.id ?? null, drafts: {}, restDrafts: {}, notices: [] };
+    return (
+      restored ?? {
+        workspaceId: this.current?.workspace.id ?? null,
+        drafts: {},
+        restDrafts: {},
+        grpcDrafts: {},
+        notices: [],
+      }
+    );
   }
 
   /** Rewrites the manifest's project list from the entries, which are the source of truth. */
@@ -2192,6 +2209,12 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.restRequests) {
         add(request.id);
       }
+      for (const api of project.grpcApis) {
+        add(api.id);
+      }
+      for (const request of project.grpcRequests) {
+        add(request.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }
@@ -2259,6 +2282,11 @@ export class WorkspaceService implements ProjectRouter {
 
   addApi(...[projectId, input]: Parameters<ProjectRouter['addApi']>): ReturnType<ProjectRouter['addApi']> {
     return this.hostFor(projectId).addApi(input);
+  }
+
+  /** @inheritdoc */
+  addGrpcApi(...[projectId, input]: Parameters<ProjectRouter['addGrpcApi']>): ReturnType<ProjectRouter['addGrpcApi']> {
+    return this.hostFor(projectId).addGrpcApi(input);
   }
 
   /** @inheritdoc */
@@ -2345,6 +2373,41 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['rememberRestCookies']>
   ): ReturnType<ProjectRouter['rememberRestCookies']> {
     return this.hostOfEntity(args[0]).rememberRestCookies(...args);
+  }
+
+  /** @inheritdoc */
+  grpcSend(...args: Parameters<ProjectRouter['grpcSend']>): ReturnType<ProjectRouter['grpcSend']> {
+    return this.hostOfEntity(args[0]).grpcSend(...args);
+  }
+
+  /** @inheritdoc */
+  grpcTlsFor(...args: Parameters<ProjectRouter['grpcTlsFor']>): ReturnType<ProjectRouter['grpcTlsFor']> {
+    return this.hostOfEntity(args[0]).grpcTlsFor(...args);
+  }
+
+  /** @inheritdoc */
+  grpcMeta(...args: Parameters<ProjectRouter['grpcMeta']>): ReturnType<ProjectRouter['grpcMeta']> {
+    return this.hostOfEntity(args[0]).grpcMeta(...args);
+  }
+
+  /** @inheritdoc */
+  grpcAuthOf(...args: Parameters<ProjectRouter['grpcAuthOf']>): ReturnType<ProjectRouter['grpcAuthOf']> {
+    return this.hostOfEntity(args[0]).grpcAuthOf(...args);
+  }
+
+  /** @inheritdoc */
+  grpcProtoSetFor(...args: Parameters<ProjectRouter['grpcProtoSetFor']>): ReturnType<ProjectRouter['grpcProtoSetFor']> {
+    return this.hostOfEntity(args[0]).grpcProtoSetFor(...args);
+  }
+
+  /** @inheritdoc */
+  grpcDefinition(...args: Parameters<ProjectRouter['grpcDefinition']>): ReturnType<ProjectRouter['grpcDefinition']> {
+    return this.hostOfEntity(args[0]).grpcDefinition(...args);
+  }
+
+  /** @inheritdoc */
+  grpcSample(...args: Parameters<ProjectRouter['grpcSample']>): ReturnType<ProjectRouter['grpcSample']> {
+    return this.hostOfEntity(args[0]).grpcSample(...args);
   }
 
   /** @inheritdoc */

@@ -36,13 +36,25 @@ export function definitionLanguage(location: string): 'json' | 'text' {
   return /\.json(?:[?#]|$)/i.test(location) ? 'json' : 'text';
 }
 
+/**
+ * What the card needs of a definition: where it came from, whether it was cached, and — for a
+ * REST API — the specification version. A gRPC API's `.proto` set has no version to show.
+ */
+export interface ApiDefinitionCardDefinition {
+  readonly source: string;
+  readonly cache: boolean;
+  readonly version?: string | undefined;
+}
+
 export interface ApiDefinitionCardProps {
   readonly apiId: string;
-  readonly definition: NonNullable<RestApiWire['definition']>;
+  readonly definition: ApiDefinitionCardDefinition | NonNullable<RestApiWire['definition']>;
+  /** What one file is called in the picker; `document` for REST, `file` for a `.proto` set. */
+  readonly noun?: 'document' | 'file';
 }
 
 /** One API's definition: its source, and a viewer over the documents it was made of. */
-export function ApiDefinitionCard({ apiId, definition }: ApiDefinitionCardProps) {
+export function ApiDefinitionCard({ apiId, definition, noun = 'document' }: ApiDefinitionCardProps) {
   const [documents, setDocuments] = useState<ApiDefinitionDocumentsResponse | undefined>(undefined);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [text, setText] = useState<string | undefined>(undefined);
@@ -104,19 +116,19 @@ export function ApiDefinitionCard({ apiId, definition }: ApiDefinitionCardProps)
     if (result.value.cancelled) {
       return;
     }
-    showToast(`Exported ${String(result.value.files.length)} document${result.value.files.length === 1 ? '' : 's'}.`);
+    showToast(`Exported ${String(result.value.files.length)} ${noun}${result.value.files.length === 1 ? '' : 's'}.`);
   }
 
   return (
     <div data-testid="api-definition-card" className="flex flex-col gap-1">
       <ReadOnlySetting label="Source" value={definition.source} testId="api-definition-source" />
-      <ReadOnlySetting label="Version" value={definition.version} />
+      {definition.version !== undefined && <ReadOnlySetting label="Version" value={definition.version} />}
       <ReadOnlySetting label="Cached" value={definition.cache ? 'yes' : 'no'} />
       {definition.cache ? (
         <>
           <div className="flex gap-2 pt-1">
             <Button variant="secondary" data-testid="api-definition-view" onClick={() => void onView()}>
-              {viewing ? 'Hide document' : 'View document'}
+              {viewing ? `Hide ${noun}` : `View ${noun}`}
             </Button>
             <Button variant="secondary" data-testid="api-definition-export" onClick={() => void onExport()}>
               Export…

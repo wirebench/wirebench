@@ -47,6 +47,7 @@ import { registerRequestChannels } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { OpenApiImportService } from './openapi-import.js';
+import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
 import { registerSslChannels } from './ipc/ssl.js';
@@ -99,6 +100,7 @@ const oauth2Service = new OAuth2Service({
 
 /** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
 const openApiImports = new OpenApiImportService();
+const protoImports = new ProtoImportService();
 
 /** Sends one event to every open window: project state is global, not per-invocation. */
 function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {
@@ -297,6 +299,7 @@ void app.whenReady().then(() => {
   registerApiChannels({
     router: workspaceService,
     imports: openApiImports,
+    protoImports,
     addProject: async (name) => await workspaceService.addProject(name),
     removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),
     projectDirs: openProjectDirs,

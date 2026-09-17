@@ -56,6 +56,8 @@ export interface ProjectRouter {
    * `api.importOpenApi` carries the same target union `project.addInterface` does.
    */
   addApi(projectId: string, ...args: Parameters<ProjectHost['addApi']>): ReturnType<ProjectHost['addApi']>;
+  /** Places an imported gRPC API in one project, caching its `.proto` files. */
+  addGrpcApi(projectId: string, ...args: Parameters<ProjectHost['addGrpcApi']>): ReturnType<ProjectHost['addGrpcApi']>;
   /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */
   reload(projectId: string): ReturnType<ProjectHost['reload']>;
 
@@ -101,6 +103,21 @@ export interface ProjectRouter {
   rememberRestCookies(
     ...args: Parameters<ProjectHost['rememberRestCookies']>
   ): ReturnType<ProjectHost['rememberRestCookies']>;
+
+  /** Resolves one gRPC call: target, expansion, credentials as refs, settings. */
+  grpcSend(...args: Parameters<ProjectHost['grpcSend']>): ReturnType<ProjectHost['grpcSend']>;
+  /** The TLS material a gRPC call needs: anchors, client identity, its own trust decision. */
+  grpcTlsFor(...args: Parameters<ProjectHost['grpcTlsFor']>): ReturnType<ProjectHost['grpcTlsFor']>;
+  /** What History names a gRPC send by: the request, its API, and its folder path. */
+  grpcMeta(...args: Parameters<ProjectHost['grpcMeta']>): ReturnType<ProjectHost['grpcMeta']>;
+  /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
+  grpcAuthOf(...args: Parameters<ProjectHost['grpcAuthOf']>): ReturnType<ProjectHost['grpcAuthOf']>;
+  /** The loaded `.proto` set of the gRPC API owning `entityId`, from its cache. */
+  grpcProtoSetFor(...args: Parameters<ProjectHost['grpcProtoSetFor']>): ReturnType<ProjectHost['grpcProtoSetFor']>;
+  /** The services and files of a gRPC API's cached definition, for the renderer. */
+  grpcDefinition(...args: Parameters<ProjectHost['grpcDefinition']>): ReturnType<ProjectHost['grpcDefinition']>;
+  /** A sample message for one type of a gRPC API's definition. */
+  grpcSample(...args: Parameters<ProjectHost['grpcSample']>): ReturnType<ProjectHost['grpcSample']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(

@@ -58,6 +58,34 @@ export async function killApp(app: ElectronApplication): Promise<void> {
   await exited;
 }
 
+/** How long a graceful `app.close()` is given before the process tree is killed instead. */
+const GRACEFUL_CLOSE_MS = 15_000;
+
+/**
+ * Closes the app, falling back to {@link killApp} if it does not exit in time.
+ *
+ * Playwright's `close()` asks the app to quit and then waits indefinitely, so a main process that
+ * will not exit — a socket it still holds, a quit handler that never settles — hangs the spec's
+ * teardown and, after it, the whole worker, taking every other test on that worker down with it.
+ * A bounded wait turns that into one killed process. Nothing else is skipped: the caller still
+ * asserts on the console errors it collected.
+ */
+async function closeOrKill(app: ElectronApplication): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = Symbol('expired');
+  const deadline = new Promise<typeof expired>((resolve) => {
+    timer = setTimeout(() => resolve(expired), GRACEFUL_CLOSE_MS);
+  });
+  try {
+    const outcome = await Promise.race([app.close().then(() => undefined), deadline]);
+    if (outcome === expired) {
+      await killApp(app);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * The executable inside a packaged bundle. A macOS `.app` keeps it under
  * `Contents/MacOS/<name>`; on the other platforms the path already is the executable.
@@ -167,7 +195,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
       window,
       userDataDir,
       async close(): Promise<void> {
-        await app!.close();
+        await closeOrKill(app!);
         if (options.keepUserDataDir !== true) {
           removeDirSync(userDataDir);
         }

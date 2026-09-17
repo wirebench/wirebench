@@ -48,6 +48,21 @@ import {
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
 import {
+  addGrpcApi,
+  addGrpcFolder,
+  addGrpcRequest,
+  cloneGrpcRequest,
+  findGrpcFolder,
+  grpcApiOwning,
+  moveGrpcNode,
+  removeGrpcApi,
+  removeGrpcFolder,
+  removeGrpcRequest,
+  updateGrpcApi,
+  updateGrpcFolder,
+  updateGrpcRequest,
+} from './project-grpc-mutations.js';
+import {
   addApi,
   addFolder,
   addRestRequest,
@@ -741,18 +756,24 @@ export async function applyChange(
     case 'remove-api':
       return removeApi(project, change.apiId);
 
+    // The folder changes serve both API kinds: a folder is a folder, and the change names the
+    // folder or its API, from which the model knows which kind of tree it sits in.
     case 'add-folder':
-      return addFolder(project, {
+      return (project.grpcApis.some((api) => api.id === change.apiId) ? addGrpcFolder : addFolder)(project, {
         apiId: change.apiId,
         ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
         name: change.name,
       });
 
     case 'update-folder':
-      return updateFolder(project, change.folderId, change.patch);
+      return findGrpcFolder(project, change.folderId) !== undefined
+        ? updateGrpcFolder(project, change.folderId, change.patch)
+        : updateFolder(project, change.folderId, change.patch);
 
     case 'remove-folder':
-      return removeFolder(project, change.folderId);
+      return findGrpcFolder(project, change.folderId) !== undefined
+        ? removeGrpcFolder(project, change.folderId)
+        : removeFolder(project, change.folderId);
 
     case 'add-rest-request':
       return addRestRequest(project, {
@@ -771,11 +792,44 @@ export async function applyChange(
       return cloneRestRequest(project, change.requestId);
 
     case 'move-node':
-      return moveNode(project, {
+      return (grpcApiOwning(project, change.nodeId) !== undefined ? moveGrpcNode : moveNode)(project, {
         nodeId: change.nodeId,
         ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
         index: change.index,
       });
+
+    case 'add-grpc-api':
+      return addGrpcApi(project, {
+        name: change.name,
+        target: change.target,
+        ...(change.tls !== undefined ? { tls: change.tls } : {}),
+      });
+
+    case 'update-grpc-api':
+      return updateGrpcApi(project, change.apiId, change.patch);
+
+    case 'remove-grpc-api':
+      return removeGrpcApi(project, change.apiId);
+
+    case 'add-grpc-request':
+      return addGrpcRequest(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.service !== undefined ? { service: change.service } : {}),
+        ...(change.method !== undefined ? { method: change.method } : {}),
+        ...(change.methodKind !== undefined ? { methodKind: change.methodKind } : {}),
+        ...(change.message !== undefined ? { message: change.message } : {}),
+      });
+
+    case 'update-grpc-request':
+      return updateGrpcRequest(project, change.requestId, change.patch);
+
+    case 'remove-grpc-request':
+      return removeGrpcRequest(project, change.requestId);
+
+    case 'clone-grpc-request':
+      return cloneGrpcRequest(project, change.requestId);
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);

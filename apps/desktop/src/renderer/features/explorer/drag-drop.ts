@@ -8,8 +8,12 @@
  */
 import type { ExplorerNode } from './tree-nodes.js';
 
-/** A folder or request movable within an API. */
-type MovableKind = 'folder' | 'rest-request';
+/** A folder or request movable within an API (REST or gRPC). */
+type MovableKind = 'folder' | 'rest-request' | 'grpc-request';
+
+function isMovable(node: ExplorerNode): node is ExplorerNode & { readonly kind: MovableKind } {
+  return node.kind === 'folder' || node.kind === 'rest-request' || node.kind === 'grpc-request';
+}
 
 /** One `moveNode` call: where one dragged node goes, in its kind's list under the target parent. */
 export interface PlannedMove {
@@ -20,7 +24,7 @@ export interface PlannedMove {
 
 function movableId(node: ExplorerNode): string | undefined {
   if (node.kind === 'folder') return node.folderId;
-  if (node.kind === 'rest-request') return node.requestId;
+  if (node.kind === 'rest-request' || node.kind === 'grpc-request') return node.requestId;
   return undefined;
 }
 
@@ -39,12 +43,16 @@ export function planMoves(
   index: number,
 ): PlannedMove[] {
   const draggedIds = new Set(dragged.map(movableId).filter((id): id is string => id !== undefined));
-  const lists: Record<MovableKind, string[]> = { folder: [], 'rest-request': [] };
-  const anchors: Record<MovableKind, string | undefined> = { folder: undefined, 'rest-request': undefined };
+  const lists: Record<MovableKind, string[]> = { folder: [], 'rest-request': [], 'grpc-request': [] };
+  const anchors: Record<MovableKind, string | undefined> = {
+    folder: undefined,
+    'rest-request': undefined,
+    'grpc-request': undefined,
+  };
 
   children.forEach((child, position) => {
     const id = movableId(child);
-    if (id === undefined || (child.kind !== 'folder' && child.kind !== 'rest-request')) return;
+    if (id === undefined || !isMovable(child)) return;
     lists[child.kind].push(id);
     if (position < index && !draggedIds.has(id)) {
       anchors[child.kind] = id;
@@ -54,7 +62,7 @@ export function planMoves(
   const plan: PlannedMove[] = [];
   for (const node of dragged) {
     const entityId = movableId(node);
-    if (entityId === undefined || (node.kind !== 'folder' && node.kind !== 'rest-request')) continue;
+    if (entityId === undefined || !isMovable(node)) continue;
     const list = lists[node.kind];
     const current = list.indexOf(entityId);
     if (current !== -1) list.splice(current, 1);
@@ -89,8 +97,10 @@ export interface DropCandidate {
  * drop only among folders, and requests only among requests.
  */
 export function isDropDisabled({ parent, children, dragged, index, sameProject, ancestors }: DropCandidate): boolean {
-  if (dragged === undefined || (dragged.kind !== 'rest-request' && dragged.kind !== 'folder')) return true;
-  if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'folder')) return true;
+  if (dragged === undefined || !isMovable(dragged)) return true;
+  if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'folder')) {
+    return true;
+  }
   if (!sameProject || parent.apiId !== dragged.apiId) return true;
 
   if (dragged.kind === 'folder') {

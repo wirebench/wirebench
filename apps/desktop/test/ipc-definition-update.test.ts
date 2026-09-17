@@ -70,6 +70,8 @@ const SNAPSHOT = {
   apis: [],
   folders: [],
   restRequests: [],
+  grpcApis: [],
+  grpcRequests: [],
   properties: {},
   disabledProperties: [],
   environments: [],

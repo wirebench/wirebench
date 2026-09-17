@@ -23,9 +23,20 @@ export function startRenamingRequest(requestId: string): void {
   startRenaming(`req:${requestId}`);
 }
 
-/** Enters inline edit mode for an API, folder or REST request row. */
-export function startRenamingNode(kind: 'api' | 'folder' | 'rest-request', id: string): void {
-  startRenaming(`${kind === 'rest-request' ? 'rest' : kind}:${id}`);
+/** The explorer row kinds a rename can be started on by id, with the prefix their tree ids carry. */
+export type RenamableNodeKind = 'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request';
+
+const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
+  api: 'api',
+  folder: 'folder',
+  'rest-request': 'rest',
+  'grpc-api': 'grpc-api',
+  'grpc-request': 'grpc',
+};
+
+/** Enters inline edit mode for an API, folder, REST request or gRPC row. */
+export function startRenamingNode(kind: RenamableNodeKind, id: string): void {
+  startRenaming(`${NODE_ID_PREFIX[kind]}:${id}`);
 }
 
 /** Enters inline edit mode for a project root, if the tree is mounted and the node exists. */

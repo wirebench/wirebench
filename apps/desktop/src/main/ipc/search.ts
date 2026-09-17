@@ -132,6 +132,38 @@ function collectFrom(
     }
   }
 
+  // A gRPC request's searchable text is its method, its message and its metadata — the API's name
+  // in the interface's slot, as for REST.
+  for (const request of snapshot.grpcRequests) {
+    const apiName = snapshot.grpcApis.find((api) => api.id === request.apiId)?.name ?? request.apiId;
+    if (scopes.requestBodies) {
+      documents.push({
+        kind: 'request-body',
+        protocol: 'grpc',
+        text: [`${request.service}/${request.method}`, request.message].join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
+      });
+    }
+    if (scopes.headers && request.metadata.length > 0) {
+      documents.push({
+        kind: 'request-header',
+        protocol: 'grpc',
+        text: request.metadata.map((row) => `${row.name}: ${row.value}`).join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
+      });
+    }
+  }
+
   if (scopes.definitions) {
     for (const summary of snapshot.interfaces) {
       let bundle;

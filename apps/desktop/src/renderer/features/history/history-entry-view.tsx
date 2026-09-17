@@ -32,6 +32,9 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
   const restRequestExists = useProjectStore((state) =>
     entry?.requestId !== undefined ? state.restRequests[entry.requestId] !== undefined : false,
   );
+  const grpcRequestExists = useProjectStore((state) =>
+    entry?.requestId !== undefined ? state.grpcRequests[entry.requestId] !== undefined : false,
+  );
 
   if (entry === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This entry is no longer available.</p>;
@@ -60,7 +63,19 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
             title: entry.requestName,
             restRequestId: entry.requestId,
           }
-        : { id: `request:${entry.requestId}`, kind: 'request', title: entry.requestName, requestId: entry.requestId },
+        : entry.kind === 'grpc'
+          ? {
+              id: `grpc:${entry.requestId}`,
+              kind: 'grpc-request',
+              title: entry.requestName,
+              grpcRequestId: entry.requestId,
+            }
+          : {
+              id: `request:${entry.requestId}`,
+              kind: 'request',
+              title: entry.requestName,
+              requestId: entry.requestId,
+            },
     );
   };
 
@@ -74,6 +89,8 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
           <p className="flex items-center gap-1.5 truncate font-medium text-fg-default">
             {entry.kind === 'rest' && entry.method !== undefined ? (
               <MethodBadge method={entry.method} className="w-auto" />
+            ) : entry.kind === 'grpc' ? (
+              <span className="text-xs text-fg-faint">gRPC</span>
             ) : (
               <span className="text-xs text-fg-faint">SOAP</span>
             )}
@@ -86,7 +103,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {(draftExists || restRequestExists) && (
+          {(draftExists || restRequestExists || grpcRequestExists) && (
             <Button variant="ghost" onClick={onGoToRequest}>
               Go to request
             </Button>

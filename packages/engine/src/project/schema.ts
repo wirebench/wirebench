@@ -376,16 +376,65 @@ export const apiFileSchema = z.looseObject({
     .optional(),
 });
 
-/** Every protocol this build can load. `grpc` is reserved: recognised, refused, never guessed at. */
-const SUPPORTED_KINDS = ['soap', 'rest'];
+const grpcSettingsSchema = z.looseObject({
+  timeoutMs: z.number().int().nonnegative().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+
+/** The four shapes a gRPC method can take. */
+export const grpcMethodKindSchema = z.enum(['unary', 'server-streaming', 'client-streaming', 'bidi-streaming']);
 
 /**
- * Refuses a document whose `kind` this build knows the name of but cannot honour — today only
- * `grpc`, which the format reserves for a later release.
- *
- * Called before schema validation so the error says what is actually wrong ("this build does not
- * support gRPC") instead of "expected 'rest', received 'grpc'", and so a project written by a
- * future build fails loudly rather than losing its gRPC requests to a dropped unknown key.
+ * `apis/<slug>/requests/[<folder>/…]<name>.request.yaml` for a gRPC request. The message text lives
+ * in the sibling file `message` names, validated as a path segment before it is read (ADR-0005),
+ * so a JSON message is a JSON file in git like a REST raw body.
+ */
+export const grpcRequestFileSchema = z.looseObject({
+  kind: z.literal('grpc'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  service: z.string(),
+  method: z.string(),
+  methodKind: grpcMethodKindSchema.default('unary'),
+  metadata: z.array(keyValueEntrySchema).default([]),
+  message: nonEmpty.optional(),
+  auth: authConfigSchema.default({ type: 'inherit' }),
+  settings: grpcSettingsSchema.default({}),
+  orphaned: z.boolean().optional(),
+});
+
+/** `apis/<slug>/api.yaml` for a gRPC API. */
+export const grpcApiFileSchema = z.looseObject({
+  kind: z.literal('grpc'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+  description: z.string().optional(),
+  target: z.string(),
+  tls: z.boolean().default(false),
+  metadata: z.array(keyValueEntrySchema).default([]),
+  auth: authConfigSchema.optional(),
+  definition: z
+    .looseObject({ source: nonEmpty, cache: z.boolean().default(true), roots: z.array(nonEmpty).default([]) })
+    .optional(),
+});
+
+/** Every protocol this build can load. A `kind` outside this list is refused by name, never guessed at. */
+const SUPPORTED_KINDS = ['soap', 'rest', 'grpc'];
+
+/**
+ * Refuses a document whose `kind` this build does not know how to honour — a protocol a later
+ * release adds, or a typo — before schema validation, so the error says what is actually wrong
+ * ("this build cannot open a graphql document") instead of "expected 'rest', received 'graphql'",
+ * and so a project written by a future build fails loudly rather than losing its requests to a
+ * dropped unknown key. `grpc` was the reserved name this guard existed for until the gRPC client
+ * arrived; it stays for whatever comes next.
  *
  * @throws ProjectError `project-kind-not-supported`
  */
@@ -404,6 +453,13 @@ export function assertSupportedKind(document: unknown, file: string): void {
       details: { file, kind, supported: SUPPORTED_KINDS },
     },
   );
+}
+
+/** The `kind` of an `api.yaml`, read ahead of full validation so the loader knows which schema applies. */
+export function apiKindOf(document: unknown): 'rest' | 'grpc' {
+  const kind =
+    typeof document === 'object' && document !== null ? (document as Record<string, unknown>)['kind'] : undefined;
+  return kind === 'grpc' ? 'grpc' : 'rest';
 }
 
 /** `environments/<slug>.yaml`. */
@@ -606,6 +662,32 @@ export const apiDefinitionCacheManifestSchema = z.looseObject({
   documents: z.array(apiDefinitionCacheDocumentSchema),
 });
 
+/** One `.proto` file of `apis/<slug>/definition/manifest.yaml` for a gRPC API. */
+const protoDefinitionCacheFileSchema = z.looseObject({
+  /** The import path, which is also the path under `definition/protos/`. */
+  path: nonEmpty,
+  sha256: nonEmpty,
+  bytes: z.number().int().nonnegative(),
+});
+
+/**
+ * `apis/<slug>/definition/manifest.yaml` for a gRPC API: the `.proto` files an import was made of,
+ * each stored byte-exact under `protos/` at its import path so the set loads again exactly as the
+ * imports spell it. The `kind` tells a reader which of the two API manifests it has.
+ */
+export const protoDefinitionCacheManifestSchema = z.looseObject({
+  formatVersion: z.literal(1),
+  kind: z.literal('proto'),
+  /** Where the files came from, as the user gave it. */
+  source: nonEmpty,
+  fetchedAt: nonEmpty,
+  roots: z.array(nonEmpty),
+  files: z.array(protoDefinitionCacheFileSchema),
+});
+
+/** The proto definition cache manifest as persisted. */
+export type ProtoDefinitionCacheManifest = z.infer<typeof protoDefinitionCacheManifestSchema>;
+
 /** The API definition cache manifest as persisted. */
 export type ApiDefinitionCacheManifest = z.infer<typeof apiDefinitionCacheManifestSchema>;
 
@@ -633,6 +715,10 @@ export type ApiFile = z.infer<typeof apiFileSchema>;
 export type RestFolderFile = z.infer<typeof restFolderFileSchema>;
 /** A REST request document as persisted (a raw body's text excluded). */
 export type RestRequestFile = z.infer<typeof restRequestFileSchema>;
+/** A gRPC `api.yaml` as parsed. */
+export type GrpcApiFile = z.infer<typeof grpcApiFileSchema>;
+/** A gRPC `*.request.yaml` as parsed. */
+export type GrpcRequestFile = z.infer<typeof grpcRequestFileSchema>;
 
 /**
  * Validates `value` against `schema`, raising

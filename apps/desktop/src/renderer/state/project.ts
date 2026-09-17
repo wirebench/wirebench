@@ -5,6 +5,12 @@ import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
   ApiImportOpenApiRequest,
+  ApiImportProtoRequest,
+  GrpcApiPatchWire,
+  GrpcApiWire,
+  GrpcRequestPatchWire,
+  GrpcRequestWire,
+  ProtoImportSummaryWire,
   AttachmentPatchWire,
   EndpointAuthWire,
   OpenApiImportSummaryWire,
@@ -36,7 +42,7 @@ import type {
   RestRequestPatchWire,
   RestRequestWire,
 } from '../../shared/wire-types.js';
-import type { ExplorerRestData } from '../features/explorer/tree-nodes.js';
+import type { ExplorerGrpcData, ExplorerRestData } from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
@@ -81,6 +87,12 @@ export interface ProjectSnapshot {
    * root's children come from exactly one project.
    */
   readonly rest: Readonly<Record<string, ExplorerRestData>>;
+  /** gRPC APIs by id, flattened across every open project. */
+  readonly grpcApis: Record<string, GrpcApiWire>;
+  /** gRPC requests by id, flattened across every open project. */
+  readonly grpcRequests: Record<string, GrpcRequestWire>;
+  /** Each project's gRPC lists, per project for the same reason as `rest`. Folders are in `folders`. */
+  readonly grpc: Readonly<Record<string, ExplorerGrpcData>>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -218,6 +230,32 @@ export interface ProjectStore extends ProjectSnapshot {
    * absent). What a drag-and-drop in the explorer commits.
    */
   readonly moveNode: (nodeId: string, parentId: string | undefined, index: number) => Promise<void>;
+  /** Adds a gRPC API to one project and returns its id. */
+  readonly addGrpcApi: (projectId: string, name: string, target?: string) => Promise<string>;
+  /** Imports a `.proto` set as a new gRPC API; main reads, maps, caches and saves in one call. */
+  readonly importProto: (
+    request: ApiImportProtoRequest,
+  ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: ProtoImportSummaryWire }>;
+  readonly updateGrpcApi: (apiId: string, patch: GrpcApiPatchWire) => Promise<void>;
+  readonly removeGrpcApi: (apiId: string) => Promise<void>;
+  /** Adds a gRPC request to an API or one of its folders, optionally already pointed at a method. */
+  readonly addGrpcRequest: (
+    apiId: string,
+    parentId?: string,
+    method?: {
+      readonly service: string;
+      readonly method: string;
+      readonly methodKind: GrpcRequestWire['methodKind'];
+      readonly message?: string;
+    },
+  ) => Promise<string>;
+  readonly updateGrpcRequest: (requestId: string, patch: GrpcRequestPatchWire) => Promise<void>;
+  /** Stages an edit made in the gRPC editor, as {@link editRestRequest} does for REST. */
+  readonly editGrpcRequest: (requestId: string, patch: GrpcRequestPatchWire) => void;
+  readonly commitGrpcRequest: (requestId: string) => Promise<boolean>;
+  readonly saveGrpcRequest: (requestId: string) => Promise<void>;
+  readonly removeGrpcRequest: (requestId: string) => Promise<void>;
+  readonly cloneGrpcRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
   readonly addEnvironment: (projectId: string, name: string) => Promise<string>;
   /**
@@ -385,6 +423,9 @@ type Indexes = Pick<
   | 'folders'
   | 'restRequests'
   | 'rest'
+  | 'grpcApis'
+  | 'grpcRequests'
+  | 'grpc'
   | 'order'
   | 'projectOf'
   | 'keystores'
@@ -444,6 +485,33 @@ export function layerRestEdits(
   };
 }
 
+/** One gRPC request's staged-but-unsaved patch, or `undefined` when it is clean. */
+export function grpcDraftPatch(requestId: string): GrpcRequestPatchWire | undefined {
+  return useDraftsStore.getState().peekGrpcRequest(requestId);
+}
+
+/** A mirrored gRPC request with its staged edit laid over it; the table and settings are replaced. */
+export function layerGrpcEdits(
+  request: GrpcRequestWire,
+  draftPatch: GrpcRequestPatchWire | undefined,
+): GrpcRequestWire {
+  if (draftPatch === undefined) {
+    return request;
+  }
+  return {
+    ...request,
+    ...(draftPatch.name !== undefined ? { name: draftPatch.name } : {}),
+    ...(draftPatch.description !== undefined ? { description: draftPatch.description ?? undefined } : {}),
+    ...(draftPatch.service !== undefined ? { service: draftPatch.service } : {}),
+    ...(draftPatch.method !== undefined ? { method: draftPatch.method } : {}),
+    ...(draftPatch.methodKind !== undefined ? { methodKind: draftPatch.methodKind } : {}),
+    ...(draftPatch.metadata !== undefined ? { metadata: draftPatch.metadata } : {}),
+    ...(draftPatch.message !== undefined ? { message: draftPatch.message } : {}),
+    ...(draftPatch.auth !== undefined ? { auth: draftPatch.auth } : {}),
+    ...(draftPatch.settings !== undefined ? { settings: draftPatch.settings } : {}),
+  };
+}
+
 /**
  * Lays the edits main has not confirmed yet over the request it just sent us.
  *
@@ -474,6 +542,9 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const folders: Record<string, RestFolderWire> = {};
   const restRequests: Record<string, RestRequestWire> = {};
   const rest: Record<string, ExplorerRestData> = {};
+  const grpcApis: Record<string, GrpcApiWire> = {};
+  const grpcRequests: Record<string, GrpcRequestWire> = {};
+  const grpc: Record<string, ExplorerGrpcData> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -507,6 +578,18 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       folders: project.folders,
       requests: project.restRequests.map((request) => restRequests[request.id] ?? request),
     };
+    for (const api of project.grpcApis) {
+      grpcApis[api.id] = api;
+      projectOf[api.id] = project.id;
+    }
+    for (const request of project.grpcRequests) {
+      grpcRequests[request.id] = layerGrpcEdits(request, grpcDraftPatch(request.id));
+      projectOf[request.id] = project.id;
+    }
+    grpc[project.id] = {
+      apis: project.grpcApis,
+      requests: project.grpcRequests.map((request) => grpcRequests[request.id] ?? request),
+    };
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -534,6 +617,9 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     folders,
     restRequests,
     rest,
+    grpcApis,
+    grpcRequests,
+    grpc,
     order,
     projectOf,
     keystores,
@@ -638,6 +724,9 @@ const EMPTY: ProjectSnapshot = {
   folders: {},
   restRequests: {},
   rest: {},
+  grpcApis: {},
+  grpcRequests: {},
+  grpc: {},
   order: [],
   projectOf: {},
   keystores: [],
@@ -720,6 +809,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     useDraftsStore.getState().discardRestRequest(requestId);
     useEditorsStore.getState().close(`rest:${requestId}`);
     useExchangesStore.getState().clearRequest(requestId);
+  };
+
+  /** The gRPC counterpart of {@link forgetRestRequest}. */
+  const forgetGrpcRequest = (requestId: string): void => {
+    useDraftsStore.getState().discardGrpcRequest(requestId);
+    useEditorsStore.getState().close(`grpc:${requestId}`);
+    useExchangesStore.getState().clearGrpcRequest(requestId);
   };
 
   /** Saves one project, reporting its own status. */
@@ -1070,10 +1166,133 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     removeFolder: async (folderId) => {
       const inside = Object.values(get().restRequests).filter((request) => request.folderId === folderId);
+      const grpcInside = Object.values(get().grpcRequests).filter((request) => request.folderId === folderId);
       await mutateEntity(folderId, { kind: 'remove-folder', folderId });
       for (const request of inside) {
         forgetRestRequest(request.id);
       }
+      for (const request of grpcInside) {
+        forgetGrpcRequest(request.id);
+      }
+    },
+
+    addGrpcApi: async (projectId, name, target = '') => {
+      const { createdId } = await mutate(projectId, { kind: 'add-grpc-api', name, target });
+      if (createdId === undefined) {
+        throw new Error('add-grpc-api did not return an API id');
+      }
+      return createdId;
+    },
+
+    importProto: async (request) => {
+      const result = await ipc().api.importProto(request);
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      apply(result.value.projectId, result.value.project);
+      return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
+    },
+
+    updateGrpcApi: async (apiId, patch) => {
+      await mutateEntity(apiId, { kind: 'update-grpc-api', apiId, patch });
+    },
+
+    removeGrpcApi: async (apiId) => {
+      const inside = Object.values(get().grpcRequests).filter((request) => request.apiId === apiId);
+      await mutateEntity(apiId, { kind: 'remove-grpc-api', apiId });
+      for (const request of inside) {
+        forgetGrpcRequest(request.id);
+      }
+      useEditorsStore.getState().close(`grpc-api:${apiId}`);
+    },
+
+    addGrpcRequest: async (apiId, parentId, method) => {
+      const { createdId } = await mutateEntity(apiId, {
+        kind: 'add-grpc-request',
+        apiId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(method !== undefined
+          ? {
+              service: method.service,
+              method: method.method,
+              methodKind: method.methodKind,
+              ...(method.message !== undefined ? { message: method.message } : {}),
+            }
+          : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-grpc-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    updateGrpcRequest: async (requestId, patch) => {
+      await mutateEntity(requestId, { kind: 'update-grpc-request', requestId, patch });
+    },
+
+    editGrpcRequest: (requestId, patch) => {
+      update((draft) => {
+        const request = draft.grpcRequests[requestId];
+        if (request !== undefined) {
+          const merged = layerGrpcEdits(request, patch);
+          draft.grpcRequests[requestId] = merged;
+          const projectId = draft.projectOf[requestId];
+          const grpc = projectId === undefined ? undefined : draft.grpc[projectId];
+          if (grpc !== undefined && projectId !== undefined) {
+            draft.grpc[projectId] = {
+              ...grpc,
+              requests: grpc.requests.map((candidate) => (candidate.id === requestId ? merged : candidate)),
+            };
+          }
+        }
+      });
+      useDraftsStore.getState().stageGrpcRequest(requestId, patch);
+    },
+
+    commitGrpcRequest: async (requestId) => {
+      const staged = useDraftsStore.getState().peekGrpcRequest(requestId);
+      if (staged === undefined) {
+        return true;
+      }
+      const projectId = ownerOf(requestId);
+      const result = await ipc().project.mutate({
+        projectId,
+        change: { kind: 'update-grpc-request', requestId, patch: staged },
+      });
+      if (!result.ok) {
+        showToast(asError(result.error).message);
+        return false;
+      }
+      apply(projectId, result.value.project);
+      useDraftsStore.getState().clearGrpcRequestIfUnchanged(requestId, staged);
+      return true;
+    },
+
+    saveGrpcRequest: async (requestId) => {
+      const projectId = ownerOf(requestId);
+      if (useDraftsStore.getState().peekGrpcRequest(requestId) === undefined) {
+        if (get().projects[projectId]?.dirty === true) {
+          await saveOne(projectId);
+        }
+        return;
+      }
+      if (!(await get().commitGrpcRequest(requestId))) {
+        return;
+      }
+      await saveOne(projectId);
+    },
+
+    removeGrpcRequest: async (requestId) => {
+      await mutateEntity(requestId, { kind: 'remove-grpc-request', requestId });
+      forgetGrpcRequest(requestId);
+    },
+
+    cloneGrpcRequest: async (requestId) => {
+      const { createdId } = await mutateEntity(requestId, { kind: 'clone-grpc-request', requestId });
+      if (createdId === undefined) {
+        throw new Error('clone-grpc-request did not return a request id');
+      }
+      return createdId;
     },
 
     addRestRequest: async (apiId, parentId, name) => {

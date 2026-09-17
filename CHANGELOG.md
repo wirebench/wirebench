@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **gRPC.** A third protocol beside SOAP and REST, in the same project, workspace, environments, history and
+  search. Import a `.proto` set (URL, file or paste; imports resolve from beside the root and the bundled
+  `google/protobuf/*` types are built in) and get a gRPC API with a folder per service and a request per method,
+  each seeded with a sample message; or start from *New gRPC API…* and a target. The editor picks the method from
+  the definition, edits the message as JSON in the protobuf JSON mapping, carries metadata, auth and settings
+  (deadline, size cap, TLS trust, bind address), and sends every streaming shape over HTTP/2; the response pane
+  leads with the gRPC status and lists every reply with its initial and trailing metadata, timing, TLS and the raw
+  exchange. Environments override a target the way they override a base URL; the Code slide-over and *Copy as
+  Command* produce a `grpcurl`-style line. See
+  [`docs/specs/2026-09-16-wirebench-grpc-client-design.md`](docs/specs/2026-09-16-wirebench-grpc-client-design.md)
+  and the update to [ADR-0007](docs/adr/0007-apis-beside-interfaces.md).
+
+### Changed
+
+- **Dependencies.** The engine now depends on `protobufjs` (BSD-3-Clause) for `.proto` parsing and message
+  encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
+
 ## [2.1.1] - 2026-09-16
 
 ### Changed

@@ -1433,6 +1433,87 @@ export const restRequestPatchSchema = z.object({
 });
 export type RestRequestPatchWire = z.infer<typeof restRequestPatchSchema>;
 
+/** The four shapes a gRPC method can take; mirrors the engine's `GrpcMethodKind`. */
+export const grpcMethodKindWireSchema = z.enum(['unary', 'server-streaming', 'client-streaming', 'bidi-streaming']);
+export type GrpcMethodKindWire = z.infer<typeof grpcMethodKindWireSchema>;
+
+/** Per-request gRPC transport settings; an absent field means *inherit*, never *off*. */
+export const grpcSettingsWireSchema = z.object({
+  timeoutMs: z.number().int().nonnegative().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxSizeBytes: z.number().int().nonnegative().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+export type GrpcSettingsWire = z.infer<typeof grpcSettingsWireSchema>;
+
+/** One gRPC request as the renderer sees it. The message text travels here, as a REST raw body does. */
+export const grpcRequestWireSchema = z.object({
+  kind: z.literal('grpc'),
+  id: z.string(),
+  apiId: z.string(),
+  /** Id of the folder it sits in, absent at the API's root. */
+  folderId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  service: z.string(),
+  method: z.string(),
+  methodKind: grpcMethodKindWireSchema,
+  metadata: z.array(keyValueWireSchema),
+  message: z.string(),
+  auth: authConfigWireSchema,
+  settings: grpcSettingsWireSchema,
+  orphaned: z.boolean().optional(),
+});
+export type GrpcRequestWire = z.infer<typeof grpcRequestWireSchema>;
+
+/** One gRPC API as the renderer sees it. Its folders share the project's `folders` list with REST. */
+export const grpcApiWireSchema = z.object({
+  kind: z.literal('grpc'),
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  target: z.string(),
+  tls: z.boolean(),
+  metadata: z.array(keyValueWireSchema),
+  auth: authConfigWireSchema.optional(),
+  definition: z.object({ source: z.string(), cache: z.boolean(), roots: z.array(z.string()) }).optional(),
+});
+export type GrpcApiWire = z.infer<typeof grpcApiWireSchema>;
+
+/** The fields of a gRPC API the renderer may patch; `null` clears an optional one. */
+export const grpcApiPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  target: z.string().optional(),
+  tls: z.boolean().optional(),
+  metadata: z.array(keyValueWireSchema).optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type GrpcApiPatchWire = z.infer<typeof grpcApiPatchSchema>;
+
+/**
+ * The fields of a gRPC request the renderer may patch. The metadata table and the settings are
+ * replaced wholesale, as a REST request's are: an absent setting means *inherit*.
+ */
+export const grpcRequestPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  service: z.string().optional(),
+  method: z.string().optional(),
+  methodKind: grpcMethodKindWireSchema.optional(),
+  metadata: z.array(keyValueWireSchema).optional(),
+  message: z.string().optional(),
+  auth: authConfigWireSchema.optional(),
+  settings: grpcSettingsWireSchema.optional(),
+});
+export type GrpcRequestPatchWire = z.infer<typeof grpcRequestPatchSchema>;
+
 /** One cookie a response set, as the Cookies tab shows it. */
 export const cookieWireSchema = z.object({
   name: z.string(),
@@ -1497,6 +1578,61 @@ export const requestPreflightRestRequestSchema = z.object({
   draft: restRequestPatchSchema.optional(),
 });
 
+/** One response message of a gRPC call: decoded JSON text when it decoded, its bytes as base64 always. */
+export const grpcResponseMessageWireSchema = z.object({
+  /** The message as canonical JSON text; absent when the bytes did not decode as the response type. */
+  json: z.string().optional(),
+  base64: z.string(),
+  bytes: z.number(),
+  problem: z.string().optional(),
+});
+export type GrpcResponseMessageWire = z.infer<typeof grpcResponseMessageWireSchema>;
+
+/**
+ * What one gRPC call produced. It carries the same `http` projection the other two protocols'
+ * exchanges do — an HTTP/2 exchange is what a gRPC call is on the wire — so the HTTP log, the
+ * status bar, the timing waterfall and the TLS inspector serve it unchanged; the gRPC status, the
+ * metadata both ways and the decoded messages are what the gRPC response pane adds.
+ */
+export const grpcExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  durationMs: z.number(),
+  http: httpExchangeWireSchema,
+  target: z.string(),
+  service: z.string(),
+  method: z.string(),
+  methodKind: grpcMethodKindWireSchema,
+  status: z.number(),
+  statusName: z.string(),
+  statusMessage: z.string().optional(),
+  statusSource: z.enum(['trailers', 'headers', 'http', 'local']),
+  /** Response headers (initial metadata), redacted unless the session shows secrets. */
+  headers: z.record(z.string(), z.string()),
+  trailers: z.record(z.string(), z.string()),
+  /** The request messages as sent, canonical JSON text each. */
+  requestMessages: z.array(z.string()),
+  responseMessages: z.array(grpcResponseMessageWireSchema),
+  encoding: z.string().optional(),
+  truncated: z.boolean(),
+  problems: z.array(exchangeProblemSchema),
+  unresolved: z.array(unresolvedRefWireSchema).optional(),
+});
+export type GrpcExchangeSummary = z.infer<typeof grpcExchangeSummarySchema>;
+
+/** Request payload for `request.sendGrpc`: the request and its unsaved draft, never a target or a credential. */
+export const requestSendGrpcRequestSchema = z.object({
+  sendId: z.string(),
+  requestId: z.string(),
+  draft: grpcRequestPatchSchema.optional(),
+});
+export type RequestSendGrpcRequest = z.infer<typeof requestSendGrpcRequestSchema>;
+
+/** Request payload for `request.preflightGrpc`: the same pair, with nothing sent. */
+export const requestPreflightGrpcRequestSchema = z.object({
+  requestId: z.string(),
+  draft: grpcRequestPatchSchema.optional(),
+});
+
 /** Request payload for `request.curl`: which saved request, and which shell's quoting. */
 export const requestCurlRequestSchema = z.object({
   requestId: z.string(),
@@ -1509,6 +1645,8 @@ export const requestCurlRequestSchema = z.object({
    * already reaches main through its own staged-edit path.
    */
   draft: restRequestPatchSchema.optional(),
+  /** The same, for a gRPC request's editor. */
+  grpcDraft: grpcRequestPatchSchema.optional(),
 });
 export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
 
@@ -1538,6 +1676,10 @@ export const projectWireSchema = z.object({
   folders: z.array(restFolderWireSchema),
   /** Every REST request of every API, flat; `apiId`/`folderId` give its place. */
   restRequests: z.array(restRequestWireSchema),
+  /** The project's gRPC APIs; their folders are in `folders`, keyed by `apiId` like a REST API's. */
+  grpcApis: z.array(grpcApiWireSchema),
+  /** Every gRPC request of every gRPC API, flat. */
+  grpcRequests: z.array(grpcRequestWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -1678,6 +1820,22 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     parentId: z.string().optional(),
     index: z.number().int().nonnegative(),
   }),
+  z.object({ kind: z.literal('add-grpc-api'), name: z.string(), target: z.string(), tls: z.boolean().optional() }),
+  z.object({ kind: z.literal('update-grpc-api'), apiId: z.string(), patch: grpcApiPatchSchema }),
+  z.object({ kind: z.literal('remove-grpc-api'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-grpc-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+    service: z.string().optional(),
+    method: z.string().optional(),
+    methodKind: grpcMethodKindWireSchema.optional(),
+    message: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-grpc-request'), requestId: z.string(), patch: grpcRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-grpc-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-grpc-request'), requestId: z.string() }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -1957,6 +2115,96 @@ export const apiImportPostmanResponseSchema = z.object({
 });
 export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
 
+/**
+ * Where a `.proto` set comes from. `folder` and `files` are paths the user picked in a native
+ * dialog (main refuses one that was neither picked nor inside a project folder); `text` is a paste
+ * or a drop; `url` is one file fetched over HTTP, its relative imports fetched beside it.
+ */
+export const protoSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('folder'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('files'), paths: z.array(z.string().max(MAX_IMPORT_LOCATION_CHARS)).min(1).max(500) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string().max(MAX_IMPORT_TEXT_CHARS),
+    /** The file name the text came from, which is the import path other files would reach it by. */
+    filename: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
+  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+]);
+export type ProtoSourceWire = z.infer<typeof protoSourceSchema>;
+
+/** One method of a service, as the definition describes it; mirrors the engine's descriptor. */
+export const grpcMethodDescriptorWireSchema = z.object({
+  name: z.string(),
+  service: z.string(),
+  kind: grpcMethodKindWireSchema,
+  requestType: z.string(),
+  responseType: z.string(),
+  comment: z.string().optional(),
+  deprecated: z.boolean().optional(),
+});
+export type GrpcMethodDescriptorWire = z.infer<typeof grpcMethodDescriptorWireSchema>;
+
+/** One service of a `.proto` set. */
+export const grpcServiceDescriptorWireSchema = z.object({
+  name: z.string(),
+  fullName: z.string(),
+  package: z.string(),
+  comment: z.string().optional(),
+  methods: z.array(grpcMethodDescriptorWireSchema),
+});
+export type GrpcServiceDescriptorWire = z.infer<typeof grpcServiceDescriptorWireSchema>;
+
+/** What a `.proto` import produced, for the summary step. */
+export const protoImportSummarySchema = z.object({
+  name: z.string(),
+  target: z.string(),
+  files: z.number(),
+  services: z.number(),
+  methods: z.number(),
+  deprecated: z.number(),
+  roots: z.array(z.string()),
+});
+export type ProtoImportSummaryWire = z.infer<typeof protoImportSummarySchema>;
+
+/** Request/response for `api.importProto`. */
+export const apiImportProtoRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: protoSourceSchema,
+  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+  /** The server to call, as `host:port`; empty leaves the API's target for the user to fill in. */
+  grpcTarget: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  tls: z.boolean().optional(),
+  cache: z.boolean().optional(),
+  token: z.string().optional(),
+});
+export type ApiImportProtoRequest = z.infer<typeof apiImportProtoRequestSchema>;
+
+export const apiImportProtoResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: protoImportSummarySchema,
+});
+export type ApiImportProtoResponse = z.infer<typeof apiImportProtoResponseSchema>;
+
+/**
+ * Response for `api.grpcDefinition`: the services a gRPC API's cached `.proto` set declares — what
+ * the editor's method picker offers — and the files, identity only.
+ */
+export const apiGrpcDefinitionResponseSchema = z.object({
+  services: z.array(grpcServiceDescriptorWireSchema),
+  files: z.array(z.object({ path: z.string(), size: z.number() })),
+  source: z.string(),
+  fetchedAt: z.string(),
+  roots: z.array(z.string()),
+});
+export type ApiGrpcDefinitionResponse = z.infer<typeof apiGrpcDefinitionResponseSchema>;
+
+/** Request/response for `api.grpcSample`: a sample message for one type of a gRPC API's definition. */
+export const apiGrpcSampleRequestSchema = z.object({ apiId: z.string(), type: z.string().max(1024) });
+export const apiGrpcSampleResponseSchema = z.object({ text: z.string() });
+
 /** Request/response for `api.cancelImport`, by the token the import was started with. */
 export const apiCancelImportRequestSchema = z.object({ token: z.string() });
 export const apiCancelImportResponseSchema = z.object({ cancelled: z.boolean() });
@@ -2101,7 +2349,7 @@ export const historyEntrySchema = z.object({
    * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
    * main writes from now on names its kind.
    */
-  kind: z.enum(['soap', 'rest']).optional(),
+  kind: z.enum(['soap', 'rest', 'grpc']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -2127,6 +2375,20 @@ export const historyEntrySchema = z.object({
     })
     .optional(),
   error: historyErrorSchema.optional(),
+  /** The call record of a gRPC send: the method, the status and every message on both sides. */
+  grpc: z
+    .object({
+      service: z.string(),
+      method: z.string(),
+      methodKind: grpcMethodKindWireSchema,
+      status: z.number().optional(),
+      statusName: z.string().optional(),
+      statusMessage: z.string().optional(),
+      requestMessages: z.array(z.string()),
+      responseMessages: z.array(z.string()),
+      trailers: z.array(headerEntrySchema),
+    })
+    .optional(),
   sizeBytes: z.number(),
   tags: z.array(z.string()).optional(),
 });
@@ -3123,7 +3385,7 @@ export const searchMatchSchema = z.object({
    * reads as what it was. It decides both the badge in the results list and which editor a click
    * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
    */
-  protocol: z.enum(['soap', 'rest']).optional(),
+  protocol: z.enum(['soap', 'rest', 'grpc']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.
@@ -3389,6 +3651,8 @@ export const workspaceStashDraftsRequestSchema = z.object({
    * build still loads: absent means the session had none.
    */
   restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
+  /** The gRPC editor's unsaved edits, by gRPC request id; absent in a stash from an older build. */
+  grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 
@@ -3415,6 +3679,7 @@ export const workspaceRestoredResponseSchema = z.object({
   drafts: z.record(z.string(), requestPatchSchema),
   /** The REST drafts the last session left unsaved, by REST request id. */
   restDrafts: z.record(z.string(), restRequestPatchSchema),
+  grpcDrafts: z.record(z.string(), grpcRequestPatchSchema).default({}),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

@@ -44,7 +44,7 @@ const REJECTED_PATTERNS = /\([^)]*[+*]\)\s*[+*]/;
 export interface SearchDocument {
   readonly kind: SearchMatchWire['kind'];
   /** Which protocol's request this text came from; absent for a definition document. */
-  readonly protocol?: 'soap' | 'rest';
+  readonly protocol?: 'soap' | 'rest' | 'grpc';
   readonly text: string;
   /** Which project of the open workspace the text came from, and its display name. */
   readonly projectId?: string;

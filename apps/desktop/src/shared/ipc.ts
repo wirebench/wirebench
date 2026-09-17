@@ -11,6 +11,14 @@ import {
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
   apiImportPostmanResponseSchema,
+  apiImportProtoRequestSchema,
+  apiImportProtoResponseSchema,
+  apiGrpcDefinitionResponseSchema,
+  apiGrpcSampleRequestSchema,
+  apiGrpcSampleResponseSchema,
+  grpcExchangeSummarySchema,
+  requestPreflightGrpcRequestSchema,
+  requestSendGrpcRequestSchema,
   oauth2OwnerRequestSchema,
   oauth2StatusSchema,
   requestPreflightRestRequestSchema,
@@ -335,6 +343,13 @@ export const channels = {
       requestPreflightRestRequestSchema,
       requestPreflightResponseSchema,
     ),
+    /** A gRPC send: its own channel for the same reason `sendRest` is, and its own summary shape. */
+    sendGrpc: defineChannel('request.sendGrpc', requestSendGrpcRequestSchema, grpcExchangeSummarySchema),
+    preflightGrpc: defineChannel(
+      'request.preflightGrpc',
+      requestPreflightGrpcRequestSchema,
+      requestPreflightResponseSchema,
+    ),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
     preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
@@ -358,6 +373,11 @@ export const channels = {
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
+    importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
+    /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */
+    grpcDefinition: defineChannel('api.grpcDefinition', apiIdRequestSchema, apiGrpcDefinitionResponseSchema),
+    /** A sample message for one type of a gRPC API's definition. */
+    grpcSample: defineChannel('api.grpcSample', apiGrpcSampleRequestSchema, apiGrpcSampleResponseSchema),
     cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
     definitionDocuments: defineChannel(
       'api.definitionDocuments',

@@ -1,6 +1,6 @@
 # ADR-0007: A REST API is a sibling container to a SOAP interface, not a second app
 
-- Status: accepted
+- Status: accepted; updated 2026-09-16 when gRPC landed (see *Update* below)
 - Date: 2026-09-14
 - Context: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (spec §2, §8, §14), built by
   `docs/plans/2026-09-13-wirebench-rest-client-plan.md`; extends ADR-0003 (project folder format)
@@ -94,3 +94,25 @@ files and its own editor. Concretely:
 - **Resend and diff from History remain SOAP-only for now.** The history record carries enough
   to show a REST send, but `history.resend` rebuilds a SOAP envelope; replaying a REST entry
   needs a REST rebuild path. Recorded in `docs/success-criteria.md` (SC-R6) and on the roadmap.
+
+## Update (2026-09-16): gRPC landed as the third container
+
+`docs/specs/2026-09-16-wirebench-grpc-client-design.md` built the protocol this ADR reserved. What it kept, and the
+one place it deviated:
+
+- **Kept.** A gRPC API is written to `apis/<slug>/` beside the REST ones, with `kind: grpc` at the top of `api.yaml`
+  and of every request file; the `.proto` set is cached under `definition/` with a manifest like an OpenAPI
+  document's; folders are the same folder; auth, environments (a target overrides under the API's slug, the same
+  slot a base URL uses), history, search, the tab host and the send dispatcher branch on `kind` at exactly one place
+  per layer, as this ADR asked. `formatVersion` stayed at 3: an older build meets `kind: grpc` and refuses it by
+  name, exactly as reserved.
+- **Deviation: a separate `grpcApis` list in memory.** This ADR's `ProjectModel` carried one `apis` list whose
+  members were told apart by `kind`. The gRPC model is a different type (`GrpcApi` has a target and TLS flag, no
+  base URL or servers; `GrpcRequestDef` has a service, method and message, no URL or body), and putting both in one
+  list would have made every REST reader narrow on `kind` before touching a field. A second list — `Project.grpcApis`
+  beside `Project.apis` — means the compiler points at every place that handles APIs and has no gRPC branch yet,
+  which is the mitigation the *Consequences* section hoped for. The on-disk shape is unchanged; only the in-memory
+  and wire shapes have the third list.
+- **History.** `HistoryEntry.kind` gained `'grpc'` and an optional `grpc` record holding the status, both message
+  lists and the trailers — the "several messages" extension this ADR left room for, added beside the single-message
+  REST shape rather than by bending it.

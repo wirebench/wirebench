@@ -6,6 +6,7 @@
  */
 
 import {
+  callGrpc,
   sendRest,
   applyWsaHeaders,
   expandSendInput,
@@ -18,6 +19,8 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  GrpcSendInput,
+  ProtoSet,
   RestSendInput,
   EndpointAuth,
   GenerateOptions,
@@ -34,6 +37,7 @@ import type {
 import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import type { SendAuth } from '@wirebench/engine';
 import type {
+  GrpcExchangeSummary,
   RestExchangeSummary,
   DefinitionImportRequest,
   EngineProgressEvent,
@@ -50,6 +54,7 @@ import type {
   WsaConfigWire,
 } from '../shared/wire-types.js';
 import {
+  toGrpcExchangeSummary,
   toRestExchangeSummary,
   redactExchangeSummary,
   toExchangeSummary,
@@ -630,6 +635,48 @@ export class EngineService {
       const full = toRestExchangeSummary(exchange, request.sendId, { ...context, show: true });
       this.exchanges.putRest(request.sendId, full, exchange.body);
       return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
+    } finally {
+      this.sends.delete(request.sendId);
+    }
+  }
+
+  /**
+   * Makes one gRPC call, registering an `AbortController` so a matching `cancel` can abort it.
+   *
+   * The input arrives resolved (`grpc-send.ts`) and the `.proto` set loaded (the project host keeps
+   * it); credentials are resolved here from their references, as for the other two protocols, and
+   * the message text is encoded against the method's request type by the engine.
+   */
+  async sendGrpcRequest(
+    request: {
+      readonly sendId: string;
+      readonly requestId: string;
+      readonly set: ProtoSet;
+      readonly input: Omit<GrpcSendInput, 'messages'>;
+      readonly messageText: string;
+    },
+    options: {
+      readonly showSecrets?: boolean;
+      readonly auth?: AuthConfig;
+      readonly accessToken?: string;
+    } = {},
+  ): Promise<GrpcExchangeSummary> {
+    const controller = new AbortController();
+    this.sends.set(request.sendId, controller);
+    try {
+      const auth = await resolveAuthConfig(
+        options.auth,
+        (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined),
+        options.accessToken !== undefined ? { accessToken: options.accessToken } : {},
+      );
+      const result = await callGrpc({
+        ...request.input,
+        set: request.set,
+        messageText: request.messageText,
+        ...(auth !== undefined ? { auth } : {}),
+        signal: controller.signal,
+      });
+      return toGrpcExchangeSummary(result, request.sendId, { show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);
     }

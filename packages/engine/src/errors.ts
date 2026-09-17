@@ -99,6 +99,22 @@ export class PostmanError extends WirebenchError {
   }
 }
 
+/** Thrown when a `.proto` set cannot be parsed, an import cannot be found, or a name does not resolve. */
+export class ProtoError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'ProtoError';
+  }
+}
+
+/** Thrown for gRPC transport failures: the connection, the HTTP/2 stream, or a malformed frame. */
+export class GrpcError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'GrpcError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

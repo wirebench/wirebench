@@ -16,6 +16,7 @@ import { ulid } from 'ulidx';
 import { slugify } from './paths.js';
 import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
 import type { WsaConfig } from '../wsa/model.js';
+import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { RestApi, RestRequestDef } from '../rest/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
@@ -280,7 +281,7 @@ export type RequestDef = SoapRequestDef;
  * A saved request of either protocol, which is what a lookup by request id can return: the id
  * space is one (ULIDs), so `kind` is how a caller finds out what it has.
  */
-export type AnyRequestDef = SoapRequestDef | RestRequestDef;
+export type AnyRequestDef = SoapRequestDef | RestRequestDef | GrpcRequestDef;
 
 /** A binding operation of an interface, holding its saved requests. */
 export interface OperationDef {
@@ -379,6 +380,12 @@ export interface Project {
    * interleave in the explorer in whatever order the user arranged them.
    */
   readonly apis: readonly RestApi[];
+  /**
+   * The project's gRPC APIs. On disk they share `apis/` with the REST ones, each `api.yaml` saying
+   * which it is with `kind`; in memory they are their own list so every surface that handles one
+   * protocol has to say what it does with the third (ADR-0007). `order` is shared with both lists.
+   */
+  readonly grpcApis: readonly GrpcApi[];
   readonly environments: readonly Environment[];
   /** Id of the environment currently active for this project, if any. */
   readonly activeEnvironmentId?: string;
@@ -417,6 +424,7 @@ export function createProject(name: string, options?: CreateOptions): Project {
     disabledProperties: [],
     interfaces: [],
     apis: [],
+    grpcApis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

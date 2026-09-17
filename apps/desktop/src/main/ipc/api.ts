@@ -16,7 +16,10 @@ import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
-import { checkedImportSource } from '../path-access.js';
+import type { ProtoImportService } from '../proto-import.js';
+import { allowsReadPath, checkedImportSource } from '../path-access.js';
+import { resolve } from 'node:path';
+import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
 import type { ProjectRouter } from '../project-router.js';
 import { emitEvent } from './events.js';
@@ -26,9 +29,17 @@ import { registerHandler } from './register.js';
 export interface ApiChannelDeps {
   readonly router: Pick<
     ProjectRouter,
-    'addApi' | 'apiDefinitionDocuments' | 'apiDefinitionText' | 'exportApiDefinitionTo'
+    | 'addApi'
+    | 'addGrpcApi'
+    | 'apiDefinitionDocuments'
+    | 'apiDefinitionText'
+    | 'exportApiDefinitionTo'
+    | 'grpcDefinition'
+    | 'grpcSample'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
+  /** The `.proto` import service; optional so the OpenAPI-only tests need not build one. */
+  readonly protoImports?: Pick<ProtoImportService, 'run' | 'cancel'>;
   /** Creates a project inside the open workspace; used only by an import that asks for one. */
   readonly addProject: (name: string) => Promise<{ readonly projectId: string }>;
   /** Takes back a project created for an import that then failed, so no empty project is left. */
@@ -59,6 +70,45 @@ function sourceLabel(source: OpenApiSourceWire): string {
     return source.path;
   }
   return source.location ?? 'inline:openapi';
+}
+
+/**
+ * The path-access check for a `.proto` source: a folder or each file must be inside an open project
+ * or picked this session; text and URLs are not paths and pass as they are.
+ *
+ * @throws WirebenchError `import-path-refused`
+ */
+async function checkedProtoSource(
+  roots: readonly string[],
+  picks: ReadPicks | undefined,
+  source: ProtoSourceWire,
+): Promise<ProtoSourceWire> {
+  const refuse = (path: string): never => {
+    throw new WirebenchError(
+      'import-path-refused',
+      `Wirebench will not read "${path}": use Browse… to pick .proto files outside the project folder`,
+      { details: { path } },
+    );
+  };
+  if (source.kind === 'folder') {
+    const resolved = resolve(source.path);
+    if (!(await allowsReadPath(roots, picks, resolved))) {
+      refuse(source.path);
+    }
+    return { kind: 'folder', path: resolved };
+  }
+  if (source.kind === 'files') {
+    const paths: string[] = [];
+    for (const path of source.paths) {
+      const resolved = resolve(path);
+      if (!(await allowsReadPath(roots, picks, resolved))) {
+        refuse(path);
+      }
+      paths.push(resolved);
+    }
+    return { kind: 'files', paths };
+  }
+  return source;
 }
 
 /** Registers the `api.*` IPC channels. */
@@ -167,7 +217,82 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     }
   });
 
-  registerHandler(channels.api.cancelImport, (request) => Promise.resolve(deps.imports.cancel(request.token)));
+  registerHandler(channels.api.importProto, async (request, sender) => {
+    const protoImports = deps.protoImports;
+    if (protoImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import .proto files');
+    }
+    // A folder or a file is a read at a renderer-named path: each must be inside an open project or
+    // have been picked in a native dialog this session, checked before anything is created.
+    const source = await checkedProtoSource(deps.projectDirs(), deps.picks, request.source);
+    const run = await protoImports.run(
+      {
+        source,
+        ...(request.token !== undefined ? { token: request.token } : {}),
+        ...(request.name !== undefined ? { name: request.name } : {}),
+        ...(request.grpcTarget !== undefined ? { target: request.grpcTarget } : {}),
+        ...(request.tls !== undefined ? { tls: request.tls } : {}),
+      },
+      {
+        onProgress: (progress) => {
+          emitEvent(sender, events.engine.progress, progress);
+        },
+      },
+    );
+    const summary = {
+      name: run.imported.api.name,
+      target: run.imported.api.target,
+      ...run.imported.summary,
+      roots: [...run.roots],
+    };
+    const place = {
+      api: run.imported.api,
+      sources: run.sources,
+      roots: run.roots,
+      source: run.sourceLabel,
+      ...(request.cache !== undefined ? { cache: request.cache } : {}),
+    };
+    if ('projectId' in request.target) {
+      const added = await router.addGrpcApi(request.target.projectId, place);
+      return { ...added, projectId: request.target.projectId, summary };
+    }
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      const added = await router.addGrpcApi(projectId, place);
+      return { ...added, projectId, summary };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  registerHandler(channels.api.grpcDefinition, async (request) => {
+    const definition = await router.grpcDefinition(request.apiId);
+    return {
+      services: definition.services.map((service) => ({
+        name: service.name,
+        fullName: service.fullName,
+        package: service.package,
+        ...(service.comment !== undefined ? { comment: service.comment } : {}),
+        methods: service.methods.map((method) => ({ ...method })),
+      })),
+      files: definition.files.map((file) => ({ ...file })),
+      source: definition.source,
+      fetchedAt: definition.fetchedAt,
+      roots: [...definition.roots],
+    };
+  });
+
+  registerHandler(channels.api.grpcSample, async (request) => ({
+    text: await router.grpcSample(request.apiId, request.type),
+  }));
+
+  registerHandler(channels.api.cancelImport, (request) =>
+    Promise.resolve({
+      cancelled:
+        deps.imports.cancel(request.token).cancelled || (deps.protoImports?.cancel(request.token).cancelled ?? false),
+    }),
+  );
 
   // Identity only — no text — so a large definition stays a bounded payload.
   registerHandler(channels.api.definitionDocuments, async (request) => {

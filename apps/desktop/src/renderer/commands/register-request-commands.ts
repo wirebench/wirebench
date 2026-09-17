@@ -15,7 +15,7 @@ import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
-import { activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
+import { activeGrpcRequestId, activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
 
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
 export function registerRequestCommands(): void {
@@ -49,6 +49,21 @@ export function registerRequestCommands(): void {
       }
     },
   });
+  // And a gRPC tab's, under the same chord for the same reason.
+  registerCommand({
+    id: 'grpc.send',
+    label: 'Send gRPC Request',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+    when: () => activeGrpcRequestId() !== undefined,
+    whenScope: 'editor.grpc',
+    run: () => {
+      const requestId = activeGrpcRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().sendGrpc(requestId);
+      }
+    },
+  });
   registerCommand({
     id: 'request.cancel',
     label: 'Cancel Request',
@@ -63,8 +78,12 @@ export function registerRequestCommands(): void {
         return useExchangesStore.getState().byRequest[requestId]?.status === 'sending';
       }
       const restRequestId = activeRestRequestId();
+      if (restRequestId !== undefined) {
+        return useExchangesStore.getState().restByRequest[restRequestId]?.status === 'sending';
+      }
+      const grpcRequestId = activeGrpcRequestId();
       return (
-        restRequestId !== undefined && useExchangesStore.getState().restByRequest[restRequestId]?.status === 'sending'
+        grpcRequestId !== undefined && useExchangesStore.getState().grpcByRequest[grpcRequestId]?.status === 'sending'
       );
     },
     run: () => {
@@ -76,6 +95,11 @@ export function registerRequestCommands(): void {
       const restRequestId = activeRestRequestId();
       if (restRequestId !== undefined) {
         void useExchangesStore.getState().cancelRest(restRequestId);
+        return;
+      }
+      const grpcRequestId = activeGrpcRequestId();
+      if (grpcRequestId !== undefined) {
+        void useExchangesStore.getState().cancelGrpc(grpcRequestId);
       }
     },
   });
@@ -255,6 +279,29 @@ export function registerRequestCommands(): void {
     shortcut: 'Mod+Shift+I',
     run: () => {
       useUiStore.getState().setImportOpenApiDialogOpen(true);
+    },
+  });
+  // The gRPC counterparts: the same `request.curl` channel answers with a grpcurl-style command
+  // for a gRPC request, and the Import dialog opens on its `.proto` format.
+  registerCommand({
+    id: 'grpc.copyAsCommand',
+    label: 'gRPC: Copy as Command',
+    category: 'Request',
+    when: () => activeGrpcRequestId() !== undefined,
+    whenScope: 'editor.grpc',
+    run: () => {
+      const requestId = activeGrpcRequestId();
+      if (requestId !== undefined) {
+        void copyAsCurl(requestId, ui().slideOver.codeShell);
+      }
+    },
+  });
+  registerCommand({
+    id: 'grpc.importProto',
+    label: 'gRPC: Import .proto…',
+    category: 'Definition',
+    run: () => {
+      useUiStore.getState().openImportDialog('proto');
     },
   });
   registerCommand({

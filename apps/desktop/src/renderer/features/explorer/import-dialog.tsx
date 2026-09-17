@@ -5,6 +5,7 @@
  * - OpenAPI 3.0, 3.1, 3.2 and Swagger 1.x / 2.0 / 3.x (YAML / JSON)
  * - Postman Collections (v2.0, v2.1 JSON)
  * - WSDL 1.1 / 2.0 (SOAP XML)
+ * - Protocol Buffers `.proto` files (gRPC)
  *
  * Provides URL, File (with drag-and-drop), and Paste input sources,
  * automatic format detection with manual override, target project selection,
@@ -24,6 +25,8 @@ import type {
   PostmanImportSummaryWire,
   PostmanSourceWire,
   ProjectAddInterfaceTarget,
+  ProtoImportSummaryWire,
+  ProtoSourceWire,
 } from '../../../shared/wire-types.js';
 import { Button } from '../../components/button.js';
 import { SecretField } from '../../components/secret-field.js';
@@ -105,7 +108,8 @@ export type UnifiedImportResult =
       readonly problems: ImportProblemWire[];
     }
   | { readonly kind: 'openapi'; readonly apiId: string; readonly summary: OpenApiImportSummaryWire }
-  | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire };
+  | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire }
+  | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire };
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -125,6 +129,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [cache, setCache] = useState(true);
+  // gRPC: whether the target speaks TLS. A `host:port` says nothing about it, unlike a URL.
+  const [tls, setTls] = useState(false);
 
   // WSDL Basic Auth fields
   const [useAuth, setUseAuth] = useState(false);
@@ -203,6 +209,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setUrl('');
     setName('');
     setBaseUrl('');
+    setTls(false);
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -229,24 +236,31 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     const filters =
       effectiveFormat === 'postman'
         ? [{ name: 'Postman Collection', extensions: ['json'] }]
-        : effectiveFormat === 'openapi'
+        : effectiveFormat === 'proto'
           ? [
-              { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+              { name: 'Protocol Buffers', extensions: ['proto'] },
               { name: 'All Files', extensions: ['*'] },
             ]
-          : [
-              {
-                name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-              },
-              { name: 'All Files', extensions: ['*'] },
-            ];
+          : effectiveFormat === 'openapi'
+            ? [
+                { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                { name: 'All Files', extensions: ['*'] },
+              ]
+            : [
+                {
+                  name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                  extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                },
+                { name: 'All Files', extensions: ['*'] },
+              ];
     const title =
       effectiveFormat === 'postman'
         ? 'Import Postman Collection'
-        : effectiveFormat === 'openapi'
-          ? 'Import OpenAPI Specification'
-          : 'Import Definition';
+        : effectiveFormat === 'proto'
+          ? 'Import .proto'
+          : effectiveFormat === 'openapi'
+            ? 'Import OpenAPI Specification'
+            : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -288,7 +302,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       ? 'Imported service'
       : format === 'postman' || effectiveFormat === 'postman'
         ? 'Imported Collection'
-        : 'Imported API';
+        : format === 'proto' || effectiveFormat === 'proto'
+          ? 'Imported gRPC API'
+          : 'Imported API';
 
   const sourceName = nameFromSource(previewSource, defaultName);
   const newProjectName = name.trim().length > 0 ? name.trim() : sourceName;
@@ -313,9 +329,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
 
     // Determine target format
-    let targetFormat: 'wsdl' | 'openapi' | 'postman';
+    let targetFormat: 'wsdl' | 'openapi' | 'postman' | 'proto';
     if (effectiveFormat === 'wsdl') {
       targetFormat = 'wsdl';
+    } else if (effectiveFormat === 'proto') {
+      targetFormat = 'proto';
     } else if (effectiveFormat === 'postman') {
       targetFormat = 'postman';
     } else if (effectiveFormat === 'openapi') {
@@ -395,6 +413,35 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           apiId: imported.apiId,
           summary: imported.summary,
         });
+      } else if (targetFormat === 'proto') {
+        // A picked file's imports are read from beside it in main; a pasted or dropped file keeps
+        // its name, which is the import path other files would reach it by.
+        const protoSource: ProtoSourceWire =
+          source.kind === 'url'
+            ? { kind: 'url', url: source.url }
+            : source.kind === 'file'
+              ? { kind: 'files', paths: [source.path] }
+              : {
+                  kind: 'text',
+                  text: source.text,
+                  ...(dropped !== undefined ? { filename: dropped.name } : {}),
+                };
+
+        const imported = await useProjectStore.getState().importProto({
+          target: into,
+          source: protoSource,
+          cache,
+          tls,
+          token,
+          ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+          ...(baseUrl.trim().length > 0 ? { grpcTarget: baseUrl.trim() } : {}),
+        });
+
+        if (cancelledTokensRef.current.has(token)) {
+          return;
+        }
+        getExplorerTree()?.open(`proj:${imported.projectId}`);
+        setResult({ kind: 'proto', apiId: imported.apiId, summary: imported.summary });
       } else {
         // Postman import
         if (source.kind === 'url') {
@@ -459,6 +506,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }
 
   const isRest = effectiveFormat === 'openapi' || effectiveFormat === 'postman';
+  const isProto = effectiveFormat === 'proto';
 
   return (
     <Dialog.Root
@@ -478,7 +526,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
               ? 'import-postman-dialog'
               : format === 'openapi'
                 ? 'import-openapi-dialog'
-                : 'import-dialog'
+                : format === 'proto'
+                  ? 'import-proto-dialog'
+                  : 'import-dialog'
           }
           className="fixed top-1/2 left-1/2 w-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
@@ -492,7 +542,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     ? 'Import OpenAPI'
                     : format === 'wsdl'
                       ? 'Import WSDL'
-                      : 'Import API or Service'}
+                      : format === 'proto'
+                        ? 'Import .proto'
+                        : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -520,6 +572,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="openapi">OpenAPI / Swagger</option>
                     <option value="postman">Postman Collection</option>
                     <option value="wsdl">WSDL (SOAP)</option>
+                    <option value="proto">Protocol Buffers (gRPC)</option>
                   </select>
                 </div>
 
@@ -545,7 +598,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <label className="text-sm text-fg-subtle" htmlFor="import-url">
                       {effectiveFormat === 'openapi' || effectiveFormat === 'postman'
                         ? 'Specification URL'
-                        : 'WSDL URL'}
+                        : effectiveFormat === 'proto'
+                          ? '.proto URL'
+                          : 'WSDL URL'}
                     </label>
                     <input
                       id="import-url"
@@ -563,7 +618,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       placeholder={
                         effectiveFormat === 'wsdl'
                           ? 'http://example.test/service.wsdl'
-                          : 'https://example.test/openapi.json or ?wsdl'
+                          : effectiveFormat === 'proto'
+                            ? 'https://example.test/protos/service.proto'
+                            : 'https://example.test/openapi.json or ?wsdl'
                       }
                       className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                     />
@@ -625,7 +682,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           setFilePath(e.target.value);
                         }}
                         placeholder={
-                          format === 'postman' ? 'Path to collection.json' : '/path/to/spec.json, .yaml, or .wsdl'
+                          format === 'postman'
+                            ? 'Path to collection.json'
+                            : format === 'proto'
+                              ? '/path/to/service.proto'
+                              : '/path/to/spec.json, .yaml, .wsdl, or .proto'
                         }
                         className="flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm outline-none"
                       />
@@ -649,7 +710,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     >
                       {dropped !== undefined
                         ? `Loaded: ${dropped.name}`
-                        : 'Drop an OpenAPI, Postman, or WSDL file here'}
+                        : 'Drop an OpenAPI, Postman, WSDL or .proto file here'}
                     </div>
                   </>
                 )}
@@ -670,7 +731,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     placeholder={
                       format === 'postman'
                         ? '{"info": {"name": "My Collection", ...}}'
-                        : 'Paste OpenAPI YAML/JSON, Postman collection JSON, or WSDL XML here…'
+                        : format === 'proto'
+                          ? 'syntax = "proto3";\n\npackage example;\n\nservice Greeter { … }'
+                          : 'Paste OpenAPI YAML/JSON, Postman collection JSON, WSDL XML or a .proto here…'
                     }
                     className="rounded border border-hairline-strong bg-surface-base p-2 font-mono text-xs text-fg-default outline-none"
                   />
@@ -704,8 +767,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </select>
               </div>
 
-              {/* Optional Name and Base URL overrides for REST/OpenAPI/Postman */}
-              {isRest && (
+              {/* Optional Name and Base URL (or gRPC target) overrides for REST and gRPC */}
+              {(isRest || isProto) && (
                 <>
                   <div className="mt-2 flex flex-col gap-1">
                     <label className="text-sm text-fg-subtle" htmlFor="import-name-override">
@@ -729,7 +792,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
                   <div className="mt-2 flex flex-col gap-1">
                     <label className="text-sm text-fg-subtle" htmlFor="import-base-url-override">
-                      Base URL (optional)
+                      {isProto ? 'Target (optional)' : 'Base URL (optional)'}
                     </label>
                     <input
                       id="import-base-url-override"
@@ -742,14 +805,25 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       }
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="https://api.example.com"
+                      placeholder={isProto ? 'host:port' : 'https://api.example.com'}
                       className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                     />
                   </div>
+                  {isProto && (
+                    <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
+                      <input
+                        type="checkbox"
+                        data-testid="import-proto-tls"
+                        checked={tls}
+                        onChange={(e) => setTls(e.target.checked)}
+                      />
+                      The target speaks TLS (grpcs)
+                    </label>
+                  )}
                 </>
               )}
 
-              {effectiveFormat === 'openapi' && (
+              {(effectiveFormat === 'openapi' || isProto) && (
                 <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
                   <input
                     type="checkbox"
@@ -757,7 +831,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     checked={cache}
                     onChange={(e) => setCache(e.target.checked)}
                   />
-                  Cache specification documents with the project
+                  {isProto
+                    ? 'Cache the .proto files with the project'
+                    : 'Cache specification documents with the project'}
                 </label>
               )}
 
@@ -848,7 +924,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
           ? 'import-postman-summary'
           : result.kind === 'openapi'
             ? 'import-openapi-summary'
-            : 'import-summary'
+            : result.kind === 'proto'
+              ? 'import-proto-summary'
+              : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -944,6 +1022,21 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
               Default authentication: <span className="font-medium text-fg-default">{result.summary.auth}</span>
             </p>
           )}
+        </div>
+      )}
+
+      {result.kind === 'proto' && (
+        <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+          <p className="font-semibold text-base">{result.summary.name}</p>
+          <p className="mt-1 text-xs text-fg-subtle">
+            gRPC · {result.summary.target === '' ? 'no target yet — set one on the API tab' : result.summary.target}
+          </p>
+          <p data-testid="import-proto-counts" className="mt-2 text-sm text-fg-default">
+            {result.summary.methods} method{result.summary.methods === 1 ? '' : 's'} in {result.summary.services}{' '}
+            service{result.summary.services === 1 ? '' : 's'}, from {result.summary.files} file
+            {result.summary.files === 1 ? '' : 's'}
+            {result.summary.deprecated > 0 ? `, ${result.summary.deprecated} deprecated` : ''}.
+          </p>
         </div>
       )}
 

@@ -3,9 +3,11 @@ import { openRequestTab, recreateRequest } from '../request-editor/request-actio
 import { usePreferencesStore } from '../../state/preferences.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
-import { startRenamingNode, startRenamingRequest } from './explorer-api.js';
+import { startRenamingNode, startRenamingRequest, type RenamableNodeKind } from './explorer-api.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { openApiTab } from '../rest-api/api-actions.js';
+import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
+import { openGrpcApiTab } from '../grpc-api/grpc-api-actions.js';
 import { useWsiStore } from '../../state/wsi.js';
 import {
   exportDefinition,
@@ -240,8 +242,8 @@ export const explorerActions = {
       });
   },
 
-  /** Puts an API, folder or REST request row into inline rename mode. */
-  renameNode(kind: 'api' | 'folder' | 'rest-request', id: string | undefined): void {
+  /** Puts an API, folder, REST request or gRPC row into inline rename mode. */
+  renameNode(kind: RenamableNodeKind, id: string | undefined): void {
     if (id !== undefined) {
       startRenamingNode(kind, id);
     }
@@ -264,6 +266,113 @@ export const explorerActions = {
     if (folderId !== undefined) {
       useUiStore.getState().setFolderAuthId(folderId);
     }
+  },
+
+  /** Creates a gRPC API in one project and opens its tab, so the user lands on its target field. */
+  newGrpcApi(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addGrpcApi(
+        projectId,
+        nextName(
+          'gRPC API',
+          Object.values(useProjectStore.getState().grpcApis).map((api) => api.name),
+        ),
+      )
+      .then((apiId) => {
+        openGrpcApiTab(apiId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New gRPC API failed');
+      });
+  },
+
+  /** Opens the Import dialog on its `.proto` format. */
+  importProto(): void {
+    useUiStore.getState().openImportDialog('proto');
+  },
+
+  /**
+   * Creates a gRPC request in an API or one of its folders and opens its editor. With no method
+   * given, the request starts unset and the editor's method picker is where it gets one.
+   */
+  newGrpcRequest(apiId: string | undefined, parentId?: string): void {
+    if (apiId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addGrpcRequest(apiId, parentId)
+      .then((requestId) => {
+        openGrpcRequestTab(requestId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New request failed');
+      });
+  },
+
+  openGrpcRequest(requestId: string | undefined): void {
+    if (requestId !== undefined) {
+      openGrpcRequestTab(requestId);
+    }
+  },
+
+  openGrpcApi(apiId: string | undefined): void {
+    if (apiId !== undefined) {
+      openGrpcApiTab(apiId);
+    }
+  },
+
+  /** Copies a gRPC request beside the original and opens the copy. */
+  duplicateGrpcRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .cloneGrpcRequest(requestId)
+      .then(openGrpcRequestTab)
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate request failed');
+      });
+  },
+
+  /** Deletes a gRPC API and everything in it, under the same rule as a REST API. */
+  removeGrpcApi(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const state = useProjectStore.getState();
+    const api = state.grpcApis[apiId];
+    if (api === undefined) {
+      return;
+    }
+    const requestCount = Object.values(state.grpcRequests).filter((request) => request.apiId === apiId).length;
+    if (requestCount === 0 && !confirmsDeletes()) {
+      void state.removeGrpcApi(apiId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'grpc-api', id: apiId, name: api.name, requestCount });
+  },
+
+  deleteGrpcRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    const request = useProjectStore.getState().grpcRequests[requestId];
+    if (request === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeGrpcRequest(requestId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore
+      .getState()
+      .requestDeleteNode({ kind: 'grpc-request', id: requestId, name: request.name, requestCount: 0 });
   },
 
   /**
@@ -297,8 +406,9 @@ export const explorerActions = {
     if (folder === undefined) {
       return;
     }
-    const requestCount = Object.values(state.restRequests).filter((request) =>
-      folderIdsUnder(folderId).has(request.folderId ?? ''),
+    const inside = folderIdsUnder(folderId);
+    const requestCount = [...Object.values(state.restRequests), ...Object.values(state.grpcRequests)].filter(
+      (request) => inside.has(request.folderId ?? ''),
     ).length;
     if (requestCount === 0 && !confirmsDeletes()) {
       void state.removeFolder(folderId).catch(reportDeleteFailure);

@@ -41,6 +41,13 @@ import {
   projectFiles,
   putAttachment,
   readApiDefinitionCache,
+  readProtoDefinitionCache,
+  describeServices,
+  loadProtoSet,
+  sampleMessageText,
+  writeProtoDefinitionCache,
+  PROTOS_DIR,
+  protoPathSegments,
   resolveApiBaseUrl,
   resolveAuthEndpoint,
   resolveEndpoint,
@@ -57,6 +64,10 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  GrpcApi,
+  GrpcServiceDescriptor,
+  ProtoSet,
+  ProtoSources,
   ResolvedDocument,
   RestApi,
   RestFolder,
@@ -109,6 +120,7 @@ import type {
 } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
+  GrpcRequestPatchWire,
   RestRequestPatchWire,
   ApplyUpdateWire,
   DefinitionUpdateOptions,
@@ -138,6 +150,9 @@ import { resolveEndpointAuth } from './secret-resolver.js';
 import { findRestFolder, findRestRequest } from './project-rest-mutations.js';
 import { resolveRestSend } from './rest-send.js';
 import type { RestSendResolution } from './rest-send.js';
+import { resolveGrpcSend } from './grpc-send.js';
+import type { GrpcSendResolution } from './grpc-send.js';
+import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
@@ -327,6 +342,12 @@ export class ProjectHost {
    * change another's, and none of this reaches disk (see `rest/cookies.ts`).
    */
   private readonly restCookies = new Map<string, readonly Cookie[]>();
+  /**
+   * Loaded `.proto` sets, keyed by gRPC API id. A set is parsed once per API from its cache and
+   * kept for the session — every send and every method-picker refresh reads from it — and dropped
+   * when the API is removed or re-imported.
+   */
+  private readonly protoSets = new Map<string, Promise<ProtoSet>>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
@@ -1169,6 +1190,9 @@ export class ProjectHost {
       open.runtime.delete(change.interfaceId);
       this.engine.close(change.interfaceId);
     }
+    if (change.kind === 'remove-grpc-api') {
+      this.protoSets.delete(change.apiId);
+    }
     // Parsed keystores are decrypted key material keyed by entry id: a removed entry must not
     // leave its key in memory, and a re-entered password must not be shadowed by the previous
     // parse — the cache key cannot see a secret changing *underneath an unchanged ref*.
@@ -1422,6 +1446,207 @@ export class ProjectHost {
       ...(ca !== undefined ? { ca: [...ca] } : {}),
       ...(trustInvalid ? { rejectUnauthorized: false } : {}),
     };
+  }
+
+  /**
+   * Resolves one gRPC call the way this project is open: the API's target under the active
+   * environment (the same override slot a REST base URL has, keyed by the API's slug), property
+   * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
+   * material-free like {@link restSend}; the `.proto` set and the secrets are resolved by the caller.
+   */
+  grpcSend(requestId: string, draft?: GrpcRequestPatchWire): GrpcSendResolution | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const context = this.workspaceContext?.();
+    const preferences = this.prefs();
+    return resolveGrpcSend({
+      project,
+      requestId,
+      ...(draft !== undefined ? { draft } : {}),
+      scopes: this.scopesFor(),
+      ...(preferences !== undefined ? { preferences } : {}),
+      resolveTarget: (api) => {
+        const asApi = { slug: api.slug, baseUrl: api.target };
+        return context === undefined
+          ? resolveApiBaseUrl(project, project.activeEnvironmentId, asApi)
+          : resolveWorkspaceApiBaseUrl({
+              workspace: context.workspace,
+              project,
+              projectSlug: context.projectSlug,
+              api: asApi,
+            });
+      },
+    });
+  }
+
+  /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
+  grpcAuthOf(ownerId: string): AuthConfig | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const api = project.grpcApis.find((candidate) => candidate.id === ownerId);
+    if (api !== undefined) {
+      return api.auth;
+    }
+    return findGrpcFolder(project, ownerId)?.auth ?? findGrpcRequest(project, ownerId)?.auth;
+  }
+
+  /** What History names a gRPC send by: the request, its API, and the folder path inside it. */
+  grpcMeta(
+    requestId: string,
+  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const located = locateGrpcRequest(this.open.project, requestId);
+    if (located === undefined) {
+      return undefined;
+    }
+    return {
+      requestName: located.request.name,
+      apiName: located.api.name,
+      folderPath: located.folders.map((folder) => folder.name).join(' / '),
+    };
+  }
+
+  /** The TLS material a gRPC call needs, read from the request's settings as {@link restTlsFor} does. */
+  async grpcTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findGrpcRequest(this.open.project, requestId);
+    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
+    const ca = await this.trustAnchors();
+    const trustInvalid = request?.settings.trustInvalid === true;
+    if (identity === undefined && ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return {
+      ...(identity !== undefined ? identity : {}),
+      ...(ca !== undefined ? { ca: [...ca] } : {}),
+      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
+    };
+  }
+
+  /** The gRPC API that is, or that holds, `entityId`. */
+  private grpcApiOf(entityId: string): GrpcApi | undefined {
+    const project = this.require().project;
+    return project.grpcApis.find((api) => api.id === entityId) ?? grpcApiOwning(project, entityId);
+  }
+
+  /**
+   * The loaded `.proto` set of the gRPC API that is, or holds, `entityId`, parsed from the API's
+   * definition cache and kept for the session.
+   *
+   * @throws ProjectError `not-found` for an id no gRPC API owns, `definition-cache-missing` for an
+   * API whose files were never cached — a send then has no schema to encode against, and says so
+   * rather than guessing
+   */
+  grpcProtoSetFor(entityId: string): Promise<ProtoSet> {
+    const api = this.grpcApiOf(entityId);
+    if (api === undefined) {
+      throw new ProjectError('not-found', `No gRPC API owns "${entityId}"`, { details: { id: entityId } });
+    }
+    const cached = this.protoSets.get(api.id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const dir = this.require().dir;
+    const loading = readProtoDefinitionCache(apiDefinitionDir(dir, api.slug)).then((cache) =>
+      loadProtoSet(cache.sources, { roots: cache.manifest.roots }),
+    );
+    // A failed load is not remembered: the user may fix the cache (a re-import) and try again.
+    loading.catch(() => {
+      this.protoSets.delete(api.id);
+    });
+    this.protoSets.set(api.id, loading);
+    return loading;
+  }
+
+  /** The services and files of a gRPC API's cached definition, for the method picker and the card. */
+  async grpcDefinition(apiId: string): Promise<{
+    readonly services: readonly GrpcServiceDescriptor[];
+    readonly files: readonly { readonly path: string; readonly size: number }[];
+    readonly source: string;
+    readonly fetchedAt: string;
+    readonly roots: readonly string[];
+  }> {
+    const api = this.requireGrpcApi(apiId);
+    const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const set = await this.grpcProtoSetFor(apiId);
+    return {
+      services: describeServices(set),
+      files: cache.manifest.files.map((file) => ({ path: file.path, size: file.bytes })),
+      source: cache.manifest.source,
+      fetchedAt: cache.manifest.fetchedAt,
+      roots: cache.manifest.roots,
+    };
+  }
+
+  /** A sample message for one type of a gRPC API's definition, as pretty JSON text. */
+  async grpcSample(apiId: string, type: string): Promise<string> {
+    return sampleMessageText(await this.grpcProtoSetFor(apiId), type);
+  }
+
+  /** The open project's gRPC API with `apiId`, or a `not-found` error. */
+  private requireGrpcApi(apiId: string): GrpcApi {
+    const api = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    if (api === undefined) {
+      throw new ProjectError('not-found', `No gRPC API with id "${apiId}"`, { details: { id: apiId } });
+    }
+    return api;
+  }
+
+  /**
+   * Places an imported gRPC API in the project, caching the `.proto` files it was made of under
+   * its own folder once the slug is settled — as {@link addApi} does for an OpenAPI import.
+   * Saves immediately: an import is never lost to a crash.
+   */
+  async addGrpcApi(input: {
+    readonly api: GrpcApi;
+    readonly sources: ProtoSources;
+    readonly roots: readonly string[];
+    /** Where the user pointed at, recorded on the API as its definition's source. */
+    readonly source: string;
+    readonly cache?: boolean;
+  }): Promise<{ project: ProjectWire; apiId: string }> {
+    const open = this.require();
+    const taken = new Set([
+      ...open.project.apis.map((api) => api.slug),
+      ...open.project.grpcApis.map((api) => api.slug),
+      ...open.project.interfaces.map((iface) => iface.slug),
+    ]);
+    const slug = uniqueSlug(input.api.name, taken);
+    const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
+    if (cache) {
+      const definitionDir = apiDefinitionDir(open.dir, slug);
+      const manifest = await writeProtoDefinitionCache(input.sources, definitionDir, {
+        source: input.source,
+        roots: input.roots,
+      });
+      // The cache is this host's own write, so the watcher must not report it as an outside edit:
+      // an import would otherwise end with a "changed on disk — reload" banner over its own work.
+      this.expectOnDisk([
+        join(definitionDir, 'manifest.yaml'),
+        ...manifest.files.map((file) => join(definitionDir, PROTOS_DIR, ...protoPathSegments(file.path))),
+      ]);
+    }
+    const api: GrpcApi = {
+      ...input.api,
+      slug,
+      order: open.project.interfaces.length + open.project.apis.length + open.project.grpcApis.length,
+      definition: { source: input.source, cache, roots: [...input.roots] },
+    };
+    open.project = { ...open.project, grpcApis: [...open.project.grpcApis, api] };
+    open.dirty = true;
+    this.protoSets.delete(api.id);
+    // The set was just parsed for the import; keep it rather than re-reading the cache on the first send.
+    this.protoSets.set(api.id, Promise.resolve(loadProtoSet(input.sources, { roots: input.roots })));
+    await this.save({ reason: 'import' });
+    return { project: this.snapshot() as ProjectWire, apiId: api.id };
   }
 
   async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
@@ -2172,6 +2397,18 @@ export class ProjectHost {
     readonly fetchedAt: string;
     readonly declaredVersion?: string;
   }> {
+    // A gRPC API's cache holds `.proto` files rather than documents; the same card lists them by
+    // import path, and says `proto` where an OpenAPI card says the document's version.
+    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    if (grpc !== undefined) {
+      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      return {
+        documents: cache.manifest.files.map((file) => ({ location: file.path, size: file.bytes })),
+        rootLocation: cache.manifest.source,
+        fetchedAt: cache.manifest.fetchedAt,
+        declaredVersion: 'proto',
+      };
+    }
     const api = this.requireApi(apiId);
     const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
     return {
@@ -2189,6 +2426,17 @@ export class ProjectHost {
    * `unknown-document` error, so this can never be turned into a read of an arbitrary file.
    */
   async apiDefinitionText(apiId: string, location: string): Promise<string> {
+    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    if (grpc !== undefined) {
+      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      const text = cache.sources.get(location);
+      if (text === undefined) {
+        throw new ProjectError('not-found', `No file "${location}" in this API's definition`, {
+          details: { apiId, location },
+        });
+      }
+      return text;
+    }
     const api = this.requireApi(apiId);
     const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
     const document = cached.documents.find((candidate) => candidate.location === location);
@@ -2202,6 +2450,19 @@ export class ProjectHost {
 
   /** Writes every cached document of `apiId` into `dir`, byte for byte, returning the file names. */
   async exportApiDefinitionTo(apiId: string, dir: string): Promise<string[]> {
+    const grpc = this.require().project.grpcApis.find((candidate) => candidate.id === apiId);
+    if (grpc !== undefined) {
+      const cache = await readProtoDefinitionCache(apiDefinitionDir(this.require().dir, grpc.slug));
+      const written: string[] = [];
+      for (const [path, text] of cache.sources) {
+        // The import paths were validated as safe segments when the cache was written, so joining
+        // them under `dir` cannot leave it.
+        await mkdir(join(dir, ...path.split('/').slice(0, -1)), { recursive: true });
+        await writeFileAtomic(nodeFs, join(dir, ...path.split('/')), Buffer.from(text, 'utf8'));
+        written.push(path);
+      }
+      return written;
+    }
     const api = this.requireApi(apiId);
     const cacheDir = apiDefinitionDir(this.require().dir, api.slug);
     const cached = await readApiDefinitionCache(cacheDir);

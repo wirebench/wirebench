@@ -37,7 +37,7 @@ describe('CodePanel', () => {
     installWirebenchApi();
     render(<CodePanel />);
 
-    expect(screen.getByText('Open a request to see its cURL command')).toBeDefined();
+    expect(screen.getByText('Open a request to see its command')).toBeDefined();
   });
 
   it('shows the command main generated for the active request tab', async () => {

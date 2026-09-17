@@ -1,5 +1,6 @@
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { registerCommand } from '../lib/commands.js';
+import { useProjectStore } from '../state/project.js';
 
 /** Registers the `explorer.*` commands — the context menu's actions, reachable from the palette. */
 export function registerExplorerCommands(): void {
@@ -184,7 +185,7 @@ export function registerExplorerCommands(): void {
     id: 'rest.newFolder',
     label: 'REST: New Folder',
     category: 'Explorer',
-    when: (ctx) => insideApi(ctx.selection?.kind),
+    when: (ctx) => insideApi(ctx.selection?.kind, ctx.selection?.apiId),
     whenScope: 'selection.api',
     run: (ctx) => {
       explorerActions.newFolder(ctx.selection?.apiId, folderOf(ctx.selection));
@@ -194,17 +195,54 @@ export function registerExplorerCommands(): void {
     id: 'rest.newRequest',
     label: 'REST: New Request',
     category: 'Explorer',
-    when: (ctx) => insideApi(ctx.selection?.kind),
+    when: (ctx) => insideApi(ctx.selection?.kind, ctx.selection?.apiId),
     whenScope: 'selection.api',
     run: (ctx) => {
       explorerActions.newRestRequest(ctx.selection?.apiId, folderOf(ctx.selection));
     },
   });
+
+  // The gRPC creators, gated the same way on their own container.
+  registerCommand({
+    id: 'grpc.newApi',
+    label: 'gRPC: New API',
+    category: 'Explorer',
+    when: (ctx) => ctx.selection?.kind === 'project',
+    whenScope: 'selection.project',
+    run: (ctx) => {
+      explorerActions.newGrpcApi(ctx.selection?.id);
+    },
+  });
+  registerCommand({
+    id: 'grpc.newRequest',
+    label: 'gRPC: New Request',
+    category: 'Explorer',
+    when: (ctx) => insideGrpcApi(ctx.selection),
+    whenScope: 'selection.grpcApi',
+    run: (ctx) => {
+      explorerActions.newGrpcRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+    },
+  });
 }
 
-/** Whether the selected node sits in an API, whichever of the three kinds it is. */
-function insideApi(kind: string | undefined): boolean {
-  return kind === 'api' || kind === 'folder' || kind === 'rest-request';
+/**
+ * Whether the selected node sits in a gRPC API. A folder row is one kind for both protocols, so a
+ * selected folder counts when the API it names is a gRPC one.
+ */
+function insideGrpcApi(selection: { readonly kind: string; readonly apiId?: string } | undefined): boolean {
+  if (selection === undefined) return false;
+  if (selection.kind === 'grpc-api' || selection.kind === 'grpc-request') return true;
+  return selection.kind === 'folder' && selection.apiId !== undefined && selection.apiId in grpcApis();
+}
+
+/** Whether the selected node sits in a REST API, whichever of the three kinds it is. */
+function insideApi(kind: string | undefined, apiId?: string): boolean {
+  if (kind === 'folder') return apiId === undefined || !(apiId in grpcApis());
+  return kind === 'api' || kind === 'rest-request';
+}
+
+function grpcApis(): Readonly<Record<string, unknown>> {
+  return useProjectStore.getState().grpcApis;
 }
 
 /**
@@ -212,5 +250,5 @@ function insideApi(kind: string | undefined): boolean {
  * selected request, or the API's root when an API row is selected.
  */
 function folderOf(selection: { readonly kind: string; readonly folderId?: string } | undefined): string | undefined {
-  return selection?.kind === 'api' ? undefined : selection?.folderId;
+  return selection?.kind === 'api' || selection?.kind === 'grpc-api' ? undefined : selection?.folderId;
 }

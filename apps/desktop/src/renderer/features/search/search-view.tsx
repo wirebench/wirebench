@@ -180,9 +180,9 @@ export function SearchView() {
             >
               {/* Which protocol the group's request belongs to: two requests may share a name, and
                   a click opens a different editor for each. */}
-              {group[0]?.protocol === 'rest' && (
+              {(group[0]?.protocol === 'rest' || group[0]?.protocol === 'grpc') && (
                 <span data-testid="search-result-badge" className="rounded-full bg-surface-base px-1.5 normal-case">
-                  REST
+                  {group[0].protocol === 'rest' ? 'REST' : 'gRPC'}
                 </span>
               )}
               <span className="truncate">{heading}</span>

@@ -3,7 +3,14 @@ import type { InterfaceSummary } from '../../src/shared/wire-types.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nodes.js';
 import { buildExplorerTree, nodeProjectId, restEntityId } from '../../src/renderer/features/explorer/tree-nodes.js';
-import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
+import {
+  REQUEST_PROPERTIES,
+  grpcApiWire,
+  grpcRequestWire,
+  restApiWire,
+  restFolderWire,
+  restRequestWire,
+} from '../helpers/wire-defaults.js';
 
 function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
   return {
@@ -410,5 +417,70 @@ describe('restEntityId and nodeProjectId', () => {
     );
     expect(nodeProjectId({ id: 'api:api-2', kind: 'api', label: 'a', apiId: 'api-2' }, projectOf)).toBe('p2');
     expect(nodeProjectId({ id: 'operations:x', kind: 'operations', label: 'Operations' }, projectOf)).toBeUndefined();
+  });
+});
+
+describe('buildExplorerTree with gRPC APIs', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/demo', status: 'ready' } as const;
+  const api = grpcApiWire({ order: 1 });
+  const folder = restFolderWire({ id: 'folder-g', apiId: api.id, name: 'Greetings', order: 0 });
+  const inFolder = grpcRequestWire({ id: 'grpc-2', name: 'Chat', methodKind: 'bidi-streaming', folderId: 'folder-g' });
+  const atRoot = grpcRequestWire({ id: 'grpc-1', name: 'SayHello', order: 1 });
+
+  function tree(): ExplorerNode[] {
+    return buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+      { p1: { apis: [restApiWire({ order: 2 })], folders: [folder], requests: [] } },
+      undefined,
+      { p1: { apis: [api], requests: [atRoot, inFolder] } },
+    );
+  }
+
+  it('places a gRPC API among the interfaces and REST APIs by order, with its folders and requests', () => {
+    const [root] = tree();
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'grpc-api', 'api']);
+
+    const grpcApi = root?.children?.[1];
+    expect(grpcApi?.id).toBe('grpc-api:grpc-api-1');
+    expect(grpcApi?.apiId).toBe('grpc-api-1');
+    expect(grpcApi?.children?.map((child) => child.id)).toEqual(['folder:folder-g', 'grpc:grpc-1']);
+
+    const folderNode = grpcApi?.children?.[0];
+    expect(folderNode?.kind).toBe('folder');
+    expect(folderNode?.grpc).toBe(true);
+    expect(folderNode?.children?.[0]).toMatchObject({
+      id: 'grpc:grpc-2',
+      kind: 'grpc-request',
+      methodKind: 'bidi-streaming',
+      folderId: 'folder-g',
+      apiId: 'grpc-api-1',
+    });
+  });
+
+  it('does not hand a gRPC API’s folders to the REST API beside it', () => {
+    const [root] = tree();
+    const restApi = root?.children?.[2];
+    expect(restApi?.children).toEqual([]);
+  });
+
+  it('addresses gRPC rows by their entity id for move-node', () => {
+    const [root] = tree();
+    const grpcApi = root?.children?.[1];
+    expect(restEntityId(grpcApi)).toBe('grpc-api-1');
+    expect(restEntityId(grpcApi?.children?.[1])).toBe('grpc-1');
+    expect(nodeProjectId(grpcApi?.children?.[1], { 'grpc-api-1': 'p1' })).toBe('p1');
+  });
+
+  it('builds the tree it always did when no gRPC data is given', () => {
+    const before = buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+    );
+    expect(before[0]?.children?.map((child) => child.kind)).toEqual(['interface']);
   });
 });

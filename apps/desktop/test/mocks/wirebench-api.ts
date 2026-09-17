@@ -33,6 +33,9 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     api: {
       importOpenApi: fail('api.importOpenApi'),
       importPostman: fail('api.importPostman'),
+      importProto: fail('api.importProto'),
+      grpcDefinition: fail('api.grpcDefinition'),
+      grpcSample: fail('api.grpcSample'),
       cancelImport: fail('api.cancelImport'),
       definitionDocuments: fail('api.definitionDocuments'),
       definitionText: fail('api.definitionText'),
@@ -59,6 +62,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       recreate: fail('request.recreate'),
       curl: fail('request.curl'),
       importCurl: fail('request.importCurl'),
+      sendGrpc: fail('request.sendGrpc'),
+      preflightGrpc: fail('request.preflightGrpc'),
     },
     theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },
     globals: {
