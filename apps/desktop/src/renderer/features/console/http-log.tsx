@@ -188,7 +188,9 @@ export function HttpLog() {
             aria-label="HTTP log"
             tabIndex={0}
             onKeyDown={onKeyDown}
-            className="min-h-0 flex-1 overflow-auto"
+            /* Two rows at least: in a short console the panel scrolls rather than leaving the
+               table with no height at all. */
+            className="min-h-11 flex-1 overflow-auto"
             onScroll={(event) => {
               const element = event.currentTarget;
               pinnedToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < ROW_HEIGHT;

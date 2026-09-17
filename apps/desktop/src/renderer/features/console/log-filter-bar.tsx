@@ -50,7 +50,7 @@ function Chip({
 
 function ChipGroup({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
   return (
-    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1">
+    <div role="group" aria-label={label} className="flex shrink-0 items-center gap-1">
       {children}
     </div>
   );
@@ -93,7 +93,9 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
   return (
     <div
       data-testid="http-log-filter"
-      className="flex shrink-0 flex-wrap items-center gap-3 border-b border-hairline px-2 py-1"
+      /* One line, scrolled sideways when it does not fit: a wrapped bar eats the height of a short
+         console, and the rows are what the panel is for. */
+      className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-hairline px-2 py-1"
     >
       <input
         type="search"
@@ -141,7 +143,7 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
           />
         ))}
       </ChipGroup>
-      <span data-testid="http-log-count" className="ml-auto font-mono text-xs text-fg-subtle">
+      <span data-testid="http-log-count" className="ml-auto shrink-0 font-mono text-xs text-fg-subtle">
         {shown} of {total}
       </span>
       <Button variant="ghost" onClick={resetFilter}>

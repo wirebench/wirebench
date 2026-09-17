@@ -13,5 +13,6 @@ export function logRows(page: Page): Locator {
  * land on the detail pane, which then swallows the click.
  */
 export async function selectLogRow(row: Locator): Promise<void> {
+  await row.scrollIntoViewIfNeeded();
   await row.click({ position: { x: 8, y: 8 } });
 }
