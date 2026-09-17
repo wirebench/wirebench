@@ -289,4 +289,15 @@ describe('HttpLog', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByTestId('log-detail')).toBeNull();
   });
+
+  it('puts the secrets toggle and Clear in the filter toolbar, not the column header', () => {
+    useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
+    render(<HttpLog />);
+
+    const toolbar = screen.getByTestId('http-log-filter');
+    expect(within(toolbar).getByRole('button', { name: 'Clear' })).toBeDefined();
+    expect(within(toolbar).getByRole('button', { name: 'Show secrets' })).toBeDefined();
+    const header = screen.getByTestId('http-log-header').parentElement!;
+    expect(within(header).queryByRole('button')).toBeNull();
+  });
 });

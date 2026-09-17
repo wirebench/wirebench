@@ -133,7 +133,28 @@ export function HttpLog() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <LogFilterBar shown={visible.length} total={log.length} />
+      <LogFilterBar
+        shown={visible.length}
+        total={log.length}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              aria-pressed={showSecrets}
+              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
+              onClick={() => {
+                void toggleSecrets();
+              }}
+            >
+              <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
+              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+            </Button>
+            <Button variant="ghost" onClick={clearLog}>
+              Clear
+            </Button>
+          </>
+        }
+      />
 
       <div className="flex min-h-0 flex-1">
         <div className={`flex min-h-0 min-w-0 flex-col ${selected === undefined ? 'flex-1' : 'basis-[45%] shrink-0'}`}>
@@ -150,20 +171,6 @@ export function HttpLog() {
               <span>ms</span>
               <span>size</span>
             </div>
-            <Button
-              variant="ghost"
-              aria-pressed={showSecrets}
-              title={showSecrets ? 'Secrets are shown — click to redact' : 'Secrets are redacted — click to show'}
-              onClick={() => {
-                void toggleSecrets();
-              }}
-            >
-              <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
-              <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
-            </Button>
-            <Button variant="ghost" onClick={clearLog}>
-              Clear
-            </Button>
           </div>
 
           <div

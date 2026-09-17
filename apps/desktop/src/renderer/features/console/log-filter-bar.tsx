@@ -3,7 +3,7 @@
  * (multi-select; none selected means all), the "n of m" count, and Reset — which clears the filter
  * and is distinct from Clear, which empties the log. State lives in the exchanges store.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '../../components/button.js';
 import type { StatusClass } from '../../state/exchanges.js';
 import { useExchangesStore } from '../../state/exchanges.js';
@@ -60,9 +60,11 @@ export interface LogFilterBarProps {
   readonly shown: number;
   /** Rows in the log. */
   readonly total: number;
+  /** Log-wide actions shown at the end of the toolbar (the secrets toggle, Clear). */
+  readonly actions?: ReactNode;
 }
 
-export function LogFilterBar({ shown, total }: LogFilterBarProps) {
+export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
   const filter = useExchangesStore((state) => state.filter);
   const setFilter = useExchangesStore((state) => state.setFilter);
   const resetFilter = useExchangesStore((state) => state.resetFilter);
@@ -144,6 +146,7 @@ export function LogFilterBar({ shown, total }: LogFilterBarProps) {
       <Button variant="ghost" onClick={resetFilter}>
         Reset
       </Button>
+      {actions !== undefined && <div className="flex items-center gap-1 border-l border-hairline pl-2">{actions}</div>}
     </div>
   );
 }
