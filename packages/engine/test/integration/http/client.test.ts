@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendHttp } from '../../../src/http/client.js';
+import { failedRequestOf } from '../../../src/index.js';
 import type { HttpRequest } from '../../../src/http/types.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
@@ -120,6 +121,44 @@ describe('sendHttp', () => {
     ).rejects.toMatchObject({
       code: 'connection-refused',
     });
+  });
+
+  it('attaches the final request to a refused connection error', async () => {
+    const error: unknown = await sendHttp(
+      req({
+        url: 'http://127.0.0.1:1/svc?page=2',
+        method: 'POST',
+        headers: { Authorization: 'Bearer abc', 'content-type': 'text/xml' },
+        body: new TextEncoder().encode('<x/>'),
+        timeoutMs: 1000,
+      }),
+    ).catch((err: unknown) => err);
+    expect(error).toMatchObject({ code: 'connection-refused', message: 'Connection refused.' });
+    const captured = failedRequestOf(error);
+    expect(captured).toMatchObject({
+      url: 'http://127.0.0.1:1/svc?page=2',
+      method: 'POST',
+      headers: { Authorization: 'Bearer abc', 'content-type': 'text/xml', host: '127.0.0.1:1', 'content-length': '4' },
+      bodyBase64: Buffer.from('<x/>').toString('base64'),
+      bodyTruncated: false,
+    });
+  });
+
+  it('caps the attached body and marks it truncated', async () => {
+    const error: unknown = await sendHttp(
+      req({ url: 'http://127.0.0.1:1', method: 'POST', body: new Uint8Array(70 * 1024), timeoutMs: 1000 }),
+    ).catch((err: unknown) => err);
+    const captured = failedRequestOf(error);
+    expect(captured?.bodyTruncated).toBe(true);
+    expect(Buffer.from(captured?.bodyBase64 ?? '', 'base64').length).toBe(64 * 1024);
+  });
+
+  it('attaches no request to an invalid-url error', async () => {
+    const error: unknown = await sendHttp(req({ url: 'not a url', body: new Uint8Array() })).catch(
+      (err: unknown) => err,
+    );
+    expect(failedRequestOf(error)).toBeUndefined();
+    expect(failedRequestOf(new Error('x'))).toBeUndefined();
   });
 
   it('throws HttpError(invalid-url) for a malformed URL', async () => {

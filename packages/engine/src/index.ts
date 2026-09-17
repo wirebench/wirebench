@@ -229,6 +229,8 @@ export { md4 } from './http/auth/md4.js';
 export { ntlmHandshake } from './http/auth/ntlm-transport.js';
 export type { NtlmCredentials, NtlmHandshakeOptions, NtlmHandshakeResult } from './http/auth/ntlm-transport.js';
 export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './http/client.js';
+export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from './http/failed-request.js';
+export type { FailedRequest } from './http/failed-request.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
 export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
 export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
