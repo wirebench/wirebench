@@ -1,3 +1,17 @@
+export { evaluateAssertions } from './assert/index.js';
+export type {
+  Assertion,
+  AssertionLanguage,
+  AssertionResult,
+  AssertionSubject,
+  MatchAssertion,
+  SchemaAssertion,
+  SlaAssertion,
+  SoapFaultAssertion,
+  StatusAssertion,
+} from './assert/model.js';
+export { assertionsSchema } from './assert/schema.js';
+
 export {
   WirebenchError,
   WsdlParseError,
