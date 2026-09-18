@@ -3,8 +3,6 @@ title: REST Client Guide
 description: Creating REST requests, configuring query parameters, path variables, request bodies, and inspecting responses.
 ---
 
-import Endpoint from '../../components/Endpoint.astro';
-import MethodBadge from '../../components/MethodBadge.astro';
 import Shortcut from '../../components/Shortcut.astro';
 
 # REST Client Guide
@@ -19,11 +17,11 @@ Wirebench includes a modern REST client engineered for speed, high contrast, and
 
 The method picker in the URL bar supports standard REST methods:
 
-- <MethodBadge method="GET" />: Safe, idempotent resource retrieval.
-- <MethodBadge method="POST" />: Resource creation or command execution.
-- <MethodBadge method="PUT" />: Complete resource replacement.
-- <MethodBadge method="PATCH" />: Partial resource updates.
-- <MethodBadge method="DELETE" />: Resource deletion.
+- `GET`: Safe, idempotent resource retrieval.
+- `POST`: Resource creation or command execution.
+- `PUT`: Complete resource replacement.
+- `PATCH`: Partial resource updates.
+- `DELETE`: Resource deletion.
 
 ---
 
@@ -32,7 +30,6 @@ The method picker in the URL bar supports standard REST methods:
 ### Dynamic Address Bar
 The address bar combines the HTTP method selector with the target endpoint URL:
 
-<Endpoint method="GET" path="https://api.example.com/v1/users/{userId}/orders" />
 
 Press <Shortcut keys={["Cmd", "Enter"]} /> (or <Shortcut keys={["Ctrl", "Enter"]} />) to execute immediately from the URL input.
 

@@ -3,8 +3,6 @@ title: SOAP & WSDL Guide
 description: Importing WSDL definitions, navigating schemas, editing envelopes, configuring WS-Security, and handling attachments.
 ---
 
-import Endpoint from '../../components/Endpoint.astro';
-import MethodBadge from '../../components/MethodBadge.astro';
 import Shortcut from '../../components/Shortcut.astro';
 
 # SOAP & WSDL Guide

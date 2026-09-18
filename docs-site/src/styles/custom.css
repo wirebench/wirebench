@@ -1,7 +1,7 @@
 /*
  * Wirebench Documentation Design System
  * 
- * Blends Postman's developer-focused layout with Wirebench's craft terracotta
+ * Wirebench documentation theme: Wirebench's craft terracotta
  * design tokens and warm near-black ramp from apps/desktop/src/renderer/styles/tokens.css.
  */
 
@@ -24,7 +24,7 @@
   --sl-color-accent-low: #2b1c16;
   --sl-color-accent: #d97757;
   --sl-color-accent-high: #e58c6e;
-  
+
   --sl-color-white: #ece9e3;
   --sl-color-gray-1: #dfdbd3;
   --sl-color-gray-2: #a49d93;
@@ -33,7 +33,7 @@
   --sl-color-gray-5: #2a2724;
   --sl-color-gray-6: #1c1b19;
   --sl-color-black: #151413;
-  
+
   --sl-color-bg: #151413;
   --sl-color-bg-nav: #0f0e0d;
   --sl-color-bg-sidebar: #121110;
@@ -64,7 +64,7 @@
   --sl-color-hairline: #dfdbd3;
 }
 
-/* Postman-Style HTTP Method Badges */
+/* HTTP Method Badges */
 .method-badge {
   display: inline-flex;
   align-items: center;
@@ -115,7 +115,7 @@
   border: 1px solid rgba(183, 154, 224, 0.3);
 }
 
-/* Postman-Style Interactive Endpoint Bar */
+/* Interactive Endpoint Bar */
 .endpoint-bar {
   display: flex;
   align-items: center;

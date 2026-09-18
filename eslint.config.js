@@ -41,6 +41,7 @@ export default tseslint.config(
       '**/test-results/**',
       '.superpowers/**',
       '**/fixtures/**',
+      'docs-site/.astro/**',
     ],
   },
   {

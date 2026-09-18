@@ -3,7 +3,6 @@ title: Introduction
 description: Overview of Wirebench, design philosophy, architecture, and protocol support.
 ---
 
-import Endpoint from '../../components/Endpoint.astro';
 import Shortcut from '../../components/Shortcut.astro';
 
 # Introduction to Wirebench

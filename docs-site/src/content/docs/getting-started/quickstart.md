@@ -4,7 +4,6 @@ description: Create a workspace, import an API, edit the request envelope, and i
 ---
 
 import { Steps } from '@astrojs/starlight/components';
-import Endpoint from '../../components/Endpoint.astro';
 import Shortcut from '../../components/Shortcut.astro';
 
 # 5-Minute Quickstart

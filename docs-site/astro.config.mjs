@@ -3,6 +3,7 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://wirebench.github.io',
+  base: '/wirebench',
   image: {
     service: passthroughImageService(),
   },
@@ -17,9 +18,7 @@ export default defineConfig({
           href: 'https://github.com/wirebench/wirebench',
         },
       ],
-      customCss: [
-        './src/styles/custom.css',
-      ],
+      customCss: ['./src/styles/custom.css'],
       sidebar: [
         {
           label: 'Getting Started',
@@ -36,12 +35,6 @@ export default defineConfig({
             { label: 'SOAP & WSDL', slug: 'guides/soap-wsdl' },
             { label: 'Environments & Properties', slug: 'guides/environments' },
             { label: 'Shared Workspaces', slug: 'guides/workspaces' },
-          ],
-        },
-        {
-          label: 'API Reference',
-          items: [
-            { label: 'Interactive Explorer (Scalar)', link: '/reference/' },
           ],
         },
         {
