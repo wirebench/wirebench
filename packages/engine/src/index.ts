@@ -10,6 +10,7 @@ export {
   WorkspaceError,
   OpenApiError,
   PostmanError,
+  LegacyProjectError,
   ProtoError,
   GrpcError,
   isWirebenchError,
@@ -416,6 +417,28 @@ export type {
   PostmanUrlEncodedParam,
   PostmanVariable,
 } from './rest/postman/index.js';
+
+// Legacy SOAP projects: reading the single-XML project files of older SOAP workbenches.
+export {
+  looksLikeLegacyProject,
+  MAX_LEGACY_PROJECT_BYTES,
+  parseLegacyProject,
+  readLegacySoapProject,
+} from './soap/legacy-project/index.js';
+export type {
+  LegacyCall,
+  LegacyCredentials,
+  LegacyDefinitionCache,
+  LegacyDefinitionPart,
+  LegacyEnvironment,
+  LegacyInterface,
+  LegacyOperation,
+  LegacyProject,
+  LegacyProjectSource,
+  LegacyProperty,
+  LegacyScript,
+  LegacyUnmapped,
+} from './soap/legacy-project/index.js';
 export type { ComposedUrl, ComposeUrlOptions, UrlProblem } from './rest/url.js';
 export type {
   CreateApiInput,
