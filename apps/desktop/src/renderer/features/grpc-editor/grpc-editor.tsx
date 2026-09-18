@@ -211,6 +211,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
           <MessageTab
             message={request.message}
             methodKind={request.methodKind}
+            apiId={api?.id}
             requestType={described?.requestType}
             onChange={(message) => {
               stage({ message });

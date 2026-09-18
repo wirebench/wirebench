@@ -37,6 +37,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       grpcDefinition: fail('api.grpcDefinition'),
       grpcRefresh: fail('api.grpcRefresh'),
       grpcSample: fail('api.grpcSample'),
+      grpcFields: fail('api.grpcFields'),
       cancelImport: fail('api.cancelImport'),
       definitionDocuments: fail('api.definitionDocuments'),
       definitionText: fail('api.definitionText'),

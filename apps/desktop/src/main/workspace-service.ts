@@ -2412,6 +2412,11 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  grpcFields(...args: Parameters<ProjectRouter['grpcFields']>): ReturnType<ProjectRouter['grpcFields']> {
+    return this.hostOfEntity(args[0]).grpcFields(...args);
+  }
+
+  /** @inheritdoc */
   grpcRefresh(...args: Parameters<ProjectRouter['grpcRefresh']>): ReturnType<ProjectRouter['grpcRefresh']> {
     return this.hostOfEntity(args[0]).refreshGrpcDefinition(...args);
   }

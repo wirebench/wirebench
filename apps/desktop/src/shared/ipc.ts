@@ -16,6 +16,8 @@ import {
   apiGrpcDefinitionResponseSchema,
   apiGrpcRefreshRequestSchema,
   apiGrpcRefreshResponseSchema,
+  apiGrpcFieldsRequestSchema,
+  apiGrpcFieldsResponseSchema,
   apiGrpcSampleRequestSchema,
   apiGrpcSampleResponseSchema,
   grpcExchangeSummarySchema,
@@ -398,6 +400,7 @@ export const channels = {
     grpcDefinition: defineChannel('api.grpcDefinition', apiIdRequestSchema, apiGrpcDefinitionResponseSchema),
     /** A sample message for one type of a gRPC API's definition. */
     grpcSample: defineChannel('api.grpcSample', apiGrpcSampleRequestSchema, apiGrpcSampleResponseSchema),
+    grpcFields: defineChannel('api.grpcFields', apiGrpcFieldsRequestSchema, apiGrpcFieldsResponseSchema),
     /** Asks a reflection-sourced API's server to describe itself again. */
     grpcRefresh: defineChannel('api.grpcRefresh', apiGrpcRefreshRequestSchema, apiGrpcRefreshResponseSchema),
     cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),

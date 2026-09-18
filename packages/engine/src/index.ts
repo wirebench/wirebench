@@ -537,6 +537,8 @@ export type {
   ToSendInputArgs,
 } from './send-options.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
+export { jsonCompletionContextAt } from './json/cursor.js';
+export type { JsonCompletionContext, JsonTextRange } from './json/cursor.js';
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
@@ -855,6 +857,7 @@ export { loadProtoSet } from './grpc/proto/load.js';
 export type { LoadProtoOptions, ProtoSet, ProtoSources } from './grpc/proto/load.js';
 export {
   describeMessage,
+  describeMessageAt,
   describeMethod,
   describeServices,
   lookupMessageType,

@@ -282,11 +282,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       // Markers go through the namespace the mounted editor hands over, so `editor/markers.ts`
       // (reached from the Problems view and the send flow) never has to import Monaco itself.
       setMarkerApi(monacoNS as typeof Monaco);
-      // `monacoNS.languages` is absent from the lightweight test double swapped in under jsdom
-      // (see `test/mocks/monaco-editor-react.tsx`); the real Monaco always has it.
-      if ((monacoNS as { languages?: unknown }).languages !== undefined) {
-        registerXmlLanguageFeaturesOnce(monacoNS as typeof Monaco, () => ipcCompletionSource(interfaceId));
-      }
+      registerXmlLanguageFeaturesOnce(monacoNS as typeof Monaco, () => ipcCompletionSource(interfaceId));
       // An Outline row selected just before switching back to XML: reveal the same range now
       // that the editor exists again.
       const pending = pendingSelectionRef.current;

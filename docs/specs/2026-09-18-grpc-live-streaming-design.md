@@ -97,7 +97,8 @@ already at the bottom — scrolling up to read one pins the view there.
   call whose client side is one message, so *Open stream* is offered only where the client streams.
 - **The composer is a plain textarea**, not the Monaco editor of the Message tab: a line of a
   conversation, typed and sent, rather than a document kept between calls. Completion in the
-  message editor is the next piece of work, and it can reach here afterwards if it earns it.
+  message editor was built next (`2026-09-18-grpc-message-completion-design.md`) and did not reach
+  here: the composer has no model of its own to register against.
 - **No flow control.** A push writes immediately; the HTTP/2 window is Node's to manage.
 
 ## 7. Success criteria

@@ -2352,6 +2352,38 @@ export type ApiGrpcRefreshResponse = z.infer<typeof apiGrpcRefreshResponseSchema
 export const apiGrpcSampleRequestSchema = z.object({ apiId: z.string(), type: z.string().max(1024) });
 export const apiGrpcSampleResponseSchema = z.object({ text: z.string() });
 
+/**
+ * Request/response for `api.grpcFields`: the fields of the message reached by walking `path` — a
+ * chain of JSON object keys — down from `type`. The message editor's completion provider asks it
+ * for the object the cursor is in, so a path that names nothing simply answers no fields rather
+ * than failing: a half-typed document is the normal case, not an error.
+ */
+export const apiGrpcFieldsRequestSchema = z.object({
+  apiId: z.string(),
+  type: z.string().max(1024),
+  path: z.array(z.string().max(256)).max(64),
+});
+
+/** One field of a message, as the completion provider needs it. */
+export const grpcMessageFieldSchema = z.object({
+  name: z.string(),
+  /** The declared type: a scalar name, or a fully qualified message or enum name. */
+  type: z.string(),
+  valueKind: z.enum(['scalar', 'enum', 'message', 'map']),
+  repeated: z.boolean(),
+  oneof: z.string().optional(),
+  /** For an enum field: the value names, in declaration order. */
+  enumValues: z.array(z.string()).optional(),
+  comment: z.string().optional(),
+});
+export type GrpcMessageFieldWire = z.infer<typeof grpcMessageFieldSchema>;
+
+export const apiGrpcFieldsResponseSchema = z.object({
+  /** The message the path resolved to, absent when it resolved to nothing. */
+  fullName: z.string().optional(),
+  fields: z.array(grpcMessageFieldSchema),
+});
+
 /** Request/response for `api.cancelImport`, by the token the import was started with. */
 export const apiCancelImportRequestSchema = z.object({ token: z.string() });
 export const apiCancelImportResponseSchema = z.object({ cancelled: z.boolean() });

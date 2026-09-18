@@ -8,6 +8,7 @@ import protobuf from 'protobufjs';
 import { ProtoError } from '../../errors.js';
 import type { GrpcMethodKind } from '../model.js';
 import type { ProtoSet } from './load.js';
+import { WELL_KNOWN_TYPES } from './well-known.js';
 
 /** One method of a service, as declared. */
 export interface GrpcMethodDescriptor {
@@ -212,4 +213,70 @@ export function describeMessage(set: ProtoSet, fullName: string): MessageDescrip
     fields: type.fieldsArray.map(describeField),
     oneofs: type.oneofsArray.filter((oneof) => !oneof.name.startsWith('_')).map((oneof) => oneof.name),
   };
+}
+
+/** The lowerCamelCase JSON name protobuf's JSON mapping accepts alongside a field's declared name. */
+function jsonNameOf(name: string): string {
+  return name.replace(/_([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
+}
+
+/** The message type `fullName`, or `undefined` when the set has no such message. */
+function messageOrUndefined(set: ProtoSet, fullName: string): protobuf.Type | undefined {
+  const found = set.root.lookup(fullName.replace(/^\./, ''), protobuf.Type, true);
+  return found instanceof protobuf.Type ? found : undefined;
+}
+
+/** The field of `descriptor` a JSON key names, matching either the declared name or its JSON name. */
+function fieldNamed(descriptor: MessageDescriptor, key: string): MessageFieldDescriptor | undefined {
+  return descriptor.fields.find((field) => field.name === key || jsonNameOf(field.name) === key);
+}
+
+/**
+ * The message whose fields belong at `path` — a chain of JSON object keys — under `rootType`.
+ *
+ * `path` is what {@link jsonCompletionContextAt} reports, so it carries no array indices: a
+ * repeated field is descended through as if it were singular. A map field is followed by the
+ * user's own key, which is consumed here, since only the schema knows that a level of the
+ * document is a map rather than a nested message.
+ *
+ * Returns `undefined` when the path names a field the message does not have, stops on a scalar or
+ * an enum, or ends on a map whose entries the user names — and for a well-known type, whose JSON
+ * is its own mapping (a `Timestamp` is a string, a wrapper is a bare value) rather than its
+ * fields, so offering those fields would be offering a document protobuf will not read back.
+ *
+ * @throws ProtoError `proto-type-unknown` when the set has no `rootType`
+ */
+export function describeMessageAt(
+  set: ProtoSet,
+  rootType: string,
+  path: readonly string[],
+): MessageDescriptor | undefined {
+  let descriptor = describeMessage(set, rootType);
+  let index = 0;
+  while (index < path.length) {
+    const field = fieldNamed(descriptor, path[index] as string);
+    if (field === undefined) {
+      return undefined;
+    }
+    if (field.valueKind === 'map') {
+      // The next segment is whatever the user called this entry; the fields under it are the
+      // value type's, so a map costs two segments rather than one.
+      index += 1;
+      if (index >= path.length) {
+        return undefined;
+      }
+    } else if (field.valueKind !== 'message') {
+      return undefined;
+    }
+    if (WELL_KNOWN_TYPES.has(field.type)) {
+      return undefined;
+    }
+    const nested = messageOrUndefined(set, field.type);
+    if (nested === undefined) {
+      return undefined;
+    }
+    descriptor = describeMessage(set, field.type);
+    index += 1;
+  }
+  return descriptor;
 }

@@ -118,6 +118,8 @@ export interface ProjectRouter {
   grpcDefinition(...args: Parameters<ProjectHost['grpcDefinition']>): ReturnType<ProjectHost['grpcDefinition']>;
   /** A sample message for one type of a gRPC API's definition. */
   grpcSample(...args: Parameters<ProjectHost['grpcSample']>): ReturnType<ProjectHost['grpcSample']>;
+  /** The fields of the message at a path of JSON keys under one type. */
+  grpcFields(...args: Parameters<ProjectHost['grpcFields']>): ReturnType<ProjectHost['grpcFields']>;
   /** Asks a reflection-sourced API's server to describe itself again. */
   grpcRefresh(
     ...args: Parameters<ProjectHost['refreshGrpcDefinition']>

@@ -6,15 +6,29 @@
  * object per line; the hint under the editor says which applies. *Reset to sample* asks main for a
  * skeleton of the method's request type — every field with a zero value — so a user starting from
  * nothing can see what the message wants.
+ *
+ * Typing a key offers the fields of the message the cursor is in, which is the same schema the
+ * sample is made of, asked for one object at a time. The provider is registered against this
+ * editor's model alone, so no other JSON editor in the app gains completions from it.
  */
+import { useEffect, useState } from 'react';
+import type * as Monaco from 'monaco-editor';
 import { Button } from '../../components/button.js';
 import { CodeEditor } from '../../editor/code-editor.js';
+import { grpcFieldsSource } from '../../editor/grpc-completion-source.js';
+import {
+  clearJsonCompletionSource,
+  registerJsonCompletionOnce,
+  setJsonCompletionSource,
+} from '../../editor/json-completion.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import type { GrpcMethodKindWire } from '../../../shared/wire-types.js';
 
 export interface MessageTabProps {
   readonly message: string;
   readonly methodKind: GrpcMethodKindWire;
+  /** The API whose schema completes this message; absent when the request has no definition. */
+  readonly apiId?: string | undefined;
   /** The request type the sample is made of; absent when the method is unset or undescribed. */
   readonly requestType?: string | undefined;
   readonly onChange: (message: string) => void;
@@ -33,12 +47,27 @@ export function clientStreams(kind: GrpcMethodKindWire): boolean {
 export function MessageTab({
   message,
   methodKind,
+  apiId,
   requestType,
   onChange,
   onResetToSample,
   onSend,
   onSave,
 }: MessageTabProps) {
+  const [modelUri, setModelUri] = useState<string | undefined>(undefined);
+
+  // Keyed on the request type rather than set once at mount: picking a different method changes
+  // what this same editor is completing against, and the editor is not remounted for it.
+  useEffect(() => {
+    if (modelUri === undefined || apiId === undefined || requestType === undefined) {
+      return undefined;
+    }
+    setJsonCompletionSource(modelUri, grpcFieldsSource(apiId, requestType));
+    return () => {
+      clearJsonCompletionSource(modelUri);
+    };
+  }, [modelUri, apiId, requestType]);
+
   return (
     <div data-testid="grpc-message" className="flex h-full min-h-0 flex-col gap-2 p-3">
       <div className="flex shrink-0 items-center gap-2">
@@ -61,13 +90,19 @@ export function MessageTab({
           language="json"
           ariaLabel="Request message"
           onChange={onChange}
-          onMount={(editor) => {
+          onMount={(editor, monacoNS) => {
             editor.addCommand(SEND_KEYBINDING, () => {
               onSend?.();
             });
             editor.addCommand(SAVE_KEYBINDING, () => {
               onSave?.();
             });
+            const model = editor.getModel();
+            if (model === null) {
+              return;
+            }
+            registerJsonCompletionOnce(monacoNS as typeof Monaco);
+            setModelUri(model.uri.toString());
           }}
         />
       </div>
