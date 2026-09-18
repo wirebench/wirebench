@@ -63,6 +63,13 @@ is the same button, and the send lands in the same History, badged with its meth
 
 ![A REST request and its response](docs/images/rest-response.png)
 
+**7. Or bring a legacy SOAP project across.** Many SOAP projects live in one XML project file from an older desktop
+workbench. Choose **Import Legacy SOAP Project…** from the command palette (or pick _Legacy SOAP project_ as the
+format in **Import…**) and pick the file. Its interfaces, endpoints, saved requests, properties and environments
+arrive in the project you choose. The definitions come from the copy the file carries, so no network is needed.
+Passwords are never copied, scripts are kept under `imported-scripts/` without being run, and test suites and mocks
+are not imported. A report lists each of these, so nothing is dropped silently.
+
 That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
 evaluates XPath 3.1 and XQuery 3.1 over the response, plus JSONPath when the body is JSON; the request editor's
 inspector strip carries _Details_,

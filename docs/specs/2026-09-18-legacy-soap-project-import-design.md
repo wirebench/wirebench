@@ -41,7 +41,7 @@ A single XML document in one namespace (see `format.ts`), whose root element car
 | `interface/endpoints/endpoint` | interface endpoint URLs |
 | `interface/operation` (`@name`, `@action`, `@bindingOperationName`) | a binding operation |
 | `operation/call` | a saved request. `@name`, `endpoint`, `request` (the envelope, optionally with a `@compression` attribute), `encoding`, `@timeout`, `credentials/username`, `credentials/domain`, `credentials/password`, `@useWsAddressing` |
-| `environment` (`@name`, `property`) | an environment with its property values |
+| `environment` (`@name`, `property`, `service/@name` + `service/endpoint`) | an environment with its property values and endpoint overrides |
 | every element whose local name ends in `Script` | a script (`@language` when given) |
 
 Anything else is left alone and, where it holds user work (the list in ruling 3), named in the report.
@@ -51,7 +51,8 @@ Anything else is left alone and, where it holds user work (the list in ruling 3)
 - **Definitions.** Each interface is resolved through the normal WSDL import, with a document fetcher that
   answers from the file's `definitionCache` parts by URL. So an interface imports offline, exactly as it was
   when the file was last saved. When an interface has no cache, the fetcher falls back to the network for
-  `@definition`, and the report says so. When neither works, the interface is skipped with the reason.
+  `@definition`, and the report says so, but only over `http(s)`: a `file:` location the imported file names is
+  never read. When neither works, the interface is skipped with the reason.
 - **Endpoints.** Endpoint URLs become the interface's `Endpoint`s. The first becomes the default.
 - **Requests.** Each `call` becomes a `SoapRequestDef` under its operation (matched by binding and
   operation name), keeping its name and its envelope byte for byte. A call's endpoint that is one of the
@@ -63,8 +64,9 @@ Anything else is left alone and, where it holds user work (the list in ruling 3)
   written to the project (ADR-0004). Every request or endpoint that had one is listed in the report, to be
   re-entered.
 - **Properties.** Project properties merge into the project's properties. A name that already exists keeps
-  its current value and is reported. Environments become Wirebench environments with their property values.
-  An environment whose name already exists gets a numbered name.
+  its current value and is reported. Environments become Wirebench environments with their property values
+  and their per-interface endpoint overrides (keyed by the imported interface's slug). An environment whose
+  name already exists gets a numbered name.
 - **Scripts.** Written to `imported-scripts/<owner-path>/<element>.<ext>` (`.groovy` by default or
   `.js` for `javascript`). `<owner-path>` is the slugified chain of named owners, and a clash gets a
   numeric suffix.
@@ -82,15 +84,15 @@ be copied as text.
 
 ### 6.1 Engine, `packages/engine/src/soap/legacy-project/`
 
-- `format.ts`: namespace URI and root name, plus `isLegacySoapProject(text)` (exempt file).
+- `format.ts`: namespace URI and root name, plus `looksLikeLegacyProject(text)` for detection (exempt file).
 - `model.ts`: the typed, parsed file (`LegacyProject`, `LegacyInterface`, `LegacyOperation`, `LegacyCall`,
   `LegacyScript`, `LegacyEnvironment`).
 - `parse.ts`: xmldom parse via `xml/parse.ts` (no DTDs, no external entities) into the model. Tolerant of
   missing optional elements; collects unknown top-level user-work elements for the report.
-- `definition-fetcher.ts`: `fetchDocumentFromCache(parts, fallback)` implementing `FetchDocument`.
+- `definition-fetcher.ts`: `fetchDocumentFromCache(cache, { fallback, onFallback })` implementing `FetchDocument`.
 - `import.ts`: `readLegacySoapProject(source)`, which applies the 50 MB cap and parses. It throws
-  `LegacyProjectError` (`legacy-too-large`, `legacy-malformed`, `legacy-not-a-project`).
-- `map.ts`: pure functions from the parsed file plus each interface's `ImportResult` to `Interface`,
+  `LegacyProjectError` (`legacy-too-large`, `legacy-read-failed`, `legacy-malformed`, `legacy-not-a-project`, `legacy-encrypted`).
+- `map.ts`: pure functions from the parsed file plus each interface's resolved operations to `Interface`,
   `Environment`, properties, script files and the report. It is pure, so it can be unit-tested without a
   project host.
 
@@ -104,11 +106,16 @@ match, and never probable from the file name alone (the extension is `.xml`).
 - `EngineService.importForProject` accepts an optional main-side `fetchDocument`. It never crosses IPC.
 - `ProjectHost.importLegacyProject(parsed)` resolves each interface, adds interfaces, requests,
   environments and properties, writes the script files, saves once, and returns the report.
-- IPC `project.importLegacy`: `{ source: { kind: 'file', path }, target: { projectId } | { newProjectName } }`.
-  The path goes through `checkedImportSource` like every other import, and a new project is removed again
-  when the import fails, as with Postman.
-- Renderer: `ImportLegacyProjectDialog`, reached from the Import chooser and from the command palette
-  (`soap.importLegacyProject`). It picks the file and the target, then shows the report.
+- IPC `project.importLegacy`: `{ source: { kind: 'file', path }, target: { projectId } | { newProjectName } }`,
+  answering `{ projectId, project, report, reportText }`. The path goes through `checkedImportSource` like every
+  other import, and the file is parsed before any project is created. An empty `newProjectName` takes the name
+  the file gives the project. A new project is removed again when the import fails, as with Postman.
+- `project.addInterface` checks the head of a picked file and refuses a legacy project with
+  `legacy-project-as-wsdl`, naming the format to choose, instead of failing partway through a WSDL import.
+- Renderer: no dialog of its own. The unified Import dialog gains the _Legacy SOAP project_ format (detected
+  from dropped or pasted text, and offered in the format list) and a summary with counts, warnings, notes and a
+  Copy report button. The command palette's `definition.importLegacyProject` opens it on that format. The
+  project is read from the picked file, so a dropped or pasted copy is refused with "use Browse…".
 
 ## 7. Boundaries
 
