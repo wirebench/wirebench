@@ -196,8 +196,9 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await page.getByTestId('workspace-switcher').click();
     await page.getByRole('menuitem', { name: 'Create workspace…' }).click();
     await createWorkspace(page, 'Third');
-    // The toolbar still showing proves the log is on screen, so zero rows is a real zero.
-    await expect(preserve).toBeVisible();
+    // An empty log shows its hint instead of the toolbar; the hint proves the log is on screen, so
+    // zero rows is a real zero.
+    await expect(page.getByText('Sent requests appear here with their raw exchange and timings.')).toBeVisible();
     await expect(logRows(page)).toHaveCount(0);
   });
 });
