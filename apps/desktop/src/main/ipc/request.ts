@@ -714,34 +714,58 @@ async function sendRestRequest(
     });
   }
 
-  const tls = await deps.project.restTlsFor?.(request.requestId);
-  const anchors = extraTrustAnchors();
-  const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
-  const mergedTls = withoutUndefined<TlsOptions>({
-    ...resolved.input.tls,
-    ...tls,
-    ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-  });
-  const owner = deps.project.projectId(request.requestId);
-  const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
-  const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
-  const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-  const input = { ...resolved.input, tls: mergedTls, ...(proxy !== undefined ? { proxy } : {}) };
   // The one query parameter an API key may be configured to travel in, so the URL is masked
   // wherever it is logged even when the key is called something this build has never heard of.
   const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
+  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
+  let input: typeof resolved.input;
+  let accessToken: string | undefined;
+  try {
+    const tls = await deps.project.restTlsFor?.(request.requestId);
+    const anchors = extraTrustAnchors();
+    const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
+    const mergedTls = withoutUndefined<TlsOptions>({
+      ...resolved.input.tls,
+      ...tls,
+      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+    });
+    const owner = deps.project.projectId(request.requestId);
+    const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
+    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
+    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
+    input = { ...resolved.input, tls: mergedTls, ...(proxy !== undefined ? { proxy } : {}) };
 
-  // The token is obtained here rather than inside the engine service: it needs a browser, a
-  // loopback listener and a cache, none of which the engine may own. A grant that would have to
-  // open a window refuses instead, and the user presses *Get new token*.
-  const accessToken =
-    resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-      ? await deps.oauth2.accessToken(resolved.auth, {
-          credentials: await oauth2Credentials(deps, resolved.auth),
-          ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-          ...(proxy !== undefined ? { proxy } : {}),
-        })
-      : undefined;
+    // The token is obtained here rather than inside the engine service: it needs a browser, a
+    // loopback listener and a cache, none of which the engine may own. A grant that would have to
+    // open a window refuses instead, and the user presses *Get new token*.
+    accessToken =
+      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+        ? await deps.oauth2.accessToken(resolved.auth, {
+            credentials: await oauth2Credentials(deps, resolved.auth),
+            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
+            ...(proxy !== undefined ? { proxy } : {}),
+          })
+        : undefined;
+  } catch (error) {
+    // Before the request was built: a bad URL, a proxy lookup, an OAuth2 token fetch. The row says
+    // it never went on the wire; History is not written (nothing was sent).
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'rest',
+        requestId: request.requestId,
+        url: joinedOrConcat(resolved.input.baseUrl, resolved.input.request.url),
+        method: resolved.input.request.method,
+        headers: {},
+        startedAt: prepareStartedAt,
+        durationMs: Date.now() - prepareStartedAt,
+        error,
+        stage: 'prepare',
+        keyParams,
+      }),
+    );
+    throw error;
+  }
 
   const startedAt = Date.now();
   try {
@@ -787,6 +811,15 @@ async function sendRestRequest(
       }),
     );
     throw error;
+  }
+}
+
+/** The base joined with the path, or the two texts side by side when the base does not parse. */
+function joinedOrConcat(baseUrl: string, path: string): string {
+  try {
+    return joinBase(baseUrl, path);
+  } catch {
+    return `${baseUrl}${path}`;
   }
 }
 
@@ -958,23 +991,49 @@ async function sendGrpcRequest(
       details: { requestId: request.requestId },
     });
   }
-  const set = await deps.project.grpcProtoSetFor(request.requestId);
+  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
+  let set: Awaited<ReturnType<typeof deps.project.grpcProtoSetFor>>;
+  let tlsOptions: TlsOptions;
+  let accessToken: string | undefined;
+  try {
+    set = await deps.project.grpcProtoSetFor(request.requestId);
 
-  const tls = await deps.project.grpcTlsFor?.(request.requestId);
-  const anchors = extraTrustAnchors();
-  const baseCa = tls?.ca ?? resolved.input.tlsOptions?.ca ?? [];
-  const tlsOptions = withoutUndefined<TlsOptions>({
-    ...resolved.input.tlsOptions,
-    ...tls,
-    ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-  });
-  const accessToken =
-    resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-      ? await deps.oauth2.accessToken(resolved.auth, {
-          credentials: await oauth2Credentials(deps, resolved.auth),
-          tls: tlsOptions,
-        })
-      : undefined;
+    const tls = await deps.project.grpcTlsFor?.(request.requestId);
+    const anchors = extraTrustAnchors();
+    const baseCa = tls?.ca ?? resolved.input.tlsOptions?.ca ?? [];
+    tlsOptions = withoutUndefined<TlsOptions>({
+      ...resolved.input.tlsOptions,
+      ...tls,
+      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+    });
+    accessToken =
+      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+        ? await deps.oauth2.accessToken(resolved.auth, {
+            credentials: await oauth2Credentials(deps, resolved.auth),
+            tls: tlsOptions,
+          })
+        : undefined;
+  } catch (error) {
+    // Before the call was built: the .proto set, the TLS identity, an OAuth2 token fetch.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'grpc',
+        requestId: request.requestId,
+        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
+          resolved.input.service,
+          resolved.input.method,
+        )}`,
+        method: 'POST',
+        headers: {},
+        startedAt: prepareStartedAt,
+        durationMs: Date.now() - prepareStartedAt,
+        error,
+        stage: 'prepare',
+      }),
+    );
+    throw error;
+  }
 
   const startedAt = Date.now();
   try {

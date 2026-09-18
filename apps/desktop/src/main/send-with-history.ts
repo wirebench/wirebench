@@ -91,10 +91,33 @@ export async function sendAndRecordHistory(
   const owner = requestId === undefined ? undefined : deps.project.projectId(requestId);
   const auth = requestId !== undefined ? deps.project.authFor(requestId) : undefined;
   const attachments = requestId !== undefined ? deps.project.sendAttachmentsFor?.(requestId) : undefined;
-  const wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
-  // Resolved per send rather than per session: the exclude list is evaluated against *this*
-  // URL, and a system proxy can change under the app while it is running.
-  const proxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, request.input.endpoint);
+  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
+  let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;
+  let proxy: Awaited<ReturnType<NonNullable<HistorySendProject['proxyFor']>>> | undefined;
+  try {
+    wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
+    // Resolved per send rather than per session: the exclude list is evaluated against *this*
+    // URL, and a system proxy can change under the app while it is running.
+    proxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, request.input.endpoint);
+  } catch (error) {
+    // Before the request was built: the WS-Security password or the proxy lookup failed. The row
+    // says it never went on the wire; History is not written (nothing was sent).
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'soap',
+        requestId,
+        url: request.input.endpoint,
+        method: 'POST',
+        headers: {},
+        startedAt: prepareStartedAt,
+        durationMs: Date.now() - prepareStartedAt,
+        error,
+        stage: 'prepare',
+      }),
+    );
+    throw error;
+  }
   const startedAt = Date.now();
   try {
     const result = await service.send(request, {

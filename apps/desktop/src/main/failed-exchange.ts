@@ -48,6 +48,14 @@ function errorOf(error: unknown): { code: string; message: string } {
   return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
 }
 
+/** The code a prepare-stage failure is reported under. */
+export function prepareFailureCode(error: unknown): string {
+  if (error instanceof TypeError && (error as { code?: unknown }).code === 'ERR_INVALID_URL') {
+    return 'invalid-url';
+  }
+  return isWirebenchError(error) ? error.code : 'internal-error';
+}
+
 /**
  * The raw request for a captured one, redacted with the same helper a finished exchange's raw
  * request goes through (sensitive header lines, `wsse:Password` in an XML body). The request line
@@ -90,7 +98,10 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url) } : {}),
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
-    error: errorOf(input.error),
+    error:
+      input.stage === 'prepare'
+        ? { code: prepareFailureCode(input.error), message: errorOf(input.error).message }
+        : errorOf(input.error),
     ...(input.stage === 'prepare' ? { stage: 'prepare' as const } : {}),
   };
 }
