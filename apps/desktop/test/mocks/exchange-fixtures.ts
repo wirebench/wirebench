@@ -44,9 +44,9 @@ export function makeExchange(overrides: Partial<ExchangeSummary> = {}): Exchange
   };
 }
 
-/** Wraps an exchange of either protocol as the HTTP Log entry the store keeps. */
-export function logExchange(exchange: AnyExchangeSummary): LogEntry {
-  return { kind: 'exchange', exchange };
+/** Wraps an exchange of either protocol as the HTTP Log entry the store keeps; `requestId` names its saved request. */
+export function logExchange(exchange: AnyExchangeSummary, requestId?: string): LogEntry {
+  return requestId === undefined ? { kind: 'exchange', exchange } : { kind: 'exchange', exchange, requestId };
 }
 
 /** A send refused at the socket: the failure row the log shows; every field can be overridden. */

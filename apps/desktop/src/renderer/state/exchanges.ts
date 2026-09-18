@@ -33,7 +33,12 @@ const LOG_CAP = 500;
  * bar and History keep consuming `ExchangeSummary` / `RestExchangeSummary` exactly as before.
  */
 export type LogEntry =
-  | { readonly kind: 'exchange'; readonly exchange: AnyExchangeSummary }
+  | {
+      readonly kind: 'exchange';
+      readonly exchange: AnyExchangeSummary;
+      /** The saved request the send came from — what the row menu resends and opens. */
+      readonly requestId?: string;
+    }
   | { readonly kind: 'failure'; readonly failure: FailedExchangeWire };
 
 /** The HTTP status classes the filter bar offers, plus `failed` for a send that produced none. */
@@ -157,6 +162,11 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
+  /**
+   * Appends a finished exchange's row — a resend from the HTTP Log's row menu. A `sendId` already in
+   * the log (either kind) is ignored.
+   */
+  readonly appendExchange: (exchange: AnyExchangeSummary, requestId?: string) => void;
   /** Appends a failed send's row. A `sendId` already in the log (either kind) is ignored. */
   readonly appendFailure: (failure: FailedExchangeWire) => void;
   /** Merges a patch into the HTTP Log filter. */
@@ -291,7 +301,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // `live` goes: the exchange holds every message it held, and holding both would let the
         // pane show a message twice.
         draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push({ kind: 'exchange', exchange: result.value });
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -432,7 +442,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
         // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
         // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
-        draft.log.push({ kind: 'exchange', exchange: result.value });
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -575,7 +585,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       update((draft) => {
         draft.byRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push({ kind: 'exchange', exchange: result.value });
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
         if (draft.log.length > LOG_CAP) {
           draft.log.splice(0, draft.log.length - LOG_CAP);
         }
@@ -599,7 +609,12 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         const index = draft.log.findIndex((entry) => entry.kind === 'exchange' && entry.exchange.sendId === sendId);
         if (index >= 0) {
-          draft.log[index] = { kind: 'exchange', exchange: fresh };
+          const previous = draft.log[index];
+          const requestId = previous?.kind === 'exchange' ? previous.requestId : undefined;
+          draft.log[index] =
+            requestId === undefined
+              ? { kind: 'exchange', exchange: fresh }
+              : { kind: 'exchange', exchange: fresh, requestId };
         }
         for (const [requestId, state] of Object.entries(draft.byRequest)) {
           if (state.sendId === sendId && state.exchange !== undefined) {
@@ -612,6 +627,20 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     clearLog: () => {
       update((draft) => {
         draft.log = [];
+      });
+    },
+
+    appendExchange: (exchange, requestId) => {
+      update((draft) => {
+        if (draft.log.some((entry) => sendIdOf(entry) === exchange.sendId)) {
+          return;
+        }
+        draft.log.push(
+          requestId === undefined ? { kind: 'exchange', exchange } : { kind: 'exchange', exchange, requestId },
+        );
+        if (draft.log.length > LOG_CAP) {
+          draft.log.splice(0, draft.log.length - LOG_CAP);
+        }
       });
     },
 
