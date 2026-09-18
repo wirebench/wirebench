@@ -32,49 +32,41 @@ import {
 } from '../helpers/test-server.js';
 
 /**
- * Captures the README's screenshots into `docs/images/`.
+ * Captures the docs site's screenshots into `docs-site/public/images/<page>/<name>.png`.
  *
- * This is a documentation *tool* wearing a spec's clothes, and it is a spec on purpose: the
- * pictures in the README are then produced by the same launcher, the same fixture project and
- * the same local test server the rest of the e2e suite uses, so re-shooting them after a UI
- * change is one command rather than an afternoon of window-arranging — and a screenshot can
- * never show a screen the app cannot actually reach.
- *
- * It does not run as part of `pnpm test:e2e`; it is skipped unless `WIREBENCH_SCREENSHOTS=1`:
+ * The same idea as `screenshots.spec.ts`, which shoots the README: every picture on the site is
+ * produced by the real app against the in-process test servers, so it can only show a screen the
+ * app can reach, and re-shooting after a UI change is one command. It is skipped unless
+ * `WIREBENCH_DOCS_SCREENSHOTS=1`; `pnpm docs:screenshots` builds the app and sets it:
  *
  * ```
- * pnpm build && WIREBENCH_SCREENSHOTS=1 pnpm test:e2e -- screenshots.spec.ts
+ * pnpm docs:screenshots
  * ```
  *
- * Dark theme at 1280x800, against the Calculator fixture served by the in-process test server,
- * so nothing here depends on a network or on the developer's own projects. These are written
- * files, not compared snapshots — pixel comparison is `a11y.spec.ts`'s job, and doing both here
- * would make re-shooting the docs a test failure.
- *
- * The response capture masks the response-status line and any HTTP log rows (see
- * `timingRegions`): both carry a real request's wall-clock duration, which is neither
- * reproducible nor anyone's business to publish in a committed screenshot.
+ * Light theme, unlike the README's dark one: the site's default reading theme is light. The
+ * images are committed; `pnpm check:docs-images` fails when a page cites one that is not there,
+ * or one is there that no page cites.
  */
 
 /** Repo root, from `e2e/specs/` up two levels. */
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-/** Where the README looks for them. */
-const IMAGES_DIR = join(REPO_ROOT, 'docs', 'images');
+/** Where the site serves its images from, one folder per page. */
+const IMAGES_DIR = join(REPO_ROOT, 'docs-site', 'public', 'images');
 
-/**
- * A README image above ~300 KB is a slow page for everyone who reads it on a phone; PNG at this
- * viewport lands well under that, and this is the tripwire for the day it does not.
- */
+/** The same tripwire as the README's: a page of 300 KB images is slow on a phone. */
 const MAX_BYTES = 300 * 1024;
 
-/** Shoots the whole window into `docs/images/<name>.png` and fails if it got too heavy. */
-async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
-  await captureWindow(page, join(IMAGES_DIR, `${name}.png`), { ...options, maxBytes: MAX_BYTES });
+/** Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`. */
+async function shoot(page: Page, shot: string, options: { mask?: Locator[] } = {}): Promise<void> {
+  await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { ...options, maxBytes: MAX_BYTES });
 }
 
-test.describe('README screenshots', () => {
-  test.skip(process.env['WIREBENCH_SCREENSHOTS'] !== '1', 'set WIREBENCH_SCREENSHOTS=1 to re-shoot the README images');
+test.describe('docs site screenshots', () => {
+  test.skip(
+    process.env['WIREBENCH_DOCS_SCREENSHOTS'] !== '1',
+    'set WIREBENCH_DOCS_SCREENSHOTS=1 (or run `pnpm docs:screenshots`) to re-shoot the docs site images',
+  );
 
   let launched: LaunchedApp | undefined;
   /** The second profile of the conflict capture, which needs someone to conflict with. */
@@ -109,50 +101,44 @@ test.describe('README screenshots', () => {
     }
   });
 
-  test('workspace picker', async () => {
+  test('getting started: workspace picker', async () => {
     launched = await launchApp();
     await resizeWindow(launched);
-    await setTheme(launched.window, 'dark');
+    await setTheme(launched.window, 'light');
     await expect(launched.window.getByTestId('workspace-picker')).toBeVisible();
-    await capture(launched.window, 'workspace-picker');
+    await shoot(launched.window, 'getting-started/workspace-picker');
   });
 
-  test('import, request editor and response', async () => {
+  test('getting started: import, request editor and response', async () => {
     server = await startTestSoapServer({ fixture: 'calculator', respondToCalculatorAdd: true });
     launched = await launchApp();
     const { window } = launched;
     await resizeWindow(launched);
-    await setTheme(window, 'dark');
+    await setTheme(window, 'light');
 
-    // The import dialog, filled in but not yet submitted — the first thing a new user does.
     await createWorkspace(window);
     await createProject(window, 'Calculator Project');
     await openImportDialog(window, 'wsdl');
     await window.getByTestId('import-url-input').fill(server.wsdlUrl);
-    await capture(window, 'import-wsdl');
+    await shoot(window, 'getting-started/import-wsdl');
 
     await window.getByTestId('import-submit').click();
     await expandExplorer(window, 'Request 1');
-
-    // The generated envelope, open in the editor.
     await openFirstRequest(window);
-    await capture(window, 'request-editor');
+    await shoot(window, 'getting-started/request-editor');
 
-    // …and the response it gets back from the test server.
     await window.getByTestId('request-send').click();
     await expect(window.getByTestId('response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await capture(window, 'response', { mask: timingRegions(window) });
+    await shoot(window, 'getting-started/response', { mask: timingRegions(window) });
   });
 
-  test('a REST request and its response', async () => {
+  test('REST client: a request and its response', async () => {
     restServer = await startTestRestServer();
     launched = await launchApp();
     const { window } = launched;
     await resizeWindow(launched);
-    await setTheme(window, 'dark');
+    await setTheme(window, 'light');
 
-    // Three distinct names: the workspace, the project and the API are different things, and a
-    // screenshot that calls all three "Petstore" teaches the reader nothing about which is which.
     await createWorkspace(window, 'Demo');
     await createProject(window, 'Pet Service');
     await createApi(window, 'Petstore', restServer.url);
@@ -160,11 +146,10 @@ test.describe('README screenshots', () => {
     await setMethodAndUrl(window, 'GET', '/echo?pet=Fido&limit=10');
     await sendRest(window);
     await expect(window.getByTestId('rest-response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-
-    await capture(window, 'rest-response', { mask: restTimingRegions(window) });
+    await shoot(window, 'rest-client/rest-response', { mask: restTimingRegions(window) });
   });
 
-  test('sync panel', async () => {
+  test('shared workspaces: sync panel', async () => {
     test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
     test.setTimeout(180_000);
     server = await startTestSoapServer({ fixture: 'calculator' });
@@ -173,7 +158,7 @@ test.describe('README screenshots', () => {
     launched = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
     const { window } = launched;
     await resizeWindow(launched);
-    await setTheme(window, 'dark');
+    await setTheme(window, 'light');
 
     await createProjectWithCalculator(window, server);
     await saveAll(window);
@@ -181,40 +166,29 @@ test.describe('README screenshots', () => {
     await runCommand(window, 'Sync: Show Sync Panel');
     await expect(window.getByTestId('sync-panel')).toBeVisible();
     await expect(window.getByTestId('sync-log-row').first()).toBeVisible({ timeout: 20_000 });
-    await capture(window, 'sync-panel');
+    await shoot(window, 'workspaces/sync-panel');
   });
 
-  test('conflict resolver', async () => {
+  test('shared workspaces: conflict resolver', async () => {
     test.skip(process.platform !== 'darwin', 'the docs screenshots are shot on macOS');
     test.setTimeout(180_000);
     server = await startTestSoapServer({ fixture: 'calculator' });
     const remote = await createBareRemote();
     remoteDir = remote.dir;
 
-    // Someone else shares the workspace and pushes an edit to the first request…
     second = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
     await createProjectWithCalculator(second.window, server);
     await saveAll(second.window);
     await shareWorkspace(second.window, SHOWN_REMOTE);
 
-    // …while this profile, having joined, edits the same line.
     launched = await launchApp({ extraEnv: shownRemoteEnv(remote.url) });
     const { window } = launched;
     await resizeWindow(launched);
-    await setTheme(window, 'dark');
+    await setTheme(window, 'light');
     await joinSharedWorkspace(window, SHOWN_REMOTE);
     await produceRequestConflict(second.window, window, remote.dir);
 
     await openConflictResolver(window);
-    await capture(window, 'conflict-resolver');
-  });
-
-  test('the helpers used above still match the shared project flow', async () => {
-    // `createProjectWithCalculator` is what every other spec uses; the two captures above
-    // inline its steps so the import dialog can be shot mid-flow. This asserts the inlined
-    // version and the shared helper still describe the same app.
-    server = await startTestSoapServer({ fixture: 'calculator' });
-    launched = await launchApp();
-    await createProjectWithCalculator(launched.window, server);
+    await shoot(window, 'workspaces/conflict-resolver');
   });
 });
