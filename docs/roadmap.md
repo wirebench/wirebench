@@ -17,7 +17,8 @@ importers for OpenAPI 3.2, Swagger 1.x/2.0 and Postman Collections behind one _I
 the README. Unreleased on `main`: gRPC as the third protocol, with `.proto` import and an HTTP/2 transport
 (`docs/specs/2026-09-16-wirebench-grpc-client-design.md`), and the HTTP Log rework — failed sends, a filter
 bar and detail tabs (`docs/specs/2026-09-16-http-log-failures-filters-detail-design.md`). Built on its own
-branch and not yet merged: the documentation site (item 2). Everything below is what is still open.
+branch and not yet merged: the documentation site (item 2). Everything below is what is still open, and
+[Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
 **Revised 2026-09-13** after a review of the surrounding tools — the Java-era SOAP workbenches, the cloud API
 platforms, and the local-first REST clients. Three things were true of all of them: every one ships a CI
@@ -63,6 +64,29 @@ is picked up.
 | — | Load testing, WSDL coverage and refactoring, code generation | — | XL | phase 4 | Deferred indefinitely; other tools do these better. The TCP monitor's use case, recording traffic, is absorbed by the mock recorder. |
 | — | MQTT, Kafka and JMS transports | — | L each | watch | A different buyer and native modules; only on a customer's ask. |
 | — | Hosted cloud | Ent | a business | idea | Only with a company behind it; see [Teams and sign-in](#teams-and-sign-in). |
+
+## Milestones and tracking
+
+Since 2026-09-18 every open item below is a GitHub issue, labelled by priority, size, audience and area, on
+the [project board](https://github.com/orgs/wirebench/projects/1) and in one of six
+[milestones](https://github.com/wirebench/wirebench/milestones). This page stays the argument for the order;
+the issues are where the work is tracked, and each one carries its own "done when" checklist and the issues
+it waits for. The milestones carry no dates, for the reason the legend gives. The version numbers are
+intentions: 3.0 is a major because Sequences and mock stubs are new file kinds, which is the kind of one-way
+door 2.0 was. No issue sits in an earlier milestone than one it is blocked by.
+
+| Milestone | Roadmap items | Issues |
+| --- | --- | --- |
+| [2.2 — Install and learn](https://github.com/wirebench/wirebench/milestone/1) | 1, 2 (site and switching guide), two small fixes, and the open question on legacy project import | [#28](https://github.com/wirebench/wirebench/issues/28) signed releases, MSI, SBOM · [#29](https://github.com/wirebench/wirebench/issues/29) documentation site · [#54](https://github.com/wirebench/wirebench/issues/54) switching guide · [#50](https://github.com/wirebench/wirebench/issues/50) HTTP Log re-redaction for REST rows · [#83](https://github.com/wirebench/wirebench/issues/83) globals loader `version` check · [#55](https://github.com/wirebench/wirebench/issues/55) the legacy-import decision |
+| [2.3 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | 3, 4, 5 | [#30](https://github.com/wirebench/wirebench/issues/30) CLI runner · [#31](https://github.com/wirebench/wirebench/issues/31) CI recipes · [#32](https://github.com/wirebench/wirebench/issues/32) MCP server · [#33](https://github.com/wirebench/wirebench/issues/33) contract operations as MCP tools ✚ · [#34](https://github.com/wirebench/wirebench/issues/34) snapshot regression ✚ · [#35](https://github.com/wirebench/wirebench/issues/35) multi-environment send ✚ · [#36](https://github.com/wirebench/wirebench/issues/36) runner `--baseline` ✚ |
+| [2.4 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3) | 8, 17 (gRPC follow-ups) | [#42](https://github.com/wirebench/wirebench/issues/42) REST resend and diff from History · [#43](https://github.com/wirebench/wirebench/issues/43) token auth kinds for SOAP owners · [#44](https://github.com/wirebench/wirebench/issues/44) cookie jar and initial/current values · [#45](https://github.com/wirebench/wirebench/issues/45) OpenAPI response validation · [#46](https://github.com/wirebench/wirebench/issues/46) JSON form view · [#47](https://github.com/wirebench/wirebench/issues/47) Update Definition for an API · [#48](https://github.com/wirebench/wirebench/issues/48) HTML response preview · [#49](https://github.com/wirebench/wirebench/issues/49) HAR 1.2 export and copy as cURL · [#52](https://github.com/wirebench/wirebench/issues/52) interactive bidirectional streams · [#53](https://github.com/wirebench/wirebench/issues/53) gRPC resend from History |
+| [2.5 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4) | 6, 7, 10, fleet management | [#37](https://github.com/wirebench/wirebench/issues/37) external secret managers · [#38](https://github.com/wirebench/wirebench/issues/38) encrypted team secrets · [#39](https://github.com/wirebench/wirebench/issues/39) secret scanning · [#40](https://github.com/wirebench/wirebench/issues/40) Kerberos/SPNEGO · [#41](https://github.com/wirebench/wirebench/issues/41) WS-Trust and SAML tokens · [#57](https://github.com/wirebench/wirebench/issues/57) WS-Security debugger ✚ · [#58](https://github.com/wirebench/wirebench/issues/58) policy-driven configuration ✚ · [#67](https://github.com/wirebench/wirebench/issues/67) managed preferences · [#68](https://github.com/wirebench/wirebench/issues/68) portable Windows build · [#70](https://github.com/wirebench/wirebench/issues/70) certificate expiry warnings |
+| [3.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | 9, 11, 12, 13, more importers and exporters | [#56](https://github.com/wirebench/wirebench/issues/56) contract diff ✚ · [#59](https://github.com/wirebench/wirebench/issues/59) mock services · [#60](https://github.com/wirebench/wirebench/issues/60) mock recording proxy · [#61](https://github.com/wirebench/wirebench/issues/61) headless `wirebench mock` · [#62](https://github.com/wirebench/wirebench/issues/62) Sequences · [#63](https://github.com/wirebench/wirebench/issues/63) typed scripting ✚ · [#64](https://github.com/wirebench/wirebench/issues/64) more importers · [#65](https://github.com/wirebench/wirebench/issues/65) exporters · [#66](https://github.com/wirebench/wirebench/issues/66) JSON Schema for project files · [#69](https://github.com/wirebench/wirebench/issues/69) published benchmark · [#71](https://github.com/wirebench/wirebench/issues/71) same-host redirect on a POST · [#72](https://github.com/wirebench/wirebench/issues/72) multi-window · [#84](https://github.com/wirebench/wirebench/issues/84) grid accessibility conventions |
+| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6) | 14, 15, 16, 17 (GraphQL), ideas | [#73](https://github.com/wirebench/wirebench/issues/73) full functional testing · [#74](https://github.com/wirebench/wirebench/issues/74) Wirebench Server · [#75](https://github.com/wirebench/wirebench/issues/75) JKS keystores · [#76](https://github.com/wirebench/wirebench/issues/76) WS-ReliableMessaging · [#77](https://github.com/wirebench/wirebench/issues/77) GraphQL · [#78](https://github.com/wirebench/wirebench/issues/78) robustness scans ✚ · [#79](https://github.com/wirebench/wirebench/issues/79) MCP request kind · [#80](https://github.com/wirebench/wirebench/issues/80) HTTP/2 by default · [#81](https://github.com/wirebench/wirebench/issues/81) localisation · [#82](https://github.com/wirebench/wirebench/issues/82) plugin API · [#85](https://github.com/wirebench/wirebench/issues/85) panel handle hover coverage |
+
+What [Deliberately not](#deliberately-not) lists has no
+issue, on purpose. 2.4 ahead of 2.5 is a bet on daily use before the enterprise buyer; nothing in 2.5 waits
+on 2.4, so the two can swap the day an enterprise evaluation arrives first.
 
 ## By theme
 
