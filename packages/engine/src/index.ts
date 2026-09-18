@@ -420,12 +420,26 @@ export type {
 
 // Legacy SOAP projects: reading the single-XML project files of older SOAP workbenches.
 export {
+  definitionRootOf,
+  fetchDocumentFromCache,
+  formatLegacyImportReport,
+  IMPORTED_SCRIPTS_DIR,
   looksLikeLegacyProject,
+  mapLegacyProject,
   MAX_LEGACY_PROJECT_BYTES,
   parseLegacyProject,
   readLegacySoapProject,
+  resolvedOperationsOf,
 } from './soap/legacy-project/index.js';
 export type {
+  CacheFetchOptions,
+  LegacyImportReport,
+  LegacyImportReportItem,
+  LegacyMapContext,
+  LegacyScriptFile,
+  MappedLegacyProject,
+  ResolvedLegacyInterface,
+  ResolvedOperation,
   LegacyCall,
   LegacyCredentials,
   LegacyDefinitionCache,
