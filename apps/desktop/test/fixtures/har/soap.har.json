@@ -1,0 +1,59 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "Wirebench",
+      "version": "0.0.0-test"
+    },
+    "entries": [
+      {
+        "startedDateTime": "2026-09-10T08:30:05.000Z",
+        "time": 143,
+        "request": {
+          "method": "POST",
+          "url": "https://example.test/calc.asmx",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [],
+          "queryString": [],
+          "postData": {
+            "mimeType": "application/octet-stream",
+            "text": "<request/>"
+          },
+          "headersSize": -1,
+          "bodySize": 10
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [
+            {
+              "name": "content-type",
+              "value": "text/xml"
+            }
+          ],
+          "content": {
+            "size": 160,
+            "mimeType": "text/xml",
+            "text": "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><AddResponse><AddResult>7</AddResult></AddResponse></soap:Body></soap:Envelope>"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 160
+        },
+        "cache": {},
+        "timings": {
+          "blocked": -1,
+          "dns": -1,
+          "connect": -1,
+          "ssl": -1,
+          "send": 0,
+          "wait": 100,
+          "receive": 0
+        }
+      }
+    ]
+  }
+}

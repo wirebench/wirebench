@@ -1,0 +1,55 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "Wirebench",
+      "version": "0.0.0-test"
+    },
+    "entries": [
+      {
+        "startedDateTime": "2026-09-13T08:30:05.000Z",
+        "time": 12,
+        "request": {
+          "method": "GET",
+          "url": "https://api.test/pet/1",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [],
+          "queryString": [],
+          "headersSize": -1,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "content": {
+            "size": 8,
+            "mimeType": "application/json",
+            "text": "{\"id\":1}"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 8
+        },
+        "cache": {},
+        "timings": {
+          "blocked": -1,
+          "dns": -1,
+          "connect": -1,
+          "ssl": -1,
+          "send": 0,
+          "wait": 8,
+          "receive": 0
+        }
+      }
+    ]
+  }
+}
