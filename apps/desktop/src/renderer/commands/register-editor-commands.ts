@@ -5,6 +5,7 @@ import { flipMode, flipOrientation, setEditorLayout } from '../features/request-
 import { focusOtherPane } from '../features/request-editor/pane-focus.js';
 import { moveToAdjacentValue } from '../features/request-editor/value-navigation.js';
 import { goToSchemaDefinitionAtCursor } from '../features/request-editor/schema-navigation.js';
+import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { usePreferencesStore } from '../state/preferences.js';
@@ -17,14 +18,11 @@ export function registerEditorCommands(): void {
   // editor (see `active-request-editor.ts`) — gated the same way as `request.send`/`cancel`,
   // by whether a request tab is active, since that is exactly when that editor is mounted.
   registerCommand({
-    id: 'editor.formatXml',
-    label: 'Format Document',
-    category: 'Editor',
+    ...catalogEntry('editor.formatXml'),
     // Also bound directly on the Monaco instance in `request-pane.tsx` (`FORMAT_KEYBINDING`)
     // so it works with the caret in the editor: Monaco's keybinding service consumes the
     // keystroke there, and the window-level dispatcher below only sees it when focus is
     // somewhere else in the shell. Exactly as `request.send`/`SEND_KEYBINDING` already pair up.
-    shortcut: 'Mod+Shift+F',
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -35,9 +33,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.goToSchemaDefinition',
-    label: 'Go to Schema Definition',
-    category: 'Editor',
+    ...catalogEntry('editor.goToSchemaDefinition'),
     // F12 is bound on the Monaco instance itself (see `request-pane.tsx`); the palette entry
     // and the pane's context menu run the very same action.
     when: () => activeRequestId() !== undefined,
@@ -47,9 +43,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.gotoLine',
-    label: 'Go to Line…',
-    category: 'Editor',
+    ...catalogEntry('editor.gotoLine'),
     // Same reasoning as `editor.formatXml` above: Mod+G is bound on the Monaco instance itself.
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
@@ -61,9 +55,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.toggleLineNumbers',
-    label: 'Toggle Line Numbers',
-    category: 'Editor',
+    ...catalogEntry('editor.toggleLineNumbers'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -71,9 +63,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.saveAs',
-    label: 'Save Request As…',
-    category: 'Editor',
+    ...catalogEntry('editor.saveAs'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -85,9 +75,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.loadFrom',
-    label: 'Load Request From…',
-    category: 'Editor',
+    ...catalogEntry('editor.loadFrom'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -106,9 +94,7 @@ export function registerEditorCommands(): void {
   });
 
   registerCommand({
-    id: 'editor.toggleLayoutOrientation',
-    label: 'Toggle Editor Layout: Side by Side / Stacked',
-    category: 'Editor',
+    ...catalogEntry('editor.toggleLayoutOrientation'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -119,10 +105,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.toggleLayoutMode',
-    label: 'Toggle Editor Layout: Split / Tabs',
-    category: 'Editor',
-    shortcut: 'Mod+Backslash',
+    ...catalogEntry('editor.toggleLayoutMode'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -136,10 +119,7 @@ export function registerEditorCommands(): void {
   // ⌘W. Closes whichever editor tab is active; the always-present Start tab is not a tab in
   // the store, so with nothing else open this is simply unavailable.
   registerCommand({
-    id: 'editor.closeTab',
-    label: 'Close Tab',
-    category: 'Editor',
-    shortcut: 'Mod+W',
+    ...catalogEntry('editor.closeTab'),
     when: () => useEditorsStore.getState().activeId !== undefined,
     whenScope: 'editor',
     run: () => {
@@ -152,15 +132,12 @@ export function registerEditorCommands(): void {
 
   // ⌘⇧PageUp/PageDown. Shifts the active tab one place along the strip; the Start tab is not
   // in the store, so it always stays first.
-  for (const [id, label, shortcut, step] of [
-    ['editor.moveTabLeft', 'Move Tab Left', 'Mod+Shift+PageUp', -1],
-    ['editor.moveTabRight', 'Move Tab Right', 'Mod+Shift+PageDown', 1],
+  for (const [id, step] of [
+    ['editor.moveTabLeft', -1],
+    ['editor.moveTabRight', 1],
   ] as const) {
     registerCommand({
-      id,
-      label,
-      category: 'Editor',
-      shortcut,
+      ...catalogEntry(id),
       when: () => useEditorsStore.getState().activeId !== undefined,
       whenScope: 'editor',
       run: () => {
@@ -175,10 +152,7 @@ export function registerEditorCommands(): void {
 
   // ⌥←/⌥→: step the caret through the envelope's element values, not its tags.
   registerCommand({
-    id: 'editor.nextValue',
-    label: 'Go to Next Element Value',
-    category: 'Editor',
-    shortcut: 'Alt+Right',
+    ...catalogEntry('editor.nextValue'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -186,10 +160,7 @@ export function registerEditorCommands(): void {
     },
   });
   registerCommand({
-    id: 'editor.previousValue',
-    label: 'Go to Previous Element Value',
-    category: 'Editor',
-    shortcut: 'Alt+Left',
+    ...catalogEntry('editor.previousValue'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -198,10 +169,7 @@ export function registerEditorCommands(): void {
   });
 
   registerCommand({
-    id: 'editor.focusOtherPane',
-    label: 'Focus Request / Response Editor',
-    category: 'Editor',
-    shortcut: 'Shift+Tab',
+    ...catalogEntry('editor.focusOtherPane'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {

@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import { explorerActions } from '../features/explorer/explorer-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
@@ -8,9 +9,7 @@ export function registerExplorerCommands(): void {
   // whatever node is currently selected. The menu itself (context-menu.tsx) owns the actual
   // logic; these mirror the same `when` gates so the palette only lists what applies.
   registerCommand({
-    id: 'explorer.importAnother',
-    label: 'Explorer: Import Another WSDL…',
-    category: 'Explorer',
+    ...catalogEntry('explorer.importAnother'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: () => {
@@ -18,9 +17,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.removeInterface',
-    label: 'Explorer: Remove Interface',
-    category: 'Explorer',
+    ...catalogEntry('explorer.removeInterface'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -28,9 +25,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.showInterface',
-    label: 'Explorer: Show Interface Viewer',
-    category: 'Explorer',
+    ...catalogEntry('explorer.showInterface'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -38,9 +33,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.updateDefinition',
-    label: 'Explorer: Update Definition…',
-    category: 'Explorer',
+    ...catalogEntry('explorer.updateDefinition'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -48,9 +41,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.exportDefinition',
-    label: 'Explorer: Export Definition…',
-    category: 'Explorer',
+    ...catalogEntry('explorer.exportDefinition'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -58,9 +49,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.generateDocs',
-    label: 'Explorer: Generate Documentation…',
-    category: 'Explorer',
+    ...catalogEntry('explorer.generateDocs'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -68,9 +57,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.copyDefinitionUrl',
-    label: 'Explorer: Copy Definition URL',
-    category: 'Explorer',
+    ...catalogEntry('explorer.copyDefinitionUrl'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -78,9 +65,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.newRequest',
-    label: 'Explorer: New Request',
-    category: 'Explorer',
+    ...catalogEntry('explorer.newRequest'),
     when: (ctx) => ctx.selection?.kind === 'operation',
     whenScope: 'selection.operation',
     run: (ctx) => {
@@ -88,9 +73,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.copySoapAction',
-    label: 'Explorer: Copy SOAPAction',
-    category: 'Explorer',
+    ...catalogEntry('explorer.copySoapAction'),
     when: (ctx) => ctx.selection?.kind === 'operation',
     whenScope: 'selection.operation',
     run: (ctx) => {
@@ -98,9 +81,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.openRequest',
-    label: 'Explorer: Open Request',
-    category: 'Explorer',
+    ...catalogEntry('explorer.openRequest'),
     when: (ctx) => ctx.selection?.kind === 'request',
     whenScope: 'selection.request',
     run: (ctx) => {
@@ -108,9 +89,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.cloneRequest',
-    label: 'Explorer: Clone Request',
-    category: 'Explorer',
+    ...catalogEntry('explorer.cloneRequest'),
     when: (ctx) => ctx.selection?.kind === 'request',
     whenScope: 'selection.request',
     run: (ctx) => {
@@ -118,9 +97,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.renameRequest',
-    label: 'Explorer: Rename Request…',
-    category: 'Explorer',
+    ...catalogEntry('explorer.renameRequest'),
     when: (ctx) => ctx.selection?.kind === 'request',
     whenScope: 'selection.request',
     run: (ctx) => {
@@ -128,9 +105,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.deleteRequest',
-    label: 'Explorer: Delete Request',
-    category: 'Explorer',
+    ...catalogEntry('explorer.deleteRequest'),
     when: (ctx) => ctx.selection?.kind === 'request',
     whenScope: 'selection.request',
     run: (ctx) => {
@@ -138,9 +113,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.recreateRequest',
-    label: 'Explorer: Recreate Request (keep values)',
-    category: 'Explorer',
+    ...catalogEntry('explorer.recreateRequest'),
     when: (ctx) => ctx.selection?.kind === 'request',
     whenScope: 'selection.request',
     run: (ctx) => {
@@ -148,9 +121,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.checkWsiWsdl',
-    label: 'Explorer: Check WSDL WS-I compliance',
-    category: 'Explorer',
+    ...catalogEntry('explorer.checkWsiWsdl'),
     when: (ctx) => ctx.selection?.kind === 'interface',
     whenScope: 'selection.interface',
     run: (ctx) => {
@@ -158,9 +129,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'explorer.copyEndpointAddress',
-    label: 'Explorer: Copy Endpoint Address',
-    category: 'Explorer',
+    ...catalogEntry('explorer.copyEndpointAddress'),
     when: (ctx) => ctx.selection?.kind === 'endpoint',
     whenScope: 'selection.endpoint',
     run: (ctx) => {
@@ -172,9 +141,7 @@ export function registerExplorerCommands(): void {
   // and a request row both name their API — so "New request" works from wherever the user is
   // rather than only on the API row itself.
   registerCommand({
-    id: 'rest.newApi',
-    label: 'REST: New API',
-    category: 'Explorer',
+    ...catalogEntry('rest.newApi'),
     when: (ctx) => ctx.selection?.kind === 'project',
     whenScope: 'selection.project',
     run: (ctx) => {
@@ -182,9 +149,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'rest.newFolder',
-    label: 'REST: New Folder',
-    category: 'Explorer',
+    ...catalogEntry('rest.newFolder'),
     when: (ctx) => insideApi(ctx.selection?.kind, ctx.selection?.apiId),
     whenScope: 'selection.api',
     run: (ctx) => {
@@ -192,9 +157,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'rest.newRequest',
-    label: 'REST: New Request',
-    category: 'Explorer',
+    ...catalogEntry('rest.newRequest'),
     when: (ctx) => insideApi(ctx.selection?.kind, ctx.selection?.apiId),
     whenScope: 'selection.api',
     run: (ctx) => {
@@ -204,9 +167,7 @@ export function registerExplorerCommands(): void {
 
   // The gRPC creators, gated the same way on their own container.
   registerCommand({
-    id: 'grpc.newApi',
-    label: 'gRPC: New API',
-    category: 'Explorer',
+    ...catalogEntry('grpc.newApi'),
     when: (ctx) => ctx.selection?.kind === 'project',
     whenScope: 'selection.project',
     run: (ctx) => {
@@ -214,9 +175,7 @@ export function registerExplorerCommands(): void {
     },
   });
   registerCommand({
-    id: 'grpc.newRequest',
-    label: 'gRPC: New Request',
-    category: 'Explorer',
+    ...catalogEntry('grpc.newRequest'),
     when: (ctx) => insideGrpcApi(ctx.selection),
     whenScope: 'selection.grpcApi',
     run: (ctx) => {
