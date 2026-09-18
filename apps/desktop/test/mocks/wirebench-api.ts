@@ -81,6 +81,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       mutate: fail('project.mutate'),
       save: fail('project.save'),
       addInterface: fail('project.addInterface'),
+      importLegacy: fail('project.importLegacy'),
       reload: fail('project.reload'),
       moveToWorkspace: fail('project.moveToWorkspace'),
     },

@@ -8,6 +8,7 @@
  * reaches, with which arguments, and that nothing path-shaped ever crosses from the renderer —
  * not about `WorkspaceService` itself, which has suites of its own.
  */
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
@@ -399,17 +400,24 @@ describe('workspace.* channels', () => {
 });
 
 describe('project.* channels', () => {
-  function registerProject() {
+  const REPORT = {
+    projectName: 'Minimal',
+    counts: { interfaces: 1, operations: 1, requests: 1, environments: 0, properties: 0, scripts: 0 },
+    items: [],
+  };
+
+  function registerProject(picks = new DialogPicks()) {
     const router = {
       projectSnapshot: vi.fn().mockReturnValue(PROJECT),
       projectMutate: vi.fn().mockResolvedValue({ project: PROJECT }),
       save: vi.fn().mockResolvedValue({ saved: true, written: 1, removed: 0 }),
       addInterface: vi.fn().mockResolvedValue({ project: PROJECT, interfaceId: 'i1' }),
+      importLegacyProject: vi.fn().mockResolvedValue({ project: PROJECT, report: REPORT }),
       reload: vi.fn().mockResolvedValue(PROJECT),
     };
     const addProject = vi.fn().mockResolvedValue({ projectId: 'p-new' });
     const removeProject = vi.fn().mockResolvedValue(undefined);
-    registerProjectChannels({ router, addProject, removeProject, projectDirs: () => [], picks: new DialogPicks() });
+    registerProjectChannels({ router, addProject, removeProject, projectDirs: () => [], picks });
     return { router, addProject, removeProject };
   }
 
@@ -417,6 +425,7 @@ describe('project.* channels', () => {
     const { router } = registerProject();
     expect(Object.keys(channels.project).sort()).toEqual([
       'addInterface',
+      'importLegacy',
       'moveToWorkspace',
       'mutate',
       'reload',
@@ -475,5 +484,62 @@ describe('project.* channels', () => {
     expect(addProject).toHaveBeenCalledWith('Calculator');
     expect(router.addInterface).toHaveBeenCalledWith('p-new', { source });
     expect(result).toEqual({ ok: true, value: { projectId: 'p-new', project: PROJECT, interfaceId: 'i1' } });
+  });
+
+  describe('importLegacy', () => {
+    const fixture = fileURLToPath(new URL('../../../fixtures/legacy-soap-project/minimal.xml', import.meta.url));
+
+    function picked(): DialogPicks {
+      const picks = new DialogPicks();
+      picks.rememberRead(fixture);
+      return picks;
+    }
+
+    it('refuses a file that is neither in a project nor picked, before creating anything', async () => {
+      const { router, addProject } = registerProject();
+      const result = await invoke('project.importLegacy', {
+        target: { newProjectName: '' },
+        source: { kind: 'file', path: fixture },
+      });
+      expect(result.ok).toBe(false);
+      expect(addProject).not.toHaveBeenCalled();
+      expect(router.importLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('parses the picked file and imports it into the named project', async () => {
+      const { router, addProject } = registerProject(picked());
+      const result = await invoke('project.importLegacy', {
+        target: { projectId: 'p1' },
+        source: { kind: 'file', path: fixture },
+        token: 't',
+      });
+      expect(result).toEqual({ ok: true, value: { projectId: 'p1', project: PROJECT, report: REPORT } });
+      expect(addProject).not.toHaveBeenCalled();
+      expect(router.importLegacyProject).toHaveBeenCalledWith('p1', {
+        project: expect.objectContaining({ name: 'Minimal' }) as unknown,
+        token: 't',
+      });
+    });
+
+    it('names a new project after the file when no name is given', async () => {
+      const { router, addProject } = registerProject(picked());
+      await invoke('project.importLegacy', {
+        target: { newProjectName: ' ' },
+        source: { kind: 'file', path: fixture },
+      });
+      expect(addProject).toHaveBeenCalledWith('Minimal');
+      expect(router.importLegacyProject).toHaveBeenCalledWith('p-new', expect.anything());
+    });
+
+    it('takes a created project back when the import fails', async () => {
+      const { router, removeProject } = registerProject(picked());
+      router.importLegacyProject.mockRejectedValueOnce(new Error('boom'));
+      const result = await invoke('project.importLegacy', {
+        target: { newProjectName: 'Mine' },
+        source: { kind: 'file', path: fixture },
+      });
+      expect(result.ok).toBe(false);
+      expect(removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+    });
   });
 });

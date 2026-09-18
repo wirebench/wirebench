@@ -2090,6 +2090,43 @@ export const projectAddInterfaceResponseSchema = z.object({
 });
 export type ProjectAddInterfaceResponse = z.infer<typeof projectAddInterfaceResponseSchema>;
 
+/**
+ * Request for `project.importLegacy`: a legacy single-XML SOAP project file the user picked. Only a
+ * `file` source — the format is a whole project, never pasted — and main still requires the path to
+ * be inside an open project or picked in a dialog this session. An empty `newProjectName` takes
+ * the name the file gives the project.
+ */
+export const projectImportLegacyRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  /** Echoed back on `engine.progress` events raised while this import is in flight. */
+  token: z.string().optional(),
+});
+export type ProjectImportLegacyRequest = z.infer<typeof projectImportLegacyRequestSchema>;
+
+/** What a legacy project import brought across, and a line for everything it did not. */
+export const legacyImportReportSchema = z.object({
+  projectName: z.string(),
+  counts: z.object({
+    interfaces: z.number(),
+    operations: z.number(),
+    requests: z.number(),
+    environments: z.number(),
+    properties: z.number(),
+    scripts: z.number(),
+  }),
+  items: z.array(z.object({ severity: z.enum(['info', 'warning']), path: z.string(), message: z.string() })).readonly(),
+});
+export type LegacyImportReportWire = z.infer<typeof legacyImportReportSchema>;
+
+export const projectImportLegacyResponseSchema = z.object({
+  /** The project the import landed in — the one that was created, for a `newProjectName`. */
+  projectId: z.string(),
+  project: projectWireSchema,
+  report: legacyImportReportSchema,
+});
+export type ProjectImportLegacyResponse = z.infer<typeof projectImportLegacyResponseSchema>;
+
 // ---------------------------------------------------------------------------
 // OpenAPI import (`api.*`): one API made from a described document, and the
 // cached definition it can be read back and exported from.

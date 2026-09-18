@@ -1,3 +1,4 @@
+import { readLegacySoapProject, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { checkedImportSource } from '../path-access.js';
@@ -10,7 +11,10 @@ import { registerHandler } from './register.js';
  * (it changes the *workspace*), so it is picked in alongside it.
  */
 export interface ProjectChannelDeps {
-  readonly router: Pick<ProjectRouter, 'projectSnapshot' | 'projectMutate' | 'save' | 'addInterface' | 'reload'>;
+  readonly router: Pick<
+    ProjectRouter,
+    'projectSnapshot' | 'projectMutate' | 'save' | 'addInterface' | 'importLegacyProject' | 'reload'
+  >;
   /** Creates a project inside the open workspace; used only by an `addInterface` that asks for one. */
   readonly addProject: (name: string) => Promise<{ readonly projectId: string }>;
   /**
@@ -70,6 +74,30 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     try {
       const added = await router.addInterface(projectId, options);
       return { ...added, projectId };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  registerHandler(channels.project.importLegacy, async (request) => {
+    // The file is read and parsed before any project is created, so a path that is refused or a
+    // file that is not a legacy project changes nothing.
+    const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    if (source.kind !== 'file') {
+      throw new WirebenchError('invalid-argument', 'Expected a file source');
+    }
+    const project = await readLegacySoapProject({ kind: 'file', path: source.path });
+    const options = { project, ...(request.token !== undefined ? { token: request.token } : {}) };
+    if ('projectId' in request.target) {
+      const imported = await router.importLegacyProject(request.target.projectId, options);
+      return { ...imported, projectId: request.target.projectId };
+    }
+    const name = request.target.newProjectName.trim() === '' ? project.name : request.target.newProjectName;
+    const { projectId } = await deps.addProject(name);
+    try {
+      const imported = await router.importLegacyProject(projectId, options);
+      return { ...imported, projectId };
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;

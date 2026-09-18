@@ -2281,6 +2281,12 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostFor(projectId).addInterface(input);
   }
 
+  importLegacyProject(
+    ...[projectId, input]: Parameters<ProjectRouter['importLegacyProject']>
+  ): ReturnType<ProjectRouter['importLegacyProject']> {
+    return this.hostFor(projectId).importLegacyProject(input);
+  }
+
   addApi(...[projectId, input]: Parameters<ProjectRouter['addApi']>): ReturnType<ProjectRouter['addApi']> {
     return this.hostFor(projectId).addApi(input);
   }
