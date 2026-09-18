@@ -9,7 +9,7 @@ import Shortcut from '../../components/Shortcut.astro';
 
 **Wirebench** is a native, clean-room desktop workbench built specifically for developers and enterprise engineers who test and debug **SOAP** (WSDL 1.1 / 2.0, XML Schema, WS-Security) and **REST** (OpenAPI 3.0, JSON, multipart) APIs.
 
-![Wirebench Workspace Launcher](/images/workspace-picker.png)
+![Wirebench Workspace Launcher](/wirebench/images/workspace-picker.png)
 
 ---
 
@@ -39,5 +39,5 @@ Modern API testing tools have drifted into bloated, cloud-dependent platforms th
 
 ## Next Steps
 
-- Proceed to [Installation](/getting-started/installation/) to install Wirebench on macOS, Windows, or Linux.
-- Follow the [5-Minute Quickstart](/getting-started/quickstart/) to send your first request.
+- Proceed to [Installation](/wirebench/getting-started/installation/) to install Wirebench on macOS, Windows, or Linux.
+- Follow the [5-Minute Quickstart](/wirebench/getting-started/quickstart/) to send your first request.

@@ -1,5 +1,6 @@
 import { defineConfig, passthroughImageService } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLinksValidator from 'starlight-links-validator';
 
 export default defineConfig({
   site: 'https://wirebench.github.io',
@@ -9,6 +10,7 @@ export default defineConfig({
   },
   integrations: [
     starlight({
+      plugins: [starlightLinksValidator()],
       title: 'Wirebench',
       description: 'The native, clean-room desktop API client for SOAP and REST services.',
       social: [

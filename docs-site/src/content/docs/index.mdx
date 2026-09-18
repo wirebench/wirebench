@@ -8,12 +8,12 @@ hero:
     file: ../../assets/hero-mark.svg
   actions:
     - text: Quickstart (5 min)
-      link: /getting-started/quickstart/
+      link: /wirebench/getting-started/quickstart/
       icon: right-arrow
       variant: primary
-    - text: Interactive API Reference
-      link: /reference/
-      icon: external
+    - text: Reference
+      link: /wirebench/reference/project-format/
+      icon: document
       variant: secondary
 ---
 
@@ -27,18 +27,18 @@ import { Card, CardGrid, Steps } from '@astrojs/starlight/components';
 <CardGrid stagger>
   <Card title="REST Client" icon="rocket">
     First-class REST client with OpenAPI 3.0 import, path variables, query parameters, header editors, and multiple body formats.
-    [Learn more about REST →](/guides/rest-client/)
+    [Learn more about REST →](/wirebench/guides/rest-client/)
   </Card>
   <Card title="SOAP & WSDL Inspection" icon="document">
     Clean-room schema parser, operations tree, XML envelope generation, WS-Security with keystores, and MTOM/SwA attachments.
-    [Explore SOAP guides →](/guides/soap-wsdl/)
+    [Explore SOAP guides →](/wirebench/guides/soap-wsdl/)
   </Card>
   <Card title="Environments & Property Expansion" icon="setting">
     Dynamic property substitution using the `${#Env#var}` and `${#Project#var}` scope hierarchy with encrypted secrets.
-    [Configure environments →](/guides/environments/)
+    [Configure environments →](/wirebench/guides/environments/)
   </Card>
   <Card title="Git-Backed Shared Workspaces" icon="laptop">
     Collaborate with your team without a hosted server. Workspaces sync seamlessly as standard Git repositories.
-    [Read collaboration guide →](/guides/workspaces/)
+    [Read collaboration guide →](/wirebench/guides/workspaces/)
   </Card>
 </CardGrid>

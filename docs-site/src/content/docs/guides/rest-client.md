@@ -9,7 +9,7 @@ import Shortcut from '../../components/Shortcut.astro';
 
 Wirebench includes a modern REST client engineered for speed, high contrast, and full OpenAPI 3.0 compatibility.
 
-![Wirebench REST Client & Response Inspector](/images/rest-response.png)
+![Wirebench REST Client & Response Inspector](/wirebench/images/rest-response.png)
 
 ---
 

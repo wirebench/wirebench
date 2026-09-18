@@ -30,7 +30,7 @@ The **Sync Panel** gives you complete visibility into repository state without s
 - **Recent Sync History**: Commit log with commit hashes, author names, and change summaries.
 - **Sync Actions**: One-click **Pull**, **Commit & Push**, or **Fetch**.
 
-![Wirebench Shared Workspace Sync Panel](/images/sync-panel.png)
+![Wirebench Shared Workspace Sync Panel](/wirebench/images/sync-panel.png)
 
 ---
 
@@ -45,7 +45,7 @@ When multiple team members modify the same request or project definition concurr
 - **Granular Merging**: Accept local, accept remote, or inspect property diffs side-by-side.
 - **Safe Resolution**: Resolving marks the file clean and creates an atomic merge commit.
 
-![Three-Way Visual Merge Conflict Resolver](/images/conflict-resolver.png)
+![Three-Way Visual Merge Conflict Resolver](/wirebench/images/conflict-resolver.png)
 
 ---
 

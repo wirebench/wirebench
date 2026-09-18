@@ -18,7 +18,7 @@ To import a WSDL:
 2. Enter a local filesystem path (e.g. `path/to/service.wsdl`) or an HTTP/HTTPS URL.
 3. Wirebench parses all bindings, ports, operations, and nested XML Schemas (`.xsd`).
 
-![Import WSDL Dialog](/images/import-wsdl.png)
+![Import WSDL Dialog](/wirebench/images/import-wsdl.png)
 
 ---
 
@@ -32,7 +32,7 @@ Clicking any operation opens the request editor:
 - Optional parameters are marked with comments indicating `minOccurs="0"`.
 - Complex types, nested sequences, and choice elements are clearly visualized.
 
-![SOAP Request Envelope Editor](/images/request-editor.png)
+![SOAP Request Envelope Editor](/wirebench/images/request-editor.png)
 
 ---
 
@@ -45,7 +45,7 @@ The response viewer renders:
 - **XML Formatter**: Collapsible XML elements, syntax coloring, and tag matching.
 - **Headers**: Raw HTTP headers, cookies, and transfer encoding metadata.
 
-![SOAP Response Viewer](/images/response.png)
+![SOAP Response Viewer](/wirebench/images/response.png)
 
 ---
 

@@ -16,7 +16,7 @@ This walkthrough takes you from zero to executing your first API request and ins
 
    When you first launch Wirebench, the **Workspace Picker** appears. You can select an existing workspace folder or click **New Workspace** to initialize a new workbench container.
 
-   ![Wirebench Workspace Picker](/images/workspace-picker.png)
+   ![Wirebench Workspace Picker](/wirebench/images/workspace-picker.png)
 
    *Shortcut:* Press <Shortcut keys={["Cmd", "Shift", "N"]} /> (macOS) or <Shortcut keys={["Ctrl", "Shift", "N"]} /> (Windows/Linux) to create a new workspace at any time.
 
@@ -28,7 +28,7 @@ This walkthrough takes you from zero to executing your first API request and ins
    - Provide a local file path or enter a remote service URL (such as a local mock or enterprise endpoint).
    - Wirebench automatically parses the service contracts, bindings, port types, and linked XML Schemas.
 
-   ![Import WSDL Modal](/images/import-wsdl.png)
+   ![Import WSDL Modal](/wirebench/images/import-wsdl.png)
 
 3. #### Explore Operations & Edit the Request Envelope
 
@@ -38,7 +38,7 @@ This walkthrough takes you from zero to executing your first API request and ins
    - Wirebench generates a clean, compliant SOAP envelope with sample placeholders for all required input parameters.
    - The editor provides full XML syntax highlighting, tag auto-closing, and real-time validation.
 
-   ![SOAP Request Editor and Envelope](/images/request-editor.png)
+   ![SOAP Request Editor and Envelope](/wirebench/images/request-editor.png)
 
 4. #### Execute the Request and Inspect the Response
 
@@ -49,7 +49,7 @@ This walkthrough takes you from zero to executing your first API request and ins
    - **Formatted XML/JSON Body**: Syntax-highlighted response body with collapsible nodes and line numbers.
    - **Headers & Raw View**: Complete response headers and raw HTTP stream inspector.
 
-   ![SOAP Response Inspector](/images/response.png)
+   ![SOAP Response Inspector](/wirebench/images/response.png)
 
 </Steps>
 
@@ -58,6 +58,6 @@ This walkthrough takes you from zero to executing your first API request and ins
 ## What's Next?
 
 Now that you have executed your first request:
-- Learn how to send REST requests, set path variables, and configure query parameters in the [REST Client Guide](/guides/rest-client/).
-- Configure dynamic variables across environments in [Environments & Property Expansion](/guides/environments/).
-- Share your workspace with your team using Git in [Shared Workspaces](/guides/workspaces/).
+- Learn how to send REST requests, set path variables, and configure query parameters in the [REST Client Guide](/wirebench/guides/rest-client/).
+- Configure dynamic variables across environments in [Environments & Property Expansion](/wirebench/guides/environments/).
+- Share your workspace with your team using Git in [Shared Workspaces](/wirebench/guides/workspaces/).
