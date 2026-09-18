@@ -35,6 +35,7 @@ describe('createRestRequest', () => {
       body: { kind: 'none' },
       auth: { type: 'inherit' },
       settings: {},
+      assertions: [],
     });
   });
 

@@ -10,6 +10,7 @@
  */
 
 import { join } from 'node:path';
+import type { Assertion } from '../assert/model.js';
 import { ProjectError } from '../errors.js';
 import type {
   Attachment,
@@ -175,6 +176,7 @@ async function loadRequests(
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),
       ...optional('wssIncomingRef', parsed.wssIncomingRef),
       properties: exact<RequestProperties>(parsed.properties),
+      assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
       envelopeXml: envelope === undefined ? '' : envelope.toString('utf8'),
     });
@@ -378,6 +380,7 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       body: await loadBody(fs, root, dir, parsed.body, parsed.name, problems),
       auth: authConfig(parsed.auth),
       settings: exact<RestRequestSettings>(parsed.settings),
+      assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
     };
   };

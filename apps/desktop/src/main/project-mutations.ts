@@ -290,6 +290,7 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     ...optional('wssOutgoingRef'),
     ...optional('wssIncomingRef'),
     properties: request.properties,
+    assertions: request.assertions,
     envelopeXml: patch.envelopeXml ?? request.envelopeXml,
   };
 
@@ -402,6 +403,7 @@ function updateRequestAuth(project: Project, requestId: string, auth: EndpointAu
     ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),
     ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     properties: request.properties,
+    assertions: request.assertions,
     envelopeXml: request.envelopeXml,
   };
   const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));

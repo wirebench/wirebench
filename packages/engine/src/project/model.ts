@@ -13,6 +13,7 @@
  */
 
 import { ulid } from 'ulidx';
+import type { Assertion } from '../assert/model.js';
 import { slugify } from './paths.js';
 import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
 import type { WsaConfig } from '../wsa/model.js';
@@ -266,6 +267,8 @@ export interface SoapRequestDef {
   /** Name of a `wss/incoming/<name>.yaml` configuration. */
   readonly wssIncomingRef?: string;
   readonly properties: RequestProperties;
+  /** Declarative checks a runner evaluates against this request's response. Empty when none. */
+  readonly assertions: readonly Assertion[];
   /**
    * True when the operation this request belongs to is no longer in the interface's definition
    * (see `wsdl/update-definition.ts`). Nothing is ever deleted on an update, so the request
@@ -495,6 +498,7 @@ export function createRequest(name: string, input: CreateRequestInput): RequestD
     headers: input.headers ?? [],
     attachments: [],
     properties: { ...DEFAULT_REQUEST_PROPERTIES, ...input.properties },
+    assertions: [],
     envelopeXml: input.envelopeXml,
   };
 }

@@ -79,6 +79,7 @@ function requestDocument(request: RequestDef): Record<string, unknown> {
     wssOutgoingRef: request.wssOutgoingRef,
     wssIncomingRef: request.wssIncomingRef,
     properties: compact({ ...request.properties }),
+    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
     orphaned: request.orphaned === true ? true : undefined,
   });
 }
@@ -171,6 +172,7 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     body: body.document,
     auth: authDocument(request.auth),
     settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
     orphaned: request.orphaned === true ? true : undefined,
   });
 }

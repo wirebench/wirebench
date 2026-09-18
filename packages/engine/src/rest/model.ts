@@ -12,6 +12,7 @@
  * `'soap'` on an interface; `'grpc'` is reserved and refused by the loader (see `project/schema.ts`).
  */
 
+import type { Assertion } from '../assert/model.js';
 import type { AttachmentSource, AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
@@ -182,6 +183,8 @@ export interface RestRequestDef {
   /** `inherit` by default: the folder chain, then the API, decides. */
   readonly auth: AuthConfig;
   readonly settings: RestRequestSettings;
+  /** Declarative checks a runner evaluates against this request's response. Empty when none. */
+  readonly assertions: readonly Assertion[];
   /**
    * True when the operation this request was imported from is no longer in the API's definition,
    * the same flag a SOAP request carries after an Update Definition. Nothing is ever deleted on
@@ -327,6 +330,7 @@ export function createRestRequest(name: string, input: CreateRestRequestInput = 
     body: input.body ?? NO_BODY,
     auth: input.auth ?? { type: 'inherit' },
     settings: input.settings ?? {},
+    assertions: [],
   };
 }
 

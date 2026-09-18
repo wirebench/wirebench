@@ -502,6 +502,7 @@ export function updateRestRequest(
         // Settings are replaced wholesale, not merged: an absent field means *inherit*, so a
         // merge could never turn an override back off.
         settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
+        assertions: request.assertions,
         ...(request.orphaned === true ? { orphaned: true } : {}),
       });
       return next;
@@ -550,9 +551,10 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       settings: original.settings,
       ...(original.description !== undefined ? { description: original.description } : {}),
     });
-    createdId = copy.id;
+    const withAssertions: RestRequestDef = { ...copy, assertions: original.assertions };
+    createdId = withAssertions.id;
     const requests = [...container.requests];
-    requests.splice(index + 1, 0, copy);
+    requests.splice(index + 1, 0, withAssertions);
     return { ...container, requests: renumber(requests) };
   };
   return { project: replaceApi(project, { ...api, ...apply(api) }), createdId };

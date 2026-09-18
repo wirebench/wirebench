@@ -20,6 +20,7 @@
  */
 
 import { z } from 'zod';
+import { assertionsSchema } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
 import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
@@ -261,6 +262,7 @@ export const requestFileSchema = z.looseObject({
   wssOutgoingRef: z.string().optional(),
   wssIncomingRef: z.string().optional(),
   properties: requestPropertiesSchema,
+  assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
 });
 
@@ -349,6 +351,7 @@ export const restRequestFileSchema = z.looseObject({
   body: restBodySchema.default({ kind: 'none' }),
   auth: authConfigSchema.default({ type: 'inherit' }),
   settings: restSettingsSchema.default({}),
+  assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
 });
 
