@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ProjectError } from '@wirebench/engine';
+import { ProjectError, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { curlForLogEntry } from '../log-curl.js';
@@ -31,6 +31,14 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       };
     }
     if (request.protocol === 'grpc') {
+      // The row menu only offers Resend for unary calls; main holds the same line, since a
+      // streaming call needs the live panel to talk into and cannot be replayed from a row.
+      const methodKind = deps.request.project.grpcSend?.(request.requestId)?.request.methodKind;
+      if (methodKind !== undefined && methodKind !== 'unary') {
+        throw new WirebenchError('grpc-resend-streaming', 'Only a unary gRPC call can be resent from the log.', {
+          details: { requestId: request.requestId, methodKind },
+        });
+      }
       return {
         protocol: 'grpc' as const,
         exchange: await sendGrpcRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),

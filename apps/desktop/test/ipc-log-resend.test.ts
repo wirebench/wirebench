@@ -143,4 +143,24 @@ describe('log.resend', () => {
     expect(call.requestId).toBe('rest-1');
     expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
   });
+
+  it('gRPC: a streaming method is refused before anything is sent', async () => {
+    const sendGrpc = vi.spyOn(EngineService.prototype, 'sendGrpcRequest');
+    const grpcSend = vi.fn(() => ({
+      unresolved: [],
+      request: { service: 's', method: 'm', methodKind: 'server-streaming' },
+    }));
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({ grpcSend }),
+    });
+    const reply = (await invoke('log.resend', { protocol: 'grpc', requestId: 'grpc-1' })) as {
+      ok: false;
+      error: { code: string };
+    };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('grpc-resend-streaming');
+    expect(sendGrpc).not.toHaveBeenCalled();
+  });
 });
