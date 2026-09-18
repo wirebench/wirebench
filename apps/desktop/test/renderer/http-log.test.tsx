@@ -445,4 +445,54 @@ describe('HttpLog — Export HAR', () => {
     await userEvent.keyboard('{ArrowDown}{ArrowDown}');
     expect(rows()[1]!.getAttribute('aria-pressed')).toBe('true');
   });
+  it('Cmd/Ctrl+click selects a second row and shows Compare; Escape returns to the detail tabs', async () => {
+    useExchangesStore.setState({
+      log: [logExchange(makeRestExchange({ sendId: 'a' })), logExchange(makeRestExchange({ sendId: 'b' }))],
+    });
+    const user = userEvent.setup();
+    render(<HttpLog />);
+    await user.click(rows()[0]!);
+    await user.keyboard('{Control>}');
+    await user.click(rows()[1]!);
+    await user.keyboard('{/Control}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
+    expect(screen.queryByRole('tablist', { name: 'Log detail' })).toBeNull();
+    screen.getByLabelText('HTTP log').focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(screen.getByRole('tablist', { name: 'Log detail' })).toBeDefined();
+    expect(rows()[1]!.getAttribute('aria-pressed')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('log-detail')).toBeNull();
+  });
+
+  it('with two rows selected, a plain click or an arrow key goes back to one row', async () => {
+    useExchangesStore.setState({
+      log: [
+        logExchange(makeRestExchange({ sendId: 'a' })),
+        logExchange(makeRestExchange({ sendId: 'b' })),
+        logExchange(makeRestExchange({ sendId: 'c' })),
+      ],
+    });
+    const user = userEvent.setup();
+    render(<HttpLog />);
+    await user.click(rows()[0]!);
+    await user.keyboard('{Meta>}');
+    await user.click(rows()[1]!);
+    await user.keyboard('{/Meta}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    screen.getByLabelText('HTTP log').focus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true']);
+
+    await user.keyboard('{Control>}');
+    await user.click(rows()[0]!);
+    await user.keyboard('{/Control}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    await user.click(rows()[1]!);
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
+  });
 });

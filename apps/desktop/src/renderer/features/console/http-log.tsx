@@ -10,6 +10,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
+import { nextSelection } from './log-selection.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
 import { nameOf, useNameSources, type NameSources } from './log-name.js';
 import { compileMatcher } from './log-search.js';
@@ -45,7 +46,8 @@ const COLUMNS_COMPACT = 'grid-cols-[3rem_4rem_minmax(0,1fr)_8rem]';
 interface RowProps {
   readonly entry: LogEntry;
   readonly selected: boolean;
-  readonly onSelect: () => void;
+  /** `additive` is a Cmd/Ctrl+click, which adds or removes a second row to compare. */
+  readonly onSelect: (additive: boolean) => void;
   /** Opens the row menu at the pointer (right-click). */
   readonly onMenu: (anchor: { x: number; y: number }) => void;
   /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
@@ -64,10 +66,12 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
       data-testid="http-log-row"
       data-kind={entry.kind}
       data-send-id={sendIdOf(entry)}
-      onClick={onSelect}
+      onClick={(event) => {
+        onSelect(event.metaKey || event.ctrlKey);
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
-        onSelect();
+        onSelect(false);
         onMenu({ x: event.clientX, y: event.clientY });
       }}
       aria-pressed={selected}
@@ -144,7 +148,12 @@ export function HttpLog() {
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  // 0–2 send ids, oldest first: one shows its detail, two are compared.
+  const [selection, setSelection] = useState<readonly string[]>([]);
+  const selectedId = selection.at(-1);
+  const selectOnly = useCallback((id: string | undefined) => {
+    setSelection(id === undefined ? [] : [id]);
+  }, []);
   // Owned here rather than in the detail so it survives selecting another row.
   const [tab, setTab] = useState<LogDetailTab>('headers');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -181,6 +190,8 @@ export function HttpLog() {
   // rather than keeping a stale one open; `selectedId` itself is untouched, so the detail
   // reappears once the filter is cleared.
   const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
+  const pairLeft = selection.length === 2 ? visible.find((entry) => sendIdOf(entry) === selection[0]) : undefined;
+  const pair = pairLeft !== undefined && selected !== undefined ? ([pairLeft, selected] as const) : undefined;
   // The detail shares the width with the table, so the row sheds the columns that do not fit.
   const compact = selected !== undefined;
   // One span for the rows shown, so every bar is placed on the same time axis.
@@ -221,7 +232,8 @@ export function HttpLog() {
     }
     if (event.key === 'Escape' && selectedId !== undefined) {
       event.preventDefault();
-      setSelectedId(undefined);
+      // With two rows, Escape goes back to the newer one's detail; a second Escape closes it.
+      selectOnly(selection.length === 2 ? selectedId : undefined);
       return;
     }
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
@@ -234,7 +246,7 @@ export function HttpLog() {
       index === -1 ? (step === 1 ? 0 : visible.length - 1) : Math.min(visible.length - 1, Math.max(0, index + step));
     const entry = visible[next];
     if (entry !== undefined) {
-      setSelectedId(sendIdOf(entry));
+      selectOnly(sendIdOf(entry));
       if (virtualised) {
         virtualizer.scrollToIndex(next);
       } else {
@@ -342,9 +354,9 @@ export function HttpLog() {
                         compact={compact}
                         names={names}
                         bar={barFor(entry)}
-                        selected={sendIdOf(entry) === selectedId}
-                        onSelect={() => {
-                          setSelectedId(sendIdOf(entry));
+                        selected={selection.includes(sendIdOf(entry))}
+                        onSelect={(additive) => {
+                          setSelection((current) => nextSelection(current, sendIdOf(entry), additive));
                         }}
                         onMenu={(anchor) => {
                           setMenu({ sendId: sendIdOf(entry), anchor });
@@ -362,9 +374,9 @@ export function HttpLog() {
                   compact={compact}
                   names={names}
                   bar={barFor(entry)}
-                  selected={sendIdOf(entry) === selectedId}
-                  onSelect={() => {
-                    setSelectedId(sendIdOf(entry));
+                  selected={selection.includes(sendIdOf(entry))}
+                  onSelect={(additive) => {
+                    setSelection((current) => nextSelection(current, sendIdOf(entry), additive));
                   }}
                   onMenu={(anchor) => {
                     setMenu({ sendId: sendIdOf(entry), anchor });
@@ -375,18 +387,22 @@ export function HttpLog() {
           </div>
         </div>
 
-        {selected !== undefined && (
-          <LogDetail
-            entry={selected}
-            tab={tab}
-            onTabChange={setTab}
-            onClose={() => {
-              setSelectedId(undefined);
-            }}
-            onMenu={(anchor) => {
-              setMenu({ sendId: sendIdOf(selected), anchor });
-            }}
-          />
+        {pair !== undefined ? (
+          <div data-testid="log-compare" className="min-w-0 flex-1" />
+        ) : (
+          selected !== undefined && (
+            <LogDetail
+              entry={selected}
+              tab={tab}
+              onTabChange={setTab}
+              onClose={() => {
+                selectOnly(undefined);
+              }}
+              onMenu={(anchor) => {
+                setMenu({ sendId: sendIdOf(selected), anchor });
+              }}
+            />
+          )
         )}
       </div>
 
