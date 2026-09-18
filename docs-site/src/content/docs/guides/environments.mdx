@@ -1,103 +1,95 @@
 ---
-title: Environments & Property Expansion
-description: Managing environment variables, property scopes, precedence, and encrypted secrets.
+title: Environments and properties
+description: Switch between deployment targets with named scopes, without editing requests.
 ---
 
-# Environments & Property Expansion
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-Wirebench provides a flexible property expansion engine that allows you to parameterize URLs, headers, and request bodies across multiple deployment environments (Local, Staging, Production).
+Environments let one request work against several deployments — local, staging, production —
+without editing the URL or the body each time. You set variables once, in a scope, and reference
+them with `${...}` inside URLs, headers, envelopes and bodies. The syntax itself, and the full
+precedence rules, are covered in
+[Property expansion syntax](/wirebench/reference/property-syntax/); this page is about managing
+environments day to day.
 
----
+## Open the Environments view
 
-## 1. The Environments View
+Choose **Environments** in the activity bar. It lists **Globals**, **Workspace**, and every
+environment you've added — both workspace-level environments and any linked project's own. Each
+entry opens a page with a table of variables.
 
-Open the **Environments** view from the left activity bar. Each environment contains a table of key-value variables:
+## Scopes, from broadest to narrowest
 
-| Variable Name | Value | Secret | Enabled | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `baseUrl` | `https://staging.api.internal` | No | Yes | Target host URL |
-| `apiKey` | `wb_live_9a7f32...` | Yes (Masked) | Yes | Authentication token |
-| `customerId` | `cust_88291` | No | Yes | Test customer ID |
-| `debugTrace` | `true` | No | No (Disabled) | Tracing flag |
+- **Globals** — available everywhere, referenced as `${#Global#name}`. The broadest scope; a
+  workspace or environment variable with the same name wins over it.
+- **Workspace** — available to every project in the workspace, as `${#Workspace#name}`. An active
+  environment's variable of the same name wins over it.
+- **Environment** — the variables of whichever environment is active, as `${#Env#name}`. This is
+  the scope you switch between deployments with.
 
-### Key Controls:
-- **Active Environment Picker**: Located in the top header and status bar. Switching the active environment instantly updates all open tabs.
-- **Variable Toggle**: Temporarily disable a variable without deleting its value.
+The shorthand `${name}` (no `#Scope#`) resolves through Env, then Workspace, then Global —
+whichever scope defines it first.
 
----
+## Add and switch environments
 
-## 2. Property Scope Hierarchy & Precedence
+<Steps>
 
-When Wirebench encounters a placeholder like `${#Scope#Property}`, it resolves the value based on strict precedence:
+1. In the Environments view, choose **Add environment**. It opens on the new environment's page
+   with a default name.
+2. Click the name to rename it, or right-click the row and choose **Rename**. Press
+   <kbd>Enter</kbd> to commit, <kbd>Escape</kbd> to cancel.
+3. To make it the one requests use, open the environment switcher in the status bar and choose it
+   from the list.
 
-```text
-Highest Precedence
-   │
-   ├── 1. Environment Scope:  ${#Env#variableName}
-   │
-   ├── 2. Project Scope:      ${#Project#variableName}
-   │
-   └── 3. Workspace Scope:    ${#Workspace#variableName}
-Lowest Precedence
-```
+</Steps>
 
-### Precedence Table
+Only one environment is active at a time. The status bar always shows which one, and every open
+request tab picks it up immediately — there's no per-tab environment.
 
-| Syntax | Target Scope | When to Use |
-| :--- | :--- | :--- |
-| `${#Env#var}` | Active Environment | Hostnames, API keys, and environment-specific endpoints (`baseUrl`, `token`). |
-| `${#Project#var}` | Current Project | Common IDs, schema versions, or constants shared across one service project. |
-| `${#Workspace#var}` | Active Workspace | Shared global constants across all projects in the workspace. |
+## Set variables
 
----
+Each scope's page (Globals, Workspace, or an environment) has its own table: name, value, and a
+**Secret** flag.
 
-## 3. Real-World Expansion Examples
+<Steps>
 
-### In Address Bars & URLs
-```text
-${#Env#baseUrl}/v1/customers/${#Env#customerId}/orders
-```
+1. Add a row and type a name and value.
+2. Turn on **Secret** for anything sensitive — a token, a password, an API key. See
+   [Secrets](/wirebench/guides/secrets/) for how secret values are stored and masked.
+3. Reference it anywhere property expansion is read — the address bar, headers, a JSON body, a
+   SOAP envelope — with `${#Env#name}`, `${#Workspace#name}`, `${#Global#name}`, or the shorthand
+   `${name}`.
 
-### In HTTP Headers
-```text
-Authorization: Bearer ${#Env#apiKey}
-X-Tenant-ID: ${#Project#tenantId}
-```
+</Steps>
 
-### In JSON Payloads
-```json
-{
-  "customerId": "${#Env#customerId}",
-  "requestOrigin": "wirebench-desktop",
-  "authHash": "${#Env#apiKey}"
-}
-```
+An unresolved reference — a typo, or a variable that only exists in a different environment —
+shows up as a row in **Problems** when you send, naming the exact `${...}` text it couldn't
+resolve.
 
-### In SOAP Envelopes
-```xml
-<soapenv:Header>
-  <auth:Token>${#Env#apiKey}</auth:Token>
-</soapenv:Header>
-<soapenv:Body>
-  <cust:GetProfileRequest>
-    <cust:Id>${#Env#customerId}</cust:Id>
-  </cust:GetProfileRequest>
-</soapenv:Body>
-```
+### Disable a variable without deleting it
 
----
+Every row has an enabled checkbox. Unticking it makes property expansion treat the variable as
+absent — a reference to it falls through to the next scope in the precedence chain (or is left
+unresolved if nothing else defines it) — while its value stays saved. This is the quickest way to
+try a request without a variable, or to keep a rarely used value around without deleting it.
 
-## 4. Encrypted Secrets & Security
+## Endpoint overrides
 
-Variables flagged as **Secret** benefit from zero-leak protections:
-- **UI Masking**: Values are masked with bullet points in the editor interface.
-- **Export Safety**: Secret values are excluded when exporting workspaces or sharing Git repositories.
-- **OS Keychain Storage**: Secrets are stored in your operating system's local secure credential vault, never written as plain text into project JSON files.
+An environment's page also has an **Endpoints** table, one row per SOAP interface and REST or gRPC
+API the workspace can reach. Filling in a row redirects every request under that interface or API
+to the address you type, instead of the one the WSDL or the API's own base URL declares — useful
+for pointing an imported definition at a different deployment of the same service.
 
----
+A row shows which layer is currently winning when more than one could apply — for example, a
+linked project's own environment override beats a workspace environment's override for the same
+interface. A request sent under an overridden interface shows a badge next to its endpoint field
+so you can tell, without opening Environments, that something is redirecting it.
 
-## 5. Proxy & Custom CA Certificates
+## Related
 
-Under **Preferences → Network & Security**:
-- **HTTP/HTTPS Proxy**: Configure corporate proxies with optional basic authentication.
-- **Custom CA Certificate Bundles**: Add custom internal root CA certificates (`.pem` / `.crt`) to trust corporate internal TLS endpoints without disabling certificate validation.
+- [Property expansion syntax](/wirebench/reference/property-syntax/) — the full `${...}` grammar
+  and resolution order.
+- [Secrets](/wirebench/guides/secrets/) — how secret variables are stored and what never leaves
+  your machine.
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/) and [REST](/wirebench/guides/rest-client/) — where
+  endpoints and base URLs come from.
