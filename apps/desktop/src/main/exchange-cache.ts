@@ -51,6 +51,12 @@ export interface CachedEngineExchange {
 interface CachedRestExchange {
   readonly summary: RestExchangeSummary;
   readonly body: Uint8Array;
+  /**
+   * Rebuilds the summary redacted (or not) for the show-secrets flag as it stands. A REST summary
+   * cannot be re-redacted from its unredacted copy alone — its URL is masked against the request's
+   * own API-key parameter names — so the send that cached it leaves the projection behind instead.
+   */
+  readonly view?: (show: boolean) => RestExchangeSummary;
 }
 
 /** Keeps the last {@link EXCHANGE_CACHE_CAP} unredacted exchange summaries. */
@@ -82,9 +88,14 @@ export class ExchangeCache {
   }
 
   /** Stores (or replaces) the unredacted REST summary for `sendId`, evicting the oldest over cap. */
-  putRest(sendId: string, summary: RestExchangeSummary, body: Uint8Array): void {
+  putRest(
+    sendId: string,
+    summary: RestExchangeSummary,
+    body: Uint8Array,
+    view?: (show: boolean) => RestExchangeSummary,
+  ): void {
     this.restEntries.delete(sendId);
-    this.restEntries.set(sendId, { summary, body });
+    this.restEntries.set(sendId, view === undefined ? { summary, body } : { summary, body, view });
     while (this.restEntries.size > this.cap) {
       const oldest = this.restEntries.keys().next();
       if (oldest.done === true) {
@@ -97,6 +108,14 @@ export class ExchangeCache {
   /** The unredacted REST summary for `sendId`, or `undefined` once it has been evicted. */
   getRest(sendId: string): RestExchangeSummary | undefined {
     return this.restEntries.get(sendId)?.summary;
+  }
+
+  /**
+   * A REST exchange rendered for the show-secrets flag `show`. Undefined when it was cached without
+   * a view: answering with the unredacted summary instead would be the one wrong answer.
+   */
+  getRestView(sendId: string, show: boolean): RestExchangeSummary | undefined {
+    return this.restEntries.get(sendId)?.view?.(show);
   }
 
   /** A REST response's bytes, for an image preview or a save-to-file. */
