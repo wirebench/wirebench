@@ -38,6 +38,26 @@ describe('assertions on a request file', () => {
     expect(await readFile(file, 'utf8')).toContain('maxMs: 500');
   });
 
+  it('survives a passwordEnv on an auth block through load → save', async () => {
+    const dir = await tempProjectDir();
+    await cp(V3_DIR, dir, { recursive: true });
+    const file = await firstRequestFile(dir);
+    await writeFile(
+      file,
+      `${await readFile(file, 'utf8')}auth:\n  type: basic\n  username: svc\n  passwordRef: sec_1\n  passwordEnv: BILLING_PASSWORD\n`,
+    );
+
+    const { project, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    const all = project.interfaces.flatMap((i) => i.operations.flatMap((o) => o.requests));
+    expect(all.find((r) => r.auth !== undefined && 'passwordEnv' in r.auth)?.auth).toMatchObject({
+      passwordEnv: 'BILLING_PASSWORD',
+    });
+
+    await saveProject(project, dir);
+    expect(await readFile(file, 'utf8')).toContain('passwordEnv: BILLING_PASSWORD');
+  });
+
   it('reports an invalid assertion as a load failure', async () => {
     const dir = await tempProjectDir();
     await cp(V3_DIR, dir, { recursive: true });

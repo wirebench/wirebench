@@ -51,6 +51,8 @@ export interface KeystoreDef {
   readonly path: string;
   readonly type: KeystoreType;
   readonly passwordSecretRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly passwordEnv?: string;
   /** The alias a send uses when the request does not name one. */
   readonly defaultAlias?: string;
 }

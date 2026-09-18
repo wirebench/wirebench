@@ -79,6 +79,9 @@ export function updateKeystore(project: Project, keystoreId: string, patch: Keys
     path: current.path,
     type: current.type,
     ...(passwordSecretRef === null || passwordSecretRef === undefined ? {} : { passwordSecretRef }),
+    // Not editable from the desktop; carried over unchanged so a patch to any other field
+    // (name, password ref, default alias) does not silently drop a name the file already declared.
+    ...(current.passwordEnv !== undefined ? { passwordEnv: current.passwordEnv } : {}),
     ...(defaultAlias === null || defaultAlias === undefined ? {} : { defaultAlias }),
   };
   const ref = toKeystoreRef(next, existing);

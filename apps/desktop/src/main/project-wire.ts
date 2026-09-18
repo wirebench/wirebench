@@ -253,6 +253,7 @@ function toKeystoreWire(ref: WssRef): KeystoreWire {
     path: def.path,
     type: def.type,
     ...(def.passwordSecretRef !== undefined ? { passwordSecretRef: def.passwordSecretRef } : {}),
+    ...(def.passwordEnv !== undefined ? { passwordEnv: def.passwordEnv } : {}),
     ...(def.defaultAlias !== undefined ? { defaultAlias: def.defaultAlias } : {}),
   };
 }

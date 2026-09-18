@@ -338,6 +338,7 @@ function toEngineAuth(auth: {
   type: EndpointAuth['type'];
   username?: string | undefined;
   passwordRef?: string | undefined;
+  passwordEnv?: string | undefined;
   domain?: string | undefined;
   preemptive?: boolean | undefined;
 }): EndpointAuth {
@@ -345,6 +346,7 @@ function toEngineAuth(auth: {
     type: auth.type,
     ...(auth.username !== undefined ? { username: auth.username } : {}),
     ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+    ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
     ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
     ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
   };

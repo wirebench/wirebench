@@ -30,6 +30,7 @@ export function toKeystoreDef(ref: WssRef): KeystoreDef {
     path: entry.path,
     type: entry.type,
     ...(entry.passwordSecretRef !== undefined ? { passwordSecretRef: entry.passwordSecretRef } : {}),
+    ...(entry.passwordEnv !== undefined ? { passwordEnv: entry.passwordEnv } : {}),
     ...(entry.defaultAlias !== undefined ? { defaultAlias: entry.defaultAlias } : {}),
   };
 }
@@ -52,6 +53,11 @@ export function toKeystoreRef(def: KeystoreDef, existing?: WssRef): WssRef {
     delete document['passwordSecretRef'];
   } else {
     document['passwordSecretRef'] = def.passwordSecretRef;
+  }
+  if (def.passwordEnv === undefined) {
+    delete document['passwordEnv'];
+  } else {
+    document['passwordEnv'] = def.passwordEnv;
   }
   if (def.defaultAlias === undefined) {
     delete document['defaultAlias'];

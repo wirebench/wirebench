@@ -49,6 +49,8 @@ export interface EndpointAuth {
   readonly username?: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a password. */
   readonly passwordRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly passwordEnv?: string;
   /** NTLM domain. */
   readonly domain?: string;
   /** NTLM workstation name; optional, and only ever advertised, never verified. */
@@ -71,6 +73,8 @@ export interface BearerAuth {
   readonly type: 'bearer';
   /** Opaque reference into the OS-keychain-backed secret store. Never a token value. */
   readonly tokenRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly tokenEnv?: string;
   /** Authentication scheme placed before the token. Defaults to `Bearer`. */
   readonly scheme?: string;
 }
@@ -82,6 +86,8 @@ export interface ApiKeyAuth {
   readonly name: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a key value. */
   readonly valueRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly valueEnv?: string;
   readonly in: 'header' | 'query';
 }
 
@@ -101,6 +107,8 @@ export interface OAuth2Auth {
   readonly clientId: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a secret value. */
   readonly clientSecretRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly clientSecretEnv?: string;
   readonly scopes: readonly string[];
   readonly audience?: string;
   /** Whether the client credentials go in an `Authorization: Basic` header or the request body. */

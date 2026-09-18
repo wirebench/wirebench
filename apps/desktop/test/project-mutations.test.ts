@@ -61,6 +61,20 @@ describe('applyChange', () => {
     expect(created?.request.endpointId).toBe('ep-1');
   });
 
+  it('update-request-auth carries a committed passwordEnv through, though the desktop never edits it', async () => {
+    const result = await applyChange(
+      build(),
+      {
+        kind: 'update-request-auth',
+        requestId: 'req-1',
+        auth: { type: 'basic', username: 'svc', passwordRef: 'sec_1', passwordEnv: 'BILLING_PASSWORD' },
+      },
+      deps,
+    );
+    const found = findRequest(result.project, 'req-1');
+    expect(found?.request.auth).toMatchObject({ passwordEnv: 'BILLING_PASSWORD' });
+  });
+
   it('add-request creates the operation when the interface does not declare it yet', async () => {
     const result = await applyChange(
       build(),

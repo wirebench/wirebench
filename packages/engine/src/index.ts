@@ -979,6 +979,8 @@ export type { GrpcToCommandOptions } from './grpc/command.js';
 
 export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage } from './secrets/resolve.js';
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
+export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
+export type { SecretNeed } from './secrets/env-names.js';
 
 export {
   REDACTED_MARKER,
