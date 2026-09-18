@@ -697,7 +697,8 @@ async function importCurlAsRest(
  * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
  * it reaches the wire, with the problems that explain why.
  */
-async function sendRestRequest(
+/** Exported for `log.resend`, which replays a saved REST request through this same path. */
+export async function sendRestRequest(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestSendRestRequest,
@@ -964,7 +965,8 @@ async function grpcCommand(
  * `.proto` set the message is encoded against. A call with an unresolved property is refused before
  * it reaches the wire.
  */
-async function sendGrpcRequest(
+/** Exported for `log.resend`, which replays a saved unary gRPC request through this same path. */
+export async function sendGrpcRequest(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestSendGrpcRequest,

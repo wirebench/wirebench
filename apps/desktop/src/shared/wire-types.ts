@@ -1787,6 +1787,21 @@ export type LogEntryWire = z.infer<typeof logEntryWireSchema>;
 export const logCurlRequestSchema = z.object({ entry: logEntryWireSchema, shell: z.enum(['posix', 'powershell']) });
 export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
 
+/**
+ * Request payload for `log.resend`: the saved request behind a row, replayed as it is now. A
+ * logged row's own headers and body are redacted and are never the source of a send.
+ */
+export const logResendRequestSchema = z.object({ protocol: z.enum(['soap', 'rest', 'grpc']), requestId: z.string() });
+export type LogResendRequest = z.infer<typeof logResendRequestSchema>;
+
+/** Response payload for `log.resend`: the new exchange, tagged by protocol. */
+export const logResendResponseSchema = z.discriminatedUnion('protocol', [
+  z.object({ protocol: z.literal('soap'), exchange: exchangeSummarySchema }),
+  z.object({ protocol: z.literal('rest'), exchange: restExchangeSummarySchema }),
+  z.object({ protocol: z.literal('grpc'), exchange: grpcExchangeSummarySchema }),
+]);
+export type LogResendResponse = z.infer<typeof logResendResponseSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),

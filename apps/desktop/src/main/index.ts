@@ -44,7 +44,7 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
-import { registerRequestChannels } from './ipc/request.js';
+import { registerRequestChannels, type RequestChannelDeps } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { OpenApiImportService } from './openapi-import.js';
@@ -260,7 +260,7 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     projectDirs: openProjectDirs,
   });
-  registerRequestChannels(engineService, {
+  const requestDeps: RequestChannelDeps = {
     project: workspaceService,
     adHocScopes: () => {
       const state = globalProperties.get();
@@ -274,7 +274,8 @@ void app.whenReady().then(() => {
     dialogPicks,
     oauth2: oauth2Service,
     getSecret: (ref) => secretStore.get(ref),
-  });
+  };
+  registerRequestChannels(engineService, requestDeps);
   registerOAuth2Channels({
     oauth2: oauth2Service,
     project: workspaceService,
@@ -397,7 +398,7 @@ void app.whenReady().then(() => {
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
-  registerLogChannels({ showSecrets: showSecretsFlag });
+  registerLogChannels({ showSecrets: showSecretsFlag, service: engineService, request: requestDeps });
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
     project: workspaceService,
