@@ -13,13 +13,16 @@ export const LEGACY_PROJECT_NAMESPACE = 'http://eviware.com/soapui/config';
 /** The local name of the document element. */
 export const LEGACY_PROJECT_ROOT = 'soapui-project';
 
+const ESCAPED_NAMESPACE = LEGACY_PROJECT_NAMESPACE.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+const NAMESPACE_DECLARATION = new RegExp(`\\sxmlns(?::[\\w.-]+)?\\s*=\\s*(["'])${ESCAPED_NAMESPACE}\\1`);
+const ROOT_ELEMENT = new RegExp(`<(?:[\\w.-]+:)?${LEGACY_PROJECT_ROOT}[\\s>]`);
+
 /**
  * A cheap check on the first few kilobytes of `text`, for import auto-detection: the root element's
- * local name and the namespace both have to appear. `parseLegacyProject` is the real test.
+ * local name has to appear, and the format's namespace has to be declared in an `xmlns` attribute.
+ * `parseLegacyProject` is the real test.
  */
 export function looksLikeLegacyProject(text: string): boolean {
   const head = text.slice(0, 4096);
-  return (
-    head.includes(LEGACY_PROJECT_NAMESPACE) && new RegExp(`<(?:[\\w.-]+:)?${LEGACY_PROJECT_ROOT}[\\s>]`).test(head)
-  );
+  return ROOT_ELEMENT.test(head) && NAMESPACE_DECLARATION.test(head);
 }
