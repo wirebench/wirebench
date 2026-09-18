@@ -68,6 +68,27 @@ describe('importing a gRPC API from a running server', () => {
     expect(screen.queryByRole('tab', { name: 'Server' })).toBeNull();
   });
 
+  it('keeps the Server tab while its panel is up, even under Auto-detect', () => {
+    // Auto-detect reads the *current* tab's input, and the Server tab has none — so selecting it
+    // drops `effectiveFormat` to `unknown`. The tab has to survive that, or the strip loses the
+    // tab the user just picked and shows nothing selected above an open Server panel.
+    installWirebenchApi({ on: vi.fn(() => () => undefined) as unknown as Window['wirebench']['on'] });
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+
+    // A `.proto` URL is enough for auto-detection to offer the tab; the format stays on Auto.
+    fireEvent.change(screen.getByTestId('import-url-input'), {
+      target: { value: 'https://example.com/greeter.proto' },
+    });
+    const serverTab = screen.getByRole('tab', { name: 'Server' });
+    fireEvent.click(serverTab);
+
+    expect(screen.getByTestId('import-reflection-target')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Server' }).getAttribute('aria-selected')).toBe('true');
+    for (const name of ['URL', 'File', 'Paste']) {
+      expect(screen.getByRole('tab', { name }).getAttribute('aria-selected')).toBe('false');
+    }
+  });
+
   it('sends the address, version and trust decision, and reports the discovery', async () => {
     const importProto = vi
       .fn()
