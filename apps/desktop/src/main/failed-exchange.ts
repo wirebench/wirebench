@@ -82,9 +82,19 @@ function rawRequestOf(captured: FailedRequest, redactedUrl: string): string {
   return redactRawHttp(Buffer.concat([head, body]).toString('base64'), { show: false, encoding: 'base64' });
 }
 
+/** Engine codes for a URL refused before the request was built. */
+const UNBUILT_URL_CODES: ReadonlySet<string> = new Set(['invalid-url', 'rest-url-incomplete']);
+
 /** The failure row for one send, redacted for good. */
 export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire {
   const captured = input.captured;
+  // A URL the engine cannot complete or parse is refused before anything is built, so such a
+  // failure never went on the wire either, whichever catch block reports it.
+  const stage =
+    input.stage ??
+    (captured === undefined && isWirebenchError(input.error) && UNBUILT_URL_CODES.has(input.error.code)
+      ? 'prepare'
+      : undefined);
   const url = redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
   return {
     sendId: input.sendId,
@@ -99,9 +109,9 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
     error:
-      input.stage === 'prepare'
+      stage === 'prepare'
         ? { code: prepareFailureCode(input.error), message: errorOf(input.error).message }
         : errorOf(input.error),
-    ...(input.stage === 'prepare' ? { stage: 'prepare' as const } : {}),
+    ...(stage === 'prepare' ? { stage: 'prepare' as const } : {}),
   };
 }

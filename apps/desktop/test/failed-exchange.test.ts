@@ -162,3 +162,23 @@ describe('failedExchangeOf structured body', () => {
     expect(Buffer.from(failure.rawRequestBase64!, 'base64').toString()).not.toContain('cs-placeholder');
   });
 });
+
+describe('failedExchangeOf — an unparseable URL from the transport', () => {
+  it('is a prepare-stage failure: nothing was built, so nothing went on the wire', () => {
+    const failure = failedExchangeOf(input({ error: new WirebenchError('invalid-url', 'Invalid URL: ht!tp:/x') }));
+    expect(failure.stage).toBe('prepare');
+    expect(failure.error.code).toBe('invalid-url');
+    const incomplete = failedExchangeOf(input({ error: new WirebenchError('rest-url-incomplete', 'Not a URL') }));
+    expect(incomplete.stage).toBe('prepare');
+  });
+
+  it('stays a send failure when the transport had built the request', () => {
+    const failure = failedExchangeOf(
+      input({
+        error: new WirebenchError('invalid-url', 'Invalid URL'),
+        captured: { url: 'https://example.test/', method: 'GET', headers: {}, bodyTruncated: false },
+      }),
+    );
+    expect('stage' in failure).toBe(false);
+  });
+});

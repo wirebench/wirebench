@@ -138,6 +138,16 @@ describe('request.sendRest → prepare-stage failures', () => {
     });
   });
 
+  it('an unparseable base URL with no proxy configured is still a prepare row', async () => {
+    const bad = resolution();
+    const input = { ...bad.input, baseUrl: 'ht!tp://', request: { ...bad.input.request, url: '/x' } };
+    const onSendFailed = register({}, { restSend: () => ({ ...bad, input }) });
+    await invoke('request.sendRest', { sendId: 's-5', requestId: 'rest-1' });
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+    // The engine refuses it while composing the URL, before anything is built.
+    expect(onSendFailed.mock.calls[0]![0]).toMatchObject({ stage: 'prepare', error: { code: 'rest-url-incomplete' } });
+  });
+
   it('a send-stage failure is unchanged (no stage)', async () => {
     const onSendFailed = register({});
     await invoke('request.sendRest', { sendId: 's-4', requestId: 'rest-1' });
