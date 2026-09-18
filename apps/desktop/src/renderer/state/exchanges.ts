@@ -46,8 +46,12 @@ export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
 /** What narrows the HTTP Log; every list empty means "all". Lives here so it survives switching console tabs. */
 export interface LogFilter {
-  /** Case-insensitive substring of the request URL. */
+  /** Searched in the URL, header lines, bodies and request name. */
   readonly text: string;
+  /** `text` is a regular expression. */
+  readonly regex: boolean;
+  /** `text` matches case-sensitively. */
+  readonly matchCase: boolean;
   /** Upper-case method names. */
   readonly methods: readonly string[];
   readonly statuses: readonly StatusClass[];
@@ -55,7 +59,14 @@ export interface LogFilter {
 }
 
 /** The filter that shows every row. */
-export const EMPTY_FILTER: LogFilter = { text: '', methods: [], statuses: [], protocols: [] };
+export const EMPTY_FILTER: LogFilter = {
+  text: '',
+  regex: false,
+  matchCase: false,
+  methods: [],
+  statuses: [],
+  protocols: [],
+};
 
 /** The send id either kind of entry carries. */
 export function sendIdOf(entry: LogEntry): string {

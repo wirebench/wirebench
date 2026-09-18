@@ -59,6 +59,8 @@ describe('LogFilterBar', () => {
     await userEvent.click(within(screen.getByRole('group', { name: 'Method' })).getByRole('button', { name: 'GET' }));
     expect(useExchangesStore.getState().filter).toEqual({
       text: '',
+      regex: false,
+      matchCase: false,
       methods: ['GET'],
       statuses: ['failed'],
       protocols: ['rest'],
@@ -81,7 +83,9 @@ describe('LogFilterBar', () => {
   });
 
   it('Reset clears the whole filter, including the text field', async () => {
-    useExchangesStore.setState({ filter: { text: 'pet', methods: ['GET'], statuses: ['4xx'], protocols: ['rest'] } });
+    useExchangesStore.setState({
+      filter: { text: 'pet', regex: false, matchCase: false, methods: ['GET'], statuses: ['4xx'], protocols: ['rest'] },
+    });
     render(<LogFilterBar shown={0} total={3} />);
     expect(screen.getByLabelText<HTMLInputElement>('Filter URL').value).toBe('pet');
 

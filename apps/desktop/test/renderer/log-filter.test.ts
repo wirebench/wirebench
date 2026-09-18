@@ -85,6 +85,8 @@ describe('matchesFilter', () => {
   it('combines the groups with AND and the values within a group with OR', () => {
     const filter = {
       text: 'api.test',
+      regex: false,
+      matchCase: false,
       methods: ['GET', 'POST'],
       statuses: ['2xx', 'failed'] as const,
       protocols: ['rest' as const],

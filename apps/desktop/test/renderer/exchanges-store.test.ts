@@ -428,6 +428,8 @@ describe('useExchangesStore: failures and the filter', () => {
 
     expect(useExchangesStore.getState().filter).toEqual({
       text: 'pet',
+      regex: false,
+      matchCase: false,
       methods: [],
       statuses: ['4xx', 'failed'],
       protocols: [],

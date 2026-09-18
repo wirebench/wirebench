@@ -11,7 +11,13 @@ import type {
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
 export function b64(text: string): string {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  // In chunks: spreading a large body into one call overflows the stack.
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
 }
 
 const ENVELOPE =
