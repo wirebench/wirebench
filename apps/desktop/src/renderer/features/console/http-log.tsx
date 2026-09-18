@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -11,14 +11,15 @@ import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
+import { nameOf, useNameSources, type NameSources } from './log-name.js';
 import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, statusLabelOf, urlOf } from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
 const ROW_HEIGHT = 22;
 
-/** time · proto · method · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
-const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(0,1fr)_8rem_4rem_5rem]';
+/** time · proto · method · name · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
+const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(6rem,12rem)_minmax(0,1fr)_8rem_4rem_5rem]';
 /**
  * What is left when the detail pane takes half the width: proto, method, URL and status. The full
  * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
@@ -34,9 +35,11 @@ interface RowProps {
   readonly onMenu: (anchor: { x: number; y: number }) => void;
   /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
   readonly compact: boolean;
+  /** What the Name cell resolves the row's request against. */
+  readonly names: NameSources;
 }
 
-function LogRow({ entry, selected, onSelect, onMenu, compact }: RowProps) {
+function LogRow({ entry, selected, onSelect, onMenu, compact, names }: RowProps) {
   const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
@@ -60,6 +63,11 @@ function LogRow({ entry, selected, onSelect, onMenu, compact }: RowProps) {
       {!compact && <span>{formatClockTime(startedAtOf(entry))}</span>}
       <span>{protocolOf(entry)}</span>
       <span>{methodOf(entry)}</span>
+      {!compact && (
+        <span className="truncate" title={nameOf(entry, names, true)}>
+          {nameOf(entry, names)}
+        </span>
+      )}
       <span className="truncate" title={urlOf(entry)}>
         {urlOf(entry)}
       </span>
@@ -91,7 +99,12 @@ export function HttpLog() {
   const [menu, setMenu] = useState<{ sendId: string; anchor: LogRowMenuProps['anchor'] } | undefined>(undefined);
   const pinnedToBottom = useRef(true);
 
-  const visible = useMemo(() => log.filter((entry) => matchesFilter(entry, filter)), [log, filter]);
+  const names = useNameSources();
+  const nameOfEntry = useCallback((entry: LogEntry) => nameOf(entry, names), [names]);
+  const visible = useMemo(
+    () => log.filter((entry) => matchesFilter(entry, filter, nameOfEntry)),
+    [log, filter, nameOfEntry],
+  );
 
   const virtualised = visible.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
@@ -223,6 +236,7 @@ export function HttpLog() {
               {!compact && <span>time</span>}
               <span>proto</span>
               <span>method</span>
+              {!compact && <span>name</span>}
               <span>URL</span>
               <span>status</span>
               {!compact && <span>ms</span>}
@@ -257,6 +271,7 @@ export function HttpLog() {
                       <LogRow
                         entry={entry}
                         compact={compact}
+                        names={names}
                         selected={sendIdOf(entry) === selectedId}
                         onSelect={() => {
                           setSelectedId(sendIdOf(entry));
@@ -275,6 +290,7 @@ export function HttpLog() {
                   key={sendIdOf(entry)}
                   entry={entry}
                   compact={compact}
+                  names={names}
                   selected={sendIdOf(entry) === selectedId}
                   onSelect={() => {
                     setSelectedId(sendIdOf(entry));

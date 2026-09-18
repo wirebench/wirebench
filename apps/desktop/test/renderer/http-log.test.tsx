@@ -37,7 +37,7 @@ describe('HttpLog', () => {
     expect(screen.queryByTestId('http-log-filter')).toBeNull();
   });
 
-  it('renders one row per entry, newest last, with time · proto · method · URL · status · ms · size', () => {
+  it('renders one row per entry, newest last, with time · proto · method · name · URL · status · ms · size', () => {
     useExchangesStore.setState({
       log: [logExchange(makeExchange({ sendId: 'a' })), logExchange(makeRestExchange({ sendId: 'b', durationMs: 12 }))],
     });
@@ -51,6 +51,7 @@ describe('HttpLog', () => {
       formatClockTime(makeExchange().http.timings.startedAt),
       'soap',
       'POST',
+      '/calc.asmx',
       'https://example.test/calc.asmx',
       '200',
       '143 ms',
@@ -59,7 +60,7 @@ describe('HttpLog', () => {
     expect(rows()[1]?.textContent).toContain('rest');
     expect(rows()[1]?.textContent).toContain('12 ms');
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
   });
 
   it('colours a failing status red', () => {
@@ -302,12 +303,12 @@ describe('HttpLog', () => {
     expect(within(header).queryByRole('button')).toBeNull();
   });
 
-  it('sheds the time, ms and size columns while a detail pane shares the width', async () => {
+  it('sheds the time, name, ms and size columns while a detail pane shares the width', async () => {
     useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
     render(<HttpLog />);
 
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
 
     await userEvent.click(rows()[0]!);
     expect(header.textContent).toBe(['proto', 'method', 'URL', 'status'].join(''));
@@ -315,7 +316,7 @@ describe('HttpLog', () => {
     expect(screen.getByTestId('http-log-status').textContent).toBe('200');
 
     await userEvent.click(screen.getByRole('button', { name: 'Close detail' }));
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
   });
 });
 
