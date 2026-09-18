@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace } from '../helpers/project.js';
@@ -63,5 +66,29 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
     expect(copied).toContain('Authorization: <redacted>');
     expect(copied).not.toContain('e2e-placeholder');
+  });
+  test('S3: Export HAR writes the shown rows with no secret in them', async () => {
+    server = await startTestRestServer();
+    const harPath = join(mkdtempSync(join(tmpdir(), 'wb-har-')), 'log.har');
+    launched = await launchApp({ extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: harPath } });
+    const page = launched.window;
+    await createWorkspace(page, 'Log');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Echo');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await addHeader(page, 'Authorization', 'Bearer e2e-placeholder');
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText('200');
+
+    await page.getByRole('button', { name: 'Export HAR' }).click();
+    await expect.poll(() => existsSync(harPath)).toBe(true);
+    const text = readFileSync(harPath, 'utf8');
+    const har = JSON.parse(text) as { log: { version: string; entries: { request: { url: string } }[] } };
+    expect(har.log.version).toBe('1.2');
+    expect(har.log.entries).toHaveLength(1);
+    expect(har.log.entries[0]?.request.url).toBe(`${server.url}/echo`);
+    // The echo route returns the Authorization header in its JSON body too: both must be masked.
+    expect(text).not.toContain('e2e-placeholder');
   });
 });
