@@ -32,6 +32,7 @@ import { registerWssChannels } from './ipc/wss.js';
 import { registerDefinitionChannels } from './ipc/definition.js';
 import { registerDialogsChannels } from './ipc/dialogs.js';
 import { registerExchangeChannels } from './ipc/exchanges.js';
+import { registerLogChannels } from './ipc/log.js';
 import { registerFsChannels } from './ipc/fs.js';
 import { registerXmlChannels } from './ipc/xml.js';
 import { registerXpathChannels } from './ipc/xpath.js';
@@ -396,6 +397,7 @@ void app.whenReady().then(() => {
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
+  registerLogChannels({ showSecrets: showSecretsFlag });
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
     project: workspaceService,

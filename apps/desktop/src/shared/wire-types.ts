@@ -1771,6 +1771,22 @@ export const requestCurlResponseSchema = z.object({
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
+/** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
+export const logEntryWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('exchange'),
+    exchange: z.union([grpcExchangeSummarySchema, restExchangeSummarySchema, exchangeSummarySchema]),
+    /** The saved request the send came from; absent for an ad-hoc send. */
+    requestId: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('failure'), failure: failedExchangeWireSchema }),
+]);
+export type LogEntryWire = z.infer<typeof logEntryWireSchema>;
+
+/** Request payload for `log.curl`; the response is `requestCurlResponseSchema`. */
+export const logCurlRequestSchema = z.object({ entry: logEntryWireSchema, shell: z.enum(['posix', 'powershell']) });
+export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),

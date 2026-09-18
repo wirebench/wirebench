@@ -29,6 +29,7 @@ describe('buildApi', () => {
       'globals',
       'history',
       'keystores',
+      'log',
       'oauth2',
       'on',
       'preferences',

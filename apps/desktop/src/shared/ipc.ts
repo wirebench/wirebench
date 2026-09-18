@@ -135,6 +135,7 @@ import {
   requestRecreateResponseSchema,
   requestCurlRequestSchema,
   requestCurlResponseSchema,
+  logCurlRequestSchema,
   requestImportCurlRequestSchema,
   requestImportCurlResponseSchema,
   requestSendRequestSchema,
@@ -585,6 +586,10 @@ export const channels = {
       exchangesSaveRestBodyRequestSchema,
       exchangesSaveRestBodyResponseSchema,
     ),
+  },
+  // What the HTTP Log asks main to do with a row it already holds.
+  log: {
+    curl: defineChannel('log.curl', logCurlRequestSchema, requestCurlResponseSchema),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),
