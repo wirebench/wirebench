@@ -3,7 +3,7 @@ import type { ExchangeSummary } from '../../../shared/wire-types.js';
 type Timings = ExchangeSummary['http']['timings'];
 
 /** The phases the transport reports, in the order they happen on the wire. */
-const PHASES = [
+export const PHASES = [
   { id: 'dns', key: 'dnsMs', className: 'bg-status-info' },
   { id: 'connect', key: 'connectMs', className: 'bg-accent' },
   { id: 'tls', key: 'tlsMs', className: 'bg-status-success' },
