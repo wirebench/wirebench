@@ -74,6 +74,14 @@ finished exchange it follows the show-secrets toggle; for a failure row it is al
 that row was redacted when it was recorded and has no unredacted copy. Resending a row never sends
 the row's own (redacted) headers or body: it replays the saved request behind it, as it is now.
 
+Exporting the HTTP Log as HAR is redacted in main with show-secrets ignored: a HAR file is made to
+be shared, so sensitive headers (including `Set-Cookie`), secret URL parameters (in the request URL
+and in `Location`, `Content-Location` and `Referer`), WS-Security passwords and JSON/form secret
+keys are always `<redacted>`. The renderer only sends the rows; the path comes from the native save
+dialog in main, and the file is written atomically. A failure row carries an `_error`; a truncated
+body carries `_truncated` and no text. A body that is neither textual nor JSON/form (binary
+responses, gRPC messages) is written as base64 without redaction, as the log shows it.
+
 Where no keyring is available (some headless Linux setups), the store degrades to base64
 plaintext, marks that entry `encrypted: false`, and logs one warning rather than refusing to
 run. That is a real weakening on such systems, and it is stated in the file rather than
