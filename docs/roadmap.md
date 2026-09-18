@@ -42,7 +42,7 @@ is picked up.
 | # | Item | Who | Size | Status | Why here |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | follow-up | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
-| 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | new | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
+| 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide done; switching guide and benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
 | 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | phase 2 subset | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
 | — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
 | 4 | MCP server over the engine, with CLI parity | Dev | S | idea → next | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
@@ -118,15 +118,17 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
   equivalent lives in Wirebench.
 - **Benchmark.** Startup, WSDL import and first-send timings taken from the performance budgets and
   published per release, so the speed claim is measured rather than asserted.
-- **Tooling.** Built 2026-09-14 on the `feat/docs-site` branch as its own workspace package, `docs-site/`,
-  on Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`; its
-  spec and plan are `docs/specs/2026-09-18-wirebench-docs-site-design.md` and
-  `docs/plans/2026-09-18-wirebench-docs-site-plan.md` on that branch. Not merged yet: it predates the
-  importers, gRPC and the HTTP Log rework, so it needs those guides before it lands. To be published to
-  GitHub Pages from a workflow on every push to `main`, at the `wirebench.github.io` address
-  first and at wirebench.io once the domain is registered. The command and shortcut reference is
-  generated from the command registry with a `--check` mode, like the WS-I tables. Screenshots come from
-  the e2e suite so they never go stale. The banned-terms and doc-path checks extend to the site.
+- **Tooling.** Done 2026-09-18 (issue #29): the user guide is `docs-site/`, its own workspace package on
+  Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`, and
+  published to GitHub Pages at https://wirebench.github.io/wirebench/ by `.github/workflows/docs.yml` on
+  every push to `main`; pull requests that touch it build it, and broken internal links fail that build.
+  The command and shortcut reference is generated from the shared command catalog
+  (`pnpm docs:commands --check`, like the WS-I tables); screenshots come from
+  `e2e/specs/docs-screenshots.spec.ts` (`pnpm docs:screenshots`), and `pnpm check:docs-images` fails on
+  a missing or orphaned one; the banned-terms and doc-path checks cover the site. Spec and plan:
+  `docs/specs/2026-09-18-wirebench-docs-site-design.md`, `docs/plans/2026-09-18-wirebench-docs-site-plan.md`.
+  Still open: the switching guide and the benchmark above, and a move to wirebench.io once the domain is
+  registered.
 - **Naming.** The app's own "Generate HTML documentation" command documents the user's WSDL; the site
   calls itself the Wirebench user guide so the two are never confused.
 

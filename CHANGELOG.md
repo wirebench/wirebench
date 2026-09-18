@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **User guide.** A documentation site at https://wirebench.github.io/wirebench/: install and first run on
+  macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
+  shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on
+  every push, and its screenshots are shot from the app by the e2e suite.
 - **Importing a legacy single-XML SOAP project.** _Import Legacy SOAP Project…_ (or _Legacy SOAP project_ in
   _Import…_, which also detects the file) brings a whole project file from an older SOAP workbench into a
   Wirebench project. It carries across the SOAP interfaces with their endpoints, every saved request (envelope

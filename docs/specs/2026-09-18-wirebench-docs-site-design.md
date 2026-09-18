@@ -131,13 +131,13 @@ describes behaviour directly.
 
 ## Success criteria
 
-- [ ] `feat/docs-site` is rebased onto `main`, and Scalar and its components and spec are gone.
-- [ ] Every page in the Content table exists with real content. The walkthrough goes from install to a
+- [x] `feat/docs-site` is rebased onto `main`, and Scalar and its components and spec are gone.
+- [x] Every page in the Content table exists with real content. The walkthrough goes from install to a
       sent SOAP request and a sent REST request.
-- [ ] Guides for the importers, gRPC and the HTTP Log match current behaviour.
-- [ ] `pnpm docs:commands --check` passes, and fails after a shortcut is changed without regenerating.
-- [ ] Every image comes from `docs-screenshots.spec.ts`, and `pnpm check:docs-images` passes.
-- [ ] `pnpm check` passes, including banned terms and doc paths across `docs-site/`.
+- [x] Guides for the importers, gRPC and the HTTP Log match current behaviour.
+- [x] `pnpm docs:commands --check` passes, and fails after a shortcut is changed without regenerating.
+- [x] Every image comes from `docs-screenshots.spec.ts`, and `pnpm check:docs-images` passes.
+- [x] `pnpm check` passes, including banned terms and doc paths across `docs-site/`.
 - [ ] A push to `main` deploys to GitHub Pages, and the site loads with working search.
 
 ## Resolved questions

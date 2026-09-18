@@ -64,103 +64,16 @@
   --sl-color-hairline: #dfdbd3;
 }
 
-/* HTTP Method Badges */
-.method-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Keys written as <kbd> in a page */
+.sl-markdown-content kbd {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.method-badge.get {
-  background: rgba(111, 191, 143, 0.15);
-  color: var(--wb-method-get);
-  border: 1px solid rgba(111, 191, 143, 0.3);
-}
-
-.method-badge.post {
-  background: rgba(217, 164, 65, 0.15);
-  color: var(--wb-method-post);
-  border: 1px solid rgba(217, 164, 65, 0.3);
-}
-
-.method-badge.put {
-  background: rgba(127, 166, 221, 0.15);
-  color: var(--wb-method-put);
-  border: 1px solid rgba(127, 166, 221, 0.3);
-}
-
-.method-badge.patch {
-  background: rgba(183, 154, 224, 0.15);
-  color: var(--wb-method-patch);
-  border: 1px solid rgba(183, 154, 224, 0.3);
-}
-
-.method-badge.delete {
-  background: rgba(224, 104, 95, 0.15);
-  color: var(--wb-method-delete);
-  border: 1px solid rgba(224, 104, 95, 0.3);
-}
-
-.method-badge.soap {
-  background: rgba(183, 154, 224, 0.15);
-  color: var(--wb-method-soap);
-  border: 1px solid rgba(183, 154, 224, 0.3);
-}
-
-/* Interactive Endpoint Bar */
-.endpoint-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--sl-color-bg-inline-code);
-  border: 1px solid var(--sl-color-hairline);
-  border-radius: 8px;
-  padding: 0.6rem 1rem;
-  margin: 1.25rem 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.875rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.endpoint-bar .endpoint-path {
-  flex: 1;
-  color: var(--sl-color-white);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-/* Keyboard Shortcut Key Badges */
-.key-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.4rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-weight: 600;
   color: var(--sl-color-white);
   background: var(--sl-color-bg-inline-code);
   border: 1px solid var(--sl-color-gray-4);
   border-radius: 4px;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
-}
-
-/* Hero Section Enhancements */
-.hero-wrapper {
-  text-align: center;
-  padding: 3rem 1rem;
-}
-
-.hero-tagline {
-  font-size: 1.25rem;
-  color: var(--sl-color-gray-2);
-  max-width: 650px;
-  margin: 1rem auto 2rem;
 }
