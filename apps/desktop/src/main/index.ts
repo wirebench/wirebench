@@ -100,7 +100,11 @@ const oauth2Service = new OAuth2Service({
 
 /** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
 const openApiImports = new OpenApiImportService();
-const protoImports = new ProtoImportService();
+const protoImports = new ProtoImportService({
+  // A discovery from the Import dialog trusts what a send would: the configured CA bundle, plus the
+  // user's own "trust this certificate anyway" for a development server.
+  grpcTls: ({ trustInvalid }) => workspaceService.grpcDiscoveryTls(trustInvalid),
+});
 
 /** Sends one event to every open window: project state is global, not per-invocation. */
 function broadcast<Payload extends z.ZodType>(event: IpcEvent<Payload>, payload: z.infer<Payload>): void {

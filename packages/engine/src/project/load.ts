@@ -542,9 +542,12 @@ async function loadApi(
         ...(parsed.definition !== undefined
           ? {
               definition: {
+                kind: parsed.definition.kind,
                 source: parsed.definition.source,
                 cache: parsed.definition.cache,
                 roots: parsed.definition.roots,
+                ...optional('reflectionVersion', parsed.definition.reflectionVersion),
+                ...optional('trustInvalid', parsed.definition.trustInvalid),
               },
             }
           : {}),

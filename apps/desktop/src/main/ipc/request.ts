@@ -904,13 +904,18 @@ async function grpcCommand(
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
   const auth = await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
+  // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
+  const fromFiles = resolved.api.definition !== undefined && resolved.api.definition.kind === 'proto';
   const command = grpcToCommand({ ...resolved.input, ...(auth !== undefined ? { auth } : {}) }, resolved.messageText, {
     redactSecrets: !show,
     shell: request.shell,
-    ...(resolved.api.definition !== undefined ? { protoFiles: [...resolved.api.definition.roots] } : {}),
+    ...(fromFiles ? { protoFiles: [...(resolved.api.definition?.roots ?? [])] } : {}),
   });
   const notes = [
-    'The .proto files are named by import path; pass their folder with -import-path.',
+    fromFiles
+      ? 'The .proto files are named by import path; pass their folder with -import-path.'
+      : 'No .proto files are named: this API was discovered by server reflection, which grpcurl uses by default.',
     ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };

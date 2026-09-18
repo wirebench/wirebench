@@ -5,6 +5,8 @@ import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
   ApiImportOpenApiRequest,
+  ApiGrpcRefreshRequest,
+  ApiGrpcRefreshResponse,
   ApiImportProtoRequest,
   GrpcApiPatchWire,
   GrpcApiWire,
@@ -236,6 +238,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly importProto: (
     request: ApiImportProtoRequest,
   ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: ProtoImportSummaryWire }>;
+  /** Asks a discovered gRPC API's server to describe itself again, and reports what changed. */
+  readonly refreshGrpcDefinition: (request: ApiGrpcRefreshRequest) => Promise<ApiGrpcRefreshResponse>;
   readonly updateGrpcApi: (apiId: string, patch: GrpcApiPatchWire) => Promise<void>;
   readonly removeGrpcApi: (apiId: string) => Promise<void>;
   /** Adds a gRPC request to an API or one of its folders, optionally already pointed at a method. */
@@ -1191,6 +1195,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
       apply(result.value.projectId, result.value.project);
       return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
+    },
+
+    refreshGrpcDefinition: async (request) => {
+      const result = await ipc().api.grpcRefresh(request);
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      apply(result.value.projectId, result.value.project);
+      return result.value;
     },
 
     updateGrpcApi: async (apiId, patch) => {

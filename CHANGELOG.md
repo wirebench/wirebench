@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **gRPC server reflection.** Point Wirebench at a running gRPC server and it describes itself: the Import
+  dialog's gRPC format gains a *Server* tab taking an address, the reflection version (automatic by default —
+  `grpc.reflection.v1`, falling back to `v1alpha`) and whether to ask a server whose certificate does not verify.
+  What comes back builds the same folder-per-service, request-per-method API a `.proto` import builds, and is
+  cached with the project as the descriptor set the server sent. The gRPC API tab's Definition card gains
+  *Refresh from server*: asking again adds a request for a method the server has gained and badges one whose
+  method is gone, never deleting anything. The `grpcurl` line for a discovered API names no `.proto` files, since
+  grpcurl asks the server itself. See
+  [`docs/specs/2026-09-17-grpc-server-reflection-design.md`](docs/specs/2026-09-17-grpc-server-reflection-design.md).
 - **gRPC.** A third protocol beside SOAP and REST, in the same project, workspace, environments, history and
   search. Import a `.proto` set (URL, file or paste; imports resolve from beside the root and the bundled
   `google/protobuf/*` types are built in) and get a gRPC API with a folder per service and a request per method,

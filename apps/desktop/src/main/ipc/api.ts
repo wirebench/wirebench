@@ -35,6 +35,7 @@ export interface ApiChannelDeps {
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
     | 'grpcDefinition'
+    | 'grpcRefresh'
     | 'grpcSample'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
@@ -244,13 +245,25 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       target: run.imported.api.target,
       ...run.imported.summary,
       roots: [...run.roots],
+      kind: run.kind === 'proto' ? ('proto' as const) : ('reflection' as const),
+      ...(run.kind === 'reflection' ? { reflectionVersion: run.version } : {}),
     };
     const place = {
       api: run.imported.api,
-      sources: run.sources,
       roots: run.roots,
       source: run.sourceLabel,
       ...(request.cache !== undefined ? { cache: request.cache } : {}),
+      ...(request.source.kind === 'reflection' && request.source.version !== undefined
+        ? { requestedVersion: request.source.version }
+        : {}),
+      ...(run.kind === 'proto'
+        ? { kind: 'proto' as const, sources: run.sources }
+        : {
+            kind: 'reflection' as const,
+            descriptors: run.descriptors,
+            version: run.version,
+            trustInvalid: run.trustInvalid,
+          }),
     };
     if ('projectId' in request.target) {
       const added = await router.addGrpcApi(request.target.projectId, place);
@@ -280,12 +293,34 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       source: definition.source,
       fetchedAt: definition.fetchedAt,
       roots: [...definition.roots],
+      kind: definition.kind,
+      ...(definition.reflectionVersion !== undefined ? { reflectionVersion: definition.reflectionVersion } : {}),
     };
   });
 
   registerHandler(channels.api.grpcSample, async (request) => ({
     text: await router.grpcSample(request.apiId, request.type),
   }));
+
+  registerHandler(channels.api.grpcRefresh, async (request) => {
+    const refreshed = await router.grpcRefresh(request.apiId, {
+      ...(request.version !== undefined ? { version: request.version } : {}),
+    });
+    return {
+      projectId: refreshed.project.id,
+      project: refreshed.project,
+      summary: {
+        ...refreshed.summary,
+        roots: [...(refreshed.project.grpcApis.find((api) => api.id === request.apiId)?.definition?.roots ?? [])],
+        kind: 'reflection' as const,
+        reflectionVersion: refreshed.version,
+      },
+      requestsAdded: refreshed.reconciled.requestsAdded.length,
+      requestsOrphaned: refreshed.reconciled.requestsOrphaned.length,
+      requestsRestored: refreshed.reconciled.requestsRestored.length,
+      foldersAdded: refreshed.reconciled.foldersAdded.length,
+    };
+  });
 
   registerHandler(channels.api.cancelImport, (request) =>
     Promise.resolve({

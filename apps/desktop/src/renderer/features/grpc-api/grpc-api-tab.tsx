@@ -11,7 +11,7 @@ import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { BooleanSetting, SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
-import { ApiDefinitionCard } from '../rest-api/api-definition-card.js';
+import { GrpcDefinitionCard } from './grpc-definition-card.js';
 import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
@@ -137,12 +137,13 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
 
       <SettingsGroup title="Definition">
         {api.definition !== undefined ? (
-          <ApiDefinitionCard apiId={apiId} definition={api.definition} noun="file" />
+          <GrpcDefinitionCard apiId={apiId} definition={api.definition} />
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-fg-subtle">
-              No <span className="font-mono">.proto</span> definition. Requests can still name a service and method by
-              hand, but a message cannot be encoded without one.
+              No definition. Requests can still name a service and method by hand, but a message cannot be encoded
+              without one — import <span className="font-mono">.proto</span> files, or discover them from a running
+              server.
             </p>
             <div>
               <Button
@@ -152,7 +153,7 @@ export function GrpcApiTab({ apiId }: GrpcApiTabProps) {
                   openImportDialog('proto');
                 }}
               >
-                Import .proto…
+                Import definition…
               </Button>
             </div>
           </div>

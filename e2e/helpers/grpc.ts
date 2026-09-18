@@ -47,6 +47,27 @@ export async function importProto(page: Page, protoPath: string, name: string, t
   await expect(grpcApiRow(page, name)).toBeVisible({ timeout: 20_000 });
 }
 
+/**
+ * Imports a gRPC API by asking a running server to describe itself, through the Import dialog's
+ * Server tab.
+ */
+export async function discoverProto(page: Page, target: string, name: string): Promise<void> {
+  const projectRow = page.getByTestId('explorer-project-row').first();
+  await expect(projectRow).toBeVisible({ timeout: 20_000 });
+  await chooseContextMenuItem(page, projectRow, 'Import…');
+  await page.getByTestId('import-format-select').selectOption('proto');
+  await expect(page.getByTestId('import-proto-dialog')).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole('tab', { name: 'Server' }).click();
+  await page.getByTestId('import-reflection-target').fill(target);
+  await page.getByTestId('import-name-input').fill(name);
+  await page.getByTestId('import-submit').click();
+
+  await expect(page.getByTestId('import-proto-summary')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('import-done').click();
+  await expect(grpcApiRow(page, name)).toBeVisible({ timeout: 20_000 });
+}
+
 /** The explorer row for one gRPC API. */
 export function grpcApiRow(page: Page, name: string): Locator {
   return page.getByTestId('grpc-api-row').filter({ hasText: name });

@@ -118,6 +118,10 @@ export interface ProjectRouter {
   grpcDefinition(...args: Parameters<ProjectHost['grpcDefinition']>): ReturnType<ProjectHost['grpcDefinition']>;
   /** A sample message for one type of a gRPC API's definition. */
   grpcSample(...args: Parameters<ProjectHost['grpcSample']>): ReturnType<ProjectHost['grpcSample']>;
+  /** Asks a reflection-sourced API's server to describe itself again. */
+  grpcRefresh(
+    ...args: Parameters<ProjectHost['refreshGrpcDefinition']>
+  ): ReturnType<ProjectHost['refreshGrpcDefinition']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(
