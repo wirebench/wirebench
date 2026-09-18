@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log row menu.** Right-click a row, press its detail's ⋯ button or press Shift+F10 on the selected
+  row to copy it as cURL (POSIX or PowerShell) from what was sent, copy its URL, request or response headers
+  or response body, resend the saved request as it is now, or open the request.
 - **HTTP Log: failures before the request is built.** A send that fails before the request is built (invalid URL,
   proxy lookup, OAuth2 token fetch) now appears as a "Failed · before send" row, and its detail says the request
   never went on the wire.
