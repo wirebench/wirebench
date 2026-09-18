@@ -521,3 +521,34 @@ describe('the HTTP Log row limit', () => {
     usePreferencesStore.getState().applyPreferences(DEFAULT_PREFERENCES_WIRE);
   });
 });
+
+describe('Preserve log', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, preserveLog: false });
+  });
+
+  it('reset keeps the log, filter and sort when preserveLog is on, and clears them when off', () => {
+    useExchangesStore.setState({
+      log: [{ kind: 'failure', failure: makeFailure() }],
+      filter: { ...EMPTY_FILTER, text: 'pets' },
+      sort: { column: 'name', direction: 'asc' },
+    });
+    useExchangesStore.getState().setPreserveLog(true);
+    useExchangesStore.getState().reset();
+    expect(useExchangesStore.getState().log).toHaveLength(1);
+    expect(useExchangesStore.getState().filter.text).toBe('pets');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'name', direction: 'asc' });
+    expect(useExchangesStore.getState().preserveLog).toBe(true);
+    useExchangesStore.getState().setPreserveLog(false);
+    useExchangesStore.getState().reset();
+    expect(useExchangesStore.getState().log).toHaveLength(0);
+    expect(useExchangesStore.getState().filter).toEqual(EMPTY_FILTER);
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+  });
+
+  it('clearLog empties the log even when preserved', () => {
+    useExchangesStore.setState({ log: [{ kind: 'failure', failure: makeFailure() }], preserveLog: true });
+    useExchangesStore.getState().clearLog();
+    expect(useExchangesStore.getState().log).toHaveLength(0);
+  });
+});

@@ -173,6 +173,11 @@ export interface ExchangesSnapshot {
   readonly sort: LogSort | undefined;
   /** How many rows the log keeps; follows `ui.logSize`. */
   readonly logCap: number;
+  /**
+   * Session-only: when on, `reset` keeps the log, filter and sort. In memory only — never
+   * saved, and off again at every launch.
+   */
+  readonly preserveLog: boolean;
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -188,13 +193,16 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly clearRequest: (requestId: string) => void;
   /**
    * Drops every response and the whole HTTP log. Called when the workspace closes: both are
-   * keyed by requests of projects that are no longer open.
+   * keyed by requests of projects that are no longer open. With `preserveLog` on, the log,
+   * filter and sort stay.
    */
   readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
   /** Sets the row limit; lowering it drops the oldest rows at once, raising it keeps every row. */
   readonly setLogCap: (cap: number) => void;
+  /** Turns Preserve log on or off. */
+  readonly setPreserveLog: (on: boolean) => void;
   /**
    * Appends a finished exchange's row — a resend from the HTTP Log's row menu. A `sendId` already in
    * the log (either kind) is ignored.
@@ -274,9 +282,18 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     filter: EMPTY_FILTER,
     sort: undefined,
     logCap: DEFAULT_LOG_CAP,
+    preserveLog: false,
 
     reset: () => {
-      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER, sort: undefined });
+      const { preserveLog, log, filter, sort } = get();
+      set({
+        byRequest: {},
+        restByRequest: {},
+        grpcByRequest: {},
+        log: preserveLog ? log : [],
+        filter: preserveLog ? filter : EMPTY_FILTER,
+        sort: preserveLog ? sort : undefined,
+      });
     },
 
     sendGrpc: async (requestId, options) => {
@@ -659,6 +676,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         draft.log = [];
       });
+    },
+
+    setPreserveLog: (on) => {
+      set({ preserveLog: on });
     },
 
     setLogCap: (cap) => {
