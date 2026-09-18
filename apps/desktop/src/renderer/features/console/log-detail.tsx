@@ -146,6 +146,9 @@ function ExchangeTiming({ http }: { readonly http: HttpExchangeWire }) {
   return (
     <div className="flex flex-col gap-1">
       <TimingsBar timings={http.timings} />
+      {http.timings.connectMs === undefined && http.timings.tlsMs === undefined && (
+        <p className="px-2 text-xs text-fg-subtle">Connection reused — no connect or TLS phase</p>
+      )}
       <ul data-testid="timing-phases" className="flex flex-col gap-0.5 px-2 pb-2 font-mono text-xs">
         {PHASES.map((phase) => {
           const value = http.timings[phase.key];
