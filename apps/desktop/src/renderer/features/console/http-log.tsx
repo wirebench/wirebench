@@ -1,21 +1,42 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
+import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
-import type { LogEntry } from '../../state/exchanges.js';
+import type { LogEntry, LogSort, SortColumn } from '../../state/exchanges.js';
 import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
+import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
+import { LogCompare } from './log-compare-view.js';
 import { LogFilterBar } from './log-filter-bar.js';
-import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, urlOf } from './log-filter.js';
+import { nextSelection } from './log-selection.js';
+import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
+import { nameOf, useNameSources, type NameSources } from './log-name.js';
+import { compileMatcher } from './log-search.js';
+import { sortEntries } from './log-sort.js';
+import { barOf, spanOf, type WaterfallBar } from './log-waterfall.js';
+import { LogWaterfallBar } from './log-waterfall-bar.js';
+import {
+  durationOf,
+  matchesFilterWith,
+  methodOf,
+  protocolOf,
+  startedAtOf,
+  statusLabelOf,
+  urlOf,
+} from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
 const ROW_HEIGHT = 22;
 
-/** time · proto · method · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
-const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(0,1fr)_8rem_4rem_5rem]';
+/**
+ * time · proto · method · name · URL · status · ms · size · waterfall. The status column fits an
+ * error code like `connection-refused`.
+ */
+const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(6rem,12rem)_minmax(0,2fr)_8rem_4rem_5rem_minmax(8rem,1fr)]';
 /**
  * What is left when the detail pane takes half the width: proto, method, URL and status. The full
  * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
@@ -26,19 +47,34 @@ const COLUMNS_COMPACT = 'grid-cols-[3rem_4rem_minmax(0,1fr)_8rem]';
 interface RowProps {
   readonly entry: LogEntry;
   readonly selected: boolean;
-  readonly onSelect: () => void;
+  /** `additive` is a Cmd/Ctrl+click, which adds or removes a second row to compare. */
+  readonly onSelect: (additive: boolean) => void;
+  /** Opens the row menu at the pointer (right-click). */
+  readonly onMenu: (anchor: { x: number; y: number }) => void;
   /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
   readonly compact: boolean;
+  /** What the Name cell resolves the row's request against. */
+  readonly names: NameSources;
+  /** Where the row sits in the Waterfall column; undefined while compact. */
+  readonly bar: WaterfallBar | undefined;
 }
 
-function LogRow({ entry, selected, onSelect, compact }: RowProps) {
+function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowProps) {
   const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
       type="button"
       data-testid="http-log-row"
       data-kind={entry.kind}
-      onClick={onSelect}
+      data-send-id={sendIdOf(entry)}
+      onClick={(event) => {
+        onSelect(event.metaKey || event.ctrlKey);
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onSelect(false);
+        onMenu({ x: event.clientX, y: event.clientY });
+      }}
       aria-pressed={selected}
       title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
       className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
@@ -49,15 +85,54 @@ function LogRow({ entry, selected, onSelect, compact }: RowProps) {
       {!compact && <span>{formatClockTime(startedAtOf(entry))}</span>}
       <span>{protocolOf(entry)}</span>
       <span>{methodOf(entry)}</span>
+      {!compact && (
+        <span className="truncate" title={nameOf(entry, names, true)}>
+          {nameOf(entry, names)}
+        </span>
+      )}
       <span className="truncate" title={urlOf(entry)}>
         {urlOf(entry)}
       </span>
       <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
-        {entry.kind === 'failure' ? entry.failure.error.code : entry.exchange.http.status}
+        {statusLabelOf(entry)}
       </span>
       {!compact && <span>{formatDuration(durationOf(entry))}</span>}
       {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}
+      {!compact && <span>{bar !== undefined && <LogWaterfallBar bar={bar} />}</span>}
     </button>
+  );
+}
+
+/**
+ * A column label that sorts on click: ascending, descending, then back to log order. Deliberately
+ * not a `columnheader`: the log is a list of buttons, not a table, and the role needs a table parent.
+ */
+function SortHeader({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  readonly label: string;
+  readonly column: SortColumn;
+  readonly sort: LogSort | undefined;
+  readonly onSort: (column: SortColumn) => void;
+}) {
+  const direction = sort?.column === column ? sort.direction : undefined;
+  return (
+    <span className="min-w-0">
+      <button
+        type="button"
+        title={`Sort by ${label}${direction === undefined ? '' : direction === 'asc' ? ', ascending' : ', descending'}`}
+        onClick={() => {
+          onSort(column);
+        }}
+        className={`truncate text-left hover:text-fg-default ${direction === undefined ? '' : 'text-fg-default'}`}
+      >
+        {label}
+        {direction === 'asc' ? ' ▲' : direction === 'desc' ? ' ▼' : ''}
+      </button>
+    </span>
   );
 }
 
@@ -68,17 +143,43 @@ function LogRow({ entry, selected, onSelect, compact }: RowProps) {
 export function HttpLog() {
   const log = useExchangesStore((state) => state.log);
   const filter = useExchangesStore((state) => state.filter);
+  const sort = useExchangesStore((state) => state.sort);
+  const cycleSort = useExchangesStore((state) => state.cycleSort);
   const clearLog = useExchangesStore((state) => state.clearLog);
+  const preserveLog = useExchangesStore((state) => state.preserveLog);
+  const setPreserveLog = useExchangesStore((state) => state.setPreserveLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  // 0–2 send ids, oldest first: one shows its detail, two are compared.
+  const [selection, setSelection] = useState<readonly string[]>([]);
+  const selectedId = selection.at(-1);
+  const selectOnly = useCallback((id: string | undefined) => {
+    setSelection(id === undefined ? [] : [id]);
+  }, []);
   // Owned here rather than in the detail so it survives selecting another row.
   const [tab, setTab] = useState<LogDetailTab>('headers');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The row menu, keyed by send id so it follows the row through a refresh of its entry.
+  const [menu, setMenu] = useState<{ sendId: string; anchor: LogRowMenuProps['anchor'] } | undefined>(undefined);
   const pinnedToBottom = useRef(true);
 
-  const visible = useMemo(() => log.filter((entry) => matchesFilter(entry, filter)), [log, filter]);
+  const names = useNameSources();
+  const nameOfEntry = useCallback((entry: LogEntry) => nameOf(entry, names), [names]);
+  const matcher = useMemo(
+    () => compileMatcher({ text: filter.text, regex: filter.regex, matchCase: filter.matchCase }),
+    [filter.text, filter.regex, filter.matchCase],
+  );
+  // The displayed order: filtered, then sorted. The arrow keys walk this, so they follow the sort.
+  const visible = useMemo(
+    () =>
+      sortEntries(
+        log.filter((entry) => matchesFilterWith(entry, filter, matcher, nameOfEntry)),
+        sort,
+        nameOfEntry,
+      ),
+    [log, filter, matcher, nameOfEntry, sort],
+  );
 
   const virtualised = visible.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
@@ -92,8 +193,14 @@ export function HttpLog() {
   // rather than keeping a stale one open; `selectedId` itself is untouched, so the detail
   // reappears once the filter is cleared.
   const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
+  const pairLeft = selection.length === 2 ? visible.find((entry) => sendIdOf(entry) === selection[0]) : undefined;
+  const pair = pairLeft !== undefined && selected !== undefined ? ([pairLeft, selected] as const) : undefined;
   // The detail shares the width with the table, so the row sheds the columns that do not fit.
   const compact = selected !== undefined;
+  // One span for the rows shown, so every bar is placed on the same time axis.
+  const span = useMemo(() => spanOf(visible), [visible]);
+  const barFor = (entry: LogEntry): WaterfallBar | undefined =>
+    compact || span === undefined ? undefined : barOf(entry, span);
 
   // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
   // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
@@ -106,18 +213,30 @@ export function HttpLog() {
     }
   }, [showSecrets, selectedExchangeId, refreshExchange]);
 
-  // Newest is at the bottom, so follow it — but only while the user has not scrolled away.
+  // Newest is at the bottom, so follow it — but only while the user has not scrolled away, and only
+  // in log order: a sorted table puts a new row wherever it sorts to.
   useEffect(() => {
     const element = scrollRef.current;
-    if (element !== null && pinnedToBottom.current) {
+    if (element !== null && pinnedToBottom.current && sort === undefined) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [log.length]);
+  }, [log.length, sort]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if ((event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && selectedId !== undefined) {
+      event.preventDefault();
+      const escaped =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(selectedId) : selectedId;
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-send-id="${escaped}"]`);
+      if (row !== null && row !== undefined) {
+        setMenu({ sendId: selectedId, anchor: row });
+      }
+      return;
+    }
     if (event.key === 'Escape' && selectedId !== undefined) {
       event.preventDefault();
-      setSelectedId(undefined);
+      // With two rows, Escape goes back to the newer one's detail; a second Escape closes it.
+      selectOnly(selection.length === 2 ? selectedId : undefined);
       return;
     }
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
@@ -130,12 +249,21 @@ export function HttpLog() {
       index === -1 ? (step === 1 ? 0 : visible.length - 1) : Math.min(visible.length - 1, Math.max(0, index + step));
     const entry = visible[next];
     if (entry !== undefined) {
-      setSelectedId(sendIdOf(entry));
+      selectOnly(sendIdOf(entry));
       if (virtualised) {
         virtualizer.scrollToIndex(next);
+      } else {
+        // Nothing is virtualised, so the row is already in the DOM; bring it into view.
+        const id = sendIdOf(entry);
+        const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(id) : id;
+        scrollRef.current
+          ?.querySelector<HTMLElement>(`[data-send-id="${escaped}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
       }
     }
   }
+
+  const menuEntry = menu === undefined ? undefined : log.find((entry) => sendIdOf(entry) === menu.sendId);
 
   if (log.length === 0) {
     return <p className="p-1 text-sm text-fg-subtle">Sent requests appear here with their raw exchange and timings.</p>;
@@ -159,6 +287,31 @@ export function HttpLog() {
               <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
               <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
             </Button>
+            <Button
+              variant="ghost"
+              aria-pressed={preserveLog}
+              title="Keep the rows when the workspace closes or switches (never saved to disk)"
+              onClick={() => {
+                setPreserveLog(!preserveLog);
+              }}
+            >
+              Preserve log
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={visible.length === 0}
+              title="Export the rows shown as a HAR file (secrets are always masked)"
+              onClick={() => {
+                void (async () => {
+                  const result = await ipc().log.exportHar({ entries: [...visible] });
+                  if (!result.ok) showToast(result.error.message);
+                  else if (result.value.saved && result.value.path !== undefined)
+                    showToast(`Saved ${result.value.path}`);
+                })();
+              }}
+            >
+              Export HAR
+            </Button>
             <Button variant="ghost" onClick={clearLog}>
               Clear
             </Button>
@@ -173,13 +326,15 @@ export function HttpLog() {
               data-testid="http-log-header"
               className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
             >
-              {!compact && <span>time</span>}
+              {!compact && <SortHeader label="time" column="time" sort={sort} onSort={cycleSort} />}
               <span>proto</span>
               <span>method</span>
+              {!compact && <SortHeader label="name" column="name" sort={sort} onSort={cycleSort} />}
               <span>URL</span>
-              <span>status</span>
-              {!compact && <span>ms</span>}
-              {!compact && <span>size</span>}
+              <SortHeader label="status" column="status" sort={sort} onSort={cycleSort} />
+              {!compact && <SortHeader label="ms" column="duration" sort={sort} onSort={cycleSort} />}
+              {!compact && <SortHeader label="size" column="size" sort={sort} onSort={cycleSort} />}
+              {!compact && <span>waterfall</span>}
             </div>
           </div>
 
@@ -210,9 +365,14 @@ export function HttpLog() {
                       <LogRow
                         entry={entry}
                         compact={compact}
-                        selected={sendIdOf(entry) === selectedId}
-                        onSelect={() => {
-                          setSelectedId(sendIdOf(entry));
+                        names={names}
+                        bar={barFor(entry)}
+                        selected={selection.includes(sendIdOf(entry))}
+                        onSelect={(additive) => {
+                          setSelection((current) => nextSelection(current, sendIdOf(entry), additive));
+                        }}
+                        onMenu={(anchor) => {
+                          setMenu({ sendId: sendIdOf(entry), anchor });
                         }}
                       />
                     </div>
@@ -225,9 +385,14 @@ export function HttpLog() {
                   key={sendIdOf(entry)}
                   entry={entry}
                   compact={compact}
-                  selected={sendIdOf(entry) === selectedId}
-                  onSelect={() => {
-                    setSelectedId(sendIdOf(entry));
+                  names={names}
+                  bar={barFor(entry)}
+                  selected={selection.includes(sendIdOf(entry))}
+                  onSelect={(additive) => {
+                    setSelection((current) => nextSelection(current, sendIdOf(entry), additive));
+                  }}
+                  onMenu={(anchor) => {
+                    setMenu({ sendId: sendIdOf(entry), anchor });
                   }}
                 />
               ))
@@ -235,17 +400,37 @@ export function HttpLog() {
           </div>
         </div>
 
-        {selected !== undefined && (
-          <LogDetail
-            entry={selected}
-            tab={tab}
-            onTabChange={setTab}
-            onClose={() => {
-              setSelectedId(undefined);
-            }}
-          />
+        {pair !== undefined ? (
+          <LogCompare left={pair[0]} right={pair[1]} />
+        ) : (
+          selected !== undefined && (
+            <LogDetail
+              entry={selected}
+              tab={tab}
+              onTabChange={setTab}
+              onClose={() => {
+                selectOnly(undefined);
+              }}
+              onMenu={(anchor) => {
+                setMenu({ sendId: sendIdOf(selected), anchor });
+              }}
+            />
+          )
         )}
       </div>
+
+      {menuEntry !== undefined && menu !== undefined && (
+        <LogRowMenu
+          entry={menuEntry}
+          anchor={menu.anchor}
+          onClose={() => {
+            setMenu(undefined);
+          }}
+          returnFocus={() => {
+            scrollRef.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

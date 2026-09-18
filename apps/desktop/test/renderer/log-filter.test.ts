@@ -6,7 +6,9 @@ import {
   methodOf,
   methodsIn,
   protocolOf,
+  stageOf,
   statusClassOf,
+  statusLabelOf,
   urlOf,
 } from '../../src/renderer/features/console/log-filter.js';
 import { logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
@@ -83,6 +85,8 @@ describe('matchesFilter', () => {
   it('combines the groups with AND and the values within a group with OR', () => {
     const filter = {
       text: 'api.test',
+      regex: false,
+      matchCase: false,
       methods: ['GET', 'POST'],
       statuses: ['2xx', 'failed'] as const,
       protocols: ['rest' as const],
@@ -91,5 +95,15 @@ describe('matchesFilter', () => {
     expect(matchesFilter(soap, filter)).toBe(false); // wrong URL, wrong protocol
     expect(matchesFilter(failed, filter)).toBe(false); // wrong URL
     expect(matchesFilter(withStatus(500), { ...filter, text: '' })).toBe(false); // 5xx not in statuses
+  });
+});
+
+describe('statusLabelOf / stageOf', () => {
+  it('labels a prepare failure "Failed · before send" and a send failure by its code', () => {
+    expect(statusLabelOf({ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) })).toBe('Failed · before send');
+    expect(statusLabelOf({ kind: 'failure', failure: makeFailure() })).toBe('connection-refused');
+    expect(statusLabelOf(logExchange(makeExchange()))).toBe('200');
+    expect(stageOf({ kind: 'failure', failure: makeFailure() })).toBe('send');
+    expect(stageOf(logExchange(makeExchange()))).toBeUndefined();
   });
 });

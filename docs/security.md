@@ -61,6 +61,27 @@ delete and list (ids and labels) — it can never read a value back. Refs are re
 only in main, at the moment of use. Anything logged, exported or shown is redacted first:
 `Authorization`, `Proxy-Authorization`, WSS passwords, keystore passwords.
 
+Request and response bodies are masked by key too. In JSON bodies (`application/json` and any
+`+json` type) and urlencoded form bodies, the values of `password`, `passwd`, `secret`, `token`,
+`access_token`, `refresh_token`, `id_token`, `client_secret`, `api_key`, `apikey` and
+`authorization` — compared case-insensitively, at any depth — become `<redacted>` wherever
+show-secrets is off (`SECRET_BODY_KEYS` in `apps/desktop/src/main/redact.ts`). A value that is an
+object or array under such a key is masked whole; a body that is not valid JSON, or is compressed,
+is left as it is.
+
+Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
+finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
+that row was redacted when it was recorded and has no unredacted copy. Resending a row never sends
+the row's own (redacted) headers or body: it replays the saved request behind it, as it is now.
+
+Exporting the HTTP Log as HAR is redacted in main with show-secrets ignored: a HAR file is made to
+be shared, so sensitive headers (including `Set-Cookie`), secret URL parameters (in the request URL
+and in `Location`, `Content-Location` and `Referer`), WS-Security passwords and JSON/form secret
+keys are always `<redacted>`. The renderer only sends the rows; the path comes from the native save
+dialog in main, and the file is written atomically. A failure row carries an `_error`; a truncated
+body carries `_truncated` and no text. A body that is neither textual nor JSON/form (binary
+responses, gRPC messages) is written as base64 without redaction, as the log shows it.
+
 Where no keyring is available (some headless Linux setups), the store degrades to base64
 plaintext, marks that entry `encrypted: false`, and logs one warning rather than refusing to
 run. That is a real weakening on such systems, and it is stated in the file rather than

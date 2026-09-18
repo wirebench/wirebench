@@ -8,6 +8,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log: rows kept and Preserve log.** The number of rows kept is a setting (Preferences › Behaviour,
+  100–5000, default 500). Preserve log keeps the rows in memory across closing or switching a workspace;
+  it is never written to disk and is off again at every launch.
+- **HTTP Log: compare two rows.** Cmd/Ctrl+click a second row to compare the two — a summary of each,
+  request and response headers marked added/removed/changed, and request and response bodies side by
+  side (pretty-printed when both are JSON or both XML). Escape goes back to one row.
+- **HTTP Log: waterfall.** A Waterfall column shows each row's start and duration across the rows shown,
+  split into connect, TLS, wait and download (hover for the breakdown; hidden while a row is selected); the
+  Timing tab notes a reused connection.
+- **HTTP Log: search, a Name column and sort.** Search matches headers, bodies (first 256 KiB) and the
+  request name, with regex and match-case toggles; a Name column shows the saved request; click Time,
+  Name, Status, ms or Size to sort.
+- **HTTP Log: Export HAR.** Saves the rows the filter shows, in display order, as a HAR 1.2 file;
+  headers, URL parameters, WS-Security passwords and JSON/form secrets are always masked, whatever
+  the show-secrets toggle says. Failed sends carry an `_error`, truncated bodies `_truncated`.
+- **HTTP Log row menu.** Right-click a row, press its detail's ⋯ button or press Shift+F10 on the selected
+  row to copy it as cURL (POSIX or PowerShell) from what was sent, copy its URL, request or response headers
+  or response body, resend the saved request as it is now, or open the request.
+- **HTTP Log: failures before the request is built.** A send that fails before the request is built (invalid URL,
+  proxy lookup, OAuth2 token fetch) now appears as a "Failed · before send" row, and its detail says the request
+  never went on the wire.
 - **Importing a legacy single-XML SOAP project.** _Import Legacy SOAP Project…_ (or _Legacy SOAP project_ in
   _Import…_, which also detects the file) brings a whole project file from an older SOAP workbench into a
   Wirebench project. It carries across the SOAP interfaces with their endpoints, every saved request (envelope
@@ -66,9 +87,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The HTTP Log's fixed 500-row limit is replaced by that setting.
 - **Dependencies.** The engine now depends on `protobufjs` (BSD-3-Clause) for `.proto` parsing and message
   encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
 
+### Fixed
+
+- Redaction masks `password`, `token`, `client_secret` and similar keys in JSON and form bodies, not only in XML.
+- HTTP Log: ↑/↓ keep the selected row in view when fewer than 200 rows are shown.
 
 ## [2.1.1] - 2026-09-16
 

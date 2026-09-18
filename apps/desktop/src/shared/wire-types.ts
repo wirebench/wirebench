@@ -660,6 +660,12 @@ export const failedExchangeWireSchema = z.object({
   durationMs: z.number(),
   /** The engine's `HttpErrorCode`, another `WirebenchError` code, or `internal-error`. */
   error: z.object({ code: z.string(), message: z.string() }),
+  /**
+   * Where the send failed. `prepare`: before the request was built (bad URL, OAuth2 token fetch,
+   * proxy lookup) — it never went on the wire. Absent means `send`, so rows from before this field
+   * existed stay valid.
+   */
+  stage: z.enum(['prepare', 'send']).optional(),
 });
 export type FailedExchangeWire = z.infer<typeof failedExchangeWireSchema>;
 
@@ -1764,6 +1770,48 @@ export const requestCurlResponseSchema = z.object({
   notes: z.array(z.string()).optional(),
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
+
+/** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
+export const logEntryWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('exchange'),
+    exchange: z.union([grpcExchangeSummarySchema, restExchangeSummarySchema, exchangeSummarySchema]),
+    /** The saved request the send came from; absent for an ad-hoc send. */
+    requestId: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('failure'), failure: failedExchangeWireSchema }),
+]);
+export type LogEntryWire = z.infer<typeof logEntryWireSchema>;
+
+/** Request payload for `log.curl`; the response is `requestCurlResponseSchema`. */
+export const logCurlRequestSchema = z.object({ entry: logEntryWireSchema, shell: z.enum(['posix', 'powershell']) });
+export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
+
+/**
+ * Request payload for `log.resend`: the saved request behind a row, replayed as it is now. A
+ * logged row's own headers and body are redacted and are never the source of a send.
+ */
+export const logResendRequestSchema = z.object({ protocol: z.enum(['soap', 'rest', 'grpc']), requestId: z.string() });
+export type LogResendRequest = z.infer<typeof logResendRequestSchema>;
+
+/** Response payload for `log.resend`: the new exchange, tagged by protocol. */
+export const logResendResponseSchema = z.discriminatedUnion('protocol', [
+  z.object({ protocol: z.literal('soap'), exchange: exchangeSummarySchema }),
+  z.object({ protocol: z.literal('rest'), exchange: restExchangeSummarySchema }),
+  z.object({ protocol: z.literal('grpc'), exchange: grpcExchangeSummarySchema }),
+]);
+export type LogResendResponse = z.infer<typeof logResendResponseSchema>;
+
+/**
+ * Request payload for `log.exportHar`: the rows the log shows, in display order. Main redacts
+ * them with `show: false` whatever the toggle says and picks the path itself.
+ */
+export const logExportHarRequestSchema = z.object({ entries: z.array(logEntryWireSchema) });
+export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
+
+/** Response payload for `log.exportHar`: `saved: false` when the save dialog was cancelled. */
+export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
+export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
 
 export const projectWireSchema = z.object({
   id: z.string(),
@@ -3230,6 +3278,7 @@ export const preferencesWireSchema = z.object({
     }),
     confirmOnDelete: z.boolean(),
     historyCap: z.number(),
+    logSize: z.number(),
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),

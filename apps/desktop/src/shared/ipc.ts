@@ -137,6 +137,11 @@ import {
   requestRecreateResponseSchema,
   requestCurlRequestSchema,
   requestCurlResponseSchema,
+  logCurlRequestSchema,
+  logExportHarRequestSchema,
+  logExportHarResponseSchema,
+  logResendRequestSchema,
+  logResendResponseSchema,
   requestImportCurlRequestSchema,
   requestImportCurlResponseSchema,
   requestSendRequestSchema,
@@ -593,6 +598,12 @@ export const channels = {
       exchangesSaveRestBodyRequestSchema,
       exchangesSaveRestBodyResponseSchema,
     ),
+  },
+  // What the HTTP Log asks main to do with a row it already holds.
+  log: {
+    curl: defineChannel('log.curl', logCurlRequestSchema, requestCurlResponseSchema),
+    resend: defineChannel('log.resend', logResendRequestSchema, logResendResponseSchema),
+    exportHar: defineChannel('log.exportHar', logExportHarRequestSchema, logExportHarResponseSchema),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),

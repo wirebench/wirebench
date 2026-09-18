@@ -1,0 +1,56 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "Wirebench",
+      "version": "0.0.0-test"
+    },
+    "entries": [
+      {
+        "startedDateTime": "2026-09-16T08:30:05.000Z",
+        "time": 9,
+        "request": {
+          "method": "POST",
+          "url": "http://127.0.0.1:50051/wirebench.greet.Greeter/SayHello",
+          "httpVersion": "HTTP/2",
+          "cookies": [],
+          "headers": [],
+          "queryString": [],
+          "headersSize": -1,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/2",
+          "cookies": [],
+          "headers": [
+            {
+              "name": "content-type",
+              "value": "application/grpc+proto"
+            }
+          ],
+          "content": {
+            "size": 29,
+            "mimeType": "application/grpc+proto",
+            "text": "ewogICJtZXNzYWdlIjogIkhlbGxvLCBBZGEiCn0=",
+            "encoding": "base64"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 29
+        },
+        "cache": {},
+        "timings": {
+          "blocked": -1,
+          "dns": -1,
+          "connect": -1,
+          "ssl": -1,
+          "send": 0,
+          "wait": 6,
+          "receive": 0
+        }
+      }
+    ]
+  }
+}

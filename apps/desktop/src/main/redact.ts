@@ -175,6 +175,92 @@ export function redactXml(text: string, opts?: { show?: boolean }): string {
   return out + text.slice(from);
 }
 
+/** Body keys whose values are masked in JSON and form bodies, compared case-insensitively. */
+export const SECRET_BODY_KEYS: readonly string[] = [
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'client_secret',
+  'api_key',
+  'apikey',
+  'authorization',
+];
+const SECRET_BODY_KEY_SET = new Set(SECRET_BODY_KEYS);
+
+function mediaTypeOf(contentType: string): string {
+  return (contentType.split(';')[0] ?? '').trim().toLowerCase();
+}
+
+function isJsonType(contentType: string): boolean {
+  const type = mediaTypeOf(contentType);
+  return type === 'application/json' || type.endsWith('+json');
+}
+
+function isFormType(contentType: string): boolean {
+  return mediaTypeOf(contentType) === 'application/x-www-form-urlencoded';
+}
+
+/** A copy with every secret-keyed value replaced whole — a nested object or array under one too. */
+function maskJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(maskJson);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => [
+        key,
+        SECRET_BODY_KEY_SET.has(key.toLowerCase()) ? REDACTED : maskJson(inner),
+      ]),
+    );
+  }
+  return value;
+}
+
+/** The indentation of the input's second line, so a pretty body stays pretty and a compact one compact. */
+function indentOf(text: string): number | undefined {
+  const match = /\n( +)\S/.exec(text);
+  return match?.[1]?.length;
+}
+
+function maskFormPair(pair: string): string {
+  const eq = pair.indexOf('=');
+  const rawKey = eq < 0 ? pair : pair.slice(0, eq);
+  let key: string;
+  try {
+    key = decodeURIComponent(rawKey.replace(/\+/g, ' '));
+  } catch {
+    key = rawKey;
+  }
+  return SECRET_BODY_KEY_SET.has(key.toLowerCase()) ? `${rawKey}=${encodeURIComponent(REDACTED)}` : pair;
+}
+
+/**
+ * Masks secret-keyed values in a JSON (`application/json`, `+json`) or urlencoded form body;
+ * anything else, or JSON that does not parse, is returned as is.
+ */
+export function redactStructuredBody(text: string, contentType: string | undefined, opts?: { show?: boolean }): string {
+  if (opts?.show === true || contentType === undefined) {
+    return text;
+  }
+  if (isJsonType(contentType)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return text;
+    }
+    return JSON.stringify(maskJson(parsed), null, indentOf(text));
+  }
+  if (isFormType(contentType)) {
+    return text.split('&').map(maskFormPair).join('&');
+  }
+  return text;
+}
+
 /** Masks a single raw `name: value` header line (no terminator), case-insensitively. */
 function redactHeaderLine(line: string): string {
   const idx = line.indexOf(':');
@@ -207,9 +293,13 @@ function headerValue(headerBlock: string, name: string): string | undefined {
  * type, and never when a `content-encoding` says the bytes are compressed (decoding those as
  * text would corrupt them irrecoverably).
  */
-function bodyIsMaskableText(headerBlock: string): boolean {
+function bodyIsIdentityEncoded(headerBlock: string): boolean {
   const encoding = headerValue(headerBlock, 'content-encoding');
-  if (encoding !== undefined && encoding.length > 0 && encoding.toLowerCase() !== 'identity') {
+  return encoding === undefined || encoding.length === 0 || encoding.toLowerCase() === 'identity';
+}
+
+function bodyIsMaskableText(headerBlock: string): boolean {
+  if (!bodyIsIdentityEncoded(headerBlock)) {
     return false;
   }
   const contentType = headerValue(headerBlock, 'content-type')?.toLowerCase() ?? '';
@@ -252,9 +342,18 @@ export function redactRawHttp(input: string, opts?: { show?: boolean; encoding?:
     .map((part, index) => (index % 2 === 0 ? redactHeaderLine(part) : part))
     .join('');
 
-  const redactedBody = bodyIsMaskableText(headerBlock)
-    ? Buffer.from(redactXml(bodyBytes.toString('utf8')), 'utf8')
-    : bodyBytes;
+  // XML first (a `wsse:Password` element), then JSON and form bodies by key. A compressed body is
+  // left alone: its bytes are not the text either pass reads.
+  let bodyText = bodyIsMaskableText(headerBlock) ? redactXml(bodyBytes.toString('utf8')) : undefined;
+  const contentType = headerValue(headerBlock, 'content-type');
+  if (contentType !== undefined && bodyIsIdentityEncoded(headerBlock)) {
+    const before = bodyText ?? bodyBytes.toString('utf8');
+    const structured = redactStructuredBody(before, contentType);
+    if (structured !== before) {
+      bodyText = structured;
+    }
+  }
+  const redactedBody = bodyText === undefined ? bodyBytes : Buffer.from(bodyText, 'utf8');
 
   const parts = [Buffer.from(redactedHeaderBlock, 'latin1')];
   if (splitIndex >= 0) {

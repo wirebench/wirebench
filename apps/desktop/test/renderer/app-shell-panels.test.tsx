@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ConsolePanel } from '../../src/renderer/shell/console-panel.js';
@@ -6,6 +6,9 @@ import { Sidebar } from '../../src/renderer/shell/sidebar.js';
 import { DEFAULT_UI_STATE } from '../../src/renderer/state/ui-state.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 /**
  * Task 9's collapse/expand/restore behaviour: the store actions the sidebar, the console, the

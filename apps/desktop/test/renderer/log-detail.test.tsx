@@ -197,3 +197,34 @@ describe('LogDetail for a failure', () => {
     expect(screen.queryByTestId('log-detail-peer')).toBeNull();
   });
 });
+
+describe('LogDetail for a prepare-stage failure', () => {
+  it('Response: says the request never went on the wire, and keeps the code', () => {
+    renderDetail({ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) }, 'response');
+    const error = screen.getByTestId('log-detail-error').textContent;
+    expect(error).toMatch(/never went on the wire/);
+    expect(error).toContain('connection-refused');
+  });
+
+  it('Response: a send-stage failure carries no such note', () => {
+    renderDetail(failure, 'response');
+    expect(screen.getByTestId('log-detail-error').textContent).not.toMatch(/never went on the wire/);
+  });
+
+  it('the Timing tab says the connection was reused when connect and TLS are both absent', () => {
+    const e = makeRestExchange();
+    const entry = logExchange({
+      ...e,
+      http: { ...e.http, timings: { startedAt: e.http.timings.startedAt, totalMs: 12, ttfbMs: 10, downloadMs: 2 } },
+    });
+    renderDetail(entry, 'timing');
+    expect(screen.getByText('Connection reused — no connect or TLS phase')).toBeDefined();
+  });
+
+  it('does not say so when a connect phase was measured', () => {
+    const e = makeRestExchange();
+    const entry = logExchange({ ...e, http: { ...e.http, timings: { ...e.http.timings, connectMs: 4 } } });
+    renderDetail(entry, 'timing');
+    expect(screen.queryByText(/Connection reused/)).toBeNull();
+  });
+});

@@ -1,0 +1,63 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "Wirebench",
+      "version": "0.0.0-test"
+    },
+    "entries": [
+      {
+        "startedDateTime": "2026-09-16T08:30:05.000Z",
+        "time": 3,
+        "request": {
+          "method": "GET",
+          "url": "http://127.0.0.1:1/nope",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [
+            {
+              "name": "Authorization",
+              "value": "<redacted>"
+            },
+            {
+              "name": "X-Trace",
+              "value": "abc"
+            }
+          ],
+          "queryString": [],
+          "headersSize": -1,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 0,
+          "statusText": "",
+          "httpVersion": "HTTP/1.1",
+          "cookies": [],
+          "headers": [],
+          "content": {
+            "size": 0,
+            "mimeType": "x-unknown"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": -1
+        },
+        "cache": {},
+        "timings": {
+          "blocked": -1,
+          "dns": -1,
+          "connect": -1,
+          "ssl": -1,
+          "send": 0,
+          "wait": 3,
+          "receive": 0
+        },
+        "_error": {
+          "code": "connection-refused",
+          "message": "Connection refused.",
+          "stage": "prepare"
+        }
+      }
+    ]
+  }
+}

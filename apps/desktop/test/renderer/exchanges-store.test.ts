@@ -428,6 +428,8 @@ describe('useExchangesStore: failures and the filter', () => {
 
     expect(useExchangesStore.getState().filter).toEqual({
       text: 'pet',
+      regex: false,
+      matchCase: false,
       methods: [],
       statuses: ['4xx', 'failed'],
       protocols: [],
@@ -469,5 +471,84 @@ describe('useExchangesStore: failures and the filter', () => {
     expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
     unsubscribe();
     expect(off).toHaveBeenCalledTimes(1);
+  });
+
+  it('cycleSort goes asc → desc → off; another column restarts at asc; resetFilter clears it', () => {
+    useExchangesStore.setState({ sort: undefined });
+    const { cycleSort } = useExchangesStore.getState();
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'duration', direction: 'asc' });
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'duration', direction: 'desc' });
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+    cycleSort('status');
+    cycleSort('name');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'name', direction: 'asc' });
+    useExchangesStore.getState().resetFilter();
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+  });
+});
+
+describe('the HTTP Log row limit', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, logCap: 500 });
+  });
+
+  it('setLogCap trims the oldest rows at once and caps later appends', () => {
+    useExchangesStore.setState({
+      log: Array.from({ length: 150 }, (_, i) => ({
+        kind: 'failure' as const,
+        failure: makeFailure({ sendId: `f${String(i)}` }),
+      })),
+    });
+    useExchangesStore.getState().setLogCap(100);
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+    expect(sendIdOf(useExchangesStore.getState().log[0]!)).toBe('f50');
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'new' }));
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+    expect(sendIdOf(useExchangesStore.getState().log.at(-1)!)).toBe('new');
+    useExchangesStore.getState().setLogCap(200);
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+  });
+
+  it('applying preferences sets the cap from ui.logSize', () => {
+    usePreferencesStore.getState().applyPreferences({
+      ...DEFAULT_PREFERENCES_WIRE,
+      ui: { ...DEFAULT_PREFERENCES_WIRE.ui, logSize: 250 },
+    });
+    expect(useExchangesStore.getState().logCap).toBe(250);
+    usePreferencesStore.getState().applyPreferences(DEFAULT_PREFERENCES_WIRE);
+  });
+});
+
+describe('Preserve log', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, preserveLog: false });
+  });
+
+  it('reset keeps the log, filter and sort when preserveLog is on, and clears them when off', () => {
+    useExchangesStore.setState({
+      log: [{ kind: 'failure', failure: makeFailure() }],
+      filter: { ...EMPTY_FILTER, text: 'pets' },
+      sort: { column: 'name', direction: 'asc' },
+    });
+    useExchangesStore.getState().setPreserveLog(true);
+    useExchangesStore.getState().reset();
+    expect(useExchangesStore.getState().log).toHaveLength(1);
+    expect(useExchangesStore.getState().filter.text).toBe('pets');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'name', direction: 'asc' });
+    expect(useExchangesStore.getState().preserveLog).toBe(true);
+    useExchangesStore.getState().setPreserveLog(false);
+    useExchangesStore.getState().reset();
+    expect(useExchangesStore.getState().log).toHaveLength(0);
+    expect(useExchangesStore.getState().filter).toEqual(EMPTY_FILTER);
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+  });
+
+  it('clearLog empties the log even when preserved', () => {
+    useExchangesStore.setState({ log: [{ kind: 'failure', failure: makeFailure() }], preserveLog: true });
+    useExchangesStore.getState().clearLog();
+    expect(useExchangesStore.getState().log).toHaveLength(0);
   });
 });

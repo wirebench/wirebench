@@ -5,6 +5,7 @@
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WirebenchError } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import type { FailedExchangeWire } from '../src/shared/wire-types.js';
@@ -143,5 +144,56 @@ describe('sendAndRecordHistory → onSendFailed', () => {
 
     expect(result.http.status).toBe(200);
     expect(onSendFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendAndRecordHistory → prepare-stage failures', () => {
+  const soapRequest = (endpoint: string) => ({
+    sendId: 'send-prep',
+    requestId: 'req-1',
+    input: { endpoint, envelopeXml: '<Envelope/>', soapVersion: '1.1' as const, timeoutMs: 2_000 },
+  });
+
+  it('a proxy lookup that throws before the send emits a prepare row and rethrows', async () => {
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+    const project = {
+      ...noopProject,
+      proxyFor: () => Promise.reject(new WirebenchError('proxy-resolve-failed', 'x')),
+    };
+    await expect(
+      sendAndRecordHistory(new EngineService(), { project, onSendFailed }, soapRequest('http://127.0.0.1:1/nope')),
+    ).rejects.toThrow('x');
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+    expect(onSendFailed.mock.calls[0]![0]).toMatchObject({
+      protocol: 'soap',
+      stage: 'prepare',
+      request: { url: 'http://127.0.0.1:1/nope', method: 'POST', headers: {} },
+      error: { code: 'proxy-resolve-failed' },
+    });
+  });
+
+  it('History durationMs still excludes the proxy lookup', async () => {
+    const server = await startEchoServer();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const recordSend = vi.fn(() => Promise.resolve(undefined));
+      const project = {
+        ...noopProject,
+        proxyFor: () => {
+          vi.setSystemTime(Date.now() + 500);
+          return Promise.resolve(undefined);
+        },
+      };
+      await sendAndRecordHistory(
+        new EngineService(),
+        { project, history: { recordSend } as never },
+        soapRequest(`${server.url}/calc`),
+      );
+      const [, entry] = recordSend.mock.calls[0] as unknown as [string, { durationMs: number }];
+      expect(entry.durationMs).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+      await server.close();
+    }
   });
 });
