@@ -1,0 +1,75 @@
+---
+title: History
+description: The persistent record of every send — search it, re-send an entry, diff two runs, and open the request that made it.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+History is the persistent record of every request you've sent — SOAP, REST and gRPC alike. Unlike
+the [HTTP Log](/wirebench/guides/http-log/), which is the raw wire exchange for the current
+session only, History survives a relaunch and is what you reach for to re-run or compare past
+sends.
+
+## Browse and search
+
+Open **History** from the activity bar, or press <kbd>⌘⇧Y</kbd> / <kbd>Ctrl+Shift+Y</kbd>. Each
+row shows when the request was sent, its project (when more than one is open), its method or
+protocol badge, its name and operation, the endpoint's host, its status and its duration.
+
+<Steps>
+
+1. Type into the search field to filter by request name, operation, interface, endpoint, status,
+   fault reason or tag.
+2. Use the project dropdown to narrow to one open project, or leave it on **All projects**.
+3. Click a row to open it as a read-only tab with the request and response bodies side by side.
+
+</Steps>
+
+## Re-send an entry
+
+Click the **↻** button on a row (or **Re-send** on an open entry's tab) to send it again. This
+resends the original request as recorded — it doesn't reopen the request for editing first. The
+result appears as a new History entry.
+
+## Diff two runs
+
+<Steps>
+
+1. Choose a row's **Compare…** button, then the same button on a second row. A diff tab opens with the two bodies
+   side by side (or stacked, using the **Side by side** toggle), pretty-printed as JSON or XML
+   depending on what they are.
+2. Toggle **Ignore whitespace** to hide formatting-only differences.
+3. To compare a past entry against its request's current state, use the row's **Compare with current**
+   button instead — it diffs the entry against what the live request would send now.
+
+</Steps>
+
+A body that doesn't parse as JSON or XML is shown as it was recorded, unformatted.
+
+## Go to the request
+
+An open History entry shows a **Go to request** button when the request it came from still
+exists in the project. It opens that request's own editor tab in the right protocol — REST, gRPC
+or SOAP.
+
+## Delete entries
+
+Choose **Delete all** in the History toolbar, then **Confirm**, to clear every entry. There's no
+per-row delete — only a full clear.
+
+## Limits
+
+- History is per-workspace and stored on disk, so it survives closing and reopening Wirebench.
+- Only the recorded request and response bodies are diffed or shown — History doesn't replay
+  timings, connection details or raw headers; that detail lives in the HTTP Log for the session
+  it happened in.
+- **Compare** and **Compare with current** always diff the response body (falling back to the
+  request body when there's no response, such as after a failed send).
+
+## Related
+
+- [HTTP Log](/wirebench/guides/http-log/): the raw wire exchange for the current session, with
+  filters and timing detail.
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
+- [REST](/wirebench/guides/rest-client/)
+- [gRPC](/wirebench/guides/grpc/)

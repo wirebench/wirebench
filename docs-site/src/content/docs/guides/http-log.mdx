@@ -1,0 +1,89 @@
+---
+title: HTTP Log
+description: Every send this session — finished or failed — with a filter bar and per-row detail tabs for timings, headers and connection info.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+The HTTP Log is the console's raw record of what actually went over the wire, one row per send
+this session: SOAP, REST and gRPC, finished exchanges and failed sends alike. It resets when the
+workspace closes — for the persistent, re-sendable record, see [History](/wirebench/guides/history/).
+
+![The response next to the request, with the HTTP Log below](/wirebench/images/getting-started/response.png)
+
+## Read a row
+
+Each row shows the time, protocol, method, URL, status, duration and response size. A failed send
+has no size and shows its error code (for example `connection-refused`) in place of a status,
+in red. Select a row to open its detail pane, which narrows the table to four columns (protocol,
+method, URL, status) to make room.
+
+<Steps>
+
+1. Click a row to select it and open the detail pane beside the table.
+2. Use the tabs — **Headers**, **Request**, **Response**, **Timing**, **Connection** — to inspect
+   it.
+3. Press <kbd>Esc</kbd>, or the **×** button, to close the detail pane.
+4. With the log focused, <kbd>↑</kbd> and <kbd>↓</kbd> move the selection, and the table scrolls to
+   follow it. With nothing selected, <kbd>↓</kbd> picks the first row and <kbd>↑</kbd> the last.
+
+</Steps>
+
+## Read timings
+
+The **Timing** tab breaks a finished exchange into phases: DNS, connect, TLS, time to first byte,
+and download. A phase reads `n/a` with a reason instead of a number when it wasn't measured — DNS
+is never measured at all, and connect/TLS are skipped when the send reused a keep-alive connection
+or ran alongside other sends in flight. A failed send has no phases: its **Timing** tab shows only
+the total time before it failed, since the transport never got far enough to measure any of them.
+
+## Read a failure
+
+A failed send — refused connection, TLS trust failure, timeout — gets a row with `data-kind`
+`failure` and a status column showing its error code. Its **Response** tab shows the error code and
+the engine's message instead of a body. Its **Connection** tab shows the URL and method it was
+sent to, plus the peer's certificate subject when the failure was a TLS trust error. Headers for a
+failed send are redacted once, at the moment they're recorded, and stay that way — no unredacted
+copy exists, so the show-secrets toggle can't reveal them, and the **Headers** tab explains this
+with a note.
+
+## Filter and search
+
+<Steps>
+
+1. Type into **Filter URL** to narrow rows to URLs containing that text.
+2. Click chips in the **Method**, **Status** and **Protocol** groups to narrow further. Within a
+   group, selecting more than one chip is an OR (either matches); across groups it's an AND. The
+   **Status** group includes `2xx`, `3xx`, `4xx`, `5xx` and `failed`. The **Protocol** group is
+   SOAP, REST and gRPC.
+3. The count on the right reads "*n* of *m*" — rows shown of rows in the log.
+4. Choose **Reset** to clear the filter without touching the log itself.
+
+</Steps>
+
+<Aside type="tip">
+Reset clears the filter; **Clear**, next to it, empties the log itself. They're separate controls
+on purpose.
+</Aside>
+
+## Show or hide secrets
+
+The lock button next to **Clear** toggles whether redacted values in the log are shown or masked.
+It affects the whole session's log at once, not just the selected row.
+
+## Limits
+
+- The log is session-only: it isn't written to disk, and it's dropped when the workspace closes.
+  For a persistent record, use History.
+- It holds the most recent 500 rows; older rows are dropped as new ones arrive.
+- A failed send's headers are redacted permanently at the moment they're logged — there's no way
+  to recover the unredacted values later, unlike a finished exchange's.
+- The Query tab and other response tooling live in the request editor's own response pane, not
+  here — the HTTP Log only shows the raw exchange.
+
+## Related
+
+- [History](/wirebench/guides/history/): the persistent, re-sendable and diffable record of your
+  own sends.
+- [REST](/wirebench/guides/rest-client/)
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
