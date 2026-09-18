@@ -119,6 +119,15 @@ the disk at all. A refused reference becomes an `import-ref-refused` problem and
 completes with what did resolve. The graph is capped at 32 levels and 500 documents
 (`import-limit`). Implementation: `packages/engine/src/wsdl/ref-policy.ts`.
 
+A legacy SOAP project import (`project.importLegacy`) adds three rules of its own, because the project
+file is untrusted input that names further locations. Its definitions are served from the copy the file
+itself carries. A document the file lacks may be fetched over `http(s)`, but never from a `file:` location,
+since that path comes from the imported file and not from the user. The file is parsed with DTDs refused
+outright, so there is no entity expansion. And nothing in it runs: its passwords are never written to the
+project (the report asks for them to be re-entered in the keychain), and its scripts are saved as inert text
+under `imported-scripts/`, which nothing in Wirebench reads. Implementation:
+`packages/engine/src/soap/legacy-project/` and `ProjectHost.importLegacyProject`.
+
 What this deliberately does *not* prevent: a remote WSDL naming an internal `http://` host.
 Fetching what the document points at is the whole of what "import this WSDL" means, and the
 user chose that URL; the reachable surface is a GET with no credentials attached unless the

@@ -29,6 +29,16 @@ All notable changes to this project are documented here. The format follows
 - **HTTP Log: failures before the request is built.** A send that fails before the request is built (invalid URL,
   proxy lookup, OAuth2 token fetch) now appears as a "Failed · before send" row, and its detail says the request
   never went on the wire.
+- **Importing a legacy single-XML SOAP project.** _Import Legacy SOAP Project…_ (or _Legacy SOAP project_ in
+  _Import…_, which also detects the file) brings a whole project file from an older SOAP workbench into a
+  Wirebench project. It carries across the SOAP interfaces with their endpoints, every saved request (envelope
+  unchanged, and gzip-compressed envelopes decoded), usernames, timeouts, encodings, project properties, and
+  environments with their endpoint overrides. Each interface resolves from the definition the file carried, so
+  the import works offline and the project reopens offline. What does not come across is listed in a report you
+  can copy: passwords (to be re-entered), test suites, mock services, REST services, WS-Security and auth
+  profiles. Scripts are kept, never run, under `imported-scripts/`. Picking such a file as a plain WSDL now says
+  which format to choose instead of failing partway through.
+
 - **Completion in the gRPC message editor.** Typing a key in the Message tab offers the fields of the message
   the cursor is in — not just the method's request type, so a nested field's own fields are offered inside it,
   and a repeated field's items are offered like the field itself. Accepting one writes the key with an empty

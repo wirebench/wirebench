@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project name="Broken" xmlns:con="http://eviware.com/soapui/config">
+  <con:interface name="Unclosed">
+</con:soapui-project>

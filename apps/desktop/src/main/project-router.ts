@@ -51,6 +51,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['addInterface']>
   ): ReturnType<ProjectHost['addInterface']>;
+  /** Imports a parsed legacy SOAP project into the addressed project. */
+  importLegacyProject(
+    projectId: string,
+    ...args: Parameters<ProjectHost['importLegacyProject']>
+  ): ReturnType<ProjectHost['importLegacyProject']>;
   /**
    * Places an imported OpenAPI-described API in the addressed project, caching its documents.
    * `api.importOpenApi` carries the same target union `project.addInterface` does.
