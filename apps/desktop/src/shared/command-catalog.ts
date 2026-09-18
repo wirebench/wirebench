@@ -1,4 +1,3 @@
-import { COMMAND_IDS } from './commands.js';
 import type { CommandCategory, CommandId } from './commands.js';
 
 /**
@@ -653,21 +652,4 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
 /** `COMMAND_CATALOG[id]`, typed so a spread at a call site needs no cast. */
 export function catalogEntry(id: CommandId): CommandCatalogEntry {
   return COMMAND_CATALOG[id];
-}
-
-// Dev-time guard: every id in the catalog must be one of `COMMAND_IDS`, and vice versa. Thrown
-// at import time rather than left to the test suite, so a drift fails as loudly as the
-// duplicate-id guard in the registry itself.
-{
-  const catalogIds = new Set(Object.keys(COMMAND_CATALOG));
-  for (const id of COMMAND_IDS) {
-    if (!catalogIds.has(id)) {
-      throw new Error(`command-catalog: missing entry for ${id}`);
-    }
-  }
-  for (const id of catalogIds) {
-    if (!(COMMAND_IDS as readonly string[]).includes(id)) {
-      throw new Error(`command-catalog: unknown id ${id}`);
-    }
-  }
 }
