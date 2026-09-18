@@ -205,6 +205,20 @@ describe('prepareSend — SOAP', () => {
     expect(plain.kind === 'soap' && plain.input.wsa).toBeUndefined();
   });
 
+  it("takes the default wsa:Action from the host's hook, and leaves it empty without one", async () => {
+    const on = makeProject({ ifaceWsa: { enabled: true, version: '2005/08' } });
+    const hooked = await prepareSend(
+      soapOf(on),
+      contextFor(on, {
+        environmentId: 'env-test',
+        defaultWsaActionFor: (selected) => `urn:default:${selected.operation.name}`,
+      }),
+    );
+    expect(hooked.kind === 'soap' && hooked.input.wsa?.defaultAction).toBe('urn:default:Op');
+    const bare = await prepareSend(soapOf(on), contextFor(on, { environmentId: 'env-test' }));
+    expect(bare.kind === 'soap' && bare.input.wsa?.defaultAction).toBe('');
+  });
+
   it('carries saved attachments and reads them from inside the project only', async () => {
     writeFileSync(join(projectDir(), 'part.bin'), 'bytes');
     const attachment = {

@@ -12,6 +12,8 @@ export type {
 } from './assert/model.js';
 export { assertionsSchema } from './assert/schema.js';
 
+export * from './run/index.js';
+
 export {
   WirebenchError,
   WsdlParseError,

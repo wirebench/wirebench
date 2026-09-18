@@ -48,6 +48,12 @@ export interface RunContext {
   readonly insecure?: boolean;
   readonly proxyFor?: (url: string) => ProxyOptions | undefined;
   readonly signal?: AbortSignal;
+  /**
+   * The WSDL-derived default `wsa:Action` for a SOAP request, as the app takes it from the
+   * interface's imported definition. Absent (or returning `''`) when no definition is at hand:
+   * an explicit `wsa:Action` or the request's SOAPAction then still applies.
+   */
+  readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
 }
 
 /** One request, ready for `sendSoapRequest` (with `scopes`) or `sendRest`. */
@@ -147,12 +153,12 @@ async function tlsFor(
 
 /**
  * WS-Addressing as the app's `wsaFor` builds it. The WSDL-derived default action comes from the
- * imported definition, which a run does not load, so it is empty: an explicit `wsa:Action` or the
- * request's SOAPAction still applies, as they do in the app for an interface not yet hydrated.
+ * host's `defaultWsaActionFor`; without one it is empty, as it is in the app for an interface not
+ * yet hydrated, and an explicit `wsa:Action` or the request's SOAPAction still applies.
  */
-function wsaFor(selected: SoapSelected): SoapSendInput['wsa'] {
+function wsaFor(selected: SoapSelected, context: RunContext): SoapSendInput['wsa'] {
   const config = effectiveWsa(selected.iface.wsa, selected.request.wsa);
-  return config.enabled ? { config, defaultAction: '' } : undefined;
+  return config.enabled ? { config, defaultAction: context.defaultWsaActionFor?.(selected) ?? '' } : undefined;
 }
 
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
@@ -272,7 +278,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   const scopes = scopesFor(context);
   const tls = await tlsFor(context, request.properties.sslKeystoreRef, resolved.endpoint?.trustInvalid === true);
   const proxy = context.proxyFor?.(resolved.url);
-  const wsa = wsaFor(selected);
+  const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
   const sendAuth = toSendAuth(auth);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
