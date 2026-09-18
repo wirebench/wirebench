@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log: search, a Name column and sort.** Search matches headers, bodies (first 256 KiB) and the
+  request name, with regex and match-case toggles; a Name column shows the saved request; click Time,
+  Name, Status, ms or Size to sort.
 - **HTTP Log: Export HAR.** Saves the rows the filter shows, in display order, as a HAR 1.2 file;
   headers, URL parameters, WS-Security passwords and JSON/form secrets are always masked, whatever
   the show-secrets toggle says. Failed sends carry an `_error`, truncated bodies `_truncated`.
