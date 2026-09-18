@@ -489,3 +489,35 @@ describe('useExchangesStore: failures and the filter', () => {
     expect(useExchangesStore.getState().sort).toBeUndefined();
   });
 });
+
+describe('the HTTP Log row limit', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, logCap: 500 });
+  });
+
+  it('setLogCap trims the oldest rows at once and caps later appends', () => {
+    useExchangesStore.setState({
+      log: Array.from({ length: 150 }, (_, i) => ({
+        kind: 'failure' as const,
+        failure: makeFailure({ sendId: `f${String(i)}` }),
+      })),
+    });
+    useExchangesStore.getState().setLogCap(100);
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+    expect(sendIdOf(useExchangesStore.getState().log[0]!)).toBe('f50');
+    useExchangesStore.getState().appendFailure(makeFailure({ sendId: 'new' }));
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+    expect(sendIdOf(useExchangesStore.getState().log.at(-1)!)).toBe('new');
+    useExchangesStore.getState().setLogCap(200);
+    expect(useExchangesStore.getState().log).toHaveLength(100);
+  });
+
+  it('applying preferences sets the cap from ui.logSize', () => {
+    usePreferencesStore.getState().applyPreferences({
+      ...DEFAULT_PREFERENCES_WIRE,
+      ui: { ...DEFAULT_PREFERENCES_WIRE.ui, logSize: 250 },
+    });
+    expect(useExchangesStore.getState().logCap).toBe(250);
+    usePreferencesStore.getState().applyPreferences(DEFAULT_PREFERENCES_WIRE);
+  });
+});

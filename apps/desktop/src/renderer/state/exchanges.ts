@@ -25,7 +25,15 @@ import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
-const LOG_CAP = 500;
+/** The row limit before preferences load; `ui.logSize` replaces it (Preferences › Behaviour). */
+const DEFAULT_LOG_CAP = 500;
+
+/** Drops the oldest rows past the store's current row limit. */
+function trimLog(draft: { log: LogEntry[]; logCap: number }): void {
+  if (draft.log.length > draft.logCap) {
+    draft.log.splice(0, draft.log.length - draft.logCap);
+  }
+}
 
 /**
  * One row of the HTTP Log: a finished exchange of either protocol, or a send that never produced
@@ -163,6 +171,8 @@ export interface ExchangesSnapshot {
   readonly filter: LogFilter;
   /** The HTTP Log's column sort; undefined is log order. Reset with the filter. */
   readonly sort: LogSort | undefined;
+  /** How many rows the log keeps; follows `ui.logSize`. */
+  readonly logCap: number;
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -183,6 +193,8 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
+  /** Sets the row limit; lowering it drops the oldest rows at once, raising it keeps every row. */
+  readonly setLogCap: (cap: number) => void;
   /**
    * Appends a finished exchange's row — a resend from the HTTP Log's row menu. A `sendId` already in
    * the log (either kind) is ignored.
@@ -261,6 +273,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     log: [],
     filter: EMPTY_FILTER,
     sort: undefined,
+    logCap: DEFAULT_LOG_CAP,
 
     reset: () => {
       set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER, sort: undefined });
@@ -326,9 +339,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // pane show a message twice.
         draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
@@ -467,9 +478,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
         // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
         draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
@@ -610,9 +619,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         draft.byRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
@@ -654,6 +661,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    setLogCap: (cap) => {
+      update((draft) => {
+        draft.logCap = cap;
+        trimLog(draft);
+      });
+    },
+
     appendExchange: (exchange, requestId) => {
       update((draft) => {
         if (draft.log.some((entry) => sendIdOf(entry) === exchange.sendId)) {
@@ -662,9 +676,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         draft.log.push(
           requestId === undefined ? { kind: 'exchange', exchange } : { kind: 'exchange', exchange, requestId },
         );
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
@@ -674,9 +686,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           return;
         }
         draft.log.push({ kind: 'failure', failure });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
