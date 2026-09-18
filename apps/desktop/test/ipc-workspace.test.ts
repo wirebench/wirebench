@@ -412,13 +412,21 @@ describe('project.* channels', () => {
       projectMutate: vi.fn().mockResolvedValue({ project: PROJECT }),
       save: vi.fn().mockResolvedValue({ saved: true, written: 1, removed: 0 }),
       addInterface: vi.fn().mockResolvedValue({ project: PROJECT, interfaceId: 'i1' }),
-      importLegacyProject: vi.fn().mockResolvedValue({ project: PROJECT, report: REPORT }),
+      importLegacyProject: vi.fn().mockResolvedValue({ project: PROJECT, report: REPORT, environmentNames: [] }),
       reload: vi.fn().mockResolvedValue(PROJECT),
     };
     const addProject = vi.fn().mockResolvedValue({ projectId: 'p-new' });
     const removeProject = vi.fn().mockResolvedValue(undefined);
-    registerProjectChannels({ router, addProject, removeProject, projectDirs: () => [], picks });
-    return { router, addProject, removeProject };
+    const ensureWorkspaceEnvironments = vi.fn().mockResolvedValue([]);
+    registerProjectChannels({
+      router,
+      addProject,
+      removeProject,
+      projectDirs: () => [],
+      picks,
+      ensureWorkspaceEnvironments,
+    });
+    return { router, addProject, removeProject, ensureWorkspaceEnvironments };
   }
 
   it('create, open, close and recent are gone from the contract', () => {
@@ -548,6 +556,35 @@ describe('project.* channels', () => {
       });
       expect(result).toMatchObject({ ok: false, error: { code: 'legacy-project-as-wsdl' } });
       expect(router.addInterface).not.toHaveBeenCalled();
+    });
+
+    it('adds the workspace environments the imported ones need, and says so in the report', async () => {
+      const { router, ensureWorkspaceEnvironments } = registerProject(picked());
+      router.importLegacyProject.mockResolvedValueOnce({
+        project: PROJECT,
+        report: REPORT,
+        environmentNames: ['Default', 'Staging'],
+      });
+      ensureWorkspaceEnvironments.mockResolvedValueOnce(['Staging']);
+      const result = await invoke('project.importLegacy', {
+        target: { projectId: 'p1' },
+        source: { kind: 'file', path: fixture },
+      });
+      expect(ensureWorkspaceEnvironments).toHaveBeenCalledWith(['Default', 'Staging']);
+      expect(result).toMatchObject({
+        ok: true,
+        value: {
+          report: {
+            items: [
+              {
+                severity: 'info',
+                path: 'Staging',
+                message: 'The workspace had no environment by this name, so one was added to switch to it.',
+              },
+            ],
+          },
+        },
+      });
     });
 
     it('takes a created project back when the import fails', async () => {

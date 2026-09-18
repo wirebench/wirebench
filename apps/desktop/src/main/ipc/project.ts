@@ -35,6 +35,12 @@ export interface ProjectChannelDeps {
   readonly projectDirs: () => readonly string[];
   /** The session's dialog memory: proof a `file` source was picked by the user, not named. */
   readonly picks: ReadPicks;
+  /**
+   * Adds the workspace environments an import's project environments need in order to be switched
+   * to, answering with the names it added. See `WorkspaceService.ensureEnvironments`. Optional so the
+   * tests of the other channels need not build one.
+   */
+  readonly ensureWorkspaceEnvironments?: (names: readonly string[]) => Promise<readonly string[]>;
 }
 
 /**
@@ -125,23 +131,36 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     }
     const project = await readLegacySoapProject({ kind: 'file', path: source.path });
     const options = { project, ...(request.token !== undefined ? { token: request.token } : {}) };
+    let projectId: string;
+    let imported: Awaited<ReturnType<typeof router.importLegacyProject>>;
     if ('projectId' in request.target) {
-      const imported = await router.importLegacyProject(request.target.projectId, options);
-      return {
-        ...imported,
-        reportText: formatLegacyImportReport(imported.report),
-        projectId: request.target.projectId,
-      };
+      projectId = request.target.projectId;
+      imported = await router.importLegacyProject(projectId, options);
+    } else {
+      const name = request.target.newProjectName.trim() === '' ? project.name : request.target.newProjectName;
+      projectId = (await deps.addProject(name)).projectId;
+      try {
+        imported = await router.importLegacyProject(projectId, options);
+      } catch (error) {
+        await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+        throw error;
+      }
     }
-    const name = request.target.newProjectName.trim() === '' ? project.name : request.target.newProjectName;
-    const { projectId } = await deps.addProject(name);
-    try {
-      const imported = await router.importLegacyProject(projectId, options);
-      return { ...imported, reportText: formatLegacyImportReport(imported.report), projectId };
-    } catch (error) {
-      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
-      throw error;
-    }
+    // An imported project environment only takes effect through the workspace environment of the
+    // same name, so any the workspace lacks are added — otherwise they could never be switched to.
+    const added = (await deps.ensureWorkspaceEnvironments?.(imported.environmentNames)) ?? [];
+    const report = {
+      ...imported.report,
+      items: [
+        ...imported.report.items,
+        ...added.map((name) => ({
+          severity: 'info' as const,
+          path: name,
+          message: 'The workspace had no environment by this name, so one was added to switch to it.',
+        })),
+      ],
+    };
+    return { projectId, project: imported.project, report, reportText: formatLegacyImportReport(report) };
   });
 
   registerHandler(channels.project.reload, async (request) => ({ project: await router.reload(request.projectId) }));

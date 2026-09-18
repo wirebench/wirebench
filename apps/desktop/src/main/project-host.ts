@@ -2426,7 +2426,7 @@ export class ProjectHost {
   async importLegacyProject(input: {
     project: LegacyProject;
     token?: string;
-  }): Promise<{ project: ProjectWire; report: LegacyImportReport }> {
+  }): Promise<{ project: ProjectWire; report: LegacyImportReport; environmentNames: string[] }> {
     const open = this.require();
     const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
     const network = createDefaultFetchDocument();
@@ -2541,7 +2541,11 @@ export class ProjectHost {
     };
     open.dirty = true;
     await this.save({ reason: 'import' });
-    return { project: this.snapshot() as ProjectWire, report: mapped.report };
+    return {
+      project: this.snapshot() as ProjectWire,
+      report: mapped.report,
+      environmentNames: mapped.environments.map((environment) => environment.name),
+    };
   }
 
   /** The open project's interface with `interfaceId`, or a `not-found` error. */

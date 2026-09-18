@@ -66,7 +66,9 @@ Anything else is left alone and, where it holds user work (the list in ruling 3)
 - **Properties.** Project properties merge into the project's properties. A name that already exists keeps
   its current value and is reported. Environments become Wirebench environments with their property values
   and their per-interface endpoint overrides (keyed by the imported interface's slug). An environment whose
-  name already exists gets a numbered name.
+  name already exists gets a numbered name. A project environment only takes effect through the workspace
+  environment of the same slug, and only workspace environments can be switched to, so the import adds any
+  workspace environment that is missing, with a note in the report.
 - **Scripts.** Written to `imported-scripts/<owner-path>/<element>.<ext>` (`.groovy` by default or
   `.js` for `javascript`). `<owner-path>` is the slugified chain of named owners, and a clash gets a
   numeric suffix.
