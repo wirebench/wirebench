@@ -80,6 +80,8 @@ API the workspace can reach. Filling in a row redirects every request under that
 to the address you type, instead of the one the WSDL or the API's own base URL declares — useful
 for pointing an imported definition at a different deployment of the same service.
 
+![The uat environment's page, with the Calculator interface's endpoint override set to a UAT address](/wirebench/images/environments/endpoint-override.png)
+
 A row shows which layer is currently winning when more than one could apply — for example, a
 linked project's own environment override beats a workspace environment's override for the same
 interface. A request sent under an overridden interface shows a badge next to its endpoint field

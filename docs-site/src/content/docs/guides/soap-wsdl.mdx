@@ -42,15 +42,18 @@ the WSDL's structure, without a send.
 
 ## Configure WS-Security
 
-Open **WS-Security** from the request pane's inspector strip toolbar to build an outgoing
-configuration:
+WS-Security configurations live in their own view. Open **WS-Security** from the activity bar (the
+shield icon). It has three sections: **Keystores**, **Outgoing** and **Incoming**.
 
-1. Choose **Add** to create an outgoing configuration, then expand it.
-2. Use **Add entry** to add a Timestamp, a UsernameToken, a Signature or an Encryption entry.
-3. A UsernameToken takes a username and a password type (`PasswordText` or `PasswordDigest`); the
-   password itself goes through the masked **Set…**/**Save** field, never typed in the clear.
-4. A Signature or Encryption entry needs a keystore. Add one with **Add keystore**, browse to a
+1. Choose **+** next to **Outgoing** to create an outgoing configuration, then expand it.
+2. Pick from **Add entry…** to add a **Timestamp**, **Username Token**, **Signature** or
+   **Encryption** entry. Entries run in the order listed; the arrows move them.
+3. A Username Token takes a username and a **Password type** (**Digest**, **Text** or **None**).
+   The password itself goes in through the masked **Set…** field, never typed in the clear.
+4. A Signature or Encryption entry needs a keystore. Choose **+** next to **Keystores**, pick a
    `.p12`/`.pfx` or `.jks` file, and set its password the same masked way.
+
+![An expanded outgoing WS-Security configuration with a Timestamp entry and a Username Token entry for user bob, password type Digest](/wirebench/images/soap-wsdl/wss-outgoing.png)
 
 Select the configuration on the request's **Auth** inspector tab (**Outgoing WSS**) before
 sending. The raw request view masks the password even though the envelope itself has the

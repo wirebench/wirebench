@@ -43,6 +43,8 @@ response shows the decoded message, the gRPC status code, and — on their own t
 metadata, timing, and the raw call. A non-OK status (for example `NOT_FOUND`) is shown as the
 result, with its code and message, not treated as a failure to send.
 
+![The SayHello request sent with the name Ada, and its reply Hello, Ada in the response messages](/wirebench/images/grpc/unary-response.png)
+
 Typing a field name inside a message's braces offers the fields the schema defines for that
 message — nested messages offer their own fields, and a scalar path offers none.
 
