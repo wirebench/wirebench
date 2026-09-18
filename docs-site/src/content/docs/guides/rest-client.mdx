@@ -1,97 +1,77 @@
 ---
-title: REST Client Guide
-description: Creating REST requests, configuring query parameters, path variables, request bodies, and inspecting responses.
+title: REST
+description: Build a REST request, send it, and read the response — parameters, bodies, auth and queries over the result.
 ---
 
-import Shortcut from '../../components/Shortcut.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-# REST Client Guide
+Wirebench's REST client groups requests under an API, which holds a base URL and, optionally,
+authentication every request under it inherits.
 
-Wirebench includes a modern REST client engineered for speed, high contrast, and full OpenAPI 3.0 compatibility.
+![A REST request and its JSON response](/wirebench/images/rest-client/rest-response.png)
 
-![Wirebench REST Client & Response Inspector](/wirebench/images/rest-client/rest-response.png)
+## Create an API and a request
 
----
+<Steps>
 
-## Supported HTTP Methods
+1. Right-click a project in the explorer and choose **New API…**. The API tab opens; set its
+   **Base URL**.
+2. Right-click the API and choose **New request**. Name it by double-clicking the breadcrumb.
+3. Set the method in the method picker and the path or URL next to it.
 
-The method picker in the URL bar supports standard REST methods:
+</Steps>
 
-- `GET`: Safe, idempotent resource retrieval.
-- `POST`: Resource creation or command execution.
-- `PUT`: Complete resource replacement.
-- `PATCH`: Partial resource updates.
-- `DELETE`: Resource deletion.
+## Path and query parameters
 
----
+A `{name}` segment in the URL becomes a row on the **Params** tab's path parameters table — its
+name is fixed by the placeholder, only its value is yours to set. The query parameters table below
+it is the other view of the same URL: editing a row rewrites the URL's query string, and editing
+the query string re-reads the table. Each row has an enabled toggle, so you can disable a
+parameter without deleting it.
 
-## URL Address Bar & Path Variables
+## Request body
 
-### Dynamic Address Bar
-The address bar combines the HTTP method selector with the target endpoint URL:
+The **Body** tab switches between five kinds, each keeping its own draft while you try another:
 
+- **None** — no body.
+- **Raw** — a text editor with a language picker (JSON, XML, text, HTML, JavaScript) and a
+  formatter (<kbd>⌘⇧F</kbd> / <kbd>Ctrl+Shift+F</kbd>) that also reports a JSON or XML body that
+  doesn't parse instead of rewriting it.
+- **Form** — `application/x-www-form-urlencoded` key/value pairs.
+- **Multipart** — mixed text fields and file parts, picked through the native file dialog.
+- **Binary** — a single file as the whole body, with its own content type.
 
-Press <Shortcut keys={["Cmd", "Enter"]} /> (or <Shortcut keys={["Ctrl", "Enter"]} />) to execute immediately from the URL input.
+## Headers and auth
 
-### Path Variables
-Path variables are declared in the URL using curly braces: `{variableName}`.
+The **Headers** tab adds request headers as key/value rows. The **Auth** tab sets this request's
+authentication, or leaves it on **Inherit** to use the API's own — Basic, Bearer, API key (as a
+header or a query parameter), or OAuth 2 with client credentials or authorization code, whose
+client secret is stored through the same masked **Set…**/**Save** field as any other secret.
 
-When Wirebench detects a path variable:
-1. It automatically generates an entry in the **Path Variables** sub-tab.
-2. You can provide static values or dynamic property placeholders:
-   - `userId`: `${#Env#activeUserId}`
-3. Before dispatching the HTTP request, Wirebench interpolates the resolved value into the URL path.
+## Send and read the response
 
----
+Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The response pane shows:
 
-## Query Parameters Table
+- **Body** — the formatted response, with headers, cookies, redirects, timing and the raw
+  exchange each on their own tab.
+- **Query** — run XPath 3.1 or JSONPath over a JSON body directly, without leaving the response.
 
-Under the **Params** tab, manage query string parameters in a clean table:
+A request with an unresolved `{path}` placeholder or a property expansion that doesn't resolve is
+refused before anything reaches the server, and the response pane says why.
 
-| Key | Value | Description | Enabled |
-| :--- | :--- | :--- | :--- |
-| `limit` | `25` | Page size limit | Yes |
-| `status` | `active` | Filter active records | Yes |
-| `sort` | `createdAt:desc` | Ordering criteria | Yes |
+<Aside type="tip">
+An environment can override an API's base URL. Switch environments from the status bar's
+environment switcher; see [Environments](/wirebench/guides/environments/).
+</Aside>
 
-- **Auto-Sync**: Editing key-value rows in the table updates the URL in real time, and editing query parameters in the address bar automatically updates the table.
-- **Toggle Switches**: Enable or disable specific parameters without deleting them.
+## Limits
 
----
+- The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
+  binary responses.
 
-## Request Body Formats
+## Related
 
-Under the **Body** tab, configure the request payload:
-
-### 1. JSON (`application/json`)
-- Syntax highlighting and indentation formatting (<Shortcut keys={["Option", "Shift", "F"]} />).
-- Real-time JSON validation with syntax error badges.
-- Supports property expansion inside JSON fields:
-  ```json
-  {
-    "accountId": "${#Env#accountId}",
-    "role": "editor",
-    "updatedAt": "${#Env#currentTimestamp}"
-  }
-  ```
-
-### 2. Multipart Form Data (`multipart/form-data`)
-- Supports mixed text fields and binary file uploads.
-- Select local files for attachments with automatic Content-Type detection.
-
-### 3. URL-Encoded (`application/x-www-form-urlencoded`)
-- Standard key-value pairs formatted for HTML form submissions and OAuth 2 token requests.
-
-### 4. Raw Text / Custom MIME Types
-- Send raw XML, plain text, GraphQL queries, or custom application formats with manual Content-Type headers.
-
----
-
-## Response Inspector
-
-The right-hand response viewer provides instant feedback:
-
-- **Status Badge**: Displays HTTP status code (e.g. `200 OK`, `201 Created`, `404 Not Found`) and HTTP status message.
-- **Latency & Size**: Accurate round-trip network execution time in milliseconds and formatted payload size (e.g. `1.4 KB`).
-- **Body Viewer**: Formatted JSON response with syntax coloring, search (<Shortcut keys={["Cmd", "F"]} />), and line numbers.
-- **Headers Tab**: Filterable list of all HTTP response headers sent by the server.
+- [Importers](/wirebench/guides/importers/): bring in an OpenAPI document or a cURL command as
+  requests.
+- [Environments](/wirebench/guides/environments/)
+- [HTTP Log](/wirebench/guides/http-log/)
