@@ -72,7 +72,7 @@ copied into every installer as `THIRD-PARTY-LICENSES.md` in the application reso
 | `debug` | 4.4.3 | MIT |
 | `detect-node-es` | 1.1.0 | MIT |
 | `dnd-core` | 14.0.1 | MIT |
-| `dompurify` | 3.4.8 | (MPL-2.0 OR Apache-2.0) |
+| `dompurify` | 3.4.15 | (MPL-2.0 OR Apache-2.0) |
 | `electron` | 44.3.0 | MIT |
 | `electron-updater` | 6.8.9 | MIT |
 | `env-paths` | 3.0.0 | MIT |
@@ -2203,7 +2203,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## dompurify@3.4.8
+## dompurify@3.4.15
 
 License: (MPL-2.0 OR Apache-2.0)
 
