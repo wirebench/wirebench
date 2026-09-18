@@ -1802,6 +1802,17 @@ export const logResendResponseSchema = z.discriminatedUnion('protocol', [
 ]);
 export type LogResendResponse = z.infer<typeof logResendResponseSchema>;
 
+/**
+ * Request payload for `log.exportHar`: the rows the log shows, in display order. Main redacts
+ * them with `show: false` whatever the toggle says and picks the path itself.
+ */
+export const logExportHarRequestSchema = z.object({ entries: z.array(logEntryWireSchema) });
+export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
+
+/** Response payload for `log.exportHar`: `saved: false` when the save dialog was cancelled. */
+export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
+export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
+
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),

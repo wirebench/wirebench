@@ -136,6 +136,8 @@ import {
   requestCurlRequestSchema,
   requestCurlResponseSchema,
   logCurlRequestSchema,
+  logExportHarRequestSchema,
+  logExportHarResponseSchema,
   logResendRequestSchema,
   logResendResponseSchema,
   requestImportCurlRequestSchema,
@@ -593,6 +595,7 @@ export const channels = {
   log: {
     curl: defineChannel('log.curl', logCurlRequestSchema, requestCurlResponseSchema),
     resend: defineChannel('log.resend', logResendRequestSchema, logResendResponseSchema),
+    exportHar: defineChannel('log.exportHar', logExportHarRequestSchema, logExportHarResponseSchema),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),

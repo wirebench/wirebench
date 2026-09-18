@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { ProjectError, WirebenchError } from '@wirebench/engine';
+import { nodeFs, ProjectError, WirebenchError, writeFileAtomic } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
+import type { RecordsWritePicks } from '../dialog-picks.js';
 import type { EngineService } from '../engine-service.js';
+import { harFileName, harOf } from '../har.js';
 import { curlForLogEntry } from '../log-curl.js';
+import { pickSaveFile } from '../native-dialogs.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
 import { sendGrpcRequest, sendRestRequest, type RequestChannelDeps } from './request.js';
@@ -13,6 +16,10 @@ export interface LogChannelDeps {
   readonly service: EngineService;
   /** The same deps `request.*` sends with, so a resend writes History and failure rows alike. */
   readonly request: RequestChannelDeps;
+  /** Records the HAR path the save dialog returned, as every other write pick is. */
+  readonly picks: RecordsWritePicks;
+  /** The `creator.version` a HAR file carries. */
+  readonly appVersion: string;
 }
 
 /** Registers `log.*`: everything the HTTP Log asks main to do with a row it already holds. */
@@ -59,5 +66,21 @@ export function registerLogChannels(deps: LogChannelDeps): void {
         input,
       }),
     };
+  });
+
+  registerHandler(channels.log.exportHar, async (request, sender) => {
+    // Always show:false, whatever the toggle says: a HAR file is made to be shared.
+    const har = harOf(request.entries, { name: 'Wirebench', version: deps.appVersion });
+    // The path is never the renderer's to choose: it comes from the native dialog or the e2e override.
+    const path = await pickSaveFile(sender, deps.picks, {
+      title: 'Export HAR',
+      filters: [{ name: 'HAR', extensions: ['har'] }],
+      defaultPath: harFileName(new Date()),
+    });
+    if (path === undefined) {
+      return { saved: false };
+    }
+    await writeFileAtomic(nodeFs, path, Buffer.from(JSON.stringify(har, null, 2), 'utf8'));
+    return { saved: true, path };
   });
 }

@@ -12,6 +12,8 @@ import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { ExchangeSummary, RestExchangeSummary } from '../src/shared/wire-types.js';
 import { restApiWire } from './helpers/wire-defaults.js';
 
+const LOG_EXTRA = { picks: { rememberWrite: () => undefined }, appVersion: '0.0.0-test' };
+
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
 vi.mock('electron', () => ({
@@ -114,6 +116,7 @@ describe('log.resend', () => {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({ buildLiveSendInput }),
+      ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', { protocol: 'soap', requestId: 'req-1' })) as {
       ok: true;
@@ -126,7 +129,12 @@ describe('log.resend', () => {
   });
 
   it('SOAP: a request that no longer exists is refused with unknown-entity', async () => {
-    registerLogChannels({ showSecrets: { get: () => false }, service: new EngineService(), request: requestDeps({}) });
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({}),
+      ...LOG_EXTRA,
+    });
     const reply = (await invoke('log.resend', { protocol: 'soap', requestId: 'gone' })) as {
       ok: false;
       error: { code: string };
@@ -136,7 +144,12 @@ describe('log.resend', () => {
 
   it('REST: goes through the REST send path with a fresh sendId and no draft', async () => {
     const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
-    registerLogChannels({ showSecrets: { get: () => false }, service: new EngineService(), request: requestDeps({}) });
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({}),
+      ...LOG_EXTRA,
+    });
     const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as { ok: boolean };
     expect(reply.ok).toBe(true);
     const call = sendRest.mock.calls[0]![0];
@@ -154,6 +167,7 @@ describe('log.resend', () => {
       showSecrets: { get: () => false },
       service: new EngineService(),
       request: requestDeps({ grpcSend }),
+      ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', { protocol: 'grpc', requestId: 'grpc-1' })) as {
       ok: false;

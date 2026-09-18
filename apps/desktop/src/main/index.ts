@@ -398,7 +398,13 @@ void app.whenReady().then(() => {
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
-  registerLogChannels({ showSecrets: showSecretsFlag, service: engineService, request: requestDeps });
+  registerLogChannels({
+    showSecrets: showSecretsFlag,
+    service: engineService,
+    request: requestDeps,
+    picks: dialogPicks,
+    appVersion: appVersion(),
+  });
   registerAttachmentChannels({
     exchanges: engineService.exchanges,
     project: workspaceService,
