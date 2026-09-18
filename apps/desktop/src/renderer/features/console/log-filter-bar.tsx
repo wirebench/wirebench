@@ -1,5 +1,5 @@
 /**
- * The HTTP Log's filter bar: a URL text field, chip groups for method, status class and protocol
+ * The HTTP Log's filter bar: a search field (URL, headers, bodies, name; regex and match-case toggles), chip groups for method, status class and protocol
  * (multi-select; none selected means all), the "n of m" count, and Reset — which clears the filter
  * and is distinct from Clear, which empties the log. State lives in the exchanges store.
  */
@@ -8,6 +8,7 @@ import { Button } from '../../components/button.js';
 import type { StatusClass } from '../../state/exchanges.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { methodsIn } from './log-filter.js';
+import { compileMatcher } from './log-search.js';
 
 const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx', 'failed'];
 const PROTOCOLS = [
@@ -44,6 +45,34 @@ function Chip({
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+/** A small on/off button inside the search field (`.*`, `Aa`). */
+function SearchToggle({
+  label,
+  glyph,
+  pressed,
+  onToggle,
+}: {
+  readonly label: string;
+  readonly glyph: string;
+  readonly pressed: boolean;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      onClick={onToggle}
+      className={`rounded px-1 font-mono text-xs leading-4 ${
+        pressed ? 'bg-surface-selected text-fg-default' : 'text-fg-faint hover:bg-surface-hover hover:text-fg-default'
+      }`}
+    >
+      {glyph}
     </button>
   );
 }
@@ -89,6 +118,11 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
       window.clearTimeout(timer);
     };
   }, [text, filter.text, setFilter]);
+  // Checked against the field, not the debounced store text, so the outline follows each keystroke.
+  const invalid = useMemo(
+    () => text !== '' && compileMatcher({ text, regex: filter.regex, matchCase: filter.matchCase }).invalid === true,
+    [text, filter.regex, filter.matchCase],
+  );
 
   return (
     <div
@@ -97,16 +131,40 @@ export function LogFilterBar({ shown, total, actions }: LogFilterBarProps) {
          console, and the rows are what the panel is for. */
       className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-hairline px-2 py-1"
     >
-      <input
-        type="search"
-        aria-label="Filter URL"
-        placeholder="Filter URL"
-        value={text}
-        onChange={(event) => {
-          setText(event.currentTarget.value);
-        }}
-        className="h-row min-w-40 rounded-md border border-hairline bg-surface-raised px-2 font-mono text-xs text-fg-default placeholder:text-fg-faint"
-      />
+      <div className="relative flex shrink-0 items-center">
+        <input
+          type="search"
+          aria-label="Search the log"
+          placeholder="Search URL, headers, bodies, name"
+          value={text}
+          aria-invalid={invalid}
+          title={invalid ? 'Not a valid regular expression' : undefined}
+          onChange={(event) => {
+            setText(event.currentTarget.value);
+          }}
+          className={`h-row w-64 rounded-md border bg-surface-raised pl-2 pr-12 font-mono text-xs text-fg-default placeholder:text-fg-faint ${
+            invalid ? 'border-status-danger' : 'border-hairline'
+          }`}
+        />
+        <div className="absolute right-1 flex items-center gap-0.5">
+          <SearchToggle
+            label="Use regular expression"
+            glyph=".*"
+            pressed={filter.regex}
+            onToggle={() => {
+              setFilter({ regex: !filter.regex });
+            }}
+          />
+          <SearchToggle
+            label="Match case"
+            glyph="Aa"
+            pressed={filter.matchCase}
+            onToggle={() => {
+              setFilter({ matchCase: !filter.matchCase });
+            }}
+          />
+        </div>
+      </div>
       <ChipGroup label="Method">
         {methods.map((method) => (
           <Chip

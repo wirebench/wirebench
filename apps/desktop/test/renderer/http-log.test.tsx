@@ -191,7 +191,7 @@ describe('HttpLog', () => {
     expect(rows()).toHaveLength(1);
     expect(rows()[0]?.textContent).toContain('404');
 
-    await userEvent.type(screen.getByLabelText('Filter URL'), 'nowhere');
+    await userEvent.type(screen.getByLabelText('Search the log'), 'nowhere');
     await waitFor(() => {
       expect(screen.getByText('No rows match the filter.')).toBeDefined();
     });
@@ -300,7 +300,8 @@ describe('HttpLog', () => {
     expect(within(toolbar).getByRole('button', { name: 'Clear' })).toBeDefined();
     expect(within(toolbar).getByRole('button', { name: 'Show secrets' })).toBeDefined();
     const header = screen.getByTestId('http-log-header').parentElement!;
-    expect(within(header).queryByRole('button')).toBeNull();
+    expect(within(header).queryByRole('button', { name: 'Clear' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: /secrets/ })).toBeNull();
   });
 
   it('sheds the time, name, ms and size columns while a detail pane shares the width', async () => {
@@ -409,5 +410,18 @@ describe('HttpLog — Export HAR', () => {
     });
     render(<HttpLog />);
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Export HAR' }).disabled).toBe(true);
+  });
+
+  it('clicking ms sorts ascending then descending, and ↓ follows the displayed order', async () => {
+    const mk = (id: string, ms: number) => logExchange(makeRestExchange({ sendId: id, durationMs: ms }));
+    useExchangesStore.setState({ log: [mk('slow', 90), mk('fast', 5), mk('mid', 40)], sort: undefined });
+    render(<HttpLog />);
+    await userEvent.click(screen.getByRole('button', { name: /^ms/ }));
+    expect(rows().map((r) => r.getAttribute('data-send-id'))).toEqual(['fast', 'mid', 'slow']);
+    await userEvent.click(screen.getByRole('button', { name: /^ms/ }));
+    expect(rows().map((r) => r.getAttribute('data-send-id'))).toEqual(['slow', 'mid', 'fast']);
+    screen.getByLabelText('HTTP log').focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(rows()[1]!.getAttribute('aria-pressed')).toBe('true');
   });
 });

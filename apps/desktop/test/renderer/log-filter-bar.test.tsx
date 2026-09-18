@@ -74,7 +74,7 @@ describe('LogFilterBar', () => {
   it('debounces the URL text into the filter', async () => {
     render(<LogFilterBar shown={3} total={3} />);
 
-    await userEvent.type(screen.getByLabelText('Filter URL'), 'pet');
+    await userEvent.type(screen.getByLabelText('Search the log'), 'pet');
 
     expect(useExchangesStore.getState().filter.text).toBe('');
     await waitFor(() => {
@@ -87,13 +87,25 @@ describe('LogFilterBar', () => {
       filter: { text: 'pet', regex: false, matchCase: false, methods: ['GET'], statuses: ['4xx'], protocols: ['rest'] },
     });
     render(<LogFilterBar shown={0} total={3} />);
-    expect(screen.getByLabelText<HTMLInputElement>('Filter URL').value).toBe('pet');
+    expect(screen.getByLabelText<HTMLInputElement>('Search the log').value).toBe('pet');
 
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
     expect(useExchangesStore.getState().filter).toEqual(EMPTY_FILTER);
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLInputElement>('Filter URL').value).toBe('');
+      expect(screen.getByLabelText<HTMLInputElement>('Search the log').value).toBe('');
     });
+  });
+
+  it('the .* and Aa toggles set regex and matchCase; an invalid regex outlines the field', async () => {
+    render(<LogFilterBar shown={1} total={1} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Use regular expression' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Match case' }));
+    expect(useExchangesStore.getState().filter).toMatchObject({ regex: true, matchCase: true });
+    await userEvent.type(screen.getByRole('searchbox'), '([[');
+    await waitFor(() => {
+      expect(screen.getByRole('searchbox').getAttribute('aria-invalid')).toBe('true');
+    });
+    expect(screen.getByRole('searchbox').className).toMatch(/border-status-danger/);
   });
 });

@@ -4,7 +4,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
-import type { LogEntry } from '../../state/exchanges.js';
+import type { LogEntry, LogSort, SortColumn } from '../../state/exchanges.js';
 import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
@@ -12,7 +12,17 @@ import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
 import { nameOf, useNameSources, type NameSources } from './log-name.js';
-import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, statusLabelOf, urlOf } from './log-filter.js';
+import { compileMatcher } from './log-search.js';
+import { sortEntries } from './log-sort.js';
+import {
+  durationOf,
+  matchesFilterWith,
+  methodOf,
+  protocolOf,
+  startedAtOf,
+  statusLabelOf,
+  urlOf,
+} from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
@@ -80,6 +90,39 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names }: RowProps)
   );
 }
 
+/** A column label that sorts on click: ascending, descending, then back to log order. */
+function SortHeader({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  readonly label: string;
+  readonly column: SortColumn;
+  readonly sort: LogSort | undefined;
+  readonly onSort: (column: SortColumn) => void;
+}) {
+  const direction = sort?.column === column ? sort.direction : undefined;
+  return (
+    <span
+      role="columnheader"
+      aria-sort={direction === undefined ? 'none' : direction === 'asc' ? 'ascending' : 'descending'}
+      className="min-w-0"
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onSort(column);
+        }}
+        className={`truncate text-left hover:text-fg-default ${direction === undefined ? '' : 'text-fg-default'}`}
+      >
+        {label}
+        {direction === 'asc' ? ' ▲' : direction === 'desc' ? ' ▼' : ''}
+      </button>
+    </span>
+  );
+}
+
 /**
  * The console's HTTP Log tab: one row per send this session — finished or failed — newest at the
  * bottom, narrowed by the filter bar, with the selected row's detail underneath in tabs.
@@ -87,6 +130,8 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names }: RowProps)
 export function HttpLog() {
   const log = useExchangesStore((state) => state.log);
   const filter = useExchangesStore((state) => state.filter);
+  const sort = useExchangesStore((state) => state.sort);
+  const cycleSort = useExchangesStore((state) => state.cycleSort);
   const clearLog = useExchangesStore((state) => state.clearLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
@@ -101,9 +146,19 @@ export function HttpLog() {
 
   const names = useNameSources();
   const nameOfEntry = useCallback((entry: LogEntry) => nameOf(entry, names), [names]);
+  const matcher = useMemo(
+    () => compileMatcher({ text: filter.text, regex: filter.regex, matchCase: filter.matchCase }),
+    [filter.text, filter.regex, filter.matchCase],
+  );
+  // The displayed order: filtered, then sorted. The arrow keys walk this, so they follow the sort.
   const visible = useMemo(
-    () => log.filter((entry) => matchesFilter(entry, filter, nameOfEntry)),
-    [log, filter, nameOfEntry],
+    () =>
+      sortEntries(
+        log.filter((entry) => matchesFilterWith(entry, filter, matcher, nameOfEntry)),
+        sort,
+        nameOfEntry,
+      ),
+    [log, filter, matcher, nameOfEntry, sort],
   );
 
   const virtualised = visible.length > VIRTUALISE_ABOVE;
@@ -132,13 +187,14 @@ export function HttpLog() {
     }
   }, [showSecrets, selectedExchangeId, refreshExchange]);
 
-  // Newest is at the bottom, so follow it — but only while the user has not scrolled away.
+  // Newest is at the bottom, so follow it — but only while the user has not scrolled away, and only
+  // in log order: a sorted table puts a new row wherever it sorts to.
   useEffect(() => {
     const element = scrollRef.current;
-    if (element !== null && pinnedToBottom.current) {
+    if (element !== null && pinnedToBottom.current && sort === undefined) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [log.length]);
+  }, [log.length, sort]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
     if ((event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && selectedId !== undefined) {
@@ -233,14 +289,14 @@ export function HttpLog() {
               data-testid="http-log-header"
               className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} min-w-0 flex-1 gap-2 font-mono text-xs text-fg-faint`}
             >
-              {!compact && <span>time</span>}
+              {!compact && <SortHeader label="time" column="time" sort={sort} onSort={cycleSort} />}
               <span>proto</span>
               <span>method</span>
-              {!compact && <span>name</span>}
+              {!compact && <SortHeader label="name" column="name" sort={sort} onSort={cycleSort} />}
               <span>URL</span>
-              <span>status</span>
-              {!compact && <span>ms</span>}
-              {!compact && <span>size</span>}
+              <SortHeader label="status" column="status" sort={sort} onSort={cycleSort} />
+              {!compact && <SortHeader label="ms" column="duration" sort={sort} onSort={cycleSort} />}
+              {!compact && <SortHeader label="size" column="size" sort={sort} onSort={cycleSort} />}
             </div>
           </div>
 
