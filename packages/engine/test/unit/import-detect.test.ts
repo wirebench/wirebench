@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { detectImportFormat, stripLeadingProtoComments } from '../../src/import-detect.js';
 
@@ -191,5 +194,24 @@ describe('stripLeadingProtoComments', () => {
     const started = performance.now();
     expect(stripLeadingProtoComments(`/*${'*//*'.repeat(20_000)}`)).toBe('');
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe('detectImportFormat: legacy SOAP projects', () => {
+  const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../fixtures/legacy-soap-project');
+
+  it('recognises a legacy project even though it carries WSDL text inside it', () => {
+    const text = readFileSync(resolve(FIXTURES, 'full.xml'), 'utf8');
+    expect(detectImportFormat({ text })).toEqual({
+      kind: 'legacy-soap-project',
+      label: 'Legacy SOAP project',
+      confidence: 'definite',
+    });
+  });
+
+  it('still detects a plain WSDL, and never guesses a legacy project from an .xml file name', () => {
+    const wsdl = readFileSync(resolve(FIXTURES, '../wsdl/crafted/nested-imports/service.wsdl'), 'utf8');
+    expect(detectImportFormat({ text: wsdl }).kind).toBe('wsdl');
+    expect(detectImportFormat({ filename: 'project.xml' }).kind).toBe('unknown');
   });
 });

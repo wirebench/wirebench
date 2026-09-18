@@ -1,14 +1,15 @@
 /**
- * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections and
- * Protocol Buffers (`.proto`).
+ * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections,
+ * Protocol Buffers (`.proto`) and legacy single-XML SOAP projects.
  *
  * Inspects document text, file names, or URLs to classify definition formats before or during import.
  */
 
 import { parse as parseYamlDocument } from 'yaml';
 import { isPostmanCollection } from './rest/postman/parse.js';
+import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
 
-export type ImportFormatKind = 'openapi' | 'postman' | 'wsdl' | 'proto' | 'unknown';
+export type ImportFormatKind = 'openapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project' | 'unknown';
 
 export interface DetectedImportFormat {
   readonly kind: ImportFormatKind;
@@ -78,14 +79,19 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
       return { kind: 'proto', label: 'Protocol Buffers', confidence: 'probable' };
     }
 
-    // 1. Check for WSDL (XML)
+    // 1. A legacy SOAP project, before WSDL: it carries its interfaces' WSDLs inside it
+    if (text.startsWith('<') && looksLikeLegacyProject(text)) {
+      return { kind: 'legacy-soap-project', label: 'Legacy SOAP project', confidence: 'definite' };
+    }
+
+    // 2. Check for WSDL (XML)
     if (text.startsWith('<') || text.startsWith('<?xml')) {
       if (WSDL_XML_REGEX.test(text) || WSDL_NS_REGEX.test(text)) {
         return { kind: 'wsdl', label: 'WSDL / SOAP', confidence: 'definite' };
       }
     }
 
-    // 2. Try JSON or YAML parsing once (avoiding duplicate parsing work)
+    // 3. Try JSON or YAML parsing once (avoiding duplicate parsing work)
     let parsed: unknown;
     let didParse = false;
 
@@ -142,7 +148,7 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
       }
     }
 
-    // 3. Pattern matching fallback on raw text
+    // 4. Pattern matching fallback on raw text
     if (/^\s*openapi\s*:\s*['"]?3\.[012]/m.test(text)) {
       return { kind: 'openapi', label: 'OpenAPI 3.x', confidence: 'probable' };
     }
