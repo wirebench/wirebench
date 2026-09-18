@@ -317,3 +317,32 @@ describe('HttpLog', () => {
     expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
   });
 });
+
+describe('HttpLog — prepare-stage failures', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows a prepare failure as "Failed · before send" and says it never went on the wire', async () => {
+    useExchangesStore.setState({
+      log: [
+        {
+          kind: 'failure',
+          failure: makeFailure({ stage: 'prepare', error: { code: 'invalid-url', message: 'Invalid URL' } }),
+        },
+      ],
+    });
+    render(<HttpLog />);
+    expect(within(rows()[0]!).getByTestId('http-log-status').textContent).toBe('Failed · before send');
+    await userEvent.click(rows()[0]!);
+    await userEvent.click(logTab('Response'));
+    expect(screen.getByTestId('log-detail-error').textContent).toMatch(/never went on the wire/);
+    expect(screen.getByTestId('log-detail-error').textContent).toMatch(/invalid-url/);
+  });
+});

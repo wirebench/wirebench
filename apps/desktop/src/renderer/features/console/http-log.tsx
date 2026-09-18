@@ -8,7 +8,7 @@ import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
-import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, urlOf } from './log-filter.js';
+import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, statusLabelOf, urlOf } from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
 const VIRTUALISE_ABOVE = 200;
@@ -53,7 +53,7 @@ function LogRow({ entry, selected, onSelect, compact }: RowProps) {
         {urlOf(entry)}
       </span>
       <span data-testid="http-log-status" className={`truncate ${bad ? 'text-status-danger' : 'text-status-success'}`}>
-        {entry.kind === 'failure' ? entry.failure.error.code : entry.exchange.http.status}
+        {statusLabelOf(entry)}
       </span>
       {!compact && <span>{formatDuration(durationOf(entry))}</span>}
       {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}

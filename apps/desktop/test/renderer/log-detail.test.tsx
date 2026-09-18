@@ -197,3 +197,17 @@ describe('LogDetail for a failure', () => {
     expect(screen.queryByTestId('log-detail-peer')).toBeNull();
   });
 });
+
+describe('LogDetail for a prepare-stage failure', () => {
+  it('Response: says the request never went on the wire, and keeps the code', () => {
+    renderDetail({ kind: 'failure', failure: makeFailure({ stage: 'prepare' }) }, 'response');
+    const error = screen.getByTestId('log-detail-error').textContent;
+    expect(error).toMatch(/never went on the wire/);
+    expect(error).toContain('connection-refused');
+  });
+
+  it('Response: a send-stage failure carries no such note', () => {
+    renderDetail(failure, 'response');
+    expect(screen.getByTestId('log-detail-error').textContent).not.toMatch(/never went on the wire/);
+  });
+});

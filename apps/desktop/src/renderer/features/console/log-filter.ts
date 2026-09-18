@@ -42,6 +42,19 @@ export function durationOf(entry: LogEntry): number {
   return entry.kind === 'failure' ? entry.failure.durationMs : entry.exchange.durationMs;
 }
 
+/** Where a failure happened (`send` when the row predates the field); undefined for an exchange. */
+export function stageOf(entry: LogEntry): 'prepare' | 'send' | undefined {
+  return entry.kind === 'failure' ? (entry.failure.stage ?? 'send') : undefined;
+}
+
+/** The status cell text: HTTP status, the error code, or `Failed · before send`. */
+export function statusLabelOf(entry: LogEntry): string {
+  if (entry.kind === 'exchange') {
+    return String(entry.exchange.http.status);
+  }
+  return entry.failure.stage === 'prepare' ? 'Failed · before send' : entry.failure.error.code;
+}
+
 /**
  * The class is the HTTP status, nothing else: a SOAP fault carried on a 200 is `2xx` (the row's
  * danger tone still shows the fault). A failure produced no status and matches `failed` only.

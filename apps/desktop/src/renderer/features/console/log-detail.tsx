@@ -273,6 +273,11 @@ export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) 
               ))}
             {tab === 'response' && (
               <div data-testid="log-detail-error" className="flex flex-col gap-1 p-3">
+                {entry.failure.stage === 'prepare' && (
+                  <p className="text-xs text-fg-subtle">
+                    The request never went on the wire: it failed while being prepared.
+                  </p>
+                )}
                 <p className="font-mono text-sm font-medium text-status-danger">{entry.failure.error.code}</p>
                 <p className="text-sm text-fg-default">{entry.failure.error.message}</p>
               </div>
