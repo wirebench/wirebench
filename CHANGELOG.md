@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log: failures before the request is built.** A send that fails before the request is built (invalid URL,
+  proxy lookup, OAuth2 token fetch) now appears as a "Failed · before send" row, and its detail says the request
+  never went on the wire.
 - **Completion in the gRPC message editor.** Typing a key in the Message tab offers the fields of the message
   the cursor is in — not just the method's request type, so a nested field's own fields are offered inside it,
   and a repeated field's items are offered like the field itself. Accepting one writes the key with an empty
@@ -59,6 +62,10 @@ All notable changes to this project are documented here. The format follows
 - **Dependencies.** The engine now depends on `protobufjs` (BSD-3-Clause) for `.proto` parsing and message
   encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
 
+### Fixed
+
+- Redaction masks `password`, `token`, `client_secret` and similar keys in JSON and form bodies, not only in XML.
+- HTTP Log: ↑/↓ keep the selected row in view when fewer than 200 rows are shown.
 
 ## [2.1.1] - 2026-09-16
 
