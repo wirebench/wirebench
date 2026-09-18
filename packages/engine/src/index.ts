@@ -979,3 +979,17 @@ export type { GrpcToCommandOptions } from './grpc/command.js';
 
 export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage } from './secrets/resolve.js';
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
+
+export {
+  REDACTED_MARKER,
+  SECRET_BODY_KEYS,
+  containsRedaction,
+  redactHeaderPairs,
+  redactHeaders,
+  redactRawHttp,
+  redactResponseAttachments,
+  redactStructuredBody,
+  redactUrl,
+  redactXml,
+} from './redact/index.js';
+export { createSecretMasker } from './redact/literal.js';

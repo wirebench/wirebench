@@ -8,7 +8,7 @@ import {
   redactRawHttp,
   redactUrl,
   redactXml,
-} from '../src/main/redact.js';
+} from '../../../src/redact/index.js';
 
 describe('containsRedaction', () => {
   it('is true when the text contains the redaction marker', () => {
