@@ -6,6 +6,7 @@
  * - Postman Collections (v2.0, v2.1 JSON)
  * - WSDL 1.1 / 2.0 (SOAP XML)
  * - Protocol Buffers `.proto` files (gRPC)
+ * - Legacy single-XML SOAP projects (a whole project: interfaces, requests, environments)
  *
  * Provides URL, File (with drag-and-drop), and Paste input sources,
  * automatic format detection with manual override, target project selection,
@@ -21,6 +22,7 @@ import type {
   GrpcReflectionVersionWire,
   ImportProblemWire,
   ImportSourceWire,
+  LegacyImportReportWire,
   OpenApiImportSummaryWire,
   OpenApiSourceWire,
   PostmanImportSummaryWire,
@@ -120,7 +122,8 @@ export type UnifiedImportResult =
     }
   | { readonly kind: 'openapi'; readonly apiId: string; readonly summary: OpenApiImportSummaryWire }
   | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire }
-  | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire };
+  | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
+  | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string };
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -131,7 +134,9 @@ export interface ImportDialogProps {
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
-  const [tab, setTab] = useState<SourceTab>(initialFmt === 'postman' ? 'file' : 'url');
+  const [tab, setTab] = useState<SourceTab>(
+    initialFmt === 'postman' || initialFmt === 'legacy-soap-project' ? 'file' : 'url',
+  );
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
   const [filePath, setFilePath] = useState('');
@@ -185,7 +190,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (fmt === 'postman') {
+    if (fmt === 'postman' || fmt === 'legacy-soap-project') {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -252,33 +257,40 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   async function browseForFile(): Promise<void> {
     const filters =
-      effectiveFormat === 'postman'
-        ? [{ name: 'Postman Collection', extensions: ['json'] }]
-        : effectiveFormat === 'proto'
-          ? [
-              { name: 'Protocol Buffers', extensions: ['proto'] },
-              { name: 'All Files', extensions: ['*'] },
-            ]
-          : effectiveFormat === 'openapi'
+      effectiveFormat === 'legacy-soap-project'
+        ? [
+            { name: 'Legacy SOAP project', extensions: ['xml'] },
+            { name: 'All Files', extensions: ['*'] },
+          ]
+        : effectiveFormat === 'postman'
+          ? [{ name: 'Postman Collection', extensions: ['json'] }]
+          : effectiveFormat === 'proto'
             ? [
-                { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                { name: 'Protocol Buffers', extensions: ['proto'] },
                 { name: 'All Files', extensions: ['*'] },
               ]
-            : [
-                {
-                  name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                  extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                },
-                { name: 'All Files', extensions: ['*'] },
-              ];
+            : effectiveFormat === 'openapi'
+              ? [
+                  { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                  { name: 'All Files', extensions: ['*'] },
+                ]
+              : [
+                  {
+                    name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                    extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                  },
+                  { name: 'All Files', extensions: ['*'] },
+                ];
     const title =
-      effectiveFormat === 'postman'
-        ? 'Import Postman Collection'
-        : effectiveFormat === 'proto'
-          ? 'Import .proto'
-          : effectiveFormat === 'openapi'
-            ? 'Import OpenAPI Specification'
-            : 'Import Definition';
+      effectiveFormat === 'legacy-soap-project'
+        ? 'Import Legacy SOAP Project'
+        : effectiveFormat === 'postman'
+          ? 'Import Postman Collection'
+          : effectiveFormat === 'proto'
+            ? 'Import .proto'
+            : effectiveFormat === 'openapi'
+              ? 'Import OpenAPI Specification'
+              : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -379,6 +391,46 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * A legacy SOAP project is a whole project, read by main from the file the user picked: main
+   * needs the path (and the dialog's evidence that it was picked), so a dropped or pasted copy
+   * is not enough.
+   */
+  async function importLegacyProject(source: ImportSourceWire): Promise<void> {
+    if (source.kind !== 'file') {
+      setImportError('Choose the project file with Browse…. A legacy project is imported from the file itself.');
+      return;
+    }
+    const token = crypto.randomUUID();
+    tokenRef.current = token;
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().project.importLegacy({
+        // An empty name asks main to use the one the file gives the project.
+        target: chosen === NEW_PROJECT ? { newProjectName: name.trim() } : { projectId: chosen },
+        source: { kind: 'file', path: source.path },
+        token,
+      });
+      if (cancelledTokensRef.current.has(token)) {
+        return;
+      }
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'legacy', report: res.value.report, reportText: res.value.reportText });
+    } finally {
+      cancelledTokensRef.current.delete(token);
+      if (tokenRef.current === token) {
+        tokenRef.current = undefined;
+      }
+      setImporting(false);
+      setProgress(undefined);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -399,6 +451,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           effectiveFormat === 'postman' ? 'Paste a .json collection to import' : 'Paste a definition to import',
         );
       }
+      return;
+    }
+
+    if (effectiveFormat === 'legacy-soap-project') {
+      await importLegacyProject(source);
       return;
     }
 
@@ -618,7 +675,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       ? 'Import WSDL'
                       : format === 'proto'
                         ? 'Import .proto'
-                        : 'Import API or Service'}
+                        : format === 'legacy-soap-project'
+                          ? 'Import Legacy SOAP Project'
+                          : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -654,6 +713,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="postman">Postman Collection</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
+                    <option value="legacy-soap-project">Legacy SOAP project</option>
                   </select>
                 </div>
 
@@ -888,9 +948,29 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       {project.name}
                     </option>
                   ))}
-                  <option value={NEW_PROJECT}>{`New project “${newProjectName}”`}</option>
+                  <option value={NEW_PROJECT}>
+                    {effectiveFormat === 'legacy-soap-project' && name.trim() === ''
+                      ? 'New project, named as in the file'
+                      : `New project “${newProjectName}”`}
+                  </option>
                 </select>
               </div>
+
+              {effectiveFormat === 'legacy-soap-project' && target === NEW_PROJECT && (
+                <div className="mt-2 flex flex-col gap-1">
+                  <label className="text-sm text-fg-subtle" htmlFor="import-legacy-project-name">
+                    New project name (optional)
+                  </label>
+                  <input
+                    id="import-legacy-project-name"
+                    data-testid="import-legacy-project-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="As named in the file"
+                    className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                  />
+                </div>
+              )}
 
               {/* Optional Name and Base URL (or gRPC target) overrides for REST and gRPC */}
               {(isRest || isProto) && (
@@ -1053,7 +1133,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
             ? 'import-openapi-summary'
             : result.kind === 'proto'
               ? 'import-proto-summary'
-              : 'import-summary'
+              : result.kind === 'legacy'
+                ? 'import-legacy-summary'
+                : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1172,6 +1254,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
         </div>
       )}
 
+      {result.kind === 'legacy' && <LegacySummary report={result.report} reportText={result.reportText} />}
+
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
           <p className="font-medium text-sm text-fg-default">{result.name}</p>
@@ -1215,5 +1299,69 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
         </Button>
       </div>
     </div>
+  );
+}
+
+/** What a legacy SOAP project import brought across, and one line for everything it did not. */
+function LegacySummary({
+  report,
+  reportText,
+}: {
+  readonly report: LegacyImportReportWire;
+  readonly reportText: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const { counts } = report;
+  const warnings = report.items.filter((item) => item.severity === 'warning');
+  const notes = report.items.filter((item) => item.severity === 'info');
+  const plural = (n: number, word: string, many = `${word}s`): string => `${String(n)} ${n === 1 ? word : many}`;
+  const renderItems = (items: typeof report.items, testId: string) => (
+    <ul data-testid={testId} className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto text-xs text-fg-subtle">
+      {items.map((item, index) => (
+        <li key={index}>
+          {item.path !== '' && <span className="text-fg-default">{item.path}</span>}
+          {item.path !== '' && ' — '}
+          {item.message}
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p className="font-semibold text-base">{report.projectName}</p>
+        <p className="mt-1 text-xs text-fg-subtle">Legacy SOAP project</p>
+        <p data-testid="import-legacy-counts" className="mt-2 text-sm text-fg-default">
+          {plural(counts.interfaces, 'interface')}, {plural(counts.requests, 'request')} in{' '}
+          {plural(counts.operations, 'operation')}, {plural(counts.environments, 'environment')},{' '}
+          {plural(counts.properties, 'property', 'properties')}
+          {counts.scripts > 0 ? `, ${plural(counts.scripts, 'script')} kept in imported-scripts/` : ''}.
+        </p>
+      </div>
+      {warnings.length > 0 && (
+        <div className="rounded border border-hairline-strong p-2">
+          <p className="text-sm text-status-warning">{plural(warnings.length, 'thing')} to look at</p>
+          {renderItems(warnings, 'import-legacy-warnings')}
+        </div>
+      )}
+      {notes.length > 0 && (
+        <div className="rounded border border-hairline-strong p-2">
+          <p className="text-sm text-fg-default">{plural(notes.length, 'note')}</p>
+          {renderItems(notes, 'import-legacy-notes')}
+        </div>
+      )}
+      <div className="flex justify-start">
+        <button
+          type="button"
+          data-testid="import-legacy-copy-report"
+          className="text-xs text-accent underline"
+          onClick={() => {
+            void navigator.clipboard.writeText(reportText).then(() => setCopied(true));
+          }}
+        >
+          {copied ? 'Copied' : 'Copy report'}
+        </button>
+      </div>
+    </>
   );
 }

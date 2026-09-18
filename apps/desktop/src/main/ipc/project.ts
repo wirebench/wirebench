@@ -1,4 +1,10 @@
-import { readLegacySoapProject, WirebenchError } from '@wirebench/engine';
+import { open } from 'node:fs/promises';
+import {
+  formatLegacyImportReport,
+  looksLikeLegacyProject,
+  readLegacySoapProject,
+  WirebenchError,
+} from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { checkedImportSource } from '../path-access.js';
@@ -32,6 +38,35 @@ export interface ProjectChannelDeps {
 }
 
 /**
+ * A legacy SOAP project carries WSDLs inside it, so offered as a single definition it would fail
+ * somewhere deep in the import. A picked file is checked up front instead, with an error that says
+ * which format to choose.
+ */
+async function refuseLegacyProjectAsWsdl(source: { kind: string; path?: string }): Promise<void> {
+  if (source.kind !== 'file' || source.path === undefined) {
+    return;
+  }
+  let head: string;
+  try {
+    const file = await open(source.path, 'r');
+    try {
+      const { buffer, bytesRead } = await file.read({ buffer: Buffer.alloc(4096), position: 0 });
+      head = buffer.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return; // the import itself reports an unreadable file
+  }
+  if (looksLikeLegacyProject(head)) {
+    throw new WirebenchError(
+      'legacy-project-as-wsdl',
+      'This file is a legacy SOAP project, not a WSDL. Choose "Legacy SOAP project" as the format to import all of it.',
+    );
+  }
+}
+
+/**
  * Registers the `project.*` IPC channels, routing each call to the host of the project it
  * names. Every request carries a `projectId` because a workspace has no single "open project".
  *
@@ -56,6 +91,7 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     // question (`checkedImportSource`, as `definition.import` does) before any project is
     // created, so a refusal changes nothing.
     const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    await refuseLegacyProjectAsWsdl(source);
     const options = {
       source,
       ...(request.auth !== undefined ? { auth: request.auth } : {}),
@@ -91,13 +127,17 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     const options = { project, ...(request.token !== undefined ? { token: request.token } : {}) };
     if ('projectId' in request.target) {
       const imported = await router.importLegacyProject(request.target.projectId, options);
-      return { ...imported, projectId: request.target.projectId };
+      return {
+        ...imported,
+        reportText: formatLegacyImportReport(imported.report),
+        projectId: request.target.projectId,
+      };
     }
     const name = request.target.newProjectName.trim() === '' ? project.name : request.target.newProjectName;
     const { projectId } = await deps.addProject(name);
     try {
       const imported = await router.importLegacyProject(projectId, options);
-      return { ...imported, projectId };
+      return { ...imported, reportText: formatLegacyImportReport(imported.report), projectId };
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;

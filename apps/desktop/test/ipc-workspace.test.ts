@@ -513,7 +513,16 @@ describe('project.* channels', () => {
         source: { kind: 'file', path: fixture },
         token: 't',
       });
-      expect(result).toEqual({ ok: true, value: { projectId: 'p1', project: PROJECT, report: REPORT } });
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          projectId: 'p1',
+          project: PROJECT,
+          report: REPORT,
+          reportText:
+            'Imported "Minimal": 1 interfaces, 1 operations, 1 requests, 0 environments, 0 properties, 0 scripts.',
+        },
+      });
       expect(addProject).not.toHaveBeenCalled();
       expect(router.importLegacyProject).toHaveBeenCalledWith('p1', {
         project: expect.objectContaining({ name: 'Minimal' }) as unknown,
@@ -529,6 +538,16 @@ describe('project.* channels', () => {
       });
       expect(addProject).toHaveBeenCalledWith('Minimal');
       expect(router.importLegacyProject).toHaveBeenCalledWith('p-new', expect.anything());
+    });
+
+    it('stops a legacy project offered to addInterface as a WSDL, naming the right format', async () => {
+      const { router } = registerProject(picked());
+      const result = await invoke('project.addInterface', {
+        target: { projectId: 'p1' },
+        source: { kind: 'file', path: fixture },
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: 'legacy-project-as-wsdl' } });
+      expect(router.addInterface).not.toHaveBeenCalled();
     });
 
     it('takes a created project back when the import fails', async () => {

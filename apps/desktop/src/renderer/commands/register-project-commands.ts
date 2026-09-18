@@ -28,6 +28,14 @@ export function registerProjectCommands(): void {
       ui().openImportDialog();
     },
   });
+  registerCommand({
+    id: 'definition.importLegacyProject',
+    label: 'Import Legacy SOAP Project…',
+    category: 'Definition',
+    run: () => {
+      ui().openImportDialog('legacy-soap-project');
+    },
+  });
   // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`.
   registerCommand({
     id: 'item.save',

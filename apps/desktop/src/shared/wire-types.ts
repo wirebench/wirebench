@@ -2124,6 +2124,8 @@ export const projectImportLegacyResponseSchema = z.object({
   projectId: z.string(),
   project: projectWireSchema,
   report: legacyImportReportSchema,
+  /** The same report as plain text, one line per item, for the dialog's Copy button. */
+  reportText: z.string(),
 });
 export type ProjectImportLegacyResponse = z.infer<typeof projectImportLegacyResponseSchema>;
 
