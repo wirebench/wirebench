@@ -11,14 +11,23 @@ export interface DiffXmlEditorProps {
   readonly modified: string;
   readonly renderSideBySide: boolean;
   readonly ignoreTrimWhitespace: boolean;
+  /** The Monaco language of both sides; XML unless given. */
+  readonly language?: string;
 }
 
 /**
- * The one Monaco diff wrapper the History view's `diff` tab uses: read-only, XML-languaged,
+ * The one Monaco diff wrapper the History view's `diff` tab and the HTTP Log's compare use: read-only,
+ * XML-languaged unless told otherwise,
  * themed like every other editor, with a side-by-side/inline toggle and a whitespace-ignore
  * toggle the diff tab's header drives.
  */
-export function DiffXmlEditor({ original, modified, renderSideBySide, ignoreTrimWhitespace }: DiffXmlEditorProps) {
+export function DiffXmlEditor({
+  original,
+  modified,
+  renderSideBySide,
+  ignoreTrimWhitespace,
+  language,
+}: DiffXmlEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(useResolvedTheme(preference));
 
@@ -35,7 +44,7 @@ export function DiffXmlEditor({ original, modified, renderSideBySide, ignoreTrim
 
   return (
     <DiffEditor
-      language={XML_LANGUAGE_ID}
+      language={language ?? XML_LANGUAGE_ID}
       theme={theme}
       original={original}
       modified={modified}

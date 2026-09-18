@@ -9,6 +9,7 @@ import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
+import { LogCompare } from './log-compare-view.js';
 import { LogFilterBar } from './log-filter-bar.js';
 import { nextSelection } from './log-selection.js';
 import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
@@ -388,7 +389,7 @@ export function HttpLog() {
         </div>
 
         {pair !== undefined ? (
-          <div data-testid="log-compare" className="min-w-0 flex-1" />
+          <LogCompare left={pair[0]} right={pair[1]} />
         ) : (
           selected !== undefined && (
             <LogDetail

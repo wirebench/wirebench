@@ -8,6 +8,9 @@ import type { RestRequestWire } from '../../src/shared/wire-types.js';
 import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
+
 describe('HTTP Log row menu', () => {
   let writeText: ReturnType<typeof vi.fn>;
   beforeEach(() => {

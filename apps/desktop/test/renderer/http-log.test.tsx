@@ -10,6 +10,8 @@ import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
 import { ToastViewport } from '../../src/renderer/components/toast.js';
 
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 const failure: LogEntry = { kind: 'failure', failure: makeFailure() };
 
 function rows(): HTMLElement[] {
