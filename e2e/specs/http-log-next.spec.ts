@@ -91,4 +91,33 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     // The echo route returns the Authorization header in its JSON body too: both must be masked.
     expect(text).not.toContain('e2e-placeholder');
   });
+
+  test('S4: search finds a row by a request header value and by name', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'Log');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Plain');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText('200');
+    await createRestRequest(page, 'Petstore', 'Tagged');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await addHeader(page, 'X-Tenant', 'blue-lagoon');
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText('200');
+    await expect(logRows(page)).toHaveCount(2);
+
+    const search = page.getByTestId('http-log-filter').getByRole('searchbox');
+    await search.fill('blue-lagoon');
+    await expect(logRows(page)).toHaveCount(1);
+    await expect(logRows(page).first()).toContainText('Tagged');
+    await search.fill('Plain');
+    await expect(logRows(page)).toHaveCount(1);
+    await page.getByRole('button', { name: 'Use regular expression' }).click();
+    await search.fill('^(Plain|Tagged)$');
+    await expect(logRows(page)).toHaveCount(2);
+  });
 });
