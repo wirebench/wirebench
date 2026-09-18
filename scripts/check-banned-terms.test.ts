@@ -38,4 +38,11 @@ describe('isExemptPath', () => {
     expect(isExemptPath('fixtures/legacy-soap-project-extra/a.xml')).toBe(false);
     expect(isExemptPath('docs/specs/2026-09-18-legacy-soap-project-import-design.md')).toBe(false);
   });
+
+  it('checks the docs site: its pages, styles, config and generated reference', () => {
+    expect(isExemptPath('docs-site/src/content/docs/guides/importers.md')).toBe(false);
+    expect(isExemptPath('docs-site/src/content/docs/reference/commands.md')).toBe(false);
+    expect(isExemptPath('docs-site/src/styles/custom.css')).toBe(false);
+    expect(isExemptPath('docs-site/astro.config.mjs')).toBe(false);
+  });
 });
