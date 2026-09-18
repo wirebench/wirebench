@@ -207,12 +207,18 @@ and omitted entirely when it would be empty; a file with no `disabled` key migra
 enabled". `enabledProperties` (`packages/engine/src/project/properties.ts`) is the one place the
 filter is applied. This is an additive format change: project and workspace manifests moved to
 `formatVersion: 2` and the global properties file to `version: 2` (ADR-0003, ADR-0006). A
-version-1 file still loads (a missing list defaults to empty); a version-3-or-later file is
-refused with the same clear error a too-new file has always produced — except the global
-properties loader (`apps/desktop/src/main/global-properties.ts`), which does not check its
+version-1 file still loads (a missing list defaults to empty); a file from a newer build than
+this one is refused with the same clear error a too-new file has always produced — except the
+global properties loader (`apps/desktop/src/main/global-properties.ts`), which does not check its
 `version` field at all yet (tracked in `docs/roadmap.md`'s "Known limitations carried from 1.0").
 A 1.0.0 build cannot open a file this build has saved: it refuses `formatVersion: 2` with its
 existing "created by a newer version of Wirebench" error.
+
+The project format has kept moving the same way since: APIs beside interfaces took it to
+`formatVersion: 3` (ADR-0007), and the CLI runner's assertions and named secret references take it
+to `formatVersion: 4` (`FORMAT_VERSION` in `packages/engine/src/project/model.ts`) — each step adds
+fields an older file simply lacks, which the loader defaults, and each still bumps the version
+because this format drops unknown keys on save.
 
 ## Where things live
 

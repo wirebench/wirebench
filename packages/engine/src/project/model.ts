@@ -21,8 +21,14 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
-/** The on-disk format version written to (and required by) `wirebench.yaml`. */
-export const FORMAT_VERSION = 3;
+/**
+ * The on-disk format version written to (and required by) `wirebench.yaml`.
+ *
+ * 4 added `assertions` on a request and the `…Env` name beside each secret reference. Both are
+ * additive, and both still bump the version: this format does not round-trip unknown keys, so an
+ * older build would delete them on its next save (see `schema.ts` and ADR-0003).
+ */
+export const FORMAT_VERSION = 4;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
