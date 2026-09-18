@@ -120,8 +120,8 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
   published per release, so the speed claim is measured rather than asserted.
 - **Tooling.** Built 2026-09-14 on the `feat/docs-site` branch as its own workspace package, `docs-site/`,
   on Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`; its
-  spec and plan are `docs/specs/2026-09-14-wirebench-docs-site-design.md` and
-  `docs/plans/2026-09-14-wirebench-docs-site-plan.md` on that branch. Not merged yet: it predates the
+  spec and plan are `docs/specs/2026-09-18-wirebench-docs-site-design.md` and
+  `docs/plans/2026-09-18-wirebench-docs-site-plan.md` on that branch. Not merged yet: it predates the
   importers, gRPC and the HTTP Log rework, so it needs those guides before it lands. To be published to
   GitHub Pages from a workflow on every push to `main`, at the `wirebench.github.io` address
   first and at wirebench.io once the domain is registered. The command and shortcut reference is
