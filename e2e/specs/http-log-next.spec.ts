@@ -170,4 +170,34 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await expect(compare).toHaveCount(0);
     await expect(page.getByRole('tablist', { name: 'Log detail' })).toBeVisible();
   });
+  test('S7: with Preserve log on, rows survive a workspace switch', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'First');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Echo');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await sendRest(page);
+    await expect(logRows(page)).toHaveCount(1);
+
+    const preserve = page.getByRole('button', { name: 'Preserve log' });
+    await preserve.click();
+    await expect(preserve).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('workspace-switcher').click();
+    await page.getByRole('menuitem', { name: 'Create workspace…' }).click();
+    await createWorkspace(page, 'Second');
+    await expect(preserve).toBeVisible();
+    await expect(logRows(page)).toHaveCount(1);
+
+    await preserve.click();
+    await expect(preserve).toHaveAttribute('aria-pressed', 'false');
+    await page.getByTestId('workspace-switcher').click();
+    await page.getByRole('menuitem', { name: 'Create workspace…' }).click();
+    await createWorkspace(page, 'Third');
+    // The toolbar still showing proves the log is on screen, so zero rows is a real zero.
+    await expect(preserve).toBeVisible();
+    await expect(logRows(page)).toHaveCount(0);
+  });
 });
