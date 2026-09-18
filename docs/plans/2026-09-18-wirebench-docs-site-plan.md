@@ -37,7 +37,7 @@ by `pnpm check`. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1
 ## Phase 3 — Publishing
 
 - [ ] **T7. Workflow.** Deploy on every push to `main` (no `paths` filter) and on `workflow_dispatch`.
-  Add a PR job that runs `pnpm docs:build` when `docs-site/**` changes. Pin actions by SHA.
+  Add a PR job that runs `pnpm docs:build` when `docs-site/**` changes. Pin actions to major versions, like the other workflows.
   - Verify: `actionlint`, if available; the PR run passes on GitHub.
 
 **Checkpoint A:** tooling complete. Push the branch and open a draft PR so CI runs e2e and the docs build.

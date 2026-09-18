@@ -66,7 +66,7 @@ limits and related links. No stubs: a page that isn't written isn't in the sideb
 - `.github/workflows/docs.yml` builds on every push to `main`, with no `paths` filter, because the
   generated reference and the screenshots depend on app code. It also builds on `workflow_dispatch`.
 - Pull requests that touch `docs-site/**` run `pnpm docs:build` as a check, without deploying.
-- Actions are pinned by commit SHA, the same way the existing workflows pin them.
+- Actions are pinned to major versions, the same way the existing workflows pin them.
 
 ## 6. Checks extended to the site
 
