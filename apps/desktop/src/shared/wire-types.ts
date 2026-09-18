@@ -660,6 +660,12 @@ export const failedExchangeWireSchema = z.object({
   durationMs: z.number(),
   /** The engine's `HttpErrorCode`, another `WirebenchError` code, or `internal-error`. */
   error: z.object({ code: z.string(), message: z.string() }),
+  /**
+   * Where the send failed. `prepare`: before the request was built (bad URL, OAuth2 token fetch,
+   * proxy lookup) — it never went on the wire. Absent means `send`, so rows from before this field
+   * existed stay valid.
+   */
+  stage: z.enum(['prepare', 'send']).optional(),
 });
 export type FailedExchangeWire = z.infer<typeof failedExchangeWireSchema>;
 

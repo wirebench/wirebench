@@ -36,6 +36,8 @@ export interface FailedExchangeInput {
    * source of the raw request.
    */
   readonly captured?: FailedRequest | undefined;
+  /** `prepare` when the failure came before the request was built; omitted or `send` otherwise. */
+  readonly stage?: 'prepare' | 'send' | undefined;
 }
 
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
@@ -89,5 +91,6 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
     error: errorOf(input.error),
+    ...(input.stage === 'prepare' ? { stage: 'prepare' as const } : {}),
   };
 }

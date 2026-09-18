@@ -137,3 +137,11 @@ describe('failedExchangeOf', () => {
     });
   });
 });
+
+describe('failedExchangeOf stage', () => {
+  it('marks a prepare-stage failure and leaves a send failure unmarked', () => {
+    expect(failedExchangeOf(input({ stage: 'prepare' })).stage).toBe('prepare');
+    expect('stage' in failedExchangeOf(input())).toBe(false);
+    expect('stage' in failedExchangeOf(input({ stage: 'send' }))).toBe(false);
+  });
+});
