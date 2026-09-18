@@ -976,3 +976,6 @@ export { isReflectionService, reflectProtoSet, reflectServices } from './grpc/re
 export type { GrpcReflectInput, GrpcReflectedProtoSet, GrpcReflectionResult } from './grpc/reflection/client.js';
 export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
 export type { GrpcToCommandOptions } from './grpc/command.js';
+
+export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage } from './secrets/resolve.js';
+export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
