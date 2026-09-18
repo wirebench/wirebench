@@ -1,19 +1,23 @@
 # Roadmap
 
-What Wirebench 2.0 deliberately leaves out, reorganised by what each item unlocks and in the order it is
+What Wirebench 2.1 deliberately leaves out, reorganised by what each item unlocks and in the order it is
 worth building. The v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md`, §14) is
 the phase plan this page argues from; where the two differ, [Departures from the v1 spec](#departures-from-the-v1-spec)
 says so, and the spec stays authoritative until it is updated.
 
-**Where things stand (2026-09-14).** 2.0.0 adds the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
-ADR-0007) and moves the project format to version 3 — the major bump is that one-way door, not a
+**Where things stand (2026-09-18).** 2.0.0 added the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
+ADR-0007) and moved the project format to version 3 — the major bump is that one-way door, not a
 rewrite. Before it: 1.0.0 (explore and send) was tagged and withdrawn unpublished; 1.1.0 was the first
 published release. It added workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`, ADR-0006),
 the Environments view with per-variable enabling (`docs/specs/2026-09-12-wirebench-layout-and-environments-design.md`),
 manual saving with per-tab dirty marks (`docs/plans/2026-09-12-save-granularity-plan.md`), and OS- and
-arch-named release artifacts. Unreleased on `main`: git-native shared workspaces
-(`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, ADR-0008, `docs/collaborate.md`). Everything
-below is what is still open.
+arch-named release artifacts. 2.1.0 added git-native shared workspaces
+(`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, ADR-0008, `docs/collaborate.md`) and the
+importers for OpenAPI 3.2, Swagger 1.x/2.0 and Postman Collections behind one _Import…_ dialog; 2.1.1 re-shot
+the README. Unreleased on `main`: gRPC as the third protocol, with `.proto` import and an HTTP/2 transport
+(`docs/specs/2026-09-16-wirebench-grpc-client-design.md`), and the HTTP Log rework — failed sends, a filter
+bar and detail tabs (`docs/specs/2026-09-16-http-log-failures-filters-detail-design.md`). Built on its own
+branch and not yet merged: the documentation site (item 2). Everything below is what is still open.
 
 **Revised 2026-09-13** after a review of the surrounding tools — the Java-era SOAP workbenches, the cloud API
 platforms, and the local-first REST clients. Three things were true of all of them: every one ships a CI
@@ -39,7 +43,7 @@ is picked up.
 | 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | follow-up | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
 | 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | new | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
 | 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | phase 2 subset | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
-| — | Shared workspaces, git-native | Ent | L | **shipped on `main`** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
+| — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
 | 4 | MCP server over the engine, with CLI parity | Dev | S | idea → next | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
 | 5 | Snapshot regression across environments ✚ | Both | S–M | new | Send one request to several environments at once, diff the responses semantically with ignore rules for volatile fields, commit the golden responses, and let the runner replay them. Mostly wiring over history's re-send and diff. |
 | 6 | Secrets from external managers; encrypted team secrets | Ent | M | new | A secret scope resolved at send time from a vault, a cloud secret manager, a password manager's CLI or the keychain, so nothing sensitive is on disk anywhere; team secrets encrypted to member keys in a shared workspace. The follow-up the shared-workspaces spec names. |
@@ -90,8 +94,12 @@ is picked up.
   equivalent lives in Wirebench.
 - **Benchmark.** Startup, WSDL import and first-send timings taken from the performance budgets and
   published per release, so the speed claim is measured rather than asserted.
-- **Tooling.** VitePress under `docs/`, so pages version with the code and still render on GitHub;
-  published to GitHub Pages from a workflow on every push to `main`, at the `wirebench.github.io` address
+- **Tooling.** Built 2026-09-14 on the `feat/docs-site` branch as its own workspace package, `docs-site/`,
+  on Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`; its
+  spec and plan are `docs/specs/2026-09-14-wirebench-docs-site-design.md` and
+  `docs/plans/2026-09-14-wirebench-docs-site-plan.md` on that branch. Not merged yet: it predates the
+  importers, gRPC and the HTTP Log rework, so it needs those guides before it lands. To be published to
+  GitHub Pages from a workflow on every push to `main`, at the `wirebench.github.io` address
   first and at wirebench.io once the domain is registered. The command and shortcut reference is
   generated from the command registry with a `--check` mode, like the WS-I tables. Screenshots come from
   the e2e suite so they never go stale. The banned-terms and doc-path checks extend to the site.
@@ -279,6 +287,10 @@ is a sibling container rather than a generalised interface. Evidence per criteri
   [`specs/2026-09-16-http-log-failures-filters-detail-design.md`](specs/2026-09-16-http-log-failures-filters-detail-design.md).
   The re-redaction line above still stands for REST rows; a failure row is redacted by design and
   the pane says so.
+- **Export the HTTP Log as HAR 1.2, and copy a row as cURL.** The next slice now that the log rework has
+  landed. The row action is wiring: cURL generation already exists behind the Code slide-over. HAR is the
+  design work — which bodies an export includes, and how redaction applies to a file that leaves the
+  machine. It also gives the mock recorder (item 11) and a HAR importer a format to share.
 
 - **The JSON form view** — see [Contracts](#contracts). The importers that used to sit beside it here
   shipped in 2.1.0.
@@ -313,7 +325,7 @@ design, and the shipped shared workspaces embody the first two:
 
 | Route                        | What it is                                                                                                                                                                                                                                                         | Size                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| Git-native shared workspaces | **Shipped on `main`** ([ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`): a whole workspace — projects and environments — shared as a git repository on the team's own hosting or a synced folder, with an in-app Sync control, a conflict resolver and per-member secrets until item 6. Roles are repository permissions; history is git history. | Shipped |
+| Git-native shared workspaces | **Shipped in 2.1.0** ([ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`): a whole workspace — projects and environments — shared as a git repository on the team's own hosting or a synced folder, with an in-app Sync control, a conflict resolver and per-member secrets until item 6. Roles are repository permissions; history is git history. | Shipped |
 | Self-hosted Wirebench Server | Spec 2 of `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (§5.4): the same repository with the server running git, plus live updates, presence, accounts and organisations, roles, OIDC and SAML SSO, SCIM, an audit log (item 15). Its own spec is next. | XL |
 | Hosted cloud                 | The same server run as a service: billing, uptime, support, and eventually a SOC 2 report.                                                                                                                                                                         | a business                  |
 
