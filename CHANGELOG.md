@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Completion in the gRPC message editor.** Typing a key in the Message tab offers the fields of the message
+  the cursor is in — not just the method's request type, so a nested field's own fields are offered inside it,
+  and a repeated field's items are offered like the field itself. Accepting one writes the key with an empty
+  value of the right JSON shape, and the suggestion carries the declared type, the field's `.proto` comment and,
+  for an enum, its values. A key the object already holds is not offered, nor is the rest of a `oneof` whose
+  member is already written. Other JSON editors in the app are unchanged. See
+  [`docs/specs/2026-09-18-grpc-message-completion-design.md`](docs/specs/2026-09-18-grpc-message-completion-design.md).
+- **gRPC live streaming and interactive bidirectional send.** A streaming call now shows itself while it runs:
+  the response pane raises its tabs as soon as the call opens, the server's initial metadata appears when its
+  headers arrive, and each reply is appended as it is decoded rather than all of them at the end. For a method
+  whose client streams, *Open stream* starts the call and leaves the request side open — a composer under the
+  response pane sends one more message at a time and *Half-close* stops sending without ending the call, so a
+  bidirectional method can be held as a conversation. Every message pushed by hand is part of the exchange that
+  is recorded, in `requestMessages` and in the raw request bytes. See
+  [`docs/specs/2026-09-18-grpc-live-streaming-design.md`](docs/specs/2026-09-18-grpc-live-streaming-design.md).
 - **gRPC server reflection.** Point Wirebench at a running gRPC server and it describes itself: the Import
   dialog's gRPC format gains a *Server* tab taking an address, the reflection version (automatic by default —
   `grpc.reflection.v1`, falling back to `v1alpha`) and whether to ask a server whose certificate does not verify.

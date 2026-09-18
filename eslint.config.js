@@ -18,13 +18,15 @@ const MONACO_PATH = {
  * `/xml` carries the parser Monaco's XML language service needs; `/rest` carries the URL helpers the
  * REST editor's query table and URL field share with the send path — the one thing that must not be
  * reimplemented in the renderer, since two sets of escaping rules would eventually disagree about
- * what is being sent; `/detect` carries pure-text format detection for the unified import dialog.
- * All three are pure text code with no Node dependency.
+ * what is being sent; `/grpc` carries the pure method-kind and target rules; `/detect` carries
+ * pure-text format detection for the unified import dialog; `/json` carries the cursor analysis
+ * Monaco's JSON completion provider runs on every keystroke, which is why it is not an IPC call.
+ * All of them are pure text code with no Node dependency.
  */
 const ENGINE_PATTERN = {
-  regex: '^@wirebench/engine(?!/(xml|rest|grpc|detect)$)(/.*)?$',
+  regex: '^@wirebench/engine(?!/(xml|rest|grpc|json|detect)$)(/.*)?$',
   message:
-    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, /grpc, and /detect subpaths may be imported (ADR-0002)',
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, /grpc, /json, and /detect subpaths may be imported (ADR-0002)',
 };
 
 export default tseslint.config(

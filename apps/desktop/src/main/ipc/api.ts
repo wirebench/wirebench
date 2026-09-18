@@ -35,6 +35,7 @@ export interface ApiChannelDeps {
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
     | 'grpcDefinition'
+    | 'grpcFields'
     | 'grpcRefresh'
     | 'grpcSample'
   >;
@@ -301,6 +302,25 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   registerHandler(channels.api.grpcSample, async (request) => ({
     text: await router.grpcSample(request.apiId, request.type),
   }));
+
+  registerHandler(channels.api.grpcFields, async (request) => {
+    const descriptor = await router.grpcFields(request.apiId, request.type, request.path);
+    if (descriptor === undefined) {
+      return { fields: [] };
+    }
+    return {
+      fullName: descriptor.fullName,
+      fields: descriptor.fields.map((field) => ({
+        name: field.name,
+        type: field.type,
+        valueKind: field.valueKind,
+        repeated: field.repeated,
+        ...(field.oneof !== undefined ? { oneof: field.oneof } : {}),
+        ...(field.enumValues !== undefined ? { enumValues: [...field.enumValues] } : {}),
+        ...(field.comment !== undefined ? { comment: field.comment } : {}),
+      })),
+    };
+  });
 
   registerHandler(channels.api.grpcRefresh, async (request) => {
     const refreshed = await router.grpcRefresh(request.apiId, {

@@ -9,13 +9,14 @@
  * trailers apart, because the two arrive at different moments and a status only ever lives in the
  * second. Timing, TLS and Raw are the shared surfaces the other protocols' panes use.
  */
-import { useState } from 'react';
-import { Copy } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Copy, Send, SquareDashedBottom } from 'lucide-react';
+import { Button } from '../../components/button.js';
 import { Tabs } from '../../components/tabs.js';
 import type { IpcError } from '../../../shared/ipc.js';
-import type { GrpcExchangeSummary } from '../../../shared/wire-types.js';
+import type { GrpcExchangeSummary, GrpcResponseMessageWire } from '../../../shared/wire-types.js';
 import { base64ByteLength, formatBytes } from '../../lib/format-size.js';
-import type { GrpcExchangeState } from '../../state/exchanges.js';
+import type { GrpcExchangeState, GrpcLiveState } from '../../state/exchanges.js';
 import { InspectorIconButton } from '../request-editor/inspectors/inspector-strip.js';
 import { SslInspector } from '../request-editor/inspectors/ssl-inspector.js';
 import { TimingsBar } from '../console/timings-bar.js';
@@ -50,10 +51,12 @@ export interface GrpcStatusLineProps {
   readonly exchange?: GrpcExchangeSummary | undefined;
   readonly error?: IpcError | undefined;
   readonly sending?: boolean;
+  /** What has arrived so far, while the call is still running. */
+  readonly live?: GrpcLiveState | undefined;
 }
 
 /** The `OK (0) · 12 ms · 3 messages · 1.2 KB` line. */
-export function GrpcStatusLine({ exchange, error, sending = false }: GrpcStatusLineProps) {
+export function GrpcStatusLine({ exchange, error, sending = false, live }: GrpcStatusLineProps) {
   if (error !== undefined) {
     return (
       <p
@@ -69,7 +72,10 @@ export function GrpcStatusLine({ exchange, error, sending = false }: GrpcStatusL
   if (sending) {
     return (
       <p role="status" data-testid="grpc-response-status" className="px-2 font-mono text-xs text-fg-muted">
-        Sending…
+        {live === undefined || live.messages.length === 0
+          ? 'Sending…'
+          : `Streaming… · ${live.messages.length} message${live.messages.length === 1 ? '' : 's'}`}
+        {live?.open === true && <span className="text-fg-subtle">{' · request side open'}</span>}
       </p>
     );
   }
@@ -103,18 +109,26 @@ export function GrpcStatusLine({ exchange, error, sending = false }: GrpcStatusL
 
 export interface GrpcResponsePaneProps {
   readonly state: GrpcExchangeState | undefined;
+  /** Writes one more message on an open interactive call. Absent where the pane is read-only. */
+  readonly onPush?: ((messageText: string) => void) | undefined;
+  /** Half-closes an open interactive call's request side. */
+  readonly onHalfClose?: (() => void) | undefined;
 }
 
 /** The response pane. */
-export function GrpcResponsePane({ state }: GrpcResponsePaneProps) {
+export function GrpcResponsePane({ state, onPush, onHalfClose }: GrpcResponsePaneProps) {
   const [tab, setTab] = useState<TabId>('messages');
   const exchange = state?.exchange;
   const sending = state?.status === 'sending';
+  const live = state?.live;
+  // While the call runs the pane shows what has arrived; once it ends the exchange replaces it,
+  // holding the same messages decoded the same way.
+  const messages = exchange?.responseMessages ?? live?.messages ?? [];
+  const headers = exchange?.headers ?? live?.headers;
+  const showTabs = exchange !== undefined || live !== undefined;
 
   const items = TABS.map((item) =>
-    item.id === 'messages' && exchange !== undefined && exchange.responseMessages.length > 0
-      ? { ...item, badge: String(exchange.responseMessages.length) }
-      : item,
+    item.id === 'messages' && messages.length > 0 ? { ...item, badge: String(messages.length) } : item,
   );
 
   return (
@@ -125,46 +139,171 @@ export function GrpcResponsePane({ state }: GrpcResponsePaneProps) {
             {...(exchange !== undefined ? { exchange } : {})}
             {...(state?.error !== undefined ? { error: state.error } : {})}
             sending={sending}
+            {...(live !== undefined ? { live } : {})}
           />
         </div>
       </div>
 
-      {exchange === undefined ? (
+      {!showTabs ? (
         <p className="p-3 text-sm text-fg-subtle">{sending ? 'Sending…' : 'Send the request to see its response.'}</p>
       ) : (
         <>
           <Tabs label="Response tabs" items={items} active={tab} onSelect={setTab} />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {tab === 'messages' && <MessagesView exchange={exchange} />}
-            {tab === 'metadata' && <MetadataView exchange={exchange} />}
-            {tab === 'timing' && (
-              <div data-testid="grpc-response-timing" className="overflow-auto">
-                <TimingsBar timings={exchange.http.timings} />
-              </div>
+            {tab === 'messages' && (
+              <MessagesView
+                messages={messages}
+                streaming={sending}
+                {...(exchange !== undefined ? { status: exchange.status } : {})}
+              />
             )}
-            {tab === 'tls' && (
-              <div data-testid="grpc-response-tls" className="overflow-auto">
-                <SslInspector http={exchange.http} />
-              </div>
-            )}
-            {tab === 'raw' && <RawExchange exchange={exchange} />}
+            {tab === 'metadata' &&
+              (exchange !== undefined ? (
+                <MetadataView exchange={exchange} />
+              ) : (
+                <div data-testid="grpc-response-metadata" className="flex flex-col gap-3 overflow-auto p-2">
+                  <MetadataTable
+                    title="Headers"
+                    testId="grpc-response-header-row"
+                    entries={Object.entries(headers ?? {})}
+                  />
+                  <p className="text-sm text-fg-subtle">The trailers arrive when the call ends.</p>
+                </div>
+              ))}
+            {tab === 'timing' &&
+              (exchange === undefined ? (
+                <p className="p-3 text-sm text-fg-subtle">Timing is measured when the call ends.</p>
+              ) : (
+                <div data-testid="grpc-response-timing" className="overflow-auto">
+                  <TimingsBar timings={exchange.http.timings} />
+                </div>
+              ))}
+            {tab === 'tls' &&
+              (exchange === undefined ? (
+                <p className="p-3 text-sm text-fg-subtle">The TLS details are read when the call ends.</p>
+              ) : (
+                <div data-testid="grpc-response-tls" className="overflow-auto">
+                  <SslInspector http={exchange.http} />
+                </div>
+              ))}
+            {tab === 'raw' &&
+              (exchange === undefined ? (
+                <p className="p-3 text-sm text-fg-subtle">The raw exchange is assembled when the call ends.</p>
+              ) : (
+                <RawExchange exchange={exchange} />
+              ))}
           </div>
+          {live?.open === true && onPush !== undefined && onHalfClose !== undefined && (
+            <StreamComposer sent={live.sent} onPush={onPush} onHalfClose={onHalfClose} />
+          )}
         </>
       )}
     </section>
   );
 }
 
-/** The decoded response messages, in order, each with its size; one that did not decode says why. */
-function MessagesView({ exchange }: { readonly exchange: GrpcExchangeSummary }) {
-  const all = exchange.responseMessages.map((message) => message.json ?? '').join('\n');
+/**
+ * The composer for a call whose request side is open: one more message, or a half-close.
+ *
+ * A plain textarea rather than the Monaco editor the request's Message tab uses — this is a line
+ * of a conversation, typed and sent, not a document kept between calls.
+ */
+function StreamComposer({
+  sent,
+  onPush,
+  onHalfClose,
+}: {
+  readonly sent: readonly string[];
+  readonly onPush: (messageText: string) => void;
+  readonly onHalfClose: () => void;
+}) {
+  const [text, setText] = useState('{}');
+  const push = (): void => {
+    if (text.trim() === '') return;
+    onPush(text);
+  };
   return (
-    <div data-testid="grpc-response-messages" className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
+    <div data-testid="grpc-stream-composer" className="shrink-0 border-t border-hairline p-2">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-xs tracking-wider text-fg-subtle uppercase">
+          Send another message{sent.length > 0 && ` · ${sent.length} sent`}
+        </h3>
+        <Button variant="secondary" data-testid="grpc-half-close" onClick={onHalfClose} title="Stop sending messages">
+          <SquareDashedBottom size={12} aria-hidden="true" />
+          Half-close
+        </Button>
+      </div>
+      <div className="flex items-start gap-2">
+        <textarea
+          aria-label="Message to send"
+          data-testid="grpc-stream-message"
+          spellCheck={false}
+          rows={3}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            // Enter sends, as it would in any composer; a newline needs Shift.
+            if (event.key === 'Enter' && !event.shiftKey && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              push();
+            }
+          }}
+          className="min-h-0 flex-1 rounded-md border border-hairline-strong bg-surface-raised p-2 font-mono text-xs text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
+        />
+        <Button variant="primary" data-testid="grpc-stream-send" onClick={push}>
+          <Send size={12} aria-hidden="true" />
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The decoded response messages, in order, each with its size; one that did not decode says why.
+ *
+ * Keyed by arrival index *and* content while a call streams, so React reuses the rows it already
+ * painted instead of rebuilding the list on each message. The scroll follows the newest message
+ * only while the reader is already at the bottom — scrolling up to read one pins the view there.
+ */
+function MessagesView({
+  messages,
+  streaming = false,
+  status,
+}: {
+  readonly messages: readonly GrpcResponseMessageWire[];
+  readonly streaming?: boolean;
+  readonly status?: number;
+}) {
+  const all = messages.map((message) => message.json ?? '').join('\n');
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const pinned = useRef(true);
+
+  useEffect(() => {
+    const element = scroller.current;
+    if (element === null || !pinned.current) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  }, [messages.length]);
+
+  return (
+    <div
+      ref={scroller}
+      data-testid="grpc-response-messages"
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+      }}
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2"
+    >
       <div className="flex items-center justify-between">
         <h3 className="text-xs tracking-wider text-fg-subtle uppercase">
-          {exchange.responseMessages.length === 0 ? 'No messages' : 'Response messages'}
+          {messages.length === 0 ? 'No messages' : 'Response messages'}
         </h3>
-        {exchange.responseMessages.length > 0 && (
+        {messages.length > 0 && (
           <InspectorIconButton
             label="Copy response messages"
             onClick={() => {
@@ -175,12 +314,13 @@ function MessagesView({ exchange }: { readonly exchange: GrpcExchangeSummary }) 
           </InspectorIconButton>
         )}
       </div>
-      {exchange.responseMessages.length === 0 && exchange.status === 0 && (
+      {messages.length === 0 && streaming && <p className="text-sm text-fg-subtle">Waiting for the first message…</p>}
+      {messages.length === 0 && !streaming && status === 0 && (
         <p className="text-sm text-fg-subtle">The call completed without a response message.</p>
       )}
-      {exchange.responseMessages.map((message, index) => (
+      {messages.map((message, index) => (
         <section
-          key={index}
+          key={`${String(index)}:${message.base64.slice(0, 16)}`}
           data-testid="grpc-response-message"
           className="rounded border border-hairline bg-surface-sunken"
         >

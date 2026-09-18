@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { clientStreams } from '@wirebench/engine/grpc';
 import { showToast } from '../../components/toast.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
@@ -98,6 +99,8 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
   const exchange = useExchangesStore((state) => state.grpcByRequest[requestId]);
   const sendGrpc = useExchangesStore((state) => state.sendGrpc);
   const cancelGrpc = useExchangesStore((state) => state.cancelGrpc);
+  const pushGrpcMessage = useExchangesStore((state) => state.pushGrpcMessage);
+  const halfCloseGrpc = useExchangesStore((state) => state.halfCloseGrpc);
   const preferences = usePreferencesStore((state) => state.preferences);
   const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
   const layout = useEditorLayout(requestId);
@@ -137,6 +140,21 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
   const onSend = useCallback(() => {
     void sendGrpc(requestId);
   }, [sendGrpc, requestId]);
+
+  const onOpenStream = useCallback(() => {
+    void sendGrpc(requestId, { interactive: true });
+  }, [sendGrpc, requestId]);
+
+  const onPush = useCallback(
+    (messageText: string) => {
+      void pushGrpcMessage(requestId, messageText);
+    },
+    [pushGrpcMessage, requestId],
+  );
+
+  const onHalfClose = useCallback(() => {
+    void halfCloseGrpc(requestId);
+  }, [halfCloseGrpc, requestId]);
 
   const onSave = useCallback(() => {
     void useProjectStore.getState().saveGrpcRequest(requestId);
@@ -193,6 +211,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
           <MessageTab
             message={request.message}
             methodKind={request.methodKind}
+            apiId={api?.id}
             requestType={described?.requestType}
             onChange={(message) => {
               stage({ message });
@@ -232,7 +251,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
     </div>
   );
 
-  const responsePane = <GrpcResponsePane state={exchange} />;
+  const responsePane = <GrpcResponsePane state={exchange} onPush={onPush} onHalfClose={onHalfClose} />;
 
   return (
     <section aria-label={`Request ${request.name}`} data-testid="grpc-editor" className="flex h-full min-h-0 flex-col">
@@ -254,6 +273,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
           void cancelGrpc(requestId);
         }}
         sendShortcut={shortcutFor('grpc.send', platform)}
+        {...(clientStreams(request.methodKind) ? { onOpenStream } : {})}
       />
 
       {layout.mode === 'tabs' ? (

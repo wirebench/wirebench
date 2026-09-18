@@ -18,13 +18,14 @@ import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { KeyValueEntry } from '../rest/model.js';
+import { defaultTlsFor } from './shape.js';
+import type { GrpcMethodKind, GrpcReflectionVersion } from './shape.js';
 
-/**
- * The four shapes a gRPC method can take, as the `.proto` declares them with the `stream` keyword.
- * Recorded on the request so the editor knows how many messages to expect on each side even when
- * the definition is not to hand.
- */
-export type GrpcMethodKind = 'unary' | 'server-streaming' | 'client-streaming' | 'bidi-streaming';
+// The pure shape rules live in `shape.ts`, which imports nothing, so the renderer can have them
+// without `node:path` coming along; they are re-exported here because this is where callers expect
+// a gRPC model rule to be.
+export { clientStreams, defaultTlsFor, GRPC_REFLECTION_VERSIONS, grpcMethodPath, serverStreams } from './shape.js';
+export type { GrpcMethodKind, GrpcReflectionVersion } from './shape.js';
 
 /**
  * Per-request transport settings. Every field is optional and an absent one means *inherit*, not
@@ -89,16 +90,6 @@ export interface GrpcFolder {
   readonly folders: readonly GrpcFolder[];
   readonly requests: readonly GrpcRequestDef[];
 }
-
-/**
- * Which reflection protocol version to ask a server with. `auto` tries `grpc.reflection.v1` and
- * falls back to `grpc.reflection.v1alpha`, which is what a server predating the stable package
- * serves; pinning one is for a server that answers both and answers one of them badly.
- */
-export type GrpcReflectionVersion = 'auto' | 'v1' | 'v1alpha';
-
-/** The versions a user can pick, in the order the selector offers them. */
-export const GRPC_REFLECTION_VERSIONS: readonly GrpcReflectionVersion[] = ['auto', 'v1', 'v1alpha'];
 
 /**
  * Where an API's schema came from, cached under `apis/<slug>/definition/`.
@@ -192,18 +183,6 @@ export function createGrpcApi(name: string, input: CreateGrpcApiInput = {}): Grp
   };
 }
 
-/** Whether a target's spelling says it expects TLS. */
-export function defaultTlsFor(target: string): boolean {
-  const trimmed = target.trim().toLowerCase();
-  if (trimmed.startsWith('grpcs://') || trimmed.startsWith('https://')) {
-    return true;
-  }
-  if (trimmed.startsWith('grpc://') || trimmed.startsWith('http://')) {
-    return false;
-  }
-  return /:443$/.test(trimmed);
-}
-
 /** Input to {@link createGrpcFolder} beyond the name. */
 export interface CreateGrpcFolderInput extends CreateOptions {
   readonly slug?: string;
@@ -276,19 +255,4 @@ export function grpcApiFolders(api: GrpcApi): GrpcFolder[] {
   const walk = (folders: readonly GrpcFolder[]): GrpcFolder[] =>
     folders.flatMap((folder) => [folder, ...walk(folder.folders)]);
   return walk(api.folders);
-}
-
-/** The HTTP/2 `:path` of a method call: `/<service>/<method>`. */
-export function grpcMethodPath(service: string, method: string): string {
-  return `/${service}/${method}`;
-}
-
-/** Whether the client side of a method sends a stream, so the message text is an array. */
-export function clientStreams(kind: GrpcMethodKind): boolean {
-  return kind === 'client-streaming' || kind === 'bidi-streaming';
-}
-
-/** Whether the server side of a method answers with a stream. */
-export function serverStreams(kind: GrpcMethodKind): boolean {
-  return kind === 'server-streaming' || kind === 'bidi-streaming';
 }

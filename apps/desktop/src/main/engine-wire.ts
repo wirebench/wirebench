@@ -17,6 +17,7 @@ import type {
   RestExchange,
   GeneratedRequest,
   GrpcCallResult,
+  GrpcResponseMessage,
   HttpExchange,
   ImportResult,
   SoapExchange,
@@ -30,6 +31,7 @@ import type {
   ExchangeSummary,
   FaultWire,
   GrpcExchangeSummary,
+  GrpcResponseMessageWire,
   HttpExchangeWire,
   ImportProblemWire,
   InterfaceSummary,
@@ -260,6 +262,19 @@ export function toRestExchangeSummary(
  * body so the HTTP log's size column and the status bar mean the same thing they do for a REST send.
  * Metadata is redacted as headers are — `authorization` is `authorization` on any protocol.
  */
+/**
+ * One decoded response message on the wire. Shared by the finished exchange and by the live
+ * events a call in flight emits, so a message looks the same whichever way the pane met it.
+ */
+export function toGrpcResponseMessageWire(message: GrpcResponseMessage): GrpcResponseMessageWire {
+  return {
+    ...(message.json !== undefined ? { json: JSON.stringify(message.json, null, 2) } : {}),
+    base64: message.base64,
+    bytes: message.bytes,
+    ...(message.problem !== undefined ? { problem: message.problem } : {}),
+  };
+}
+
 export function toGrpcExchangeSummary(
   result: GrpcCallResult,
   sendId: string,
@@ -310,12 +325,7 @@ export function toGrpcExchangeSummary(
     headers: redactHeaders(exchange.headers, { show }),
     trailers: redactHeaders(exchange.trailers, { show }),
     requestMessages: result.requestMessages.map((message) => JSON.stringify(message, null, 2)),
-    responseMessages: result.responseMessages.map((message) => ({
-      ...(message.json !== undefined ? { json: JSON.stringify(message.json, null, 2) } : {}),
-      base64: message.base64,
-      bytes: message.bytes,
-      ...(message.problem !== undefined ? { problem: message.problem } : {}),
-    })),
+    responseMessages: result.responseMessages.map(toGrpcResponseMessageWire),
     ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
     truncated: exchange.truncated,
     problems: [],

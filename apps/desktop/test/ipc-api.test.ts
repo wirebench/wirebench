@@ -141,6 +141,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       apiDefinitionText: vi.fn(),
       exportApiDefinitionTo: vi.fn(),
       grpcDefinition: vi.fn(),
+      grpcFields: vi.fn(),
       grpcRefresh: vi.fn(),
       grpcSample: vi.fn(),
     },
@@ -428,5 +429,52 @@ describe('api.grpcRefresh', () => {
     expect(response.requestsAdded).toBe(1);
     expect(response.requestsOrphaned).toBe(2);
     expect(response.foldersAdded).toBe(1);
+  });
+});
+
+describe('api.grpcFields', () => {
+  it('answers the fields of the message the path resolved to', async () => {
+    const grpcFields = vi.fn().mockResolvedValue({
+      fullName: 'wirebench.greet.HelloRequest',
+      fields: [
+        { name: 'name', id: 1, type: 'string', valueKind: 'scalar', repeated: false, optional: false },
+        {
+          name: 'mood',
+          id: 5,
+          type: 'wirebench.greet.Mood',
+          valueKind: 'enum',
+          repeated: false,
+          optional: false,
+          enumValues: ['MOOD_UNSPECIFIED', 'CHEERFUL'],
+          comment: 'The mood.',
+        },
+      ],
+      oneofs: [],
+    });
+    setup({ router: { grpcFields } as unknown as ApiChannelDeps['router'] });
+
+    const response = await value<{
+      fullName?: string;
+      fields: { name: string; enumValues?: string[]; comment?: string }[];
+    }>('api.grpcFields', { apiId: 'g-1', type: 'wirebench.greet.HelloRequest', path: ['echo'] });
+
+    expect(grpcFields).toHaveBeenCalledWith('g-1', 'wirebench.greet.HelloRequest', ['echo']);
+    expect(response.fullName).toBe('wirebench.greet.HelloRequest');
+    expect(response.fields.map((field) => field.name)).toEqual(['name', 'mood']);
+    expect(response.fields[1]).toMatchObject({ enumValues: ['MOOD_UNSPECIFIED', 'CHEERFUL'], comment: 'The mood.' });
+  });
+
+  it('answers no fields for a path that resolves to nothing, rather than failing', async () => {
+    // The provider asks about a document mid-edit, where a key naming nothing is the normal case.
+    const grpcFields = vi.fn().mockResolvedValue(undefined);
+    setup({ router: { grpcFields } as unknown as ApiChannelDeps['router'] });
+
+    const response = await value<{ fullName?: string; fields: unknown[] }>('api.grpcFields', {
+      apiId: 'g-1',
+      type: 'wirebench.greet.HelloRequest',
+      path: ['nope'],
+    });
+
+    expect(response).toEqual({ fields: [] });
   });
 });

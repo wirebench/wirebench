@@ -19,6 +19,8 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  GrpcCallStreamHandle,
+  GrpcResponseMessage,
   GrpcSendInput,
   ProtoSet,
   RestSendInput,
@@ -38,6 +40,8 @@ import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type Reso
 import type { SendAuth } from '@wirebench/engine';
 import type {
   GrpcExchangeSummary,
+  GrpcLiveEvent,
+  RequestGrpcPushResponse,
   RestExchangeSummary,
   DefinitionImportRequest,
   EngineProgressEvent,
@@ -55,6 +59,7 @@ import type {
 } from '../shared/wire-types.js';
 import {
   toGrpcExchangeSummary,
+  toGrpcResponseMessageWire,
   toRestExchangeSummary,
   redactExchangeSummary,
   toExchangeSummary,
@@ -260,6 +265,13 @@ function messageFor(progress: ImportProgress): string {
 export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
+
+  /**
+   * The open interactive gRPC calls, by send id. An entry lives only while the engine holds that
+   * call's request side open, so a push or a half-close for a call that has ended is answered
+   * rather than written to a dead stream.
+   */
+  private readonly grpcStreams = new Map<string, GrpcCallStreamHandle>();
   private readonly imports = new Map<string, AbortController>();
 
   /**
@@ -646,23 +658,32 @@ export class EngineService {
    * The input arrives resolved (`grpc-send.ts`) and the `.proto` set loaded (the project host keeps
    * it); credentials are resolved here from their references, as for the other two protocols, and
    * the message text is encoded against the method's request type by the engine.
+   *
+   * `options.onLive` is told what arrives while the call runs — the initial metadata and each
+   * decoded message — and `options.interactive` keeps the request side open, registering the call's
+   * handle so {@link pushGrpcMessage} and {@link halfCloseGrpc} can drive it by the same `sendId`.
+   * Neither changes what this resolves with: the whole exchange, once the call has ended.
    */
   async sendGrpcRequest(
     request: {
       readonly sendId: string;
       readonly requestId: string;
       readonly set: ProtoSet;
-      readonly input: Omit<GrpcSendInput, 'messages'>;
+      readonly input: Omit<GrpcSendInput, 'messages' | 'onHeaders' | 'onMessage' | 'onOpen'>;
       readonly messageText: string;
     },
     options: {
       readonly showSecrets?: boolean;
       readonly auth?: AuthConfig;
       readonly accessToken?: string;
+      readonly interactive?: boolean;
+      readonly onLive?: (event: GrpcLiveEvent) => void;
     } = {},
   ): Promise<GrpcExchangeSummary> {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
+    const { sendId } = request;
+    const onLive = options.onLive;
     try {
       const auth = await resolveAuthConfig(
         options.auth,
@@ -675,11 +696,57 @@ export class EngineService {
         messageText: request.messageText,
         ...(auth !== undefined ? { auth } : {}),
         signal: controller.signal,
+        ...(onLive !== undefined
+          ? {
+              onHeaders: (headers: Readonly<Record<string, string>>, httpStatus: number): void => {
+                onLive({ kind: 'headers', sendId, httpStatus, headers: { ...headers } });
+              },
+              onMessage: (message: GrpcResponseMessage, index: number): void => {
+                onLive({ kind: 'message', sendId, index, message: toGrpcResponseMessageWire(message) });
+              },
+            }
+          : {}),
+        ...(options.interactive === true
+          ? {
+              onOpen: (handle: GrpcCallStreamHandle): void => {
+                this.grpcStreams.set(sendId, handle);
+                onLive?.({ kind: 'open', sendId });
+              },
+            }
+          : {}),
       });
-      return toGrpcExchangeSummary(result, request.sendId, { show: options.showSecrets ?? false });
+      return toGrpcExchangeSummary(result, sendId, { show: options.showSecrets ?? false });
     } finally {
-      this.sends.delete(request.sendId);
+      this.sends.delete(sendId);
+      this.grpcStreams.delete(sendId);
     }
+  }
+
+  /**
+   * Writes one more message on the interactive gRPC call `sendId`, returning it as it went.
+   *
+   * @throws WirebenchError `grpc-stream-unknown` when no interactive call with that id is open;
+   * whatever the engine throws for text that does not encode against the request type
+   */
+  pushGrpcMessage(sendId: string, messageText: string): RequestGrpcPushResponse {
+    const handle = this.grpcStreams.get(sendId);
+    if (handle === undefined) {
+      throw new WirebenchError('grpc-stream-unknown', 'That call is no longer open for sending.', {
+        details: { sendId },
+      });
+    }
+    return { json: JSON.stringify(handle.send(messageText), null, 2) };
+  }
+
+  /** Half-closes the interactive gRPC call `sendId`. `false` when no such call is open. */
+  halfCloseGrpc(sendId: string): { closed: boolean } {
+    const handle = this.grpcStreams.get(sendId);
+    if (handle === undefined) {
+      return { closed: false };
+    }
+    handle.end();
+    this.grpcStreams.delete(sendId);
+    return { closed: true };
   }
 
   /** Aborts the in-flight send for `sendId`. Returns `false` when no such send is pending. */

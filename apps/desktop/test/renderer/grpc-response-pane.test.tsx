@@ -3,7 +3,7 @@
  * comes back with), the messages are listed in order, a message that did not decode says why, and
  * the metadata tab keeps headers and trailers apart.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { GrpcResponsePane, grpcStatusToneClass } from '../../src/renderer/features/grpc-editor/response-pane.js';
 import { makeGrpcExchange, b64 } from '../mocks/exchange-fixtures.js';
@@ -92,5 +92,110 @@ describe('GrpcResponsePane', () => {
     expect(grpcStatusToneClass({ status: 0, statusSource: 'trailers' })).toBe('text-status-success');
     expect(grpcStatusToneClass({ status: 4, statusSource: 'local' })).toBe('text-status-warning');
     expect(grpcStatusToneClass({ status: 13, statusSource: 'trailers' })).toBe('text-status-danger');
+  });
+});
+
+/** One decoded message as main puts it on the wire. */
+function live(json: string) {
+  return { json, base64: b64(json), bytes: json.length };
+}
+
+describe('a call that is still running', () => {
+  it('shows the messages that have arrived, before there is an exchange', () => {
+    render(
+      <GrpcResponsePane
+        state={{
+          status: 'sending',
+          sendId: 's',
+          live: { messages: [live('{"message":"Hello #1"}')], sent: [], open: false },
+        }}
+      />,
+    );
+
+    // The tab strip is up while the call runs, rather than only after it ends.
+    expect(screen.getByRole('tablist', { name: 'Response tabs' })).toBeTruthy();
+    expect(screen.getAllByTestId('grpc-response-message')).toHaveLength(1);
+    expect(screen.getByTestId('grpc-response-status').textContent).toContain('1 message');
+  });
+
+  it('says it is waiting before the first message', () => {
+    render(
+      <GrpcResponsePane state={{ status: 'sending', sendId: 's', live: { messages: [], sent: [], open: false } }} />,
+    );
+
+    expect(screen.getByText('Waiting for the first message…')).toBeTruthy();
+    expect(screen.getByTestId('grpc-response-status').textContent).toBe('Sending…');
+  });
+
+  it('shows the initial metadata before the trailers exist', () => {
+    render(
+      <GrpcResponsePane
+        state={{
+          status: 'sending',
+          sendId: 's',
+          live: { messages: [], sent: [], open: false, headers: { 'content-type': 'application/grpc' } },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+
+    expect(screen.getAllByTestId('grpc-response-header-row')).toHaveLength(1);
+    expect(screen.getByText('The trailers arrive when the call ends.')).toBeTruthy();
+  });
+
+  it('offers the composer only while the request side is open', () => {
+    const onPush = vi.fn();
+    const onHalfClose = vi.fn();
+    const { rerender } = render(
+      <GrpcResponsePane
+        state={{ status: 'sending', sendId: 's', live: { messages: [], sent: [], open: false } }}
+        onPush={onPush}
+        onHalfClose={onHalfClose}
+      />,
+    );
+    expect(screen.queryByTestId('grpc-stream-composer')).toBeNull();
+
+    rerender(
+      <GrpcResponsePane
+        state={{ status: 'sending', sendId: 's', live: { messages: [], sent: [], open: true } }}
+        onPush={onPush}
+        onHalfClose={onHalfClose}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('grpc-stream-message'), { target: { value: '{"name":"Ada"}' } });
+    fireEvent.click(screen.getByTestId('grpc-stream-send'));
+    expect(onPush).toHaveBeenCalledWith('{"name":"Ada"}');
+
+    fireEvent.click(screen.getByTestId('grpc-half-close'));
+    expect(onHalfClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('will not send an empty message', () => {
+    const onPush = vi.fn();
+    render(
+      <GrpcResponsePane
+        state={{ status: 'sending', sendId: 's', live: { messages: [], sent: [], open: true } }}
+        onPush={onPush}
+        onHalfClose={() => undefined}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('grpc-stream-message'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByTestId('grpc-stream-send'));
+
+    expect(onPush).not.toHaveBeenCalled();
+  });
+
+  it('counts what has been sent on the composer', () => {
+    render(
+      <GrpcResponsePane
+        state={{ status: 'sending', sendId: 's', live: { messages: [], sent: ['{}', '{}'], open: true } }}
+        onPush={() => undefined}
+        onHalfClose={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId('grpc-stream-composer').textContent).toContain('2 sent');
   });
 });

@@ -152,9 +152,11 @@ on disk, and axe over the editor.
 ## 9. Boundaries
 
 Not built: ~~server reflection~~ (built 2026-09-17, see
-`docs/specs/2026-09-17-grpc-server-reflection-design.md`), gRPC-Web, interactive bidirectional streaming, a
-schema-driven form view, streaming replies shown before the call ends, resend and diff from History for gRPC
-entries, a Query view over messages.
+`docs/specs/2026-09-17-grpc-server-reflection-design.md`), gRPC-Web, ~~interactive bidirectional streaming~~ and
+~~streaming replies shown before the call ends~~ (both built 2026-09-18, see
+`docs/specs/2026-09-18-grpc-live-streaming-design.md`), a schema-driven form view, resend and diff from History
+for gRPC entries, a Query view over messages. Message-field completion from the descriptor was built
+2026-09-18, see `docs/specs/2026-09-18-grpc-message-completion-design.md`.
 
 ## 10. Success criteria
 

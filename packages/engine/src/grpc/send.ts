@@ -56,6 +56,42 @@ export interface GrpcSendInput {
   readonly signal?: AbortSignal;
   /** Clock for timings; tests inject one. */
   readonly now?: () => number;
+  /**
+   * Called once with the initial metadata, the moment the server's headers arrive rather than when
+   * the call ends. A server stream can run for minutes before its first message, and the headers
+   * are the first sign it was accepted at all.
+   */
+  readonly onHeaders?: (headers: Readonly<Record<string, string>>, httpStatus: number) => void;
+  /**
+   * Called for each response message as it is parsed, already decompressed, in arrival order. The
+   * same messages are still collected into {@link GrpcExchange.messages}, so a caller that only
+   * wants the end result ignores this and sees no difference.
+   */
+  readonly onMessage?: (message: Uint8Array, index: number) => void;
+  /**
+   * Opts into *interactive* mode: the request side stays open after {@link GrpcSendInput.messages}
+   * are written, and the handle pushes further messages or half-closes. Without it — every batch
+   * caller — `sendGrpc` writes every message and half-closes immediately, as it always has.
+   *
+   * The call still ends the way it always did: when the server ends the stream, the deadline
+   * passes, or the signal aborts. Half-closing is not required to finish, since a server may
+   * answer and end while the client still holds its side open.
+   */
+  readonly onOpen?: (handle: GrpcStreamHandle) => void;
+}
+
+/** The client's side of a call left open by {@link GrpcSendInput.onOpen}. */
+export interface GrpcStreamHandle {
+  /**
+   * Frames and writes one more request message.
+   *
+   * @throws GrpcError `grpc-stream-closed` once the request side is half-closed or the call is over
+   */
+  readonly write: (message: Uint8Array) => void;
+  /** Half-closes the request side. Idempotent, and a no-op once the call has ended. */
+  readonly end: () => void;
+  /** False once {@link end} has been called or the call has ended. */
+  readonly isOpen: () => boolean;
 }
 
 /** Where a call's status came from, which the response pane says when it is not the trailers. */
@@ -246,10 +282,15 @@ function connectOptions(input: GrpcSendInput, target: GrpcTarget): http2.SecureC
  *
  * Client-streaming and bidirectional methods are sent in "batch" form: every request message is
  * written, the request side is closed, and the responses are read until the server ends the stream.
+ * {@link GrpcSendInput.onOpen} turns that into an interactive call instead, where the caller keeps
+ * pushing messages until it half-closes.
+ *
+ * {@link GrpcSendInput.onHeaders} and {@link GrpcSendInput.onMessage} report the initial metadata
+ * and each response message as they arrive, for a caller that shows a stream while it runs.
  *
  * @throws HttpError for a connection, DNS, TLS or abort failure, with the HTTP transport's codes;
  * GrpcError `grpc-target-invalid`, `grpc-auth-unsupported`, `grpc-stream-malformed`,
- * `grpc-encoding-unsupported`, `grpc-message-too-large`
+ * `grpc-encoding-unsupported`, `grpc-message-too-large`, `grpc-stream-closed`
  */
 export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const target = parseGrpcTarget(input.target, input.tls);
@@ -257,8 +298,10 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const startedAtMs = now();
   const startedAt = new Date().toISOString();
   const requestHeaders = buildGrpcHeaders(input, target);
-  const framed = input.messages.map((message) => encodeGrpcFrame(message));
-  const rawRequest = concat([new TextEncoder().encode(headerText(requestHeaders)), ...framed]);
+  // What was actually sent, which in interactive mode grows after the call opens; the exchange
+  // reports these rather than `input.messages` so its record and its raw bytes stay the same thing.
+  const sent: Uint8Array[] = [...input.messages];
+  const sentFrames: Uint8Array[] = sent.map((message) => encodeGrpcFrame(message));
 
   const origin = `${target.tls ? 'https' : 'http'}://${target.authority}`;
   const session: ClientHttp2Session = http2.connect(origin, connectOptions(input, target));
@@ -352,7 +395,7 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
           authority: target.authority,
           path: requestHeaders[':path'] ?? '',
           headers: requestHeaders,
-          messages: input.messages,
+          messages: sent,
         },
         httpStatus,
         headers: responseHeaders,
@@ -371,7 +414,7 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
           ...(headersAt !== undefined ? { ttfbMs: headersAt - startedAtMs, downloadMs: endMs - headersAt } : {}),
         },
         ...(tlsInfo !== undefined ? { tls: tlsInfo } : {}),
-        rawRequest,
+        rawRequest: concat([new TextEncoder().encode(headerText(requestHeaders)), ...sentFrames]),
         rawResponse: concat([
           new TextEncoder().encode(responseText),
           ...rawFrames,
@@ -442,7 +485,9 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
             },
           ),
         );
+        return;
       }
+      input.onHeaders?.(responseHeaders, httpStatus);
     });
     stream.on('data', (chunk: Buffer) => {
       if (settled) return;
@@ -454,7 +499,9 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
             truncated = true;
             break;
           }
-          messages.push(frame.compressed ? decompress(frame.payload, encoding) : frame.payload);
+          const message = frame.compressed ? decompress(frame.payload, encoding) : frame.payload;
+          messages.push(message);
+          input.onMessage?.(message, messages.length - 1);
         }
       } catch (error) {
         fail(error);
@@ -483,9 +530,42 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
       }
       finish();
     });
-    for (const frame of framed) {
+    for (const frame of sentFrames) {
       stream.write(Buffer.from(frame));
     }
-    stream.end();
+    if (input.onOpen === undefined) {
+      stream.end();
+      return;
+    }
+    // Interactive: the request side stays open until the caller half-closes, the deadline passes or
+    // the signal aborts. `settled` covers all three, so a handle held past the end is inert rather
+    // than writing to a dead stream.
+    let halfClosed = false;
+    const open = stream;
+    try {
+      input.onOpen({
+        write: (message: Uint8Array): void => {
+          if (settled || halfClosed) {
+            throw new GrpcError('grpc-stream-closed', 'The request side of this call is already closed', {
+              details: { halfClosed, settled },
+            });
+          }
+          sent.push(message);
+          const frame = encodeGrpcFrame(message);
+          sentFrames.push(frame);
+          open.write(Buffer.from(frame));
+        },
+        end: (): void => {
+          if (halfClosed) return;
+          halfClosed = true;
+          if (!settled) {
+            open.end();
+          }
+        },
+        isOpen: (): boolean => !settled && !halfClosed,
+      });
+    } catch (error) {
+      fail(error);
+    }
   });
 }

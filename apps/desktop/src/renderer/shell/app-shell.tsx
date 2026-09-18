@@ -13,7 +13,7 @@ import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
-import { subscribeToExchangeFailures } from '../state/exchanges.js';
+import { subscribeToExchangeFailures, subscribeToGrpcLive } from '../state/exchanges.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
@@ -251,6 +251,7 @@ export function AppShell() {
   useEffect(() => subscribeToPreferences(), []);
   useEffect(() => subscribeToHistory(), []);
   useEffect(() => subscribeToExchangeFailures(), []);
+  useEffect(() => subscribeToGrpcLive(), []);
 
   const openPalette = useCallback((mode: PaletteMode = 'commands') => {
     setPaletteMode(mode);

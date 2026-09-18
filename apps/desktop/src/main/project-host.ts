@@ -41,6 +41,7 @@ import {
   projectFiles,
   putAttachment,
   readApiDefinitionCache,
+  describeMessageAt,
   describeServices,
   loadProtoSet,
   sampleMessageText,
@@ -75,6 +76,7 @@ import type {
   GrpcReconcileResult,
   GrpcReflectionVersion,
   GrpcServiceDescriptor,
+  MessageDescriptor,
   ProtoImportSummary,
   ProtoSet,
   ProtoSources,
@@ -1629,6 +1631,18 @@ export class ProjectHost {
   /** A sample message for one type of a gRPC API's definition, as pretty JSON text. */
   async grpcSample(apiId: string, type: string): Promise<string> {
     return sampleMessageText(await this.grpcProtoSetFor(apiId), type);
+  }
+
+  /**
+   * The fields of the message reached by walking `path` — a chain of JSON object keys — down from
+   * `type`, for the message editor's completion provider.
+   *
+   * A path that names nothing answers no fields rather than failing: the provider asks about a
+   * document the user is in the middle of typing, where a key that resolves to nothing is the
+   * normal case. An unknown `type` still fails, since that is the caller's own mistake.
+   */
+  async grpcFields(apiId: string, type: string, path: readonly string[]): Promise<MessageDescriptor | undefined> {
+    return describeMessageAt(await this.grpcProtoSetFor(apiId), type, path);
   }
 
   /** The open project's gRPC API with `apiId`, or a `not-found` error. */

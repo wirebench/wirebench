@@ -20,6 +20,11 @@
       "types": "./dist/rest/browser.d.ts",
       "default": "./dist/rest/browser.js"
     },
+    "./json": {
+      "development": "./src/json/cursor.ts",
+      "types": "./dist/json/cursor.d.ts",
+      "default": "./dist/json/cursor.js"
+    },
     "./grpc": {
       "development": "./src/grpc/browser.ts",
       "types": "./dist/grpc/browser.d.ts",

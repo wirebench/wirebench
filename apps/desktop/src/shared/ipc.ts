@@ -16,9 +16,16 @@ import {
   apiGrpcDefinitionResponseSchema,
   apiGrpcRefreshRequestSchema,
   apiGrpcRefreshResponseSchema,
+  apiGrpcFieldsRequestSchema,
+  apiGrpcFieldsResponseSchema,
   apiGrpcSampleRequestSchema,
   apiGrpcSampleResponseSchema,
   grpcExchangeSummarySchema,
+  grpcLiveEventSchema,
+  requestGrpcHalfCloseRequestSchema,
+  requestGrpcHalfCloseResponseSchema,
+  requestGrpcPushRequestSchema,
+  requestGrpcPushResponseSchema,
   requestPreflightGrpcRequestSchema,
   requestSendGrpcRequestSchema,
   oauth2OwnerRequestSchema,
@@ -353,6 +360,18 @@ export const channels = {
       requestPreflightGrpcRequestSchema,
       requestPreflightResponseSchema,
     ),
+    /**
+     * One more message on a gRPC call opened with `interactive`. An ordinary invoke rather than a
+     * channel of its own kind: the call it belongs to is named by the same `sendId` the send used,
+     * which is how `request.cancel` already addresses a send in flight.
+     */
+    grpcPush: defineChannel('request.grpcPush', requestGrpcPushRequestSchema, requestGrpcPushResponseSchema),
+    /** Half-closes an interactive gRPC call's request side; the server may still be answering. */
+    grpcHalfClose: defineChannel(
+      'request.grpcHalfClose',
+      requestGrpcHalfCloseRequestSchema,
+      requestGrpcHalfCloseResponseSchema,
+    ),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
     preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
@@ -381,6 +400,7 @@ export const channels = {
     grpcDefinition: defineChannel('api.grpcDefinition', apiIdRequestSchema, apiGrpcDefinitionResponseSchema),
     /** A sample message for one type of a gRPC API's definition. */
     grpcSample: defineChannel('api.grpcSample', apiGrpcSampleRequestSchema, apiGrpcSampleResponseSchema),
+    grpcFields: defineChannel('api.grpcFields', apiGrpcFieldsRequestSchema, apiGrpcFieldsResponseSchema),
     /** Asks a reflection-sourced API's server to describe itself again. */
     grpcRefresh: defineChannel('api.grpcRefresh', apiGrpcRefreshRequestSchema, apiGrpcRefreshResponseSchema),
     cancelImport: defineChannel('api.cancelImport', apiCancelImportRequestSchema, apiCancelImportResponseSchema),
@@ -671,6 +691,10 @@ export const events = {
   },
   engine: {
     progress: defineEvent('engine.progress', engineProgressEventSchema),
+  },
+  grpc: {
+    /** A gRPC call in flight reporting what has arrived so far, keyed by the send's id. */
+    live: defineEvent('grpc.live', grpcLiveEventSchema),
   },
   globals: {
     changed: defineEvent('globals.changed', globalsStateSchema),

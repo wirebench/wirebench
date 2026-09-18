@@ -537,6 +537,8 @@ export type {
   ToSendInputArgs,
 } from './send-options.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
+export { jsonCompletionContextAt } from './json/cursor.js';
+export type { JsonCompletionContext, JsonTextRange } from './json/cursor.js';
 export { formatXml } from './xml/pretty.js';
 export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
@@ -855,6 +857,7 @@ export { loadProtoSet } from './grpc/proto/load.js';
 export type { LoadProtoOptions, ProtoSet, ProtoSources } from './grpc/proto/load.js';
 export {
   describeMessage,
+  describeMessageAt,
   describeMethod,
   describeServices,
   lookupMessageType,
@@ -873,9 +876,9 @@ export type { SampleMessageOptions } from './grpc/proto/sample.js';
 export { WELL_KNOWN_TYPES, isWrapperType } from './grpc/proto/well-known.js';
 export { decodeMessage, encodeMessage, parseMessageText } from './grpc/codec.js';
 export { buildGrpcHeaders, parseGrpcTarget, sendGrpc } from './grpc/send.js';
-export type { GrpcExchange, GrpcSendInput, GrpcStatusSource, GrpcTarget } from './grpc/send.js';
+export type { GrpcExchange, GrpcSendInput, GrpcStatusSource, GrpcStreamHandle, GrpcTarget } from './grpc/send.js';
 export { callGrpc, decodeResponseMessage } from './grpc/call.js';
-export type { GrpcCallInput, GrpcCallResult, GrpcResponseMessage } from './grpc/call.js';
+export type { GrpcCallInput, GrpcCallResult, GrpcCallStreamHandle, GrpcResponseMessage } from './grpc/call.js';
 export { expandGrpcInput } from './grpc/expand.js';
 export type { ExpandGrpcOptions, GrpcExpandable } from './grpc/expand.js';
 export { apiFromProtoSet, importProto } from './grpc/import.js';
