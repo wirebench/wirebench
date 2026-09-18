@@ -140,6 +140,45 @@ describe('exchanges.get', () => {
 
     expect(await invoke('exchanges.get', {})).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
   });
+
+  it('re-renders a REST exchange through its cached view, per the flag at call time', async () => {
+    const cache = new ExchangeCache();
+    const rest = (show: boolean): RestExchangeSummary => ({
+      sendId: 'rest-1',
+      durationMs: 5,
+      url: show ? 'https://api.test/pet?api_key=k3y' : 'https://api.test/pet?api_key=<redacted>',
+      method: 'GET',
+      text: '{}',
+      language: 'json',
+      cookies: [],
+      methodChanged: false,
+      problems: [],
+      http: unredactedExchange('rest-1').http,
+    });
+    cache.putRest('rest-1', rest(true), new Uint8Array(), rest);
+    const flag = new ShowSecretsFlag();
+    registerExchangeChannels(cache, flag);
+
+    const hidden = (await invoke('exchanges.get', { sendId: 'rest-1' })) as { ok: true; value: RestExchangeSummary };
+    expect(hidden.ok).toBe(true);
+    expect(hidden.value.url).toContain('<redacted>');
+    expect(JSON.stringify(hidden.value)).not.toContain('k3y');
+
+    flag.set(true);
+    const shown = (await invoke('exchanges.get', { sendId: 'rest-1' })) as { ok: true; value: RestExchangeSummary };
+    expect(shown.value.url).toContain('api_key=k3y');
+  });
+
+  it('never answers a REST exchange cached without a view, rather than risk it unredacted', async () => {
+    const cache = new ExchangeCache();
+    cache.putRest('rest-1', { ...({} as RestExchangeSummary), sendId: 'rest-1' }, new Uint8Array());
+    registerExchangeChannels(cache, new ShowSecretsFlag());
+
+    expect(await invoke('exchanges.get', { sendId: 'rest-1' })).toMatchObject({
+      ok: false,
+      error: { code: 'unknown-send' },
+    });
+  });
 });
 
 /**

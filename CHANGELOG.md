@@ -93,6 +93,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **HTTP Log: a REST row follows the show-secrets toggle.** Turning _show secrets_ on or off now
+  re-renders the selected REST row too, as it already did for SOAP; before, a REST row kept the
+  redaction it had at send time (#50).
 - Redaction masks `password`, `token`, `client_secret` and similar keys in JSON and form bodies, not only in XML.
 - HTTP Log: ↑/↓ keep the selected row in view when fewer than 200 rows are shown.
 

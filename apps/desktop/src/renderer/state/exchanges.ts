@@ -491,9 +491,6 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         // The same push the SOAP path does: the HTTP Log is one list across every protocol.
-        // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
-        // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
-        // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
         draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
         trimLog(draft);
       });
@@ -663,6 +660,15 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
             requestId === undefined
               ? { kind: 'exchange', exchange: fresh }
               : { kind: 'exchange', exchange: fresh, requestId };
+        }
+        // A REST summary is the one carrying `methodChanged`; each lands back in its own protocol's map.
+        if ('methodChanged' in fresh) {
+          for (const [requestId, state] of Object.entries(draft.restByRequest)) {
+            if (state.sendId === sendId && state.exchange !== undefined) {
+              draft.restByRequest[requestId] = { ...state, exchange: fresh };
+            }
+          }
+          return;
         }
         for (const [requestId, state] of Object.entries(draft.byRequest)) {
           if (state.sendId === sendId && state.exchange !== undefined) {

@@ -652,7 +652,9 @@ export class EngineService {
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
       };
       const full = toRestExchangeSummary(exchange, request.sendId, { ...context, show: true });
-      this.exchanges.putRest(request.sendId, full, exchange.body);
+      this.exchanges.putRest(request.sendId, full, exchange.body, (show) =>
+        toRestExchangeSummary(exchange, request.sendId, { ...context, show }),
+      );
       return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);

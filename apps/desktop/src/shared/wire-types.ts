@@ -1609,6 +1609,14 @@ export const restExchangeSummarySchema = z.object({
 export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
 
 /**
+ * Response payload for `exchanges.get`: one cached exchange, re-redacted for the show-secrets flag
+ * as it stands. REST is tried first: a REST summary also satisfies the looser SOAP shape, which would
+ * strip its `url`, `method` and `text`; a SOAP summary lacks those, so it falls through to its own.
+ */
+export const exchangesGetResponseSchema = z.union([restExchangeSummarySchema, exchangeSummarySchema]);
+export type ExchangesGetResponse = z.infer<typeof exchangesGetResponseSchema>;
+
+/**
  * Request payload for `request.sendRest`.
  *
  * The renderer names the request and, when its editor has unsaved edits, hands over the draft it is

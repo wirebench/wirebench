@@ -13,7 +13,7 @@ import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { logExchange, makeFailure } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 
 const draft: RequestDraft = {
@@ -550,5 +550,22 @@ describe('Preserve log', () => {
     useExchangesStore.setState({ log: [{ kind: 'failure', failure: makeFailure() }], preserveLog: true });
     useExchangesStore.getState().clearLog();
     expect(useExchangesStore.getState().log).toHaveLength(0);
+  });
+
+  it('refreshExchange swaps a REST row and its request state for the re-redacted copy', async () => {
+    const hidden = makeRestExchange({ sendId: 'rest-1', url: 'https://api.test/pet?api_key=<redacted>' });
+    const shown = makeRestExchange({ sendId: 'rest-1', url: 'https://api.test/pet?api_key=k3y' });
+    installWirebenchApi({ exchanges: { get: vi.fn().mockResolvedValue({ ok: true, value: shown }) } });
+    useExchangesStore.setState({
+      log: [logExchange(hidden, 'rq-1')],
+      restByRequest: { 'rq-1': { status: 'done', sendId: 'rest-1', exchange: hidden } },
+    });
+
+    await useExchangesStore.getState().refreshExchange('rest-1');
+
+    const state = useExchangesStore.getState();
+    expect(state.log[0]).toEqual(logExchange(shown, 'rq-1'));
+    expect(state.restByRequest['rq-1']?.exchange?.url).toBe('https://api.test/pet?api_key=k3y');
+    expect(state.byRequest['rq-1']).toBeUndefined();
   });
 });
