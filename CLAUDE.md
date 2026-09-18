@@ -13,6 +13,12 @@
 - Do **not** add a `Co-Authored-By:` trailer either.
 - The message body is the record of _why_; keep it about the change.
 
+## Pull request descriptions
+
+- No generated-by footer: no "Generated with Claude Code" line, no session link, no bot emoji
+  sign-off. The description ends with its last section.
+- Same rule as the commit messages above — the text is about the change, not about what wrote it.
+
 ## Gates
 
 - `WIREBENCH_SKIP_PERF=1 pnpm check` before every commit; `pnpm test:perf` unskipped before a push.
