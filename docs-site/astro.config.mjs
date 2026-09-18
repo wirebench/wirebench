@@ -42,7 +42,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
-            { label: 'Keyboard Shortcuts', slug: 'reference/shortcuts' },
+            { label: 'Commands and shortcuts', slug: 'reference/commands' },
             { label: 'Project Format (v3)', slug: 'reference/project-format' },
           ],
         },

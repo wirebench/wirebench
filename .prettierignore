@@ -14,3 +14,4 @@ e2e/test-results
 THIRD-PARTY-LICENSES.md
 .serena/
 docs-site/.astro
+docs-site/src/content/docs/reference/commands.md
