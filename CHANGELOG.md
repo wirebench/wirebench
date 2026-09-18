@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log: waterfall.** A Waterfall column shows each row's start and duration across the rows shown,
+  split into connect, TLS, wait and download (hover for the breakdown; hidden while a row is selected); the
+  Timing tab notes a reused connection.
 - **HTTP Log: search, a Name column and sort.** Search matches headers, bodies (first 256 KiB) and the
   request name, with regex and match-case toggles; a Name column shows the saved request; click Time,
   Name, Status, ms or Size to sort.
