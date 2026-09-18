@@ -26,18 +26,28 @@
 5. **CI names its secrets like people do.** A ref in a file is opaque (`passwordRef: sec_…`), so the
    file gains an optional human name beside it and CI sets `WIREBENCH_SECRET_<NAME>`. The ref-named
    variable stays as the fallback, so an unedited project can still run.
-6. **Send orchestration that is pure moves into the engine.** Secret resolution, expansion
-   preflight, proxy/TLS/WS-Security assembly and redaction live in `apps/desktop/src/main/` today and
-   import no Electron. They move to `@wirebench/engine`; the desktop imports them from there. One
-   behaviour, two hosts. History recording and the OAuth2 loopback listener stay in the desktop.
-7. **First scope: SOAP and REST.** gRPC unary is slice S7, last and cuttable. OAuth2 runs headless
+6. **What is pure and self-contained moves into the engine; the desktop's send glue stays.**
+   `secret-resolver.ts` and `redact.ts` import nothing from the desktop and move to
+   `@wirebench/engine` unchanged; the desktop imports them from there. The send assembly itself is
+   not movable as it stands: it lives in `ProjectHost` and `EngineService`, bound to editor drafts,
+   wire types, the user's preferences and the secret store. It is, though, only glue over functions
+   the engine already exports (`toSendInput`, `resolveEndpoint`, `resolveScopes`, `effectiveAuth`,
+   `toRestSendInput`, `expandRestSendInput`, `resolveAuthChain`, `toTlsClientIdentity`). The engine
+   gains `run/`, which composes those same functions for a *saved* request with no draft. The
+   desktop adopting `run/` is a follow-up, not this issue.
+7. **The CLI has no user preferences.** Preferences belong to a desktop user, not to a pipeline, so
+   a run uses the engine's defaults plus the project's own settings. The proxy comes from the
+   conventional `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` variables; extra trust anchors from
+   Node's own `NODE_EXTRA_CA_CERTS`. A client certificate comes from the request's keystore, its
+   password through §3.3.
+8. **First scope: SOAP and REST.** gRPC unary is slice S7, last and cuttable. OAuth2 runs headless
    with the client-credentials grant only; a request that needs the authorization-code grant fails
    with a clear run error rather than opening a browser.
-8. **The runner never writes to the project.** No history entry, no `.wirebench/local.yaml`, no
+9. **The runner never writes to the project.** No history entry, no `.wirebench/local.yaml`, no
    migration written back. It reads a project and writes only the report files it was asked for.
-9. **One project per invocation** (owner, 2026-09-18). A pipeline that covers several projects calls
+10. **One project per invocation** (owner, 2026-09-18). A pipeline that covers several projects calls
    the runner once per project; a workspace-wide run is out of scope.
-10. **Offline and account-free.** No login, no telemetry, no network call other than the requests
+11. **Offline and account-free.** No login, no telemetry, no network call other than the requests
    being run.
 
 ## 1. Objective
@@ -126,7 +136,7 @@ assertions:
     name: at least one country    # optional label used in reports
   - type: schema                  # response validates against the contract (XSD; SOAP structure first)
   - type: sla
-    maxMs: 800                    # compared with timings.totalMs
+    maxMs: 800                    # compared with the exchange's durationMs
 ```
 
 | Type | Holds when | Engine surface |
@@ -134,8 +144,8 @@ assertions:
 | `status` | the HTTP status is in the set | `HttpExchange.status` |
 | `soap-fault` | a fault is absent (or present, when asked) | `isSoapFault` / `parseFault` |
 | `match` | the expression's result equals, matches or exists | `evaluateWithTimeout` (XPath 3.1, XQuery 3.1, JSONPath) |
-| `schema` | `validateMessage` reports no problem | `validateMessage` |
-| `sla` | `timings.totalMs <= maxMs` | `HttpExchange.timings` |
+| `schema` | `validateMessage` reports no problem against the interface's cached definition | `validateMessage` |
+| `sla` | `durationMs <= maxMs` — every leg of the send, an auth challenge included | `SoapExchange.durationMs`, `RestExchange.durationMs` |
 
 Rules: `soap-fault` and an XSD `schema` on a REST request are load errors, not silent passes.
 `schema` for REST is out of scope until #45 (OpenAPI response validation) lands; the type is
@@ -203,7 +213,7 @@ JSON report, so a pipeline can branch on it.
 - Auth and keystore shapes gain the optional `…Env` name beside each `…Ref`.
 - `FORMAT_VERSION` goes 3 → 4 (assumption 3): `migrate.ts` gains the 3 → 4 step, `serialize.ts`
   writes both fields, and the format-v2 fixture set gains a v3 sibling so the migration is tested.
-  The desktop writes version 4 only when it saves, as today; the CLI never writes (assumption 8), so
+  The desktop writes version 4 only when it saves, as today; the CLI never writes (assumption 9), so
   it runs a version 3 project as it is, migrated in memory.
 - `WORKSPACE_FORMAT_VERSION` is untouched; nothing here changes a workspace file.
 - The project-format page under `docs/architecture/` and the CHANGELOG document the bump.
@@ -214,13 +224,13 @@ JSON report, so a pipeline can branch on it.
 | Module | Change |
 | --- | --- |
 | `assert/` | New. `evaluateAssertions(exchange, assertions, context): Promise<AssertionResult[]>`; one file per type; no I/O beyond what `validateMessage` already does. |
-| `run/` | New. `selectRequests(target, selectors)`, `prepareSend(request, environment, getSecret)` — the assembly moved from the desktop's `project-router.ts` and `expansion-preflight.ts` — and `runRequests(plan, hooks)`, which yields one result per request. Host-agnostic: the desktop can adopt it later for a "run folder" action. |
+| `run/` | New. `selectRequests(project, selectors)`, `prepareSoapSend` / `prepareRestSend` — a saved request composed into a send input from the engine's existing functions, secrets through the injected `getSecret` — and `runRequests(plan, hooks)`, which yields one result per request. Host-agnostic: the desktop can adopt it later for a "run folder" action. |
 | `secrets/` | Secret resolution moved from the desktop's `secret-resolver.ts`, unchanged in behaviour; `getSecret` stays the injected seam. |
 | `redact/` | Moved from the desktop's `redact.ts`; gains `withSecrets(values)` for literal masking. |
 | `project/schema.ts`, `project/model.ts` | The two format additions of §4. |
 
-The desktop keeps thin re-exports for one release so the move is a pure relocation in its diff; its
-tests move with the code.
+The desktop's two files become one-line re-exports, so its diff is a pure relocation and every
+importer keeps working; their tests move to the engine with the code.
 
 ## 6. CLI package (`packages/cli/`)
 
@@ -286,9 +296,9 @@ Each is shippable alone and is one or more commits with `pnpm check` green.
 
 | # | Slice | Done when |
 | --- | --- | --- |
-| S1 | Relocate secret resolution, preflight, send assembly and redaction into the engine | Desktop behaviour and tests unchanged; nothing in `packages/engine/src` imports Electron. |
+| S1 | Move secret resolution and redaction into the engine | Desktop behaviour and tests unchanged; nothing in `packages/engine/src` imports Electron. |
 | S2 | Format version 4 and the `assert/` evaluator | A version 3 project migrates; `assertions:` and `…Env` survive load → save; each assertion type has passing and failing unit tests. |
-| S3 | `packages/cli` skeleton: `run` for SOAP and REST, `cli` reporter, exit codes | A fixture project runs green and red against a local server with the right codes. |
+| S3 | Engine `run/` and the `packages/cli` skeleton: `run` for SOAP and REST, `cli` reporter, exit codes | A fixture project runs green and red against a local server with the right codes. |
 | S4 | Env-var secrets, `secrets list`, literal redaction | A run with the variable set authenticates; without it, exit 3 naming the variable; the value appears in no output. |
 | S5 | `junit` and `json` reporters | JUnit validates against the XSD; JSON matches its documented shape. |
 | S6 | `html` reporter | One offline file; passes the contrast check. |
@@ -357,4 +367,4 @@ Settled with the owner on 2026-09-18:
 2. **Distribution belongs to #31.** This issue builds the binary inside the monorepo and publishes
    nothing.
 3. **gRPC stays in this issue as S7**, the last slice, and is the first thing cut if time runs out.
-4. **One project per invocation** (assumption 9).
+4. **One project per invocation** (assumption 10).
