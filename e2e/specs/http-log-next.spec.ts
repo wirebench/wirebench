@@ -120,4 +120,25 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await search.fill('^(Plain|Tagged)$');
     await expect(logRows(page)).toHaveCount(2);
   });
+
+  test('S5: the waterfall draws one bar per row and a danger bar for a failure', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'Log');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Echo');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await sendRest(page);
+    await createApi(page, 'Dead', 'http://127.0.0.1:1');
+    await createRestRequest(page, 'Dead', 'Nope');
+    await setMethodAndUrl(page, 'GET', '/nope');
+    await sendRest(page);
+    await expect(logRows(page)).toHaveCount(2);
+
+    await expect(page.getByTestId('waterfall-bar')).toHaveCount(2);
+    await expect(logRows(page).last().getByTestId('waterfall-bar')).toHaveClass(/bg-status-danger/);
+    await expect(logRows(page).first().getByTestId('waterfall-bar')).toHaveAttribute('title', /ms/);
+  });
 });
