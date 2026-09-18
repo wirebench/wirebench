@@ -39,10 +39,17 @@ function model(uri: string, text: string) {
   };
 }
 
-/** The registered provider, asked about `marked` with the cursor at its `|`. */
+/**
+ * The registered provider, asked about `marked` with the cursor at its `|`.
+ *
+ * Split rather than replaced, so a fixture carrying a second `|` fails here rather than quietly
+ * asking about the wrong offset.
+ */
 async function complete(uri: string, marked: string) {
-  const offset = marked.indexOf('|');
-  return provider.provideCompletionItems(model(uri, marked.replace('|', '')), { lineNumber: 1, column: offset + 1 });
+  const parts = marked.split('|');
+  expect(parts).toHaveLength(2);
+  const offset = (parts[0] as string).length;
+  return provider.provideCompletionItems(model(uri, parts.join('')), { lineNumber: 1, column: offset + 1 });
 }
 
 beforeEach(() => {

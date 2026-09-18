@@ -8,11 +8,16 @@
 import { describe, expect, it } from 'vitest';
 import { jsonCompletionContextAt } from '../../../src/json/cursor.js';
 
-/** Runs the analysis on a document whose cursor is marked with `|`. */
+/**
+ * Runs the analysis on a document whose cursor is marked with `|`.
+ *
+ * Split rather than replaced: a fixture carrying a second `|` is a mistake in the test, and
+ * splitting turns it into a failure here instead of silently analysing the wrong offset.
+ */
 function at(marked: string) {
-  const offset = marked.indexOf('|');
-  expect(offset).toBeGreaterThanOrEqual(0);
-  return jsonCompletionContextAt(marked.replace('|', ''), offset);
+  const parts = marked.split('|');
+  expect(parts).toHaveLength(2);
+  return jsonCompletionContextAt(parts.join(''), (parts[0] as string).length);
 }
 
 describe('jsonCompletionContextAt', () => {
