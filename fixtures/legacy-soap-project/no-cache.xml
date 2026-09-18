@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="p-1" activeEnvironment="Default" name="No Cache" resourceRoot="" soapui-version="5.7.0" abortOnError="false" runType="SEQUENTIAL" xmlns:con="http://eviware.com/soapui/config">
+  <con:settings/>
+  <con:interface xsi:type="con:WsdlInterface" id="i-1" wsaVersion="NONE" name="EchoBinding" type="wsdl" bindingName="{urn:wb:nested}EchoBinding" soapVersion="1_2" anonymous="optional" definition="http://example.invalid/nested/service.wsdl" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+    <con:endpoints>
+      <con:endpoint>http://example.invalid/echo</con:endpoint>
+    </con:endpoints>
+    <con:operation id="o-1" isOneWay="false" action="urn:wb:nested/Echo" name="Echo" bindingOperationName="Echo" type="Request-Response" inputName="" receivesAttachments="false" sendsAttachments="false" anonymous="optional">
+      <con:settings/>
+        <con:call id="Request 1-id" name="Request 1">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>http://example.invalid/echo</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:com="urn:wb:common">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <com:EchoRequest>${#Project#greeting}</com:EchoRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:authType>No Authorization</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+    </con:operation>
+  </con:interface>
+  <con:properties/>
+  <con:wssContainer/>
+  <con:oAuth2ProfileContainer/>
+  <con:oAuth1ProfileContainer/>
+  <con:sensitiveInformation/>
+</con:soapui-project>
