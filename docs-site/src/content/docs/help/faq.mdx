@@ -1,0 +1,70 @@
+---
+title: FAQ
+description: Quick answers about accounts, privacy, data location, sync, protocols, licence and updates.
+---
+
+### Is there an account or cloud sync?
+
+No. There's no account to create and no Wirebench-run server. Sharing a workspace works over git
+(your own remote) or a synced folder (Dropbox, OneDrive, Syncthing, a network share) — see
+[Shared workspaces](/wirebench/guides/shared-workspaces/).
+
+### Does Wirebench send any telemetry or usage data?
+
+No. Wirebench never sends usage data, and it never loads remote content into the app. Checking
+for updates is something you trigger yourself — the app doesn't check on its own unless you turn
+that on.
+
+### Where is my data stored?
+
+In one data folder, in your OS's standard app-data location — see [Where your data
+lives](/wirebench/getting-started/installation/#where-your-data-lives) for the exact path on
+macOS, Windows, Linux and under a snap install. Workspaces, projects, preferences and secrets are
+all there.
+
+### Are my credentials stored safely?
+
+Yes. Secrets are encrypted with your OS's own keychain (macOS Keychain, Windows DPAPI, or
+libsecret on Linux) before they touch disk, and project files never hold a credential value —
+only an opaque reference to one. On a headless Linux setup with no keyring available, Wirebench
+falls back to a weaker, marked-as-such store rather than refusing to run.
+
+### Can I use git to sync a project or workspace?
+
+Yes, in two ways. A single project can be **exported** to a folder you manage, or **linked** to an
+existing folder that's already under git — either one lets you commit it yourself. A whole
+**workspace** can be shared as a git repository directly from Wirebench (**Share this
+workspace…**), which keeps it synced across a team through Wirebench's own Sync control.
+
+### Which protocols are supported?
+
+SOAP (with WS-Security, WS-Addressing, MTOM/SwA attachments, and WS-I Basic Profile validation),
+REST, and gRPC (unary and streaming, message completion from `.proto` reflection or files) — all
+sharing one project, one set of environments and one history.
+
+### Can I import from other tools' export formats?
+
+Yes: WSDL, OpenAPI/Swagger, Postman collections, and a legacy single-file SOAP project. You can
+also import a single request from a `curl` command line (**Import cURL…**).
+
+### Is Wirebench free, and what licence is it under?
+
+Yes. Wirebench is open source under the [Apache License 2.0](https://github.com/wirebench/wirebench/blob/main/LICENSE).
+
+### How do I update?
+
+Run **Check for Updates…** from the command palette, or turn on **Preferences → Updates → Check
+for updates on launch** to have it check automatically. Wirebench never checks on its own
+otherwise.
+
+### Does Wirebench work offline?
+
+Yes, for anything that doesn't itself require the network — editing requests, environments and
+history all work offline. Sending a request, importing a WSDL/OpenAPI document by URL, or syncing
+a shared workspace all need a reachable network, same as any client that talks to a real service.
+
+### What happens if I open a project made by a newer version of Wirebench?
+
+It's refused with a clear error rather than opened partially or guessed at — see [Project folder
+format](/wirebench/reference/project-format/) for how the format version works. Update Wirebench
+to open it.

@@ -23,7 +23,7 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       sidebar: [
         {
-          label: 'Getting Started',
+          label: 'Getting started',
           items: [
             { label: 'Introduction', slug: 'getting-started' },
             { label: 'Install and first run', slug: 'getting-started/installation' },
@@ -31,19 +31,36 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Core Guides',
+          label: 'Guides',
           items: [
-            { label: 'REST Client', slug: 'guides/rest-client' },
-            { label: 'SOAP & WSDL', slug: 'guides/soap-wsdl' },
-            { label: 'Environments & Properties', slug: 'guides/environments' },
-            { label: 'Shared Workspaces', slug: 'guides/workspaces' },
+            { label: 'Workspaces and projects', slug: 'guides/workspaces' },
+            { label: 'SOAP and WSDL', slug: 'guides/soap-wsdl' },
+            { label: 'REST', slug: 'guides/rest-client' },
+            { label: 'gRPC', slug: 'guides/grpc' },
+            { label: 'Importing APIs', slug: 'guides/importers' },
+            { label: 'Environments and properties', slug: 'guides/environments' },
+            { label: 'Authentication', slug: 'guides/auth' },
+            { label: 'Secrets', slug: 'guides/secrets' },
+            { label: 'HTTP Log', slug: 'guides/http-log' },
+            { label: 'History', slug: 'guides/history' },
+            { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
+            { label: 'Preferences and layout', slug: 'guides/preferences' },
           ],
         },
         {
           label: 'Reference',
           items: [
             { label: 'Commands and shortcuts', slug: 'reference/commands' },
-            { label: 'Project Format (v3)', slug: 'reference/project-format' },
+            { label: 'Property expansion syntax', slug: 'reference/property-syntax' },
+            { label: 'Project folder format', slug: 'reference/project-format' },
+            { label: 'WS-I assertions', slug: 'reference/ws-i' },
+          ],
+        },
+        {
+          label: 'Help',
+          items: [
+            { label: 'Troubleshooting', slug: 'help/troubleshooting' },
+            { label: 'FAQ', slug: 'help/faq' },
           ],
         },
       ],

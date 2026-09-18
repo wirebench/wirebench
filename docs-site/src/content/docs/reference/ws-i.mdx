@@ -1,0 +1,33 @@
+---
+title: WS-I assertions
+description: What Wirebench's WS-I Basic Profile report checks, and where the full assertion list lives.
+---
+
+Wirebench checks a SOAP interface against the **WS-I Basic Profile 1.1**: a description-level
+check over the WSDL and its schemas, and a message-level check over one sent exchange. Run either
+from an interface's own tab or from a request's context menu (**Check WS-I compliance**); a request needs to
+have been sent at least once, since the message checks run over its last exchange.
+
+The **WS-I Report** tab in the console shows the result. Each assertion comes back as one of:
+
+| Result | Meaning |
+| --- | --- |
+| Passed | The construct the assertion examines was found and satisfies the profile |
+| Failed | A `REQUIRED` rule was violated |
+| Warning | A `RECOMMENDED` rule was violated |
+| N/A | The construct the assertion examines doesn't occur, so the rule doesn't apply |
+
+The report opens with the four counts as a summary, then the individual findings — each with the
+location in the document (and line, when known) that triggered it. A **failures and warnings
+only** toggle hides the passed and N/A rows so a clean report doesn't bury the ones that matter.
+
+## The full assertion list
+
+Every assertion Wirebench implements — its id, the profile requirement it paraphrases, and
+whether it's description- or message-level — is generated from source and kept in the repository,
+not duplicated here:
+
+[**ws-i-assertions.md** on GitHub](https://github.com/wirebench/wirebench/blob/main/docs/ws-i-assertions.md)
+
+That page also lists the assertion ids the profile defines that Wirebench does not yet implement,
+so its coverage isn't overstated.
