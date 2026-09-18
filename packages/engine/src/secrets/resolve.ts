@@ -67,6 +67,31 @@ export async function resolveEndpointAuth(
 }
 
 /**
+ * Converts resolved endpoint credentials into the engine's `SendAuth`, or `undefined` when there
+ * is nothing to send (no auth configured, `type: 'none'`, or an incomplete pair). Basic defaults
+ * to preemptive; a non-preemptive send waits for the 401 challenge. Shared by every host so a
+ * SOAP request authenticates the same way from the app and from a pipeline.
+ */
+export function toSendAuth(auth?: ResolvedAuth): SendAuth | undefined {
+  if (auth === undefined || auth.type === 'none') {
+    return undefined;
+  }
+  if (auth.username === undefined || auth.password === undefined) {
+    return undefined;
+  }
+  if (auth.type === 'ntlm') {
+    return {
+      type: 'ntlm',
+      username: auth.username,
+      password: auth.password,
+      ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+      ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
+    };
+  }
+  return { type: 'basic', username: auth.username, password: auth.password, preemptive: auth.preemptive !== false };
+}
+
+/**
  * Resolves any {@link AuthConfig} into the engine's `SendAuth` — the shape that carries values
  * rather than references.
  *
