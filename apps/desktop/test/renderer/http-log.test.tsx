@@ -8,6 +8,7 @@ import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visi
 import { b64, logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 
 const failure: LogEntry = { kind: 'failure', failure: makeFailure() };
 
@@ -369,5 +370,43 @@ describe('HttpLog — keyboard scrolling', () => {
     await userEvent.keyboard('{ArrowDown}{ArrowDown}');
     expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' });
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('HttpLog — Export HAR', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('Export HAR sends the rows the filter shows, in display order, and reports the path', async () => {
+    const exportHar = vi.fn().mockResolvedValue({ ok: true, value: { saved: true, path: '/tmp/x.har' } });
+    installWirebenchApi({ log: { exportHar } });
+    const a = logExchange(makeRestExchange({ sendId: 'a' }));
+    const b: LogEntry = { kind: 'failure', failure: makeFailure({ sendId: 'b' }) };
+    useExchangesStore.setState({ log: [a, b], filter: { ...EMPTY_FILTER, statuses: ['failed'] } });
+    render(
+      <>
+        <HttpLog />
+        <ToastViewport />
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Export HAR' }));
+    expect(exportHar).toHaveBeenCalledWith({ entries: [b] });
+    expect(await screen.findByText(/Saved \/tmp\/x\.har/)).toBeDefined();
+  });
+
+  it('Export HAR is disabled when the filter shows no row', () => {
+    installWirebenchApi();
+    useExchangesStore.setState({
+      log: [logExchange(makeRestExchange({ sendId: 'a' }))],
+      filter: { ...EMPTY_FILTER, statuses: ['failed'] },
+    });
+    render(<HttpLog />);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Export HAR' }).disabled).toBe(true);
   });
 });

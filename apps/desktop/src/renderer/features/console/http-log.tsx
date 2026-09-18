@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '../../components/button.js';
+import { showToast } from '../../components/toast.js';
 import { formatBytes, formatClockTime, formatDuration } from '../../lib/format-size.js';
 import { responseSize, toneFor } from '../request-editor/response-status.js';
 import type { LogEntry } from '../../state/exchanges.js';
 import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
+import { ipc } from '../../state/ipc-client.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
@@ -188,6 +190,21 @@ export function HttpLog() {
             >
               <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
               <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={visible.length === 0}
+              title="Export the rows shown as a HAR file (secrets are always masked)"
+              onClick={() => {
+                void (async () => {
+                  const result = await ipc().log.exportHar({ entries: [...visible] });
+                  if (!result.ok) showToast(result.error.message);
+                  else if (result.value.saved && result.value.path !== undefined)
+                    showToast(`Saved ${result.value.path}`);
+                })();
+              }}
+            >
+              Export HAR
             </Button>
             <Button variant="ghost" onClick={clearLog}>
               Clear
