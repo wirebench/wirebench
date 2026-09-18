@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **HTTP Log: compare two rows.** Cmd/Ctrl+click a second row to compare the two — a summary of each,
+  request and response headers marked added/removed/changed, and request and response bodies side by
+  side (pretty-printed when both are JSON or both XML). Escape goes back to one row.
 - **HTTP Log: waterfall.** A Waterfall column shows each row's start and duration across the rows shown,
   split into connect, TLS, wait and download (hover for the breakdown; hidden while a row is selected); the
   Timing tab notes a reused connection.
