@@ -103,7 +103,10 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowP
   );
 }
 
-/** A column label that sorts on click: ascending, descending, then back to log order. */
+/**
+ * A column label that sorts on click: ascending, descending, then back to log order. Deliberately
+ * not a `columnheader`: the log is a list of buttons, not a table, and the role needs a table parent.
+ */
 function SortHeader({
   label,
   column,
@@ -117,13 +120,10 @@ function SortHeader({
 }) {
   const direction = sort?.column === column ? sort.direction : undefined;
   return (
-    <span
-      role="columnheader"
-      aria-sort={direction === undefined ? 'none' : direction === 'asc' ? 'ascending' : 'descending'}
-      className="min-w-0"
-    >
+    <span className="min-w-0">
       <button
         type="button"
+        title={`Sort by ${label}${direction === undefined ? '' : direction === 'asc' ? ', ascending' : ', descending'}`}
         onClick={() => {
           onSort(column);
         }}
