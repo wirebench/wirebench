@@ -1,0 +1,134 @@
+---
+title: Shared workspaces
+description: Share a workspace with a team over git or a synced folder, sync with pull and push, and resolve conflicts.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A workspace can be shared with a team. Members join by URL, or by pointing at an existing folder,
+and every save becomes a commit so everyone converges on the same projects and environments.
+
+A shared workspace's tree — `workspace.yaml`, `environments/`, and each project's files — becomes
+either:
+
+- **a git repository**, synced by Wirebench's own Sync control over the system `git`, or
+- **a synced folder**, replicated by whatever tool you already point at that folder (Dropbox,
+  OneDrive, Syncthing, a network share) — Wirebench just reads and writes the files there.
+
+Everything that must never leave your machine — which environment is active, unsaved edits,
+secret values, history, preferences — stays out of the tree. See [Secrets](#secrets) below.
+
+## Share a workspace
+
+<Steps>
+
+1. From **Manage workspaces…** (or the workspace switcher), choose **Share this workspace…** on a
+   local workspace.
+2. Choose **Git repository** (the default) or **Synced folder**.
+3. For a git repository, enter a remote URL (optional — you can add one later from the Sync
+   panel) and a branch, which defaults to `main`.
+4. For a synced folder, click **Choose folder…** and pick an empty folder.
+
+</Steps>
+
+Every save becomes a commit. Members join by URL, or by pointing at the same synced folder.
+
+<Aside type="caution" title="The remote must be empty">
+For a git repository, the remote must be empty: a repository that already has history of its own
+is not merged into the new workspace, and the push is refused. Create an empty repository on your
+host for each shared workspace.
+</Aside>
+
+## Join a shared workspace
+
+**Join shared workspace…** is on the workspace picker and always available, since it's how a
+workspace first arrives on a machine.
+
+- Paste the git URL (`git@host:team/workspace.git`, `https://…`, or `ssh://…`) and, optionally, a
+  branch. Wirebench clones it and opens it.
+- **Use existing clone or synced folder…** picks a folder that is already a git checkout or an
+  existing synced folder containing a `workspace.yaml`.
+
+Joining a workspace already on this machine is refused; the dialog offers **Open it** instead.
+
+## Sync: pull, push, commit
+
+Once a workspace is shared, the status bar shows a Sync badge whose label follows the sync state
+— *Up to date*, *N to push*, *N to pull*, *Diverged*, *Conflicts*, *Syncing…*, *Offline*, *Error*,
+*No git* (a git share where git could not be found), or *Synced folder* (no Sync control at all).
+Click it to open the **Sync panel**:
+
+![The Sync panel of a workspace shared to a git remote](/wirebench/images/workspaces/sync-panel.png)
+
+- **Pull**, **Push** and **Fetch** buttons, and a commit-message field for when *Commit on save*
+  is off — leave it empty and Wirebench writes a generated one.
+- **Conflicts**, when there are any, each with a **Resolve…** shortcut into the conflict
+  resolver.
+- **Recent commits** — the last 20, each with its subject, author and a relative time.
+- **Settings** — *Commit on save*, *Push on save*, *Auto-fetch every N seconds*, *Remote* and
+  *Branch*.
+- **Reveal shared folder** and **Stop sharing…**.
+
+**Commit on save** (on by default) commits every successful save with a generated message. With
+it off, saves stay uncommitted until you use **Commit** with your own message.
+
+**Push on save** (on by default) pushes every commit right away. A push rejected as
+non-fast-forward triggers a fetch, merge and retry automatically.
+
+**Fetch** runs on open, on demand, and on the auto-fetch interval; it never changes files, only
+the ahead/behind counts. **Pull** is fetch plus merge — it's refused if you have uncommitted
+changes and *Commit on save* is off.
+
+## Conflicts
+
+When a merge leaves conflicted files, the sync banner offers **Resolve…**, which opens the
+conflict resolver. It lists each conflicted entity by name with three choices:
+
+- **Keep mine**
+- **Keep theirs**
+- **Open file** — edit it by hand in your file manager and resolve it outside the app.
+
+**Cancel** aborts the whole merge, with a confirmation, since it discards every resolution made so
+far.
+
+![The conflict resolver naming a request both sides edited](/wirebench/images/workspaces/conflict-resolver.png)
+
+While a conflict is open, conflicted requests are read-only in the editor. Once every conflicted
+file is resolved, Wirebench commits the merge and reloads.
+
+## Identity
+
+The first time a shared workspace needs to commit and neither the repository nor your global git
+config sets both a name and an email, a dialog asks for them once and writes them into the
+repository's own local git config — not a Wirebench-wide identity. There is no way to dismiss
+this dialog without answering it.
+
+## Secrets
+
+Secret refs travel with the workspace like everything else; the values behind them never do —
+they stay in each member's OS keychain. Open a request whose secret ref has no value on this
+machine and the field shows **Not on this machine** with an **Enter…** button; typing a value
+there stores it locally under the same ref, so the shared files are untouched and your teammates'
+files never change.
+
+## Without git
+
+A synced folder has no Sync control of its own: whatever tool watches that folder is in charge of
+getting files to other members, and Wirebench just reloads what changes on disk. Two people
+saving the same file at the same time race on whatever your sync client does about it — usually
+last write wins, with no merge. Prefer a git share for anything beyond one person working across
+their own machines.
+
+With git absent entirely, a git share still opens and works as a plain folder — the badge shows
+*No git* and the Sync panel explains what to install.
+
+## Stop sharing
+
+From the Sync panel, **Stop sharing…** moves the tree back to the workspace's own folder and
+turns the workspace local again. Nothing is deleted, and the git repository (if any) is left in
+place for you to delete by hand.
+
+## Related
+
+- [Workspaces and projects](/wirebench/guides/workspaces/) — what a workspace and a project are,
+  and managing them locally.

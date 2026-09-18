@@ -1,66 +1,117 @@
 ---
-title: Shared Workspaces & Collaboration
-description: Collaborate on API projects using Git-backed shared workspaces, sync status, and visual merge conflict resolution.
+title: Workspaces and projects
+description: What a workspace and a project are, and how to create, switch between and manage them.
 ---
 
-import Shortcut from '../../components/Shortcut.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-# Shared Workspaces & Git Collaboration
+A **workspace** holds your projects and the environments they share. Everything in it lives in
+plain files you can read, diff and commit. A **project** is one API — SOAP, REST or gRPC — with
+its interfaces or definitions, requests, and attachments. A workspace usually holds several
+projects.
 
-In Wirebench, collaboration is built on **standard Git repositories**. You can share entire workspaces — including projects, environments, and test definitions — across your engineering team without relying on proprietary third-party servers.
+## The workspace picker
 
----
+Wirebench opens the workspace picker whenever no workspace is open — on first launch, or after
+you delete the one you had open. It lists every workspace on disk, with its project count and
+when you last opened it, and offers a name field to create another.
 
-## 1. Connecting a Shared Workspace
+![The workspace picker Wirebench shows on first launch](/wirebench/images/getting-started/workspace-picker.png)
 
-To set up a Git-backed shared workspace:
-1. Open the Workspace Manager (<Shortcut keys={["Cmd", "Shift", "N"]} />).
-2. Select **Share Workspace** or **Join Shared Workspace**.
-3. Provide your Git repository URL (HTTPS or SSH, e.g. `git@github.com:your-org/api-tests.git`).
-4. Wirebench initializes the Git repository and hooks into your system Git client.
+From the picker you can also **Import project folder…** (copies a project folder into a new
+workspace named after it) and **Join shared workspace…** (see [Shared
+workspaces](/wirebench/guides/shared-workspaces/)).
 
----
+## Create a workspace
 
-## 2. The Sync Panel
+<Steps>
 
-The **Sync Panel** gives you complete visibility into repository state without switching to a terminal:
+1. On the picker, type a name in **Workspace name**.
+2. Choose **Create workspace**, or press Enter.
 
-- **Branch Tracking**: View your current working branch and upstream tracking branch.
-- **Ahead / Behind Status**: Shows how many commits you are ahead of or behind the remote.
-- **Recent Sync History**: Commit log with commit hashes, author names, and change summaries.
-- **Sync Actions**: One-click **Pull**, **Commit & Push**, or **Fetch**.
+</Steps>
 
-![Wirebench Shared Workspace Sync Panel](/wirebench/images/workspaces/sync-panel.png)
+Once a workspace is open, **Create workspace…** is also on the workspace switcher — the dropdown
+next to the workspace name in the title bar — and on the command palette, alongside **Manage
+Workspaces…**.
 
----
+## Switch workspaces
 
-## 3. Visual 3-Way Merge Conflict Resolution
+Open the workspace switcher (the dropdown next to the workspace name in the title bar) and choose
+another workspace from the list. Each row shows a folder or branch glyph when that workspace is
+shared. A workspace that cannot be read is disabled in the list, with the reason in its tooltip.
 
-When multiple team members modify the same request or project definition concurrently, Wirebench eliminates manual Git conflict markers (`<<<<<<< HEAD`) by providing a built-in **Visual Conflict Resolver**:
+## Manage workspaces
 
-- **Three-Way Comparison**:
-  - **Local Version**: Your local changes made in this session.
-  - **Base Version**: The common ancestor commit.
-  - **Remote Version**: Incoming changes pushed by a teammate.
-- **Granular Merging**: Accept local, accept remote, or inspect property diffs side-by-side.
-- **Safe Resolution**: Resolving marks the file clean and creates an atomic merge commit.
+**Manage workspaces…** (from the switcher) lists every workspace with its folder and project
+count. From here you can:
 
-![Three-Way Visual Merge Conflict Resolver](/wirebench/images/workspaces/conflict-resolver.png)
+- **Rename** a workspace in place — type into its name field and press Enter or click away.
+- **Share this workspace…** or **Stop sharing** — see [Shared
+  workspaces](/wirebench/guides/shared-workspaces/).
+- **Delete** a workspace.
 
----
+<Aside type="caution" title="Deleting a workspace">
+Deleting sends the workspace and the projects stored inside it to the trash — never a permanent
+delete. A linked project's folder is left exactly where it is, since it never belonged to the
+workspace. Deleting the workspace you have open returns you to the picker.
+</Aside>
 
-## 4. Branching & PR Workflows
+## Add a project
 
-Because Wirebench workspaces are standard Git repositories:
-- You can create feature branches (e.g. `git checkout -b feature/v2-payment-apis`).
-- Push branches and open Pull Requests on GitHub, GitLab, or Bitbucket.
-- Code reviewers can review API changes, schema updates, and test assertions in standard pull request diffs.
+**New Project…** (<kbd>⌘⇧N</kbd> / <kbd>Ctrl+Shift+N</kbd>) creates an empty project inside the
+open workspace — just a name; its folder is the workspace's own `projects/<slug>/`. From there,
+import a WSDL or an OpenAPI document into it, or build requests by hand. See
+[importers](/wirebench/guides/importers/).
 
----
+## Remove a project
 
-## 5. Offline-First Resilience
+Right-click a project in the explorer and choose **Remove Project from Workspace…**. What happens
+next depends on how the project got here:
 
-If you lose internet connectivity:
-- Wirebench remains fully functional. You can create requests, edit envelopes, and test local services.
-- All modifications are committed to your local Git repository.
-- When reconnected, click **Sync** to push your work to the remote team repository.
+- An **internal** project (created in the workspace, or imported into it) offers to move its
+  folder to the trash — on by default.
+- A **linked** project's folder is never touched; the dialog says so and removing it only takes
+  the project out of the workspace.
+
+Removing always asks for confirmation first.
+
+## Link an existing project folder
+
+**Link Project Folder…** adds a project folder from anywhere on disk to the workspace without
+copying it — Wirebench reads and writes it in place. Use this when a project's files need to stay
+where they are, for example under their own version control outside the workspace.
+
+<Aside type="note">
+Linked projects are not available in a [shared workspace](/wirebench/guides/shared-workspaces/):
+a linked folder points outside the tree that gets shared, which a teammate's machine cannot
+resolve. Use **Move to workspace…** on a local workspace to copy a linked project in first.
+</Aside>
+
+## Import a project folder
+
+**Import Project Folder…** copies a project folder into the open workspace (or, run from the
+picker with no workspace open, into a new workspace named after the folder). Unlike linking, the
+files become the workspace's own copy.
+
+The picker also remembers project folders you opened before Wirebench had workspaces, listed
+under **Project folders you opened before** — click one to import it the same way.
+
+## Export a project
+
+Right-click a project and choose **Export Project…** to write it out to a folder you pick,
+independent of the workspace it lives in.
+
+## Tabs across projects
+
+The editor's tabs belong to the workspace, not to any one project: open a request from one
+project, then another from a different project, and both stay open side by side. Closing or
+reordering tabs, and which one is active, is remembered per workspace the next time you open it.
+
+## Related
+
+- [Shared workspaces](/wirebench/guides/shared-workspaces/) — share a workspace with a team, sync,
+  and resolve conflicts.
+- [Importers](/wirebench/guides/importers/) — WSDL, OpenAPI, cURL and legacy SOAP project import.
+- [Environments](/wirebench/guides/environments/) — variables and endpoints shared across a
+  workspace's projects.
