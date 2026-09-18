@@ -47,6 +47,10 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
   registerHandler(channels.exchanges.get, (request) => {
     const summary = cache.get(request.sendId);
     if (summary === undefined) {
+      const rest = cache.getRestView(request.sendId, showSecrets.get());
+      if (rest !== undefined) {
+        return Promise.resolve(rest);
+      }
       throw new WirebenchError('unknown-send', `No cached exchange for send "${request.sendId}"`, {
         details: { sendId: request.sendId },
       });

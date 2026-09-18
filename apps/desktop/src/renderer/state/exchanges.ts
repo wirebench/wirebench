@@ -25,7 +25,15 @@ import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
-const LOG_CAP = 500;
+/** The row limit before preferences load; `ui.logSize` replaces it (Preferences › Behaviour). */
+const DEFAULT_LOG_CAP = 500;
+
+/** Drops the oldest rows past the store's current row limit. */
+function trimLog(draft: { log: LogEntry[]; logCap: number }): void {
+  if (draft.log.length > draft.logCap) {
+    draft.log.splice(0, draft.log.length - draft.logCap);
+  }
+}
 
 /**
  * One row of the HTTP Log: a finished exchange of either protocol, or a send that never produced
@@ -33,7 +41,12 @@ const LOG_CAP = 500;
  * bar and History keep consuming `ExchangeSummary` / `RestExchangeSummary` exactly as before.
  */
 export type LogEntry =
-  | { readonly kind: 'exchange'; readonly exchange: AnyExchangeSummary }
+  | {
+      readonly kind: 'exchange';
+      readonly exchange: AnyExchangeSummary;
+      /** The saved request the send came from — what the row menu resends and opens. */
+      readonly requestId?: string;
+    }
   | { readonly kind: 'failure'; readonly failure: FailedExchangeWire };
 
 /** The HTTP status classes the filter bar offers, plus `failed` for a send that produced none. */
@@ -41,8 +54,12 @@ export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
 
 /** What narrows the HTTP Log; every list empty means "all". Lives here so it survives switching console tabs. */
 export interface LogFilter {
-  /** Case-insensitive substring of the request URL. */
+  /** Searched in the URL, header lines, bodies and request name. */
   readonly text: string;
+  /** `text` is a regular expression. */
+  readonly regex: boolean;
+  /** `text` matches case-sensitively. */
+  readonly matchCase: boolean;
   /** Upper-case method names. */
   readonly methods: readonly string[];
   readonly statuses: readonly StatusClass[];
@@ -50,7 +67,22 @@ export interface LogFilter {
 }
 
 /** The filter that shows every row. */
-export const EMPTY_FILTER: LogFilter = { text: '', methods: [], statuses: [], protocols: [] };
+export const EMPTY_FILTER: LogFilter = {
+  text: '',
+  regex: false,
+  matchCase: false,
+  methods: [],
+  statuses: [],
+  protocols: [],
+};
+
+/** The HTTP Log columns a header click sorts by. */
+export type SortColumn = 'time' | 'name' | 'status' | 'duration' | 'size';
+
+export interface LogSort {
+  readonly column: SortColumn;
+  readonly direction: 'asc' | 'desc';
+}
 
 /** The send id either kind of entry carries. */
 export function sendIdOf(entry: LogEntry): string {
@@ -137,6 +169,15 @@ export interface ExchangesSnapshot {
   readonly log: readonly LogEntry[];
   /** The HTTP Log's filter. Not persisted; dropped with the log on `reset`. */
   readonly filter: LogFilter;
+  /** The HTTP Log's column sort; undefined is log order. Reset with the filter. */
+  readonly sort: LogSort | undefined;
+  /** How many rows the log keeps; follows `ui.logSize`. */
+  readonly logCap: number;
+  /**
+   * Session-only: when on, `reset` keeps the log, filter and sort. In memory only — never
+   * saved, and off again at every launch.
+   */
+  readonly preserveLog: boolean;
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -152,17 +193,29 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly clearRequest: (requestId: string) => void;
   /**
    * Drops every response and the whole HTTP log. Called when the workspace closes: both are
-   * keyed by requests of projects that are no longer open.
+   * keyed by requests of projects that are no longer open. With `preserveLog` on, the log,
+   * filter and sort stay.
    */
   readonly reset: () => void;
   /** Empties the HTTP log. Per-request state is left alone — the panes keep their responses. */
   readonly clearLog: () => void;
+  /** Sets the row limit; lowering it drops the oldest rows at once, raising it keeps every row. */
+  readonly setLogCap: (cap: number) => void;
+  /** Turns Preserve log on or off. */
+  readonly setPreserveLog: (on: boolean) => void;
+  /**
+   * Appends a finished exchange's row — a resend from the HTTP Log's row menu. A `sendId` already in
+   * the log (either kind) is ignored.
+   */
+  readonly appendExchange: (exchange: AnyExchangeSummary, requestId?: string) => void;
   /** Appends a failed send's row. A `sendId` already in the log (either kind) is ignored. */
   readonly appendFailure: (failure: FailedExchangeWire) => void;
   /** Merges a patch into the HTTP Log filter. */
   readonly setFilter: (patch: Partial<LogFilter>) => void;
   /** Shows every row again. Distinct from `clearLog`, which empties the log. */
   readonly resetFilter: () => void;
+  /** Cycles off → asc → desc → off; a different column starts again at asc. */
+  readonly cycleSort: (column: SortColumn) => void;
   /**
    * Re-reads one exchange from main (`exchanges.get`), which re-redacts it against the
    * show-secrets flag as it stands now, and swaps the fresher copy into the log and the
@@ -227,9 +280,20 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     grpcByRequest: {},
     log: [],
     filter: EMPTY_FILTER,
+    sort: undefined,
+    logCap: DEFAULT_LOG_CAP,
+    preserveLog: false,
 
     reset: () => {
-      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER });
+      const { preserveLog, log, filter, sort } = get();
+      set({
+        byRequest: {},
+        restByRequest: {},
+        grpcByRequest: {},
+        log: preserveLog ? log : [],
+        filter: preserveLog ? filter : EMPTY_FILTER,
+        sort: preserveLog ? sort : undefined,
+      });
     },
 
     sendGrpc: async (requestId, options) => {
@@ -291,10 +355,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         // `live` goes: the exchange holds every message it held, and holding both would let the
         // pane show a message twice.
         draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push({ kind: 'exchange', exchange: result.value });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
+        trimLog(draft);
       });
     },
 
@@ -429,13 +491,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         // The same push the SOAP path does: the HTTP Log is one list across every protocol.
-        // (`refreshExchange` cannot re-redact a REST row on a show-secrets toggle — `exchanges.get`
-        // only knows the SOAP cache — but the row's URL was already redacted at send time, so it
-        // stays correct; it just does not gain the secret back. Tracked on the roadmap.)
-        draft.log.push({ kind: 'exchange', exchange: result.value });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
+        trimLog(draft);
       });
     },
 
@@ -575,10 +632,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
       update((draft) => {
         draft.byRequest[requestId] = { status: 'done', sendId, exchange: result.value };
-        draft.log.push({ kind: 'exchange', exchange: result.value });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        draft.log.push({ kind: 'exchange', exchange: result.value, requestId });
+        trimLog(draft);
       });
     },
 
@@ -599,7 +654,21 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       update((draft) => {
         const index = draft.log.findIndex((entry) => entry.kind === 'exchange' && entry.exchange.sendId === sendId);
         if (index >= 0) {
-          draft.log[index] = { kind: 'exchange', exchange: fresh };
+          const previous = draft.log[index];
+          const requestId = previous?.kind === 'exchange' ? previous.requestId : undefined;
+          draft.log[index] =
+            requestId === undefined
+              ? { kind: 'exchange', exchange: fresh }
+              : { kind: 'exchange', exchange: fresh, requestId };
+        }
+        // A REST summary is the one carrying `methodChanged`; each lands back in its own protocol's map.
+        if ('methodChanged' in fresh) {
+          for (const [requestId, state] of Object.entries(draft.restByRequest)) {
+            if (state.sendId === sendId && state.exchange !== undefined) {
+              draft.restByRequest[requestId] = { ...state, exchange: fresh };
+            }
+          }
+          return;
         }
         for (const [requestId, state] of Object.entries(draft.byRequest)) {
           if (state.sendId === sendId && state.exchange !== undefined) {
@@ -615,15 +684,36 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    setPreserveLog: (on) => {
+      set({ preserveLog: on });
+    },
+
+    setLogCap: (cap) => {
+      update((draft) => {
+        draft.logCap = cap;
+        trimLog(draft);
+      });
+    },
+
+    appendExchange: (exchange, requestId) => {
+      update((draft) => {
+        if (draft.log.some((entry) => sendIdOf(entry) === exchange.sendId)) {
+          return;
+        }
+        draft.log.push(
+          requestId === undefined ? { kind: 'exchange', exchange } : { kind: 'exchange', exchange, requestId },
+        );
+        trimLog(draft);
+      });
+    },
+
     appendFailure: (failure) => {
       update((draft) => {
         if (draft.log.some((entry) => sendIdOf(entry) === failure.sendId)) {
           return;
         }
         draft.log.push({ kind: 'failure', failure });
-        if (draft.log.length > LOG_CAP) {
-          draft.log.splice(0, draft.log.length - LOG_CAP);
-        }
+        trimLog(draft);
       });
     },
 
@@ -632,7 +722,16 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     resetFilter: () => {
-      set({ filter: EMPTY_FILTER });
+      set({ filter: EMPTY_FILTER, sort: undefined });
+    },
+
+    cycleSort: (column) => {
+      set((state) => {
+        if (state.sort?.column !== column) {
+          return { sort: { column, direction: 'asc' } };
+        }
+        return { sort: state.sort.direction === 'asc' ? { column, direction: 'desc' } : undefined };
+      });
     },
 
     clearRequest: (requestId) => {

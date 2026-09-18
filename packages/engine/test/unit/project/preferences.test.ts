@@ -145,3 +145,12 @@ describe('git preferences', () => {
     expect(reset.git).toEqual(DEFAULT_PREFERENCES.git);
   });
 });
+
+describe('ui.logSize', () => {
+  it('defaults to 500 and is clamped to 100–5000', () => {
+    expect(DEFAULT_PREFERENCES.ui.logSize).toBe(500);
+    expect(mergePreferences({ ui: { logSize: 20 } }).ui.logSize).toBe(100);
+    expect(mergePreferences({ ui: { logSize: 99999 } }).ui.logSize).toBe(5000);
+    expect(mergePreferences({ ui: {} }).ui.logSize).toBe(500);
+  });
+});

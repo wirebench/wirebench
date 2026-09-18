@@ -302,21 +302,20 @@ is a sibling container rather than a generalised interface. Evidence per criteri
 - **_Update Definition_ for an API**, preserving edited values the way the WSDL one does (spec §15.7).
 - **Response validation against the OpenAPI response schema** — the functional-testing phase, with the
   `ajv` ask (spec §15.8).
-- **Re-redact a REST row in the HTTP Log when _show secrets_ is toggled.** REST sends reach the log
-  now, but `refreshExchange` re-fetches through `exchanges.get`, which only knows the SOAP cache, so a
-  REST row keeps the redaction it was given at send time instead of gaining the secret back. The row
-  is never *wrong* — it is redacted, which is the safe direction — it just does not update.
+- **Re-redact a REST row in the HTTP Log when _show secrets_ is toggled — done 2026-09-18.** The
+  exchange cache keeps each REST send's projection, so `exchanges.get` re-renders a REST row for the
+  flag as it stands, URL key parameters included ([#50](https://github.com/wirebench/wirebench/issues/50)).
 - **Failed sends reach the HTTP Log — done 2026-09-16.** A send that fails at the network level
   (DNS, refused connection, TLS, proxy, timeout, abort, too many redirects) now gets a row with its
   error code, its duration and the request headers it was built with, redacted at emit and kept so;
   the log also gained a filter bar and a five-tab detail pane. See
   [`specs/2026-09-16-http-log-failures-filters-detail-design.md`](specs/2026-09-16-http-log-failures-filters-detail-design.md).
-  The re-redaction line above still stands for REST rows; a failure row is redacted by design and
-  the pane says so.
-- **Export the HTTP Log as HAR 1.2, and copy a row as cURL.** The next slice now that the log rework has
-  landed. The row action is wiring: cURL generation already exists behind the Code slide-over. HAR is the
-  design work — which bodies an export includes, and how redaction applies to a file that leaves the
-  machine. It also gives the mock recorder (item 11) and a HAR importer a format to share.
+  A failure row is redacted by design and the pane says so.
+- **HTTP Log export, reuse, search, waterfall, compare, row limit and preserve log — done 2026-09-18.**
+  Export HAR, copy as cURL, Resend and Open request from a row menu, search with regex and case, a Name
+  column and sort, a waterfall column, comparing two rows, a row-limit setting and a session-only Preserve
+  log. See
+  [`specs/2026-09-18-http-log-export-search-compare-design.md`](specs/2026-09-18-http-log-export-search-compare-design.md).
 
 - **The JSON form view** — see [Contracts](#contracts). The importers that used to sit beside it here
   shipped in 2.1.0.

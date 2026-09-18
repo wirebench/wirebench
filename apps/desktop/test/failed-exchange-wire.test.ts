@@ -35,3 +35,12 @@ describe('failedExchangeWireSchema', () => {
     expect(events.exchange.failed.payload.safeParse({}).success).toBe(false);
   });
 });
+
+describe('failedExchangeWireSchema.stage', () => {
+  it('is optional and accepts prepare/send only', () => {
+    expect(failedExchangeWireSchema.safeParse(failure).success).toBe(true);
+    expect(failedExchangeWireSchema.safeParse({ ...failure, stage: 'prepare' }).success).toBe(true);
+    expect(failedExchangeWireSchema.safeParse({ ...failure, stage: 'send' }).success).toBe(true);
+    expect(failedExchangeWireSchema.safeParse({ ...failure, stage: 'wire' }).success).toBe(false);
+  });
+});

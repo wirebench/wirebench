@@ -101,6 +101,7 @@ import {
   exchangeFailedEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
+  exchangesGetResponseSchema,
   exchangesSaveRestBodyRequestSchema,
   exchangesSaveRestBodyResponseSchema,
   globalsStateSchema,
@@ -137,6 +138,11 @@ import {
   requestRecreateResponseSchema,
   requestCurlRequestSchema,
   requestCurlResponseSchema,
+  logCurlRequestSchema,
+  logExportHarRequestSchema,
+  logExportHarResponseSchema,
+  logResendRequestSchema,
+  logResendResponseSchema,
   requestImportCurlRequestSchema,
   requestImportCurlResponseSchema,
   requestSendRequestSchema,
@@ -585,7 +591,7 @@ export const channels = {
   // Re-reads one cached exchange, redacted per the show-secrets flag as it stands *now*, so a
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.
   exchanges: {
-    get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangeSummarySchema),
+    get: defineChannel('exchanges.get', exchangesGetRequestSchema, exchangesGetResponseSchema),
     // The REST response body, written to a file the *user* picks. The bytes never cross the bridge:
     // main holds them in the exchange cache and writes them itself.
     saveRestBody: defineChannel(
@@ -593,6 +599,12 @@ export const channels = {
       exchangesSaveRestBodyRequestSchema,
       exchangesSaveRestBodyResponseSchema,
     ),
+  },
+  // What the HTTP Log asks main to do with a row it already holds.
+  log: {
+    curl: defineChannel('log.curl', logCurlRequestSchema, requestCurlResponseSchema),
+    resend: defineChannel('log.resend', logResendRequestSchema, logResendResponseSchema),
+    exportHar: defineChannel('log.exportHar', logExportHarRequestSchema, logExportHarResponseSchema),
   },
   history: {
     list: defineChannel('history.list', historyListRequestSchema, historyListResponseSchema),

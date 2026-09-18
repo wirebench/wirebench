@@ -8,7 +8,10 @@ import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visi
 import { b64, logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { formatClockTime } from '../../src/renderer/lib/format-size.js';
+import { ToastViewport } from '../../src/renderer/components/toast.js';
 
+vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
+vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 const failure: LogEntry = { kind: 'failure', failure: makeFailure() };
 
 function rows(): HTMLElement[] {
@@ -36,7 +39,7 @@ describe('HttpLog', () => {
     expect(screen.queryByTestId('http-log-filter')).toBeNull();
   });
 
-  it('renders one row per entry, newest last, with time · proto · method · URL · status · ms · size', () => {
+  it('renders one row per entry, newest last, with time · proto · method · name · URL · status · ms · size', () => {
     useExchangesStore.setState({
       log: [logExchange(makeExchange({ sendId: 'a' })), logExchange(makeRestExchange({ sendId: 'b', durationMs: 12 }))],
     });
@@ -44,21 +47,25 @@ describe('HttpLog', () => {
 
     expect(rows()).toHaveLength(2);
     const first = rows()[0]!;
-    const cells = [...first.querySelectorAll('span')].map((cell) => cell.textContent);
+    const cells = [...first.querySelectorAll(':scope > span')].map((cell) => cell.textContent);
     // Clock time is local, so derive it rather than pin a timezone.
     expect(cells).toEqual([
       formatClockTime(makeExchange().http.timings.startedAt),
       'soap',
       'POST',
+      '/calc.asmx',
       'https://example.test/calc.asmx',
       '200',
       '143 ms',
       expect.stringMatching(/B$/),
+      '',
     ]);
     expect(rows()[1]?.textContent).toContain('rest');
     expect(rows()[1]?.textContent).toContain('12 ms');
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
   });
 
   it('colours a failing status red', () => {
@@ -189,7 +196,7 @@ describe('HttpLog', () => {
     expect(rows()).toHaveLength(1);
     expect(rows()[0]?.textContent).toContain('404');
 
-    await userEvent.type(screen.getByLabelText('Filter URL'), 'nowhere');
+    await userEvent.type(screen.getByLabelText('Search the log'), 'nowhere');
     await waitFor(() => {
       expect(screen.getByText('No rows match the filter.')).toBeDefined();
     });
@@ -298,15 +305,18 @@ describe('HttpLog', () => {
     expect(within(toolbar).getByRole('button', { name: 'Clear' })).toBeDefined();
     expect(within(toolbar).getByRole('button', { name: 'Show secrets' })).toBeDefined();
     const header = screen.getByTestId('http-log-header').parentElement!;
-    expect(within(header).queryByRole('button')).toBeNull();
+    expect(within(header).queryByRole('button', { name: 'Clear' })).toBeNull();
+    expect(within(header).queryByRole('button', { name: /secrets/ })).toBeNull();
   });
 
-  it('sheds the time, ms and size columns while a detail pane shares the width', async () => {
+  it('sheds the time, name, ms and size columns while a detail pane shares the width', async () => {
     useExchangesStore.setState({ log: [logExchange(makeExchange({ sendId: 'a' }))] });
     render(<HttpLog />);
 
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
 
     await userEvent.click(rows()[0]!);
     expect(header.textContent).toBe(['proto', 'method', 'URL', 'status'].join(''));
@@ -314,6 +324,199 @@ describe('HttpLog', () => {
     expect(screen.getByTestId('http-log-status').textContent).toBe('200');
 
     await userEvent.click(screen.getByRole('button', { name: 'Close detail' }));
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
+  });
+
+  it('shows a waterfall column with a bar per row only while no row is selected', async () => {
+    useExchangesStore.setState({
+      log: [logExchange(makeExchange({ sendId: 'a' })), failure],
+    });
+    render(<HttpLog />);
+    const header = screen.getByTestId('http-log-header');
+    expect(within(header).getByText('waterfall')).toBeDefined();
+    expect(screen.getAllByTestId('waterfall-bar')).toHaveLength(2);
+
+    await userEvent.click(rows()[0]!);
+    expect(within(header).queryByText('waterfall')).toBeNull();
+    expect(screen.queryAllByTestId('waterfall-bar')).toHaveLength(0);
+  });
+});
+
+describe('HttpLog — prepare-stage failures', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows a prepare failure as "Failed · before send" and says it never went on the wire', async () => {
+    useExchangesStore.setState({
+      log: [
+        {
+          kind: 'failure',
+          failure: makeFailure({ stage: 'prepare', error: { code: 'invalid-url', message: 'Invalid URL' } }),
+        },
+      ],
+    });
+    render(<HttpLog />);
+    expect(within(rows()[0]!).getByTestId('http-log-status').textContent).toBe('Failed · before send');
+    await userEvent.click(rows()[0]!);
+    await userEvent.click(logTab('Response'));
+    expect(screen.getByTestId('log-detail-error').textContent).toMatch(/never went on the wire/);
+    expect(screen.getByTestId('log-detail-error').textContent).toMatch(/invalid-url/);
+  });
+});
+
+describe('HttpLog — keyboard scrolling', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('arrow keys scroll the newly selected row into view when the list is not virtualised', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    useExchangesStore.setState({
+      log: Array.from({ length: 30 }, (_, i) => logExchange(makeExchange({ sendId: `s-${String(i)}` }))),
+    });
+    render(<HttpLog />);
+    screen.getByLabelText('HTTP log').focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('HttpLog — Export HAR', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('Export HAR sends the rows the filter shows, in display order, and reports the path', async () => {
+    const exportHar = vi.fn().mockResolvedValue({ ok: true, value: { saved: true, path: '/tmp/x.har' } });
+    installWirebenchApi({ log: { exportHar } });
+    const a = logExchange(makeRestExchange({ sendId: 'a' }));
+    const b: LogEntry = { kind: 'failure', failure: makeFailure({ sendId: 'b' }) };
+    useExchangesStore.setState({ log: [a, b], filter: { ...EMPTY_FILTER, statuses: ['failed'] } });
+    render(
+      <>
+        <HttpLog />
+        <ToastViewport />
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Export HAR' }));
+    expect(exportHar).toHaveBeenCalledWith({ entries: [b] });
+    expect(await screen.findByText(/Saved \/tmp\/x\.har/)).toBeDefined();
+  });
+
+  it('Export HAR is disabled when the filter shows no row', () => {
+    installWirebenchApi();
+    useExchangesStore.setState({
+      log: [logExchange(makeRestExchange({ sendId: 'a' }))],
+      filter: { ...EMPTY_FILTER, statuses: ['failed'] },
+    });
+    render(<HttpLog />);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Export HAR' }).disabled).toBe(true);
+  });
+
+  it('clicking ms sorts ascending then descending, and ↓ follows the displayed order', async () => {
+    const mk = (id: string, ms: number) => logExchange(makeRestExchange({ sendId: id, durationMs: ms }));
+    useExchangesStore.setState({ log: [mk('slow', 90), mk('fast', 5), mk('mid', 40)], sort: undefined });
+    render(<HttpLog />);
+    await userEvent.click(screen.getByRole('button', { name: /^ms/ }));
+    expect(rows().map((r) => r.getAttribute('data-send-id'))).toEqual(['fast', 'mid', 'slow']);
+    await userEvent.click(screen.getByRole('button', { name: /^ms/ }));
+    expect(rows().map((r) => r.getAttribute('data-send-id'))).toEqual(['slow', 'mid', 'fast']);
+    screen.getByLabelText('HTTP log').focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(rows()[1]!.getAttribute('aria-pressed')).toBe('true');
+  });
+  it('Cmd/Ctrl+click selects a second row and shows Compare; Escape returns to the detail tabs', async () => {
+    useExchangesStore.setState({
+      log: [logExchange(makeRestExchange({ sendId: 'a' })), logExchange(makeRestExchange({ sendId: 'b' }))],
+    });
+    const user = userEvent.setup();
+    render(<HttpLog />);
+    await user.click(rows()[0]!);
+    await user.keyboard('{Control>}');
+    await user.click(rows()[1]!);
+    await user.keyboard('{/Control}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
+    expect(screen.queryByRole('tablist', { name: 'Log detail' })).toBeNull();
+    screen.getByLabelText('HTTP log').focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(screen.getByRole('tablist', { name: 'Log detail' })).toBeDefined();
+    expect(rows()[1]!.getAttribute('aria-pressed')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('log-detail')).toBeNull();
+  });
+
+  it('with two rows selected, a plain click or an arrow key goes back to one row', async () => {
+    useExchangesStore.setState({
+      log: [
+        logExchange(makeRestExchange({ sendId: 'a' })),
+        logExchange(makeRestExchange({ sendId: 'b' })),
+        logExchange(makeRestExchange({ sendId: 'c' })),
+      ],
+    });
+    const user = userEvent.setup();
+    render(<HttpLog />);
+    await user.click(rows()[0]!);
+    await user.keyboard('{Meta>}');
+    await user.click(rows()[1]!);
+    await user.keyboard('{/Meta}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    screen.getByLabelText('HTTP log').focus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true']);
+
+    await user.keyboard('{Control>}');
+    await user.click(rows()[0]!);
+    await user.keyboard('{/Control}');
+    expect(screen.getByTestId('log-compare')).toBeDefined();
+    await user.click(rows()[1]!);
+    expect(screen.queryByTestId('log-compare')).toBeNull();
+    expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
+  });
+});
+
+describe('HttpLog — Preserve log', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, preserveLog: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useExchangesStore.setState({ preserveLog: false });
+  });
+
+  it('the Preserve log toggle reflects and sets the store flag', async () => {
+    useExchangesStore.setState({ log: [logExchange(makeRestExchange())] });
+    render(<HttpLog />);
+    const toggle = screen.getByRole('button', { name: 'Preserve log' });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(toggle);
+    expect(useExchangesStore.getState().preserveLog).toBe(true);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
   });
 });

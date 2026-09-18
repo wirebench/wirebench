@@ -36,6 +36,8 @@ export interface FailedExchangeInput {
    * source of the raw request.
    */
   readonly captured?: FailedRequest | undefined;
+  /** `prepare` when the failure came before the request was built; omitted or `send` otherwise. */
+  readonly stage?: 'prepare' | 'send' | undefined;
 }
 
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
@@ -44,6 +46,14 @@ function errorOf(error: unknown): { code: string; message: string } {
     return { code: error.code, message: error.message };
   }
   return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
+}
+
+/** The code a prepare-stage failure is reported under. */
+export function prepareFailureCode(error: unknown): string {
+  if (error instanceof TypeError && (error as { code?: unknown }).code === 'ERR_INVALID_URL') {
+    return 'invalid-url';
+  }
+  return isWirebenchError(error) ? error.code : 'internal-error';
 }
 
 /**
@@ -72,9 +82,19 @@ function rawRequestOf(captured: FailedRequest, redactedUrl: string): string {
   return redactRawHttp(Buffer.concat([head, body]).toString('base64'), { show: false, encoding: 'base64' });
 }
 
+/** Engine codes for a URL refused before the request was built. */
+const UNBUILT_URL_CODES: ReadonlySet<string> = new Set(['invalid-url', 'rest-url-incomplete']);
+
 /** The failure row for one send, redacted for good. */
 export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire {
   const captured = input.captured;
+  // A URL the engine cannot complete or parse is refused before anything is built, so such a
+  // failure never went on the wire either, whichever catch block reports it.
+  const stage =
+    input.stage ??
+    (captured === undefined && isWirebenchError(input.error) && UNBUILT_URL_CODES.has(input.error.code)
+      ? 'prepare'
+      : undefined);
   const url = redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
   return {
     sendId: input.sendId,
@@ -88,6 +108,10 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url) } : {}),
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
-    error: errorOf(input.error),
+    error:
+      stage === 'prepare'
+        ? { code: prepareFailureCode(input.error), message: errorOf(input.error).message }
+        : errorOf(input.error),
+    ...(stage === 'prepare' ? { stage: 'prepare' as const } : {}),
   };
 }

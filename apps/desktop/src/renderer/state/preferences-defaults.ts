@@ -51,6 +51,7 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     defaultLayout: { orientation: 'side-by-side', mode: 'split' },
     confirmOnDelete: true,
     historyCap: 1000,
+    logSize: 500,
   },
   updates: { checkOnLaunch: false },
   shortcuts: {},

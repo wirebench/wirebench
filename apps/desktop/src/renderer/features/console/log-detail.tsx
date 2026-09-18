@@ -146,6 +146,9 @@ function ExchangeTiming({ http }: { readonly http: HttpExchangeWire }) {
   return (
     <div className="flex flex-col gap-1">
       <TimingsBar timings={http.timings} />
+      {http.timings.connectMs === undefined && http.timings.tlsMs === undefined && (
+        <p className="px-2 text-xs text-fg-subtle">Connection reused — no connect or TLS phase</p>
+      )}
       <ul data-testid="timing-phases" className="flex flex-col gap-0.5 px-2 pb-2 font-mono text-xs">
         {PHASES.map((phase) => {
           const value = http.timings[phase.key];
@@ -222,10 +225,12 @@ export interface LogDetailProps {
   readonly onTabChange: (tab: LogDetailTab) => void;
   /** Closes the pane (the × button and Escape); omitted, neither is offered. */
   readonly onClose?: () => void;
+  /** Opens the row menu below the ⋯ button; omitted, the button is not offered. */
+  readonly onMenu?: (anchor: HTMLElement) => void;
 }
 
 /** The detail pane beside the HTTP Log table, on its right. */
-export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) {
+export function LogDetail({ entry, tab, onTabChange, onClose, onMenu }: LogDetailProps) {
   return (
     <div
       data-testid="log-detail"
@@ -247,6 +252,19 @@ export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) 
             className="px-2 text-sm text-fg-muted hover:text-fg-default"
           >
             ×
+          </button>
+        )}
+        {onMenu !== undefined && (
+          <button
+            type="button"
+            aria-label="Row actions"
+            title="Row actions (Shift+F10)"
+            onClick={(event) => {
+              onMenu(event.currentTarget);
+            }}
+            className="px-2 text-sm text-fg-muted hover:text-fg-default"
+          >
+            ⋯
           </button>
         )}
         <div className="min-w-0 flex-1">
@@ -273,6 +291,11 @@ export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) 
               ))}
             {tab === 'response' && (
               <div data-testid="log-detail-error" className="flex flex-col gap-1 p-3">
+                {entry.failure.stage === 'prepare' && (
+                  <p className="text-xs text-fg-subtle">
+                    The request never went on the wire: it failed while being prepared.
+                  </p>
+                )}
                 <p className="font-mono text-sm font-medium text-status-danger">{entry.failure.error.code}</p>
                 <p className="text-sm text-fg-default">{entry.failure.error.message}</p>
               </div>

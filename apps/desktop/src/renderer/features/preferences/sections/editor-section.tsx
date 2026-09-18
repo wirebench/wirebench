@@ -121,6 +121,12 @@ export function UiSection({ preferences, update }: SectionProps) {
           min={1}
           onCommit={(historyCap) => update({ ui: { historyCap: historyCap ?? 1000 } })}
         />
+        <NumberSetting
+          label="HTTP Log rows kept"
+          value={ui.logSize}
+          min={100}
+          onCommit={(logSize) => update({ ui: { logSize: Math.min(5000, Math.max(100, logSize ?? 500)) } })}
+        />
       </SettingsGroup>
     </>
   );

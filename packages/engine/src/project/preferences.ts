@@ -169,6 +169,17 @@ export interface UiPreferences {
   readonly confirmOnDelete: boolean;
   /** How many history entries are kept per project. */
   readonly historyCap: number;
+  /** How many rows the HTTP Log keeps in memory ({@link LOG_SIZE_MIN}–{@link LOG_SIZE_MAX}). */
+  readonly logSize: number;
+}
+
+/** The smallest HTTP Log row limit a user can set. */
+export const LOG_SIZE_MIN = 100;
+/** The largest HTTP Log row limit a user can set. */
+export const LOG_SIZE_MAX = 5000;
+
+function clampLogSize(value: number): number {
+  return Math.min(LOG_SIZE_MAX, Math.max(LOG_SIZE_MIN, Math.round(value)));
 }
 
 /**
@@ -247,6 +258,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     defaultLayout: Object.freeze({ orientation: 'side-by-side', mode: 'split' }),
     confirmOnDelete: true,
     historyCap: 1000,
+    logSize: 500,
   }),
   updates: Object.freeze({ checkOnLaunch: false }),
   shortcuts: Object.freeze({}),
@@ -336,6 +348,7 @@ export const preferencesSchema = z.object({
         .optional(),
       confirmOnDelete: z.boolean().optional(),
       historyCap: z.number().optional(),
+      logSize: z.number().finite().optional(),
     })
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
@@ -411,6 +424,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     editor: mergeSection(base.editor, value.editor),
     ui: {
       ...mergeSection(base.ui, value.ui),
+      logSize: clampLogSize(value.ui?.logSize ?? base.ui.logSize),
       defaultLayout: mergeSection(base.ui.defaultLayout, value.ui?.defaultLayout),
     },
     updates: mergeSection(base.updates, value.updates),

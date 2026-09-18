@@ -5,6 +5,7 @@
  */
 
 import type { LogEntry, LogFilter, StatusClass } from '../../state/exchanges.js';
+import { compileMatcher, matchesText, type TextMatcher } from './log-search.js';
 
 export type { StatusClass } from '../../state/exchanges.js';
 
@@ -42,6 +43,19 @@ export function durationOf(entry: LogEntry): number {
   return entry.kind === 'failure' ? entry.failure.durationMs : entry.exchange.durationMs;
 }
 
+/** Where a failure happened (`send` when the row predates the field); undefined for an exchange. */
+export function stageOf(entry: LogEntry): 'prepare' | 'send' | undefined {
+  return entry.kind === 'failure' ? (entry.failure.stage ?? 'send') : undefined;
+}
+
+/** The status cell text: HTTP status, the error code, or `Failed · before send`. */
+export function statusLabelOf(entry: LogEntry): string {
+  if (entry.kind === 'exchange') {
+    return String(entry.exchange.http.status);
+  }
+  return entry.failure.stage === 'prepare' ? 'Failed · before send' : entry.failure.error.code;
+}
+
 /**
  * The class is the HTTP status, nothing else: a SOAP fault carried on a 200 is `2xx` (the row's
  * danger tone still shows the fault). A failure produced no status and matches `failed` only.
@@ -65,8 +79,25 @@ export function statusClassOf(entry: LogEntry): StatusClass {
 }
 
 /** Every group must pass (AND); within a group, any selected value passes (OR); an empty group passes all. */
-export function matchesFilter(entry: LogEntry, filter: LogFilter): boolean {
-  if (filter.text !== '' && !urlOf(entry).toLowerCase().includes(filter.text.toLowerCase())) {
+export function matchesFilter(
+  entry: LogEntry,
+  filter: LogFilter,
+  nameOf?: (entry: LogEntry) => string | undefined,
+): boolean {
+  return matchesFilterWith(entry, filter, compileMatcher(filter), nameOf);
+}
+
+/**
+ * {@link matchesFilter} with the text matcher compiled once by the caller — the table compiles it
+ * per render, not per row. An invalid regex skips the text test, so every row stays visible.
+ */
+export function matchesFilterWith(
+  entry: LogEntry,
+  filter: LogFilter,
+  matcher: TextMatcher,
+  nameOf?: (entry: LogEntry) => string | undefined,
+): boolean {
+  if (filter.text !== '' && matcher.invalid !== true && !matchesText(entry, matcher, nameOf?.(entry))) {
     return false;
   }
   if (filter.methods.length > 0 && !filter.methods.includes(methodOf(entry).toUpperCase())) {

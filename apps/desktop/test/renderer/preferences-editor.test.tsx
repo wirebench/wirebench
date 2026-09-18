@@ -69,6 +69,25 @@ describe('PreferencesEditor', () => {
     });
   });
 
+  it('sets HTTP Log rows kept, clamped to 100–5000', async () => {
+    const update = stubUpdate();
+    installWirebenchApi({ preferences: { update } });
+    render(<PreferencesEditor initialSection="ui" />);
+
+    const field = screen.getByLabelText('HTTP Log rows kept');
+    fireEvent.change(field, { target: { value: '1000' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { ui: { logSize: 1000 } } });
+    });
+
+    fireEvent.change(field, { target: { value: '99999' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledWith({ patch: { ui: { logSize: 5000 } } });
+    });
+  });
+
   it('pushes a theme change into the ui store, which is what the shell renders from', async () => {
     installWirebenchApi({ preferences: { update: stubUpdate() } });
     render(<PreferencesEditor initialSection="ui" />);

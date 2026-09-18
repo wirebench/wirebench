@@ -730,7 +730,19 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
               {/* Source tabs */}
               <div className="mt-3">
-                <Tabs label="Import source" items={isProto ? PROTO_TABS : TABS} active={tab} onSelect={setTab} />
+                {/*
+                  `tab === 'server'` keeps the tab while its own panel is up. Under Auto-detect the
+                  detection reads the current tab's input, and the Server tab has none — so selecting
+                  it makes `effectiveFormat` fall back to `unknown`, which would otherwise drop the
+                  very tab the user just picked and leave the strip with nothing selected above a
+                  Server panel.
+                */}
+                <Tabs
+                  label="Import source"
+                  items={isProto || tab === 'server' ? PROTO_TABS : TABS}
+                  active={tab}
+                  onSelect={setTab}
+                />
               </div>
 
               <div className="mt-3 flex flex-col gap-2">

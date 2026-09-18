@@ -8,6 +8,7 @@ import type {
 } from '../../shared/wire-types.js';
 import { setKeybindingOverrides } from '../lib/keybindings.js';
 import { ipc } from './ipc-client.js';
+import { useExchangesStore } from './exchanges.js';
 import { useUiStore } from './ui.js';
 
 /**
@@ -41,6 +42,7 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => {
     ui.setTheme(preferences.ui.theme);
     ui.setEditorLineNumbers(preferences.editor.lineNumbers);
     ui.setEditorLayout(preferences.ui.defaultLayout);
+    useExchangesStore.getState().setLogCap(preferences.ui.logSize);
   };
 
   return {
