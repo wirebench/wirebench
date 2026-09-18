@@ -181,3 +181,27 @@ describe('redactXml over hostile input', () => {
     expect(redactXml('<Passwords>x</Passwords>')).toBe('<Passwords>x</Passwords>');
   });
 });
+
+describe('redactRawHttp — structured bodies', () => {
+  it('masks a JSON body password in a raw request', () => {
+    const raw =
+      'POST /login HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"user":"ann","password":"s3cr3t-placeholder"}';
+    const out = redactRawHttp(raw, { encoding: 'text' });
+    expect(out).not.toContain('s3cr3t-placeholder');
+    expect(out).toContain('"user":"ann"');
+  });
+
+  it('masks a form body token in base64 raw input', () => {
+    const raw = Buffer.from(
+      'POST /t HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\ntoken=plain-token&a=1',
+    ).toString('base64');
+    const out = Buffer.from(redactRawHttp(raw, { encoding: 'base64' }), 'base64').toString('utf8');
+    expect(out).not.toContain('plain-token');
+    expect(out).toContain('a=1');
+  });
+
+  it('leaves the JSON body when show is true', () => {
+    const raw = 'POST / HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{"password":"p"}';
+    expect(redactRawHttp(raw, { show: true })).toBe(raw);
+  });
+});

@@ -145,3 +145,20 @@ describe('failedExchangeOf stage', () => {
     expect('stage' in failedExchangeOf(input({ stage: 'send' }))).toBe(false);
   });
 });
+
+describe('failedExchangeOf structured body', () => {
+  it('masks a JSON client_secret in the raw request', () => {
+    const failure = failedExchangeOf(
+      input({
+        captured: {
+          url: 'https://example.test/token',
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          bodyBase64: Buffer.from('{"client_secret":"cs-placeholder"}').toString('base64'),
+          bodyTruncated: false,
+        },
+      }),
+    );
+    expect(Buffer.from(failure.rawRequestBase64!, 'base64').toString()).not.toContain('cs-placeholder');
+  });
+});
