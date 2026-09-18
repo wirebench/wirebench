@@ -141,4 +141,33 @@ test.describe('HTTP Log: export, reuse, search, waterfall, compare', () => {
     await expect(logRows(page).last().getByTestId('waterfall-bar')).toHaveClass(/bg-status-danger/);
     await expect(logRows(page).first().getByTestId('waterfall-bar')).toHaveAttribute('title', /ms/);
   });
+
+  test('S6: Cmd/Ctrl+click compares two rows', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+    await createWorkspace(page, 'Log');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+    await createRestRequest(page, 'Petstore', 'Echo');
+    await setMethodAndUrl(page, 'GET', '/echo');
+    await sendRest(page);
+    await addHeader(page, 'X-Second', 'yes');
+    await sendRest(page);
+    await expect(logRows(page)).toHaveCount(2);
+
+    await selectLogRow(logRows(page).first());
+    await logRows(page)
+      .last()
+      .click({ position: { x: 8, y: 8 }, modifiers: ['ControlOrMeta'] });
+    const compare = page.getByTestId('log-compare');
+    await expect(compare).toBeVisible();
+    await expect(
+      compare.getByRole('table', { name: 'Request headers' }).locator('tr[data-change="added"]'),
+    ).toContainText(/x-second/i);
+    await page.getByLabel('HTTP log').focus();
+    await page.keyboard.press('Escape');
+    await expect(compare).toHaveCount(0);
+    await expect(page.getByRole('tablist', { name: 'Log detail' })).toBeVisible();
+  });
 });
