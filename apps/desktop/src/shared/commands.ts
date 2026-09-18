@@ -24,6 +24,7 @@ export const COMMAND_IDS = [
   'view.toggleTheme',
   'preferences.open',
   'definition.import',
+  'definition.importLegacyProject',
   'item.save',
   'project.save',
   'workspace.create',

@@ -301,6 +301,7 @@ void app.whenReady().then(() => {
     removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),
     projectDirs: openProjectDirs,
     picks: dialogPicks,
+    ensureWorkspaceEnvironments: async (names) => await workspaceService.ensureEnvironments(names),
   });
   registerApiChannels({
     router: workspaceService,

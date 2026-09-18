@@ -35,6 +35,7 @@ import {
   saveProject,
   saveShare,
   saveWorkspace,
+  slugify,
   uniqueSlug,
   WirebenchError,
   WorkspaceError,
@@ -1928,6 +1929,29 @@ export class WorkspaceService implements ProjectRouter {
   // ——— environments and properties ———————————————————————————————————————————————————————
 
   /**
+   * Makes sure the workspace has an environment for each of `names`, adding the missing ones.
+   *
+   * A project environment only takes part when the workspace environment of the same slug is the
+   * active one, and only workspace environments can be switched to. So an import that brings
+   * project environments along calls this, or they could never be selected.
+   *
+   * @returns the names that were added.
+   */
+  async ensureEnvironments(names: readonly string[]): Promise<string[]> {
+    const added: string[] = [];
+    for (const name of names) {
+      const slug = slugify(name).toLowerCase();
+      const existing = this.requireOpen().workspace.environments;
+      if (existing.some((environment) => environment.slug.toLowerCase() === slug)) {
+        continue;
+      }
+      await this.mutate({ kind: 'add-workspace-environment', name });
+      added.push(name);
+    }
+    return added;
+  }
+
+  /**
    * Applies one {@link WorkspaceChange} to the open workspace: its name, its `${#Workspace#…}`
    * properties, or one of its environments. Every change is written through `saveWorkspace`
    * before it is announced, so what the renderer is shown is always what is on disk.
@@ -2279,6 +2303,12 @@ export class WorkspaceService implements ProjectRouter {
     ...[projectId, input]: Parameters<ProjectRouter['addInterface']>
   ): ReturnType<ProjectRouter['addInterface']> {
     return this.hostFor(projectId).addInterface(input);
+  }
+
+  importLegacyProject(
+    ...[projectId, input]: Parameters<ProjectRouter['importLegacyProject']>
+  ): ReturnType<ProjectRouter['importLegacyProject']> {
+    return this.hostFor(projectId).importLegacyProject(input);
   }
 
   addApi(...[projectId, input]: Parameters<ProjectRouter['addApi']>): ReturnType<ProjectRouter['addApi']> {

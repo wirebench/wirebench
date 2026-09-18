@@ -1,3 +1,10 @@
+import { open } from 'node:fs/promises';
+import {
+  formatLegacyImportReport,
+  looksLikeLegacyProject,
+  readLegacySoapProject,
+  WirebenchError,
+} from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { checkedImportSource } from '../path-access.js';
@@ -10,7 +17,10 @@ import { registerHandler } from './register.js';
  * (it changes the *workspace*), so it is picked in alongside it.
  */
 export interface ProjectChannelDeps {
-  readonly router: Pick<ProjectRouter, 'projectSnapshot' | 'projectMutate' | 'save' | 'addInterface' | 'reload'>;
+  readonly router: Pick<
+    ProjectRouter,
+    'projectSnapshot' | 'projectMutate' | 'save' | 'addInterface' | 'importLegacyProject' | 'reload'
+  >;
   /** Creates a project inside the open workspace; used only by an `addInterface` that asks for one. */
   readonly addProject: (name: string) => Promise<{ readonly projectId: string }>;
   /**
@@ -25,6 +35,41 @@ export interface ProjectChannelDeps {
   readonly projectDirs: () => readonly string[];
   /** The session's dialog memory: proof a `file` source was picked by the user, not named. */
   readonly picks: ReadPicks;
+  /**
+   * Adds the workspace environments an import's project environments need in order to be switched
+   * to, answering with the names it added. See `WorkspaceService.ensureEnvironments`. Optional so the
+   * tests of the other channels need not build one.
+   */
+  readonly ensureWorkspaceEnvironments?: (names: readonly string[]) => Promise<readonly string[]>;
+}
+
+/**
+ * A legacy SOAP project carries WSDLs inside it, so offered as a single definition it would fail
+ * somewhere deep in the import. A picked file is checked up front instead, with an error that says
+ * which format to choose.
+ */
+async function refuseLegacyProjectAsWsdl(source: { kind: string; path?: string }): Promise<void> {
+  if (source.kind !== 'file' || source.path === undefined) {
+    return;
+  }
+  let head: string;
+  try {
+    const file = await open(source.path, 'r');
+    try {
+      const { buffer, bytesRead } = await file.read({ buffer: Buffer.alloc(4096), position: 0 });
+      head = buffer.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return; // the import itself reports an unreadable file
+  }
+  if (looksLikeLegacyProject(head)) {
+    throw new WirebenchError(
+      'legacy-project-as-wsdl',
+      'This file is a legacy SOAP project, not a WSDL. Choose "Legacy SOAP project" as the format to import all of it.',
+    );
+  }
 }
 
 /**
@@ -52,6 +97,7 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
     // question (`checkedImportSource`, as `definition.import` does) before any project is
     // created, so a refusal changes nothing.
     const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    await refuseLegacyProjectAsWsdl(source);
     const options = {
       source,
       ...(request.auth !== undefined ? { auth: request.auth } : {}),
@@ -74,6 +120,47 @@ export function registerProjectChannels(deps: ProjectChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  registerHandler(channels.project.importLegacy, async (request) => {
+    // The file is read and parsed before any project is created, so a path that is refused or a
+    // file that is not a legacy project changes nothing.
+    const source = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    if (source.kind !== 'file') {
+      throw new WirebenchError('invalid-argument', 'Expected a file source');
+    }
+    const project = await readLegacySoapProject({ kind: 'file', path: source.path });
+    const options = { project, ...(request.token !== undefined ? { token: request.token } : {}) };
+    let projectId: string;
+    let imported: Awaited<ReturnType<typeof router.importLegacyProject>>;
+    if ('projectId' in request.target) {
+      projectId = request.target.projectId;
+      imported = await router.importLegacyProject(projectId, options);
+    } else {
+      const name = request.target.newProjectName.trim() === '' ? project.name : request.target.newProjectName;
+      projectId = (await deps.addProject(name)).projectId;
+      try {
+        imported = await router.importLegacyProject(projectId, options);
+      } catch (error) {
+        await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+        throw error;
+      }
+    }
+    // An imported project environment only takes effect through the workspace environment of the
+    // same name, so any the workspace lacks are added — otherwise they could never be switched to.
+    const added = (await deps.ensureWorkspaceEnvironments?.(imported.environmentNames)) ?? [];
+    const report = {
+      ...imported.report,
+      items: [
+        ...imported.report.items,
+        ...added.map((name) => ({
+          severity: 'info' as const,
+          path: name,
+          message: 'The workspace had no environment by this name, so one was added to switch to it.',
+        })),
+      ],
+    };
+    return { projectId, project: imported.project, report, reportText: formatLegacyImportReport(report) };
   });
 
   registerHandler(channels.project.reload, async (request) => ({ project: await router.reload(request.projectId) }));

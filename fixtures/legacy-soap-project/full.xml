@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="p-1" activeEnvironment="Default" name="Billing Suite" resourceRoot="" soapui-version="5.7.0" abortOnError="false" runType="SEQUENTIAL" xmlns:con="http://eviware.com/soapui/config">
+  <con:settings/>
+  <con:description>Everything the v1 import reads, and the things it only reports.</con:description>
+  <con:interface xsi:type="con:WsdlInterface" id="i-1" wsaVersion="NONE" name="EchoBinding" type="wsdl" bindingName="{urn:wb:nested}EchoBinding" soapVersion="1_1" anonymous="optional" definition="http://example.invalid/nested/service.wsdl" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+      <con:definitionCache type="TEXT" rootPart="http://example.invalid/nested/service.wsdl">
+        <con:part>
+          <con:url>http://example.invalid/nested/service.wsdl</con:url>
+          <con:content><![CDATA[<definitions name="NestedImportsService"
+             targetNamespace="urn:wb:nested"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:wb:nested"
+             xmlns:types="urn:wb:nested-types">
+  <import namespace="urn:wb:nested-types" location="./types.wsdl"/>
+
+  <binding name="EchoBinding" type="types:EchoPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Echo">
+      <soap:operation soapAction="urn:wb:nested/Echo"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+
+  <service name="EchoService">
+    <port name="EchoPort" binding="tns:EchoBinding">
+      <soap:address location="http://example.invalid/echo"/>
+    </port>
+  </service>
+</definitions>]]></con:content>
+          <con:type>http://schemas.xmlsoap.org/wsdl/</con:type>
+        </con:part>
+        <con:part>
+          <con:url>http://example.invalid/nested/types.wsdl</con:url>
+          <con:content><![CDATA[<definitions name="NestedImportsTypes"
+             targetNamespace="urn:wb:nested-types"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:tns="urn:wb:nested-types"
+             xmlns:common="urn:wb:common"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xs:schema targetNamespace="urn:wb:nested-types">
+      <xs:import namespace="urn:wb:common" schemaLocation="schemas/common.xsd"/>
+    </xs:schema>
+  </types>
+
+  <message name="EchoIn">
+    <part name="parameters" element="common:EchoRequest"/>
+  </message>
+  <message name="EchoOut">
+    <part name="parameters" element="common:EchoResponse"/>
+  </message>
+
+  <portType name="EchoPortType">
+    <operation name="Echo">
+      <input message="tns:EchoIn"/>
+      <output message="tns:EchoOut"/>
+    </operation>
+  </portType>
+</definitions>]]></con:content>
+          <con:type>http://schemas.xmlsoap.org/wsdl/</con:type>
+        </con:part>
+        <con:part>
+          <con:url>http://example.invalid/nested/schemas/common.xsd</con:url>
+          <con:content><xs:schema targetNamespace="urn:wb:common"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:common="urn:wb:common">
+  <xs:include schemaLocation="base.xsd"/>
+
+  <xs:element name="EchoRequest" type="common:BaseType"/>
+  <xs:element name="EchoResponse" type="common:BaseType"/>
+</xs:schema></con:content>
+          <con:type>http://www.w3.org/2001/XMLSchema</con:type>
+        </con:part>
+        <con:part>
+          <con:url>http://example.invalid/nested/schemas/base.xsd</con:url>
+          <con:content><xs:schema targetNamespace="urn:wb:common"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="BaseType">
+    <xs:restriction base="xs:string"/>
+  </xs:simpleType>
+</xs:schema></con:content>
+          <con:type>http://www.w3.org/2001/XMLSchema</con:type>
+        </con:part>
+      </con:definitionCache>
+    <con:endpoints>
+      <con:endpoint>http://example.invalid/echo</con:endpoint>
+      <con:endpoint>https://staging.example.invalid/echo</con:endpoint>
+    </con:endpoints>
+    <con:operation id="o-1" isOneWay="false" action="urn:wb:nested/Echo" name="Echo" bindingOperationName="Echo" type="Request-Response" inputName="" receivesAttachments="false" sendsAttachments="false" anonymous="optional">
+      <con:settings/>
+        <con:call id="Request 1-id" name="Request 1">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>http://example.invalid/echo</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:com="urn:wb:common">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <com:EchoRequest>${#Project#greeting}</com:EchoRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:authType>No Authorization</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+        <con:call id="Staging with auth-id" name="Staging with auth" timeout="15000">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>https://staging.example.invalid/echo</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:com="urn:wb:common">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <com:EchoRequest>${#Project#greeting}</com:EchoRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:username>alice</con:username><con:password>not-a-real-password</con:password><con:authType>Preemptive</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+        <con:call id="One-off URL, NTLM-id" name="One-off URL, NTLM">
+          <con:settings/>
+          <con:encoding>ISO-8859-1</con:encoding>
+          <con:endpoint>http://other.example.invalid:8080/echo</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:com="urn:wb:common">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <com:EchoRequest>${#Project#greeting}</com:EchoRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:username>bob</con:username><con:password>also-fake</con:password><con:domain>CORP</con:domain><con:authType>NTLM</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+        <con:call id="Compressed-id" name="Compressed">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>http://example.invalid/echo</con:endpoint>
+          <con:request compression="gzip">H4sIAAAAAAAC/12PwQ6CMBBE735FUzyz96ZwMCHxaPyDWjZUQ7vYFtQY/11KSgzeZt/szGZlIDWgm0TjJuxpQPa0vQsi44qbGAcBELRBq0I5u8kqyXeQBGDOAc9JTbbio3ficUnakuP1jjEm10tHVC162MIDta+FJDjHRKMNnfE+Yoj1/l2cPN1Qx6LziPHquo+E/62lD7aFv3n9r/4Cew+hMPIAAAA=</con:request>
+          <con:credentials><con:authType>No Authorization</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+    </con:operation>
+    <con:operation id="o-2" isOneWay="false" action="urn:wb:nested/Retired" name="Retired" bindingOperationName="Retired" type="Request-Response" inputName="" receivesAttachments="false" sendsAttachments="false" anonymous="optional">
+      <con:settings/>
+        <con:call id="Old request-id" name="Old request">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>http://example.invalid/echo</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:com="urn:wb:common">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <com:EchoRequest>${#Project#greeting}</com:EchoRequest>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:authType>No Authorization</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+    </con:operation>
+  </con:interface>
+  <con:interface xsi:type="con:WsdlInterface" id="i-2" wsaVersion="NONE" name="WsiEchoBinding" type="wsdl" bindingName="{urn:wb:wsi}EchoBinding" soapVersion="1_1" anonymous="optional" definition="http://example.invalid/wsi/service.wsdl?wsdl" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+      <con:definitionCache type="TEXT" rootPart="http://example.invalid/wsi/service.wsdl?wsdl">
+        <con:part>
+          <con:url>http://example.invalid/wsi/service.wsdl?wsdl</con:url>
+          <con:content><![CDATA[<wsdl:definitions name="WsiService"
+                  targetNamespace="urn:wb:wsi"
+                  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="urn:wb:wsi"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:wb:wsi" elementFormDefault="qualified"
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+      <xsd:element name="Echo" type="xsd:string"/>
+      <xsd:element name="EchoResult" type="xsd:string"/>
+      <xsd:element name="Extra" type="xsd:string"/>
+      <xsd:element name="AuthHeader" type="xsd:string"/>
+      <xsd:element name="EchoFaultDetail" type="xsd:string"/>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="EchoRequest">
+    <wsdl:part name="body" element="tns:Echo"/>
+  </wsdl:message>
+  <wsdl:message name="EchoResponse">
+    <wsdl:part name="body" element="tns:EchoResult"/>
+  </wsdl:message>
+  <wsdl:message name="EchoHeader">
+    <wsdl:part name="auth" element="tns:AuthHeader"/>
+  </wsdl:message>
+  <wsdl:message name="EchoFaultMessage">
+    <wsdl:part name="detail" element="tns:EchoFaultDetail"/>
+  </wsdl:message>
+
+  <wsdl:portType name="EchoPortType">
+    <wsdl:operation name="Echo">
+      <wsdl:input message="tns:EchoRequest"/>
+      <wsdl:output message="tns:EchoResponse"/>
+      <wsdl:fault name="EchoFault" message="tns:EchoFaultMessage"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="EchoBinding" type="tns:EchoPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Echo">
+      <soap:operation soapAction="urn:wb:wsi:Echo" style="document"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+        <soap:header message="tns:EchoHeader" part="auth" use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+      <wsdl:fault name="EchoFault">
+        <soap:fault name="EchoFault" use="literal"/>
+      </wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="EchoService">
+    <wsdl:port name="EchoPort" binding="tns:EchoBinding">
+      <soap:address location="http://example.invalid/wsi"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>]]></con:content>
+          <con:type>http://schemas.xmlsoap.org/wsdl/</con:type>
+        </con:part>
+      </con:definitionCache>
+    <con:endpoints>
+      <con:endpoint>http://example.invalid/wsi</con:endpoint>
+    </con:endpoints>
+    <con:operation id="o-3" isOneWay="false" action="urn:wb:wsi:Echo" name="Echo" bindingOperationName="Echo" type="Request-Response" inputName="" receivesAttachments="false" sendsAttachments="false" anonymous="optional">
+      <con:settings/>
+        <con:call id="Echo with header-id" name="Echo with header" useWsAddressing="true">
+          <con:settings/>
+          <con:encoding>UTF-8</con:encoding>
+          <con:endpoint>http://example.invalid/wsi</con:endpoint>
+          <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:wb:wsi">
+   <soapenv:Header>
+      <urn:AuthHeader>token</urn:AuthHeader>
+   </soapenv:Header>
+   <soapenv:Body>
+      <urn:Echo>hello &amp; goodbye</urn:Echo>
+   </soapenv:Body>
+</soapenv:Envelope>]]></con:request>
+          <con:credentials><con:authType>No Authorization</con:authType></con:credentials>
+          <con:jmsConfig JMSDeliveryMode="PERSISTENT"/>
+          <con:jmsPropertyConfig/>
+          <con:wsaConfig mustUnderstand="NONE" version="200508"/>
+          <con:wsrmConfig version="1.2"/>
+        </con:call>
+    </con:operation>
+    <con:operation id="o-4" isOneWay="false" action="urn:wb:wsi:Echo" name="Unused" bindingOperationName="Unused" type="Request-Response" inputName="" receivesAttachments="false" sendsAttachments="false" anonymous="optional">
+      <con:settings/>
+    </con:operation>
+  </con:interface>
+  <con:interface xsi:type="con:RestService" id="r-1" name="Accounts REST" type="rest" wadlVersion="http://wadl.dev.java.net/2009/02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+    <con:endpoints><con:endpoint>http://example.invalid/rest</con:endpoint></con:endpoints>
+  </con:interface>
+  <con:testSuite id="s-1" name="Smoke">
+    <con:settings/>
+    <con:runType>SEQUENTIAL</con:runType>
+    <con:testCase id="c-1" failOnError="true" name="Echo once" searchProperties="true">
+      <con:settings/>
+      <con:testStep type="groovy" name="Prepare" id="t-1">
+        <con:settings/>
+        <con:config><script>log.info("preparing")</script></con:config>
+      </con:testStep>
+      <con:setupScript>testRunner.testCase.setPropertyValue("n", "1")</con:setupScript>
+      <con:properties/>
+    </con:testCase>
+    <con:setupScript language="javascript">log.info('suite setup')</con:setupScript>
+    <con:tearDownScript/>
+    <con:properties/>
+  </con:testSuite>
+  <con:mockService id="m-1" port="8088" path="/mock" host="localhost" name="Echo mock">
+    <con:settings/>
+    <con:properties/>
+    <con:startScript>log.info('mock up')</con:startScript>
+  </con:mockService>
+  <con:properties>
+    <con:property><con:name>greeting</con:name><con:value>Hello</con:value></con:property>
+    <con:property><con:name>tenant</con:name><con:value>acme</con:value></con:property>
+    <con:property><con:name>empty</con:name></con:property>
+  </con:properties>
+  <con:afterLoadScript>log.info('project loaded')
+// second line</con:afterLoadScript>
+  <con:beforeSaveScript/>
+  <con:wssContainer/>
+  <con:databaseConnectionContainer/>
+  <con:oAuth2ProfileContainer/>
+  <con:oAuth1ProfileContainer/>
+  <con:sensitiveInformation/>
+  <con:environment name="Default">
+    <con:property><con:name>tenant</con:name><con:value>acme-dev</con:value></con:property>
+  </con:environment>
+  <con:environment name="Staging">
+    <con:service name="EchoBinding"><con:endpoint>https://staging.example.invalid/echo</con:endpoint></con:service>
+    <con:property><con:name>tenant</con:name><con:value>acme-staging</con:value></con:property>
+  </con:environment>
+</con:soapui-project>

@@ -116,6 +116,8 @@ import {
   globalsSetRequestSchema,
   projectAddInterfaceRequestSchema,
   projectAddInterfaceResponseSchema,
+  projectImportLegacyRequestSchema,
+  projectImportLegacyResponseSchema,
   projectChangedEventSchema,
   projectChangedOnDiskEventSchema,
   projectHydrationEventSchema,
@@ -427,6 +429,12 @@ export const channels = {
       'project.addInterface',
       projectAddInterfaceRequestSchema,
       projectAddInterfaceResponseSchema,
+    ),
+    /** Imports a legacy single-XML SOAP project file into a project, answering with what came across. */
+    importLegacy: defineChannel(
+      'project.importLegacy',
+      projectImportLegacyRequestSchema,
+      projectImportLegacyResponseSchema,
     ),
     moveToWorkspace: defineChannel(
       'project.moveToWorkspace',

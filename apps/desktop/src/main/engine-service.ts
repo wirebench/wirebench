@@ -37,7 +37,7 @@ import type {
   WsaConfigPatch,
 } from '@wirebench/engine';
 import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
-import type { SendAuth } from '@wirebench/engine';
+import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import type {
   GrpcExchangeSummary,
   GrpcLiveEvent,
@@ -369,6 +369,12 @@ export class EngineService {
       readonly cache: { readonly dir: string; readonly mode: 'prefer-cache' | 'refresh' | 'none' };
       readonly auth?: { readonly username: string; readonly password: string };
       readonly token?: string;
+      /**
+       * Where every document is read from, in place of the network. Main-side only — it never
+       * crosses IPC. A legacy project import passes one that answers from the file's own copy of
+       * the definition.
+       */
+      readonly fetchDocument?: FetchDocument;
     },
     hooks: EngineServiceHooks = {},
   ): Promise<InterfaceSummary> {
@@ -380,6 +386,7 @@ export class EngineService {
     try {
       result = await engineImportDefinition(toEngineSource(input.source), {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
+        ...(input.fetchDocument !== undefined ? { fetchDocument: input.fetchDocument } : {}),
         cache: input.cache,
         signal: controller.signal,
         onProgress: (progress) => {

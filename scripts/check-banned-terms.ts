@@ -9,7 +9,10 @@
  * property syntax" tells a reader what the code does, where a product name does not.
  *
  * Every tracked file is scanned, case-insensitively, including `THIRD-PARTY-LICENSES.md`: a
- * bundled dependency's licence text must not carry these names either.
+ * bundled dependency's licence text must not carry these names either. The one exception is
+ * {@link FORMAT_IDENTIFIER_PATHS}: the legacy SOAP project import has to recognise that file by its
+ * namespace URI and root element name, which contain the terms, so the constants holding them and the
+ * hand-written fixtures written in that format are exempt. Nothing else is.
  *
  * `node scripts/check-banned-terms.ts` prints the result and exits non-zero, listing
  * `file:line`, on any hit. Wired into `pnpm check` as `pnpm check:banned-terms`.
@@ -33,6 +36,24 @@ export interface BannedTermHit {
 
 /** This script itself is the one place the terms are written down, so it never reports itself. */
 const SELF_RELATIVE_PATH = 'scripts/check-banned-terms.ts';
+
+/**
+ * Where a foreign file format's own identifiers must appear verbatim (owner ruling of 2026-09-18,
+ * `docs/specs/2026-09-18-legacy-soap-project-import-design.md` ruling 5). An entry ending in `/` exempts
+ * everything under that folder; any other entry exempts exactly that file.
+ */
+export const FORMAT_IDENTIFIER_PATHS: readonly string[] = [
+  'packages/engine/src/soap/legacy-project/format.ts',
+  'fixtures/legacy-soap-project/',
+];
+
+/** True when `path` (repo-relative, `/`-separated) is the checker itself or a format-identifier path. */
+export function isExemptPath(path: string): boolean {
+  if (path === SELF_RELATIVE_PATH) {
+    return true;
+  }
+  return FORMAT_IDENTIFIER_PATHS.some((entry) => (entry.endsWith('/') ? path.startsWith(entry) : path === entry));
+}
 
 /**
  * Finds every banned term in `content`. Pure — the file is identified by `file` only so the
@@ -63,7 +84,7 @@ async function trackedFiles(repoRoot: string): Promise<string[]> {
 
 async function main(): Promise<void> {
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-  const files = (await trackedFiles(repoRoot)).filter((path) => path !== SELF_RELATIVE_PATH);
+  const files = (await trackedFiles(repoRoot)).filter((path) => !isExemptPath(path));
 
   const hits: BannedTermHit[] = [];
   for (const file of files) {

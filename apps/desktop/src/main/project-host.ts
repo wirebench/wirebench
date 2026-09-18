@@ -25,16 +25,21 @@ import {
   attachmentFile,
   attachmentsDir,
   createFileAttachmentResolver,
+  createDefaultFetchDocument,
   createInterface,
   createProject,
   DEFAULT_PREFERENCES,
   definitionCacheDir,
+  definitionRootOf,
   enabledProperties,
   exportDefinition,
+  fetchDocumentFromCache,
   generateDocs,
   generateId,
+  IMPORTED_SCRIPTS_DIR,
   interfaceDir,
   loadProject,
+  mapLegacyProject,
   nodeFs,
   planUpdate,
   ProjectError,
@@ -72,6 +77,9 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  LegacyImportReport,
+  LegacyProject,
+  ResolvedLegacyInterface,
   GrpcApi,
   GrpcReconcileResult,
   GrpcReflectionVersion,
@@ -2403,6 +2411,141 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, interfaceId };
+  }
+
+  /**
+   * Imports a legacy single-XML SOAP project into the open project: resolves each interface from
+   * the definition the file carried (writing it to the interface's definition cache, so the
+   * project reopens offline), adds interfaces with their saved requests, environments and new
+   * properties, writes the file's scripts under `imported-scripts/`, and saves once.
+   *
+   * A document the file holds no copy of is fetched over `http(s)` only, never from a `file:`
+   * location, because the path would come from the imported file rather than from the user. An
+   * interface that cannot be resolved is left out and reported, and the rest still import.
+   */
+  async importLegacyProject(input: {
+    project: LegacyProject;
+    token?: string;
+  }): Promise<{ project: ProjectWire; report: LegacyImportReport; environmentNames: string[] }> {
+    const open = this.require();
+    const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+    const network = createDefaultFetchDocument();
+    const summaries = new Map<string, InterfaceSummary>();
+
+    const resolved: ResolvedLegacyInterface[] = [];
+    for (const legacy of input.project.interfaces) {
+      const id = generateId();
+      const slug = uniqueSlug(legacy.name, taken);
+      taken.add(slug);
+      const base = { legacy, id, slug };
+      const root = definitionRootOf(legacy.cache, legacy.definitionUrl);
+      if (root === undefined) {
+        resolved.push({ ...base, resolved: false, problem: 'the project file names no definition for it.' });
+        continue;
+      }
+      const fetchedFromNetwork: string[] = [];
+      let refusedLocal: string | undefined;
+      const fetchDocument = fetchDocumentFromCache(legacy.cache, {
+        fallback: (location, signal) => {
+          if (!/^https?:/i.test(location)) {
+            refusedLocal = location;
+            throw new ProjectError('legacy-local-definition', `${location} is not in the project file`, {
+              details: { location },
+            });
+          }
+          return network(location, signal);
+        },
+        onFallback: (location) => fetchedFromNetwork.push(location),
+      });
+      try {
+        const summary = await this.engine.importForProject(
+          {
+            interfaceId: id,
+            source: { kind: 'url', url: root },
+            cache: { dir: definitionCacheDir(open.dir, slug), mode: 'refresh' },
+            fetchDocument,
+            ...(input.token !== undefined ? { token: input.token } : {}),
+          },
+          { onProgress: (event) => this.hooks.onProgress?.(event) },
+        );
+        summaries.set(id, summary);
+        resolved.push({
+          ...base,
+          resolved: true,
+          definitionUrl: summary.definitionUrl,
+          targetNamespace: summary.targetNamespace,
+          operations: summary.operations.map((operation) => ({
+            bindingName: operation.binding,
+            name: operation.name,
+            soapVersion: operation.soapVersion,
+            ...(operation.soapAction !== undefined ? { soapAction: operation.soapAction } : {}),
+          })),
+          fetchedFromNetwork,
+        });
+      } catch (error) {
+        const problem =
+          refusedLocal !== undefined
+            ? `the project file holds no copy of ${refusedLocal}, and a local path it names is never read. Import that WSDL on its own.`
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        resolved.push({ ...base, resolved: false, problem });
+      }
+    }
+
+    const mapped = mapLegacyProject(input.project, resolved, {
+      environmentNames: new Set(open.project.environments.map((environment) => environment.name)),
+      environmentSlugs: new Set(open.project.environments.map((environment) => environment.slug)),
+      propertyNames: new Set(Object.keys(open.project.properties)),
+      firstInterfaceOrder: open.project.interfaces.length + open.project.apis.length + open.project.grpcApis.length,
+      firstEnvironmentOrder: open.project.environments.length,
+    });
+
+    const cacheDefinition = this.prefs()?.wsdl.cacheDefinitions ?? true;
+    const interfaces = mapped.interfaces.map((iface): Interface => {
+      const summary = summaries.get(iface.id);
+      if (summary !== undefined) {
+        open.runtime.set(iface.id, { hydration: 'ready', summary });
+      }
+      return {
+        ...iface,
+        cacheDefinition,
+        // As for a WSDL import: a definition that declares WS-Addressing turns it on for the interface.
+        wsa: {
+          ...DEFAULT_WSA_CONFIG,
+          enabled: summary?.wsa?.enabled ?? false,
+          version: summary?.wsa?.version ?? '2005/08',
+        },
+      };
+    });
+
+    const scriptsRoot = resolvePath(open.dir, IMPORTED_SCRIPTS_DIR);
+    for (const script of mapped.scripts) {
+      const target = resolvePath(open.dir, ...script.path.split('/'));
+      // `mapLegacyProject` slugifies every segment; this guards that promise against a symlink too.
+      if (!(await isInsideAny([scriptsRoot], target))) {
+        continue;
+      }
+      await mkdir(resolvePath(target, '..'), { recursive: true });
+      await writeFileAtomic(nodeFs, target, Buffer.from(script.source, 'utf8'));
+    }
+
+    open.project = {
+      ...open.project,
+      ...(open.project.description === undefined && input.project.description !== undefined
+        ? { description: input.project.description }
+        : {}),
+      properties: { ...open.project.properties, ...mapped.properties },
+      interfaces: [...open.project.interfaces, ...interfaces],
+      environments: [...open.project.environments, ...mapped.environments],
+    };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return {
+      project: this.snapshot() as ProjectWire,
+      report: mapped.report,
+      environmentNames: mapped.environments.map((environment) => environment.name),
+    };
   }
 
   /** The open project's interface with `interfaceId`, or a `not-found` error. */
