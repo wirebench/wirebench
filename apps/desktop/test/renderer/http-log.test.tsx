@@ -346,3 +346,28 @@ describe('HttpLog — prepare-stage failures', () => {
     expect(screen.getByTestId('log-detail-error').textContent).toMatch(/invalid-url/);
   });
 });
+
+describe('HttpLog — keyboard scrolling', () => {
+  beforeEach(() => {
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER });
+    useSecretsVisibilityStore.setState({ show: false });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('arrow keys scroll the newly selected row into view when the list is not virtualised', async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    useExchangesStore.setState({
+      log: Array.from({ length: 30 }, (_, i) => logExchange(makeExchange({ sendId: `s-${String(i)}` }))),
+    });
+    render(<HttpLog />);
+    screen.getByLabelText('HTTP log').focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+});

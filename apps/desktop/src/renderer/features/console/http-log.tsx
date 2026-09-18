@@ -38,6 +38,7 @@ function LogRow({ entry, selected, onSelect, compact }: RowProps) {
       type="button"
       data-testid="http-log-row"
       data-kind={entry.kind}
+      data-send-id={sendIdOf(entry)}
       onClick={onSelect}
       aria-pressed={selected}
       title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
@@ -133,6 +134,13 @@ export function HttpLog() {
       setSelectedId(sendIdOf(entry));
       if (virtualised) {
         virtualizer.scrollToIndex(next);
+      } else {
+        // Nothing is virtualised, so the row is already in the DOM; bring it into view.
+        const id = sendIdOf(entry);
+        const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(id) : id;
+        scrollRef.current
+          ?.querySelector<HTMLElement>(`[data-send-id="${escaped}"]`)
+          ?.scrollIntoView({ block: 'nearest' });
       }
     }
   }
