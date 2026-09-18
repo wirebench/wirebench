@@ -1,6 +1,6 @@
 # Spec: HTTP Log — export, reuse, search, waterfall, compare and the capture gaps
 
-- Status: **draft** (under review)
+- Status: **shipped**
 - Date: 2026-09-18
 - Builds on: `docs/specs/2026-09-16-http-log-failures-filters-detail-design.md` (failed rows, filter
   bar, detail tabs — shipped in #26), `docs/security.md` (no secret is ever written to a log or a

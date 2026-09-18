@@ -279,6 +279,11 @@ is a sibling container rather than a generalised interface. Evidence per criteri
   [`specs/2026-09-16-http-log-failures-filters-detail-design.md`](specs/2026-09-16-http-log-failures-filters-detail-design.md).
   The re-redaction line above still stands for REST rows; a failure row is redacted by design and
   the pane says so.
+- **HTTP Log export, reuse, search, waterfall, compare, row limit and preserve log — done 2026-09-18.**
+  Export HAR, copy as cURL, Resend and Open request from a row menu, search with regex and case, a Name
+  column and sort, a waterfall column, comparing two rows, a row-limit setting and a session-only Preserve
+  log. See
+  [`specs/2026-09-18-http-log-export-search-compare-design.md`](specs/2026-09-18-http-log-export-search-compare-design.md).
 
 - **The JSON form view** — see [Contracts](#contracts). The importers that used to sit beside it here
   shipped in 2.1.0.
