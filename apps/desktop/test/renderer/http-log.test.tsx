@@ -498,3 +498,25 @@ describe('HttpLog — Export HAR', () => {
     expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
   });
 });
+
+describe('HttpLog — Preserve log', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [], filter: EMPTY_FILTER, preserveLog: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useExchangesStore.setState({ preserveLog: false });
+  });
+
+  it('the Preserve log toggle reflects and sets the store flag', async () => {
+    useExchangesStore.setState({ log: [logExchange(makeRestExchange())] });
+    render(<HttpLog />);
+    const toggle = screen.getByRole('button', { name: 'Preserve log' });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    await userEvent.click(toggle);
+    expect(useExchangesStore.getState().preserveLog).toBe(true);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+  });
+});

@@ -146,6 +146,8 @@ export function HttpLog() {
   const sort = useExchangesStore((state) => state.sort);
   const cycleSort = useExchangesStore((state) => state.cycleSort);
   const clearLog = useExchangesStore((state) => state.clearLog);
+  const preserveLog = useExchangesStore((state) => state.preserveLog);
+  const setPreserveLog = useExchangesStore((state) => state.setPreserveLog);
   const refreshExchange = useExchangesStore((state) => state.refreshExchange);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const toggleSecrets = useSecretsVisibilityStore((state) => state.toggle);
@@ -284,6 +286,16 @@ export function HttpLog() {
             >
               <span aria-hidden="true">{showSecrets ? '🔓' : '🔒'}</span>
               <span className="sr-only">{showSecrets ? 'Hide secrets' : 'Show secrets'}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              aria-pressed={preserveLog}
+              title="Keep the rows when the workspace closes or switches (never saved to disk)"
+              onClick={() => {
+                setPreserveLog(!preserveLog);
+              }}
+            >
+              Preserve log
             </Button>
             <Button
               variant="ghost"
