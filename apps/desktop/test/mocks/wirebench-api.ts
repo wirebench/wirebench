@@ -166,6 +166,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       describeMany: vi.fn().mockResolvedValue({ ok: true, value: { results: [] } }),
     },
     exchanges: { get: fail('exchanges.get') },
+    log: { curl: fail('log.curl'), resend: fail('log.resend') },
     attachments: {
       saveResponse: fail('attachments.saveResponse'),
       openResponse: fail('attachments.openResponse'),

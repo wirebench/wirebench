@@ -8,6 +8,7 @@ import { sendIdOf, useExchangesStore } from '../../state/exchanges.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import { LogDetail, type LogDetailTab } from './log-detail.js';
 import { LogFilterBar } from './log-filter-bar.js';
+import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
 import { durationOf, matchesFilter, methodOf, protocolOf, startedAtOf, statusLabelOf, urlOf } from './log-filter.js';
 
 /** Beyond this many rows the plain map costs more than the virtualiser's bookkeeping. */
@@ -27,11 +28,13 @@ interface RowProps {
   readonly entry: LogEntry;
   readonly selected: boolean;
   readonly onSelect: () => void;
+  /** Opens the row menu at the pointer (right-click). */
+  readonly onMenu: (anchor: { x: number; y: number }) => void;
   /** True while a detail pane shares the width, so the row shows only its four narrow columns. */
   readonly compact: boolean;
 }
 
-function LogRow({ entry, selected, onSelect, compact }: RowProps) {
+function LogRow({ entry, selected, onSelect, onMenu, compact }: RowProps) {
   const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
@@ -40,6 +43,11 @@ function LogRow({ entry, selected, onSelect, compact }: RowProps) {
       data-kind={entry.kind}
       data-send-id={sendIdOf(entry)}
       onClick={onSelect}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onSelect();
+        onMenu({ x: event.clientX, y: event.clientY });
+      }}
       aria-pressed={selected}
       title={entry.kind === 'failure' ? entry.failure.error.message : undefined}
       className={`grid ${compact ? COLUMNS_COMPACT : COLUMNS} w-full items-center gap-2 px-2 text-left font-mono text-xs ${
@@ -77,6 +85,8 @@ export function HttpLog() {
   // Owned here rather than in the detail so it survives selecting another row.
   const [tab, setTab] = useState<LogDetailTab>('headers');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The row menu, keyed by send id so it follows the row through a refresh of its entry.
+  const [menu, setMenu] = useState<{ sendId: string; anchor: LogRowMenuProps['anchor'] } | undefined>(undefined);
   const pinnedToBottom = useRef(true);
 
   const visible = useMemo(() => log.filter((entry) => matchesFilter(entry, filter)), [log, filter]);
@@ -116,6 +126,16 @@ export function HttpLog() {
   }, [log.length]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    if ((event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && selectedId !== undefined) {
+      event.preventDefault();
+      const escaped =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(selectedId) : selectedId;
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-send-id="${escaped}"]`);
+      if (row !== null && row !== undefined) {
+        setMenu({ sendId: selectedId, anchor: row });
+      }
+      return;
+    }
     if (event.key === 'Escape' && selectedId !== undefined) {
       event.preventDefault();
       setSelectedId(undefined);
@@ -144,6 +164,8 @@ export function HttpLog() {
       }
     }
   }
+
+  const menuEntry = menu === undefined ? undefined : log.find((entry) => sendIdOf(entry) === menu.sendId);
 
   if (log.length === 0) {
     return <p className="p-1 text-sm text-fg-subtle">Sent requests appear here with their raw exchange and timings.</p>;
@@ -222,6 +244,9 @@ export function HttpLog() {
                         onSelect={() => {
                           setSelectedId(sendIdOf(entry));
                         }}
+                        onMenu={(anchor) => {
+                          setMenu({ sendId: sendIdOf(entry), anchor });
+                        }}
                       />
                     </div>
                   );
@@ -237,6 +262,9 @@ export function HttpLog() {
                   onSelect={() => {
                     setSelectedId(sendIdOf(entry));
                   }}
+                  onMenu={(anchor) => {
+                    setMenu({ sendId: sendIdOf(entry), anchor });
+                  }}
                 />
               ))
             )}
@@ -251,9 +279,25 @@ export function HttpLog() {
             onClose={() => {
               setSelectedId(undefined);
             }}
+            onMenu={(anchor) => {
+              setMenu({ sendId: sendIdOf(selected), anchor });
+            }}
           />
         )}
       </div>
+
+      {menuEntry !== undefined && menu !== undefined && (
+        <LogRowMenu
+          entry={menuEntry}
+          anchor={menu.anchor}
+          onClose={() => {
+            setMenu(undefined);
+          }}
+          returnFocus={() => {
+            scrollRef.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }

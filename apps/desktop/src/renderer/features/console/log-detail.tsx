@@ -222,10 +222,12 @@ export interface LogDetailProps {
   readonly onTabChange: (tab: LogDetailTab) => void;
   /** Closes the pane (the × button and Escape); omitted, neither is offered. */
   readonly onClose?: () => void;
+  /** Opens the row menu below the ⋯ button; omitted, the button is not offered. */
+  readonly onMenu?: (anchor: HTMLElement) => void;
 }
 
 /** The detail pane beside the HTTP Log table, on its right. */
-export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) {
+export function LogDetail({ entry, tab, onTabChange, onClose, onMenu }: LogDetailProps) {
   return (
     <div
       data-testid="log-detail"
@@ -247,6 +249,19 @@ export function LogDetail({ entry, tab, onTabChange, onClose }: LogDetailProps) 
             className="px-2 text-sm text-fg-muted hover:text-fg-default"
           >
             ×
+          </button>
+        )}
+        {onMenu !== undefined && (
+          <button
+            type="button"
+            aria-label="Row actions"
+            title="Row actions (Shift+F10)"
+            onClick={(event) => {
+              onMenu(event.currentTarget);
+            }}
+            className="px-2 text-sm text-fg-muted hover:text-fg-default"
+          >
+            ⋯
           </button>
         )}
         <div className="min-w-0 flex-1">
