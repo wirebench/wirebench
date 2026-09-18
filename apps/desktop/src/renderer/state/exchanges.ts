@@ -68,6 +68,14 @@ export const EMPTY_FILTER: LogFilter = {
   protocols: [],
 };
 
+/** The HTTP Log columns a header click sorts by. */
+export type SortColumn = 'time' | 'name' | 'status' | 'duration' | 'size';
+
+export interface LogSort {
+  readonly column: SortColumn;
+  readonly direction: 'asc' | 'desc';
+}
+
 /** The send id either kind of entry carries. */
 export function sendIdOf(entry: LogEntry): string {
   return entry.kind === 'exchange' ? entry.exchange.sendId : entry.failure.sendId;
@@ -153,6 +161,8 @@ export interface ExchangesSnapshot {
   readonly log: readonly LogEntry[];
   /** The HTTP Log's filter. Not persisted; dropped with the log on `reset`. */
   readonly filter: LogFilter;
+  /** The HTTP Log's column sort; undefined is log order. Reset with the filter. */
+  readonly sort: LogSort | undefined;
 }
 
 /** The exchanges store: {@link ExchangesSnapshot} plus the actions that drive a send. */
@@ -184,6 +194,8 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly setFilter: (patch: Partial<LogFilter>) => void;
   /** Shows every row again. Distinct from `clearLog`, which empties the log. */
   readonly resetFilter: () => void;
+  /** Cycles off → asc → desc → off; a different column starts again at asc. */
+  readonly cycleSort: (column: SortColumn) => void;
   /**
    * Re-reads one exchange from main (`exchanges.get`), which re-redacts it against the
    * show-secrets flag as it stands now, and swaps the fresher copy into the log and the
@@ -248,9 +260,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     grpcByRequest: {},
     log: [],
     filter: EMPTY_FILTER,
+    sort: undefined,
 
     reset: () => {
-      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER });
+      set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER, sort: undefined });
     },
 
     sendGrpc: async (requestId, options) => {
@@ -672,7 +685,16 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     resetFilter: () => {
-      set({ filter: EMPTY_FILTER });
+      set({ filter: EMPTY_FILTER, sort: undefined });
+    },
+
+    cycleSort: (column) => {
+      set((state) => {
+        if (state.sort?.column !== column) {
+          return { sort: { column, direction: 'asc' } };
+        }
+        return { sort: state.sort.direction === 'asc' ? { column, direction: 'desc' } : undefined };
+      });
     },
 
     clearRequest: (requestId) => {

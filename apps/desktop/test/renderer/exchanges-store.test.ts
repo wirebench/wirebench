@@ -472,4 +472,20 @@ describe('useExchangesStore: failures and the filter', () => {
     unsubscribe();
     expect(off).toHaveBeenCalledTimes(1);
   });
+
+  it('cycleSort goes asc → desc → off; another column restarts at asc; resetFilter clears it', () => {
+    useExchangesStore.setState({ sort: undefined });
+    const { cycleSort } = useExchangesStore.getState();
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'duration', direction: 'asc' });
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'duration', direction: 'desc' });
+    cycleSort('duration');
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+    cycleSort('status');
+    cycleSort('name');
+    expect(useExchangesStore.getState().sort).toEqual({ column: 'name', direction: 'asc' });
+    useExchangesStore.getState().resetFilter();
+    expect(useExchangesStore.getState().sort).toBeUndefined();
+  });
 });
