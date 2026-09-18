@@ -1,4 +1,5 @@
 import type { Assertion, AssertionResult, AssertionSubject } from './model.js';
+import { evaluateContract } from './contract.js';
 import { evaluateMatch } from './match.js';
 import { evaluateSla } from './sla.js';
 import { evaluateSoapFault } from './soap-fault.js';
@@ -15,12 +16,7 @@ function evaluateOne(subject: AssertionSubject, assertion: Assertion): Promise<A
     case 'match':
       return evaluateMatch(subject, assertion);
     case 'schema':
-      return {
-        type: assertion.type,
-        label: assertion.name ?? assertion.type,
-        outcome: 'errored',
-        message: 'not implemented',
-      };
+      return evaluateContract(subject, assertion);
   }
 }
 
