@@ -9,7 +9,7 @@ import Shortcut from '../../components/Shortcut.astro';
 
 **Wirebench** is a native, clean-room desktop workbench built specifically for developers and enterprise engineers who test and debug **SOAP** (WSDL 1.1 / 2.0, XML Schema, WS-Security) and **REST** (OpenAPI 3.0, JSON, multipart) APIs.
 
-![Wirebench Workspace Launcher](/wirebench/images/workspace-picker.png)
+![Wirebench Workspace Launcher](/wirebench/images/getting-started/workspace-picker.png)
 
 ---
 

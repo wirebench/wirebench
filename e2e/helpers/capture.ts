@@ -40,18 +40,26 @@ export async function setTheme(page: Page, preference: 'dark' | 'light'): Promis
 
 /**
  * Regions carrying a real request's timing — a response's duration/status line, and any HTTP
- * log rows in the console — masked out of the README captures. Unlike `a11y.spec.ts`'s
+ * log rows in the console, and the status bar's last-request line — masked out of every capture. Unlike `a11y.spec.ts`'s
  * `dynamicRegions` (masked so a *pixel comparison* never depends on when it ran), these are
  * masked because they are wall-clock numbers off whoever's machine re-shoots the docs: a
  * committed screenshot should not silently vary with — or leak — a maintainer's local timing.
  */
 export function timingRegions(page: Page): Locator[] {
-  return [page.getByTestId('response-status'), page.locator('[data-testid="http-log-row"]')];
+  return [
+    page.getByTestId('response-status'),
+    page.locator('[data-testid="http-log-row"]'),
+    page.getByTestId('status-bar-last'),
+  ];
 }
 
 /** The same, for the REST response pane, whose status line carries its own duration. */
 export function restTimingRegions(page: Page): Locator[] {
-  return [page.getByTestId('rest-response-status'), page.locator('[data-testid="http-log-row"]')];
+  return [
+    page.getByTestId('rest-response-status'),
+    page.locator('[data-testid="http-log-row"]'),
+    page.getByTestId('status-bar-last'),
+  ];
 }
 
 /** The remote the sync captures show: a realistic URL rather than the test remote's temp folder. */
@@ -95,10 +103,19 @@ export async function captureWindow(
   // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
   // otherwise a Retina machine produces a 2560x1600 file (and a different one from a non-Retina
   // machine), which is both heavier than a README wants and not reproducible across developers.
+  // A mask is painted in the window's own background rather than Playwright's default magenta, so
+  // a masked timing reads as an empty field instead of a highlighter stripe across the picture.
+  const maskColor = await page.evaluate(() => {
+    const dom = globalThis as unknown as {
+      document: { body: unknown };
+      getComputedStyle(element: unknown): { backgroundColor: string };
+    };
+    return dom.getComputedStyle(dom.document.body).backgroundColor;
+  });
   const buffer = await page.screenshot({
     animations: 'disabled',
     scale: 'css',
-    ...(options.mask !== undefined ? { mask: options.mask } : {}),
+    ...(options.mask !== undefined ? { mask: options.mask, maskColor } : {}),
   });
   expect(buffer.byteLength, `${file} is ${String(buffer.byteLength)} bytes; keep screenshots small`).toBeLessThan(
     options.maxBytes,
