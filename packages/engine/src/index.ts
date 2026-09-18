@@ -510,7 +510,14 @@ export type {
   GrpcRequestFile,
   ProtoDefinitionCacheManifest,
 } from './project/schema.js';
-export { DEFAULT_PREFERENCES, mergePreferences, preferencesSchema, resetPreferences } from './project/preferences.js';
+export {
+  DEFAULT_PREFERENCES,
+  LOG_SIZE_MAX,
+  LOG_SIZE_MIN,
+  mergePreferences,
+  preferencesSchema,
+  resetPreferences,
+} from './project/preferences.js';
 export type {
   EditorPreferences,
   HttpPreferences,

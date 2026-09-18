@@ -3239,6 +3239,7 @@ export const preferencesWireSchema = z.object({
     }),
     confirmOnDelete: z.boolean(),
     historyCap: z.number(),
+    logSize: z.number(),
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
