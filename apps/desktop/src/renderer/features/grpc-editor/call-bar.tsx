@@ -11,7 +11,7 @@
  * The strip shows the address the call would actually go to, and where that came from, which only
  * main knows.
  */
-import { Send, Square } from 'lucide-react';
+import { Radio, Send, Square } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import type { GrpcMethodDescriptorWire, GrpcServiceDescriptorWire } from '../../../shared/wire-types.js';
 import { methodKindLabel } from './method-kind-badge.js';
@@ -49,6 +49,12 @@ export interface CallBarProps {
   readonly onSend: () => void;
   readonly onCancel: () => void;
   readonly sendShortcut?: string | undefined;
+  /**
+   * Opens the call and leaves its request side open, for a method whose client streams. Absent for
+   * every other method: there is nothing to push into a unary or server-streaming call once it has
+   * started, so only Send is offered.
+   */
+  readonly onOpenStream?: (() => void) | undefined;
 }
 
 const FIELD_CLASS =
@@ -68,6 +74,7 @@ export function CallBar({
   onSend,
   onCancel,
   sendShortcut,
+  onOpenStream,
 }: CallBarProps) {
   const current = service === '' && method === '' ? '' : `${service}/${method}`;
   const hasDefinition = services !== undefined && services.length > 0;
@@ -139,15 +146,28 @@ export function CallBar({
           Cancel
         </Button>
       ) : (
-        <Button
-          variant="primary"
-          data-testid="grpc-send"
-          onClick={onSend}
-          {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
-        >
-          <Send size={12} aria-hidden="true" />
-          Send
-        </Button>
+        <>
+          {onOpenStream !== undefined && (
+            <Button
+              variant="secondary"
+              data-testid="grpc-open-stream"
+              onClick={onOpenStream}
+              title="Open the call and keep sending messages into it"
+            >
+              <Radio size={12} aria-hidden="true" />
+              Open stream
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            data-testid="grpc-send"
+            onClick={onSend}
+            {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
+          >
+            <Send size={12} aria-hidden="true" />
+            Send
+          </Button>
+        </>
       )}
     </div>
   );

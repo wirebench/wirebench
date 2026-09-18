@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **gRPC live streaming and interactive bidirectional send.** A streaming call now shows itself while it runs:
+  the response pane raises its tabs as soon as the call opens, the server's initial metadata appears when its
+  headers arrive, and each reply is appended as it is decoded rather than all of them at the end. For a method
+  whose client streams, *Open stream* starts the call and leaves the request side open — a composer under the
+  response pane sends one more message at a time and *Half-close* stops sending without ending the call, so a
+  bidirectional method can be held as a conversation. Every message pushed by hand is part of the exchange that
+  is recorded, in `requestMessages` and in the raw request bytes. See
+  [`docs/specs/2026-09-18-grpc-live-streaming-design.md`](docs/specs/2026-09-18-grpc-live-streaming-design.md).
 - **gRPC server reflection.** Point Wirebench at a running gRPC server and it describes itself: the Import
   dialog's gRPC format gains a *Server* tab taking an address, the reflection version (automatic by default —
   `grpc.reflection.v1`, falling back to `v1alpha`) and whether to ask a server whose certificate does not verify.

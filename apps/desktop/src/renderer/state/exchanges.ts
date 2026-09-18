@@ -10,6 +10,8 @@ import type {
   ExchangeSummary,
   FailedExchangeWire,
   GrpcExchangeSummary,
+  GrpcLiveEvent,
+  GrpcResponseMessageWire,
   RestExchangeSummary,
   UnresolvedRefWire,
 } from '../../shared/wire-types.js';
@@ -87,6 +89,24 @@ export interface RestExchangeState {
   readonly startedAt?: string;
 }
 
+/**
+ * What a gRPC call that is still running has produced so far.
+ *
+ * A server stream can run for minutes, so the pane shows this while `status` is `sending` and the
+ * finished `exchange` replaces it at the end. The two never disagree: main sends the same decoded
+ * messages either way, these one at a time.
+ */
+export interface GrpcLiveState {
+  /** Response messages in arrival order. */
+  readonly messages: readonly GrpcResponseMessageWire[];
+  /** The server's initial metadata, once its headers have arrived. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Messages pushed by hand on an interactive call, canonical JSON text each. */
+  readonly sent: readonly string[];
+  /** True while the request side is open for pushing — an interactive call that has not half-closed. */
+  readonly open: boolean;
+}
+
 /** What is known about the most recent call of one gRPC request. */
 export interface GrpcExchangeState {
   readonly status: ExchangeStatus;
@@ -94,6 +114,8 @@ export interface GrpcExchangeState {
   readonly exchange?: GrpcExchangeSummary;
   readonly error?: IpcError;
   readonly startedAt?: string;
+  /** Present while the call runs; dropped when the exchange arrives. */
+  readonly live?: GrpcLiveState;
 }
 
 /** The exchanges store's serialisable state. */
@@ -157,10 +179,20 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancelRest: (requestId: string) => Promise<void>;
   /** Clears the REST exchange state for a removed request. */
   readonly clearRestRequest: (requestId: string) => void;
-  /** Makes one gRPC call, the request and its unsaved draft named; main resolves everything else. */
-  readonly sendGrpc: (requestId: string) => Promise<void>;
+  /**
+   * Makes one gRPC call, the request and its unsaved draft named; main resolves everything else.
+   * `interactive` keeps the request side open afterwards, for {@link pushGrpcMessage} and
+   * {@link halfCloseGrpc}; without it the call is written and half-closed at once, as before.
+   */
+  readonly sendGrpc: (requestId: string, options?: { readonly interactive?: boolean }) => Promise<void>;
   readonly cancelGrpc: (requestId: string) => Promise<void>;
   readonly clearGrpcRequest: (requestId: string) => void;
+  /** Writes one more message on the open interactive call for `requestId`. */
+  readonly pushGrpcMessage: (requestId: string, messageText: string) => Promise<void>;
+  /** Half-closes that call's request side; the server may still be answering. */
+  readonly halfCloseGrpc: (requestId: string) => Promise<void>;
+  /** Folds one `grpc.live` event into the request whose call it belongs to. */
+  readonly applyGrpcLive: (event: GrpcLiveEvent) => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -200,7 +232,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       set({ byRequest: {}, restByRequest: {}, grpcByRequest: {}, log: [], filter: EMPTY_FILTER });
     },
 
-    sendGrpc: async (requestId) => {
+    sendGrpc: async (requestId, options) => {
       const request = useProjectStore.getState().grpcRequests[requestId];
       if (request === undefined) {
         update((draft) => {
@@ -215,8 +247,14 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       useProblemsStore.getState().clearSource('send', requestId);
 
       const sendId = crypto.randomUUID();
+      const interactive = options?.interactive === true;
       update((draft) => {
-        draft.grpcByRequest[requestId] = { status: 'sending', sendId, startedAt: new Date().toISOString() };
+        draft.grpcByRequest[requestId] = {
+          status: 'sending',
+          sendId,
+          startedAt: new Date().toISOString(),
+          live: { messages: [], sent: [], open: false },
+        };
       });
 
       const draftPatch = useDraftsStore.getState().peekGrpcRequest(requestId);
@@ -224,6 +262,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         sendId,
         requestId,
         ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+        ...(interactive ? { interactive: true } : {}),
       });
 
       if (get().grpcByRequest[requestId]?.sendId !== sendId) {
@@ -249,6 +288,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         useProblemsStore.getState().add(expansionProblems(requestId, unresolved));
       }
       update((draft) => {
+        // `live` goes: the exchange holds every message it held, and holding both would let the
+        // pane show a message twice.
         draft.grpcByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         draft.log.push({ kind: 'exchange', exchange: result.value });
         if (draft.log.length > LOG_CAP) {
@@ -268,6 +309,65 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     clearGrpcRequest: (requestId) => {
       update((draft) => {
         delete draft.grpcByRequest[requestId];
+      });
+    },
+
+    pushGrpcMessage: async (requestId, messageText) => {
+      const entry = get().grpcByRequest[requestId];
+      if (entry?.sendId === undefined || entry.live?.open !== true) {
+        return;
+      }
+      const sendId = entry.sendId;
+      const result = await ipc().request.grpcPush({ sendId, messageText });
+      if (!result.ok) {
+        showToast(result.error.message);
+        return;
+      }
+      update((draft) => {
+        const live = draft.grpcByRequest[requestId];
+        // The same guard the awaited send has: a reply for a call this request has moved on from
+        // belongs to nothing.
+        if (live?.sendId !== sendId || live.live === undefined) {
+          return;
+        }
+        live.live.sent.push(result.value.json);
+      });
+    },
+
+    halfCloseGrpc: async (requestId) => {
+      const entry = get().grpcByRequest[requestId];
+      if (entry?.sendId === undefined || entry.live?.open !== true) {
+        return;
+      }
+      await ipc().request.grpcHalfClose({ sendId: entry.sendId });
+    },
+
+    applyGrpcLive: (event) => {
+      update((draft) => {
+        const found = Object.entries(draft.grpcByRequest).find(([, state]) => state.sendId === event.sendId);
+        if (found === undefined) {
+          return;
+        }
+        const [, state] = found;
+        // An event for a send this request has already replaced, or one that has finished, is
+        // dropped rather than written over the newer state.
+        if (state.status !== 'sending' || state.live === undefined) {
+          return;
+        }
+        switch (event.kind) {
+          case 'open':
+            state.live.open = true;
+            return;
+          case 'headers':
+            state.live.headers = event.headers;
+            return;
+          case 'message':
+            state.live.messages.push(event.message);
+            return;
+          case 'closed':
+            state.live.open = false;
+            return;
+        }
       });
     },
 
@@ -542,6 +642,16 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
   };
 });
+
+/**
+ * Subscribes the gRPC panes to `grpc.live`, the running half of a call. Called once from the
+ * shell; returns the unsubscribe for symmetry with React effects.
+ */
+export function subscribeToGrpcLive(): () => void {
+  return window.wirebench.on('grpc.live', ((payload: GrpcLiveEvent) => {
+    useExchangesStore.getState().applyGrpcLive(payload);
+  }) as (payload: unknown) => void);
+}
 
 /**
  * Subscribes the log to `exchange.failed`. Called once from the shell, beside `subscribeToHistory`;

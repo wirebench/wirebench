@@ -1,3 +1,4 @@
+import type { WebContents } from 'electron';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
@@ -20,7 +21,7 @@ import {
   failedRequestOf,
   grpcMethodPath,
 } from '@wirebench/engine';
-import { channels } from '../../shared/ipc.js';
+import { channels, events } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
 import type {
@@ -68,6 +69,7 @@ import type {
   RequestRecreateRequest,
   RequestRecreateResponse,
 } from '../../shared/wire-types.js';
+import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
 /** The `ProjectRouter` surface the `request.*` channels drive; a stub stands in for it in tests. */
@@ -933,6 +935,7 @@ async function sendGrpcRequest(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestSendGrpcRequest,
+  sender: WebContents,
 ): Promise<GrpcExchangeSummary> {
   const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
   if (resolved === undefined) {
@@ -987,6 +990,12 @@ async function sendGrpcRequest(
         showSecrets: deps.showSecrets?.get() ?? false,
         auth: resolved.auth,
         ...(accessToken !== undefined ? { accessToken } : {}),
+        ...(request.interactive === true ? { interactive: true } : {}),
+        // The stream as it happens, alongside the invoke that is still open and will resolve with
+        // the whole exchange. A window that has gone away swallows its own events.
+        onLive: (event) => {
+          emitEvent(sender, events.grpc.live, event);
+        },
       },
     );
     await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
@@ -1109,7 +1118,17 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 
-  registerHandler(channels.request.sendGrpc, (request) => sendGrpcRequest(service, deps, request));
+  registerHandler(channels.request.sendGrpc, (request, sender) => sendGrpcRequest(service, deps, request, sender));
+  registerHandler(channels.request.grpcPush, (request) =>
+    Promise.resolve(service.pushGrpcMessage(request.sendId, request.messageText)),
+  );
+  registerHandler(channels.request.grpcHalfClose, (request, sender) => {
+    const closed = service.halfCloseGrpc(request.sendId);
+    if (closed.closed) {
+      emitEvent(sender, events.grpc.live, { kind: 'closed', sendId: request.sendId });
+    }
+    return Promise.resolve(closed);
+  });
 
   registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
 

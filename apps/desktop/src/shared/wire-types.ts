@@ -1670,8 +1670,65 @@ export const requestSendGrpcRequestSchema = z.object({
   sendId: z.string(),
   requestId: z.string(),
   draft: grpcRequestPatchSchema.optional(),
+  /**
+   * Keeps the request side open once the message text has been written, so `request.grpcPush` can
+   * add more messages and `request.grpcHalfClose` ends them. Absent — every send until now — the
+   * call is written and half-closed at once, exactly as before.
+   */
+  interactive: z.boolean().optional(),
 });
 export type RequestSendGrpcRequest = z.infer<typeof requestSendGrpcRequestSchema>;
+
+/**
+ * One report from a gRPC call that is still running, correlated to the invoke by `sendId`.
+ *
+ * `request.sendGrpc` stays open and still resolves with the whole exchange; these say what has
+ * happened so far, so a server stream fills in as it arrives instead of appearing at the end.
+ * A renderer that ignores them sees exactly the behaviour it saw before.
+ */
+export const grpcLiveEventSchema = z.discriminatedUnion('kind', [
+  /** The request side is open for pushing. Only an interactive call reports it. */
+  z.object({ kind: z.literal('open'), sendId: z.string() }),
+  /** The server's initial metadata, the moment it arrives. */
+  z.object({
+    kind: z.literal('headers'),
+    sendId: z.string(),
+    httpStatus: z.number(),
+    headers: z.record(z.string(), z.string()),
+  }),
+  /** One response message, decoded, in arrival order. */
+  z.object({
+    kind: z.literal('message'),
+    sendId: z.string(),
+    index: z.number(),
+    message: grpcResponseMessageWireSchema,
+  }),
+  /** The request side has been half-closed; the server may still be answering. */
+  z.object({ kind: z.literal('closed'), sendId: z.string() }),
+]);
+export type GrpcLiveEvent = z.infer<typeof grpcLiveEventSchema>;
+
+/** Request payload for `request.grpcPush`: one more message on an open interactive call. */
+export const requestGrpcPushRequestSchema = z.object({
+  sendId: z.string(),
+  /** The message as JSON text, encoded against the method's request type by main. */
+  messageText: z.string(),
+});
+export type RequestGrpcPushRequest = z.infer<typeof requestGrpcPushRequestSchema>;
+
+/** What `request.grpcPush` answers: the message as it went, so the pane echoes what was sent. */
+export const requestGrpcPushResponseSchema = z.object({
+  /** The message in canonical JSON text, as encoded against the request type. */
+  json: z.string(),
+});
+export type RequestGrpcPushResponse = z.infer<typeof requestGrpcPushResponseSchema>;
+
+/** Request payload for `request.grpcHalfClose`: which open call to stop sending on. */
+export const requestGrpcHalfCloseRequestSchema = z.object({ sendId: z.string() });
+
+/** What `request.grpcHalfClose` answers. `false` when no such call is open. */
+export const requestGrpcHalfCloseResponseSchema = z.object({ closed: z.boolean() });
+export type RequestGrpcHalfCloseResponse = z.infer<typeof requestGrpcHalfCloseResponseSchema>;
 
 /** Request payload for `request.preflightGrpc`: the same pair, with nothing sent. */
 export const requestPreflightGrpcRequestSchema = z.object({
