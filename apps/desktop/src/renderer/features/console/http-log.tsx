@@ -14,6 +14,8 @@ import { LogRowMenu, type LogRowMenuProps } from './log-row-menu.js';
 import { nameOf, useNameSources, type NameSources } from './log-name.js';
 import { compileMatcher } from './log-search.js';
 import { sortEntries } from './log-sort.js';
+import { barOf, spanOf, type WaterfallBar } from './log-waterfall.js';
+import { LogWaterfallBar } from './log-waterfall-bar.js';
 import {
   durationOf,
   matchesFilterWith,
@@ -28,8 +30,11 @@ import {
 const VIRTUALISE_ABOVE = 200;
 const ROW_HEIGHT = 22;
 
-/** time · proto · method · name · URL · status · ms · size. The status column fits an error code like `connection-refused`. */
-const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(6rem,12rem)_minmax(0,1fr)_8rem_4rem_5rem]';
+/**
+ * time · proto · method · name · URL · status · ms · size · waterfall. The status column fits an
+ * error code like `connection-refused`.
+ */
+const COLUMNS = 'grid-cols-[5rem_3rem_4rem_minmax(6rem,12rem)_minmax(0,2fr)_8rem_4rem_5rem_minmax(8rem,1fr)]';
 /**
  * What is left when the detail pane takes half the width: proto, method, URL and status. The full
  * seven columns have a min-content width the narrowed table cannot go below, so they would overflow
@@ -47,9 +52,11 @@ interface RowProps {
   readonly compact: boolean;
   /** What the Name cell resolves the row's request against. */
   readonly names: NameSources;
+  /** Where the row sits in the Waterfall column; undefined while compact. */
+  readonly bar: WaterfallBar | undefined;
 }
 
-function LogRow({ entry, selected, onSelect, onMenu, compact, names }: RowProps) {
+function LogRow({ entry, selected, onSelect, onMenu, compact, names, bar }: RowProps) {
   const bad = entry.kind === 'failure' || toneFor(entry.exchange) === 'bad';
   return (
     <button
@@ -86,6 +93,7 @@ function LogRow({ entry, selected, onSelect, onMenu, compact, names }: RowProps)
       </span>
       {!compact && <span>{formatDuration(durationOf(entry))}</span>}
       {!compact && <span>{entry.kind === 'exchange' ? formatBytes(responseSize(entry.exchange)) : ''}</span>}
+      {!compact && <span>{bar !== undefined && <LogWaterfallBar bar={bar} />}</span>}
     </button>
   );
 }
@@ -175,6 +183,10 @@ export function HttpLog() {
   const selected = visible.find((entry) => sendIdOf(entry) === selectedId);
   // The detail shares the width with the table, so the row sheds the columns that do not fit.
   const compact = selected !== undefined;
+  // One span for the rows shown, so every bar is placed on the same time axis.
+  const span = useMemo(() => spanOf(visible), [visible]);
+  const barFor = (entry: LogEntry): WaterfallBar | undefined =>
+    compact || span === undefined ? undefined : barOf(entry, span);
 
   // Redaction is applied in main, once, at send time — so when the flag flips, the exchange the
   // user is looking at has to be re-fetched (`exchanges.get`) to be re-redacted. A failure row has
@@ -297,6 +309,7 @@ export function HttpLog() {
               <SortHeader label="status" column="status" sort={sort} onSort={cycleSort} />
               {!compact && <SortHeader label="ms" column="duration" sort={sort} onSort={cycleSort} />}
               {!compact && <SortHeader label="size" column="size" sort={sort} onSort={cycleSort} />}
+              {!compact && <span>waterfall</span>}
             </div>
           </div>
 
@@ -328,6 +341,7 @@ export function HttpLog() {
                         entry={entry}
                         compact={compact}
                         names={names}
+                        bar={barFor(entry)}
                         selected={sendIdOf(entry) === selectedId}
                         onSelect={() => {
                           setSelectedId(sendIdOf(entry));
@@ -347,6 +361,7 @@ export function HttpLog() {
                   entry={entry}
                   compact={compact}
                   names={names}
+                  bar={barFor(entry)}
                   selected={sendIdOf(entry) === selectedId}
                   onSelect={() => {
                     setSelectedId(sendIdOf(entry));

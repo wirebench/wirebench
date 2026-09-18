@@ -45,7 +45,7 @@ describe('HttpLog', () => {
 
     expect(rows()).toHaveLength(2);
     const first = rows()[0]!;
-    const cells = [...first.querySelectorAll('span')].map((cell) => cell.textContent);
+    const cells = [...first.querySelectorAll(':scope > span')].map((cell) => cell.textContent);
     // Clock time is local, so derive it rather than pin a timezone.
     expect(cells).toEqual([
       formatClockTime(makeExchange().http.timings.startedAt),
@@ -56,11 +56,14 @@ describe('HttpLog', () => {
       '200',
       '143 ms',
       expect.stringMatching(/B$/),
+      '',
     ]);
     expect(rows()[1]?.textContent).toContain('rest');
     expect(rows()[1]?.textContent).toContain('12 ms');
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
   });
 
   it('colours a failing status red', () => {
@@ -309,7 +312,9 @@ describe('HttpLog', () => {
     render(<HttpLog />);
 
     const header = screen.getByTestId('http-log-header');
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
 
     await userEvent.click(rows()[0]!);
     expect(header.textContent).toBe(['proto', 'method', 'URL', 'status'].join(''));
@@ -317,7 +322,23 @@ describe('HttpLog', () => {
     expect(screen.getByTestId('http-log-status').textContent).toBe('200');
 
     await userEvent.click(screen.getByRole('button', { name: 'Close detail' }));
-    expect(header.textContent).toBe(['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size'].join(''));
+    expect(header.textContent).toBe(
+      ['time', 'proto', 'method', 'name', 'URL', 'status', 'ms', 'size', 'waterfall'].join(''),
+    );
+  });
+
+  it('shows a waterfall column with a bar per row only while no row is selected', async () => {
+    useExchangesStore.setState({
+      log: [logExchange(makeExchange({ sendId: 'a' })), failure],
+    });
+    render(<HttpLog />);
+    const header = screen.getByTestId('http-log-header');
+    expect(within(header).getByText('waterfall')).toBeDefined();
+    expect(screen.getAllByTestId('waterfall-bar')).toHaveLength(2);
+
+    await userEvent.click(rows()[0]!);
+    expect(within(header).queryByText('waterfall')).toBeNull();
+    expect(screen.queryAllByTestId('waterfall-bar')).toHaveLength(0);
   });
 });
 
