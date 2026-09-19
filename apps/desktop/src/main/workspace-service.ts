@@ -1016,7 +1016,10 @@ export class WorkspaceService implements ProjectRouter {
       }
       const nextRef = nextRefs.get(entry.ref.id);
       if (nextRef === undefined || !refsEqual(nextRef, entry.ref)) {
-        await this.releaseEntry(open, entry, { discardUnsaved: nextRef === undefined });
+        await this.releaseEntry(open, entry, {
+          discardUnsaved: nextRef === undefined,
+          closeSessions: nextRef === undefined,
+        });
       }
     }
     for (const ref of loaded.projects) {
@@ -1068,17 +1071,25 @@ export class WorkspaceService implements ProjectRouter {
    * id) passes `discardUnsaved: false`, because the very next step re-adds the same id and
    * `openEntry` restores from that record — deleting it here would silently drop the local user's
    * uncommitted work on a routine pulled rename.
+   *
+   * `closeSessions` follows the same split. A project that is genuinely gone takes its WebSocket
+   * sessions with it, and waits for their History entries. A relocation must not: the project is
+   * about to be re-added under the same id, so killing the user's open sessions — and blocking the
+   * reload for up to the recording timeout — would make a teammate's rename look like a dropped
+   * connection.
    */
   private async releaseEntry(
     open: OpenWorkspace,
     entry: OpenProjectEntry,
-    options: { discardUnsaved: boolean },
+    options: { discardUnsaved: boolean; closeSessions: boolean },
   ): Promise<void> {
     this.cancelUnsavedWrite(entry.ref.id);
     // Before the host and the history file go: a session still open against one of this project's
     // requests records its entry when it closes, and `history.close` below would leave that entry
     // nowhere to be written.
-    await this.deps.closeWsSessions?.(entry.projectId).catch(() => undefined);
+    if (options.closeSessions) {
+      await this.deps.closeWsSessions?.(entry.projectId).catch(() => undefined);
+    }
     await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
     if (options.discardUnsaved) {
       await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
@@ -1546,7 +1557,7 @@ export class WorkspaceService implements ProjectRouter {
       });
     }
     // Removing a project discards its unsaved changes: there is no project left to restore into.
-    await this.releaseEntry(open, entry, { discardUnsaved: true });
+    await this.releaseEntry(open, entry, { discardUnsaved: true, closeSessions: true });
     this.reindex();
     await this.saveManifest(open);
     if (trashFolder && trash !== undefined) {

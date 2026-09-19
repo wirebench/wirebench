@@ -506,6 +506,33 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     await openPromise;
   });
 
+  it('waits for a session that already closed but whose History write is still in flight', async () => {
+    // The engine drops a session from its map as the socket finishes, before the pending
+    // `request.openWs` has written the entry. So "nothing is open" says nothing about "everything
+    // is recorded", and the shutdown wait must not be skipped on the strength of it.
+    let recorded = false;
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      recorded = true;
+      return { id: 'h-late', kind: 'websocket' } as HistoryEntryWire;
+    });
+    const service = register({ history: { recordWsSession } as never });
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 'late-1', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+
+    // The user disconnected a moment before the quit: the socket is closing, so the engine has
+    // nothing left to close — but the entry has not been written yet.
+    unwrap(await invoke('request.wsClose', { sendId: 'late-1' }));
+    expect(service.closeAllWs()).toBe(0);
+    expect(recorded).toBe(false);
+
+    await whenWsSessionsRecorded(8000);
+
+    expect(recorded).toBe(true);
+    await openPromise;
+  });
+
   it('closes only the sessions of the project being closed, and waits for those', async () => {
     const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
       Promise.resolve({ id: 'h-close', kind: 'websocket' } as HistoryEntryWire),

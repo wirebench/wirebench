@@ -200,16 +200,18 @@ const workspaceService = new WorkspaceService({
   // whole workspace) closing has to ask the sockets to close *and* wait for the entries before
   // the history files go with it.
   closeWsSessions: async (projectId) => {
-    const asked =
-      projectId === undefined
-        ? engineService.closeAllWs()
-        : engineService.closeWsWhere((requestId) => workspaceService.projectId(requestId) === projectId);
-    if (asked > 0) {
-      await whenWsSessionsRecorded(
-        WS_SESSION_RECORD_TIMEOUT_MS,
-        projectId === undefined ? undefined : (requestId) => workspaceService.projectId(requestId) === projectId,
-      );
+    const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
+    if (matches === undefined) {
+      engineService.closeAllWs();
+    } else {
+      engineService.closeWsWhere(matches);
     }
+    // Always awaited, never guarded by "did we just close anything": the engine drops a session
+    // from its map as the socket finishes, *before* the pending `request.openWs` has written the
+    // History entry. A session that closed a moment ago is therefore invisible here while its
+    // write is still in flight, and skipping the wait would race it against `history.close`.
+    // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
+    await whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches);
   },
   trash: trashFolder,
   // "System proxy" means whatever Chromium's own network stack means by it — including any PAC

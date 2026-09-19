@@ -262,6 +262,39 @@ describe('WorkspaceService — workspace-level watcher', () => {
     await service.close();
   }, 20_000);
 
+  it('keeps a project’s WebSocket sessions open across a pulled rename', async () => {
+    // The relocation releases the entry and re-adds the same id straight after. Closing its
+    // sockets there — and waiting up to the recording timeout for their History entries — would
+    // make a teammate's rename look, to the person watching a live session, like a dropped
+    // connection. Only a project genuinely gone from the manifest takes its sessions with it.
+    const closeWsSessions = vi.fn(() => Promise.resolve());
+    const { workspace, tree } = await seedWorkspace('Team');
+    const { service } = newService({ closeWsSessions });
+    await service.open(workspace.id);
+    await settle();
+    const alphaId = workspace.projects[0]!.id;
+    closeWsSessions.mockClear();
+
+    await rename(join(tree, 'projects', 'alpha'), join(tree, 'projects', 'alpha-moved'));
+    const renamed: Workspace = {
+      ...workspace,
+      projects: workspace.projects.map((ref) => (ref.id === alphaId ? { ...ref, slug: 'alpha-moved' } : ref)),
+    };
+    await saveWorkspace(renamed, tree);
+
+    await vi.waitFor(() => {
+      expect(service.snapshot()?.projects.find((p) => p.id === alphaId)?.slug).toBe('alpha-moved');
+    }, WAIT_OPTIONS);
+
+    expect(closeWsSessions).not.toHaveBeenCalled();
+
+    // The same project genuinely removed does close them, so the flag is not simply off.
+    await service.removeProject(alphaId, { deleteFiles: false });
+    expect(closeWsSessions).toHaveBeenCalledWith(alphaId);
+
+    await service.close();
+  }, 20_000);
+
   it('serialises a watcher-driven reload behind an in-flight removeProject, leaving entries and the manifest consistent', async () => {
     const { workspace, tree } = await seedWorkspace('Team');
     const second = createProject('Beta');
