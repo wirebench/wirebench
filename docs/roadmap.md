@@ -5,7 +5,7 @@ worth building. The v1 design (`docs/specs/2026-09-09-wirebench-v1-explore-and-s
 the phase plan this page argues from; where the two differ, [Departures from the v1 spec](#departures-from-the-v1-spec)
 says so, and the spec stays authoritative until it is updated.
 
-**Where things stand (2026-09-18).** 2.0.0 added the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
+**Where things stand (2026-09-19).** 2.0.0 added the REST client (`docs/specs/2026-09-13-wirebench-rest-client-design.md`,
 ADR-0007) and moved the project format to version 3 — the major bump is that one-way door, not a
 rewrite. Before it: 1.0.0 (explore and send) was tagged and withdrawn unpublished; 1.1.0 was the first
 published release. It added workspaces (`docs/specs/2026-09-11-wirebench-workspaces-design.md`, ADR-0006),
@@ -14,10 +14,14 @@ manual saving with per-tab dirty marks (`docs/plans/2026-09-12-save-granularity-
 arch-named release artifacts. 2.1.0 added git-native shared workspaces
 (`docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`, ADR-0008, `docs/collaborate.md`) and the
 importers for OpenAPI 3.2, Swagger 1.x/2.0 and Postman Collections behind one _Import…_ dialog; 2.1.1 re-shot
-the README. Unreleased on `main`: gRPC as the third protocol, with `.proto` import and an HTTP/2 transport
-(`docs/specs/2026-09-16-wirebench-grpc-client-design.md`), and the HTTP Log rework — failed sends, a filter
-bar and detail tabs (`docs/specs/2026-09-16-http-log-failures-filters-detail-design.md`). Built on its own
-branch and not yet merged: the documentation site (item 2). Everything below is what is still open, and
+the README. Unreleased on `main`: gRPC as the third protocol, with `.proto` import, an HTTP/2 transport,
+server reflection, live and interactive bidirectional streams and message completion
+(`docs/specs/2026-09-16-wirebench-grpc-client-design.md`); the HTTP Log rework and its export, search,
+waterfall and compare (`docs/specs/2026-09-16-http-log-failures-filters-detail-design.md`,
+`docs/specs/2026-09-18-http-log-export-search-compare-design.md`); import of the legacy single-XML SOAP
+project format (`docs/specs/2026-09-18-legacy-soap-project-import-design.md`); the user guide site
+(item 2); and the CLI runner, slices S1–S6 (item 3, `docs/specs/2026-09-18-cli-runner-design.md`), which
+took the project format to version 4. Everything below is what is still open, and
 [Milestones and tracking](#milestones-and-tracking) maps it to the issues and milestones that track it.
 
 **Revised 2026-09-13** after a review of the surrounding tools — the Java-era SOAP workbenches, the cloud API
@@ -28,7 +32,10 @@ adoption blockers first, then turns what the engine knows about a contract into 
 build cheaply, and keeps AI out of the product while making it easy for agents to drive. Items marked ✚ exist
 in no other client. Re-read on 2026-09-14 against the two largest API platforms' own comparison pages, which
 added the MCP-tools step to item 4, secret scanning under [Secrets](#secrets), and one open question under
-[Departures from the v1 spec](#departures-from-the-v1-spec).
+[Departures from the v1 spec](#departures-from-the-v1-spec). A third pass on 2026-09-19 found the page silent on Server-Sent Events, WebSocket
+and the contract format that describes a WebSocket endpoint; they are now part of item 17, a
+[Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions) theme and an entry under
+[Contracts](#contracts).
 
 **Legend.** _Who_: Dev (an individual developer's daily use), Ent (what enterprise adoption needs), Both.
 _Size_: XS hours · S days · M one to two weeks · L a plan of around fifteen tasks · XL larger than any single
@@ -43,7 +50,7 @@ is picked up.
 | --- | --- | --- | --- | --- | --- |
 | 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | follow-up | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
 | 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide and switching guide done; benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
-| 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner landed on `feat/cli-runner`**; CI recipes (#31) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
+| 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner on `main`** (S1–S6); gRPC unary and OAuth2 client credentials (S7, #30), CI recipes (#31) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
 | — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
 | 4 | MCP server over the engine, with CLI parity | Dev | S | idea → next | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
 | 5 | Snapshot regression across environments ✚ | Both | S–M | new | Send one request to several environments at once, diff the responses semantically with ignore rules for volatile fields, commit the golden responses, and let the runner replay them. Mostly wiring over history's re-send and diff. |
@@ -60,7 +67,7 @@ is picked up.
 | 14 | Full functional testing: suites, data-driven runs, callback listener | Both | XL | phase 2 | Suites, CSV and XLSX data sources, and a listener for WS-Addressing callbacks, after Sequences and scripting have proved the model. |
 | 15 | Self-hosted Wirebench Server: sign-in, teams, SSO | Ent | XL | new | Spec 2 of the shared-workspaces design (§5.4): the same repository with the server running git, live updates, presence and OIDC-first sign-in; SCIM and audit second. The enterprise offer, with data inside their own network. |
 | 16 | JKS keystores, WS-ReliableMessaging | Ent | S each | spec 1.1 | Build when a customer asks; each is a niche. SAML tokens moved into item 7. |
-| 17 | gRPC (shipped) and GraphQL | Dev | L each | gRPC shipped 2026-09-16; GraphQL later phase | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; the remaining follow-up is resend from History. GraphQL stays demand-driven. |
+| 17 | gRPC (shipped), streaming over HTTP and WebSocket, and GraphQL | Dev | L each | gRPC shipped 2026-09-16; GraphQL later phase | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; the remaining follow-up is resend from History. That work paid for a live pane and a multi-message record, which Server-Sent Events and a WebSocket request kind reuse — see [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions). GraphQL stays demand-driven, cut in two: queries and mutations over HTTP, then subscriptions once those transports exist. |
 | — | Load testing, WSDL coverage and refactoring, code generation | — | XL | phase 4 | Deferred indefinitely; other tools do these better. The TCP monitor's use case, recording traffic, is absorbed by the mock recorder. |
 | — | MQTT, Kafka and JMS transports | — | L each | watch | A different buyer and native modules; only on a customer's ask. |
 | — | Hosted cloud | Ent | a business | idea | Only with a company behind it; see [Teams and sign-in](#teams-and-sign-in). |
@@ -77,12 +84,17 @@ door 2.0 was. No issue sits in an earlier milestone than one it is blocked by.
 
 | Milestone | Roadmap items | Issues |
 | --- | --- | --- |
-| [2.2 — Install and learn](https://github.com/wirebench/wirebench/milestone/1) | 1, 2 (site and switching guide), two small fixes, and legacy SOAP project import (ruled yes) | [#28](https://github.com/wirebench/wirebench/issues/28) signed releases, MSI, SBOM · [#29](https://github.com/wirebench/wirebench/issues/29) documentation site · [#54](https://github.com/wirebench/wirebench/issues/54) switching guide · [#50](https://github.com/wirebench/wirebench/issues/50) HTTP Log re-redaction for REST rows · [#83](https://github.com/wirebench/wirebench/issues/83) globals loader `version` check · [#55](https://github.com/wirebench/wirebench/issues/55) legacy SOAP project import |
-| [2.3 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | 3, 4, 5 | [#30](https://github.com/wirebench/wirebench/issues/30) CLI runner · [#31](https://github.com/wirebench/wirebench/issues/31) CI recipes · [#32](https://github.com/wirebench/wirebench/issues/32) MCP server · [#33](https://github.com/wirebench/wirebench/issues/33) contract operations as MCP tools ✚ · [#34](https://github.com/wirebench/wirebench/issues/34) snapshot regression ✚ · [#35](https://github.com/wirebench/wirebench/issues/35) multi-environment send ✚ · [#36](https://github.com/wirebench/wirebench/issues/36) runner `--baseline` ✚ |
-| [2.4 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3) | 8, 17 (gRPC follow-ups) | [#42](https://github.com/wirebench/wirebench/issues/42) REST resend and diff from History · [#43](https://github.com/wirebench/wirebench/issues/43) token auth kinds for SOAP owners · [#44](https://github.com/wirebench/wirebench/issues/44) cookie jar and initial/current values · [#45](https://github.com/wirebench/wirebench/issues/45) OpenAPI response validation · [#46](https://github.com/wirebench/wirebench/issues/46) JSON form view · [#47](https://github.com/wirebench/wirebench/issues/47) Update Definition for an API · [#48](https://github.com/wirebench/wirebench/issues/48) HTML response preview · [#49](https://github.com/wirebench/wirebench/issues/49) HAR 1.2 export and copy as cURL · [#53](https://github.com/wirebench/wirebench/issues/53) gRPC resend from History |
+| [2.2 — Install and learn](https://github.com/wirebench/wirebench/milestone/1) | 1, 2 (switching guide) | [#28](https://github.com/wirebench/wirebench/issues/28) signed releases, MSI, SBOM · [#54](https://github.com/wirebench/wirebench/issues/54) switching guide |
+| [2.3 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | 3, 4, 5 | [#30](https://github.com/wirebench/wirebench/issues/30) CLI runner (S7 left: gRPC unary, OAuth2 client credentials) · [#31](https://github.com/wirebench/wirebench/issues/31) CI recipes · [#32](https://github.com/wirebench/wirebench/issues/32) MCP server · [#33](https://github.com/wirebench/wirebench/issues/33) contract operations as MCP tools ✚ · [#34](https://github.com/wirebench/wirebench/issues/34) snapshot regression ✚ · [#35](https://github.com/wirebench/wirebench/issues/35) multi-environment send ✚ · [#36](https://github.com/wirebench/wirebench/issues/36) runner `--baseline` ✚ |
+| [2.4 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3) | 8, 17 (gRPC follow-ups) | [#42](https://github.com/wirebench/wirebench/issues/42) REST resend and diff from History · [#43](https://github.com/wirebench/wirebench/issues/43) token auth kinds for SOAP owners · [#44](https://github.com/wirebench/wirebench/issues/44) cookie jar and initial/current values · [#45](https://github.com/wirebench/wirebench/issues/45) OpenAPI response validation · [#46](https://github.com/wirebench/wirebench/issues/46) JSON form view · [#47](https://github.com/wirebench/wirebench/issues/47) Update Definition for an API · [#48](https://github.com/wirebench/wirebench/issues/48) HTML response preview · [#53](https://github.com/wirebench/wirebench/issues/53) gRPC resend from History · [#97](https://github.com/wirebench/wirebench/issues/97) Server-Sent Events responses |
 | [2.5 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4) | 6, 7, 10, fleet management | [#37](https://github.com/wirebench/wirebench/issues/37) external secret managers · [#38](https://github.com/wirebench/wirebench/issues/38) encrypted team secrets · [#39](https://github.com/wirebench/wirebench/issues/39) secret scanning · [#40](https://github.com/wirebench/wirebench/issues/40) Kerberos/SPNEGO · [#41](https://github.com/wirebench/wirebench/issues/41) WS-Trust and SAML tokens · [#57](https://github.com/wirebench/wirebench/issues/57) WS-Security debugger ✚ · [#58](https://github.com/wirebench/wirebench/issues/58) policy-driven configuration ✚ · [#67](https://github.com/wirebench/wirebench/issues/67) managed preferences · [#68](https://github.com/wirebench/wirebench/issues/68) portable Windows build · [#70](https://github.com/wirebench/wirebench/issues/70) certificate expiry warnings |
-| [3.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | 9, 11, 12, 13, more importers and exporters | [#56](https://github.com/wirebench/wirebench/issues/56) contract diff ✚ · [#59](https://github.com/wirebench/wirebench/issues/59) mock services · [#60](https://github.com/wirebench/wirebench/issues/60) mock recording proxy · [#61](https://github.com/wirebench/wirebench/issues/61) headless `wirebench mock` · [#62](https://github.com/wirebench/wirebench/issues/62) Sequences · [#63](https://github.com/wirebench/wirebench/issues/63) typed scripting ✚ · [#64](https://github.com/wirebench/wirebench/issues/64) more importers · [#65](https://github.com/wirebench/wirebench/issues/65) exporters · [#66](https://github.com/wirebench/wirebench/issues/66) JSON Schema for project files · [#69](https://github.com/wirebench/wirebench/issues/69) published benchmark · [#71](https://github.com/wirebench/wirebench/issues/71) same-host redirect on a POST · [#72](https://github.com/wirebench/wirebench/issues/72) multi-window · [#84](https://github.com/wirebench/wirebench/issues/84) grid accessibility conventions |
-| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6) | 14, 15, 16, 17 (GraphQL), ideas | [#73](https://github.com/wirebench/wirebench/issues/73) full functional testing · [#74](https://github.com/wirebench/wirebench/issues/74) Wirebench Server · [#75](https://github.com/wirebench/wirebench/issues/75) JKS keystores · [#76](https://github.com/wirebench/wirebench/issues/76) WS-ReliableMessaging · [#77](https://github.com/wirebench/wirebench/issues/77) GraphQL · [#78](https://github.com/wirebench/wirebench/issues/78) robustness scans ✚ · [#79](https://github.com/wirebench/wirebench/issues/79) MCP request kind · [#80](https://github.com/wirebench/wirebench/issues/80) HTTP/2 by default · [#81](https://github.com/wirebench/wirebench/issues/81) localisation · [#82](https://github.com/wirebench/wirebench/issues/82) plugin API · [#85](https://github.com/wirebench/wirebench/issues/85) panel handle hover coverage |
+| [3.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | 9, 11, 12, 13, 17 (WebSocket), more importers and exporters | [#56](https://github.com/wirebench/wirebench/issues/56) contract diff ✚ · [#59](https://github.com/wirebench/wirebench/issues/59) mock services · [#60](https://github.com/wirebench/wirebench/issues/60) mock recording proxy · [#61](https://github.com/wirebench/wirebench/issues/61) headless `wirebench mock` · [#62](https://github.com/wirebench/wirebench/issues/62) Sequences · [#63](https://github.com/wirebench/wirebench/issues/63) typed scripting ✚ · [#64](https://github.com/wirebench/wirebench/issues/64) more importers · [#65](https://github.com/wirebench/wirebench/issues/65) exporters · [#66](https://github.com/wirebench/wirebench/issues/66) JSON Schema for project files · [#69](https://github.com/wirebench/wirebench/issues/69) published benchmark · [#71](https://github.com/wirebench/wirebench/issues/71) same-host redirect on a POST · [#72](https://github.com/wirebench/wirebench/issues/72) multi-window · [#84](https://github.com/wirebench/wirebench/issues/84) grid accessibility conventions · [#98](https://github.com/wirebench/wirebench/issues/98) WebSocket request kind · [#100](https://github.com/wirebench/wirebench/issues/100) AsyncAPI import ✚ |
+| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6) | 14, 15, 16, 17 (GraphQL), ideas | [#73](https://github.com/wirebench/wirebench/issues/73) full functional testing · [#74](https://github.com/wirebench/wirebench/issues/74) Wirebench Server · [#75](https://github.com/wirebench/wirebench/issues/75) JKS keystores · [#76](https://github.com/wirebench/wirebench/issues/76) WS-ReliableMessaging · [#77](https://github.com/wirebench/wirebench/issues/77) GraphQL queries and mutations · [#99](https://github.com/wirebench/wirebench/issues/99) GraphQL subscriptions · [#78](https://github.com/wirebench/wirebench/issues/78) robustness scans ✚ · [#79](https://github.com/wirebench/wirebench/issues/79) MCP request kind · [#80](https://github.com/wirebench/wirebench/issues/80) HTTP/2 by default · [#81](https://github.com/wirebench/wirebench/issues/81) localisation · [#82](https://github.com/wirebench/wirebench/issues/82) plugin API · [#85](https://github.com/wirebench/wirebench/issues/85) panel handle hover coverage |
+
+Closed since the table was first written, and so no longer in it: [#29](https://github.com/wirebench/wirebench/issues/29) the user guide site, [#49](https://github.com/wirebench/wirebench/issues/49) HAR
+1.2 export and copy as cURL, [#50](https://github.com/wirebench/wirebench/issues/50) HTTP Log re-redaction for REST rows, [#51](https://github.com/wirebench/wirebench/issues/51) gRPC server reflection,
+[#52](https://github.com/wirebench/wirebench/issues/52) interactive bidirectional streams, [#55](https://github.com/wirebench/wirebench/issues/55) the legacy SOAP project import, and [#83](https://github.com/wirebench/wirebench/issues/83) the
+globals loader's `version` check, which had been fixed before its issue was opened.
 
 What [Deliberately not](#deliberately-not) lists has no
 issue, on purpose. 2.4 ahead of 2.5 is a bet on daily use before the enterprise buyer; nothing in 2.5 waits
@@ -211,6 +223,14 @@ here needs a new parser; each item reuses the schema set, the definition cache o
 - **Form view and response validation for REST** (item 8). A JSON body filled in as fields generated from
   the OpenAPI schema, round-tripping to the raw editor, and responses validated against the response schema
   with editor markers — the Form model and the XSD validation path, applied to JSON Schema.
+- **AsyncAPI import for WebSocket** ✚. An AsyncAPI document is to a WebSocket endpoint what a WSDL is to a
+  SOAP service: servers, channels, operations and message schemas. Where a client reads one at all, it stops
+  at showing the document. Import 2.x and 3.0 through the one Import… dialog and cache it like a WSDL; each
+  channel with a WebSocket binding becomes a request with its URL, subprotocol and security scheme filled
+  in; sample messages come from the payload schema; every frame in either direction is validated against
+  the message schema, with markers on the timeline; Update Definition reports what changed. Many WebSocket
+  endpoints have no contract, so this sits on top of the plain request kind and never gates it. Kafka, MQTT
+  and AMQP bindings are reported as skipped.
 - **Schema-driven variation and robustness scans.** From the XSD or JSON Schema, generate valid variations,
   boundary values and invalid inputs (missing required element, wrong enumeration, oversized string,
   entity expansion), send them, and report which the service rejected correctly; CLI-runnable. An idea,
@@ -330,6 +350,29 @@ REST in the functional-testing slices (items 12–14); JSONPath is already in th
 (`xpath/jsonpath.ts`), so assertions can reuse it rather than adding a dependency. gRPC and GraphQL
 (item 17) are demand-driven parity after that; MQTT, Kafka and JMS are watched, not planned.
 
+### Streaming: Server-Sent Events, WebSocket and GraphQL subscriptions
+
+Until 2026-09-19 this page was silent on all three: the REST client design and the HTTP Log export design
+each list them as non-goals of that spec, and nothing ever said whether they were non-goals of the product.
+They are not. gRPC brought a response pane that shows a stream as it arrives, a multi-message exchange
+record in History, and sending into an open call; each item here is a thin layer over those.
+
+- **Server-Sent Events** (milestone 2.4). A `text/event-stream` response is a REST response, not a new
+  protocol, and today it shows nothing until the connection closes. Render it event by event — name, id,
+  data, arrival time — let Stop close it, and record what arrived. Token-streaming APIs answer this way,
+  and so does the streamable-HTTP transport the MCP request kind needs, which is why this comes first.
+- **WebSocket request kind** (milestone 3.0). Connect to `ws://` and `wss://` with headers, subprotocols,
+  the shared auth kinds, proxy, client certificates and the CA bundle; a message timeline with text and
+  binary frames; compose and send while connected; saved messages stored with the request; the handshake in
+  the HTTP Log and the session in History. It lands without a project format bump, or the bump is argued in
+  an ADR. The contract side is the AsyncAPI import under [Contracts](#contracts).
+- **GraphQL subscriptions** (later). A protocol layer over the two transports above — the
+  `graphql-transport-ws` subprotocol and `graphql-sse` — plus incremental delivery over a multipart
+  response. Queries and mutations need none of it and are their own item.
+
+Raw WebSocket only. Messaging layers that ride on it — Socket.IO, STOMP, MQTT over WebSocket — belong with
+the transports under [Deliberately not](#deliberately-not).
+
 ### Mock services
 
 Generated from a WSDL or an OpenAPI document (item 11); every incoming request validated against the
@@ -368,8 +411,9 @@ design, and the shipped shared workspaces embody the first two:
 - **Load testing.** Dedicated load tools do it better; a response SLA assertion is enough.
 - **A hosted cloud before there is a company.** The self-hosted server comes first and may be all that is
   ever needed.
-- **Every protocol.** gRPC and GraphQL when asked; MQTT, Kafka and JMS are a different buyer with a
-  different tool budget.
+- **Every protocol.** GraphQL when asked; MQTT, Kafka and JMS are a different buyer with a different tool
+  budget, and so are the messaging layers that ride on WebSocket (Socket.IO, STOMP, MQTT over WebSocket).
+  Raw WebSocket and Server-Sent Events are in: see [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions).
 - **A plugin API before the CLI and MCP surfaces are stable.**
 
 ### Deferred (phase 4)
@@ -388,9 +432,6 @@ wizard; code generation. The TCP monitor proxy is no longer a separate item: the
 
 ### Known limitations carried from the layout and environments work
 
-- The global properties file's loader (`apps/desktop/src/main/global-properties.ts`) does not
-  validate its `version` field, so a future version-3 globals file would be silently misread
-  rather than refused — unlike the project and workspace loaders, which do refuse a too-new file.
 - The Environments view's rows (`apps/desktop/src/renderer/features/environments/
   environments-view.tsx`) use `role="row"` without `gridcell` children or `aria-rowindex`, and the
   environment page's variables and endpoint-overrides tables
