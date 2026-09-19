@@ -20,7 +20,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   headers. Make `-G` move the `-d` data into the query. Check the SOAP parser's flag handling for the same
   swallowing.
   - Verify: one unit test per flag, including `curl --ntlm -u u:p https://x`.
-- [ ] **T4. cURL `-u` password reaches the keychain.** The import dialog stores the parsed password as a
+- [x] **T4. cURL `-u` password reaches the keychain.** The import dialog stores the parsed password as a
   secret and passes `passwordRef`. The "set a password" toast only appears when none was given.
   - Verify: renderer or IPC unit test; e2e: paste `curl -u` and send against the Basic-auth test server
     without entering the password again.

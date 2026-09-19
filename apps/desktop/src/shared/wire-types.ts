@@ -562,6 +562,8 @@ export const requestImportCurlResponseSchema = z.object({
    * credential the request now expects, and knows to supply the password if they did not paste one.
    */
   basicUsername: z.string().optional(),
+  /** Whether the request's Basic auth has a password: the command's, stored in the keychain, or the dialog's. */
+  passwordStored: z.boolean().optional(),
 });
 export type RequestImportCurlResponse = z.infer<typeof requestImportCurlResponseSchema>;
 

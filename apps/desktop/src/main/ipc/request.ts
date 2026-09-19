@@ -172,6 +172,12 @@ export interface RequestChannelDeps {
    * only for the material the token request consumes before a send exists.
    */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
+  /**
+   * Stores a credential a pasted command carried (`curl -u user:password`) and returns its ref, so
+   * the imported request authenticates without the user typing the password again. Optional: without
+   * it the password is dropped and the dialog asks for it, as before.
+   */
+  readonly storeSecret?: (value: string, label: string) => Promise<string>;
 }
 
 /**
@@ -570,12 +576,12 @@ async function networkNote(
  * imported.
  */
 async function importCurl(
-  project: RequestChannelProject,
+  deps: Pick<RequestChannelDeps, 'project' | 'storeSecret'>,
   request: RequestImportCurlRequest,
 ): Promise<RequestImportCurlResponse> {
   return request.target.kind === 'rest'
-    ? await importCurlAsRest(project, request, request.target)
-    : await importCurlAsSoap(project, request, request.target);
+    ? await importCurlAsRest(deps, request, request.target)
+    : await importCurlAsSoap(deps.project, request, request.target);
 }
 
 /** The SOAP half: a new request under an operation, with the envelope the command carried. */
@@ -637,10 +643,11 @@ function bodyToWire(body: RestBody): NonNullable<RestRequestPatchWire['body']> {
  * the command as far as this channel is concerned: the dialog stores it and sends a reference.
  */
 async function importCurlAsRest(
-  project: RequestChannelProject,
+  deps: Pick<RequestChannelDeps, 'project' | 'storeSecret'>,
   request: RequestImportCurlRequest,
   target: Extract<RequestImportCurlTarget, { kind: 'rest' }>,
 ): Promise<RequestImportCurlResponse> {
+  const { project } = deps;
   const owner = ownerOf(project, target.apiId);
   const api = project.projectSnapshot?.(owner)?.apis.find((candidate) => candidate.id === target.apiId);
 
@@ -658,13 +665,20 @@ async function importCurlAsRest(
   }
 
   const { method, url, pathParams, query, headers, body, settings } = parsed.request;
+  // A password in the command goes straight to the keychain; the model only ever holds its ref.
+  const password = parsed.basic?.password;
+  const passwordRef =
+    request.passwordRef ??
+    (parsed.basic !== undefined && password !== undefined && password !== '' && deps.storeSecret !== undefined
+      ? await deps.storeSecret(password, `cURL import: ${parsed.basic.username}`)
+      : undefined);
   const auth =
     parsed.basic === undefined
       ? undefined
       : {
           type: 'basic' as const,
           username: parsed.basic.username,
-          ...(request.passwordRef !== undefined ? { passwordRef: request.passwordRef } : {}),
+          ...(passwordRef !== undefined ? { passwordRef } : {}),
           preemptive: true,
         };
   await project.projectMutate(owner, {
@@ -686,6 +700,7 @@ async function importCurlAsRest(
     requestId,
     problems: [...parsed.problems],
     ...(parsed.basic !== undefined ? { basicUsername: parsed.basic.username } : {}),
+    ...(passwordRef !== undefined ? { passwordStored: true } : {}),
   };
 }
 
@@ -1201,5 +1216,5 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   registerHandler(channels.request.curl, (request) => curl(service, deps, request));
 
-  registerHandler(channels.request.importCurl, (request) => importCurl(deps.project, request));
+  registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
 }

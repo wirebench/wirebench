@@ -117,7 +117,7 @@ export async function importCurl(
     showToast(result.error.message);
     return undefined;
   }
-  const { requestId, problems, basicUsername } = result.value;
+  const { requestId, problems, basicUsername, passwordStored } = result.value;
   // The snapshot main broadcast for the new request may not have landed yet; refresh so the
   // tab (and the explorer row) can be opened against a mirror that actually contains it.
   const owner = target.kind === 'soap' ? target.interfaceId : target.apiId;
@@ -136,7 +136,7 @@ export async function importCurl(
   }
   // A `-u` with no password pasted leaves the request configured but unable to authenticate, which
   // is worth saying once rather than leaving the user to a 401.
-  if (basicUsername !== undefined && options.passwordRef === undefined) {
+  if (basicUsername !== undefined && passwordStored !== true && options.passwordRef === undefined) {
     notes.push(`set a password for “${basicUsername}” on the Auth tab`);
   }
   showToast(notes.length === 0 ? 'Imported cURL command' : `Imported — ${notes.join('; ')}`);
