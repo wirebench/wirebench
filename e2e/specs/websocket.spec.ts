@@ -84,8 +84,10 @@ test.describe('WebSocket: a request owns a session, its transcript, and its own 
 
     // Disconnect with a chosen code and reason, and read the chip that follows.
     await page.getByRole('button', { name: 'Close code and reason' }).click();
-    await page.getByLabel('Code').fill('3001');
-    await page.getByLabel('Reason').fill('done');
+    // Scoped to the popover: other panes label a field "Code" too, and page-wide is ambiguous.
+    const closeOptions = page.getByRole('group', { name: 'Close code and reason' });
+    await closeOptions.getByLabel('Code').fill('3001');
+    await closeOptions.getByLabel('Reason').fill('done');
     await page.getByTestId('ws-connect').click();
     await expect(page.getByTestId('ws-state')).toHaveText('closed 3001', { timeout: 20_000 });
 

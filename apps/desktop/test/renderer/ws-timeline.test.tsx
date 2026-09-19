@@ -233,7 +233,8 @@ describe('the live frame cap', () => {
     expect(live.frames).toHaveLength(WS_LIVE_FRAME_LIMIT);
     expect(live.frames[0]!.index).toBe(25);
     expect(live.droppedFrames).toBe(25);
-  });
+    // 5025 store updates over an array that grows to the cap: slower than the 5s default on CI.
+  }, 30_000);
 
   it('keeps counting messages past the cap, and leaves control frames out', () => {
     const apply = useExchangesStore.getState().applyWsLive;
@@ -243,5 +244,5 @@ describe('the live frame cap', () => {
     apply({ kind: 'frame', sendId: 's1', frame: frame({ index: 99_999, opcode: 'ping', text: undefined, size: 4 }) });
     const counts = useExchangesStore.getState().wsByRequest['ws-1']!.live!.counts;
     expect(counts).toEqual({ sent: 0, received: WS_LIVE_FRAME_LIMIT + 25, bytes: (WS_LIVE_FRAME_LIMIT + 25) * 2 });
-  });
+  }, 30_000);
 });
