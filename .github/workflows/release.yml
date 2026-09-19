@@ -285,7 +285,9 @@ jobs:
       - name: Deploy the production dependency tree
         run: |
           pnpm build
-          pnpm --filter @wirebench/desktop deploy --prod sbom-root
+          # Hoisted, so every package is a real directory: Syft does not follow the symlinks of
+          # pnpm's default layout, and would list almost nothing.
+          pnpm --filter @wirebench/desktop deploy --prod --config.node-linker=hoisted sbom-root
           echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_ENV"
       - uses: anchore/sbom-action@v0
         with:
