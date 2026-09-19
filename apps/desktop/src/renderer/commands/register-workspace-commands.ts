@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { projectRowActions } from '../features/explorer/project-actions.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
@@ -28,18 +29,14 @@ export function workspaceIsShared(): boolean {
  */
 export function registerWorkspaceCommands(): void {
   registerCommand({
-    id: 'workspace.create',
-    label: 'Create Workspace…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.create'),
     run: () => {
       useUiStore.getState().setWorkspaceCreateOpen(true);
     },
   });
 
   registerCommand({
-    id: 'workspace.switch',
-    label: 'Switch Workspace…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.switch'),
     when: workspaceIsOpen,
     whenScope: 'workspace',
     // With no argument this opens the title bar's dropdown, which is where the choice lives.
@@ -64,9 +61,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.manage',
-    label: 'Manage Workspaces…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.manage'),
     run: () => {
       useUiStore.getState().setWorkspaceManageOpen(true);
     },
@@ -76,10 +71,7 @@ export function registerWorkspaceCommands(): void {
   // `project.new` / `project.open` / `project.close` are gone, because a project belongs to a
   // workspace and creating one asks for a name only.
   registerCommand({
-    id: 'workspace.newProject',
-    label: 'New Project…',
-    category: 'Workspace',
-    shortcut: 'Mod+Shift+N',
+    ...catalogEntry('workspace.newProject'),
     when: workspaceIsOpen,
     whenScope: 'workspace',
     run: () => {
@@ -88,9 +80,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.linkProject',
-    label: 'Link Project Folder…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.linkProject'),
     // A shared workspace holds its projects inside the workspace's own tree — linking an
     // external folder into it is refused before this ever reaches main. See `Move to workspace…`.
     when: () => workspaceIsOpen() && !workspaceIsShared(),
@@ -101,9 +91,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.importProjectFolder',
-    label: 'Import Project Folder…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.importProjectFolder'),
     when: workspaceIsOpen,
     whenScope: 'workspace',
     run: () => {
@@ -112,9 +100,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.exportProject',
-    label: 'Export Project…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.exportProject'),
     when: () => selectedProjectId() !== undefined,
     whenScope: 'selection.project',
     run: () => {
@@ -126,9 +112,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.removeProject',
-    label: 'Remove Project from Workspace…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.removeProject'),
     when: () => selectedProjectId() !== undefined,
     whenScope: 'selection.project',
     // Nothing is removed until the confirmation is answered; the dialog lives in the shell.
@@ -141,9 +125,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.share',
-    label: 'Share Workspace…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.share'),
     when: () => workspaceIsOpen() && !workspaceIsShared(),
     whenScope: 'workspace',
     run: () => {
@@ -152,18 +134,14 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'workspace.join',
-    label: 'Join Shared Workspace…',
-    category: 'Workspace',
+    ...catalogEntry('workspace.join'),
     run: () => {
       useUiStore.getState().setJoinDialogOpen(true);
     },
   });
 
   registerCommand({
-    id: 'workspace.stopSharing',
-    label: 'Stop Sharing',
-    category: 'Workspace',
+    ...catalogEntry('workspace.stopSharing'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => {
@@ -172,9 +150,7 @@ export function registerWorkspaceCommands(): void {
   });
 
   registerCommand({
-    id: 'project.moveToWorkspace',
-    label: 'Move to Workspace…',
-    category: 'Project',
+    ...catalogEntry('project.moveToWorkspace'),
     when: workspaceIsOpen,
     whenScope: 'workspace',
     // The palette has no project to act on; this is reached with the id as an argument from the

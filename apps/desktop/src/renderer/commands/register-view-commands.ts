@@ -1,24 +1,25 @@
 import type { CommandId } from '@shared/commands.js';
+import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
 import { useEditorsStore } from '../state/editors.js';
 import { activeRequestId, hasActiveRequest, ui } from './command-helpers.js';
 
-/** The request pane's four views, as `view.request*` commands. */
-const REQUEST_VIEWS: readonly (readonly [id: CommandId, label: string, view: RequestViewType])[] = [
-  ['view.requestXml', 'Request: XML View', 'xml'],
-  ['view.requestForm', 'Request: Form View', 'form'],
-  ['view.requestOutline', 'Request: Outline View', 'outline'],
-  ['view.requestRaw', 'Request: Raw View', 'raw'],
+/** The request pane's four views, as `view.request*` commands. Labels live in the catalog. */
+const REQUEST_VIEWS: readonly (readonly [id: CommandId, view: RequestViewType])[] = [
+  ['view.requestXml', 'xml'],
+  ['view.requestForm', 'form'],
+  ['view.requestOutline', 'outline'],
+  ['view.requestRaw', 'raw'],
 ];
 
 /** The response pane's four selectable views (the Fault tab is revealed, never chosen). */
-const RESPONSE_VIEWS: readonly (readonly [id: CommandId, label: string, view: ResponseViewType])[] = [
-  ['view.responseXml', 'Response: XML View', 'xml'],
-  ['view.responseOutline', 'Response: Outline View', 'outline'],
-  ['view.responseRaw', 'Response: Raw View', 'raw'],
-  ['view.responseQuery', 'Response: Query View', 'query'],
+const RESPONSE_VIEWS: readonly (readonly [id: CommandId, view: ResponseViewType])[] = [
+  ['view.responseXml', 'xml'],
+  ['view.responseOutline', 'outline'],
+  ['view.responseRaw', 'raw'],
+  ['view.responseQuery', 'query'],
 ];
 
 /**
@@ -29,119 +30,81 @@ const RESPONSE_VIEWS: readonly (readonly [id: CommandId, label: string, view: Re
  */
 export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-open') => void): void {
   registerCommand({
-    id: 'palette.open',
-    label: 'Show All Commands',
-    category: 'General',
-    shortcut: 'Mod+K',
-    // The design gives the palette both ⌘K and ⌘⇧P; the second is an alias, so it is not
-    // offered to the menu and cannot be rebound on its own.
-    extraShortcuts: ['Mod+Shift+P'],
+    ...catalogEntry('palette.open'),
     run: () => {
       openPalette('commands');
     },
   });
   registerCommand({
-    id: 'palette.quickOpen',
-    label: 'Go to Operation or Request…',
-    category: 'General',
-    shortcut: 'Mod+P',
+    ...catalogEntry('palette.quickOpen'),
     run: () => {
       openPalette('quick-open');
     },
   });
 
   registerCommand({
-    id: 'view.toggleSidebar',
-    label: 'Toggle Sidebar',
-    category: 'View',
-    shortcut: 'Mod+B',
+    ...catalogEntry('view.toggleSidebar'),
     run: () => {
       ui().toggleSidebar();
     },
   });
   registerCommand({
-    id: 'view.toggleConsole',
-    label: 'Toggle Console',
-    category: 'View',
-    shortcut: 'Mod+J',
+    ...catalogEntry('view.toggleConsole'),
     run: () => {
       ui().toggleConsole();
     },
   });
   registerCommand({
-    id: 'view.toggleCode',
-    label: 'Toggle Code Panel',
-    category: 'View',
-    shortcut: 'Mod+Alt+B',
+    ...catalogEntry('view.toggleCode'),
     run: () => {
       ui().toggleCode();
     },
   });
 
   registerCommand({
-    id: 'view.showExplorer',
-    label: 'Show Explorer',
-    category: 'View',
-    shortcut: 'Mod+Shift+E',
+    ...catalogEntry('view.showExplorer'),
     run: () => {
       ui().showSidebarView('explorer');
     },
   });
   registerCommand({
-    id: 'view.showEnvironments',
-    label: 'Show Environments',
-    category: 'View',
+    ...catalogEntry('view.showEnvironments'),
     run: () => {
       ui().showSidebarView('environments');
     },
   });
   registerCommand({
-    id: 'view.showSearch',
-    label: 'Show Search',
-    category: 'View',
-    shortcut: 'Mod+Shift+S',
+    ...catalogEntry('view.showSearch'),
     run: () => {
       ui().showSidebarView('search');
     },
   });
   registerCommand({
-    id: 'view.showHistory',
-    label: 'Show History',
-    category: 'View',
-    shortcut: 'Mod+Shift+Y',
+    ...catalogEntry('view.showHistory'),
     run: () => {
       ui().showSidebarView('history');
     },
   });
   registerCommand({
-    id: 'view.showWss',
-    label: 'Show WS-Security',
-    category: 'View',
+    ...catalogEntry('view.showWss'),
     run: () => {
       ui().showSidebarView('wss');
     },
   });
   registerCommand({
-    id: 'view.showSettings',
-    label: 'Show Settings',
-    category: 'View',
-    shortcut: 'Mod+Comma',
+    ...catalogEntry('view.showSettings'),
     run: () => {
       ui().openPreferences();
     },
   });
   registerCommand({
-    id: 'preferences.open',
-    label: 'Open Preferences',
-    category: 'General',
+    ...catalogEntry('preferences.open'),
     run: () => {
       ui().openPreferences();
     },
   });
   registerCommand({
-    id: 'view.toggleTheme',
-    label: 'Cycle Theme (Dark, Light, System)',
-    category: 'View',
+    ...catalogEntry('view.toggleTheme'),
     run: () => {
       cycleTheme();
     },
@@ -149,11 +112,9 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
 
   // The pane view switchers. They ship without chords — the design's §5 table spends every
   // free one — but they are commands so the palette, the menu and a user rebind can reach them.
-  for (const [id, label, view] of REQUEST_VIEWS) {
+  for (const [id, view] of REQUEST_VIEWS) {
     registerCommand({
-      id,
-      label,
-      category: 'View',
+      ...catalogEntry(id),
       when: hasActiveRequest,
       whenScope: 'editor.request',
       run: () => {
@@ -164,11 +125,9 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
       },
     });
   }
-  for (const [id, label, view] of RESPONSE_VIEWS) {
+  for (const [id, view] of RESPONSE_VIEWS) {
     registerCommand({
-      id,
-      label,
-      category: 'View',
+      ...catalogEntry(id),
       when: hasActiveRequest,
       whenScope: 'editor.request',
       run: () => {

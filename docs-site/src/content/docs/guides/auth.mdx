@@ -1,0 +1,132 @@
+---
+title: Authentication
+description: Request auth schemes, WS-Security, client certificates and folder-level auth.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Wirebench separates two kinds of authentication: request auth — credentials attached to the HTTP
+request itself, on the **Auth** tab or inspector — and WS-Security, which signs or encrypts parts
+of a SOAP envelope. Client certificates cover a third case: proving your identity at the TLS layer,
+before any request-level auth applies. Every credential you type goes through the secret store; see
+[Secrets](/wirebench/guides/secrets/) for what that means.
+
+## Request auth (REST and SOAP)
+
+A REST request, folder or API — and a SOAP interface, endpoint or request — can each configure
+their own auth, or inherit from whatever's above them. REST offers the full set; SOAP offers
+Basic and NTLM (plus Bearer, API key and OAuth2 at the endpoint/interface level).
+
+| Scheme | Fields |
+| --- | --- |
+| Basic | Username, password, and **send credentials preemptively** (skip waiting for a 401) |
+| NTLM | Username, password, domain, workstation |
+| Bearer token | Token, and the scheme word sent before it (default `Bearer`) |
+| API key | Name, value, and whether it's sent as a header or a query parameter |
+| OAuth 2 | See below |
+
+<Steps>
+
+1. Open the request, folder or API and go to its **Auth** tab (REST) or **Auth** inspector (SOAP).
+2. Pick a type from the dropdown, or leave it on **Inherit** — REST requests and folders show
+   what they'd inherit from, right above the form.
+3. Fill in the fields. Anything that stores a secret (password, token, client secret) opens the
+   secret entry dialog instead of a plain text box.
+
+</Steps>
+
+A SOAP request's Auth inspector also reports which level actually supplies the credentials it
+will send — its own, its endpoint's, or its interface's — so you can tell at a glance why a
+request authenticates the way it does.
+
+### Folder-level auth (REST)
+
+A REST folder has no editor tab of its own, so its credentials live behind a dialog: right-click
+the folder and choose its auth entry. It configures the same form as a request or an API, and
+every request in that folder that inherits picks it up.
+
+### OAuth 2
+
+Two grants are supported:
+
+- **Client credentials** — a token URL, client ID and client secret; Wirebench requests a token
+  directly, no browser involved.
+- **Authorization code**, with optional **PKCE** (on by default) — Wirebench opens your browser to
+  the authorize URL and completes the flow through a local loopback listener. Register the
+  redirect URI the status panel shows with your OAuth provider; if it needs a fixed port rather
+  than a random one, set it under **Preferences → REST**.
+
+Both grants also take scopes (space-separated), an audience, and whether the client is
+authenticated with a Basic header or in the request body.
+
+The status panel below the fields shows whether a token is held and when it expires. **Get
+token** starts the flow (or requests one directly, for client credentials); **Clear** discards the
+held token. The token value itself is only shown when the session's show-secrets switch is on —
+otherwise the panel just says a token exists and when it expires.
+
+Turn on **Remember the refresh token** to keep a refresh token in the secret store across
+sessions, so re-opening the project doesn't force a fresh sign-in. Turning it off deletes the
+stored refresh token.
+
+## WS-Security (SOAP)
+
+WS-Security lives in its own sidebar view, **WSS**, alongside Keystores (see below). A project
+holds a list of **Outgoing configurations**, each an ordered list of entries applied to a request's
+envelope before it's sent:
+
+- **Timestamp** — a `Created`/`Expires` window, with a configurable time-to-live.
+- **Username Token** — a username and password (plain text or digest), optionally with a nonce and
+  a `Created` timestamp.
+- **Signature** — signs the parts you choose (Body and Timestamp by default) using a keystore's
+  private key, with a choice of algorithm and canonicalization.
+- **Encryption** — encrypts the parts you choose using a keystore, with a choice of symmetric and
+  key-transport algorithm.
+
+<Steps>
+
+1. Open the **WSS** view in the activity bar.
+2. Add or select an Outgoing configuration, then add entries with **Add** and reorder them with
+   the up/down arrows — order matters, since a signature normally has to cover a timestamp that
+   was already added.
+3. Assign the configuration to the interface, endpoint or request that should apply it.
+4. A Username Token's password is entered through the same secret dialog as any other credential;
+   only its reference is ever saved to the project.
+
+</Steps>
+
+An **Incoming configuration** works the other way: it states what a response must satisfy — a
+valid signature, a decrypted body, a timestamp within tolerance — so a response that doesn't meet
+it is flagged rather than silently accepted.
+
+## Client certificates and keystores
+
+Under **WSS → Keystores**, add a PKCS#12 (`.p12`) or PEM keystore. Each row shows whether it
+loaded (a wrong password shows as **Wrong password**, a missing file as **File missing**), and its
+certificate aliases once it did. A keystore's password is entered through the secret dialog, same
+as any other credential — Wirebench holds no key material or password in the renderer.
+
+Keystores serve two purposes:
+
+- **WS-Security signing and encryption** — a Signature or Encryption entry above references one.
+- **TLS client certificates** — under **Preferences → SSL**, set a **Client keystore** to present
+  by default whenever a server asks for one. A request can also select its own keystore, which
+  always wins over the default.
+
+The **SSL** inspector on a sent request's response shows the negotiated protocol, cipher, and the
+peer's certificate chain, including expiry — and, when a client certificate was presented, its
+subject.
+
+<Aside type="tip" title="Trusting a custom CA">
+To trust a corporate or internal root CA without disabling certificate validation, add its PEM
+bundle under **Preferences → SSL → CA bundle**. It's added to the system trust store; nothing is
+replaced. There is no global "trust all certificates" switch — turn on **Trust invalid
+certificates** on the individual endpoint that needs it instead.
+</Aside>
+
+## Related
+
+- [Secrets](/wirebench/guides/secrets/) — how passwords, tokens and keystore passphrases are
+  stored, and what never leaves your machine.
+- [Environments and properties](/wirebench/guides/environments/) — reference a variable from an
+  auth field, for example a per-environment API key.
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/) — endpoints and interfaces that auth attaches to.

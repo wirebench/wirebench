@@ -1,0 +1,89 @@
+---
+title: Ten-minute walkthrough
+description: From a fresh install to a SOAP response and a REST response.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This walkthrough sends one SOAP request and one REST request against public test services. You
+need Wirebench [installed](/wirebench/getting-started/installation/) and an internet connection.
+
+## Part 1: a SOAP request
+
+<Steps>
+
+1. **Create a workspace.** On the workspace picker, type a name such as `Tutorial` and choose
+   **Create workspace**.
+
+2. **Add a project.** In the empty explorer, choose **New project**, name it `Calculator` and
+   confirm. You can also run **New Project…** from anywhere with <kbd>⌘⇧N</kbd> (macOS) or
+   <kbd>Ctrl+Shift+N</kbd> (Windows and Linux).
+
+3. **Import the WSDL.** Press <kbd>⌘I</kbd> or <kbd>Ctrl+I</kbd> to open **Import**. On the
+   **URL** tab, paste this public calculator service:
+
+   ```
+   http://www.dneonline.com/calculator.asmx?WSDL
+   ```
+
+   Leave the format on **Auto-detect**, choose `Calculator` as the target project and import.
+   Anything the WSDL imports or includes is fetched with it and stored beside the project.
+
+   ![The Import dialog with a WSDL URL filled in](/wirebench/images/getting-started/import-wsdl.png)
+
+4. **Open a request.** The explorer now lists the service's bindings and operations. Each
+   operation has a `Request 1` whose envelope was generated from the schema. Expand
+   **Operations → CalculatorSoap → Add** and open **Request 1**.
+
+   ![The generated Add request, open in the editor](/wirebench/images/getting-started/request-editor.png)
+
+5. **Fill in the values.** Replace the two `?` placeholders with numbers, for example
+   `<tem:intA>2</tem:intA>` and `<tem:intB>3</tem:intB>`. If you would rather not edit XML, switch
+   to the **Form** tab and type into the fields.
+
+6. **Send.** Choose **Send** or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The response
+   opens beside the request, with its status, duration and size. The **HTTP Log** at the bottom
+   records the exchange, and **History** keeps the run so you can send it again later.
+
+   ![The response next to the request, with the HTTP Log below](/wirebench/images/getting-started/response.png)
+
+</Steps>
+
+## Part 2: a REST request
+
+<Steps>
+
+1. **Create an API.** Right-click the `Calculator` project in the explorer and choose
+   **New API…**. The new API opens in a tab. Set its **Base URL** to:
+
+   ```
+   https://httpbin.org
+   ```
+
+2. **Add a request.** Right-click the API in the explorer and choose **New request**.
+
+3. **Set the method and path.** Leave the method on `GET` and enter the path
+   `/get?pet=Fido&limit=10` next to it. The query parameters also appear on the **Params** tab,
+   where you can edit them one by one.
+
+4. **Send.** Press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. httpbin echoes the request back as
+   JSON, so the response shows the query parameters you sent.
+
+   ![A REST request and its JSON response](/wirebench/images/rest-client/rest-response.png)
+
+</Steps>
+
+<Aside type="tip" title="Have an OpenAPI document?">
+Instead of building requests by hand, press <kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd> to import
+it. The explorer fills with folders and requests, each with its parameters and a body sampled from
+the schema.
+</Aside>
+
+## Where next
+
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/): endpoints, WS-Security, attachments and XPath
+  queries over responses.
+- [REST](/wirebench/guides/rest-client/): parameters, bodies, auth and OpenAPI import.
+- [Environments](/wirebench/guides/environments/): switch between test and production endpoints
+  without editing requests.
+- [Shared workspaces](/wirebench/guides/shared-workspaces/): work on the same workspace with your team.

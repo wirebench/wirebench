@@ -1,0 +1,94 @@
+---
+title: Install and first run
+description: Download Wirebench for macOS, Windows or Linux, get past the first-launch prompts, and know where your data lives.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Download the file for your system from the
+[latest release](https://github.com/wirebench/wirebench/releases/latest). Every file name carries
+the version, the system and the processor, for example `Wirebench-1.1.0-mac-universal.dmg`.
+
+<Aside type="caution" title="Releases are not code-signed yet">
+macOS and Windows warn the first time you open an unsigned app. The steps below get past that
+warning once; later launches open normally. Signed and notarised releases are next on the
+[roadmap](https://github.com/wirebench/wirebench/blob/main/docs/roadmap.md).
+</Aside>
+
+<Tabs syncKey="os">
+<TabItem label="macOS">
+
+**Download.** `…-mac-universal.dmg` runs on every Mac. The `…-mac-arm64.dmg` (Apple silicon) and
+`…-mac-x64.dmg` (Intel) builds are about half the size, if you know which Mac you have.
+
+**Install.** Open the `.dmg` and drag **Wirebench** into **Applications**.
+
+**First launch.** macOS says it cannot verify the app and offers only to cancel or move it to the
+Bin. Choose **Done**, then:
+
+1. Open **System Settings → Privacy & Security**.
+2. Scroll to the message about Wirebench and choose **Open Anyway**.
+3. Confirm with your password or Touch ID.
+
+</TabItem>
+<TabItem label="Windows">
+
+**Download.** `…-windows-x64-setup.exe` for most PCs, or `…-windows-arm64-setup.exe` for ARM
+devices such as Surface Pro X or Snapdragon laptops.
+
+**Install.** Run the installer. It installs for your user only, so it does not ask for
+administrator rights, and it lets you change the install folder. It adds Start menu and desktop
+shortcuts.
+
+**First launch.** Microsoft Defender SmartScreen may say it prevented an unrecognised app from
+starting. Choose **More info**, then **Run anyway**.
+
+</TabItem>
+<TabItem label="Linux">
+
+Pick the package that suits your distribution. All of them are for x86-64; the AppImage and
+`.deb` also come for arm64.
+
+| Package | Install |
+| --- | --- |
+| AppImage (any distribution) | `chmod +x Wirebench-*.AppImage`, then run it |
+| `.deb` (Debian, Ubuntu) | `sudo apt install ./wirebench_*_amd64.deb` |
+| `.rpm` (Fedora, RHEL, openSUSE) | `sudo dnf install ./wirebench-*.x86_64.rpm` |
+| `.snap` | `sudo snap install --dangerous wirebench_*_amd64.snap` |
+
+The snap needs `--dangerous` because it comes from the release page rather than the Snap Store; the
+flag means "unsigned", not "unsafe". The snap is confined to your home folder, so **it cannot read a
+WSDL or project stored outside your home folder**. The AppImage, `.deb` and `.rpm` have no such
+limit.
+
+</TabItem>
+</Tabs>
+
+## First run
+
+Wirebench opens on the workspace picker. Type a name and choose **Create workspace**, then carry on
+with the [ten-minute walkthrough](/wirebench/getting-started/walkthrough/).
+
+To share workspaces with a team you also need [git](https://git-scm.com/downloads). If it is
+installed somewhere Wirebench does not look, point to it under **Preferences → Git**. Everything
+else works without git.
+
+## Where your data lives
+
+Workspaces, projects, preferences and saved secrets are stored in Wirebench's data folder:
+
+| System | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Wirebench` |
+| Windows | `%APPDATA%\Wirebench` |
+| Linux | `~/.config/Wirebench` |
+
+A snap install keeps it under `~/snap/wirebench/current/.config/Wirebench` instead.
+
+Secrets are encrypted with your operating system's keychain before they are written there. Back up
+the folder to back up everything; to move a single project, use **Export project…** instead.
+
+## Updates
+
+Wirebench never checks for updates on its own. Run **Check for Updates…** from the command palette,
+or turn on **Preferences → Updates → Check for updates on launch**. No usage data is sent, ever.

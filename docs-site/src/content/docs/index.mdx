@@ -1,0 +1,51 @@
+---
+title: Wirebench Documentation
+description: Wirebench is a desktop client for SOAP, REST and gRPC APIs. Install it, send a first request in ten minutes, and find a guide for every feature.
+template: splash
+hero:
+  tagline: A desktop client for SOAP, REST and gRPC. Your work stays in plain files on your machine, ready for git.
+  image:
+    file: ../../assets/hero-mark.svg
+  actions:
+    - text: Ten-minute walkthrough
+      link: /wirebench/getting-started/walkthrough/
+      icon: right-arrow
+      variant: primary
+    - text: Reference
+      link: /wirebench/reference/project-format/
+      icon: document
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Find your way around
+
+<CardGrid>
+  <Card title="SOAP and WSDL" icon="document">
+    Import a WSDL, send generated envelopes, sign and encrypt with WS-Security, and attach files.
+    [SOAP guide →](/wirebench/guides/soap-wsdl/)
+  </Card>
+  <Card title="REST" icon="rocket">
+    Build requests by hand or from an OpenAPI document, with parameters, bodies and auth.
+    [REST guide →](/wirebench/guides/rest-client/)
+  </Card>
+  <Card title="gRPC" icon="random">
+    Call services from `.proto` files or server reflection, including streaming calls.
+    [gRPC guide →](/wirebench/guides/grpc/)
+  </Card>
+  <Card title="Importing APIs" icon="download">
+    Bring in WSDL, OpenAPI, Postman collections, cURL commands, `.proto` files and legacy SOAP
+    projects.
+    [Importers →](/wirebench/guides/importers/)
+  </Card>
+  <Card title="Environments" icon="setting">
+    Switch endpoints and values between test and production without editing a request.
+    [Environments →](/wirebench/guides/environments/)
+  </Card>
+  <Card title="Shared workspaces" icon="laptop">
+    Work on one workspace with your team over git or a synced folder, with conflicts resolved in
+    the app.
+    [Sharing guide →](/wirebench/guides/shared-workspaces/)
+  </Card>
+</CardGrid>

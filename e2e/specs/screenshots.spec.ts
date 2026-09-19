@@ -1,16 +1,22 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { ADA, createBareRemote } from '../helpers/git-remote.js';
+import {
+  captureWindow,
+  resizeWindow,
+  restTimingRegions,
+  setTheme,
+  SHOWN_REMOTE,
+  shownRemoteEnv,
+  timingRegions,
+} from '../helpers/capture.js';
+import { createBareRemote } from '../helpers/git-remote.js';
 import { launchApp, removeDirSync, type LaunchedApp } from '../helpers/launch-app.js';
 import { runCommand } from '../helpers/palette.js';
 import {
   createProject,
   createProjectWithCalculator,
   createWorkspace,
-  dismissChangedOnDiskBanners,
   expandExplorer,
   openFirstRequest,
   openImportDialog,
@@ -56,100 +62,15 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 /** Where the README looks for them. */
 const IMAGES_DIR = join(REPO_ROOT, 'docs', 'images');
 
-/** Same window size as the theme snapshots: wide enough for the three-pane shell. */
-const VIEWPORT = { width: 1280, height: 800 };
-
 /**
  * A README image above ~300 KB is a slow page for everyone who reads it on a phone; PNG at this
  * viewport lands well under that, and this is the tripwire for the day it does not.
  */
 const MAX_BYTES = 300 * 1024;
 
-/** Resizes the Electron window itself — a Playwright viewport cannot move a native frame. */
-async function resizeWindow(launched: LaunchedApp): Promise<void> {
-  await launched.app.evaluate(async ({ BrowserWindow }, size) => {
-    const [window] = BrowserWindow.getAllWindows();
-    window?.setSize(size.width, size.height);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }, VIEWPORT);
-}
-
-/** Clicks the status bar's theme indicator until it sits on `preference`. */
-async function setTheme(page: Page, preference: 'dark' | 'light'): Promise<void> {
-  const indicator = page.getByTestId('status-bar-theme');
-  await expect(indicator).toBeVisible();
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if ((await indicator.getAttribute('data-theme-preference')) === preference) {
-      return;
-    }
-    await indicator.click();
-  }
-  throw new Error(`the theme indicator never reached ${preference}`);
-}
-
-/**
- * Regions carrying a real request's timing — a response's duration/status line, and any HTTP
- * log rows in the console — masked out of the README captures. Unlike `a11y.spec.ts`'s
- * `dynamicRegions` (masked so a *pixel comparison* never depends on when it ran), these are
- * masked because they are wall-clock numbers off whoever's machine re-shoots the docs: a
- * committed screenshot should not silently vary with — or leak — a maintainer's local timing.
- */
-function timingRegions(page: Page): Locator[] {
-  return [page.getByTestId('response-status'), page.locator('[data-testid="http-log-row"]')];
-}
-
-/** The same, for the REST response pane, whose status line carries its own duration. */
-function restTimingRegions(page: Page): Locator[] {
-  return [page.getByTestId('rest-response-status'), page.locator('[data-testid="http-log-row"]')];
-}
-
-/** The remote the sync captures show: a realistic URL rather than the test remote's temp folder. */
-const SHOWN_REMOTE = 'https://git.example.com/team/wirebench-workspace.git';
-
-/**
- * Git config for a sync capture's profile: Ada's identity plus `url.<test remote>.insteadOf`, so
- * the app is genuinely configured with {@link SHOWN_REMOTE} while git itself talks to the local
- * bare remote. It is the global config the launch points at, never a repository's own, so the
- * app's local-config check has nothing to refuse.
- */
-function shownRemoteEnv(remoteUrl: string): Record<string, string> {
-  const file = join(mkdtempSync(join(tmpdir(), 'wirebench-e2e-gitconfig-')), 'gitconfig');
-  writeFileSync(
-    file,
-    `[user]\n\tname = ${ADA.name}\n\temail = ${ADA.email}\n[url "${remoteUrl}"]\n\tinsteadOf = ${SHOWN_REMOTE}\n`,
-    'utf8',
-  );
-  return { GIT_CONFIG_GLOBAL: file, GIT_CONFIG_NOSYSTEM: '1' };
-}
-
 /** Shoots the whole window into `docs/images/<name>.png` and fails if it got too heavy. */
 async function capture(page: Page, name: string, options: { mask?: Locator[] } = {}): Promise<void> {
-  // A toast ("Saved", "Pulled 3 changes…") is passing chrome, not part of the screen documented.
-  await expect(page.getByTestId('toast-viewport').locator(':scope > div')).toHaveCount(0, { timeout: 15_000 });
-  // Nor is the watcher's "changed on disk" banner: writing the fixture project races the watcher,
-  // so whether it shows is a matter of timing. A README picture should not document a bar the
-  // reader will never see, and the banner pushes everything below it down by two rows.
-  //
-  // Not while a dialog is up, though: its overlay covers the banner in the picture and swallows
-  // the click that would dismiss it, so the attempt would spend its whole timeout on a button no
-  // pointer can reach.
-  const modalOverlay = page.locator('[data-state="open"][aria-hidden="true"]');
-  if ((await modalOverlay.count()) === 0) {
-    await dismissChangedOnDiskBanners(page);
-  }
-  // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
-  // otherwise a Retina machine produces a 2560x1600 file (and a different one from a non-Retina
-  // machine), which is both heavier than a README wants and not reproducible across developers.
-  const buffer = await page.screenshot({
-    animations: 'disabled',
-    scale: 'css',
-    ...(options.mask !== undefined ? { mask: options.mask } : {}),
-  });
-  expect(buffer.byteLength, `${name}.png is ${String(buffer.byteLength)} bytes; keep README images small`).toBeLessThan(
-    MAX_BYTES,
-  );
-  mkdirSync(IMAGES_DIR, { recursive: true });
-  writeFileSync(join(IMAGES_DIR, `${name}.png`), buffer);
+  await captureWindow(page, join(IMAGES_DIR, `${name}.png`), { ...options, maxBytes: MAX_BYTES });
 }
 
 test.describe('README screenshots', () => {

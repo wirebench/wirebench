@@ -1,0 +1,207 @@
+---
+title: Importing APIs
+description: Bring a WSDL, OpenAPI document, Postman collection, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
+`curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
+smaller one.
+
+| Format | Opens | Starts from |
+| --- | --- | --- |
+| WSDL (SOAP) | Import dialog | URL, file or pasted XML |
+| OpenAPI / Swagger | Import dialog | URL, file or pasted YAML/JSON |
+| Postman Collection | Import dialog | File or pasted JSON |
+| .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
+| Legacy SOAP project | Import dialog | File only |
+| cURL command | Import cURL dialog | Pasted command |
+
+## The Import dialog
+
+<Steps>
+
+1. Press <kbd>⌘I</kbd> / <kbd>Ctrl+I</kbd>, or run **Import…** from the command palette
+   (<kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd>). From a project or API row's context menu, **Import…** opens
+   the same dialog.
+
+2. Choose a source tab: **URL**, **File**, or **Paste**. When the format is gRPC, a fourth tab,
+   **Server**, asks a running server to describe itself instead of reading a document.
+
+3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
+   Collection**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
+
+4. Pick **Into project** — an open project, or **New project "…"**.
+
+5. Choose **Import**.
+
+</Steps>
+
+<Aside type="tip" title="Dedicated commands">
+**Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>) and **Import Postman Collection…**
+open the same dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
+palette, pins it to the legacy format.
+</Aside>
+
+## WSDL
+
+<Steps>
+
+1. Open **Import…**, paste the WSDL URL on the **URL** tab (or pick a `.wsdl`/`.xml` file, or paste
+   the XML), and leave the format on auto-detect or set it to **WSDL (SOAP)**.
+
+2. On the URL tab, optionally turn on **Use Basic auth** and give a username and password to fetch
+   the document. **Use these credentials for requests too** carries them onto the interface's
+   requests as well.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+What arrives: the service's bindings and operations, each with a generated `Request 1` envelope.
+Anything the WSDL imports or includes is fetched and cached beside the project, so the interface
+works offline afterwards. If the import finds problems, they are listed with a link to **Show in
+Problems**.
+
+## OpenAPI (and Swagger)
+
+Wirebench reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x, 2.0 and 3.x, in YAML or JSON.
+
+<Steps>
+
+1. Open **Import…** (or press <kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>) and give the document by
+   URL, file or paste.
+
+2. Optionally set **Name** and **Base URL** overrides, and **Cache specification documents with the
+   project** to keep a copy alongside the project.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+The summary shows the declared version, the API version if the document gives one, the base URL,
+and the request and folder counts. When the document declares security schemes, they're listed
+with **Use** buttons to apply one to the API — credentials are yours to fill in afterwards on the
+API tab. Anything the import could not carry across is listed under "things not imported," with the
+reason next to each.
+
+## Postman collections
+
+Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app labels this format
+**Postman Collection**.
+
+<Steps>
+
+1. Open **Import…** and pick **Postman Collection**, or run **Import Postman Collection…**.
+
+2. Provide the collection on the **File** or **Paste** tab.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+What arrives: the collection's requests and folders, with a default authentication scheme noted if
+the collection declares one.
+
+<Aside type="note">
+Postman import by URL is not supported. Download the collection file, or paste its JSON, instead.
+</Aside>
+
+## cURL commands
+
+cURL import has its own dialog, opened from a request context so the imported request lands where
+you meant it — an operation, an API, or a folder.
+
+<Steps>
+
+1. From a SOAP operation's, an API's, or a folder's context menu, choose **Import cURL…**. The REST
+   editor also offers it. The dialog names its target, for example "Imports into the API
+   'Petstore'."
+
+2. Paste the `curl` command. A live preview below shows the endpoint, headers, and body it parsed,
+   plus any problems.
+
+3. Choose **Import**. The new request opens in its own editor.
+
+</Steps>
+
+![The Import cURL dialog with a pasted POST command and the preview of its endpoint, headers and body](/wirebench/images/importers/curl-preview.png)
+
+The same command runs in reverse: **Copy as cURL**, from a request, and the **Code** panel's preview
+both give you the request back as a command — with secrets masked unless you turn on show-secrets.
+
+## .proto files and gRPC servers
+
+<Steps>
+
+1. Open **Import…** and pick **Protocol Buffers (gRPC)**, or set the format and use the **URL**,
+   **File**, or **Paste** tab for a `.proto` file — or the **Server** tab to ask a running server.
+
+2. On the **Server** tab, give the address as `host:port`, and set the **Reflection version**
+   (automatic, `v1`, or `v1alpha`). **Ask even if the certificate does not verify** skips
+   certificate checks.
+
+3. Optionally set **Name**, **Target** (`host:port`, defaults to the address the server was
+   discovered at), and whether **the target speaks TLS (grpcs)**.
+
+4. Choose the target project and **Import**.
+
+</Steps>
+
+What arrives: the discovered services and methods, with the target address, or a note that it still
+needs one. The summary says whether the import came from files or from server reflection, and at
+what reflection version.
+
+## Legacy SOAP project
+
+Many SOAP testers keep their work in a legacy SOAP project file (one XML file from an older desktop
+SOAP workbench). Importing it reads that file and adds its interfaces, endpoints, saved requests,
+properties and environments to a Wirebench project — no network access needed, since the
+definitions are read from the copy the file carries.
+
+<Steps>
+
+1. Open **Import…** and pick **Legacy SOAP project** as the format, or run **Import Legacy SOAP
+   Project…** from the command palette. Only the **File** tab works for this format — the project
+   is read from the picked file itself, so a dropped or pasted copy is refused.
+
+2. Browse to the file and choose the target project. For a new project, an optional name overrides
+   the one the file carries.
+
+3. Choose **Import**.
+
+</Steps>
+
+The summary counts interfaces, requests, operations, environments and properties, plus any scripts
+kept. Below the counts, two lists cover what needs attention:
+
+- **Things to look at** — warnings, such as a password that was not imported.
+- **Notes** — informational items, such as test suites or mocks the import did not map.
+
+**Copy report** copies the full list as text.
+
+![The legacy SOAP project import summary, counting 2 interfaces and 6 requests, with a warning that the password was not imported](/wirebench/images/importers/legacy-summary.png)
+
+### Limits
+
+- **Scope.** Test suites, mock services, REST services, security configurations, database
+  connections and auth profiles are not mapped. Each appears in the report with the reason.
+- **Passwords are never imported.** Every request or endpoint that had one is listed in the report,
+  to be re-entered.
+- **Scripts are kept, never run.** Every script in the file is written as-is to
+  `imported-scripts/` in the project folder and listed in the report. Nothing reads or executes that
+  folder.
+- **Compressed request envelopes** that fail to decode are skipped and reported, rather than
+  imported garbled.
+- **A name that already exists** — for a project property or an environment — keeps its current
+  value or gets a numbered name, and the report notes it.
+
+## Related
+
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
+- [REST](/wirebench/guides/rest-client/)
+- [Environments](/wirebench/guides/environments/)
+- [Ten-minute walkthrough](/wirebench/getting-started/walkthrough/)

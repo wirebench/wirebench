@@ -1,0 +1,103 @@
+---
+title: SOAP and WSDL
+description: Import a WSDL, send a SOAP request, configure WS-Security, and update a definition without losing your edits.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench imports a WSDL into an operations tree, generates a sample envelope for every operation,
+and sends it over HTTP or HTTPS. WS-Security, MTOM attachments and WS-I Basic Profile checks build
+on the same request.
+
+## Import a WSDL
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **Import…**.
+2. On the **File** or **URL** tab, point to the WSDL — a local path or an HTTP/HTTPS URL.
+3. Name the interface and confirm. Wirebench fetches everything the WSDL imports or includes and
+   stores it beside the project.
+
+</Steps>
+
+The explorer fills with a folder per interface, a request named `Request 1` under each operation,
+generated from the operation's schema.
+
+![The Import dialog with a WSDL URL filled in](/wirebench/images/getting-started/import-wsdl.png)
+
+## Send a request
+
+Open a request and it opens in the request editor with a generated SOAP envelope.
+
+![The generated Add request, open in the editor](/wirebench/images/getting-started/request-editor.png)
+
+Fill in the values and choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The
+response opens beside the request with its status, headers, timing and raw bytes on their own
+tabs, and the exchange is recorded in the HTTP Log and in History.
+
+Right-click the request pane and choose **Check WS-I compliance** to run the WS-I Basic Profile
+assertions against the exchange you just sent — see the report's summary, filter to failures, and
+export it as HTML. **Check WSDL WS-I compliance** on an interface row runs the same checks against
+the WSDL's structure, without a send.
+
+## Configure WS-Security
+
+WS-Security configurations live in their own view. Open **WS-Security** from the activity bar (the
+shield icon). It has three sections: **Keystores**, **Outgoing** and **Incoming**.
+
+1. Choose **+** next to **Outgoing** to create an outgoing configuration, then expand it.
+2. Pick from **Add entry…** to add a **Timestamp**, **Username Token**, **Signature** or
+   **Encryption** entry. Entries run in the order listed; the arrows move them.
+3. A Username Token takes a username and a **Password type** (**Digest**, **Text** or **None**).
+   The password itself goes in through the masked **Set…** field, never typed in the clear.
+4. A Signature or Encryption entry needs a keystore. Choose **+** next to **Keystores**, pick a
+   `.p12`/`.pfx` or `.jks` file, and set its password the same masked way.
+
+![An expanded outgoing WS-Security configuration with a Timestamp entry and a Username Token entry for user bob, password type Digest](/wirebench/images/soap-wsdl/wss-outgoing.png)
+
+Select the configuration on the request's **Auth** inspector tab (**Outgoing WSS**) before
+sending. The raw request view masks the password even though the envelope itself has the
+`wsse:Security` header; the project file on disk stores a `passwordRef`, never the password.
+
+An incoming configuration validates a response: select it as **Incoming WSS** on the same **Auth**
+tab, and the response's **WSS** inspector tab reports whether the signature or encryption checked
+out.
+
+<Aside type="note">
+WS-Addressing headers are added automatically when the imported WSDL declares
+`wsaw:UsingAddressing` — no separate configuration step. Each send gets a fresh `wsa:MessageID`.
+</Aside>
+
+## Attach files
+
+Open the **Attachments** tab on the request inspector strip to add a file. Wirebench copies it
+into the project's own cache, named by its content digest, and shows it in the grid with its size.
+
+Give the attachment the Content-ID your envelope references with `cid:` in the grid's inline
+editor, then turn on **Enable MTOM** in **Request properties** (the inspector points you there
+when MTOM is off). Wirebench sends the file as a separate MIME part and rewrites the `cid:`
+reference as an `xop:Include`; anything the response sends back appears on the response's
+**Attachments** tab, where **Save attachment as…** writes it to disk.
+
+## Update Definition
+
+When the upstream WSDL changes, right-click the interface and choose **Update Definition…**, point
+it at the new WSDL, and choose **Preview changes**. The preview lists what is new, removed and
+changed; choose **Update** to apply it:
+
+- New operations get a generated request, folded shut like anything an import adds.
+- Removed operations' requests are kept as orphaned rows, not deleted.
+- An edited request whose operation still exists keeps your edit — save your changes before
+  running the update, since the merge reads what's on disk.
+
+## Limits
+
+- WSDL 1.1 with SOAP 1.1 and 1.2 bindings.
+- WS-I Basic Profile checks the fixed set of assertions in the report; there is no way to add
+  custom ones.
+
+## Related
+
+- [REST](/wirebench/guides/rest-client/)
+- [HTTP Log](/wirebench/guides/http-log/)
+- [Importers](/wirebench/guides/importers/)

@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import { checkForUpdates } from '../lib/update-status.js';
 import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
@@ -12,36 +13,26 @@ import { activeGrpcRequestId, activeRequestId, activeRestRequestId, ui } from '.
 export function registerProjectCommands(): void {
   // No shortcut, and no `when`: checking for updates is always available and never urgent.
   registerCommand({
-    id: 'app.checkForUpdates',
-    label: 'Check for Updates…',
-    category: 'General',
+    ...catalogEntry('app.checkForUpdates'),
     run: () => {
       void checkForUpdates();
     },
   });
   registerCommand({
-    id: 'definition.import',
-    label: 'Import…',
-    category: 'Definition',
-    shortcut: 'Mod+I',
+    ...catalogEntry('definition.import'),
     run: () => {
       ui().openImportDialog();
     },
   });
   registerCommand({
-    id: 'definition.importLegacyProject',
-    label: 'Import Legacy SOAP Project…',
-    category: 'Definition',
+    ...catalogEntry('definition.importLegacyProject'),
     run: () => {
       ui().openImportDialog('legacy-soap-project');
     },
   });
   // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`.
   registerCommand({
-    id: 'item.save',
-    label: 'Save',
-    category: 'Project',
-    shortcut: 'Mod+S',
+    ...catalogEntry('item.save'),
     when: () =>
       activeRequestId() !== undefined || activeRestRequestId() !== undefined || activeGrpcRequestId() !== undefined,
     whenScope: 'project',
@@ -75,10 +66,7 @@ export function registerProjectCommands(): void {
   });
 
   registerCommand({
-    id: 'project.save',
-    label: 'Save All',
-    category: 'Project',
-    shortcut: 'Mod+Alt+S',
+    ...catalogEntry('project.save'),
     when: () => Object.keys(useProjectStore.getState().projects).length > 0,
     whenScope: 'project',
     run: () => {
@@ -92,9 +80,7 @@ export function registerProjectCommands(): void {
   });
 
   registerCommand({
-    id: 'env.switch',
-    label: 'Switch Environment…',
-    category: 'Environment',
+    ...catalogEntry('env.switch'),
     when: () => useWorkspaceStore.getState().workspace !== null,
     whenScope: 'project',
     // With no argument this opens the status bar's dropdown, which is where the choice lives.
@@ -112,10 +98,7 @@ export function registerProjectCommands(): void {
     },
   });
   registerCommand({
-    id: 'env.next',
-    label: 'Next Environment',
-    category: 'Environment',
-    shortcut: 'Mod+Alt+E',
+    ...catalogEntry('env.next'),
     when: () => (useWorkspaceStore.getState().workspace?.environments.length ?? 0) > 0,
     whenScope: 'project.environments',
     run: () => {
@@ -126,9 +109,7 @@ export function registerProjectCommands(): void {
   // No default shortcut: revealing credentials on screen should take a deliberate act, not a
   // key one finger-slip away.
   registerCommand({
-    id: 'secrets.toggleShowSecrets',
-    label: 'Toggle Show Secrets in HTTP Log',
-    category: 'Secrets',
+    ...catalogEntry('secrets.toggleShowSecrets'),
     run: () => {
       void useSecretsVisibilityStore.getState().toggle();
     },

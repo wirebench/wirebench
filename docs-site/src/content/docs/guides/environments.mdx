@@ -1,0 +1,97 @@
+---
+title: Environments and properties
+description: Switch between deployment targets with named scopes, without editing requests.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Environments let one request work against several deployments — local, staging, production —
+without editing the URL or the body each time. You set variables once, in a scope, and reference
+them with `${...}` inside URLs, headers, envelopes and bodies. The syntax itself, and the full
+precedence rules, are covered in
+[Property expansion syntax](/wirebench/reference/property-syntax/); this page is about managing
+environments day to day.
+
+## Open the Environments view
+
+Choose **Environments** in the activity bar. It lists **Globals**, **Workspace**, and every
+environment you've added — both workspace-level environments and any linked project's own. Each
+entry opens a page with a table of variables.
+
+## Scopes, from broadest to narrowest
+
+- **Globals** — available everywhere, referenced as `${#Global#name}`. The broadest scope; a
+  workspace or environment variable with the same name wins over it.
+- **Workspace** — available to every project in the workspace, as `${#Workspace#name}`. An active
+  environment's variable of the same name wins over it.
+- **Environment** — the variables of whichever environment is active, as `${#Env#name}`. This is
+  the scope you switch between deployments with.
+
+The shorthand `${name}` (no `#Scope#`) resolves through Env, then Workspace, then Global —
+whichever scope defines it first.
+
+## Add and switch environments
+
+<Steps>
+
+1. In the Environments view, choose **Add environment**. It opens on the new environment's page
+   with a default name.
+2. Click the name to rename it, or right-click the row and choose **Rename**. Press
+   <kbd>Enter</kbd> to commit, <kbd>Escape</kbd> to cancel.
+3. To make it the one requests use, open the environment switcher in the status bar and choose it
+   from the list.
+
+</Steps>
+
+Only one environment is active at a time. The status bar always shows which one, and every open
+request tab picks it up immediately — there's no per-tab environment.
+
+## Set variables
+
+Each scope's page (Globals, Workspace, or an environment) has its own table: name, value, and a
+**Secret** flag.
+
+<Steps>
+
+1. Add a row and type a name and value.
+2. Turn on **Secret** for anything sensitive — a token, a password, an API key. See
+   [Secrets](/wirebench/guides/secrets/) for how secret values are stored and masked.
+3. Reference it anywhere property expansion is read — the address bar, headers, a JSON body, a
+   SOAP envelope — with `${#Env#name}`, `${#Workspace#name}`, `${#Global#name}`, or the shorthand
+   `${name}`.
+
+</Steps>
+
+An unresolved reference — a typo, or a variable that only exists in a different environment —
+shows up as a row in **Problems** when you send, naming the exact `${...}` text it couldn't
+resolve.
+
+### Disable a variable without deleting it
+
+Every row has an enabled checkbox. Unticking it makes property expansion treat the variable as
+absent — a reference to it falls through to the next scope in the precedence chain (or is left
+unresolved if nothing else defines it) — while its value stays saved. This is the quickest way to
+try a request without a variable, or to keep a rarely used value around without deleting it.
+
+## Endpoint overrides
+
+An environment's page also has an **Endpoints** table, one row per SOAP interface and REST or gRPC
+API the workspace can reach. Filling in a row redirects every request under that interface or API
+to the address you type, instead of the one the WSDL or the API's own base URL declares — useful
+for pointing an imported definition at a different deployment of the same service.
+
+![The uat environment's page, with the Calculator interface's endpoint override set to a UAT address](/wirebench/images/environments/endpoint-override.png)
+
+A row shows which layer is currently winning when more than one could apply — for example, a
+linked project's own environment override beats a workspace environment's override for the same
+interface. A request sent under an overridden interface shows a badge next to its endpoint field
+so you can tell, without opening Environments, that something is redirecting it.
+
+## Related
+
+- [Property expansion syntax](/wirebench/reference/property-syntax/) — the full `${...}` grammar
+  and resolution order.
+- [Secrets](/wirebench/guides/secrets/) — how secret variables are stored and what never leaves
+  your machine.
+- [SOAP and WSDL](/wirebench/guides/soap-wsdl/) and [REST](/wirebench/guides/rest-client/) — where
+  endpoints and base URLs come from.

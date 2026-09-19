@@ -9,6 +9,9 @@
   },
   "scripts": {
     "dev": "pnpm --filter @wirebench/desktop dev",
+    "docs:dev": "pnpm --filter @wirebench/docs-site dev",
+    "docs:build": "pnpm --filter @wirebench/docs-site build",
+    "docs:preview": "pnpm --filter @wirebench/docs-site preview",
     "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
     "package": "pnpm build && pnpm --filter @wirebench/desktop package",
     "package:mac": "pnpm build && pnpm --filter @wirebench/desktop package:mac",
@@ -25,14 +28,17 @@
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc -b && pnpm --filter @wirebench/desktop typecheck && tsc --noEmit -p scripts/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
-    "check": "pnpm typecheck && pnpm lint && pnpm wsi:docs --check && pnpm contrast:check && pnpm check:doc-paths && pnpm check:banned-terms && pnpm licenses:third-party --check && pnpm test && pnpm test:perf",
+    "check": "pnpm typecheck && pnpm lint && pnpm wsi:docs --check && pnpm docs:commands --check && pnpm contrast:check && pnpm check:doc-paths && pnpm check:docs-images && pnpm check:banned-terms && pnpm licenses:third-party --check && pnpm test && pnpm test:perf",
     "check:tests": "pnpm typecheck && pnpm test && pnpm test:perf",
     "fixtures:refresh": "node scripts/fixtures-refresh.ts",
     "wsi:docs": "node scripts/wsi-docs.ts",
     "contrast:check": "node scripts/contrast-check.ts",
     "check:doc-paths": "node scripts/check-doc-paths.ts",
     "check:banned-terms": "node scripts/check-banned-terms.ts",
-    "licenses:third-party": "node scripts/third-party-licenses.ts"
+    "licenses:third-party": "node scripts/third-party-licenses.ts",
+    "docs:commands": "node scripts/docs-commands.ts",
+    "check:docs-images": "node scripts/check-docs-images.ts",
+    "docs:screenshots": "pnpm build && WIREBENCH_DOCS_SCREENSHOTS=1 pnpm test:e2e -- docs-screenshots.spec.ts"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

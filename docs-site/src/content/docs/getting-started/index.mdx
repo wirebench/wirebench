@@ -1,0 +1,36 @@
+---
+title: Introduction
+description: What Wirebench is, what it speaks, and where to start.
+---
+
+Wirebench is a desktop client for testing and exploring APIs. It sends SOAP, REST and gRPC requests
+from one window, keeps your work as plain files you can review in git, and runs entirely on your
+machine: no account, no cloud sync you did not set up, no telemetry.
+
+![The workspace picker Wirebench shows on first launch](/wirebench/images/getting-started/workspace-picker.png)
+
+## What it speaks
+
+| Protocol | Start from | Guide |
+| --- | --- | --- |
+| SOAP 1.1 and 1.2 | A WSDL (URL, file or pasted), with its imports and includes | [SOAP and WSDL](/wirebench/guides/soap-wsdl/) |
+| REST | An OpenAPI or Postman collection, a cURL command, or nothing at all | [REST](/wirebench/guides/rest-client/) |
+| gRPC | A `.proto` file, or server reflection | [gRPC](/wirebench/guides/grpc/) |
+
+## How your work is organised
+
+- A **workspace** is the top level. It holds any number of projects, one set of environments shared
+  by all of them, and your open tabs. Wirebench keeps it in its own data folder, so there is no
+  folder for you to pick or manage.
+- A **project** holds what you import or create: interfaces, APIs, requests and their properties.
+  On disk it is a folder of small YAML and XML files, so it can be exported, reviewed and kept in git.
+- A workspace can be **shared with a team** over git or a synced folder. See
+  [Shared workspaces](/wirebench/guides/shared-workspaces/).
+
+## Where to start
+
+1. [Install Wirebench](/wirebench/getting-started/installation/) on macOS, Windows or Linux.
+2. Follow the [ten-minute walkthrough](/wirebench/getting-started/walkthrough/): a SOAP request, then
+   a REST request.
+3. Keep the [command reference](/wirebench/reference/commands/) handy. Everything in Wirebench is a
+   command in the palette (<kbd>⌘K</kbd> on macOS, <kbd>Ctrl+K</kbd> on Windows and Linux).
