@@ -214,11 +214,18 @@ global properties loader (`apps/desktop/src/main/global-properties.ts`), which d
 A 1.0.0 build cannot open a file this build has saved: it refuses `formatVersion: 2` with its
 existing "created by a newer version of Wirebench" error.
 
+## Format version
+
 The project format has kept moving the same way since: APIs beside interfaces took it to
-`formatVersion: 3` (ADR-0007), and the CLI runner's assertions and named secret references take it
-to `formatVersion: 4` (`FORMAT_VERSION` in `packages/engine/src/project/model.ts`) — each step adds
+`formatVersion: 3` (ADR-0007), and the CLI runner's `assertions:` and named secret references
+(`…Env` beside a `passwordRef`/`tokenRef`/`valueRef`/`clientSecretRef`) take it to
+`formatVersion: 4` (`FORMAT_VERSION` in `packages/engine/src/project/model.ts`) — each step adds
 fields an older file simply lacks, which the loader defaults, and each still bumps the version
-because this format drops unknown keys on save.
+because this format drops unknown keys on save. A version-3 project migrates to 4 in memory with no
+data moved; the CLI never writes a project (it only writes report files), so it can run a
+version-3 project unmigrated on disk. A build older than the one that wrote `formatVersion: 4`
+refuses it with the same "created by a newer version of Wirebench" error `formatVersion: 2`
+introduced.
 
 ## Where things live
 

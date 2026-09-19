@@ -1,6 +1,6 @@
 # Spec: CLI runner — `wirebench run` with assertions, reports and exit codes
 
-- Status: **approved** (owner, 2026-09-18)
+- Status: **S1–S6 shipped (feat/cli-runner); S7 (gRPC unary, OAuth2 client credentials) pending**
 - Date: 2026-09-18
 - Issue: [#30](https://github.com/wirebench/wirebench/issues/30) (roadmap item 3, milestone 2.3)
 - Builds on: `docs/adr/0001-electron-stack.md` (the engine stays Electron-free so the CLI can run on
@@ -116,7 +116,14 @@ wirebench --version | --help
 ```
 
 Order of execution is the project's own order (`order` field, then name), so a run is
-deterministic. Requests run sequentially; parallelism is out of scope.
+deterministic. Requests run sequentially; parallelism is out of scope. **Implementation note:**
+`--bail` stops after the request that failed or errored — every request the project's own order
+would have run before it still ran, and only the rest are reported `skipped`.
+
+**Implementation note.** `--timeout` is applied through the request's own settings (the same
+`timeoutMs` a REST request's `settings` carries), not a separate transport-level override — so a
+request that already declares its own timeout, and a request with none, both end up sending with
+exactly the value `--timeout` names.
 
 ### 3.2 Assertions
 
@@ -174,16 +181,28 @@ Resolution for a ref, in order: `WIREBENCH_SECRET_<NAME>` when a name is declare
 `secret-missing`, naming the variable to set. The CLI never reads the desktop's `secrets.json` and
 never touches a keychain.
 
+**Implementation note.** WS-Security passwords (a username-token password, a signing-key password)
+carry no `…Env` name in this release — they are supplied only through the ref-derived
+`WIREBENCH_SECRET_<REF>` variable, which `wirebench secrets list` prints for each of them. A
+missing keystore file or a missing WS-Security password both surface as `secret-missing` (exit 3),
+the same as a missing `…Env`/ref variable.
+
 Every value resolved from the environment is registered with the redactor and masked wherever it
 appears — headers, URL, bodies, assertion "actual" text — in every reporter, the `cli` one included.
+**Implementation note.** That literal masking only replaces resolved values of 4 characters or
+more; a shorter value is too likely to occur by chance in unrelated output for masking to be safe.
+Pattern-based redaction (`Authorization`/`Proxy-Authorization` headers, `wsse:Password`, the
+JSON/form secret-key list) is unaffected by this floor and always applies.
 
 ### 3.4 Reports
 
 - **cli** — one line per request (outcome, status, time), failures expanded below, a summary line.
   Goes to stdout; diagnostics go to stderr.
 - **junit** — one `<testsuite>` per operation or API folder, one `<testcase>` per request
-  (`classname` = its path, `time` = seconds), one `<failure>` per failed assertion, `<error>` for an
-  errored request, `<skipped/>` after a bail. Validates against the common JUnit XSD CI systems use.
+  (`classname` = the request's group — its operation, or its folder path under an API — and `name`
+  = the request's own name, so a consumer showing `classname` + `name` together shows the full
+  path; `time` = seconds), one `<failure>` per failed assertion, `<error>` for an errored request,
+  `<skipped/>` after a bail. Validates against the common JUnit XSD CI systems use.
 - **json** — the full run: `{ formatVersion: 1, tool, startedAt, environment, summary, requests[] }`
   with each request's outcome, timings, status and assertion results. The stable machine interface;
   `formatVersion` governs it.
