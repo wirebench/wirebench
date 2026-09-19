@@ -143,7 +143,7 @@ describe('EditorArea — a WebSocket request tab', () => {
     useProjectStore.setState({ wsRequests: {} });
   });
 
-  it('opens the placeholder, named for the request, until the WebSocket editor exists', () => {
+  it('opens the WebSocket editor, named for the request', async () => {
     installWirebenchApi();
     useProjectStore.setState({ wsRequests: { 'ws-1': wsRequestWire({ id: 'ws-1', name: 'Lobby' }) } });
     useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
@@ -151,9 +151,7 @@ describe('EditorArea — a WebSocket request tab', () => {
 
     render(<EditorArea />);
 
-    const placeholder = screen.getByTestId('ws-editor-placeholder');
-    expect(placeholder).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Lobby' })).toBeTruthy();
-    expect(screen.getByText('The WebSocket editor is not here yet.')).toBeTruthy();
+    expect(await screen.findByTestId('ws-editor')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Request Lobby' })).toBeTruthy();
   });
 });

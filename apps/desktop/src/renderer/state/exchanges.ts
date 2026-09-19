@@ -312,6 +312,8 @@ export interface ExchangesStore extends ExchangesSnapshot {
     requestId: string,
     message: { readonly format: 'text' | 'binary'; readonly content: string; readonly expand: boolean },
   ) => Promise<void>;
+  /** Aborts a handshake still in progress for `requestId` (Escape, or Cancel on the strip). */
+  readonly cancelWs: (requestId: string) => Promise<void>;
   /** Closes the open session for `requestId`, if any. */
   readonly disconnectWs: (requestId: string, code?: number, reason?: string) => Promise<void>;
   /** Clears the WebSocket exchange state for a removed request. */
@@ -609,6 +611,14 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         }
         pushLiveFrame(state.live, result.value);
       });
+    },
+
+    cancelWs: async (requestId) => {
+      const entry = get().wsByRequest[requestId];
+      if (entry?.sendId === undefined || entry.status !== 'connecting') {
+        return;
+      }
+      await ipc().request.cancel({ sendId: entry.sendId });
     },
 
     disconnectWs: async (requestId, code, reason) => {

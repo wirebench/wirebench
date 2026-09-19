@@ -173,3 +173,13 @@ export function subprotocolProblem(token: string): string | undefined {
   if (!/^[\x21-\x7e]+$/.test(token)) return 'A subprotocol is plain ASCII.';
   return undefined;
 }
+
+/**
+ * Why a saved binary message's content is not base64, or `undefined` when it is. A saved message
+ * is written to its own `.b64` file, so unlike the composer it takes base64 only.
+ */
+export function base64Problem(text: string): string | undefined {
+  const compact = text.replace(/\s/g, '');
+  if (compact === '') return undefined;
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(compact) && compact.length % 4 === 0 ? undefined : 'Not valid base64.';
+}

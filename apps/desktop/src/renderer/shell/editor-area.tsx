@@ -10,9 +10,6 @@ import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
-// No Monaco here — a plain placeholder until the WebSocket editor exists — so this stays a
-// synchronous import rather than lazy like the other tab bodies.
-import { WsEditorPlaceholder } from '../features/ws-editor/placeholder.js';
 import type { ProjectWire, WorkspaceEnvironmentWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
@@ -47,6 +44,12 @@ const GrpcApiTab = lazy(async () => {
 const WsApiTab = lazy(async () => {
   const module = await import('../features/ws-api/ws-api-tab.js');
   return { default: module.WsApiTab };
+});
+
+// Split out like the gRPC editor: its saved-message editor and frame viewer are Monaco.
+const WsEditor = lazy(async () => {
+  const module = await import('../features/ws-editor/ws-editor.js');
+  return { default: module.WsEditor };
 });
 
 const HistoryEntryView = lazy(async () => {
@@ -534,7 +537,9 @@ export function EditorArea() {
             <WsApiTab apiId={activeTab.wsApiId} />
           </Suspense>
         ) : activeTab.kind === 'ws-request' && activeTab.wsRequestId !== undefined ? (
-          <WsEditorPlaceholder requestId={activeTab.wsRequestId} />
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <WsEditor requestId={activeTab.wsRequestId} />
+          </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />

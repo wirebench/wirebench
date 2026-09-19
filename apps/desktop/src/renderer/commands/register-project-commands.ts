@@ -7,7 +7,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
-import { activeGrpcRequestId, activeRequestId, activeRestRequestId, ui } from './command-helpers.js';
+import { activeGrpcRequestId, activeRequestId, activeRestRequestId, activeWsRequestId, ui } from './command-helpers.js';
 
 /** Registers the Project, Definition, Environment, Secrets and application commands. */
 export function registerProjectCommands(): void {
@@ -34,9 +34,18 @@ export function registerProjectCommands(): void {
   registerCommand({
     ...catalogEntry('item.save'),
     when: () =>
-      activeRequestId() !== undefined || activeRestRequestId() !== undefined || activeGrpcRequestId() !== undefined,
+      activeRequestId() !== undefined ||
+      activeRestRequestId() !== undefined ||
+      activeGrpcRequestId() !== undefined ||
+      activeWsRequestId() !== undefined,
     whenScope: 'project',
     run: () => {
+      // A WebSocket tab writes its staged edits (saved messages included) the way a gRPC one does.
+      const wsRequestId = activeWsRequestId();
+      if (wsRequestId !== undefined) {
+        void useProjectStore.getState().saveWsRequest(wsRequestId);
+        return;
+      }
       const grpcRequestId = activeGrpcRequestId();
       if (grpcRequestId !== undefined) {
         void useProjectStore.getState().saveGrpcRequest(grpcRequestId);
