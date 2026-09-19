@@ -5,7 +5,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { chooseContextMenuItem } from '../helpers/rest.js';
-import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
+import { createProject, createWorkspace, saveAll, workspaceProjectDir } from '../helpers/project.js';
 import { startTestWsServer, type TestWsServer } from '../helpers/test-server.js';
 
 /** Axe fails the spec at these impact levels, the same gate `a11y.spec.ts` uses. */
@@ -91,7 +91,9 @@ test.describe('WebSocket: a request owns a session, its transcript, and its own 
     await page.getByTestId('ws-connect').click();
     await expect(page.getByTestId('ws-state')).toHaveText('closed 3001', { timeout: 20_000 });
 
-    // The request's own file, on disk, opens as a WebSocket document.
+    // The request's own file, on disk, opens as a WebSocket document. Save first: nothing reaches
+    // the project folder until it does, and the read below would race the write.
+    await saveAll(page);
     const projectDir = workspaceProjectDir(userDataDir!, 'Feeds');
     const apiYaml = readFileSync(join(projectDir, 'apis/Echo API/api.yaml'), 'utf8');
     expect(apiYaml).toContain('kind: websocket');
