@@ -61,4 +61,23 @@ describe('a saved WebSocket request as session options', () => {
     expect(handshake.url).toBe('/echo?room=7');
     expect(handshake.headers.authorization).toBe('Bearer secret');
   });
+
+  it('reaches /echo with no authorization header when the request has no auth', async () => {
+    const scopes = { project: {}, global: {}, system: {} };
+    const request = createWsRequest('anon', { url: '/echo' });
+
+    const { input } = expandWsInput({ serverUrl: server.url, request, apiHeaders: [] }, scopes);
+    const options = toWsSessionOptions(input, {});
+
+    expect(options.headers?.['Authorization']).toBeUndefined();
+
+    const session = openWsSession(options);
+    openSessions.push(session);
+    await until(() => session.isOpen, 'open');
+    session.close();
+    await session.done;
+
+    const handshake = server.handshakes.at(-1)!;
+    expect(handshake.headers.authorization).toBeUndefined();
+  });
 });

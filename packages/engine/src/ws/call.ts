@@ -30,7 +30,8 @@ export type { WsCallInput } from './expand.js';
  * only negotiates a subprotocol through its own `protocols` option, which `subprotocols` here
  * becomes. Dropping these rather than throwing keeps a pasted-in header harmless instead of fatal;
  * `sec-websocket-accept` is included for the same reason though it only ever appears in a
- * response, never a request.
+ * response, never a request. `host` stays here too: the transport sets it itself from the URL, so
+ * a caller-supplied value would only ever be overridden, never honoured.
  *
  * Exported for the unit test only — not part of the package's public surface.
  */
@@ -62,19 +63,26 @@ function mergeHeaders(...layers: readonly (readonly KeyValueEntry[])[]): Record<
   return result;
 }
 
-/** What {@link toWsSessionOptions} additionally accepts beyond the call's own fields. */
+/**
+ * What {@link toWsSessionOptions} additionally accepts beyond the call's own fields. An absent
+ * `auth` means no credentials at all — the common case of a request that inherited nothing and
+ * configured nothing.
+ */
 export interface WsSessionMaterial {
-  readonly auth: SendAuth;
+  readonly auth?: SendAuth;
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   readonly signal?: AbortSignal;
 }
 
 /** Credentials resolved into the header (or headers) they become on the wire. */
-function authHeadersAndQuery(auth: SendAuth): {
+function authHeadersAndQuery(auth: SendAuth | undefined): {
   readonly headers: Record<string, string>;
   readonly query: readonly KeyValueEntry[];
 } {
+  if (auth === undefined) {
+    return { headers: {}, query: [] };
+  }
   if (auth.type === 'ntlm') {
     throw new WsError(
       'ws-auth-unsupported',
@@ -100,7 +108,8 @@ function authHeadersAndQuery(auth: SendAuth): {
  * store, bind address, timeouts inherited from higher up) is a desktop concern handled later —
  * this reads only `input.request.settings`.
  *
- * @throws WsError `ws-auth-unsupported` for NTLM.
+ * @throws WsError `ws-auth-unsupported` for NTLM. An absent `material.auth` means no credentials
+ * and never throws.
  * @throws WsError `ws-bad-url` (via `resolveWsUrl`) for a URL that cannot be resolved.
  */
 export function toWsSessionOptions(input: WsCallInput, material: WsSessionMaterial): WsSessionOptions {

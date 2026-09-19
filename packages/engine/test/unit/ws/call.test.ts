@@ -34,15 +34,11 @@ describe('toWsSessionOptions', () => {
     expect(options.headers?.['X-Api']).toBe('api');
   });
 
-  // An API key "in query" adds nothing to the headers, which keeps these two cases about headers
-  // alone; a real "no auth" case is exercised through the higher-level fixtures instead, since
-  // `SendAuth` (unlike `AuthConfig`) has no `none` member to construct directly.
-  const noHeaderAuth = { type: 'api-key', name: 'k', value: 'v', in: 'query' } as const;
-
   it('a request header beats an API header whatever the case', () => {
-    const options = toWsSessionOptions(callInput({ headers: [entry('x-custom', 'req')] }, [entry('X-Custom', 'api')]), {
-      auth: noHeaderAuth,
-    });
+    const options = toWsSessionOptions(
+      callInput({ headers: [entry('x-custom', 'req')] }, [entry('X-Custom', 'api')]),
+      {},
+    );
     expect(Object.keys(options.headers ?? {})).toEqual(['x-custom']);
     expect(options.headers?.['x-custom']).toBe('req');
   });
@@ -50,10 +46,17 @@ describe('toWsSessionOptions', () => {
   it('drops forbidden handshake headers rather than throwing', () => {
     const options = toWsSessionOptions(
       callInput({ headers: [entry('Sec-WebSocket-Key', 'x'), entry('Upgrade', 'y'), entry('X-Ok', 'z')] }),
-      { auth: noHeaderAuth },
+      {},
     );
     expect(options.headers).toEqual({ 'X-Ok': 'z' });
     expect(FORBIDDEN_HANDSHAKE_HEADERS.has('sec-websocket-key')).toBe(true);
+  });
+
+  it('no auth means no authorization header and no extra query rows', () => {
+    const options = toWsSessionOptions(callInput({ query: [entry('room', '7')] }), {});
+    expect(options.headers?.['Authorization']).toBeUndefined();
+    expect(options.headers?.['authorization']).toBeUndefined();
+    expect(options.url).toBe('wss://example.test/chat?room=7');
   });
 
   it('Bearer lands in the authorization header', () => {
