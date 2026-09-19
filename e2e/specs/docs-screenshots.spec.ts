@@ -82,10 +82,61 @@ const IMAGES_DIR = join(REPO_ROOT, 'docs-site', 'public', 'images');
 /** The same tripwire as the README's: a page of 300 KB images is slow on a phone. */
 const MAX_BYTES = 300 * 1024;
 
-/** Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`. */
+/**
+ * Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`.
+ * The status bar's last-request and last-saved clock times are masked on every shot, since any
+ * screen can show them; `mask` adds the regions a particular screen needs on top.
+ */
 async function shoot(page: Page, shot: string, options: { mask?: Locator[] } = {}): Promise<void> {
-  await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { ...options, maxBytes: MAX_BYTES });
+  const mask = [...(options.mask ?? []), page.getByTestId('status-bar-last'), page.getByTestId('status-bar-save')];
+  await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { mask, maxBytes: MAX_BYTES });
 }
+
+/**
+ * A collection that loses a little of everything a switcher might have: scripts, a folder variable,
+ * a dynamic variable, a password and an auth type there is no field for. The summary it produces is
+ * the one the Postman switching page explains.
+ */
+const SWITCHING_COLLECTION = JSON.stringify({
+  info: { name: 'Petstore', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+  variable: [
+    { key: 'baseUrl', value: 'https://petstore.example.com/v2' },
+    { key: 'tenant', value: 'acme' },
+  ],
+  auth: {
+    type: 'basic',
+    basic: [
+      { key: 'username', value: '{{user}}' },
+      { key: 'password', value: 'not-copied' },
+    ],
+  },
+  event: [{ listen: 'prerequest', script: { exec: ['pm.variables.set("ts", Date.now());'] } }],
+  item: [
+    {
+      name: 'Pets',
+      item: [
+        {
+          name: 'List pets',
+          event: [{ listen: 'test', script: { exec: ['pm.test("200", () => pm.response.to.have.status(200));'] } }],
+          request: { method: 'GET', url: '{{baseUrl}}/pets?tenant={{tenant}}' },
+        },
+        {
+          name: 'Create pet',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/pets',
+            header: [{ key: 'X-Request-Id', value: '{{$guid}}' }],
+            body: { mode: 'raw', raw: '{"name":"Fido"}', options: { raw: { language: 'json' } } },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Signed upload',
+      request: { method: 'PUT', url: '{{baseUrl}}/uploads', auth: { type: 'awsv4' } },
+    },
+  ],
+});
 
 /** A Calculator `Add` envelope summing `intA` and `intB`. */
 function addEnvelope(intA: string, intB: string): string {
@@ -468,5 +519,21 @@ test.describe('docs site screenshots', () => {
 
     await openConflictResolver(window);
     await shoot(window, 'shared-workspaces/conflict-resolver');
+  });
+
+  test('switching: a Postman import summary', async () => {
+    launched = await launchApp();
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'light');
+    await createWorkspace(window, 'Team APIs');
+    await createProject(window, 'Pet Service');
+
+    await openImportDialog(window, 'postman');
+    await window.getByRole('tab', { name: 'Paste' }).click();
+    await window.getByTestId('import-postman-paste').fill(SWITCHING_COLLECTION);
+    await window.getByTestId('import-postman-submit').click();
+    await expect(window.getByTestId('import-postman-warnings')).toBeVisible();
+    await shoot(window, 'switching/postman-summary');
   });
 });

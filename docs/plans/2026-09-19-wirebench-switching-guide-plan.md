@@ -31,7 +31,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
 
 ## Phase 2 — Pages
 
-- [ ] **T6. Switching section and Postman page.** Add the sidebar section and
+- [x] **T6. Switching section and Postman page.** Add the sidebar section and
   `switching/postman.mdx`, following the page shape in spec §3, with a summary screenshot added to
   `docs-screenshots.spec.ts`.
   - Verify: `pnpm docs:build`; `pnpm check:docs-images`.

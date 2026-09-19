@@ -48,6 +48,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Switching',
+          items: [{ label: 'From Postman collections', slug: 'switching/postman' }],
+        },
+        {
           label: 'Reference',
           items: [
             { label: 'Commands and shortcuts', slug: 'reference/commands' },

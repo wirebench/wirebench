@@ -1,0 +1,97 @@
+---
+title: From Postman collections
+description: What a Postman collection brings into Wirebench, what it leaves behind, and where each part lives once it's imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A Postman collection becomes **one REST API** in the project you choose:
+- folders become folders;
+- requests become requests;
+- `{{variables}}` become Wirebench properties.
+
+Scripts, variable values and credentials do not come across. The import summary lists each of
+them, so you know what to set up before the first send.
+
+To run the import, see [Postman collections](/wirebench/guides/importers/#postman-collections) in
+the importers guide. It takes Collection v2.0 and v2.1 JSON, from a file or pasted.
+
+![The import summary for a Postman collection: three requests in one folder, and five things to look at, from scripts to credentials](/wirebench/images/switching/postman-summary.png)
+
+## What carries over
+
+| In Postman | In Wirebench | More |
+| --- | --- | --- |
+| The collection, its name and description | A REST API with the same name and description | [REST](/wirebench/guides/rest-client/) |
+| A `baseUrl` or `base_url` collection variable. Without one, the origin of the first full URL | The API's **Base URL**, also offered as a suggestion in that field. Request URLs that started with `{{baseUrl}}` become relative paths | [REST](/wirebench/guides/rest-client/#create-an-api-and-a-request) |
+| Folders, nested, with their descriptions | Folders, nested the same way | |
+| Requests: method, URL and description | Requests. A request saved as a bare URL string is a GET | |
+| `{{name}}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/reference/property-syntax/) |
+| `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/guides/rest-client/#path-and-query-parameters) |
+| Query parameters and headers, including disabled ones | Rows in the **Params** and **Headers** tables. Disabled rows stay off | |
+| A raw body (JSON, XML, text…) | A raw body in the same language | [Request body](/wirebench/guides/rest-client/#request-body) |
+| An `x-www-form-urlencoded` body | A form body | |
+| A `form-data` body | A multipart body. File fields keep the file path | |
+| A binary file body | A binary body pointing at the same path | |
+| A GraphQL body | A raw JSON body holding `query` and `variables`, with `Content-Type: application/json` | |
+
+### Authentication
+
+Auth set on the collection becomes the API's auth. Auth on a folder becomes the folder's, and auth
+on a request becomes the request's. A request or folder set to inherit still inherits.
+
+| Postman auth | Wirebench auth |
+| --- | --- |
+| No auth | None |
+| Inherit auth from parent | Inherit |
+| Basic | Basic, with the username |
+| Bearer token | Bearer. The token is not copied |
+| API key | API key, with its name and whether it goes in a header or the query. The key is not copied |
+| OAuth 2.0, authorization code (with or without PKCE) | OAuth 2, authorization code with PKCE on: token URL, authorization URL, client ID and scopes |
+| OAuth 2.0, client credentials | OAuth 2, client credentials: token URL, client ID and scopes |
+| NTLM | NTLM, with the username, domain and workstation |
+
+See [Authentication](/wirebench/guides/auth/) for each scheme's fields.
+
+## What does not carry over
+
+| In Postman | What happens | What to do |
+| --- | --- | --- |
+| Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
+| Collection and folder variables, other than the base URL | Not imported. The summary names them; their values are lost | Define each as a project property or an environment variable, with the same name |
+| Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Translated to `${$guid}`, but nothing generates a value. The summary names them | Define each as a property |
+| Pre-request and test scripts | Not imported. The summary counts the items that had them | Recreate the checks by hand. Wirebench does not run scripts |
+| OAuth 2.0 password or implicit grants | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
+| Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
+| Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |
+| Saved responses and examples | Not imported, and not reported | Send the request to get a live response |
+| Environment and globals exports | Not accepted: the dialog asks for a collection | Recreate them as [environments](/wirebench/guides/environments/) |
+| Collections by URL | Not supported | Download the file, or paste its JSON |
+
+<Aside type="caution" title="Credentials typed as headers">
+A token written straight into a header, such as `Authorization: Bearer …`, is an ordinary header to
+the importer, so it arrives as plain text in the project files. Before you share the project, move it
+to the **Auth** tab, where it is stored as a secret.
+</Aside>
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys it counts, on each **Auth** tab. See
+   [Secrets](/wirebench/guides/secrets/).
+
+3. Define the variables it names as properties or environment variables. See
+   [Environments and properties](/wirebench/guides/environments/).
+
+4. Check the API's **Base URL**, then send one request to confirm the setup.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/guides/importers/): the Import dialog and every format it reads.
+- [Property expansion syntax](/wirebench/reference/property-syntax/): how `${name}` resolves.
+- [Secrets](/wirebench/guides/secrets/): where credentials live and why no import copies them.
