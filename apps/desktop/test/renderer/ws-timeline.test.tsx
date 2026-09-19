@@ -172,6 +172,15 @@ describe('WsTimeline', () => {
     render(<WsTimeline frames={FRAMES} droppedFrames={12} />);
     expect(screen.getByTestId('ws-timeline-dropped').textContent).toContain('12 earlier frames');
   });
+
+  it('counts the whole session, not just the frames still held, once past the cap', () => {
+    const held = Array.from({ length: 5000 }, (_, index) => frame({ index: index + 25 }));
+    render(<WsTimeline frames={held} droppedFrames={25} />);
+
+    // 5025 happened; 5000 are still in memory. The status line's running counts never forgot the
+    // 25 that were let go, so neither may this total.
+    expect(screen.getByTestId('ws-timeline-count').textContent).toContain('5025');
+  });
 });
 
 describe('WsFrameDetail', () => {

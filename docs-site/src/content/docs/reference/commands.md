@@ -176,7 +176,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
-| History: Re-send Last Request | — | — |
+| History: Re-send Last SOAP Request | — | — |
 | History: Compare Last Two Sends | — | — |
 | History: Delete All Entries | — | — |
 

@@ -925,9 +925,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   const forgetWsRequest = (requestId: string): void => {
     useDraftsStore.getState().discardWsRequest(requestId);
     useEditorsStore.getState().close(`ws:${requestId}`);
+    // Only a session still on the wire is worth closing: a `closed`/`error` request has no live
+    // session behind its send id, and asking main to close one is an invoke that can only answer
+    // `{ closed: false }`.
     void useExchangesStore
       .getState()
-      .disconnectWs(requestId)
+      .closeOpenWsSessions([requestId])
       .catch(() => undefined);
     useExchangesStore.getState().clearWsRequest(requestId);
   };

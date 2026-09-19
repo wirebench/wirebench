@@ -194,8 +194,18 @@ export interface WsLiveCounts {
  */
 export const WS_LIVE_FRAME_LIMIT = 5000;
 
-/** Appends a frame to a live half, letting the oldest go past {@link WS_LIVE_FRAME_LIMIT}. */
+/**
+ * Appends a frame to a live half, letting the oldest go past {@link WS_LIVE_FRAME_LIMIT}.
+ *
+ * A frame whose `index` is already at the tail is ignored. `events.ws.live` is the single source
+ * of frames — a sent frame arrives through it, not from `request.wsSend`'s reply — and this keeps
+ * that so: were a second source ever to hand the same frame over again it would be dropped here
+ * rather than doubling the row, the counts and the bytes.
+ */
 function pushLiveFrame(live: Draft<WsLiveState>, frame: WsFrameWire): void {
+  if (live.frames.at(-1)?.index === frame.index) {
+    return;
+  }
   live.frames.push(frame);
   if (frame.opcode === 'text' || frame.opcode === 'binary') {
     const counts = live.counts ?? { sent: 0, received: 0, bytes: 0 };
@@ -324,11 +334,15 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly applyGrpcLive: (event: GrpcLiveEvent) => void;
   /**
    * Opens one WebSocket session, the request and its unsaved draft named; main resolves the URL,
-   * the headers, the subprotocols and the credentials. A no-op while `status` is `connecting` or
-   * `open` — a request already has a session running (spec assumption 8).
+   * the headers, the subprotocols and the credentials. A no-op while `status` is `connecting`,
+   * `open` or `closing` — a request already has a session on the wire (spec assumption 8).
    */
   readonly connectWs: (requestId: string) => Promise<void>;
-  /** Sends one message on the open session for `requestId`. A no-op while the session is not open. */
+  /**
+   * Sends one message on the open session for `requestId`. A no-op while the session is not open.
+   *
+   * The frame it produced reaches the timeline through `events.ws.live`, not from here.
+   */
   readonly sendWsMessage: (
     requestId: string,
     message: { readonly format: 'text' | 'binary'; readonly content: string; readonly expand: boolean },
@@ -337,6 +351,15 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancelWs: (requestId: string) => Promise<void>;
   /** Closes the open session for `requestId`, if any. */
   readonly disconnectWs: (requestId: string, code?: number, reason?: string) => Promise<void>;
+  /**
+   * Closes every session still on the wire (`connecting`, `open` or `closing`), or only those of
+   * `requestIds`. For the lifecycle moments that drop this state wholesale — leaving or closing a
+   * workspace, removing a project — so a session cannot outlive the request it belongs to.
+   *
+   * The sessions to close are read synchronously, so a caller may reset the store straight after
+   * without waiting for the returned promise.
+   */
+  readonly closeOpenWsSessions: (requestIds?: readonly string[]) => Promise<void>;
   /** Clears the WebSocket exchange state for a removed request. */
   readonly clearWsRequest: (requestId: string) => void;
   /** Folds one `ws.live` event into the request whose session it belongs to. */
@@ -532,7 +555,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
     connectWs: async (requestId) => {
       const current = get().wsByRequest[requestId];
-      if (current?.status === 'connecting' || current?.status === 'open') {
+      // `closing` counts too: the session is still on the wire until main answers, and a second
+      // connect started now would run two sessions against the one request.
+      if (current?.status === 'connecting' || current?.status === 'open' || current?.status === 'closing') {
         return;
       }
       const request = useProjectStore.getState().wsRequests[requestId];
@@ -625,13 +650,10 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         });
         return;
       }
-      update((draft) => {
-        const state = draft.wsByRequest[requestId];
-        if (state?.sendId !== sendId || state.live === undefined) {
-          return;
-        }
-        pushLiveFrame(state.live, result.value);
-      });
+      // The frame itself is *not* pushed here. The engine fires `onFrame` for a sent frame as it
+      // records it, so the same frame is already on its way through `events.ws.live`; pushing the
+      // reply as well recorded it twice — duplicate rows, doubled counts, and the frame cap
+      // reached at half the real length.
     },
 
     cancelWs: async (requestId) => {
@@ -658,6 +680,37 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         ...(code !== undefined ? { code } : {}),
         ...(reason !== undefined ? { reason } : {}),
       });
+    },
+
+    closeOpenWsSessions: async (requestIds) => {
+      // Collected before anything is awaited: the caller resets this state as soon as it returns.
+      const live = Object.entries(get().wsByRequest).filter(
+        ([requestId, state]) =>
+          (requestIds === undefined || requestIds.includes(requestId)) &&
+          state.sendId !== undefined &&
+          (state.status === 'connecting' || state.status === 'open' || state.status === 'closing'),
+      );
+      if (live.length === 0) {
+        return;
+      }
+      update((draft) => {
+        for (const [requestId] of live) {
+          const state = draft.wsByRequest[requestId];
+          if (state !== undefined) {
+            state.status = 'closing';
+          }
+        }
+      });
+      // One session refusing to close must not leave the rest of them open.
+      await Promise.all(
+        live.map(async ([, state]) => {
+          try {
+            await ipc().request.wsClose({ sendId: state.sendId! });
+          } catch {
+            // Nothing to report: the state this close was tidying is about to be dropped anyway.
+          }
+        }),
+      );
     },
 
     clearWsRequest: (requestId) => {

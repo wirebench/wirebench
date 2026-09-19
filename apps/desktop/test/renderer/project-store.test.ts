@@ -1101,6 +1101,23 @@ describe('useProjectStore with REST data', () => {
     expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
   });
 
+  it('asks main to close nothing when the deleted request’s session had already finished', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({ wsApis: [wsApiWire()], wsRequests: [wsRequestWire()], ...overrides });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: false } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: wsWire({ wsRequests: [] }) } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useExchangesStore.setState({ wsByRequest: { 'ws-1': { status: 'closed', sendId: 'send-1' } } });
+
+    await useProjectStore.getState().removeWsRequest('ws-1');
+
+    expect(wsClose).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().wsByRequest['ws-1']).toBeUndefined();
+  });
+
   it('closes an open WebSocket session and drops the tab/draft of a request removed with its folder', async () => {
     const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
       projectWire({

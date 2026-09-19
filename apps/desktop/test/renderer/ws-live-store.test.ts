@@ -174,7 +174,7 @@ describe('sendWsMessage', () => {
     expect(useExchangesStore.getState().wsByRequest['ws-1']?.error?.code).toBe('ws-not-open');
   });
 
-  it('sends on the open session and records the frame that went', async () => {
+  it('sends on the open session and leaves the frame to the live event', async () => {
     void startConnect();
     const sendId = sendIdOf();
     live({ kind: 'handshake', sendId, handshake: handshake() });
@@ -182,7 +182,81 @@ describe('sendWsMessage', () => {
     await useExchangesStore.getState().sendWsMessage('ws-1', { format: 'text', content: 'hello', expand: false });
 
     expect(wsSend).toHaveBeenCalledWith({ sendId, requestId: 'ws-1', format: 'text', content: 'hello', expand: false });
-    expect(useExchangesStore.getState().wsByRequest['ws-1']?.live?.frames.map((f) => f.text)).toEqual(['hello']);
+    // The reply is not pushed: the engine records the frame and fires `onFrame` for it, so the
+    // timeline would otherwise hold it twice.
+    expect(useExchangesStore.getState().wsByRequest['ws-1']?.live?.frames).toEqual([]);
+  });
+
+  it('a sent message adds exactly one row and counts once, reply and live event together', async () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+    const sent = frame({ index: 0, direction: 'sent', text: 'hello', size: 5 });
+    wsSend.mockResolvedValue({ ok: true, value: sent });
+
+    await useExchangesStore.getState().sendWsMessage('ws-1', { format: 'text', content: 'hello', expand: false });
+    live({ kind: 'frame', sendId, frame: sent });
+
+    const state = useExchangesStore.getState().wsByRequest['ws-1'];
+    expect(state?.live?.frames.map((one) => one.text)).toEqual(['hello']);
+    expect(state?.live?.counts).toEqual({ sent: 1, received: 0, bytes: 5 });
+  });
+
+  it('ignores a frame whose index is already at the tail, whatever hands it over', () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+    const one = frame({ index: 0, direction: 'sent', text: 'one', size: 3 });
+
+    live({ kind: 'frame', sendId, frame: one });
+    live({ kind: 'frame', sendId, frame: { ...one } });
+
+    const state = useExchangesStore.getState().wsByRequest['ws-1'];
+    expect(state?.live?.frames).toHaveLength(1);
+    expect(state?.live?.counts).toEqual({ sent: 1, received: 0, bytes: 3 });
+  });
+});
+
+describe('closeOpenWsSessions', () => {
+  it('closes every session still on the wire and leaves a finished one alone', async () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+
+    await useExchangesStore.getState().closeOpenWsSessions();
+
+    expect(wsClose).toHaveBeenCalledWith({ sendId });
+
+    wsClose.mockClear();
+    useExchangesStore.setState({ wsByRequest: { 'ws-1': { status: 'closed', sendId: 'done' } } });
+    await useExchangesStore.getState().closeOpenWsSessions();
+    expect(wsClose).not.toHaveBeenCalled();
+  });
+
+  it('closes only the requests it was given', async () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+
+    await useExchangesStore.getState().closeOpenWsSessions(['ws-other']);
+    expect(wsClose).not.toHaveBeenCalled();
+
+    await useExchangesStore.getState().closeOpenWsSessions(['ws-1']);
+    expect(wsClose).toHaveBeenCalledWith({ sendId });
+  });
+});
+
+describe('connectWs while closing', () => {
+  it('refuses a second connect while the session is still closing', async () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+    await useExchangesStore.getState().disconnectWs('ws-1');
+    expect(useExchangesStore.getState().wsByRequest['ws-1']?.status).toBe('closing');
+
+    await useExchangesStore.getState().connectWs('ws-1');
+
+    expect(openWs).toHaveBeenCalledTimes(1);
   });
 });
 

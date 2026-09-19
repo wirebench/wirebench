@@ -249,8 +249,11 @@ export function WsResponsePane({ state, onSend, sendShortcut }: WsResponsePanePr
   const handshake = live?.handshake ?? exchange?.handshake;
   const open = state?.status === 'open';
 
+  // The whole session's frame count. Past the live cap `frames` holds only the newest of them,
+  // so the badge adds back the ones let go rather than reporting a total that stopped growing.
+  const totalFrames = frames.length + (live?.droppedFrames ?? 0);
   const items = TABS.map((item) =>
-    item.id === 'timeline' && frames.length > 0 ? { ...item, badge: String(frames.length) } : item,
+    item.id === 'timeline' && totalFrames > 0 ? { ...item, badge: String(totalFrames) } : item,
   );
 
   return (

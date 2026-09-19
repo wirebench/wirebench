@@ -89,7 +89,8 @@ describe('history commands', () => {
     });
   });
 
-  it('re-sends the newest SOAP entry, passing over newer entries of other kinds', async () => {
+  it('re-sends the newest SOAP entry, passing over newer entries of other kinds, and says so', async () => {
+    showToast.mockReset();
     const resend = vi.fn().mockResolvedValue({ ok: true, value: { sendId: 's-1' } });
     installWirebenchApi({ history: { resend } });
     useHistoryStore.setState({
@@ -104,6 +105,22 @@ describe('history commands', () => {
     await vi.waitFor(() => {
       expect(resend).toHaveBeenCalledWith({ id: 'soap' });
     });
+    // Nothing older may be replayed in silence: the row that is being re-sent is named.
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Re-sending the newest SOAP entry'));
+  });
+
+  it('says nothing extra when the newest entry is the one it re-sends', async () => {
+    showToast.mockReset();
+    const resend = vi.fn().mockResolvedValue({ ok: true, value: { sendId: 's-1' } });
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({ entries: [entry({ id: 'soap', kind: 'soap' })], total: 1 });
+
+    await runCommand('history.resend', context);
+
+    await vi.waitFor(() => {
+      expect(resend).toHaveBeenCalledWith({ id: 'soap' });
+    });
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('says there is nothing to re-send when no entry is SOAP', async () => {

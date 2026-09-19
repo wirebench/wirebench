@@ -192,6 +192,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       // workspace being left.
       useDraftsStore.getState().reset();
       useEditorsStore.getState().reset();
+      // Before the reset: dropping `wsByRequest` forgets the send ids, and main would then hold
+      // sockets open against a workspace nothing on screen belongs to any more. The close is
+      // asked for synchronously and its promise deliberately not waited on — the shell must not
+      // wait on a socket to finish switching workspaces.
+      void useExchangesStore.getState().closeOpenWsSessions();
       useExchangesStore.getState().reset();
       useInterfaceEditorStore.getState().reset();
       useProjectStore.getState().reset();
@@ -375,6 +380,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
 
     removeProject: async (projectId, deleteFiles) => {
       const sentIn = generation;
+      // A session belonging to a project that is about to stop existing has nothing left to
+      // answer to, and the mirror naming its request goes with the project.
+      const mirror = useProjectStore.getState();
+      const owned = Object.keys(mirror.wsRequests).filter((requestId) => mirror.projectOf[requestId] === projectId);
+      void useExchangesStore.getState().closeOpenWsSessions(owned);
       applyReply(sentIn, unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
     },
 

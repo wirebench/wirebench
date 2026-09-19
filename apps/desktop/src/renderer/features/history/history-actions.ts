@@ -26,12 +26,22 @@ export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind'>): bo
   return (entry.kind ?? 'soap') === 'soap';
 }
 
-/** Re-sends the most recent SOAP history entry, or says there is none. */
+/**
+ * Re-sends the most recent SOAP history entry, or says there is none.
+ *
+ * Only SOAP can be replayed, so the newest entry overall is not always the one this re-sends.
+ * When it is not, the entry that *is* being re-sent is named — a command called "re-send the last
+ * request" must never quietly replay something older than the row at the top of History.
+ */
 export async function resendLastHistoryEntry(): Promise<void> {
-  const entry = useHistoryStore.getState().entries.find(canResendHistoryEntry);
+  const entries = useHistoryStore.getState().entries;
+  const entry = entries.find(canResendHistoryEntry);
   if (entry === undefined) {
     showToast('Nothing to re-send: only a SOAP entry can be re-sent from History.');
     return;
+  }
+  if (entry.id !== entries[0]?.id) {
+    showToast(`Re-sending the newest SOAP entry: ${entry.requestName} (${formatClockTime(entry.at)}).`);
   }
   const result = await ipc().history.resend({ id: entry.id });
   if (!result.ok) {

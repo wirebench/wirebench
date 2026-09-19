@@ -256,4 +256,20 @@ describe('the session pane', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'TLS' }));
     expect(screen.getByText(/No TLS/)).toBeTruthy();
   });
+
+  it('badges the whole session’s frame count, including the ones let go past the cap', () => {
+    const state: WsExchangeState = {
+      status: 'open',
+      sendId: 's1',
+      live: {
+        open: true,
+        handshake: handshake(),
+        frames: [{ index: 25, direction: 'received', opcode: 'text', at: 1, size: 2, text: 'hi' }],
+        droppedFrames: 25,
+      },
+    };
+    render(<WsResponsePane state={state} />);
+
+    expect(screen.getByRole('tab', { name: /Timeline/ }).textContent).toContain('26');
+  });
 });

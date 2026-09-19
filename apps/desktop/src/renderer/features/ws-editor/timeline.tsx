@@ -100,6 +100,11 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
   const [query, setQuery] = useState('');
   const scroller = useRef<HTMLDivElement | null>(null);
 
+  // The session's real frame count, not the count still held: past the live cap the oldest frames
+  // are let go, and a total that shrank back to the cap would disagree with the status line's
+  // running counts, which never forget one.
+  const total = frames.length + (droppedFrames ?? 0);
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return frames.filter(
@@ -181,8 +186,8 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
         />
         <span data-testid="ws-timeline-count" className="shrink-0 text-fg-subtle">
           {visible.length === frames.length
-            ? `${String(frames.length)} frame${frames.length === 1 ? '' : 's'}`
-            : `${String(visible.length)} of ${String(frames.length)} frames`}
+            ? `${String(total)} frame${total === 1 ? '' : 's'}`
+            : `${String(visible.length)} of ${String(total)} frames`}
         </span>
       </div>
       {droppedFrames !== undefined && droppedFrames > 0 && (
