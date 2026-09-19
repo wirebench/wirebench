@@ -90,7 +90,7 @@ runs:
         # when it looks like a version tag (v1.2.3); else `latest`.
         version="$WB_VERSION"
         if [ -z "$version" ]; then
-          if [[ "$WB_ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "$WB_ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             version="${WB_ACTION_REF#v}"
           else
             version="latest"

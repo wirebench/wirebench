@@ -5,10 +5,13 @@
  * flow through `env:` so a malicious value in, say, `select` can't be read back as shell source.
  * Tasks 5 and 6 append cases here for the GitLab template and the release workflow.
  */
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 const repoRoot = join(import.meta.dirname, '..');
 
@@ -96,5 +99,99 @@ describe('action/action.yml', () => {
   it('sets up Node with the node-version input', () => {
     const setupNode = action.runs.steps.find((step) => step.uses?.startsWith('actions/setup-node@'));
     expect(setupNode).toBeDefined();
+  });
+});
+
+/**
+ * Runs the composite step's actual `run:` script (not a reimplementation of its version logic)
+ * against a fake `npx` that records its argv instead of hitting the network, so these cases catch
+ * a regression in the real script the way the other unit tests can't — YAML parsing alone can't
+ * see what a shell conditional does with its input.
+ */
+describe('action/action.yml run script: version resolution', () => {
+  const runScript = (() => {
+    const action = loadAction();
+    const step = action.runs.steps.find((candidate) => candidate.id === 'run');
+    if (step?.run === undefined) {
+      throw new Error('action.yml has no step with id "run"');
+    }
+    return step.run;
+  })();
+
+  const tempDirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  /** Executes the run script with the given env, returning the fake npx's captured argv and the exit-code output. */
+  function runWithFakeNpx(env: Readonly<Record<string, string>>): { npxArgs: string[]; exitCode: string | undefined } {
+    const dir = mkdtempSync(join(tmpdir(), 'wirebench-recipes-test-'));
+    tempDirs.push(dir);
+
+    const binDir = join(dir, 'bin');
+    const capturePath = join(dir, 'npx-args.txt');
+    const githubOutput = join(dir, 'github-output.txt');
+    const scriptPath = join(dir, 'run.sh');
+
+    execFileSync('mkdir', ['-p', binDir]);
+    // A fake `npx` ahead of the real one on PATH: it records its own argv (one per line) and
+    // exits 0, so the script under test never touches the network.
+    writeFileSync(join(binDir, 'npx'), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > "${capturePath}"\nexit 0\n`);
+    chmodSync(join(binDir, 'npx'), 0o755);
+    writeFileSync(scriptPath, `#!/usr/bin/env bash\n${runScript}`);
+    chmodSync(scriptPath, 0o755);
+    writeFileSync(githubOutput, '');
+
+    const defaults: Record<string, string> = {
+      WB_PROJECT: './project',
+      WB_ENV: '',
+      WB_SELECT: '',
+      WB_VARS: '',
+      WB_JUNIT: '',
+      WB_JSON: '',
+      WB_HTML: '',
+      WB_BAIL: 'false',
+      WB_REQUIRE_ASSERTIONS: 'false',
+      WB_INSECURE: 'false',
+      WB_TIMEOUT: '',
+      WB_SLA: '',
+      WB_VERSION: '',
+      WB_NODE_VERSION: '24',
+      WB_ACTION_REF: '',
+      WB_PACKAGES: '',
+    };
+
+    execFileSync('bash', [scriptPath], {
+      env: { ...defaults, ...env, PATH: `${binDir}:${process.env['PATH']}`, GITHUB_OUTPUT: githubOutput },
+      stdio: 'pipe',
+    });
+
+    const npxArgs = readFileSync(capturePath, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0);
+    const outputMatch = readFileSync(githubOutput, 'utf8').match(/^exit-code=(.*)$/m);
+    return { npxArgs, exitCode: outputMatch?.[1] };
+  }
+
+  it('strips the leading v from an exact version tag', () => {
+    const { npxArgs, exitCode } = runWithFakeNpx({ WB_ACTION_REF: 'v2.3.0' });
+    expect(npxArgs).toContain('@wirebench/cli@2.3.0');
+    expect(exitCode).toBe('0');
+  });
+
+  it('keeps a pre-release ref (v2.3.0-rc.1) instead of falling back to latest', () => {
+    const { npxArgs } = runWithFakeNpx({ WB_ACTION_REF: 'v2.3.0-rc.1' });
+    expect(npxArgs).toContain('@wirebench/cli@2.3.0-rc.1');
+    expect(npxArgs.some((arg) => arg.includes('@latest'))).toBe(false);
+  });
+
+  it('falls back to latest for a non-version ref (e.g. a branch name)', () => {
+    const { npxArgs } = runWithFakeNpx({ WB_ACTION_REF: 'main' });
+    expect(npxArgs).toContain('@wirebench/cli@latest');
+  });
+
+  it('WB_VERSION overrides the ref entirely', () => {
+    const { npxArgs } = runWithFakeNpx({ WB_ACTION_REF: 'v2.3.0-rc.1', WB_VERSION: '9.9.9' });
+    expect(npxArgs).toContain('@wirebench/cli@9.9.9');
   });
 });
