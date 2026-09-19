@@ -4,6 +4,7 @@ import { showToast } from '../../components/toast.js';
 import { type LogEntry, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
+import { openWsRequestTab } from '../ws-editor/ws-actions.js';
 import { openRequestTab } from '../request-editor/request-actions.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { protocolOf, urlOf } from './log-filter.js';
@@ -89,6 +90,8 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
         openRestRequestTab(requestId);
       } else if (protocol === 'grpc') {
         openGrpcRequestTab(requestId);
+      } else if (protocol === 'websocket') {
+        openWsRequestTab(requestId);
       } else {
         openRequestTab(requestId);
       }
