@@ -16,8 +16,9 @@ Decided with the owner on 2026-09-19:
    `api.yaml` and of every request file, the way gRPC does. In memory a `Project` carries `wsApis` beside
    `grpcApis`, `apis` and `interfaces`. The container has a `definition` slot that stays empty in this spec; #100
    fills it.
-2. **The transport is undici's `WebSocket`**, already a dependency. It takes the same `Agent`/`ProxyAgent`
-   dispatcher `createDispatcher` builds for `sendHttp`, so proxy, client certificates, the custom CA bundle and
+2. **The transport is undici's `WebSocket`**, already a dependency. It takes the same TLS and proxy *options*
+   `sendHttp` does, built through `createDispatcher` when there is no proxy and through `proxyAgentOptionsFor`
+   (with `proxyTunnel: true`) when there is one, so client certificates, the custom CA bundle and
    `trustInvalid` are reused rather than re-implemented. No new runtime dependency.
 3. **History keeps a capped transcript.** One entry per session, written when it closes.
 4. **The CLI runner is out of scope.** It refuses a `kind: websocket` request with a named reason.
@@ -304,6 +305,28 @@ ADR-0007, the roadmap, the changelog and the docs site describe the fourth conta
 1. Does a refused handshake (401/403) surface its status and headers through undici? The task-1 spike answers
    it. Decided 2026-09-19: whatever it finds is accepted — if the status is not surfaced, the HTTP Log entry
    shows the request side and the error text, the gap is noted here, and a second transport is not added for it.
+
+### 13.1 What the task-1 spike found (undici 8.10.2)
+
+- **A refused handshake exposes no HTTP status or headers through the WebSocket API.** `error` fires with an
+  empty `message` and an internal `TypeError` on `error.error` (an undici implementation detail, not a stable
+  field to branch on); no status, no response headers, nothing reachable from the `WebSocket` object says why
+  the handshake failed. `close` is not guaranteed to fire afterward — once a prior WebSocket has already opened
+  against the same origin, the pooled connection means a subsequent refused handshake's `close` never arrives,
+  only `error` does. The session therefore treats `error` before open as the terminal signal for a failed
+  handshake and never waits on `close` to follow it. The HTTP Log entry for a refusal shows the request side and
+  a generic failure, matching decision 1 above.
+- **The raw request head and the TLS socket are observable**, one layer below the WebSocket object: undici's
+  `undici:client:sendHeaders` diagnostics channel fires for the handshake's underlying HTTP request, carrying
+  the raw request head (including the `sec-websocket-*` headers undici adds) and the connection's socket. This
+  is what the Handshake tab reads from.
+- **A proxied WebSocket needs `proxyTunnel: true`.** undici's `WebSocket` rewrites `ws:`/`wss:` to `http:`/
+  `https:` before dispatching, and `ProxyAgent` only CONNECT-tunnels an `http:` request when `proxyTunnel: true`
+  is set; without it, the request is forward-proxied instead, which a plain forward proxy has no `upgrade`
+  handler for and the handshake hangs. `createDispatcher` does not set `proxyTunnel`, so the session does not
+  reuse it for the proxy case — it builds its own agent straight from `proxyAgentOptionsFor(proxy, { tls,
+  localAddress }, false, { proxyTunnel: true })`, `new ProxyAgent(...)` from undici. `createDispatcher` stays
+  unchanged and is used only when there is no proxy.
 
 Settled 2026-09-19: saved messages are separate files (§4); the History cap is 500 frames, both ends kept, and
 1 MB (§7); no manual ping and one connection per tab stand.
