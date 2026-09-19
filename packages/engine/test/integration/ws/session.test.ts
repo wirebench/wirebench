@@ -2,6 +2,8 @@
  * `openWsSession` against the in-process test WebSocket server: the handshake, every frame kind,
  * every way a session ends, and the transport options (TLS, proxy, message-size cap) it accepts.
  */
+import diagnosticsChannel from 'node:diagnostics_channel';
+import { request as undiciRequest } from 'undici';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { WsError } from '../../../src/errors.js';
 import { openWsSession, type WsSessionHandle } from '../../../src/ws/session.js';
@@ -127,13 +129,17 @@ describe('openWsSession', () => {
     expect(exchange.closed).toEqual({ code: 4000, reason: 'bye', by: 'server' });
   });
 
-  it('a dropped socket closes by error with code 1006', async () => {
+  it('a dropped socket closes by error with code 1006, without marking the handshake as refused', async () => {
     const session = track(openWsSession({ url: `${server.url}/drop` }));
     await until(() => session.isOpen, 'open');
     session.send('trigger');
     const exchange = await session.done;
     expect(exchange.closed.by).toBe('error');
     expect(exchange.closed.code).toBe(1006);
+    // The handshake succeeded (101) before the socket was dropped: it is not a refusal, so
+    // `handshake.error` must stay unset even though the exchange overall closed `by: 'error'`.
+    expect(exchange.handshake.status).toBe(101);
+    expect(exchange.handshake.error).toBeUndefined();
   });
 
   it('a refused handshake resolves done with by error, no frames, and a handshake error', async () => {
@@ -281,6 +287,61 @@ describe('openWsSession', () => {
     expect(session.isOpen).toBe(true);
     session.close(1000, 'cleanup');
     await session.done;
+  });
+
+  it('a malformed URL throws ws-bad-options, leaking no diagnostics subscription', () => {
+    const before = diagnosticsChannel.hasSubscribers('undici:websocket:open');
+    try {
+      openWsSession({ url: 'not a url' });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(WsError);
+      expect((err as WsError).code).toBe('ws-bad-options');
+    }
+    expect(diagnosticsChannel.hasSubscribers('undici:websocket:open')).toBe(before);
+  });
+
+  it('a duplicate subprotocol throws ws-bad-options, leaking no diagnostics subscription', () => {
+    const before = diagnosticsChannel.hasSubscribers('undici:websocket:open');
+    try {
+      openWsSession({ url: `${server.url}/echo`, subprotocols: ['a', 'a'] });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(WsError);
+      expect((err as WsError).code).toBe('ws-bad-options');
+    }
+    expect(diagnosticsChannel.hasSubscribers('undici:websocket:open')).toBe(before);
+  });
+
+  it('a subprotocol with a space throws ws-bad-options, leaking no diagnostics subscription', () => {
+    const before = diagnosticsChannel.hasSubscribers('undici:websocket:open');
+    try {
+      openWsSession({ url: `${server.url}/echo`, subprotocols: ['not a token'] });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(WsError);
+      expect((err as WsError).code).toBe('ws-bad-options');
+    }
+    expect(diagnosticsChannel.hasSubscribers('undici:websocket:open')).toBe(before);
+  });
+
+  it('a concurrent plain HTTP request to the same URL never donates its head', async () => {
+    const path = '/echo?room=concurrent';
+    const session = track(openWsSession({ url: `${server.url}${path}` }));
+    // Fired while the session's own upgrade is in flight; whatever answer (or failure) this gets
+    // from the test server is irrelevant and swallowed — the point is only that it must never be
+    // mistaken for the session's own request in `onSendHeaders`.
+    // The test server has no plain-request handler at all (only 'upgrade'), so this never gets a
+    // response and would otherwise hold its socket open past the test — aborted shortly after
+    // being fired, once its head has gone out, so it can't block `afterAll`'s `server.close()`.
+    const plainUrl = `http://127.0.0.1:${server.port}${path}`;
+    const plainAbort = new AbortController();
+    void undiciRequest(plainUrl, { signal: plainAbort.signal }).catch(() => undefined);
+    setTimeout(() => plainAbort.abort(), 50);
+    await until(() => session.isOpen, 'open');
+    session.close();
+    const exchange = await session.done;
+    expect(exchange.handshake.rawRequestHead?.toLowerCase()).toContain('sec-websocket-key');
   });
 
   it('onClosed fires exactly once, after the last onFrame', async () => {
