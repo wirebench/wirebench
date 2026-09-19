@@ -50,8 +50,10 @@ export interface DemoServer {
 }
 
 /**
- * The fixture's REST API: `/ok`, `/slow` (200 ms late), `/broken` (500) and `/secure` (Basic
- * `svc:hunter2-long`, else 401). The engine's test
+ * The fixture's REST API: `/ok`, `/slow` (200 ms late), `/broken` (500), `/secure` (Basic
+ * `svc:hunter2-long`, else 401) and `/echo`, which answers 401 with the Basic password it was sent
+ * written back JSON-string-escaped, entity-escaped and form-encoded — the way a careless service
+ * echoes a credential into an error body. The engine's test
  * server has no per-route delay, and this is small enough not to be worth adding one there.
  */
 export async function startDemoServer(): Promise<DemoServer> {
@@ -71,6 +73,24 @@ export async function startDemoServer(): Promise<DemoServer> {
       setTimeout(() => json(200, { ok: true }), 200);
     } else if (path === '/broken') {
       json(500, { ok: false });
+    } else if (path === '/echo') {
+      const header = req.headers.authorization ?? '';
+      const decoded = Buffer.from(header.replace(/^Basic /, ''), 'base64').toString('utf8');
+      const password = decoded.slice(decoded.indexOf(':') + 1);
+      const entities = password
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+      res.writeHead(401, { 'content-type': 'text/plain' });
+      res.end(
+        [
+          `json: {"password":${JSON.stringify(password)}}`,
+          `xml: <password>${entities}</password>`,
+          `form: ${new URLSearchParams({ password }).toString()}`,
+        ].join('\n'),
+      );
     } else if (path === '/secure') {
       secureAuth.push(req.headers.authorization);
       json(req.headers.authorization === expected ? 200 : 401, {});

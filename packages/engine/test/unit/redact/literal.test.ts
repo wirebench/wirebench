@@ -19,6 +19,34 @@ describe('createSecretMasker', () => {
     expect(mask('?pw=p%40ss%20word')).toBe('?pw=<redacted>');
   });
 
+  describe('the escaped forms a secret takes in a body', () => {
+    const secret = `p&ss<1 "q'\\x~`;
+    const mask = createSecretMasker([secret]);
+
+    it('masks the three-entity XML form a SOAP envelope or wsse:Password carries', () => {
+      expect(mask(`<wsse:Password>p&amp;ss&lt;1 "q'\\x~</wsse:Password>`)).toBe(
+        '<wsse:Password><redacted></wsse:Password>',
+      );
+    });
+
+    it('masks the five-entity XML form an escaped REST XML body carries', () => {
+      expect(mask('<pw>p&amp;ss&lt;1 &quot;q&apos;\\x~</pw>')).toBe('<pw><redacted></pw>');
+    });
+
+    it('masks the JSON-string form a JSON body carries', () => {
+      expect(mask(`{"pw":"p&ss<1 \\"q'\\\\x~"}`)).toBe('{"pw":"<redacted>"}');
+    });
+
+    it("masks the form-encoded body's form and URLSearchParams' form", () => {
+      expect(mask('pw=p%26ss%3C1+%22q%27%5Cx~&a=1')).toBe('pw=<redacted>&a=1');
+      expect(mask('pw=p%26ss%3C1+%22q%27%5Cx%7E&a=1')).toBe('pw=<redacted>&a=1');
+    });
+
+    it('keeps the length floor: a short value is not masked in any form', () => {
+      expect(createSecretMasker(['a&b'])('a&amp;b a%26b')).toBe('a&amp;b a%26b');
+    });
+  });
+
   it('ignores empty and very short values rather than shredding the text', () => {
     const mask = createSecretMasker(['', 'ab']);
     expect(mask('abab')).toBe('abab');

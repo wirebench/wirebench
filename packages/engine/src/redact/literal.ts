@@ -12,15 +12,46 @@ import { REDACTED_MARKER } from './index.js';
 const MIN_MASKED_LENGTH = 4;
 
 /**
- * Builds a function that replaces every occurrence of `values` — and the base64 and
- * percent-encoded forms of each — with the redaction marker.
+ * The forms a value takes on the wire besides itself — each one the engine (or its XML serializer,
+ * or `URLSearchParams`) really writes somewhere:
+ * - percent-encoded, as `encodeURIComponent` puts it in a URL;
+ * - `application/x-www-form-urlencoded`, both as `rest/body.ts`'s `formEncode` writes a form body
+ *   and as `URLSearchParams` writes an OAuth2 token request (they differ on `~`);
+ * - XML text with the three entities `entitizeValue` and a DOM serializer emit (the SOAP envelope,
+ *   a WS-Security `wsse:Password`), and with all five, as `escapeForLanguage` escapes an XML body;
+ * - a JSON string's content, as `escapeForLanguage` escapes a JSON body or `JSON.stringify` writes
+ *   an error detail.
+ * A server echoing the value back is free to use any of them too.
+ */
+function encodedForms(value: string): string[] {
+  const xml3 = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return [
+    encodeURIComponent(value),
+    encodeURIComponent(value)
+      .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+      .replace(/%20/g, '+'),
+    new URLSearchParams({ v: value }).toString().slice(2),
+    xml3,
+    xml3.replace(/"/g, '&quot;').replace(/'/g, '&apos;'),
+    JSON.stringify(value).slice(1, -1),
+  ];
+}
+
+/**
+ * Builds a function that replaces every occurrence of `values` — and the base64, percent-, form-,
+ * XML- and JSON-escaped forms of each — with the redaction marker.
  */
 export function createSecretMasker(values: readonly string[]): (text: string) => string {
   const plain = values.filter((value) => value.length >= MIN_MASKED_LENGTH);
   const needles = new Set<string>();
   for (const value of plain) {
     needles.add(value);
-    needles.add(encodeURIComponent(value));
+    for (const form of encodedForms(value)) {
+      // An escaped form is never shorter than the value, but the floor is kept explicit per needle.
+      if (form.length >= MIN_MASKED_LENGTH) {
+        needles.add(form);
+      }
+    }
   }
   // Longest first: a value that is a prefix of another must not leave the other's tail behind.
   const ordered = [...needles].sort((a, b) => b.length - a.length);

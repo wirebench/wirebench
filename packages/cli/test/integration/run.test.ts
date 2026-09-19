@@ -47,7 +47,7 @@ describe('wirebench run', () => {
   });
 
   it('runs the SOAP request against its environment endpoint', async () => {
-    const { code, stdout } = await run('Echo');
+    const { code, stdout } = await run('Echo/Echo/Say hello');
     expect(stdout).toContain('Echo/Echo/Say hello');
     expect(code).toBe(0);
   });

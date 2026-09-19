@@ -1,0 +1,9 @@
+entries:
+  - addCreated: false
+    addNonce: false
+    kind: username-token
+    passwordRef: sec_wss
+    passwordType: text
+    username: svc
+id: RUNNER0010
+name: Token
