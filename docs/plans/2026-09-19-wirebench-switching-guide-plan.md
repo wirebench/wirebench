@@ -24,7 +24,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   secret and passes `passwordRef`. The "set a password" toast only appears when none was given.
   - Verify: renderer or IPC unit test; e2e: paste `curl -u` and send against the Basic-auth test server
     without entering the password again.
-- [ ] **T5. cURL preview follows the target.** For a REST target the preview shows method, URL, header
+- [x] **T5. cURL preview follows the target.** For a REST target the preview shows method, URL, header
   names, body kind and auth, with REST problems only. For a SOAP target it stays as it is. After an import
   the problems are listed, not just counted.
   - Verify: unit tests for `curl-preview.ts` for both targets.
