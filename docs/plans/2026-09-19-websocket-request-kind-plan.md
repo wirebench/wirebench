@@ -1125,6 +1125,41 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
 }
 ```
 
+**Two amendments from Task 1's findings (undici 8.10.2) — they override the listing above:**
+
+- **The proxy agent.** `createDispatcher({ proxy })` does not CONNECT-tunnel a WebSocket handshake: undici
+  rewrites `ws:` to `http:` and `ProxyAgent` only tunnels `http:` when `proxyTunnel` is true. So build the
+  dispatcher like this, leaving `createDispatcher` untouched, and always own (and close) a proxy agent:
+  ```ts
+  import { ProxyAgent } from 'undici';
+  import { createDispatcher, proxyAgentOptionsFor } from '../http/client.js';
+
+  const dispatcher =
+    options.proxy !== undefined
+      ? new ProxyAgent(
+          proxyAgentOptionsFor(
+            options.proxy,
+            {
+              ...(options.tls !== undefined ? { tls: options.tls } : {}),
+              ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
+            },
+            false,
+            { proxyTunnel: true },
+          ),
+        )
+      : createDispatcher({
+          ...(options.tls !== undefined ? { tls: options.tls } : {}),
+          ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
+        });
+  ```
+- **A refused handshake may never fire `close`.** On an origin whose connection is pooled, only `error`
+  fires. Move the body of the `close` listener into a `settle(code, reason, wasClean)` function guarded by
+  `settled`; call it from `close`, and from `error` **when no handshake has happened** as
+  `settle(1006, '', false)` on the next macrotask (`setTimeout(…, 0)`), so a `close` that does arrive wins and
+  carries its own code. An empty `error.message` becomes `The server refused the WebSocket handshake`. Add a
+  test: open and close `/echo` first, then `/refuse` on the same server — `done` must still resolve.
+  No HTTP status is available for a refusal; `handshake.status` stays undefined (test 6 asserts that).
+
 Settle these against the tests, not by guessing:
 1. **`closed.code` in test 13** is whatever the close event reports after a client `close(1000, …)` — expect
    `1000`. Test 13 asserts on `by` and `reason` for that reason.
