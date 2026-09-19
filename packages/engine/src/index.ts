@@ -1043,3 +1043,5 @@ export type {
 export { resolveWsUrl } from './ws/url.js';
 export { prettyFrameText } from './ws/pretty.js';
 export type { PrettyFrameResult } from './ws/pretty.js';
+export { openWsSession } from './ws/session.js';
+export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
