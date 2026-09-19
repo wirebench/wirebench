@@ -33,6 +33,10 @@ function cancelPending(): void {
 /** Hands every current draft to main for `workspaceId` now, replacing what it held. */
 export async function stashDrafts(workspaceId: string): Promise<void> {
   cancelPending();
+  // `workspace.stashDrafts` does not yet carry a WebSocket field (its wire schema, shared with
+  // main, has none) — a WS draft is not handed over across a restart. Restoring one on the next
+  // launch (`workspace.takeRestored`'s `wsDrafts`) still works; only this session's own crash
+  // recovery is the gap, and closing that is main-side wire work outside this task.
   const { requests, restRequests, grpcRequests } = useDraftsStore.getState();
   await ipc().workspace.stashDrafts({
     workspaceId,
@@ -58,7 +62,8 @@ export function subscribeToDraftStash(workspaceId: () => string | undefined): ()
     if (
       state.requests === previous.requests &&
       state.restRequests === previous.restRequests &&
-      state.grpcRequests === previous.grpcRequests
+      state.grpcRequests === previous.grpcRequests &&
+      state.wsRequests === previous.wsRequests
     ) {
       return;
     }
@@ -145,6 +150,14 @@ export function applyRestored(workspaceId: string, restored: WorkspaceRestoredRe
       continue;
     }
     projects.editGrpcRequest(requestId, patch);
+    restoredDrafts += 1;
+  }
+  for (const [requestId, patch] of Object.entries(restored.wsDrafts)) {
+    if (projects.wsRequests[requestId] === undefined) {
+      droppedDrafts += 1;
+      continue;
+    }
+    projects.editWsRequest(requestId, patch);
     restoredDrafts += 1;
   }
   for (const notice of restored.notices) {

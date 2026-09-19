@@ -47,7 +47,9 @@ export interface EditorTab {
     | 'rest-request'
     | 'api'
     | 'grpc-request'
-    | 'grpc-api';
+    | 'grpc-api'
+    | 'ws-request'
+    | 'ws-api';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -64,6 +66,10 @@ export interface EditorTab {
   readonly grpcRequestId?: string;
   /** Set when `kind` is `'grpc-api'`: the gRPC API this tab shows. */
   readonly grpcApiId?: string;
+  /** Set when `kind` is `'ws-request'`: the WebSocket request this tab edits, its own field like `grpcRequestId`. */
+  readonly wsRequestId?: string;
+  /** Set when `kind` is `'ws-api'`: the WebSocket API this tab shows. */
+  readonly wsApiId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

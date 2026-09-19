@@ -14,6 +14,10 @@ import type {
   GrpcResponseMessageWire,
   RestExchangeSummary,
   UnresolvedRefWire,
+  WsExchangeSummary,
+  WsFrameWire,
+  WsHandshakeWire,
+  WsLiveEvent,
 } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { usePreferencesStore } from './preferences.js';
@@ -150,6 +154,33 @@ export interface GrpcExchangeState {
   readonly live?: GrpcLiveState;
 }
 
+/**
+ * What a WebSocket session that is still open has produced so far.
+ *
+ * A session can run for the life of the tab, so the pane shows this while `status` is `open` (or
+ * `connecting`/`closing`) and the finished `exchange` replaces it once the session closes. Mirrors
+ * {@link GrpcLiveState}: the handshake and the frames one at a time, the finished exchange carrying
+ * the same information whole.
+ */
+export interface WsLiveState {
+  /** The handshake that opened the session, once it has settled. */
+  readonly handshake?: WsHandshakeWire;
+  /** Frames sent or received, in arrival order. */
+  readonly frames: readonly WsFrameWire[];
+  /** True while the session is open. */
+  readonly open: boolean;
+}
+
+/** What is known about the most recent session of one WebSocket request. */
+export interface WsExchangeState {
+  readonly status: 'idle' | 'connecting' | 'open' | 'closing' | 'closed' | 'error';
+  readonly sendId?: string;
+  /** Present while the session runs; dropped when the exchange arrives. */
+  readonly live?: WsLiveState;
+  readonly exchange?: WsExchangeSummary;
+  readonly error?: IpcError;
+}
+
 /** The exchanges store's serialisable state. */
 export interface ExchangesSnapshot {
   readonly byRequest: Record<string, ExchangeState>;
@@ -161,6 +192,8 @@ export interface ExchangesSnapshot {
   readonly restByRequest: Record<string, RestExchangeState>;
   /** The gRPC third, keyed by gRPC request id, apart for the same reason. */
   readonly grpcByRequest: Record<string, GrpcExchangeState>;
+  /** The WebSocket fourth, keyed by WebSocket request id, apart for the same reason. */
+  readonly wsByRequest: Record<string, WsExchangeState>;
   /**
    * Newest-last log of every send this session, SOAP and REST alike, finished or failed: the
    * console's HTTP Log is a protocol-neutral surface, and a send that never produced a response
@@ -246,6 +279,23 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly halfCloseGrpc: (requestId: string) => Promise<void>;
   /** Folds one `grpc.live` event into the request whose call it belongs to. */
   readonly applyGrpcLive: (event: GrpcLiveEvent) => void;
+  /**
+   * Opens one WebSocket session, the request and its unsaved draft named; main resolves the URL,
+   * the headers, the subprotocols and the credentials. A no-op while `status` is `connecting` or
+   * `open` — a request already has a session running (spec assumption 8).
+   */
+  readonly connectWs: (requestId: string) => Promise<void>;
+  /** Sends one message on the open session for `requestId`. A no-op while the session is not open. */
+  readonly sendWsMessage: (
+    requestId: string,
+    message: { readonly format: 'text' | 'binary'; readonly content: string; readonly expand: boolean },
+  ) => Promise<void>;
+  /** Closes the open session for `requestId`, if any. */
+  readonly disconnectWs: (requestId: string, code?: number, reason?: string) => Promise<void>;
+  /** Clears the WebSocket exchange state for a removed request. */
+  readonly clearWsRequest: (requestId: string) => void;
+  /** Folds one `ws.live` event into the request whose session it belongs to. */
+  readonly applyWsLive: (event: WsLiveEvent) => void;
 }
 
 type Mutate = (draft: Draft<ExchangesSnapshot>) => void;
@@ -278,6 +328,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     byRequest: {},
     restByRequest: {},
     grpcByRequest: {},
+    wsByRequest: {},
     log: [],
     filter: EMPTY_FILTER,
     sort: undefined,
@@ -290,6 +341,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         byRequest: {},
         restByRequest: {},
         grpcByRequest: {},
+        wsByRequest: {},
         log: preserveLog ? log : [],
         filter: preserveLog ? filter : EMPTY_FILTER,
         sort: preserveLog ? sort : undefined,
@@ -428,6 +480,167 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
             return;
           case 'closed':
             state.live.open = false;
+            return;
+        }
+      });
+    },
+
+    connectWs: async (requestId) => {
+      const current = get().wsByRequest[requestId];
+      if (current?.status === 'connecting' || current?.status === 'open') {
+        return;
+      }
+      const request = useProjectStore.getState().wsRequests[requestId];
+      if (request === undefined) {
+        update((draft) => {
+          draft.wsByRequest[requestId] = {
+            status: 'error',
+            error: { code: 'unknown-request', message: `No WebSocket request with id "${requestId}"` },
+          };
+        });
+        return;
+      }
+      useProblemsStore.getState().clearSource('expansion', requestId);
+      useProblemsStore.getState().clearSource('send', requestId);
+
+      const sendId = crypto.randomUUID();
+      update((draft) => {
+        draft.wsByRequest[requestId] = { status: 'connecting', sendId, live: { frames: [], open: false } };
+      });
+
+      const draftPatch = useDraftsStore.getState().peekWsRequest(requestId);
+      const result = await ipc().request.openWs({
+        sendId,
+        requestId,
+        ...(draftPatch !== undefined ? { draft: draftPatch } : {}),
+      });
+
+      // A disconnect, or a newer connect, may already have moved this request on; only settle
+      // this session if it is still the one running.
+      if (get().wsByRequest[requestId]?.sendId !== sendId) {
+        return;
+      }
+      if (!result.ok) {
+        update((draft) => {
+          draft.wsByRequest[requestId] = { status: 'error', sendId, error: result.error };
+        });
+        useProblemsStore.getState().add([
+          {
+            groupId: `send:${requestId}`,
+            source: 'send',
+            severity: 'error',
+            requestId,
+            problem: { code: result.error.code, message: `${result.error.code}: ${result.error.message}` },
+          },
+        ]);
+        return;
+      }
+      // `live` goes: the exchange holds the handshake and every frame it held, and holding both
+      // would let the pane show a frame twice.
+      //
+      // Unlike REST/gRPC, nothing is pushed onto `log` here: the HTTP Log's WebSocket row is the
+      // handshake alone (`WsHandshakeExchangeSummary`), written the moment the handshake settles
+      // rather than when the session closes — a separate wire path this task's brief did not
+      // cover (no renderer channel carries it yet). See the task report.
+      update((draft) => {
+        draft.wsByRequest[requestId] = { status: 'closed', sendId, exchange: result.value };
+      });
+    },
+
+    sendWsMessage: async (requestId, message) => {
+      const entry = get().wsByRequest[requestId];
+      if (entry?.sendId === undefined || entry.status !== 'open') {
+        update((draft) => {
+          const state = draft.wsByRequest[requestId];
+          draft.wsByRequest[requestId] = {
+            status: state?.status ?? 'idle',
+            ...(state?.sendId !== undefined ? { sendId: state.sendId } : {}),
+            ...(state?.live !== undefined ? { live: state.live } : {}),
+            ...(state?.exchange !== undefined ? { exchange: state.exchange } : {}),
+            error: { code: 'ws-not-open', message: 'The WebSocket session is not open.' },
+          };
+        });
+        return;
+      }
+      const sendId = entry.sendId;
+      const result = await ipc().request.wsSend({
+        sendId,
+        requestId,
+        format: message.format,
+        content: message.content,
+        expand: message.expand,
+      });
+      if (!result.ok) {
+        update((draft) => {
+          const state = draft.wsByRequest[requestId];
+          if (state?.sendId !== sendId) {
+            return;
+          }
+          draft.wsByRequest[requestId] = { ...state, error: result.error };
+        });
+        return;
+      }
+      update((draft) => {
+        const state = draft.wsByRequest[requestId];
+        if (state?.sendId !== sendId || state.live === undefined) {
+          return;
+        }
+        state.live.frames.push(result.value);
+      });
+    },
+
+    disconnectWs: async (requestId, code, reason) => {
+      const entry = get().wsByRequest[requestId];
+      if (entry?.sendId === undefined) {
+        return;
+      }
+      update((draft) => {
+        const state = draft.wsByRequest[requestId];
+        if (state !== undefined && (state.status === 'connecting' || state.status === 'open')) {
+          state.status = 'closing';
+        }
+      });
+      await ipc().request.wsClose({
+        sendId: entry.sendId,
+        ...(code !== undefined ? { code } : {}),
+        ...(reason !== undefined ? { reason } : {}),
+      });
+    },
+
+    clearWsRequest: (requestId) => {
+      update((draft) => {
+        delete draft.wsByRequest[requestId];
+      });
+    },
+
+    applyWsLive: (event) => {
+      update((draft) => {
+        const found = Object.entries(draft.wsByRequest).find(([, state]) => state.sendId === event.sendId);
+        if (found === undefined) {
+          return;
+        }
+        const [, state] = found;
+        // An event for a send this request has already replaced, or one whose exchange has
+        // already arrived, is dropped rather than written over the newer state.
+        if (state.live === undefined) {
+          return;
+        }
+        switch (event.kind) {
+          case 'handshake':
+            state.live.handshake = event.handshake;
+            if (event.handshake.error === undefined) {
+              state.status = 'open';
+              state.live.open = true;
+            } else {
+              state.status = 'error';
+            }
+            return;
+          case 'frame':
+            state.live.frames.push(event.frame);
+            return;
+          case 'closed':
+            state.live.open = false;
+            state.status = 'closing';
             return;
         }
       });
@@ -749,6 +962,16 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 export function subscribeToGrpcLive(): () => void {
   return window.wirebench.on('grpc.live', ((payload: GrpcLiveEvent) => {
     useExchangesStore.getState().applyGrpcLive(payload);
+  }) as (payload: unknown) => void);
+}
+
+/**
+ * Subscribes the WebSocket panes to `ws.live`, the running half of a session. Called once from the
+ * shell; returns the unsubscribe for symmetry with React effects.
+ */
+export function subscribeToWsLive(): () => void {
+  return window.wirebench.on('ws.live', ((payload: WsLiveEvent) => {
+    useExchangesStore.getState().applyWsLive(payload);
   }) as (payload: unknown) => void);
 }
 

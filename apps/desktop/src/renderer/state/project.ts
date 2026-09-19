@@ -12,6 +12,10 @@ import type {
   GrpcApiWire,
   GrpcRequestPatchWire,
   GrpcRequestWire,
+  WsApiPatchWire,
+  WsApiWire,
+  WsRequestPatchWire,
+  WsRequestWire,
   ProtoImportSummaryWire,
   AttachmentPatchWire,
   EndpointAuthWire,
@@ -95,6 +99,10 @@ export interface ProjectSnapshot {
   readonly grpcRequests: Record<string, GrpcRequestWire>;
   /** Each project's gRPC lists, per project for the same reason as `rest`. Folders are in `folders`. */
   readonly grpc: Readonly<Record<string, ExplorerGrpcData>>;
+  /** WebSocket APIs by id, flattened across every open project. */
+  readonly wsApis: Record<string, WsApiWire>;
+  /** WebSocket requests by id, flattened across every open project. */
+  readonly wsRequests: Record<string, WsRequestWire>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -260,6 +268,19 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly saveGrpcRequest: (requestId: string) => Promise<void>;
   readonly removeGrpcRequest: (requestId: string) => Promise<void>;
   readonly cloneGrpcRequest: (requestId: string) => Promise<string>;
+  /** Adds a WebSocket API to a project and returns its id. */
+  readonly addWsApi: (projectId: string, name: string, url?: string) => Promise<string>;
+  readonly updateWsApi: (apiId: string, patch: WsApiPatchWire) => Promise<void>;
+  readonly removeWsApi: (apiId: string) => Promise<void>;
+  /** Adds a WebSocket request to an API or one of its folders. */
+  readonly addWsRequest: (apiId: string, parentId?: string, name?: string, url?: string) => Promise<string>;
+  readonly updateWsRequest: (requestId: string, patch: WsRequestPatchWire) => Promise<void>;
+  /** Stages an edit made in the WebSocket editor, as {@link editGrpcRequest} does for gRPC. */
+  readonly editWsRequest: (requestId: string, patch: WsRequestPatchWire) => void;
+  readonly commitWsRequest: (requestId: string) => Promise<boolean>;
+  readonly saveWsRequest: (requestId: string) => Promise<void>;
+  readonly removeWsRequest: (requestId: string) => Promise<void>;
+  readonly cloneWsRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
   readonly addEnvironment: (projectId: string, name: string) => Promise<string>;
   /**
@@ -430,6 +451,8 @@ type Indexes = Pick<
   | 'grpcApis'
   | 'grpcRequests'
   | 'grpc'
+  | 'wsApis'
+  | 'wsRequests'
   | 'order'
   | 'projectOf'
   | 'keystores'
@@ -516,6 +539,30 @@ export function layerGrpcEdits(
   };
 }
 
+/** One WebSocket request's staged-but-unsaved patch, or `undefined` when it is clean. */
+export function wsDraftPatch(requestId: string): WsRequestPatchWire | undefined {
+  return useDraftsStore.getState().peekWsRequest(requestId);
+}
+
+/** A mirrored WebSocket request with its staged edit laid over it; tables and messages are replaced. */
+export function layerWsEdits(request: WsRequestWire, draftPatch: WsRequestPatchWire | undefined): WsRequestWire {
+  if (draftPatch === undefined) {
+    return request;
+  }
+  return {
+    ...request,
+    ...(draftPatch.name !== undefined ? { name: draftPatch.name } : {}),
+    ...(draftPatch.description !== undefined ? { description: draftPatch.description ?? undefined } : {}),
+    ...(draftPatch.url !== undefined ? { url: draftPatch.url } : {}),
+    ...(draftPatch.query !== undefined ? { query: draftPatch.query } : {}),
+    ...(draftPatch.headers !== undefined ? { headers: draftPatch.headers } : {}),
+    ...(draftPatch.subprotocols !== undefined ? { subprotocols: draftPatch.subprotocols } : {}),
+    ...(draftPatch.auth !== undefined ? { auth: draftPatch.auth } : {}),
+    ...(draftPatch.settings !== undefined ? { settings: draftPatch.settings } : {}),
+    ...(draftPatch.messages !== undefined ? { messages: draftPatch.messages } : {}),
+  };
+}
+
 /**
  * Lays the edits main has not confirmed yet over the request it just sent us.
  *
@@ -549,6 +596,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const grpcApis: Record<string, GrpcApiWire> = {};
   const grpcRequests: Record<string, GrpcRequestWire> = {};
   const grpc: Record<string, ExplorerGrpcData> = {};
+  const wsApis: Record<string, WsApiWire> = {};
+  const wsRequests: Record<string, WsRequestWire> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -594,6 +643,16 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       apis: project.grpcApis,
       requests: project.grpcRequests.map((request) => grpcRequests[request.id] ?? request),
     };
+    // Optional-ish in practice: a fixture built before the WebSocket kind existed may omit
+    // these, so fall back to empty rather than throwing on an old test's project literal.
+    for (const api of project.wsApis ?? []) {
+      wsApis[api.id] = api;
+      projectOf[api.id] = project.id;
+    }
+    for (const request of project.wsRequests ?? []) {
+      wsRequests[request.id] = layerWsEdits(request, wsDraftPatch(request.id));
+      projectOf[request.id] = project.id;
+    }
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -624,6 +683,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     grpcApis,
     grpcRequests,
     grpc,
+    wsApis,
+    wsRequests,
     order,
     projectOf,
     keystores,
@@ -731,6 +792,8 @@ const EMPTY: ProjectSnapshot = {
   grpcApis: {},
   grpcRequests: {},
   grpc: {},
+  wsApis: {},
+  wsRequests: {},
   order: [],
   projectOf: {},
   keystores: [],
@@ -820,6 +883,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     useDraftsStore.getState().discardGrpcRequest(requestId);
     useEditorsStore.getState().close(`grpc:${requestId}`);
     useExchangesStore.getState().clearGrpcRequest(requestId);
+  };
+
+  /** The WebSocket counterpart of {@link forgetRestRequest}. */
+  const forgetWsRequest = (requestId: string): void => {
+    useDraftsStore.getState().discardWsRequest(requestId);
+    useEditorsStore.getState().close(`ws:${requestId}`);
+    useExchangesStore.getState().clearWsRequest(requestId);
   };
 
   /** Saves one project, reporting its own status. */
@@ -1304,6 +1374,105 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { createdId } = await mutateEntity(requestId, { kind: 'clone-grpc-request', requestId });
       if (createdId === undefined) {
         throw new Error('clone-grpc-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    addWsApi: async (projectId, name, url) => {
+      const { createdId } = await mutate(projectId, {
+        kind: 'add-ws-api',
+        name,
+        ...(url !== undefined ? { url } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-ws-api did not return an API id');
+      }
+      return createdId;
+    },
+
+    updateWsApi: async (apiId, patch) => {
+      await mutateEntity(apiId, { kind: 'update-ws-api', apiId, patch });
+    },
+
+    removeWsApi: async (apiId) => {
+      const inside = Object.values(get().wsRequests).filter((request) => request.apiId === apiId);
+      await mutateEntity(apiId, { kind: 'remove-ws-api', apiId });
+      for (const request of inside) {
+        forgetWsRequest(request.id);
+      }
+      useEditorsStore.getState().close(`ws-api:${apiId}`);
+    },
+
+    addWsRequest: async (apiId, parentId, name, url) => {
+      const { createdId } = await mutateEntity(apiId, {
+        kind: 'add-ws-request',
+        apiId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(name !== undefined ? { name } : {}),
+        ...(url !== undefined ? { url } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-ws-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    updateWsRequest: async (requestId, patch) => {
+      await mutateEntity(requestId, { kind: 'update-ws-request', requestId, patch });
+    },
+
+    editWsRequest: (requestId, patch) => {
+      update((draft) => {
+        const request = draft.wsRequests[requestId];
+        if (request !== undefined) {
+          draft.wsRequests[requestId] = layerWsEdits(request, patch);
+        }
+      });
+      useDraftsStore.getState().stageWsRequest(requestId, patch);
+    },
+
+    commitWsRequest: async (requestId) => {
+      const staged = useDraftsStore.getState().peekWsRequest(requestId);
+      if (staged === undefined) {
+        return true;
+      }
+      const projectId = ownerOf(requestId);
+      const result = await ipc().project.mutate({
+        projectId,
+        change: { kind: 'update-ws-request', requestId, patch: staged },
+      });
+      if (!result.ok) {
+        showToast(asError(result.error).message);
+        return false;
+      }
+      apply(projectId, result.value.project);
+      useDraftsStore.getState().clearWsRequestIfUnchanged(requestId, staged);
+      return true;
+    },
+
+    saveWsRequest: async (requestId) => {
+      const projectId = ownerOf(requestId);
+      if (useDraftsStore.getState().peekWsRequest(requestId) === undefined) {
+        if (get().projects[projectId]?.dirty === true) {
+          await saveOne(projectId);
+        }
+        return;
+      }
+      if (!(await get().commitWsRequest(requestId))) {
+        return;
+      }
+      await saveOne(projectId);
+    },
+
+    removeWsRequest: async (requestId) => {
+      await mutateEntity(requestId, { kind: 'remove-ws-request', requestId });
+      forgetWsRequest(requestId);
+    },
+
+    cloneWsRequest: async (requestId) => {
+      const { createdId } = await mutateEntity(requestId, { kind: 'clone-ws-request', requestId });
+      if (createdId === undefined) {
+        throw new Error('clone-ws-request did not return a request id');
       }
       return createdId;
     },

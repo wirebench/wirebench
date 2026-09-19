@@ -3,7 +3,7 @@ import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import type { AnyExchangeSummary } from '../../src/renderer/features/request-editor/response-status.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 
-export { b64, makeExchange, makeFailure, makeGrpcExchange, makeRestExchange } from './wire-fixtures.js';
+export { b64, makeExchange, makeFailure, makeGrpcExchange, makeRestExchange, makeWsExchange } from './wire-fixtures.js';
 
 /** Wraps an exchange of either protocol as the HTTP Log entry the store keeps; `requestId` names its saved request. */
 export function logExchange(exchange: AnyExchangeSummary, requestId?: string): LogEntry {
