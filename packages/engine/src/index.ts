@@ -1045,3 +1045,5 @@ export { prettyFrameText } from './ws/pretty.js';
 export type { PrettyFrameResult } from './ws/pretty.js';
 export { openWsSession } from './ws/session.js';
 export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
+export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
+export type { WsTranscript } from './ws/transcript.js';
