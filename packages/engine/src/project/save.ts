@@ -169,10 +169,35 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
 }
 
 /**
+ * True when `name` is a WebSocket request's saved-message sibling for `requestSlug`:
+ * `<requestSlug>.msg-<message-slug>.<ext>`, where `<ext>` is one `[A-Za-z0-9]+` run at the very
+ * end. Matched by trying the known `requestSlug` as a literal prefix — never by a greedy regex
+ * capture across the whole name — so a request slug that itself contains a dot or the literal text
+ * `.msg-` cannot be mis-split from the message slug that follows it.
+ */
+function isWsMessageSibling(name: string, requestSlug: string): boolean {
+  const prefix = `${requestSlug}.msg-`;
+  if (!name.startsWith(prefix)) {
+    return false;
+  }
+  const rest = name.slice(prefix.length);
+  const dot = rest.lastIndexOf('.');
+  // dot > 0 requires a non-empty message slug before the extension.
+  return dot > 0 && /^[A-Za-z0-9]+$/.test(rest.slice(dot + 1));
+}
+
+/**
  * Lists the managed files inside one directory of an API's request tree: its `folder.yaml`, every
- * `*.request.yaml`, and the `<slug>.body.*` sibling of any such request. A stray file — notes, a
- * `.body.json` with no request — is foreign and never a deletion candidate, exactly as in an
- * operation folder.
+ * `*.request.yaml`, and two conventions of per-request sibling file, each claimed only when it
+ * belongs to a request slug actually present in this directory:
+ *
+ * - `<slug>.body.<ext>` — a REST raw body or a gRPC message, one file for the whole request.
+ * - `<slug>.msg-<message-slug>.<ext>` — one WebSocket saved message, one file per message
+ *   ({@link isWsMessageSibling}).
+ *
+ * Claiming only a sibling of a *known* request slug (rather than every file matching either
+ * pattern) means a hand-placed file — notes, a `.body.json` or `.msg-x.txt` with no matching
+ * request — is foreign and never a deletion candidate, exactly as in an operation folder.
  */
 async function listApiTreeFiles(fs: FsLike, root: string, dir: string): Promise<string[]> {
   const managed: string[] = [];
@@ -198,6 +223,13 @@ async function listApiTreeFiles(fs: FsLike, root: string, dir: string): Promise<
     const body = /^(.*)\.body\.[A-Za-z0-9]+$/.exec(entry.name);
     if (body !== null && requestSlugs.has(body[1]!)) {
       managed.push(`${dir}/${entry.name}`);
+      continue;
+    }
+    for (const slug of requestSlugs) {
+      if (isWsMessageSibling(entry.name, slug)) {
+        managed.push(`${dir}/${entry.name}`);
+        break;
+      }
     }
   }
   for (const entry of entries) {
