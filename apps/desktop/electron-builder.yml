@@ -85,6 +85,10 @@ win:
   target:
     - target: nsis
       arch: [x64, arm64]
+    # For fleet deployment (Intune, SCCM, Group Policy): installs per machine and silently with
+    # `msiexec /i … /qn`. It does not auto-update; the fleet tool pushes each new version.
+    - target: msi
+      arch: [x64, arm64]
   icon: resources/icon.png
 
 nsis:
@@ -96,6 +100,16 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+msi:
+  artifactName: ${productName}-${version}-windows-${arch}.${ext}
+  # Fixed for the life of the product: Windows Installer finds the previous version to replace
+  # by this code, so changing it would install a second copy beside the first.
+  upgradeCode: 0603bc67-6208-4879-a904-bba016bb5433
+  oneClick: false
+  perMachine: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
 

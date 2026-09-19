@@ -7,7 +7,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
 
 ## Phase 1 — Artifacts
 
-- [ ] **T1. MSI target.** Add `msi` for x64 and arm64 in `electron-builder.yml`: per machine, with an
+- [x] **T1. MSI target.** Add `msi` for x64 and arm64 in `electron-builder.yml`: per machine, with an
   artifact name that matches the NSIS naming and a fixed upgrade code. Add `*.msi` to the uploaded
   artifacts.
   - Verify: a rehearsal produces two `.msi` files.
