@@ -278,7 +278,14 @@ export async function saveProject(project: Project, root: string, options?: Save
   const goneEntities = new Set<string>();
   for (const [dir, liveSlugs] of [
     [INTERFACES_DIR, new Set(project.interfaces.map((i) => i.slug))],
-    [APIS_DIR, new Set([...project.apis.map((a) => a.slug), ...project.grpcApis.map((a) => a.slug)])],
+    [
+      APIS_DIR,
+      new Set([
+        ...project.apis.map((a) => a.slug),
+        ...project.grpcApis.map((a) => a.slug),
+        ...project.wsApis.map((a) => a.slug),
+      ]),
+    ],
   ] as const) {
     for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
       if (entry.isDirectory && !liveSlugs.has(entry.name)) {

@@ -98,6 +98,7 @@ function makeProject(
     ],
     apis: [{ ...createApi('Api', { id: 'api-1', slug: 'api', order: 1, baseUrl: '' }), requests: [...restRequests] }],
     grpcApis: [],
+    wsApis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

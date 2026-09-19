@@ -87,6 +87,7 @@ export function sampleProject(): Project {
     disabledProperties: ['tier'],
     apis: [],
     grpcApis: [],
+    wsApis: [],
     interfaces: [
       {
         kind: 'soap',

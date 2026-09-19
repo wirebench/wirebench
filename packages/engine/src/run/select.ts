@@ -111,8 +111,10 @@ const covers = (selector: string, candidate: string): boolean =>
 
 /**
  * Resolves `selectors` (display paths or on-disk paths, matched at a `/` boundary) against the
- * project's requests, in explorer order. An empty `selectors` list selects everything. A gRPC API
- * is skipped: it is not runnable in this slice. `unmatched` lists every selector that covered no
+ * project's requests, in explorer order. An empty `selectors` list selects everything. A gRPC or
+ * WebSocket API is skipped: neither is runnable from the command line in this slice, and there is
+ * no per-selector reason to report — a selector naming one simply matches nothing and surfaces
+ * through `unmatched`, same as a typo would. `unmatched` lists every selector that covered no
  * request, so the runner can refuse the run rather than quietly test nothing.
  */
 export function selectRequests(

@@ -51,6 +51,7 @@ function project(parts: { interfaces?: Interface[]; apis?: RestApi[]; wss?: Part
     interfaces: parts.interfaces ?? [],
     apis: parts.apis ?? [],
     grpcApis: [],
+    wsApis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [], ...parts.wss },
   };
