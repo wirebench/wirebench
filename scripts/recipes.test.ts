@@ -202,7 +202,7 @@ describe('action/action.yml run script: version resolution', () => {
  * `script` is the one-line POSIX sh command documented there.
  */
 interface GitlabJob {
-  readonly image?: string;
+  readonly image?: { readonly name?: string; readonly entrypoint?: readonly string[] };
   readonly entrypoint?: readonly string[];
   readonly variables?: Record<string, string>;
   readonly script?: readonly string[];
@@ -230,11 +230,12 @@ describe('templates/gitlab/wirebench.gitlab-ci.yml', () => {
   const job = template['.wirebench-run'] as GitlabJob;
 
   it('uses the CLI image pinned by WIREBENCH_VERSION', () => {
-    expect(job.image).toBe('ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}');
+    expect(job.image?.name).toBe('ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}');
   });
 
-  it('overrides the entrypoint', () => {
-    expect(job.entrypoint).toEqual(['']);
+  it('overrides the entrypoint under image:, where GitLab accepts it', () => {
+    expect(job.image?.entrypoint).toEqual(['']);
+    expect(job.entrypoint).toBeUndefined();
   });
 
   it('declares every documented variable with its default', () => {
@@ -274,6 +275,7 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   readonly needs?: string | readonly string[];
+  readonly if?: string;
   readonly permissions?: Record<string, string>;
   readonly steps: readonly WorkflowStep[];
 }
@@ -288,7 +290,7 @@ function loadReleaseWorkflow(): ReleaseWorkflow {
   return parse(text) as ReleaseWorkflow;
 }
 
-const TAG_GATE = "startsWith(github.ref, 'refs/tags/v')";
+const TAG_GATE = "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')";
 
 describe('.github/workflows/release.yml', () => {
   const workflow = loadReleaseWorkflow();
@@ -381,5 +383,13 @@ describe('.github/workflows/release.yml', () => {
     expect(workflow.jobs.check).toBeDefined();
     expect(workflow.jobs.build?.needs).toBe('check');
     expect(workflow.jobs.release?.needs).toBe('build');
+  });
+
+  it('gates every push, publish and release on a tag push, never on workflow_dispatch', () => {
+    expect(workflow.jobs.release?.if).toBe(TAG_GATE);
+    const text = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8');
+    for (const line of text.split('\n').filter((l) => l.includes("startsWith(github.ref, 'refs/tags/v')"))) {
+      expect(line).toContain("github.event_name == 'push' && ");
+    }
   });
 });

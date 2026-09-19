@@ -26,7 +26,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, cp, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { appendFile, chmod, cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -225,10 +225,28 @@ async function smokeNpm(demoUrl: string): Promise<void> {
  * the runner reachable from inside the container at the same `127.0.0.1:<port>` URL, and the
  * project path the CLI is given is `.`, relative to `/work` where the fixture copy is mounted.
  */
+/**
+ * `mkdtemp` creates its dir mode 0700, owned by the host user (uid 1001 on GitHub runners), but
+ * the image runs as `node` (uid 1000). Open the copy up the way a CI checkout is (GitLab's
+ * `/builds` is world-writable): dirs 0777 so the container can write the JUnit file, files 0666.
+ */
+async function openUpForContainer(dir: string): Promise<void> {
+  await chmod(dir, 0o777);
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await openUpForContainer(path);
+    } else {
+      await chmod(path, 0o666);
+    }
+  }
+}
+
 async function smokeDocker(demoUrl: string, image: string): Promise<void> {
   const workDir = await mkdtemp(join(tmpdir(), 'wirebench-cli-smoke-docker-'));
   try {
     await cp(FIXTURE, workDir, { recursive: true });
+    await openUpForContainer(workDir);
     const run: Runner = (args, env) => {
       const envFlags = Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
       return execCapture(
@@ -245,7 +263,7 @@ async function smokeDocker(demoUrl: string, image: string): Promise<void> {
 
 /**
  * `--gitlab`: runs the GitLab template's `.wirebench-run.script[0]` in the image with `sh -c`
- * (`--entrypoint sh`, matching the template's `entrypoint: [""]` override that hands the shell
+ * (`--entrypoint sh`, matching the template's `image.entrypoint: [""]` override that hands the shell
  * the raw command), passing the WIREBENCH_* variables the template expects via `-e`. Same fixture
  * mount and four checks as `--via docker`, so a defect in the template's shell expansion (word
  * splitting on WIREBENCH_ARGS, a missing `--env` when WIREBENCH_ENV is empty, …) surfaces here
@@ -258,8 +276,17 @@ async function smokeGitlab(demoUrl: string, image: string): Promise<void> {
   }
   const { parse } = await import('yaml');
   const template = parse(await readFile(templatePath, 'utf8')) as {
-    ['.wirebench-run']?: { script?: readonly string[] };
+    ['.wirebench-run']?: {
+      image?: { name?: string; entrypoint?: readonly string[] } | string;
+      script?: readonly string[];
+    };
   };
+  const templateImage = template['.wirebench-run']?.image;
+  if (typeof templateImage !== 'object' || JSON.stringify(templateImage.entrypoint) !== '[""]') {
+    fail(
+      `--gitlab: ${templatePath} must set .wirebench-run.image.entrypoint to [""] (GitLab has no job-level entrypoint)`,
+    );
+  }
   const script = template['.wirebench-run']?.script?.[0];
   if (script === undefined || script.length === 0) {
     fail(`--gitlab: ${templatePath} has no .wirebench-run.script[0]`);
@@ -268,6 +295,7 @@ async function smokeGitlab(demoUrl: string, image: string): Promise<void> {
   const workDir = await mkdtemp(join(tmpdir(), 'wirebench-cli-smoke-gitlab-'));
   try {
     await cp(FIXTURE, workDir, { recursive: true });
+    await openUpForContainer(workDir);
     const run: Runner = (args, env) => {
       // The template's script takes its arguments from WIREBENCH_PROJECT/_ENV/_ARGS/_JUNIT, not
       // from argv, so translate `run <project> <flags...>` (the shared `runChecks` call shape)

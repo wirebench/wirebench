@@ -18,8 +18,9 @@
 # Variables, "Mask variable" on); the runner reads them from the environment and never prints them.
 
 .wirebench-run:
-  image: ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}
-  entrypoint: ['']
+  image:
+    name: ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}
+    entrypoint: ['']
   variables:
     WIREBENCH_VERSION: latest
     WIREBENCH_PROJECT: ''

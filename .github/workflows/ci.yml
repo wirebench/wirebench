@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -263,8 +266,15 @@ jobs:
             echo "expected the passing selection to exit 0, got ${{ steps.pass.outputs.exit-code }}" >&2
             exit 1
           fi
-          if [ "${{ steps.fail.outputs.exit-code }}" != "1" ]; then
-            echo "expected the failing selection to exit 1, got ${{ steps.fail.outputs.exit-code }}" >&2
+          # A failed composite step may not surface its outputs, so the failing case accepts an
+          # empty exit-code as long as the step's outcome is failure; any other code fails.
+          if [ "${{ steps.fail.outcome }}" != "failure" ]; then
+            echo "expected the failing selection's outcome to be failure, got ${{ steps.fail.outcome }}" >&2
+            exit 1
+          fi
+          fail_code="${{ steps.fail.outputs.exit-code }}"
+          if [ -n "$fail_code" ] && [ "$fail_code" != "1" ]; then
+            echo "expected the failing selection to exit 1, got $fail_code" >&2
             exit 1
           fi
           if [ ! -f out/pass.xml ]; then
