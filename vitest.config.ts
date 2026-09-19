@@ -73,6 +73,20 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'cli-unit',
+          include: ['packages/cli/test/unit/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'cli-integration',
+          include: ['packages/cli/test/integration/**/*.test.ts'],
+          // Each test spawns the CLI as a child process against a local server.
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'desktop',
           include: ['apps/desktop/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',

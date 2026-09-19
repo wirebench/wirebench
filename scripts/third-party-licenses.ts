@@ -56,7 +56,7 @@ const BUNDLED_DEV_DEPENDENCIES = [
 ] as const;
 
 /** Workspace packages: Wirebench's own code, covered by the repository's own LICENSE. */
-const OWN_PACKAGES = new Set(['@wirebench/engine', '@wirebench/desktop']);
+const OWN_PACKAGES = new Set(['@wirebench/engine', '@wirebench/desktop', '@wirebench/cli']);
 
 /** File names that may carry a license or notice, in the order they are looked for. */
 const LICENSE_FILE_PATTERN = /^(licen[cs]e|notice|copying)(\.(md|txt|markdown))?$/i;
