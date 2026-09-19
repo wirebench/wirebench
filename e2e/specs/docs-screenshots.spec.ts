@@ -22,6 +22,7 @@ import {
   createProject,
   createProjectWithCalculator,
   createWorkspace,
+  dismissChangedOnDiskBanners,
   expandExplorer,
   openFirstRequest,
   workspaceProjectDir,
@@ -364,12 +365,14 @@ test.describe('docs site screenshots', () => {
     await createWorkspace(window, 'Demo');
     await createProject(window, 'Pet Service');
     await createApi(window, 'Petstore', 'https://api.example.com');
+    // The capture cannot dismiss a watcher banner once the dialog covers it, so it goes first.
+    await dismissChangedOnDiskBanners(window);
     await apiRow(window, 'Petstore').click({ button: 'right' });
     await window.getByRole('menuitem', { name: 'Import cURL…' }).click();
     await expect(window.getByTestId('import-curl-target')).toContainText('the API “Petstore”');
     await window.getByLabel('cURL command').click();
     await window.keyboard.insertText(
-      `curl -X POST 'https://api.example.com/pets?dry=true' -H 'Content-Type: application/json' -H 'X-From: curl' -d '{"name":"Fido"}'`,
+      `curl -X POST 'https://api.example.com/pets?dry=true' -u ada:s3cret -H 'Content-Type: application/json' -H 'X-From: curl' -d '{"name":"Fido"}'`,
     );
     await expect(window.getByTestId('import-curl-submit')).toBeEnabled();
     await shoot(window, 'importers/curl-preview');

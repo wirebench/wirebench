@@ -53,6 +53,7 @@ export default defineConfig({
             { label: 'From Postman collections', slug: 'switching/postman' },
             { label: 'From a legacy SOAP project', slug: 'switching/legacy-soap-project' },
             { label: 'From OpenAPI and Swagger', slug: 'switching/openapi' },
+            { label: 'From cURL commands', slug: 'switching/curl' },
           ],
         },
         {

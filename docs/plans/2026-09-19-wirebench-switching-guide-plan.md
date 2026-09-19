@@ -39,7 +39,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   - Verify: `pnpm docs:build`; `pnpm check:banned-terms`.
 - [x] **T8. OpenAPI and Swagger page.** `switching/openapi.mdx`.
   - Verify: `pnpm docs:build`.
-- [ ] **T9. cURL page.** `switching/curl.mdx`.
+- [x] **T9. cURL page.** `switching/curl.mdx`.
   - Verify: `pnpm docs:build`.
 - [ ] **T10. Importers guide corrections.** Fix the four contradictions from spec §3, link each source
   section to its switching page, and re-shoot the affected images.
