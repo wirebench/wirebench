@@ -45,6 +45,7 @@ export default defineConfig({
             { label: 'History', slug: 'guides/history' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
+            { label: 'Run in CI', slug: 'guides/run-in-ci' },
           ],
         },
         {

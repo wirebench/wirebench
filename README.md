@@ -115,15 +115,23 @@ the workspace switcher; it has no default keyboard shortcuts of its own.
 ## Run in CI
 
 `@wirebench/cli` (binary `wirebench`) runs the requests already saved in a project from a
-pipeline, with assertions, exit codes and reports a CI system understands:
+pipeline, with assertions, exit codes and reports a CI system understands — as a GitHub Action, a
+GitLab template, a container image or plain `npx`:
 
-```bash
-WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  wirebench run ./project --env staging --reporter junit=reports/wirebench.xml
+```yaml
+# GitHub Actions
+- uses: wirebench/wirebench/action@v2.3.0
+  with:
+    project: ./api-tests
+    env: staging
+    junit: reports/wirebench.xml
+  env:
+    WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
 ```
 
-See [`docs/cli.md`](docs/cli.md) for the full command reference — assertions, environment-variable
-secrets, all four reporters and the exit-code table.
+See [Run in CI](https://wirebench.github.io/wirebench/guides/run-in-ci/) on the docs site for all
+four recipes, or [`docs/cli.md`](docs/cli.md#run-in-ci) for the full command reference —
+assertions, environment-variable secrets, all four reporters and the exit-code table.
 
 ## Development
 

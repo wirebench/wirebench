@@ -33,6 +33,16 @@ All notable changes to this project are documented here. The format follows
   because this format drops unknown keys on save, **saving a project with this version writes
   `formatVersion: 4`, and an older Wirebench refuses to open it** (`format-too-new`). Everyone
   working on a project a 2.3+ build has saved needs to be on 2.3 or later too.
+- **CI recipes for the runner.** `@wirebench/cli` and `@wirebench/engine` are published to npm; a
+  container image is published to `ghcr.io/wirebench/wirebench-cli` (`linux/amd64` +
+  `linux/arm64`); a GitHub Action (`wirebench/wirebench/action@<tag>`) and a GitLab template
+  (`templates/gitlab/wirebench.gitlab-ci.yml`) wrap them. All four ways to run in CI map secrets
+  to `WIREBENCH_SECRET_<NAME>` the caller sets — none of them holds or asks for one itself. See
+  ["Run in CI"](docs/cli.md#run-in-ci) and
+  [`docs/specs/2026-09-19-ci-recipes-design.md`](docs/specs/2026-09-19-ci-recipes-design.md).
+  Publishing itself waits on the first tagged release after the npm organisation and the GHCR
+  package's visibility are set up (see ["Before the first publishing
+  release"](docs/release.md#before-the-first-publishing-release)).
 - **HTTP Log: rows kept and Preserve log.** The number of rows kept is a setting (Preferences › Behaviour,
   100–5000, default 500). Preserve log keeps the rows in memory across closing or switching a workspace;
   it is never written to disk and is off again at every launch.

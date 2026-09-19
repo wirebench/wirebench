@@ -1,0 +1,176 @@
+name: Wirebench
+description: Run a Wirebench project's requests against an environment and report the result.
+author: Wirebench
+
+inputs:
+  project:
+    description: Path to the project directory (containing wirebench.yaml).
+    required: true
+  env:
+    description: Environment name or slug (-e/--env). Required when the project defines any.
+    required: false
+  select:
+    description: Selectors to run, one per line. Empty means every request in the project.
+    required: false
+  vars:
+    description: Environment property overrides (--var), one key=value per line.
+    required: false
+  junit:
+    description: Path to write a JUnit report to (--reporter junit=<path>).
+    required: false
+  json:
+    description: Path to write a JSON report to (--reporter json=<path>).
+    required: false
+  html:
+    description: Path to write an HTML report to (--reporter html=<path>).
+    required: false
+  bail:
+    description: Stop at the first failed or errored request.
+    required: false
+    default: 'false'
+  require-assertions:
+    description: Treat a request with no assertions as an error.
+    required: false
+    default: 'false'
+  insecure:
+    description: Skip TLS certificate verification.
+    required: false
+    default: 'false'
+  timeout:
+    description: Per-request timeout override, in milliseconds (--timeout).
+    required: false
+  sla:
+    description: Default response-time ceiling for requests that declare none, in milliseconds (--sla).
+    required: false
+  version:
+    description: >-
+      @wirebench/cli version to run. Defaults to this action's own ref when it is a version tag
+      (e.g. a `uses: wirebench/wirebench/action@v2.3.0` pin resolves to `2.3.0`), else `latest`.
+    required: false
+  node-version:
+    description: Node.js version to set up before running (this replaces the caller job's Node for later steps).
+    required: false
+    default: '24'
+
+outputs:
+  exit-code:
+    description: The wirebench CLI's exit code (0 pass, 1 assertion failure, 2 usage error, 3 missing secret).
+    value: ${{ steps.run.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - id: run
+      shell: bash
+      env:
+        WB_PROJECT: ${{ inputs.project }}
+        WB_ENV: ${{ inputs.env }}
+        WB_SELECT: ${{ inputs.select }}
+        WB_VARS: ${{ inputs.vars }}
+        WB_JUNIT: ${{ inputs.junit }}
+        WB_JSON: ${{ inputs.json }}
+        WB_HTML: ${{ inputs.html }}
+        WB_BAIL: ${{ inputs.bail }}
+        WB_REQUIRE_ASSERTIONS: ${{ inputs.require-assertions }}
+        WB_INSECURE: ${{ inputs.insecure }}
+        WB_TIMEOUT: ${{ inputs.timeout }}
+        WB_SLA: ${{ inputs.sla }}
+        WB_VERSION: ${{ inputs.version }}
+        WB_NODE_VERSION: ${{ inputs.node-version }}
+        WB_ACTION_REF: ${{ github.action_ref }}
+      run: |
+        # Every input above arrives through env: (never interpolated into this script), so a
+        # value that happens to contain shell metacharacters can't be reinterpreted as source.
+        #
+        # `version`: WB_VERSION wins when set; else this action's own ref (github.action_ref)
+        # when it looks like a version tag (v1.2.3); else `latest`.
+        version="$WB_VERSION"
+        if [ -z "$version" ]; then
+          if [[ "$WB_ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            version="${WB_ACTION_REF#v}"
+          else
+            version="latest"
+          fi
+        fi
+
+        args=(run "$WB_PROJECT")
+
+        if [ -n "$WB_ENV" ]; then
+          args+=(--env "$WB_ENV")
+        fi
+
+        # Multi-line inputs arrive with LF line endings even from a Windows runner's YAML, but a
+        # value typed or generated with CRLF could still carry a trailing \r on each line — strip
+        # it so a selector or var name never gains an invisible tail character.
+        if [ -n "$WB_SELECT" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            if [ -n "$line" ]; then
+              args+=("$line")
+            fi
+          done <<< "$WB_SELECT"
+        fi
+
+        if [ -n "$WB_VARS" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            if [ -n "$line" ]; then
+              args+=(--var "$line")
+            fi
+          done <<< "$WB_VARS"
+        fi
+
+        args+=(--reporter cli)
+        if [ -n "$WB_JUNIT" ]; then
+          args+=(--reporter "junit=$WB_JUNIT")
+        fi
+        if [ -n "$WB_JSON" ]; then
+          args+=(--reporter "json=$WB_JSON")
+        fi
+        if [ -n "$WB_HTML" ]; then
+          args+=(--reporter "html=$WB_HTML")
+        fi
+
+        if [ "$WB_BAIL" = "true" ]; then
+          args+=(--bail)
+        fi
+        if [ "$WB_REQUIRE_ASSERTIONS" = "true" ]; then
+          args+=(--require-assertions)
+        fi
+        if [ "$WB_INSECURE" = "true" ]; then
+          args+=(--insecure)
+        fi
+        if [ -n "$WB_TIMEOUT" ]; then
+          args+=(--timeout "$WB_TIMEOUT")
+        fi
+        if [ -n "$WB_SLA" ]; then
+          args+=(--sla "$WB_SLA")
+        fi
+
+        # `npx` cannot resolve an unpublished @wirebench/engine from a tarball on its own, so the
+        # default is a single package spec; WB_PACKAGES (undocumented, newline-separated) lets
+        # `action-smoke` in ci.yml point npx at the engine and CLI tarballs instead, in whatever
+        # order npx needs to see them.
+        packages=()
+        if [ -n "$WB_PACKAGES" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            if [ -n "$line" ]; then
+              packages+=(--package "$line")
+            fi
+          done <<< "$WB_PACKAGES"
+        else
+          packages=(--package "@wirebench/cli@$version")
+        fi
+
+        set +e
+        npx --yes "${packages[@]}" wirebench "${args[@]}"
+        code=$?
+        set -e
+
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code

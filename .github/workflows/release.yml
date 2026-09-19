@@ -1,8 +1,10 @@
 name: Release
 
 # Tag-driven: `git tag v1.0.0 && git push --tags` builds the three OS artifact sets and
-# collects them into a *draft* GitHub Release. Nothing is published automatically — a human
-# reviews the draft, checks the artifacts, and presses publish.
+# collects them into a *draft* GitHub Release — that part stays a draft a human has to publish.
+# The same tag also publishes the container image to GHCR and the npm packages, in the `image`
+# and `npm` jobs below. A `workflow_dispatch` run rehearses both (build the image, pack the
+# tarballs) without pushing or publishing anything.
 on:
   push:
     tags: ['v*']
@@ -112,9 +114,87 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
 
+  # Builds and (on a tag) pushes the CLI container image to GHCR. The rehearsal
+  # (workflow_dispatch) builds it without logging in or pushing.
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/wirebench/wirebench-cli
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/cli/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+
+  # Publishes @wirebench/engine and @wirebench/cli to npm on a tag. The rehearsal
+  # (workflow_dispatch) only packs and checks the tarballs.
+  npm:
+    needs: check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wirebench/engine --filter @wirebench/cli build
+
+      - name: Pack and check the tarballs (rehearsal)
+        if: github.event_name == 'workflow_dispatch'
+        run: pnpm pack:check
+
+      - name: Publish
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          pnpm --filter @wirebench/engine --filter @wirebench/cli exec npm version "$v" --no-git-tag-version
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then dist=next; else dist=latest; fi
+          pnpm publish -r --filter @wirebench/engine --filter @wirebench/cli --access public --tag "$dist" --no-git-checks
+
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # The only job that writes: it creates the draft release and attaches the artifacts.
     permissions:
