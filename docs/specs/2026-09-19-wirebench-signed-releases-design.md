@@ -136,14 +136,14 @@ each step exists, and jobs get least-privilege permissions (only `release` write
 
 ## Success criteria
 
-- [ ] A rehearsal with no secrets builds signed-ready artifacts: NSIS and MSI for x64 and arm64, macOS
+- [x] A rehearsal with no secrets builds signed-ready artifacts: NSIS and MSI for x64 and arm64, macOS
       and Linux as today, and a CycloneDX SBOM.
-- [ ] `latest.yml` matches the final Windows installers (`update-metadata.ts --check`).
+- [x] `latest.yml` matches the final Windows installers (`update-metadata.ts --check`).
 - [ ] With SignPath secrets set, the app executable and both installers are signed. Verified on the
       first signed rehearsal.
 - [ ] Tag builds attest every artifact and the SBOM, and `gh attestation verify` passes on a download.
-- [ ] Silent install for NSIS and MSI, and download verification, are documented on the site.
-- [ ] `docs/release.md` covers the SignPath and Apple setups end to end.
+- [x] Silent install for NSIS and MSI, and download verification, are documented on the site.
+- [x] `docs/release.md` covers the SignPath and Apple setups end to end.
 
 ## Open questions
 

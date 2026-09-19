@@ -48,7 +48,7 @@ is picked up.
 
 | # | Item | Who | Size | Status | Why here |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | follow-up | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
+| 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | **pipeline done** (2026-09-19); waiting on the SignPath application and an Apple account | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
 | 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide and switching guide done; benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
 | 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner on `main`** (S1–S6); gRPC unary and OAuth2 client credentials (S7, #30), CI recipes (#31) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
 | — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
@@ -104,13 +104,14 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
 
 ### Release and distribution
 
-- **Signing.** macOS needs a Developer ID Application certificate and notarisation through the Apple
-  Developer Program. Windows can use SignPath Foundation's free open-source programme or Azure Artifact
-  Signing; a traditional CA certificate is the most expensive route and the most awkward in CI. The
-  secrets are listed in `docs/release.md`; the workflow already skips signing for any that are unset.
-- **Fleet installation.** Document the NSIS installer's silent mode and produce an MSI in the same pass as
-  signing (item 1): Intune-managed customers ask for both at once.
-- **Supply chain.** A CycloneDX SBOM and GitHub build attestations attached to every release, also item 1.
+- **Signing.** Pipeline done 2026-09-19 (issue #28). Windows is signed through SignPath Foundation's
+  open-source programme (ruled 2026-09-19): the app first, then the NSIS and MSI installers, with
+  `latest.yml` recomputed afterwards. macOS signs and notarises through electron-builder. Both stay
+  unsigned until their secrets exist. What is left is outside the repository: the SignPath application
+  and an Apple Developer account. `docs/release.md` has the steps.
+- **Fleet installation.** Done: an MSI for x64 and arm64 beside the NSIS installer, with silent installs
+  documented on the site.
+- **Supply chain.** Done: a CycloneDX SBOM on every release, and build and SBOM attestations on tags.
 - **Managed preferences.** A policy file at a system location that locks the proxy, CA bundle and update
   settings for managed machines.
 - **Portable build.** A Windows zip with a relative data directory, for locked-down machines where nothing

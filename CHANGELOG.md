@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Fleet-ready releases.** An MSI installer for Windows x64 and arm64, for Intune and other fleet
+  tools (`msiexec /qn`); a CycloneDX SBOM with every release; build and SBOM attestations on tagged
+  releases, checked with `gh attestation verify`. Windows signing through SignPath Foundation is wired
+  into the release workflow and switches on with its secrets. Silent installs and download
+  verification are on the install page, and the site has a code-signing policy.
 - **User guide.** A documentation site at https://wirebench.github.io/wirebench/: install and first run on
   macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
   shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on

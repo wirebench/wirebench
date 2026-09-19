@@ -36,7 +36,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
 
 ## Phase 3 — Close-out
 
-- [ ] **T7. Close-out.** Update the roadmap row and the changelog, tick the spec, and open the PR.
+- [x] **T7. Close-out.** Update the roadmap row and the changelog, tick the spec, and open the PR.
   SignPath's application and a signed rehearsal stay with the owner, and #28 stays open until the
   first signed release.
   - Verify: `pnpm check`; `pnpm test:perf`; a green rehearsal linked in the PR.
