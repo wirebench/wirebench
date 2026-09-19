@@ -173,6 +173,26 @@ describe('harOf — WebSocket', () => {
     );
     expect(text).not.toContain('secret-tok');
   });
+
+  it('a WebSocket failure row (refused handshake) produces a valid HAR entry', () => {
+    const entry = harOf(
+      [
+        {
+          kind: 'failure',
+          failure: makeFailure({
+            protocol: 'websocket',
+            request: { url: 'ws://127.0.0.1:1/refuse', method: 'GET', headers: { Authorization: '<redacted>' } },
+          }),
+        },
+      ],
+      CREATOR,
+    ).log.entries[0]!;
+    expect(entry.request.method).toBe('GET');
+    expect(entry.request.url).toBe('ws://127.0.0.1:1/refuse');
+    expect(entry.response.status).toBe(0);
+    expect(entry._error?.code).toBe('connection-refused');
+    requiredFieldsPresent(entry);
+  });
 });
 
 describe('harFileName', () => {

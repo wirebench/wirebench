@@ -6,6 +6,14 @@ export interface RecordWsSessionInput {
   readonly apiName: string;
   readonly folderPath: string;
   readonly exchange: WsExchangeSummary;
+  /**
+   * Whether the live `handshake` event actually fired for this session — the one fact
+   * `ipc/request.ts`'s `reportWsHandshakeFailure` is guarded by. `ok` is derived from it rather
+   * than from `exchange.handshake.status === 101`: that status is optional on the engine's
+   * handshake (e.g. absent through a proxy tunnel) and so cannot itself distinguish an opened
+   * session from a refused one.
+   */
+  readonly handshakeOpened: boolean;
   /** Query parameters an API key travels in, masked in the URL whatever they are called. */
   readonly keyParams?: readonly string[];
 }
@@ -64,7 +72,7 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
     method: 'GET',
     ...(ws.status !== undefined ? { status: ws.status } : {}),
     durationMs: exchange.durationMs,
-    ok: ws.status === 101 && ws.closedBy !== 'error',
+    ok: record.handshakeOpened && ws.closedBy !== 'error',
     request: { envelopeXml: '', headers },
     ...(ws.status !== undefined
       ? {

@@ -437,6 +437,30 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     await openPromise;
   });
 
+  it('the successful log row masks a secret header and an API-key query parameter when secrets are hidden', async () => {
+    const onExchange = vi.fn<(entry: LogEntryWire) => void>();
+    const withKeyInQuery = (requestId: string) =>
+      requestId.startsWith('ws-')
+        ? resolution('/echo', {
+            auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
+          })
+        : undefined;
+    register({ onExchange, getSecret: () => Promise.resolve('shh-secret') }, { wsSend: withKeyInQuery });
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 's8b', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+    unwrap(await invoke('request.wsClose', { sendId: 's8b' }));
+    await openPromise;
+
+    expect(onExchange).toHaveBeenCalledTimes(1);
+    const entry = onExchange.mock.calls[0]![0];
+    if (entry.kind !== 'exchange') throw new Error('unreachable');
+    const exchange = entry.exchange as { url: string; wsUrl: string; requestHeaders: Record<string, string> };
+    expect(exchange.requestHeaders['Authorization']).toBe('<redacted>');
+    expect(exchange.url).not.toContain('shh-secret');
+    expect(exchange.wsUrl).not.toContain('shh-secret');
+  });
+
   it('writes one History entry on close, through wsMeta and the resolved request/api names', async () => {
     const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
       Promise.resolve({ id: 'h1', kind: 'websocket' } as HistoryEntryWire),

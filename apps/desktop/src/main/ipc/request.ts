@@ -1227,12 +1227,18 @@ function reportWsHandshake(
 }
 
 /**
- * The HTTP Log's row for a handshake that never reached 101: a refusal (e.g. 401) or a transport
+ * The HTTP Log's row for a handshake that never opened: a refusal (e.g. 401) or a transport
  * failure before any response. Checked against the *settled* `summary` rather than a live event —
  * `openWsSession`'s `done` never rejects for this, and the engine's `onHandshake` hook never fires
  * for it either (only a handshake that actually opened reaches it) — so this is the one place such
  * a failure can be seen and reported, exactly like a prepare/send-stage failure. `recordWs` still
  * writes History for it afterwards (`closedBy: 'error'`).
+ *
+ * Guarded by `handshakeLogged` — set only by that same live event — rather than by
+ * `summary.handshake.status !== 101`: `status` is *optional* on the engine's handshake (e.g. absent
+ * through a proxy tunnel, which never populates it even for a session that opened fine), so testing
+ * it here could report a failure row for a session that already got a success row. The two rows
+ * must stay provably exclusive.
  */
 function reportWsHandshakeFailure(
   deps: RequestChannelDeps,
@@ -1240,8 +1246,9 @@ function reportWsHandshakeFailure(
   requestId: string,
   summary: WsExchangeSummary,
   keyParams: readonly string[] | undefined,
+  handshakeLogged: boolean,
 ): void {
-  if (summary.handshake.status === 101) {
+  if (handshakeLogged) {
     return;
   }
   const { handshake } = summary;
@@ -1264,13 +1271,20 @@ function reportWsHandshakeFailure(
   );
 }
 
-/** Appends one WebSocket session's history entry, on close — successful or not. A no-op without a history service. */
+/**
+ * Appends one WebSocket session's history entry, on close — successful or not. A no-op without a
+ * history service. `handshakeOpened` is the same fact `reportWsHandshakeFailure` is guarded by
+ * (the live `handshake` event actually fired), so History's `ok` follows it rather than
+ * re-deriving from `summary.handshake.status`, which is optional and so cannot distinguish a
+ * refusal from a session that opened but happens to carry no status (e.g. through a proxy tunnel).
+ */
 async function recordWs(
   deps: RequestChannelDeps,
   requestId: string,
   resolved: WsSendResolution,
   summary: WsExchangeSummary,
   keyParams: readonly string[] | undefined,
+  handshakeOpened: boolean,
 ): Promise<void> {
   const projectId = deps.project.projectId(requestId);
   if (deps.history === undefined || projectId === undefined) {
@@ -1283,6 +1297,7 @@ async function recordWs(
     apiName: meta?.apiName ?? resolved.api.name,
     folderPath: meta?.folderPath ?? '',
     exchange: summary,
+    handshakeOpened,
     ...(keyParams !== undefined ? { keyParams } : {}),
   });
   if (entry !== undefined) {
@@ -1414,6 +1429,11 @@ export async function openWsRequest(
   }
 
   const startedAt = Date.now();
+  // Set by the live `handshake` event, which only ever fires for one that actually opened (see
+  // `reportWsHandshake`'s doc) — the one fact that decides which of the two rows below is written,
+  // rather than re-deriving it from `summary.handshake.status`, which is *optional* (e.g. absent
+  // through a proxy tunnel) and so cannot itself tell a success from a refusal.
+  let handshakeLogged = false;
   try {
     const summary = await service.openWsSession(
       { sendId: request.sendId, requestId: request.requestId, options },
@@ -1423,14 +1443,15 @@ export async function openWsRequest(
         onLive: (event) => {
           if (event.kind === 'handshake') {
             // Only ever a `status === 101` handshake — see `reportWsHandshake`'s own doc.
+            handshakeLogged = true;
             reportWsHandshake(deps, request.sendId, request.requestId, event.handshake);
           }
           emitEvent(sender, events.ws.live, event);
         },
       },
     );
-    reportWsHandshakeFailure(deps, request.sendId, request.requestId, summary, keyParams);
-    await recordWs(deps, request.requestId, resolved, summary, keyParams);
+    reportWsHandshakeFailure(deps, request.sendId, request.requestId, summary, keyParams, handshakeLogged);
+    await recordWs(deps, request.requestId, resolved, summary, keyParams, handshakeLogged);
     return summary;
   } catch (error) {
     const durationMs = Date.now() - startedAt;

@@ -20,6 +20,7 @@ describe('buildWsHistoryEntry', () => {
       apiName: 'Chat',
       folderPath: 'Sockets',
       exchange: makeWsExchange(),
+      handshakeOpened: true,
     });
     expect(entry.kind).toBe('websocket');
     expect(entry.method).toBe('GET');
@@ -57,10 +58,38 @@ describe('buildWsHistoryEntry', () => {
         counts: { sent: 0, received: 0, bytesSent: 0, bytesReceived: 0 },
         durationMs: 10,
       }),
+      handshakeOpened: false,
     });
     expect(entry.status).toBe(401);
     expect(entry.ok).toBe(false);
     expect(entry.ws?.closedBy).toBe('error');
+  });
+
+  it('a session that opened but whose handshake carries no status (e.g. through a proxy tunnel) is still ok: true', () => {
+    // `handshake.status` is optional on the engine's handshake and can be absent even for a
+    // session that opened fine — `ok` must follow `handshakeOpened`, not `ws.status === 101`,
+    // or such a session would read as a failure it never was.
+    const entry = buildWsHistoryEntry('p1', {
+      requestId: 'ws-1',
+      requestName: 'Echo',
+      apiName: 'Chat',
+      folderPath: '',
+      exchange: makeWsExchange({
+        handshake: {
+          url: 'wss://api.test/chat',
+          requestHeaders: {},
+          requestedSubprotocols: [],
+          responseHeaders: {},
+          startedAt: '2026-09-19T08:30:05.000Z',
+          durationMs: 10,
+        },
+        closed: { code: 1000, reason: 'normal', by: 'client' },
+      }),
+      handshakeOpened: true,
+    });
+    expect(entry.status).toBeUndefined();
+    expect(entry.ok).toBe(true);
+    expect(entry.ws?.closedBy).toBe('client');
   });
 
   it('masks an API key travelling in the URL query, whatever it is called', () => {
@@ -73,6 +102,7 @@ describe('buildWsHistoryEntry', () => {
         url: 'wss://api.test/chat?x-custom-cred=shh-secret',
         handshake: { ...makeWsExchange().handshake, url: 'wss://api.test/chat?x-custom-cred=shh-secret' },
       }),
+      handshakeOpened: true,
       keyParams: ['x-custom-cred'],
     });
     expect(JSON.stringify(entry)).not.toContain('shh-secret');
@@ -93,6 +123,7 @@ describe('buildWsHistoryEntry', () => {
       apiName: 'Chat',
       folderPath: '',
       exchange: makeWsExchange({ frames, counts: { sent: 500, received: 500, bytesSent: 1000, bytesReceived: 1000 } }),
+      handshakeOpened: true,
     });
     expect(entry.ws?.frames).toHaveLength(500);
     expect(entry.ws?.truncated).toBe(true);
@@ -120,6 +151,7 @@ describe('HistoryService.recordWsSession', () => {
       apiName: 'Chat',
       folderPath: '',
       exchange: makeWsExchange(),
+      handshakeOpened: true,
     });
     expect(wire?.kind).toBe('websocket');
     const { entries } = history.list({ projectId: 'p1' });
@@ -135,6 +167,7 @@ describe('HistoryService.recordWsSession', () => {
       apiName: 'Chat',
       folderPath: '',
       exchange: makeWsExchange(),
+      handshakeOpened: true,
     });
     expect(wire).toBeUndefined();
   });
