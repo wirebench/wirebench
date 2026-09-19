@@ -135,3 +135,28 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: e2e/test-results
+
+  # Builds the container image the way a release tag will and proves it actually runs a
+  # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`
+  # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31).
+  image-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/cli/Dockerfile
+          load: true
+          push: false
+          platforms: linux/amd64
+          tags: wirebench-cli:ci
+      - run: docker run --rm wirebench-cli:ci --version
+      - run: pnpm cli:smoke --via docker --image wirebench-cli:ci
