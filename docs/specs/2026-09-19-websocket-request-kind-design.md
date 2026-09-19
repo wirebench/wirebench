@@ -223,7 +223,9 @@ Same pattern as `grpc.live`:
   the last messages before an unexpected close — is what a person returns to History for: at most **500 frames,
   the first 400 and the last 100**, and **1 MB of payload** in total. Past 1 MB an oversized frame keeps its row
   and loses its payload (`payloadTruncated: true`, its true `size` kept) rather than being dropped, so the shape
-  of the conversation survives. The handshake and the close frame are always recorded, outside the cap. An entry
+  of the conversation survives. The handshake is stored beside the frames, not among them, so the cap never touches it; the close frame is a
+  session's last frame, so it is always within the kept tail, and as a row without a payload the byte budget
+  never strips it. An entry
   that hit either limit carries `truncated: true` and `omittedFrames`, the count left out of the middle.
 
 ## 8. Renderer
