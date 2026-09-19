@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { setMonacoText } from '../helpers/editor.js';
+import { monacoModelText, setMonacoText } from '../helpers/editor.js';
 import { environmentRow, openEnvironmentsView } from '../helpers/environments.js';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
@@ -156,9 +156,11 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await sendRestByKeyboard(page);
 
     await expect(responseStatus(page)).toContainText('200');
-    const body = page.getByTestId('rest-response-body');
-    await expect(body).toContainText('Fido', { timeout: 20_000 });
-    await expect(body).toContainText('application/json');
+    // The echo lists the headers before the body, so on a short window the body's line is below
+    // the fold and never rendered: read the model. The escaped form is the echoed body as a JSON
+    // string, which the request editor's own model (unescaped) cannot match.
+    await expect.poll(() => monacoModelText(page), { timeout: 20_000 }).toContain('"body": "{\\"name\\":\\"Fido\\"}"');
+    await expect(page.getByTestId('rest-response-body')).toContainText('application/json');
   });
 
   test('refuses to send a request whose URL is not finished, and says why', async () => {

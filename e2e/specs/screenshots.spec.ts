@@ -136,7 +136,7 @@ test.describe('README screenshots', () => {
 
     // The generated envelope, open in the editor.
     await openFirstRequest(window);
-    await capture(window, 'request-editor');
+    await capture(window, 'request-editor', { mask: timingRegions(window) });
 
     // …and the response it gets back from the test server.
     await window.getByTestId('request-send').click();
