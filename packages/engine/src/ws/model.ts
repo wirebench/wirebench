@@ -226,18 +226,13 @@ export interface CreateWsRequestInput extends CreateOptions {
   readonly messages?: readonly WsSavedMessage[];
 }
 
-/**
- * Creates a request with an empty URL and inherited credentials, and nothing saved. The slug is
- * lower-cased before {@link slugify}, unlike a REST or gRPC request's: it is embedded verbatim in
- * a saved message's on-disk file name (`<request-slug>.msg-<slug>.<ext>`), which should stay
- * lower-case for stability across case-insensitive and case-sensitive file systems alike.
- */
+/** Creates a request with an empty URL and inherited credentials, and nothing saved. */
 export function createWsRequest(name: string, input: CreateWsRequestInput = {}): WsRequestDef {
   return {
     kind: 'websocket',
     id: idOf(input),
     name,
-    slug: input.slug ?? slugify(name.toLowerCase()),
+    slug: input.slug ?? slugify(name),
     order: input.order ?? 0,
     ...(input.description !== undefined ? { description: input.description } : {}),
     url: input.url ?? '',
@@ -250,7 +245,7 @@ export function createWsRequest(name: string, input: CreateWsRequestInput = {}):
   };
 }
 
-/** Creates a saved message, text and empty by default. Lower-cased for the same reason as above. */
+/** Creates a saved message, text and empty by default. */
 export function createWsSavedMessage(
   name: string,
   input?: CreateOptions & { readonly slug?: string; readonly format?: 'text' | 'binary'; readonly content?: string },
@@ -258,7 +253,7 @@ export function createWsSavedMessage(
   return {
     id: idOf(input),
     name,
-    slug: input?.slug ?? slugify(name.toLowerCase()),
+    slug: input?.slug ?? slugify(name),
     format: input?.format ?? 'text',
     content: input?.content ?? '',
   };
