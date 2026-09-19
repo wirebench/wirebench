@@ -1,6 +1,6 @@
 # Spec: WebSocket request kind
 
-- Status: **approved** 2026-09-19, not yet built
+- Status: **built** 2026-09-19
 - Date: 2026-09-19
 - Issue: #98. Shaped so that #99 (GraphQL subscriptions) and #100 (AsyncAPI import) land on it without
   reshaping it; neither is built here.

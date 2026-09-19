@@ -1,0 +1,72 @@
+---
+title: WebSocket
+description: Connect, watch a live frame timeline, and send composed or saved messages while a session is open.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A WebSocket API is a fourth container beside SOAP, REST and gRPC, in the same project, workspace,
+environments, history and search. Requests under it connect, show every frame on a live timeline,
+and send messages while the connection is open.
+
+## Create a WebSocket API and request
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **New WebSocket API…**.
+2. Set its **URL** — a `ws://` or `wss://` address. This is where every request in the API
+   connects, the same way a REST API's base URL works.
+3. Right-click the API and choose **New request**, or **New request** in a folder under it.
+
+</Steps>
+
+## Connect and watch the timeline
+
+Open the request and choose **Connect**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The
+state chip beside the button tracks the session — `connecting`, `open`, `closing`, `closed
+<code>`, or `failed` — and every frame that crosses the wire, sent or received, appears on the
+timeline as it arrives: its direction, arrival time, size and, for a control frame, its opcode.
+A text frame that parses as JSON or XML is pretty-printed, with the raw text one toggle away; a
+binary frame shows hex with a base64 copy. The timeline filters by direction, can hide control
+frames, and searches the frames it shows.
+
+## Send while connected
+
+The composer under the timeline sends one message at a time — **Text** or **Binary** (typed as
+hex or base64; anything else is refused before it reaches the wire, saying why). `${…}` property
+references expand in the message text at send time, unless *Expand properties* is off.
+
+Saved messages live on the request's **Messages** tab, named and kept with it like a REST body,
+so a message you send often is one click away rather than retyped each time.
+
+## Close the session
+
+Choose **Disconnect** to close with the default code, `1000`; the chevron beside it opens the
+code and reason fields. The code must be `1000` or in the `3000`–`4999` range — the set the
+WebSocket protocol lets an application choose — and anything else is refused in the popover with
+that sentence. The close frame, whichever side sent it, and every ping and pong along the way
+appear on the timeline as control rows.
+
+## The handshake and the session record
+
+The handshake is one HTTP Log entry: the `GET` with its headers, the `101` (or the refusal
+status) with its headers, timing and TLS. A handshake that fails outright appears as a failed
+send.
+
+The session appears in History once it closes, named after its request. A long-running session
+can produce far more frames than are worth keeping forever, so History keeps a sample rather than
+the whole run — the first 400 frames and the last 100, capped at 1 MB — enough to show how the
+session opened and how it ended. Re-sending a request from History is offered for a SOAP entry
+only; a WebSocket entry's row has Resend off, the same as REST and gRPC.
+
+<Aside type="tip">
+Use **WebSocket: Copy as Command** from the command palette to copy the open request as a
+command-line call.
+</Aside>
+
+## Related
+
+- [Environments](/wirebench/guides/environments/)
+- [Authentication](/wirebench/guides/auth/)
+- [HTTP Log](/wirebench/guides/http-log/)
+- [History](/wirebench/guides/history/)

@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **WebSocket request kind.** A fourth container beside SOAP, REST and gRPC, in the same project, workspace,
+  environments, history and search. *New WebSocket API…* takes a `ws://` or `wss://` URL; a request under it
+  connects with headers, query parameters, subprotocols, the shared auth kinds that are a header or query
+  value, the resolved proxy, a client certificate and the custom CA bundle. Every frame — sent or received,
+  text or binary, control or data — appears on a live timeline as it arrives, with a pretty-printed view for
+  JSON or XML text one toggle from the raw bytes. While connected, the composer sends a typed or saved
+  message (`${…}` properties expand at send time); *Disconnect* closes with a chosen code (1000 or
+  3000–4999) and reason, and the close frame and every ping/pong show as control rows. The handshake is one
+  HTTP Log entry (`GET`, its headers, the `101` or the refusal, timing and TLS); the session appears in
+  History when it closes, capped to its first 400 and last 100 frames within 1 MB — History's own re-send
+  stays offered for a SOAP entry only. `kind: websocket` writes under the existing `formatVersion: 3`; a
+  project without a WebSocket API is byte-identical to before. See
+  [`docs/specs/2026-09-19-websocket-request-kind-design.md`](docs/specs/2026-09-19-websocket-request-kind-design.md)
+  and the update to [ADR-0007](docs/adr/0007-apis-beside-interfaces.md).
 - **User guide.** A documentation site at https://wirebench.github.io/wirebench/: install and first run on
   macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
   shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on

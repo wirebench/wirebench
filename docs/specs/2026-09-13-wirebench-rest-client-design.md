@@ -78,7 +78,8 @@ third-party OpenAPI document; teams that want SOAP and REST calls in one reviewa
 - I commit the project. The diff for renaming one request touches exactly two files, and no token, password or key
   is anywhere in the folder.
 
-**Non-goals (this spec).** GraphQL, WebSocket, Server-Sent Events and gRPC (§8 for gRPC); OpenAPI 2.0 and
+**Non-goals (this spec).** GraphQL, ~~WebSocket~~ (built — see `docs/specs/2026-09-19-websocket-request-kind-design.md`),
+Server-Sent Events and gRPC (§8 for gRPC); OpenAPI 2.0 and
 AsyncAPI; a cookie jar that persists across sends (§15); mock servers for REST; pre-request scripts, tests and
 assertions (functional-testing phase); an OpenAPI _Update Definition_ that preserves edits (roadmap, §15); response
 validation against the OpenAPI schema (§15); code generation; certificate pinning.
