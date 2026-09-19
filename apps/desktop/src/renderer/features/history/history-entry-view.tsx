@@ -161,6 +161,22 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
 }
 
 /**
+ * What a capped transcript left out: the frames dropped from the middle, and whether any kept
+ * frame lost its payload to the byte budget. Worded from the record itself, not the cap's sizes.
+ */
+export function truncationNote(ws: NonNullable<HistoryEntryWire['ws']>): string {
+  const omitted = ws.omittedFrames ?? 0;
+  const parts: string[] = [];
+  if (omitted > 0) {
+    parts.push(`${String(omitted)} frame${omitted === 1 ? '' : 's'} from the middle of the session were not kept.`);
+  }
+  if (ws.frames.some((frame) => frame.payloadTruncated === true)) {
+    parts.push('Some payloads were not kept either; their frames show their size.');
+  }
+  return parts.length === 0 ? 'Part of this session was not kept.' : parts.join(' ');
+}
+
+/**
  * A WebSocket session's record: the status line the editor shows and a read-only timeline. A
  * transcript the history cap trimmed says so, because the gap is in the middle of the session.
  */
@@ -188,7 +204,7 @@ function WsHistoryBody({
       {ws.error !== undefined && <p className="px-2 py-1 text-xs text-status-danger">{ws.error}</p>}
       {ws.truncated === true && (
         <p data-testid="ws-history-truncated" role="note" className="px-2 py-1 text-xs text-status-warning">
-          {`The first 400 and last 100 frames were kept; ${String(ws.omittedFrames ?? 0)} omitted`}
+          {truncationNote(ws)}
         </p>
       )}
       <WsTimelineWithDetail frames={ws.frames} />

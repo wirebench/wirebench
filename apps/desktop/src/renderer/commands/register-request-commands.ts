@@ -16,7 +16,11 @@ import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
-import { connectOrSendWs, copyWsCommand, sendSelectedWsMessage } from '../features/ws-editor/ws-session-actions.js';
+import {
+  connectOrSendWs,
+  copyWsCommand,
+  sendSelectedWsMessageReporting,
+} from '../features/ws-editor/ws-session-actions.js';
 import {
   activeGrpcRequestId,
   activeRequestId,
@@ -101,7 +105,7 @@ export function registerRequestCommands(): void {
     run: () => {
       const requestId = activeWsRequestId();
       if (requestId !== undefined) {
-        void sendSelectedWsMessage(requestId);
+        void sendSelectedWsMessageReporting(requestId);
       }
     },
   });

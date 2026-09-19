@@ -225,4 +225,14 @@ describe('the live frame cap', () => {
     expect(live.frames[0]!.index).toBe(25);
     expect(live.droppedFrames).toBe(25);
   });
+
+  it('keeps counting messages past the cap, and leaves control frames out', () => {
+    const apply = useExchangesStore.getState().applyWsLive;
+    for (let index = 0; index < WS_LIVE_FRAME_LIMIT + 25; index += 1) {
+      apply({ kind: 'frame', sendId: 's1', frame: frame({ index, size: 2 }) });
+    }
+    apply({ kind: 'frame', sendId: 's1', frame: frame({ index: 99_999, opcode: 'ping', text: undefined, size: 4 }) });
+    const counts = useExchangesStore.getState().wsByRequest['ws-1']!.live!.counts;
+    expect(counts).toEqual({ sent: 0, received: WS_LIVE_FRAME_LIMIT + 25, bytes: (WS_LIVE_FRAME_LIMIT + 25) * 2 });
+  });
 });

@@ -172,6 +172,19 @@ export interface WsLiveState {
   readonly open: boolean;
   /** How many of the oldest frames were let go to keep {@link WS_LIVE_FRAME_LIMIT}; absent when none. */
   readonly droppedFrames?: number;
+  /**
+   * Running totals of the session's messages (text and binary frames — the engine's rule; control
+   * frames are not counted) and their payload bytes, kept as frames arrive so the status line
+   * neither falls back when old frames are let go nor re-counts thousands of frames every tick.
+   */
+  readonly counts?: WsLiveCounts;
+}
+
+/** The status line's running totals for a live session. */
+export interface WsLiveCounts {
+  readonly sent: number;
+  readonly received: number;
+  readonly bytes: number;
 }
 
 /**
@@ -184,6 +197,14 @@ export const WS_LIVE_FRAME_LIMIT = 5000;
 /** Appends a frame to a live half, letting the oldest go past {@link WS_LIVE_FRAME_LIMIT}. */
 function pushLiveFrame(live: Draft<WsLiveState>, frame: WsFrameWire): void {
   live.frames.push(frame);
+  if (frame.opcode === 'text' || frame.opcode === 'binary') {
+    const counts = live.counts ?? { sent: 0, received: 0, bytes: 0 };
+    live.counts = {
+      sent: counts.sent + (frame.direction === 'sent' ? 1 : 0),
+      received: counts.received + (frame.direction === 'received' ? 1 : 0),
+      bytes: counts.bytes + frame.size,
+    };
+  }
   const excess = live.frames.length - WS_LIVE_FRAME_LIMIT;
   if (excess > 0) {
     live.frames.splice(0, excess);

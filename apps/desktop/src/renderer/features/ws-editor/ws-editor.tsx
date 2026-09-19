@@ -30,7 +30,7 @@ import { WsMessagesTab } from './messages-tab.js';
 import { WsResponsePane } from './response-pane.js';
 import { WsSettingsTab } from './settings-tab.js';
 import { WsSubprotocolsTab } from './subprotocols-tab.js';
-import { sendWsComposed, useWsSelectionStore } from './ws-session-actions.js';
+import { sendWsComposed, sendWsReporting, useWsSelectionStore } from './ws-session-actions.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -146,7 +146,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
 
   const onSendSaved = useCallback(
     (message: WsSavedMessageWire) => {
-      void sendWsComposed(requestId, {
+      void sendWsReporting(requestId, {
         format: message.format,
         content: message.content,
         expand: message.format === 'text',

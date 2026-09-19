@@ -65,6 +65,8 @@ describe('a WebSocket entry in History', () => {
     useHistoryStore.setState({ entries: [wsEntry()], total: 1 });
     render(<HistoryView />);
     expect(screen.getByTestId('history-ws-badge').textContent).toBe('WS');
+    // No ↻: a session is not replayed from History.
+    expect(screen.queryByRole('button', { name: 'Re-send Lobby' })).toBeNull();
   });
 
   it('shows the status line and a read-only timeline, without a composer or Re-send', () => {
@@ -85,7 +87,26 @@ describe('a WebSocket entry in History', () => {
     useHistoryStore.setState({ entries: [wsEntry({ truncated: true, omittedFrames: 1234 })], total: 1 });
     render(<HistoryEntryView historyId="h-ws" />);
     expect(screen.getByTestId('ws-history-truncated').textContent).toBe(
-      'The first 400 and last 100 frames were kept; 1234 omitted',
+      '1234 frames from the middle of the session were not kept.',
+    );
+  });
+
+  it('mentions trimmed payloads, alone or beside omitted frames', () => {
+    const trimmed = {
+      index: 2,
+      direction: 'received' as const,
+      opcode: 'text' as const,
+      at: 20,
+      size: 9e6,
+      payloadTruncated: true,
+    };
+    useHistoryStore.setState({
+      entries: [wsEntry({ truncated: true, omittedFrames: 0, frames: [trimmed] })],
+      total: 1,
+    });
+    render(<HistoryEntryView historyId="h-ws" />);
+    expect(screen.getByTestId('ws-history-truncated').textContent).toBe(
+      'Some payloads were not kept either; their frames show their size.',
     );
   });
 });

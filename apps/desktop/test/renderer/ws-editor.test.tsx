@@ -27,6 +27,8 @@ import type { WsRequestWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { wsApiWire, wsRequestWire } from '../helpers/wire-defaults.js';
 
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
@@ -232,6 +234,25 @@ describe('the WebSocket commands', () => {
       expect(wsSend).toHaveBeenCalledWith(expect.objectContaining({ content: 'ping' }));
     });
     expect(openWs).not.toHaveBeenCalled();
+  });
+
+  it('toasts a failed send from Mod+Enter and from ws.sendMessage', async () => {
+    showToast.mockReset();
+    wsSend.mockResolvedValue({ ok: false, error: { code: 'ws-session-closed', message: 'the connection is closed' } });
+    setSession('open');
+    await runCommand('ws.connect', context);
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('ws-session-closed: the connection is closed');
+    });
+    showToast.mockReset();
+    // A second failure with the same error is still a new failure.
+    useExchangesStore.setState({
+      wsByRequest: { 'ws-1': { status: 'open', sendId: 's1', live: { frames: [], open: true } } },
+    });
+    await runCommand('ws.sendMessage', context);
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('ws-session-closed: the connection is closed');
+    });
   });
 
   it('Escape cancels a handshake in progress, and only then', async () => {

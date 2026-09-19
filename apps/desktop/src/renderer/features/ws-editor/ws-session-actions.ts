@@ -55,11 +55,26 @@ export async function sendSelectedWsMessage(requestId: string): Promise<string |
   });
 }
 
+/**
+ * {@link sendSelectedWsMessage} for the shortcut, the palette and a per-message Send: none of
+ * them has an inline place to show a failure, so it goes to the app's toast.
+ */
+export async function sendSelectedWsMessageReporting(requestId: string): Promise<void> {
+  const failure = await sendSelectedWsMessage(requestId);
+  if (failure !== undefined) showToast(failure);
+}
+
+/** {@link sendWsComposed}, its failure shown as a toast — for a Send with no inline error line. */
+export async function sendWsReporting(requestId: string, message: WsComposedMessage): Promise<void> {
+  const failure = await sendWsComposed(requestId, message);
+  if (failure !== undefined) showToast(failure);
+}
+
 /** `Mod+Enter` outside the composer: connect a closed session, send the selected message on an open one. */
 export function connectOrSendWs(requestId: string): void {
   const status = useExchangesStore.getState().wsByRequest[requestId]?.status;
   if (status === 'open') {
-    void sendSelectedWsMessage(requestId);
+    void sendSelectedWsMessageReporting(requestId);
     return;
   }
   if (status === 'connecting' || status === 'closing') {

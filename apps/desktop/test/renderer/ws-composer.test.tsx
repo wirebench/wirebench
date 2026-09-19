@@ -200,6 +200,7 @@ describe('the status line', () => {
       live: {
         open: true,
         handshake: handshake(),
+        counts: { sent: 1, received: 0, bytes: 5 },
         frames: [
           { index: 0, direction: 'sent', opcode: 'text', at: 1, size: 5, text: 'hello' },
           { index: 1, direction: 'received', opcode: 'ping', at: 2, size: 0 },
@@ -214,6 +215,17 @@ describe('the status line', () => {
       vi.advanceTimersByTime(2000);
     });
     expect(screen.getByTestId('ws-response-status').textContent).toContain('00:12');
+    // The ticking line is not a live region: it would be re-announced every second.
+    expect(screen.getByTestId('ws-response-status').getAttribute('role')).toBeNull();
+  });
+
+  it('announces connecting and failure, which change rarely', () => {
+    const { rerender } = render(<WsStatusLine state={{ status: 'connecting', sendId: 's1' }} />);
+    expect(screen.getByRole('status').textContent).toBe('Connecting…');
+    rerender(
+      <WsStatusLine state={{ status: 'error', sendId: 's1', error: { code: 'ws-handshake', message: 'refused' } }} />,
+    );
+    expect(screen.getByRole('status').textContent).toContain('refused');
   });
 });
 

@@ -125,9 +125,12 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
-          ↻
-        </Button>
+        {/* A WebSocket session reconnects from its request; History has nothing to replay it with. */}
+        {entry.kind !== 'websocket' && (
+          <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
+            ↻
+          </Button>
+        )}
         <Button
           variant="ghost"
           onClick={onCompare}

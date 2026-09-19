@@ -12,7 +12,7 @@
  * in view (and a margin either side) between two spacers of the right height, so a long session
  * scrolls like a short one.
  */
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { formatBytes } from '../../lib/format-size.js';
 import type { WsFrameWire } from '../../../shared/wire-types.js';
@@ -31,6 +31,22 @@ const FALLBACK_VIEWPORT_ROWS = 40;
 const PIN_SLACK_PX = 24;
 
 type Direction = 'all' | 'sent' | 'received';
+
+/**
+ * Each frame's lower-cased preview, computed once per frame object: the store keeps a frame's
+ * identity once it has arrived, so a keystroke in the filter re-reads thousands of cached strings
+ * rather than re-deriving (and for binary, re-hexing) each one.
+ */
+const searchText = new WeakMap<WsFrameWire, string>();
+
+function searchTextOf(frame: WsFrameWire): string {
+  let text = searchText.get(frame);
+  if (text === undefined) {
+    text = framePreview(frame).toLowerCase();
+    searchText.set(frame, text);
+  }
+  return text;
+}
 
 const DIRECTIONS: readonly { readonly id: Direction; readonly label: string }[] = [
   { id: 'all', label: 'All' },
@@ -90,7 +106,7 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
       (frame) =>
         (direction === 'all' || frame.direction === direction) &&
         (showControl || !isControlFrame(frame)) &&
-        (needle === '' || framePreview(frame).toLowerCase().includes(needle)),
+        (needle === '' || searchTextOf(frame).includes(needle)),
     );
   }, [frames, direction, showControl, query]);
 
@@ -207,7 +223,8 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
   );
 }
 
-function TimelineRow({
+/** Memoised: a new frame, or a selection change, repaints only the rows it touches. */
+const TimelineRow = memo(function TimelineRow({
   frame,
   selected,
   onSelect,
@@ -250,4 +267,4 @@ function TimelineRow({
       <span className="min-w-0 flex-1 truncate text-fg-default">{framePreview(frame)}</span>
     </li>
   );
-}
+});

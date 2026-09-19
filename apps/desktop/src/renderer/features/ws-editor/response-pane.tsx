@@ -54,11 +54,6 @@ export function wsStatusText(summary: WsStatusSummary): string {
   return parts.join(' · ');
 }
 
-/** Whether a frame is a message (text or binary) rather than a control frame. */
-function isData(frame: WsFrameWire): boolean {
-  return frame.opcode === 'text' || frame.opcode === 'binary';
-}
-
 /** The status line's parts for a request's session, live or finished; `undefined` before any handshake. */
 export function wsStatusSummary(state: WsExchangeState | undefined, now: number): WsStatusSummary | undefined {
   const exchange = state?.exchange;
@@ -78,16 +73,18 @@ export function wsStatusSummary(state: WsExchangeState | undefined, now: number)
   if (live === undefined || handshake === undefined) {
     return undefined;
   }
-  const data = live.frames.filter(isData);
+  // Running totals the store keeps as frames arrive: they survive the frame cap and cost nothing
+  // per tick.
+  const counts = live.counts ?? { sent: 0, received: 0, bytes: 0 };
   const started = Date.parse(handshake.startedAt);
   return {
     status: handshake.status,
     extensions: handshake.extensions,
     protocol: handshake.protocol,
     ...(Number.isNaN(started) ? {} : { elapsedMs: now - started }),
-    sent: data.filter((frame) => frame.direction === 'sent').length,
-    received: data.filter((frame) => frame.direction === 'received').length,
-    bytes: data.reduce((sum, frame) => sum + frame.size, 0),
+    sent: counts.sent,
+    received: counts.received,
+    bytes: counts.bytes,
   };
 }
 
@@ -135,10 +132,14 @@ export function WsStatusLine({ state }: WsStatusLineProps) {
   return <WsSummaryLine summary={summary} />;
 }
 
-/** One status line from a summary already made — the History view has no live state to read. */
+/**
+ * One status line from a summary already made — the History view has no live state to read. Not a
+ * live region: while a session is open its clock changes every second, and a screen reader would
+ * announce each tick. The connecting and failure lines, which change rarely, are the announced ones.
+ */
 export function WsSummaryLine({ summary }: { readonly summary: WsStatusSummary }) {
   return (
-    <p role="status" data-testid="ws-response-status" className="truncate px-2 font-mono text-xs text-fg-muted">
+    <p data-testid="ws-response-status" className="truncate px-2 font-mono text-xs text-fg-muted">
       {wsStatusText(summary)}
     </p>
   );
