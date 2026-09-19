@@ -1101,6 +1101,34 @@ describe('useProjectStore with REST data', () => {
     expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
   });
 
+  it('closes an open WebSocket session and drops the tab/draft of a request removed with its folder', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({
+        wsApis: [wsApiWire()],
+        folders: [restFolderWire({ id: 'folder-1', apiId: 'ws-api-1' })],
+        wsRequests: [wsRequestWire({ folderId: 'folder-1' })],
+        ...overrides,
+      });
+    const emptied = wsWire({ folders: [], wsRequests: [] });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: true } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useDraftsStore.getState().stageWsRequest('ws-1', { url: '/lobby-2' });
+    useEditorsStore.getState().open({ id: 'ws:ws-1', kind: 'ws-request', title: 'Lobby', wsRequestId: 'ws-1' });
+    useExchangesStore.setState({
+      wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1', live: { frames: [], open: true } } },
+    });
+
+    await useProjectStore.getState().removeFolder('folder-1');
+
+    expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
+    expect(useDraftsStore.getState().isWsRequestDirty('ws-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
   it('deleting an API takes the tabs and drafts of the requests inside it', async () => {
     const emptied = restWire({ apis: [], folders: [], restRequests: [] });
     withMutate(restWire());

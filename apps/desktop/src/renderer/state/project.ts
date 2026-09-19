@@ -1258,12 +1258,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     removeFolder: async (folderId) => {
       const inside = Object.values(get().restRequests).filter((request) => request.folderId === folderId);
       const grpcInside = Object.values(get().grpcRequests).filter((request) => request.folderId === folderId);
+      const wsInside = Object.values(get().wsRequests).filter((request) => request.folderId === folderId);
       await mutateEntity(folderId, { kind: 'remove-folder', folderId });
       for (const request of inside) {
         forgetRestRequest(request.id);
       }
       for (const request of grpcInside) {
         forgetGrpcRequest(request.id);
+      }
+      for (const request of wsInside) {
+        forgetWsRequest(request.id);
       }
     },
 

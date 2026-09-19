@@ -10,7 +10,7 @@ import type {
   WorkspaceEnvironmentWire,
 } from '../../src/shared/wire-types.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import { restApiWire, wsApiWire } from '../helpers/wire-defaults.js';
+import { grpcApiWire, restApiWire, wsApiWire } from '../helpers/wire-defaults.js';
 
 const iface: InterfaceWire = {
   id: 'iface-1',
@@ -253,5 +253,33 @@ describe('EndpointsTable — APIs', () => {
     expect(screen.getByTestId<HTMLInputElement>('environment-endpoint').getAttribute('placeholder')).toBe(
       "No override — use the API's base URL",
     );
+  });
+
+  it('badges each API row with its own protocol — REST, gRPC or WS — not a hardcoded one', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [environment],
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'internal', dir: '/tmp/demo', status: 'ready' }],
+      }),
+      mutate: vi.fn().mockResolvedValue({}) as unknown as ReturnType<typeof useWorkspaceStore.getState>['mutate'],
+    });
+    useProjectStore.setState({
+      projects: {
+        p1: {
+          id: 'p1',
+          name: 'Demo',
+          environments: [],
+          apis: [restApiWire({ order: 0 })],
+          grpcApis: [grpcApiWire({ order: 1 })],
+          wsApis: [wsApiWire({ order: 2 })],
+        } as unknown as ProjectWire,
+      },
+      interfaces: {},
+      order: [{ projectId: 'p1', interfaceIds: [] }],
+    });
+    render(<EndpointsTable environmentId={environment.id} />);
+
+    const badges = screen.getAllByTestId('env-endpoint-api-badge').map((badge) => badge.textContent);
+    expect(badges).toEqual(['REST', 'gRPC', 'WS']);
   });
 });

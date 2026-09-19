@@ -49,6 +49,8 @@ interface Row {
   /** Present only when this row belongs to a workspace environment — a project environment has
    * nothing else contending for the same entity, so there is no precedence to show. */
   readonly source?: EffectiveEndpointSource;
+  /** Present only for `entity: 'api'`: which protocol the API row's badge names. */
+  readonly protocol?: 'rest' | 'grpc' | 'websocket';
 }
 
 /** The row one interface contributes. */
@@ -72,14 +74,17 @@ function interfaceRow(input: {
 }
 
 /**
- * A REST API as this table sees it, or a gRPC API brought to the same shape: its target stands in
- * for a base URL, and a `.proto` names no servers.
+ * A REST API as this table sees it, or a gRPC/WebSocket API brought to the same shape: its target
+ * (or URL) stands in for a base URL, and neither a `.proto` nor an AsyncAPI document names
+ * servers. `kind` is what a row's badge names.
  */
-type EndpointApi = Pick<RestApiWire, 'id' | 'name' | 'slug' | 'baseUrl' | 'servers'>;
+type EndpointApi = Pick<RestApiWire, 'id' | 'name' | 'slug' | 'baseUrl' | 'servers'> & {
+  readonly kind: 'rest' | 'grpc' | 'websocket';
+};
 
-/** A gRPC API in the REST API's shape, so one row builder serves both. */
+/** A gRPC API in the REST API's shape, so one row builder serves every protocol. */
 function asEndpointApi(api: GrpcApiWire): EndpointApi {
-  return { id: api.id, name: api.name, slug: api.slug, baseUrl: api.target, servers: [] };
+  return { id: api.id, name: api.name, slug: api.slug, baseUrl: api.target, servers: [], kind: 'grpc' };
 }
 
 function asEndpointApiWithOrder(api: GrpcApiWire): EndpointApi & { readonly order: number } {
@@ -88,7 +93,15 @@ function asEndpointApiWithOrder(api: GrpcApiWire): EndpointApi & { readonly orde
 
 /** A WebSocket API in the REST API's shape, so one row builder serves all three protocols. */
 function asWsEndpointApi(api: WsApiWire): EndpointApi & { readonly order: number } {
-  return { id: api.id, name: api.name, slug: api.slug, baseUrl: api.url, servers: [], order: api.order };
+  return {
+    id: api.id,
+    name: api.name,
+    slug: api.slug,
+    baseUrl: api.url,
+    servers: [],
+    kind: 'websocket',
+    order: api.order,
+  };
 }
 
 /** The row one API contributes. Its suggestions are the servers a definition recorded. */
@@ -107,6 +120,7 @@ function apiRow(input: {
     key: input.key,
     override: input.override,
     suggestions: [input.api.baseUrl, ...input.api.servers.map((server) => server.url)].filter((url) => url !== ''),
+    protocol: input.api.kind,
     ...(input.source !== undefined ? { source: input.source } : {}),
   };
 }
@@ -149,7 +163,7 @@ function EndpointRow({ row, onCommit }: EndpointRowProps) {
         {row.name}
         {row.entity === 'api' && (
           <span data-testid="env-endpoint-api-badge" className="ml-1.5 text-xs text-fg-subtle">
-            REST
+            {row.protocol === 'grpc' ? 'gRPC' : row.protocol === 'websocket' ? 'WS' : 'REST'}
           </span>
         )}
       </th>

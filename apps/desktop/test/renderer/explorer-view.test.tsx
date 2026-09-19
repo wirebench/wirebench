@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ExplorerView, sameProject } from '../../src/renderer/features/explorer/explorer-view.js';
@@ -11,7 +11,14 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { InterfaceWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { REQUEST_PROPERTIES, restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
+import {
+  REQUEST_PROPERTIES,
+  restApiWire,
+  restFolderWire,
+  restRequestWire,
+  wsApiWire,
+  wsRequestWire,
+} from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 function wireProject(patch: Partial<WorkspaceProjectWire> = {}): WorkspaceProjectWire {
@@ -660,5 +667,75 @@ describe('ExplorerView with APIs', () => {
     expect(sameProject(nodeB, nodeC)).toBe(false);
     expect(sameProject(undefined, nodeA)).toBe(false);
     expect(sameProject(nodeA, undefined)).toBe(false);
+  });
+});
+
+describe('ExplorerView with a WebSocket API', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      projects: {},
+      interfaces: {},
+      requests: {},
+      wsApis: {},
+      wsRequests: {},
+      ws: {},
+      order: [],
+    });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useUiStore.setState({ selection: undefined, workspaces: {}, confirmDeleteNode: undefined });
+    openWorkspace([wireProject()]);
+    globalThis.ResizeObserver = ManualResizeObserver;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function seedWs(): void {
+    useProjectStore.setState({
+      order: [{ projectId: 'p1', interfaceIds: [] }],
+      ws: {
+        p1: {
+          apis: [wsApiWire()],
+          requests: [wsRequestWire()],
+        },
+      },
+      wsApis: { 'ws-api-1': wsApiWire() },
+      wsRequests: { 'ws-1': wsRequestWire() },
+      projectOf: { p1: 'p1', 'ws-api-1': 'p1', 'ws-1': 'p1' },
+    });
+    useUiStore.setState({ workspaces: { w1: { tabs: [], explorerOpen: { 'ws-api:ws-api-1': true } } } });
+  }
+
+  function mount(): void {
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+  }
+
+  it('renders a WebSocket API row with a WS badge, and a WS-badged request row', () => {
+    seedWs();
+    mount();
+
+    const apiRow = screen.getByTestId('ws-api-row');
+    expect(apiRow.textContent).toContain('Chat');
+    expect(screen.getByTestId('explorer-api-badge').textContent).toBe('WS');
+
+    const requestRow = screen.getByTestId('ws-request-row');
+    expect(requestRow.textContent).toContain('Lobby');
+    expect(screen.getByTestId('ws-badge')).not.toBeNull();
+  });
+
+  it('titles the delete confirmation "Delete API?" for a WebSocket API pending deletion', () => {
+    seedWs();
+    mount();
+
+    act(() => {
+      useUiStore.getState().requestDeleteNode({ kind: 'ws-api', id: 'ws-api-1', name: 'Chat', requestCount: 1 });
+    });
+
+    expect(screen.getByRole('alertdialog', { name: 'Delete API?' })).not.toBeNull();
   });
 });

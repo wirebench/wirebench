@@ -10,6 +10,9 @@ import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
+// No Monaco here — a plain placeholder until the WebSocket editor exists — so this stays a
+// synchronous import rather than lazy like the other tab bodies.
+import { WsEditorPlaceholder } from '../features/ws-editor/placeholder.js';
 import type { ProjectWire, WorkspaceEnvironmentWire } from '../../shared/wire-types.js';
 
 // Monaco is by far the heaviest thing the renderer loads, so the request editor — the only
@@ -530,6 +533,8 @@ export function EditorArea() {
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <WsApiTab apiId={activeTab.wsApiId} />
           </Suspense>
+        ) : activeTab.kind === 'ws-request' && activeTab.wsRequestId !== undefined ? (
+          <WsEditorPlaceholder requestId={activeTab.wsRequestId} />
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />
