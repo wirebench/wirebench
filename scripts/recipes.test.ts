@@ -195,3 +195,67 @@ describe('action/action.yml run script: version resolution', () => {
     expect(npxArgs).toContain('@wirebench/cli@9.9.9');
   });
 });
+
+/**
+ * Static checks on `templates/gitlab/wirebench.gitlab-ci.yml` (Task 5 of #31): the hidden job
+ * exists with the image, entrypoint, variables and artifacts spec §2.4 promises, and its
+ * `script` is the one-line POSIX sh command documented there.
+ */
+interface GitlabJob {
+  readonly image?: string;
+  readonly entrypoint?: readonly string[];
+  readonly variables?: Record<string, string>;
+  readonly script?: readonly string[];
+  readonly artifacts?: {
+    readonly when?: string;
+    readonly reports?: { readonly junit?: string };
+  };
+}
+
+function loadGitlabTemplate(): Record<string, GitlabJob> {
+  const text = readFileSync(join(repoRoot, 'templates', 'gitlab', 'wirebench.gitlab-ci.yml'), 'utf8');
+  return parse(text) as Record<string, GitlabJob>;
+}
+
+const EXPECTED_SCRIPT_LINE =
+  'node /app/dist/bin.js run "$WIREBENCH_PROJECT" ${WIREBENCH_ENV:+--env "$WIREBENCH_ENV"} --reporter cli --reporter "junit=$WIREBENCH_JUNIT" $WIREBENCH_ARGS';
+
+describe('templates/gitlab/wirebench.gitlab-ci.yml', () => {
+  const template = loadGitlabTemplate();
+
+  it('declares the hidden .wirebench-run job', () => {
+    expect(template['.wirebench-run']).toBeDefined();
+  });
+
+  const job = template['.wirebench-run'] as GitlabJob;
+
+  it('uses the CLI image pinned by WIREBENCH_VERSION', () => {
+    expect(job.image).toBe('ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}');
+  });
+
+  it('overrides the entrypoint', () => {
+    expect(job.entrypoint).toEqual(['']);
+  });
+
+  it('declares every documented variable with its default', () => {
+    const expected: Record<string, string> = {
+      WIREBENCH_VERSION: 'latest',
+      WIREBENCH_PROJECT: '',
+      WIREBENCH_ENV: '',
+      WIREBENCH_ARGS: '',
+      WIREBENCH_JUNIT: 'wirebench-junit.xml',
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(job.variables?.[name], `variable "${name}"`).toBe(value);
+    }
+  });
+
+  it('has the exact one-line script from spec §2.4', () => {
+    expect(job.script).toEqual([EXPECTED_SCRIPT_LINE]);
+  });
+
+  it('always publishes the JUnit report, even on a red pipeline', () => {
+    expect(job.artifacts?.when).toBe('always');
+    expect(job.artifacts?.reports?.junit).toBe('$WIREBENCH_JUNIT');
+  });
+});

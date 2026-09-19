@@ -1,0 +1,34 @@
+# Wirebench GitLab CI template (docs/specs/2026-09-19-ci-recipes-design.md §2.4).
+#
+# Usage:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/wirebench/wirebench/v2.3.0/templates/gitlab/wirebench.gitlab-ci.yml
+#
+#   api-tests:
+#     extends: .wirebench-run
+#     variables:
+#       WIREBENCH_VERSION: '2.3.0'
+#       WIREBENCH_PROJECT: api-tests
+#       WIREBENCH_ENV: staging
+#
+# This file is not rewritten when a release tag is cut — the tagged file must equal the tagged
+# commit — so always set WIREBENCH_VERSION explicitly rather than relying on the `latest` default
+# above. Map CI/CD secrets to masked variables named WIREBENCH_SECRET_<NAME> (Settings > CI/CD >
+# Variables, "Mask variable" on); the runner reads them from the environment and never prints them.
+
+.wirebench-run:
+  image: ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}
+  entrypoint: ['']
+  variables:
+    WIREBENCH_VERSION: latest
+    WIREBENCH_PROJECT: ''
+    WIREBENCH_ENV: ''
+    WIREBENCH_ARGS: ''
+    WIREBENCH_JUNIT: wirebench-junit.xml
+  script:
+    - node /app/dist/bin.js run "$WIREBENCH_PROJECT" ${WIREBENCH_ENV:+--env "$WIREBENCH_ENV"} --reporter cli --reporter "junit=$WIREBENCH_JUNIT" $WIREBENCH_ARGS
+  artifacts:
+    when: always
+    reports:
+      junit: $WIREBENCH_JUNIT

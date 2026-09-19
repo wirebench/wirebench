@@ -243,18 +243,88 @@ async function smokeDocker(demoUrl: string, image: string): Promise<void> {
   }
 }
 
-/** `--gitlab`: runs the GitLab template's `script[0]` in the image instead of the CLI directly. */
-function checkGitlabTemplate(): void {
+/**
+ * `--gitlab`: runs the GitLab template's `.wirebench-run.script[0]` in the image with `sh -c`
+ * (`--entrypoint sh`, matching the template's `entrypoint: [""]` override that hands the shell
+ * the raw command), passing the WIREBENCH_* variables the template expects via `-e`. Same fixture
+ * mount and four checks as `--via docker`, so a defect in the template's shell expansion (word
+ * splitting on WIREBENCH_ARGS, a missing `--env` when WIREBENCH_ENV is empty, …) surfaces here
+ * instead of only on a GitLab runner.
+ */
+async function smokeGitlab(demoUrl: string, image: string): Promise<void> {
   const templatePath = join(repoRoot, 'templates', 'gitlab', 'wirebench.gitlab-ci.yml');
   if (!existsSync(templatePath)) {
-    usageError(
-      `--gitlab: ${templatePath} does not exist yet (Task 5 adds the GitLab template); nothing to smoke-test.`,
-    );
+    usageError(`--gitlab: ${templatePath} does not exist.`);
   }
-  // Task 5 replaces this with: parse the template's `.wirebench-run.script[0]`, run it with
-  // `docker run --entrypoint sh … <image> -c "<script>"`, passing WIREBENCH_* via `-e`, then the
-  // same four checks as the other recipes.
-  fail('--gitlab: the template exists but running its script is not implemented yet (Task 5).');
+  const { parse } = await import('yaml');
+  const template = parse(await readFile(templatePath, 'utf8')) as {
+    ['.wirebench-run']?: { script?: readonly string[] };
+  };
+  const script = template['.wirebench-run']?.script?.[0];
+  if (script === undefined || script.length === 0) {
+    fail(`--gitlab: ${templatePath} has no .wirebench-run.script[0]`);
+  }
+
+  const workDir = await mkdtemp(join(tmpdir(), 'wirebench-cli-smoke-gitlab-'));
+  try {
+    await cp(FIXTURE, workDir, { recursive: true });
+    const run: Runner = (args, env) => {
+      // The template's script takes its arguments from WIREBENCH_PROJECT/_ENV/_ARGS/_JUNIT, not
+      // from argv, so translate `run <project> <flags...>` (the shared `runChecks` call shape)
+      // into those variables instead of appending argv to the shell command. `-e`/`--env` and a
+      // `--reporter junit=<path>` become WIREBENCH_ENV/WIREBENCH_JUNIT (the template already adds
+      // `--reporter cli` and the junit reporter itself); everything else — `--var …`, the
+      // selectors — passes through in WIREBENCH_ARGS exactly as given.
+      const [, projectArg, ...rest] = args;
+      let envArg = '';
+      let junitArg = 'wirebench-junit.xml';
+      const extraArgs: string[] = [];
+      for (let i = 0; i < rest.length; i += 1) {
+        const token = rest[i] as string;
+        if ((token === '-e' || token === '--env') && rest[i + 1] !== undefined) {
+          envArg = rest[i + 1] as string;
+          i += 1;
+        } else if (token === '--reporter' && rest[i + 1] === 'cli') {
+          i += 1;
+        } else if (token === '--reporter' && rest[i + 1]?.startsWith('junit=') === true) {
+          junitArg = (rest[i + 1] as string).slice('junit='.length);
+          i += 1;
+        } else {
+          extraArgs.push(token);
+        }
+      }
+      const envFlags = Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+      const templateVars: Record<string, string> = {
+        WIREBENCH_PROJECT: projectArg as string,
+        WIREBENCH_ENV: envArg,
+        WIREBENCH_JUNIT: junitArg,
+        WIREBENCH_ARGS: extraArgs.join(' '),
+      };
+      const varFlags = Object.entries(templateVars).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+      return execCapture(
+        'docker',
+        [
+          'run',
+          '--rm',
+          '--network',
+          'host',
+          '--entrypoint',
+          'sh',
+          '-v',
+          `${workDir}:/work`,
+          ...envFlags,
+          ...varFlags,
+          image,
+          '-c',
+          script,
+        ],
+        {},
+      );
+    };
+    await runChecks(run, '.', workDir, (hostPath) => relative(workDir, hostPath), demoUrl);
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
 }
 
 /** `--serve-only`: starts the demo server and stays up until killed, for another CI step to hit. */
@@ -307,7 +377,16 @@ async function main(): Promise<void> {
     if (via !== 'docker') {
       usageError('--gitlab requires --via docker');
     }
-    checkGitlabTemplate();
+    if (values.image === undefined || values.image.length === 0) {
+      usageError('--gitlab requires --image <ref>');
+    }
+    const demo = await startDemoServer();
+    try {
+      await smokeGitlab(demo.url, values.image);
+    } finally {
+      await demo.close();
+    }
+    process.stdout.write('cli-smoke --via docker --gitlab: ok\n');
     return;
   }
 

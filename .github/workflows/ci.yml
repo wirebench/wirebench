@@ -160,6 +160,7 @@ jobs:
           tags: wirebench-cli:ci
       - run: docker run --rm wirebench-cli:ci --version
       - run: pnpm cli:smoke --via docker --image wirebench-cli:ci
+      - run: pnpm cli:smoke --via docker --image wirebench-cli:ci --gitlab
 
   # Proves the npm recipe end to end: pack both packages the way a release would, install the
   # tarballs into an empty directory (no workspace, no `workspace:*` protocol to fall back on),
