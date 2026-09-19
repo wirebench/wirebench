@@ -40,7 +40,7 @@ export async function setTheme(page: Page, preference: 'dark' | 'light'): Promis
 
 /**
  * Regions carrying a real request's timing — a response's duration/status line, and any HTTP
- * log rows in the console, and the status bar's last-request line — masked out of every capture. Unlike `a11y.spec.ts`'s
+ * log rows in the console, and the status bar's last-request and last-saved lines — masked out of every capture. Unlike `a11y.spec.ts`'s
  * `dynamicRegions` (masked so a *pixel comparison* never depends on when it ran), these are
  * masked because they are wall-clock numbers off whoever's machine re-shoots the docs: a
  * committed screenshot should not silently vary with — or leak — a maintainer's local timing.
@@ -50,6 +50,7 @@ export function timingRegions(page: Page): Locator[] {
     page.getByTestId('response-status'),
     page.locator('[data-testid="http-log-row"]'),
     page.getByTestId('status-bar-last'),
+    page.getByTestId('status-bar-save'),
   ];
 }
 
@@ -59,6 +60,7 @@ export function restTimingRegions(page: Page): Locator[] {
     page.getByTestId('rest-response-status'),
     page.locator('[data-testid="http-log-row"]'),
     page.getByTestId('status-bar-last'),
+    page.getByTestId('status-bar-save'),
   ];
 }
 
