@@ -6,6 +6,8 @@ import {
   REQUEST_PROPERTIES,
   restApiWire,
   restRequestWire,
+  wsApiWire,
+  wsRequestWire,
 } from './helpers/wire-defaults.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
 
@@ -98,6 +100,32 @@ function projectWithRest(): ProjectWire {
         query: [{ name: 'status', value: 'open', enabled: true }],
         headers: [{ name: 'X-Tenant', value: 'acme', enabled: true }],
         body: { kind: 'raw', language: 'json', contentType: 'application/json', text: '{ "note": "rush" }' },
+      }),
+    ],
+  };
+}
+
+/**
+ * The same project, plus one WebSocket API holding one request with a header, a subprotocol, a
+ * text saved message and a binary one — enough to tell a text hit from a binary-bytes non-hit.
+ */
+function projectWithWs(): ProjectWire {
+  return {
+    ...project(),
+    wsApis: [wsApiWire({ id: 'ws-api-9', name: 'Chat Service' })],
+    wsRequests: [
+      wsRequestWire({
+        id: 'ws-9',
+        apiId: 'ws-api-9',
+        name: 'Lobby socket',
+        url: '/chat/lobby',
+        headers: [{ name: 'X-Room', value: 'general', enabled: true }],
+        subprotocols: ['chat.v1'],
+        messages: [
+          { id: 'm-greet', name: 'Greeting', slug: 'Greeting', format: 'text', content: 'hello there' },
+          // Base64 for the bytes 0x01 0x02 0x03; its own text never mentions "lobby" or "hello".
+          { id: 'm-bytes', name: 'Handshake bytes', slug: 'Handshake-bytes', format: 'binary', content: 'AQID' },
+        ],
       }),
     ],
   };
@@ -220,6 +248,126 @@ describe('search.query', () => {
   });
 
   it('finds a REST request by a fragment of its URL', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithRest()));
+
+    const result = (await invoke({ query: '/orders', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string; snippet: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({
+      kind: 'request-body',
+      protocol: 'rest',
+      requestId: 'rest-9',
+      snippet: 'POST /orders/{orderId}',
+    });
+  });
+
+  it('finds a WebSocket request by its name', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({
+      query: 'Lobby socket',
+      regex: false,
+      caseSensitive: false,
+      scopes: ALL_SCOPES,
+    })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({ kind: 'request-body', protocol: 'websocket', requestId: 'ws-9' });
+  });
+
+  it('finds a WebSocket request by a fragment of its URL', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({ query: '/chat/lobby', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string; interfaceName: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({
+      kind: 'request-body',
+      protocol: 'websocket',
+      requestId: 'ws-9',
+      interfaceName: 'Chat Service',
+    });
+  });
+
+  it('finds a WebSocket request by a header value', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({ query: 'general', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; snippet: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({
+      kind: 'request-header',
+      protocol: 'websocket',
+      snippet: 'X-Room: general',
+    });
+  });
+
+  it('finds a WebSocket request by a subprotocol', async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({ query: 'chat.v1', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({ kind: 'request-body', protocol: 'websocket', requestId: 'ws-9' });
+  });
+
+  it("finds a WebSocket request by a text saved message's content", async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({ query: 'hello there', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({ kind: 'request-body', protocol: 'websocket', requestId: 'ws-9' });
+  });
+
+  it("finds a WebSocket request by a saved message's name", async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    const result = (await invoke({
+      query: 'Handshake bytes',
+      regex: false,
+      caseSensitive: false,
+      scopes: ALL_SCOPES,
+    })) as {
+      ok: true;
+      value: { matches: { kind: string; protocol?: string; requestId: string }[] };
+    };
+
+    expect(result.value.matches).toHaveLength(1);
+    expect(result.value.matches[0]).toMatchObject({ kind: 'request-body', protocol: 'websocket', requestId: 'ws-9' });
+  });
+
+  it("does not find a binary saved message's base64 content, only its name — the content is bytes, not text", async () => {
+    registerSearchChannels(engineWith(undefined), projectsWith(projectWithWs()));
+
+    // "AQID" is the base64 content of the binary message; it must never surface as a hit.
+    const result = (await invoke({ query: 'AQID', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {
+      ok: true;
+      value: { matches: unknown[] };
+    };
+
+    expect(result.value.matches).toEqual([]);
+  });
+
+  it('an existing REST search assertion still passes unchanged', async () => {
     registerSearchChannels(engineWith(undefined), projectsWith(projectWithRest()));
 
     const result = (await invoke({ query: '/orders', regex: false, caseSensitive: false, scopes: ALL_SCOPES })) as {

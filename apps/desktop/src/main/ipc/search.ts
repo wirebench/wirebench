@@ -165,16 +165,20 @@ function collectFrom(
   }
 
   // A WebSocket request's searchable text is its URL, its subprotocols and its saved messages —
-  // the header table is a separate document, as for the other two protocols.
+  // the header table is a separate document, as for the other two protocols. A binary message's
+  // content is base64, not text: indexing it would put opaque bytes in the corpus and produce
+  // garbage substring hits, so — mirroring how the REST indexer above only indexes a `raw`/`form`
+  // body and skips `binary`/`multipart` — only a message's name is indexed for a binary message;
+  // its content joins the corpus only when the message is text.
   for (const request of snapshot.wsRequests) {
     const apiName = snapshot.wsApis.find((api) => api.id === request.apiId)?.name ?? request.apiId;
     if (scopes.requestBodies) {
-      const lines = [request.url];
+      const lines = [request.name, request.url];
       if (request.subprotocols.length > 0) {
         lines.push(request.subprotocols.join(', '));
       }
       for (const message of request.messages) {
-        lines.push(`${message.name}: ${message.content}`);
+        lines.push(message.format === 'text' ? `${message.name}: ${message.content}` : message.name);
       }
       documents.push({
         kind: 'request-body',
