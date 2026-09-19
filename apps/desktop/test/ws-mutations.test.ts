@@ -210,6 +210,27 @@ describe('requests', () => {
     ]);
   });
 
+  it('slugs new messages in main, apart case-insensitively, whatever slug the renderer suggested', () => {
+    const next = updateWsRequest(seeded(), 'q-root', {
+      messages: [
+        { id: 'm-hi', name: 'Hi', slug: 'Hi', format: 'text', content: 'hi there' },
+        { id: 'm-a', name: 'Ping', slug: 'ping', format: 'text', content: 'a' },
+        { id: 'm-b', name: 'ping', slug: 'ping', format: 'text', content: 'b' },
+        { id: 'm-c', name: 'HI', slug: 'whatever', format: 'text', content: 'c' },
+      ],
+    }).project;
+    const slugs = findWsRequest(next, 'q-root')!.messages.map((message) => message.slug);
+    expect(slugs).toEqual(['Hi', 'Ping', 'ping-2', 'HI-2']);
+    expect(new Set(slugs.map((slug) => slug.toLowerCase())).size).toBe(slugs.length);
+  });
+
+  it('keeps an existing message’s slug when the patch renames it', () => {
+    const next = updateWsRequest(seeded(), 'q-root', {
+      messages: [{ id: 'm-hi', name: 'Hello', slug: 'hello', format: 'text', content: 'hi there' }],
+    }).project;
+    expect(findWsRequest(next, 'q-root')!.messages[0]).toMatchObject({ name: 'Hello', slug: 'Hi' });
+  });
+
   it('renames with a unique slug, clones beside the original with fresh ids, and removes with renumbering', () => {
     const renamed = updateWsRequest(seeded(), 'q-pong', { name: 'Ping' }).project;
     expect(findWsRequest(renamed, 'q-pong')).toMatchObject({ name: 'Ping', slug: 'Ping-2' });

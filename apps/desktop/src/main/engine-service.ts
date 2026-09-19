@@ -830,6 +830,9 @@ export class EngineService {
           onHandshake: (handshake) => {
             if (handshake.status === 101) {
               this.wsSessions.set(sendId, handle);
+              // The handshake is over, so `request.cancel` (Escape) has nothing left to abort: an
+              // open session ends only through `closeWs`, with a close code, never a torn socket.
+              this.sends.delete(sendId);
             }
             safeOnLive({ kind: 'handshake', sendId, handshake: toWsHandshakeWire(handshake, wireOpts) });
           },

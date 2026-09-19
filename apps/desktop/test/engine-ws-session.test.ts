@@ -101,6 +101,23 @@ describe('EngineService.openWsSession', () => {
     expect(mapSizes(service)).toEqual({ sends: 0, wsSessions: 0 });
   });
 
+  it('does not let request.cancel abort a session whose handshake already succeeded', async () => {
+    const service = new EngineService();
+    const promise = service.openWsSession({
+      sendId: 'late-esc',
+      requestId: 'q-1',
+      options: { url: `${server.url}/echo` },
+    });
+    await waitForOpen(service, 'late-esc');
+
+    expect(service.cancel('late-esc')).toEqual({ cancelled: false });
+    // Still open: a message goes, and only wsClose ends it.
+    expect(() => service.sendWsMessage('late-esc', { text: 'still here' })).not.toThrow();
+    service.closeWs('late-esc', 1000);
+    const summary = await promise;
+    expect(summary.closed.by).not.toBe('error');
+  });
+
   it('refuses a message to an unknown sendId with ws-session-unknown', () => {
     const service = new EngineService();
     expect(() => service.sendWsMessage('never-opened', { text: 'x' })).toThrow(WirebenchError);

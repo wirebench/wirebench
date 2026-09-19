@@ -387,7 +387,28 @@ export function withWsPatch(request: WsRequestDef, patch?: WsRequestPatchWire): 
     ...(patch.settings !== undefined ? { settings: cleanWsSettings(patch.settings) } : {}),
     // Reordering saved messages is done through this patch with a full `messages` list, which
     // REPLACES the request's list wholesale — the same rule tables and settings follow.
-    ...(patch.messages !== undefined ? { messages: patch.messages.map(toEngineMessage) } : {}),
+    ...(patch.messages !== undefined ? { messages: slugMessages(request, patch.messages) } : {}),
+  });
+}
+
+/**
+ * The patch's messages with main's slugs. A message the request already has keeps its slug (its
+ * file stays where it is, even across a rename); a new one is slugged from its name with the
+ * engine's `uniqueSlug`, which compares case-insensitively — `Ping` and `ping` would otherwise be
+ * the same file on macOS and Windows. The renderer's own slug is ignored: it is only a hint.
+ */
+function slugMessages(request: WsRequestDef, incoming: NonNullable<WsRequestPatchWire['messages']>): WsSavedMessage[] {
+  const existing = new Map(request.messages.map((message) => [message.id, message.slug]));
+  const taken = new Set<string>();
+  for (const message of incoming) {
+    const kept = existing.get(message.id);
+    if (kept !== undefined) taken.add(kept);
+  }
+  return incoming.map((message) => {
+    const kept = existing.get(message.id);
+    const slug = kept ?? uniqueSlug(message.name, taken);
+    taken.add(slug);
+    return { ...toEngineMessage(message), slug };
   });
 }
 
