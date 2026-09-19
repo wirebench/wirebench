@@ -1,11 +1,10 @@
-import { spawn } from 'node:child_process';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startTestSoapServer } from '@wirebench/engine/test-helpers';
 import type { TestSoapServer } from '@wirebench/engine/test-helpers';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { FIXTURE, hashTree, runCli, startDemoServer } from './helpers.js';
+import { FIXTURE, hashTree, runCli, spawnCli, startDemoServer } from './helpers.js';
 import type { DemoServer } from './helpers.js';
 
 let demo: DemoServer;
@@ -152,38 +151,38 @@ describe('wirebench run', () => {
     expect(demo.requests).toEqual(['/slow']);
   });
 
-  it('exits 130 on SIGINT and still prints the summary', async () => {
-    const child = spawn(
-      process.execPath,
-      [
-        join(import.meta.dirname, '..', '..', 'dist', 'bin.js'),
-        'run',
-        FIXTURE,
-        '-e',
-        'local',
-        ...vars(),
-        'demo/slow',
-        'demo/broken',
-      ],
-      {
-        env: { ...process.env, NO_COLOR: '1' },
-      },
-    );
+  // On Windows `child.kill('SIGINT')` terminates the process outright (no handler runs, no exit
+  // code), so there is nothing there for this test to observe.
+  it.skipIf(process.platform === 'win32')('exits 130 on SIGINT and still prints the summary', async () => {
+    const child = spawnCli(['run', FIXTURE, '-e', 'local', ...vars(), 'demo/slow', 'demo/broken']);
+    const closed = new Promise<number | null>((resolve) => child.on('close', resolve));
     let stdout = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-    await new Promise<void>((resolve) => {
-      const poll = setInterval(() => {
-        if (demo.requests.length > 0) {
-          clearInterval(poll);
-          resolve();
-        }
-      }, 5);
-    });
-    child.kill('SIGINT');
-    const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
-    expect(code).toBe(130);
-    expect(stdout).toContain('skipped');
-    expect(demo.requests).toEqual(['/slow']);
+    let poll: NodeJS.Timeout | undefined;
+    try {
+      // `/slow` answers 200 ms late, so the interrupt lands while it is in flight.
+      await new Promise<void>((resolve, reject) => {
+        const deadline = Date.now() + 5_000;
+        poll = setInterval(() => {
+          if (demo.requests.length > 0) {
+            resolve();
+          } else if (Date.now() > deadline || child.exitCode !== null) {
+            reject(new Error(`the run never reached /slow; stdout so far:\n${stdout}`));
+          }
+        }, 5);
+      });
+      child.kill('SIGINT');
+      const code = await closed;
+      expect(code).toBe(130);
+      expect(stdout).toContain('skipped');
+      expect(demo.requests).toEqual(['/slow']);
+    } finally {
+      clearInterval(poll);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+        await closed;
+      }
+    }
   });
 
   it('leaves the fixture byte-identical', async () => {

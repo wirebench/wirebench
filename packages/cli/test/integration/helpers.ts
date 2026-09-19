@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -12,15 +13,24 @@ import { join, relative } from 'node:path';
 const BIN = join(import.meta.dirname, '..', '..', 'dist', 'bin.js');
 export const FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'runner-project');
 
-/** Runs the built CLI as a child process. */
+/**
+ * Starts the built CLI as a child process under this Node — never through a shell or a `.cmd`
+ * shim, which Windows would refuse to `spawn` directly.
+ */
+export function spawnCli(
+  args: readonly string[],
+  env: Readonly<Record<string, string>> = {},
+): ChildProcessWithoutNullStreams {
+  return spawn(process.execPath, [BIN, ...args], { env: { ...process.env, NO_COLOR: '1', ...env } });
+}
+
+/** Runs the built CLI as a child process to completion. */
 export function runCli(
   args: readonly string[],
   env: Readonly<Record<string, string>> = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [BIN, ...args], {
-      env: { ...process.env, NO_COLOR: '1', ...env },
-    });
+    const child = spawnCli(args, env);
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
