@@ -67,14 +67,28 @@ export async function packPackages(outDir: string): Promise<{ engine: string; cl
 }
 
 async function main(): Promise<void> {
-  const { mkdtemp, rm } = await import('node:fs/promises');
+  // `node scripts/pack-check.ts [outDir]`: an explicit outDir (action-smoke in ci.yml passes
+  // `$RUNNER_TEMP/pkgs`, so a later step can find the tarballs by a fixed path) is kept, not
+  // cleaned up, since the caller owns it; the default temp dir behaves as before.
+  const explicitOutDir = process.argv[2];
+  const { mkdtemp, mkdir, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
-  const outDir = await mkdtemp(join(tmpdir(), 'wirebench-pack-check-'));
+  const outDir = explicitOutDir ?? (await mkdtemp(join(tmpdir(), 'wirebench-pack-check-')));
+  if (explicitOutDir !== undefined) {
+    await mkdir(outDir, { recursive: true });
+  }
   try {
     const tarballs = await packPackages(outDir);
     process.stdout.write(`packed ${tarballs.engine}\npacked ${tarballs.cli}\n`);
+    const githubOutput = process.env['GITHUB_OUTPUT'];
+    if (githubOutput !== undefined && githubOutput.length > 0) {
+      const { appendFile } = await import('node:fs/promises');
+      await appendFile(githubOutput, `engine=${tarballs.engine}\ncli=${tarballs.cli}\n`);
+    }
   } finally {
-    await rm(outDir, { recursive: true, force: true });
+    if (explicitOutDir === undefined) {
+      await rm(outDir, { recursive: true, force: true });
+    }
   }
 }
 
