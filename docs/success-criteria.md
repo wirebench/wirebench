@@ -15,7 +15,8 @@ built by [`plans/2026-09-13-wirebench-rest-client-plan.md`](plans/2026-09-13-wir
 in waves W1–W6), and SC-G1–SC-G9 for the gRPC client
 ([`specs/2026-09-16-wirebench-grpc-client-design.md`](specs/2026-09-16-wirebench-grpc-client-design.md) §10,
 built by [`plans/2026-09-16-wirebench-grpc-client-plan.md`](plans/2026-09-16-wirebench-grpc-client-plan.md)), and SC-W1–SC-W6 for the WebSocket request kind
-([`specs/2026-09-19-websocket-request-kind-design.md`](specs/2026-09-19-websocket-request-kind-design.md) §12). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
+([`specs/2026-09-19-websocket-request-kind-design.md`](specs/2026-09-19-websocket-request-kind-design.md) §12,
+built by [`plans/2026-09-19-websocket-request-kind-plan.md`](plans/2026-09-19-websocket-request-kind-plan.md)). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
 suite still runs unchanged.
 
 Every row's evidence runs in `pnpm check` (lint + typecheck + unit/integration + perf) or
