@@ -37,7 +37,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   - Verify: `pnpm docs:build`; `pnpm check:docs-images`.
 - [x] **T7. Legacy SOAP project page.** `switching/legacy-soap-project.mdx`.
   - Verify: `pnpm docs:build`; `pnpm check:banned-terms`.
-- [ ] **T8. OpenAPI and Swagger page.** `switching/openapi.mdx`.
+- [x] **T8. OpenAPI and Swagger page.** `switching/openapi.mdx`.
   - Verify: `pnpm docs:build`.
 - [ ] **T9. cURL page.** `switching/curl.mdx`.
   - Verify: `pnpm docs:build`.

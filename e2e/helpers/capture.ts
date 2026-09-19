@@ -105,20 +105,33 @@ export async function captureWindow(
   // `scale: 'css'` pins the image to 1280x800 regardless of the display's device pixel ratio:
   // otherwise a Retina machine produces a 2560x1600 file (and a different one from a non-Retina
   // machine), which is both heavier than a README wants and not reproducible across developers.
-  // A mask is painted in the window's own background rather than Playwright's default magenta, so
-  // a masked timing reads as an empty field instead of a highlighter stripe across the picture.
-  const maskColor = await page.evaluate(() => {
-    const dom = globalThis as unknown as {
-      document: { body: unknown };
-      getComputedStyle(element: unknown): { backgroundColor: string };
-    };
-    return dom.getComputedStyle(dom.document.body).backgroundColor;
-  });
-  const buffer = await page.screenshot({
-    animations: 'disabled',
-    scale: 'css',
-    ...(options.mask !== undefined ? { mask: options.mask, maskColor } : {}),
-  });
+  // A masked region is hidden rather than painted over: `visibility: hidden` keeps its space and
+  // lets whatever is behind it show, so a masked timing reads as an empty field on any surface —
+  // the status bar's shade as much as the window's. One paint colour cannot match both.
+  const masked = options.mask ?? [];
+  for (const locator of masked) {
+    await locator.evaluateAll((elements) => {
+      for (const element of elements) {
+        (element as { setAttribute(name: string, value: string): void }).setAttribute('data-capture-mask', '');
+      }
+    });
+  }
+  let buffer: Buffer;
+  try {
+    buffer = await page.screenshot({
+      animations: 'disabled',
+      scale: 'css',
+      style: '[data-capture-mask] { visibility: hidden !important; }',
+    });
+  } finally {
+    for (const locator of masked) {
+      await locator.evaluateAll((elements) => {
+        for (const element of elements) {
+          (element as { removeAttribute(name: string): void }).removeAttribute('data-capture-mask');
+        }
+      });
+    }
+  }
   expect(buffer.byteLength, `${file} is ${String(buffer.byteLength)} bytes; keep screenshots small`).toBeLessThan(
     options.maxBytes,
   );

@@ -138,6 +138,52 @@ const SWITCHING_COLLECTION = JSON.stringify({
   ],
 });
 
+/**
+ * An OpenAPI document with the things an import reports: two security schemes to choose from (one
+ * with a flow there is no field for), a cookie parameter, a second media type, a webhook and a
+ * vendor extension. The summary it produces is the one the OpenAPI switching page explains.
+ */
+const SWITCHING_OPENAPI = [
+  'openapi: 3.1.0',
+  'info:',
+  '  title: Petstore',
+  '  version: 1.4.0',
+  'servers:',
+  '  - url: https://petstore.example.com/v2',
+  'security:',
+  '  - apiKey: []',
+  '  - oauth: []',
+  'tags:',
+  '  - name: pets',
+  'x-internal-owner: platform',
+  'paths:',
+  '  /pets:',
+  '    get:',
+  '      tags: [pets]',
+  '      summary: List pets',
+  '      parameters:',
+  '        - { name: limit, in: query, schema: { type: integer }, example: 20 }',
+  '        - { name: session, in: cookie, schema: { type: string } }',
+  '      responses: { "200": { description: OK } }',
+  '    post:',
+  '      tags: [pets]',
+  '      summary: Create a pet',
+  '      requestBody:',
+  '        content:',
+  '          application/json: { schema: { type: object, properties: { name: { type: string } } } }',
+  '          application/xml: { schema: { type: object } }',
+  '      responses: { "201": { description: Created } }',
+  'webhooks:',
+  '  petAdopted:',
+  '    post: { responses: { "200": { description: OK } } }',
+  'components:',
+  '  securitySchemes:',
+  '    apiKey: { type: apiKey, in: header, name: X-Api-Key }',
+  '    oauth:',
+  '      type: oauth2',
+  '      flows: { password: { tokenUrl: "https://id.example.com/token", scopes: {} } }',
+].join('\n');
+
 /** A Calculator `Add` envelope summing `intA` and `intB`. */
 function addEnvelope(intA: string, intB: string): string {
   return [
@@ -535,5 +581,21 @@ test.describe('docs site screenshots', () => {
     await window.getByTestId('import-postman-submit').click();
     await expect(window.getByTestId('import-postman-warnings')).toBeVisible();
     await shoot(window, 'switching/postman-summary');
+  });
+
+  test('switching: an OpenAPI import summary', async () => {
+    launched = await launchApp();
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'light');
+    await createWorkspace(window, 'Team APIs');
+    await createProject(window, 'Pet Service');
+
+    await openImportDialog(window, 'openapi');
+    await window.getByRole('tab', { name: 'Paste' }).click();
+    await window.getByTestId('import-openapi-paste').fill(SWITCHING_OPENAPI);
+    await window.getByTestId('import-openapi-submit').click();
+    await expect(window.getByTestId('import-openapi-skipped')).toBeVisible();
+    await shoot(window, 'switching/openapi-summary');
   });
 });
