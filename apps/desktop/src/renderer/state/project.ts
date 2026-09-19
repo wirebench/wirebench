@@ -785,6 +785,29 @@ export function folderChainOf(
   return chain;
 }
 
+/**
+ * `folderId` and every folder beneath it, however deep — what `removeFolder` needs to find every
+ * request a folder's removal takes with it, since main removes a folder and its whole subtree in
+ * one mutation, but the renderer's request maps are flat and only know a request's *immediate*
+ * folder.
+ */
+function descendantFolderIds(folders: Readonly<Record<string, RestFolderWire>>, folderId: string): ReadonlySet<string> {
+  const ids = new Set([folderId]);
+  // Repeated passes rather than recursion: the map is flat, and a parent may appear after its
+  // child. It settles as soon as a pass adds nothing.
+  for (;;) {
+    const before = ids.size;
+    for (const folder of Object.values(folders)) {
+      if (folder.parentId !== undefined && ids.has(folder.parentId)) {
+        ids.add(folder.id);
+      }
+    }
+    if (ids.size === before) {
+      return ids;
+    }
+  }
+}
+
 /** The folders a REST request sits in, outermost first. Empty for a request at the API's root. */
 export function selectFolderChain(state: ProjectSnapshot, requestId: string): readonly RestFolderWire[] {
   return folderChainOf(state.folders, state.restRequests[requestId]?.folderId);
@@ -1256,9 +1279,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     removeFolder: async (folderId) => {
-      const inside = Object.values(get().restRequests).filter((request) => request.folderId === folderId);
-      const grpcInside = Object.values(get().grpcRequests).filter((request) => request.folderId === folderId);
-      const wsInside = Object.values(get().wsRequests).filter((request) => request.folderId === folderId);
+      // main removes a folder and everything nested inside it, so the renderer must forget every
+      // request in the whole subtree — not just the ones sitting directly in `folderId` — or a
+      // request two folders deep keeps its tab, draft and (for a WebSocket request) its open
+      // session after the folder that held it is gone.
+      const insideIds = descendantFolderIds(get().folders, folderId);
+      const inside = Object.values(get().restRequests).filter(
+        (request) => request.folderId !== undefined && insideIds.has(request.folderId),
+      );
+      const grpcInside = Object.values(get().grpcRequests).filter(
+        (request) => request.folderId !== undefined && insideIds.has(request.folderId),
+      );
+      const wsInside = Object.values(get().wsRequests).filter(
+        (request) => request.folderId !== undefined && insideIds.has(request.folderId),
+      );
       await mutateEntity(folderId, { kind: 'remove-folder', folderId });
       for (const request of inside) {
         forgetRestRequest(request.id);
