@@ -11,8 +11,11 @@
  * extracts the tarballs and asserts on their contents; `node scripts/pack-check.ts` runs the
  * same pack for local/CI use as `pnpm pack:check`.
  *
- * No shell is used anywhere here: `execFileSync` is called with an argv array, never a shell
- * string, so package names and paths can't be reinterpreted by a shell.
+ * `execFileSync` is always called with an argv array, never a shell string, so package names and
+ * paths can't be reinterpreted by a shell. The one exception is `pnpm.cmd` on Windows: Node
+ * cannot spawn a `.cmd` shim without `shell: true` (it's a batch file, not a native executable),
+ * so the `pack` calls below pass `shell: process.platform === 'win32'` — same treatment as the
+ * `npm install` call in `pack-check.test.ts`.
  *
  * `pnpm pack` (pnpm 9.13.2) rejects `--filter` — filtering makes pnpm pick the recursive code
  * path, which `pack` does not implement (`Unknown option: 'recursive'`) — so each package is
@@ -33,6 +36,7 @@ function pack(packageDir: string, outDir: string): void {
   execFileSync(PNPM_BIN, ['pack', '--pack-destination', outDir], {
     cwd: packageDir,
     stdio: 'pipe',
+    shell: process.platform === 'win32',
   });
 }
 
