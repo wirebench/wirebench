@@ -110,3 +110,36 @@ describe('a WebSocket entry in History', () => {
     );
   });
 });
+
+describe('re-send in History is SOAP only', () => {
+  it('offers ↻ on a SOAP row (or one with no kind) and not on REST, gRPC or WebSocket rows', () => {
+    const base = wsEntry();
+    const soap = { ...base, id: 's', kind: 'soap' as const, requestName: 'Soap', ws: undefined };
+    const legacy = { ...base, id: 'l', kind: undefined, requestName: 'Legacy', ws: undefined };
+    const rest = { ...base, id: 'r', kind: 'rest' as const, requestName: 'Rest', ws: undefined };
+    const grpc = { ...base, id: 'g', kind: 'grpc' as const, requestName: 'Grpc', ws: undefined };
+    useHistoryStore.setState({ entries: [soap, legacy, rest, grpc, base], total: 5 });
+    render(<HistoryView />);
+    expect(screen.getByRole('button', { name: 'Re-send Soap' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Re-send Legacy' })).toBeTruthy();
+    for (const name of ['Rest', 'Grpc', 'Lobby']) {
+      expect(screen.queryByRole('button', { name: `Re-send ${name}` })).toBeNull();
+    }
+  });
+
+  it('offers Re-send in a SOAP entry’s tab and not in a REST one’s', () => {
+    const base = wsEntry();
+    useHistoryStore.setState({
+      entries: [
+        { ...base, id: 's', kind: 'soap', ws: undefined },
+        { ...base, id: 'r', kind: 'rest', ws: undefined },
+      ],
+      total: 2,
+    });
+    const { unmount } = render(<HistoryEntryView historyId="s" />);
+    expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+    unmount();
+    render(<HistoryEntryView historyId="r" />);
+    expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+  });
+});

@@ -8,6 +8,7 @@ import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
+import { canResendHistoryEntry } from './history-actions.js';
 import { useProjectStore } from '../../state/project.js';
 import { ipc } from '../../state/ipc-client.js';
 import { WsSummaryLine, WsTimelineWithDetail } from '../ws-editor/response-pane.js';
@@ -123,8 +124,8 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
               Go to request
             </Button>
           )}
-          {/* A session is not replayed from History; it reconnects from its request. */}
-          {entry.kind !== 'websocket' && (
+          {/* Only a SOAP send can be replayed from History; the others resend from their request. */}
+          {canResendHistoryEntry(entry) && (
             <Button variant="secondary" onClick={onResend}>
               Re-send
             </Button>

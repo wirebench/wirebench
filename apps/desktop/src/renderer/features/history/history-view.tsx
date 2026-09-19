@@ -9,6 +9,7 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
+import { canResendHistoryEntry } from './history-actions.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire, WorkspaceProjectWire } from '../../../shared/wire-types.js';
@@ -125,8 +126,8 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        {/* A WebSocket session reconnects from its request; History has nothing to replay it with. */}
-        {entry.kind !== 'websocket' && (
+        {/* Only a SOAP send can be replayed from History; the others resend from their request. */}
+        {canResendHistoryEntry(entry) && (
           <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
             ↻
           </Button>
