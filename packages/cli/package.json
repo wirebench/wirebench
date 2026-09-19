@@ -1,9 +1,26 @@
 {
   "name": "@wirebench/cli",
   "version": "2.1.1",
-  "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wirebench/wirebench.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "prepack": "node -e \"require('fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
   "bin": {
     "wirebench": "./dist/bin.js"
   },

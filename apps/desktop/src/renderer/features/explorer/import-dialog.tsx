@@ -1246,6 +1246,10 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
         </div>
       )}
 
+      {result.kind === 'postman' && (result.summary.warnings?.length ?? 0) > 0 && (
+        <PostmanWarnings name={result.summary.name} warnings={result.summary.warnings ?? []} />
+      )}
+
       {result.kind === 'proto' && (
         <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
           <p className="font-semibold text-base">{result.summary.name}</p>
@@ -1322,22 +1326,10 @@ function LegacySummary({
   readonly report: LegacyImportReportWire;
   readonly reportText: string;
 }) {
-  const [copied, setCopied] = useState(false);
   const { counts } = report;
   const warnings = report.items.filter((item) => item.severity === 'warning');
   const notes = report.items.filter((item) => item.severity === 'info');
   const plural = (n: number, word: string, many = `${word}s`): string => `${String(n)} ${n === 1 ? word : many}`;
-  const renderItems = (items: typeof report.items, testId: string) => (
-    <ul data-testid={testId} className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto text-xs text-fg-subtle">
-      {items.map((item, index) => (
-        <li key={index}>
-          {item.path !== '' && <span className="text-fg-default">{item.path}</span>}
-          {item.path !== '' && ' — '}
-          {item.message}
-        </li>
-      ))}
-    </ul>
-  );
   return (
     <>
       <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
@@ -1353,27 +1345,75 @@ function LegacySummary({
       {warnings.length > 0 && (
         <div className="rounded border border-hairline-strong p-2">
           <p className="text-sm text-status-warning">{plural(warnings.length, 'thing')} to look at</p>
-          {renderItems(warnings, 'import-legacy-warnings')}
+          <ReportItems items={warnings} testId="import-legacy-warnings" />
         </div>
       )}
       {notes.length > 0 && (
         <div className="rounded border border-hairline-strong p-2">
           <p className="text-sm text-fg-default">{plural(notes.length, 'note')}</p>
-          {renderItems(notes, 'import-legacy-notes')}
+          <ReportItems items={notes} testId="import-legacy-notes" />
         </div>
       )}
-      <div className="flex justify-start">
-        <button
-          type="button"
-          data-testid="import-legacy-copy-report"
-          className="text-xs text-accent underline"
-          onClick={() => {
-            void navigator.clipboard.writeText(reportText).then(() => setCopied(true));
-          }}
-        >
-          {copied ? 'Copied' : 'Copy report'}
-        </button>
-      </div>
+      <CopyReport text={reportText} testId="import-legacy-copy-report" />
     </>
+  );
+}
+
+/**
+ * What a Postman import did not bring across: scripts, variables, credentials to re-enter,
+ * unsupported auth. The engine words each line; the report copies them under the collection name.
+ */
+function PostmanWarnings({ name, warnings }: { readonly name: string; readonly warnings: readonly string[] }) {
+  const items = warnings.map((message) => ({ path: '', message }));
+  const count = `${String(warnings.length)} ${warnings.length === 1 ? 'thing' : 'things'}`;
+  const reportText = [`Postman collection "${name}"`, ...warnings.map((w) => `- ${w}`)].join('\n');
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-2">
+        <p className="text-sm text-status-warning">{count} to look at</p>
+        <ReportItems items={items} testId="import-postman-warnings" />
+      </div>
+      <CopyReport text={reportText} testId="import-postman-copy-report" />
+    </>
+  );
+}
+
+/** One line per report item, its path first when it has one. */
+function ReportItems({
+  items,
+  testId,
+}: {
+  readonly items: readonly { readonly path: string; readonly message: string }[];
+  readonly testId: string;
+}) {
+  return (
+    <ul data-testid={testId} className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto text-xs text-fg-subtle">
+      {items.map((item, index) => (
+        <li key={index}>
+          {item.path !== '' && <span className="text-fg-default">{item.path}</span>}
+          {item.path !== '' && ' — '}
+          {item.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Puts an import report on the clipboard, for a ticket or a migration checklist. */
+function CopyReport({ text, testId }: { readonly text: string; readonly testId: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex justify-start">
+      <button
+        type="button"
+        data-testid={testId}
+        className="text-xs text-accent underline"
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => setCopied(true));
+        }}
+      >
+        {copied ? 'Copied' : 'Copy report'}
+      </button>
+    </div>
   );
 }

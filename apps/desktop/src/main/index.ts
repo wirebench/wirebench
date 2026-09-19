@@ -299,6 +299,7 @@ void app.whenReady().then(() => {
     dialogPicks,
     oauth2: oauth2Service,
     getSecret: (ref) => secretStore.get(ref),
+    storeSecret: (value, label) => secretStore.set(value, { label }),
   };
   registerRequestChannels(engineService, requestDeps);
   registerOAuth2Channels({

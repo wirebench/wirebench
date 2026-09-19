@@ -47,6 +47,13 @@ sharing one project, one set of environments and one history.
 Yes: WSDL, OpenAPI/Swagger, Postman collections, and a legacy single-file SOAP project. You can
 also import a single request from a `curl` command line (**Import cURL…**).
 
+### Can IT deploy Wirebench to managed machines?
+
+Yes. Each release has an MSI for Windows fleets, which installs silently with `msiexec /qn`, and a
+CycloneDX SBOM. Newer releases also carry build attestations. See
+[Deploy to a fleet](/wirebench/getting-started/installation/#deploy-to-a-fleet) and the
+[code-signing policy](/wirebench/help/code-signing-policy/).
+
 ### Is Wirebench free, and what licence is it under?
 
 Yes. Wirebench is open source under the [Apache License 2.0](https://github.com/wirebench/wirebench/blob/main/LICENSE).

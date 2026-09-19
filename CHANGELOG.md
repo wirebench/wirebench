@@ -22,10 +22,21 @@ All notable changes to this project are documented here. The format follows
   project without a WebSocket API is byte-identical to before. See
   [`docs/specs/2026-09-19-websocket-request-kind-design.md`](docs/specs/2026-09-19-websocket-request-kind-design.md)
   and the update to [ADR-0007](docs/adr/0007-apis-beside-interfaces.md).
+
+- **Fleet-ready releases.** An MSI installer for Windows x64 and arm64, for Intune and other fleet
+  tools (`msiexec /qn`); a CycloneDX SBOM with every release; build and SBOM attestations on tagged
+  releases, checked with `gh attestation verify`. Windows signing through SignPath Foundation is wired
+  into the release workflow and switches on with its secrets. Silent installs and download
+  verification are on the install page, and the site has a code-signing policy.
 - **User guide.** A documentation site at https://wirebench.github.io/wirebench/: install and first run on
   macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
   shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on
   every push, and its screenshots are shot from the app by the e2e suite.
+- **Switching guide.** A Switching section on the site, one page per source — Postman collections,
+  legacy SOAP projects, OpenAPI and Swagger, and cURL commands — each saying what carries over, what
+  does not, and where the equivalent lives in Wirebench.
+- **cURL import reads `--json`, `-G` and `-I`.** `--json` becomes a JSON body with its two headers,
+  `-G` moves the data into query rows, and `-I` asks for HEAD.
 - **CLI runner: `wirebench run` and `wirebench secrets list`.** A new package, `@wirebench/cli`
   (binary `wirebench`), runs the requests already saved in a project from a pipeline: `status`,
   `soap-fault`, `match` (XPath/XQuery/JSONPath), `schema` and `sla` assertions declared per request;
@@ -42,6 +53,16 @@ All notable changes to this project are documented here. The format follows
   because this format drops unknown keys on save, **saving a project with this version writes
   `formatVersion: 4`, and an older Wirebench refuses to open it** (`format-too-new`). Everyone
   working on a project a 2.3+ build has saved needs to be on 2.3 or later too.
+- **CI recipes for the runner.** `@wirebench/cli` and `@wirebench/engine` are published to npm; a
+  container image is published to `ghcr.io/wirebench/wirebench-cli` (`linux/amd64` +
+  `linux/arm64`); a GitHub Action (`wirebench/wirebench/action@<tag>`) and a GitLab template
+  (`templates/gitlab/wirebench.gitlab-ci.yml`) wrap them. All four ways to run in CI map secrets
+  to `WIREBENCH_SECRET_<NAME>` the caller sets — none of them holds or asks for one itself. See
+  ["Run in CI"](docs/cli.md#run-in-ci) and
+  [`docs/specs/2026-09-19-ci-recipes-design.md`](docs/specs/2026-09-19-ci-recipes-design.md).
+  Publishing itself waits on the first tagged release after the npm organisation and the GHCR
+  package's visibility are set up (see ["Before the first publishing
+  release"](docs/release.md#before-the-first-publishing-release)).
 - **HTTP Log: rows kept and Preserve log.** The number of rows kept is a setting (Preferences › Behaviour,
   100–5000, default 500). Preserve log keeps the rows in memory across closing or switching a workspace;
   it is never written to disk and is off again at every launch.
@@ -126,6 +147,19 @@ All notable changes to this project are documented here. The format follows
   encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
 
 ### Fixed
+
+- **Postman import says what it left behind.** The summary lists the scripts, variables, credentials
+  and auth types a collection could not bring across, with **Copy report**; before, they were computed
+  and never shown. An OAuth 2 password or implicit grant is reported instead of silently becoming
+  client credentials, and `{{var}}` in auth fields is translated like every other field.
+- **A pasted `curl -u user:password` keeps the password**, stored as a secret, so the request
+  authenticates on its first send instead of asking for the password again.
+- **cURL flags no longer swallow the URL.** Value-less flags such as `--ntlm`, `--digest` and `-O` left
+  the REST import without a URL, and a flag with a value such as `-o out.xml` made the file the SOAP
+  endpoint. Bundled flags (`-sSL`, `-XPUT`, `-uada:pw`) are read as curl reads them.
+- **The cURL preview follows its target.** A REST import previews the method, URL, headers, body kind
+  and Basic user, without the SOAP-only warnings about `-u` and `-d @file`; the toast after an import
+  names each ignored flag instead of counting them.
 
 - **HTTP Log: a REST row follows the show-secrets toggle.** Turning _show secrets_ on or off now
   re-renders the selected REST row too, as it already did for SOAP; before, a REST row kept the

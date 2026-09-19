@@ -48,9 +48,9 @@ is picked up.
 
 | # | Item | Who | Size | Status | Why here |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | follow-up | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
-| 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide done; switching guide and benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
-| 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner on `main`** (S1–S6); gRPC unary and OAuth2 client credentials (S7, #30), CI recipes (#31) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
+| 1 | Signed and notarised releases, MSI with silent install, SBOM | Ent | XS signing, S the rest | **pipeline done** (2026-09-19); waiting on the SignPath application and an Apple account | Managed Macs and Windows fleets block unsigned apps, and every other client ships signed. Nothing else matters if IT cannot install it. |
+| 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide and switching guide done; benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
+| 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner on `main`** (S1–S6); **CI recipes (#31) shipped, pending the first publishing release** (image + npm; see `docs/release.md#before-the-first-publishing-release`); gRPC unary and OAuth2 client credentials (S7, #30) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
 | — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
 | 4 | MCP server over the engine, with CLI parity | Dev | S | idea → next | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
 | 5 | Snapshot regression across environments ✚ | Both | S–M | new | Send one request to several environments at once, diff the responses semantically with ignore rules for volatile fields, commit the golden responses, and let the runner replay them. Mostly wiring over history's re-send and diff. |
@@ -104,13 +104,14 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
 
 ### Release and distribution
 
-- **Signing.** macOS needs a Developer ID Application certificate and notarisation through the Apple
-  Developer Program. Windows can use SignPath Foundation's free open-source programme or Azure Artifact
-  Signing; a traditional CA certificate is the most expensive route and the most awkward in CI. The
-  secrets are listed in `docs/release.md`; the workflow already skips signing for any that are unset.
-- **Fleet installation.** Document the NSIS installer's silent mode and produce an MSI in the same pass as
-  signing (item 1): Intune-managed customers ask for both at once.
-- **Supply chain.** A CycloneDX SBOM and GitHub build attestations attached to every release, also item 1.
+- **Signing.** Pipeline done 2026-09-19 (issue #28). Windows is signed through SignPath Foundation's
+  open-source programme (ruled 2026-09-19): the app first, then the NSIS and MSI installers, with
+  `latest.yml` recomputed afterwards. macOS signs and notarises through electron-builder. Both stay
+  unsigned until their secrets exist. What is left is outside the repository: the SignPath application
+  and an Apple Developer account. `docs/release.md` has the steps.
+- **Fleet installation.** Done: an MSI for x64 and arm64 beside the NSIS installer, with silent installs
+  documented on the site.
+- **Supply chain.** Done: a CycloneDX SBOM on every release, and build and SBOM attestations on tags.
 - **Managed preferences.** A policy file at a system location that locks the proxy, CA bundle and update
   settings for managed machines.
 - **Portable build.** A Windows zip with a relative data directory, for locked-down machines where nothing
@@ -126,8 +127,13 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
   documentation, Update Definition, shortcuts); reference pages for the project folder format
   (ADR-0003), every preference, and the command and shortcut list; troubleshooting and FAQ; the existing
   security, release and contributing pages moved over.
-- **Switching guide.** One page per importer (item 8): what carries over, what does not, and where the
-  equivalent lives in Wirebench.
+- **Switching guide.** Done 2026-09-19 (issue #54): a Switching section on the site with one page per
+  source (Postman collections, legacy SOAP projects, OpenAPI and Swagger, cURL), each saying what
+  carries over, what does not, and where the equivalent lives in Wirebench. Four importer gaps were
+  fixed first so the pages describe behaviour that holds: Postman warnings shown in the summary, a
+  cURL `-u` password kept in the keychain, a cURL preview that follows its target, and cURL flags that
+  no longer swallow the URL. Spec and plan: `docs/specs/2026-09-19-wirebench-switching-guide-design.md`,
+  `docs/plans/2026-09-19-wirebench-switching-guide-plan.md`.
 - **Benchmark.** Startup, WSDL import and first-send timings taken from the performance budgets and
   published per release, so the speed claim is measured rather than asserted.
 - **Tooling.** Done 2026-09-18 (issue #29): the user guide is `docs-site/`, its own workspace package on
@@ -139,7 +145,7 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
   `e2e/specs/docs-screenshots.spec.ts` (`pnpm docs:screenshots`), and `pnpm check:docs-images` fails on
   a missing or orphaned one; the banned-terms and doc-path checks cover the site. Spec and plan:
   `docs/specs/2026-09-18-wirebench-docs-site-design.md`, `docs/plans/2026-09-18-wirebench-docs-site-plan.md`.
-  Still open: the switching guide and the benchmark above, and a move to wirebench.io once the domain is
+  Still open: the benchmark above, and a move to wirebench.io once the domain is
   registered.
 - **Naming.** The app's own "Generate HTML documentation" command documents the user's WSDL; the site
   calls itself the Wirebench user guide so the two are never confused.

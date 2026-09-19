@@ -116,6 +116,28 @@ test.describe('cURL', () => {
     expect(server.requests.at(-1)?.body.toString('utf8')).toContain('Fido');
   });
 
+  test('a pasted -u password goes to the keychain, and the request authenticates with it', async () => {
+    server = await startTestRestServer();
+    launched = await launchApp();
+    const page = launched.window;
+
+    await createWorkspace(page, 'cURL');
+    await createProject(page, 'Pets');
+    await createApi(page, 'Petstore', server.url);
+
+    await apiRow(page, 'Petstore').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Import cURL…' }).click();
+    await page.getByLabel('cURL command').click();
+    await page.keyboard.insertText(`curl -u u:p ${server.url}/auth/basic`);
+    await page.getByTestId('import-curl-submit').click();
+
+    await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
+    // Nothing left to type: the toast does not ask for a password.
+    await expect(page.getByText(/set a password for/)).toHaveCount(0);
+    await sendRest(page);
+    await expect(responseStatus(page)).toContainText('200');
+  });
+
   test('round-trips: copy a request as a command, paste it back, send the copy', async () => {
     server = await startTestRestServer();
     launched = await launchApp();

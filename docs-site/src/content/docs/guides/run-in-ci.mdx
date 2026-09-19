@@ -1,0 +1,133 @@
+---
+title: Run in CI
+description: Run a Wirebench project in a pipeline as a GitHub Action, a GitLab template, a container image, or plain npx.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+`@wirebench/cli` (binary `wirebench`) runs the requests already saved in a project from a
+terminal or a pipeline, and turns the result into an exit code and a report a CI system
+understands. Four recipes get there — a GitHub Action, a GitLab template, a container image, or
+plain `npx` — all backed by the same published package.
+
+<Aside type="note" title="Secrets are the caller's">
+None of these recipes holds or asks for a secret. Map each one your pipeline already has to a
+`WIREBENCH_SECRET_<NAME>` variable in the CI system's own environment or variables — the same
+name `wirebench secrets list` reports — and the runner's own masking hides the value everywhere
+a report could show it.
+</Aside>
+
+<Tabs>
+<TabItem label="GitHub Actions">
+
+```yaml
+- uses: wirebench/wirebench/action@v2.3.0
+  with:
+    project: ./api-tests
+    env: staging
+    junit: reports/wirebench.xml
+  env:
+    WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
+```
+
+The action's first step installs Node 24 (`node-version`, default `24`) — this changes which
+`node` later steps in the same job see, so pin `node-version` or give the action a job of its own
+if a later step needs a different version. It then runs `@wirebench/cli` through `npx` and
+exposes the CLI's exit code as the `exit-code` output, so a caller using
+`continue-on-error: true` can still branch on the result.
+
+Every input is passed through `env:`, never interpolated into the action's own script, so a value
+containing shell metacharacters can't be reinterpreted as source.
+
+| Input | Default | Maps to |
+| --- | --- | --- |
+| `project` | _(required)_ | `<path>` |
+| `env` | — | `--env` |
+| `select` | — | selectors, one per line |
+| `vars` | — | `--var`, one `key=value` per line |
+| `junit` / `json` / `html` | — | `--reporter junit=…` etc. |
+| `bail`, `require-assertions`, `insecure` | `false` | the flags |
+| `timeout`, `sla` | — | `--timeout`, `--sla` |
+| `version` | this action's own ref when it is a version tag (e.g. `v2.3.0` → `2.3.0`), else `latest` | `@wirebench/cli` version run via `npx` |
+| `node-version` | `24` | `actions/setup-node` |
+
+See the [action's own README](https://github.com/wirebench/wirebench/blob/main/action/README.md)
+for the full reference.
+
+</TabItem>
+<TabItem label="GitLab CI">
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v2.3.0/templates/gitlab/wirebench.gitlab-ci.yml
+
+api-tests:
+  extends: .wirebench-run
+  variables:
+    WIREBENCH_VERSION: '2.3.0'
+    WIREBENCH_PROJECT: api-tests
+    WIREBENCH_ENV: staging
+```
+
+`.wirebench-run` runs the CLI from `ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}` and
+collects `WIREBENCH_JUNIT` (default `wirebench-junit.xml`) as a JUnit report with
+`artifacts: when: always`, so results still show up on a red pipeline.
+
+<Aside type="caution" title="Pin the version">
+The template file is not rewritten when a release tag is cut — the tagged file has to equal the
+tagged commit — so its own `WIREBENCH_VERSION` default is `latest`. Always set `WIREBENCH_VERSION`
+explicitly, the way the example above does, rather than relying on that default.
+</Aside>
+
+Map a secret to `WIREBENCH_SECRET_<NAME>` under **Settings → CI/CD → Variables**, with "Mask
+variable" turned on. `WIREBENCH_ARGS` carries anything else — extra flags, selectors — through to
+the CLI unchanged.
+
+</TabItem>
+<TabItem label="Docker">
+
+```bash
+docker run --rm -v "$PWD:/work" \
+  -e WIREBENCH_SECRET_BILLING_PASSWORD \
+  ghcr.io/wirebench/wirebench-cli:2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+```
+
+The image is published for `linux/amd64` and `linux/arm64`. It runs as the non-root `node` user
+with `WORKDIR /work` and `ENTRYPOINT ["node", "/app/dist/bin.js"]`, so any `wirebench` subcommand
+follows the image reference directly — mount the project under `/work` and pass secrets with
+`-e`.
+
+</TabItem>
+<TabItem label="npx">
+
+```bash
+WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
+  npx --yes @wirebench/cli@2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+```
+
+Works on any runner that already has Node 24 — the same package the GitHub Action installs under
+the hood, with no other setup.
+
+</TabItem>
+</Tabs>
+
+## What comes back
+
+Every recipe above is the same CLI underneath, so the outcome is identical whichever one runs it:
+
+- Exit `0` when every selected request passed, `1` when an assertion failed, `2`/`3` for a
+  pipeline problem (bad flags, an unresolved secret, a network failure) — see the
+  [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md) for the full
+  exit-code table.
+- `--reporter junit=<file>` writes a JUnit file naming the request and the assertion that
+  failed, for the CI system's own test view.
+- Nothing prints a secret's value: it's masked wherever it could appear — headers, URLs, bodies,
+  an assertion's actual text — in every reporter, including the plain `cli` one.
+
+## Related
+
+- [Secrets](/wirebench/guides/secrets/) — how a secret reference resolves, on the desktop and in
+  the CLI.
+- [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md) — the full
+  `wirebench run` and `wirebench secrets list` reference, including every assertion type and
+  report format.

@@ -46,6 +46,16 @@ export default defineConfig({
             { label: 'History', slug: 'guides/history' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
+            { label: 'Run in CI', slug: 'guides/run-in-ci' },
+          ],
+        },
+        {
+          label: 'Switching',
+          items: [
+            { label: 'From Postman collections', slug: 'switching/postman' },
+            { label: 'From a legacy SOAP project', slug: 'switching/legacy-soap-project' },
+            { label: 'From OpenAPI and Swagger', slug: 'switching/openapi' },
+            { label: 'From cURL commands', slug: 'switching/curl' },
           ],
         },
         {
@@ -62,6 +72,7 @@ export default defineConfig({
           items: [
             { label: 'Troubleshooting', slug: 'help/troubleshooting' },
             { label: 'FAQ', slug: 'help/faq' },
+            { label: 'Code-signing policy', slug: 'help/code-signing-policy' },
           ],
         },
       ],

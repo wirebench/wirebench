@@ -142,6 +142,42 @@ describe('ImportPostmanDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it('lists what the import did not bring across, and copies it as a report', async () => {
+    const warnings = [
+      'Scripts on 2 items (pre-request and test) were not imported',
+      'Credentials are not copied from the collection; re-enter them for 1 auth configuration',
+    ];
+    importPostman.mockResolvedValue({
+      ok: true,
+      value: { apiId: 'api-1', projectId: 'proj-1', project, summary: summary({ warnings }) },
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    mount();
+    await userEvent.click(screen.getByTestId('import-postman-browse'));
+    await userEvent.click(screen.getByTestId('import-postman-submit'));
+
+    const list = await screen.findByTestId('import-postman-warnings');
+    expect(list.querySelectorAll('li')).toHaveLength(2);
+    expect(list.textContent).toContain('Scripts on 2 items');
+    expect(screen.getByText('2 things to look at')).toBeTruthy();
+
+    await userEvent.click(screen.getByTestId('import-postman-copy-report'));
+    expect(writeText).toHaveBeenCalledWith(
+      ['Postman collection "Sample Collection"', ...warnings.map((w) => `- ${w}`)].join('\n'),
+    );
+    await waitFor(() => expect(screen.getByTestId('import-postman-copy-report').textContent).toBe('Copied'));
+  });
+
+  it('shows no warning list when the import brought everything across', async () => {
+    mount();
+    await userEvent.click(screen.getByTestId('import-postman-browse'));
+    await userEvent.click(screen.getByTestId('import-postman-submit'));
+    await screen.findByTestId('import-postman-summary');
+    expect(screen.queryByTestId('import-postman-warnings')).toBeNull();
+    expect(screen.queryByTestId('import-postman-copy-report')).toBeNull();
+  });
+
   it('imports a collection from pasted text into a new project', async () => {
     mount();
 

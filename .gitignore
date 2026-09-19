@@ -18,3 +18,4 @@ fixtures/openapi/crafted/large.json
 git-worktrees/
 release
 .serena/
+packages/*/LICENSE

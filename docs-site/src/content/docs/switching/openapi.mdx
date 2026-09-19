@@ -1,0 +1,97 @@
+---
+title: From OpenAPI and Swagger
+description: What an OpenAPI or Swagger document brings into Wirebench, what it leaves behind, and where each part lives once it's imported.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+An OpenAPI or Swagger document becomes **one REST API** in the project you choose. Every operation
+becomes a ready-to-send request, filled in with examples from the document:
+- tags become folders;
+- servers become base URLs;
+- security schemes become auth you can apply with one click.
+
+Responses, webhooks, callbacks and vendor extensions do not come across. The summary lists what was
+skipped and why.
+
+To run the import, see [OpenAPI (and Swagger)](/wirebench/guides/importers/#openapi-and-swagger) in
+the importers guide. It reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x and 2.0, in YAML or JSON, by
+URL, file or paste.
+
+![The import summary for an OpenAPI document: two requests in one folder, two security schemes to choose from, and four things not imported](/wirebench/images/switching/openapi-summary.png)
+
+## What carries over
+
+| In the document | In Wirebench | More |
+| --- | --- | --- |
+| `info.title` and `info.description` | The API's name and description | [REST](/wirebench/guides/rest-client/) |
+| `servers`, with variables filled from their defaults | The API's **Base URL** (the first server). The others are offered as suggestions in that field | [Create an API](/wirebench/guides/rest-client/#create-an-api-and-a-request) |
+| Swagger 2 `host`, `basePath` and `schemes` | The same, built into server URLs. With no scheme, `https` | |
+| An operation's first tag | A folder, with the tag's description. An untagged operation goes in a **Deprecated** folder if it is deprecated, else in one named after the first path segment | |
+| An operation | A request named after its `summary`, else its `operationId`, else `METHOD /path`. A deprecated operation's description starts with **Deprecated.** | |
+| Path parameters | Rows in the **Path parameters** table, turned on | [Path and query parameters](/wirebench/guides/rest-client/#path-and-query-parameters) |
+| Query parameters | Rows in the **Params** table. Required ones are on; optional ones are there but off | |
+| Header parameters | Rows in the **Headers** table, all off, so the import never changes what is sent until you turn one on | |
+| Parameter examples | Values: the `example`, else the first named example, else a value made from the schema | |
+| A request body | One body, chosen in this order: JSON, XML, form, multipart, anything else. Required fields are on | [Request body](/wirebench/guides/rest-client/#request-body) |
+| Swagger 2 `body` and `formData` parameters | A raw body, or a form or multipart body | |
+| Global `security` with a single requirement | The API's auth, applied for you | [Authentication](/wirebench/guides/auth/) |
+| An operation whose `security` differs from the global one | That request's own auth. `security: []` becomes **None** | |
+
+### Security schemes
+
+The summary lists the schemes, each with a **Use** button, when the global `security` lists more
+than one requirement or none at all; you choose one. Either way, the document holds no credential to
+import, so you fill it in on the API tab.
+
+| Scheme | Wirebench auth |
+| --- | --- |
+| HTTP `basic` | Basic |
+| HTTP `bearer` | Bearer |
+| `apiKey` in a header or the query | API key, with its name and location |
+| `oauth2` with a client-credentials flow | OAuth 2, client credentials: token URL and scopes |
+| `oauth2` with an authorization-code flow | OAuth 2, authorization code with PKCE on: authorization URL, token URL and scopes |
+
+When a scheme offers both OAuth 2 flows, the import uses client credentials. The client ID is left
+empty for you to fill in.
+
+## What does not carry over
+
+| In the document | What happens | What to do |
+| --- | --- | --- |
+| Credentials of any kind | Nothing to import: a document doesn't hold them | Fill them in on the API's **Auth** tab |
+| HTTP schemes other than basic and bearer (`digest`…) | Listed in the summary with the reason; no **Use** button | Send the header yourself |
+| `apiKey` in a cookie | Listed in the summary with the reason | Send a `Cookie` header yourself |
+| OAuth 2 flows that are only `implicit` or `password` | Listed in the summary with the reason | Use a client-credentials or authorization-code setup, or a Bearer token |
+| `openIdConnect` and `mutualTLS` schemes | Listed in the summary with the reason | For mutual TLS, see [Client certificates](/wirebench/guides/auth/#client-certificates-and-keystores) |
+| Cookie parameters | Skipped, and listed | Send a `Cookie` header yourself |
+| `Accept`, `Content-Type` and `Authorization` header parameters | Skipped, and listed: the request sets these itself | Nothing |
+| A second media type for a body | Skipped, and listed with the one that was chosen | Change the body on the **Body** tab |
+| Webhooks, callbacks and links | Skipped, and listed | Nothing: they describe calls the server makes, not ones you send |
+| Vendor extensions (`x-…`) | Skipped, and listed | Nothing |
+| A `$ref` that can't be resolved | Skipped, and listed | Fix the reference in the document and import again |
+| Responses and response examples | Not imported, and not listed | Send the request to see the live response |
+| Servers set on a single path or operation | Not imported, and not listed | Set the request's URL to the full address, or use an environment |
+| Server variables with a list of allowed values | Filled from their default only. The import makes no environments from the list | Add an [environment](/wirebench/guides/environments/) per value |
+| Tags after an operation's first | Not used: a request lives in one folder | Nothing |
+
+## After importing
+
+<Steps>
+
+1. Read **things not imported** in the summary.
+
+2. If the import didn't apply a security scheme, choose **Use** on the one the API uses. Then fill in
+   its credentials on the API tab. See [Secrets](/wirebench/guides/secrets/).
+
+3. Turn on the header and optional query rows you need, on each request.
+
+4. Send one request to confirm the base URL and auth.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/guides/importers/): the Import dialog and every format it reads.
+- [REST](/wirebench/guides/rest-client/): working with the imported requests.
+- [Authentication](/wirebench/guides/auth/): each scheme's fields.
