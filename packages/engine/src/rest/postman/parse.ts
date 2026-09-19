@@ -46,6 +46,10 @@ interface ParseContext {
   scriptedItems: number;
 }
 
+function itemCount(n: number): string {
+  return `${String(n)} ${n === 1 ? 'item' : 'items'}`;
+}
+
 function tv(ctx: ParseContext, text: string): string {
   return translatePostmanVariables(text, ctx.dynamic);
 }
@@ -150,10 +154,12 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
 
   const warnings: string[] = [];
   if (ctx.skippedItems > 0) {
-    warnings.push(`${ctx.skippedItems} items without a request were skipped`);
+    warnings.push(
+      `${itemCount(ctx.skippedItems)} without a request ${ctx.skippedItems === 1 ? 'was' : 'were'} skipped`,
+    );
   }
   if (ctx.scriptedItems > 0) {
-    warnings.push(`Scripts on ${ctx.scriptedItems} items (pre-request and test) were not imported`);
+    warnings.push(`Scripts on ${itemCount(ctx.scriptedItems)} (pre-request and test) were not imported`);
   }
   if (ctx.dynamic.size > 0) {
     warnings.push(

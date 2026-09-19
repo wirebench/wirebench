@@ -156,7 +156,7 @@ export function apiFromPostmanCollection(
   }
   if (credentialCount.value > 0) {
     warnings.push(
-      `Credentials are not copied from the collection; re-enter them for ${credentialCount.value} auth configurations`,
+      `Credentials are not copied from the collection; re-enter them for ${credentialCount.value} auth ${credentialCount.value === 1 ? 'configuration' : 'configurations'}`,
     );
   }
 

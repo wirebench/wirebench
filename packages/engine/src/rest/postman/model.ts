@@ -127,5 +127,4 @@ export interface PostmanImportSummary {
   readonly requests: number;
   readonly auth?: AuthConfig['type'];
   readonly warnings?: readonly string[];
-  readonly skipped?: readonly string[];
 }

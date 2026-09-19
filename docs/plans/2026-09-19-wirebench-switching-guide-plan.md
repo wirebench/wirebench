@@ -11,7 +11,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   maps to `none` with a warning instead of silently becoming client credentials. `{{var}}` in auth fields
   (username, token and auth URLs, client ID, scope, API key name) is translated to `${var}`.
   - Verify: engine unit tests in `packages/engine/test/unit/rest/postman/`.
-- [ ] **T2. Postman summary shows warnings.** The Postman summary in `import-dialog.tsx` lists
+- [x] **T2. Postman summary shows warnings.** The Postman summary in `import-dialog.tsx` lists
   `summary.warnings` with a Copy report button, reusing the legacy summary's list. Remove the wire
   schema's unused `skipped` field, or fill it.
   - Verify: renderer unit test; an e2e step in the Postman import spec asserts that a warning is shown.
