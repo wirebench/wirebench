@@ -104,6 +104,10 @@ function Row({
             <span data-testid="history-grpc-badge" className="w-12 shrink-0 text-fg-faint">
               gRPC
             </span>
+          ) : entry.kind === 'websocket' ? (
+            <span data-testid="history-ws-badge" className="w-12 shrink-0 text-fg-faint">
+              WS
+            </span>
           ) : (
             <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
               {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
