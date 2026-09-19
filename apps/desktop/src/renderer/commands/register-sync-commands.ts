@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import { useSyncStore } from '../state/sync.js';
 import { useUiStore } from '../state/ui.js';
 import { registerCommand } from '../lib/commands.js';
@@ -10,47 +11,35 @@ import { workspaceIsShared } from './register-workspace-commands.js';
  */
 export function registerSyncCommands(): void {
   registerCommand({
-    id: 'sync.pull',
-    label: 'Sync: Pull',
-    category: 'Sync',
-    shortcut: 'Mod+Alt+L',
+    ...catalogEntry('sync.pull'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().pull(),
   });
 
   registerCommand({
-    id: 'sync.push',
-    label: 'Sync: Push',
-    category: 'Sync',
-    shortcut: 'Mod+Alt+U',
+    ...catalogEntry('sync.push'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().push(),
   });
 
   registerCommand({
-    id: 'sync.fetch',
-    label: 'Sync: Fetch',
-    category: 'Sync',
+    ...catalogEntry('sync.fetch'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().fetch(),
   });
 
   registerCommand({
-    id: 'sync.commit',
-    label: 'Sync: Commit',
-    category: 'Sync',
+    ...catalogEntry('sync.commit'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().commit(),
   });
 
   registerCommand({
-    id: 'sync.resolveConflicts',
-    label: 'Sync: Resolve Conflicts…',
-    category: 'Sync',
+    ...catalogEntry('sync.resolveConflicts'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     // The resolver component itself is mounted against this flag in Task 11.
@@ -60,9 +49,7 @@ export function registerSyncCommands(): void {
   });
 
   registerCommand({
-    id: 'sync.openPanel',
-    label: 'Sync: Show Sync Panel',
-    category: 'Sync',
+    ...catalogEntry('sync.openPanel'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => {
@@ -71,9 +58,7 @@ export function registerSyncCommands(): void {
   });
 
   registerCommand({
-    id: 'sync.revealTree',
-    label: 'Sync: Reveal Shared Folder',
-    category: 'Sync',
+    ...catalogEntry('sync.revealTree'),
     when: workspaceIsShared,
     whenScope: 'workspace.shared',
     run: () => void useSyncStore.getState().revealTree(),

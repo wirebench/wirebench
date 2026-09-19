@@ -1,0 +1,79 @@
+---
+title: REST
+description: Build a REST request, send it, and read the response — parameters, bodies, auth and queries over the result.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench's REST client groups requests under an API, which holds a base URL and, optionally,
+authentication every request under it inherits.
+
+![A REST request and its JSON response](/wirebench/images/rest-client/rest-response.png)
+
+## Create an API and a request
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **New API…**. The API tab opens; set its
+   **Base URL**.
+2. Right-click the API and choose **New request**. Name it by double-clicking the breadcrumb.
+3. Set the method in the method picker and the path or URL next to it.
+
+</Steps>
+
+## Path and query parameters
+
+A `{name}` segment in the URL becomes a row on the **Params** tab's path parameters table — its
+name is fixed by the placeholder, only its value is yours to set. The query parameters table below
+it is the other view of the same URL: editing a row rewrites the URL's query string, and editing
+the query string re-reads the table. Each row has an enabled toggle, so you can disable a
+parameter without deleting it.
+
+## Request body
+
+The **Body** tab switches between five kinds, each keeping its own draft while you try another:
+
+- **None** — no body.
+- **Raw** — a text editor with a language picker (JSON, XML, text, HTML, JavaScript) and a
+  formatter (<kbd>⌘⇧F</kbd> / <kbd>Ctrl+Shift+F</kbd>) that also reports a JSON or XML body that
+  doesn't parse instead of rewriting it.
+- **Form** — `application/x-www-form-urlencoded` key/value pairs.
+- **Multipart** — mixed text fields and file parts, picked through the native file dialog.
+- **Binary** — a single file as the whole body, with its own content type.
+
+![The Body tab of a POST request set to Raw, holding a small JSON object](/wirebench/images/rest-client/body-tab.png)
+
+## Headers and auth
+
+The **Headers** tab adds request headers as key/value rows. The **Auth** tab sets this request's
+authentication, or leaves it on **Inherit** to use the API's own — Basic, Bearer, API key (as a
+header or a query parameter), or OAuth 2 with client credentials or authorization code, whose
+client secret is stored through the same masked **Set…**/**Save** field as any other secret.
+
+## Send and read the response
+
+Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The response pane shows:
+
+- **Body** — the formatted response, with headers, cookies, redirects, timing and the raw
+  exchange each on their own tab.
+- **Query** — run XPath 3.1 or JSONPath over a JSON body directly, without leaving the response.
+
+A request with an unresolved `{path}` placeholder or a property expansion that doesn't resolve is
+refused before anything reaches the server, and the response pane says why.
+
+<Aside type="tip">
+An environment can override an API's base URL. Switch environments from the status bar's
+environment switcher; see [Environments](/wirebench/guides/environments/).
+</Aside>
+
+## Limits
+
+- The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
+  binary responses.
+
+## Related
+
+- [Importers](/wirebench/guides/importers/): bring in an OpenAPI document or a cURL command as
+  requests.
+- [Environments](/wirebench/guides/environments/)
+- [HTTP Log](/wirebench/guides/http-log/)

@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **User guide.** A documentation site at https://wirebench.github.io/wirebench/: install and first run on
+  macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
+  shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on
+  every push, and its screenshots are shot from the app by the e2e suite.
 - **HTTP Log: rows kept and Preserve log.** The number of rows kept is a setting (Preferences › Behaviour,
   100–5000, default 500). Preserve log keeps the rows in memory across closing or switching a workspace;
   it is never written to disk and is off again at every launch.

@@ -1,0 +1,103 @@
+---
+title: Property expansion syntax
+description: The ${#Scope#name} property syntax, scope precedence, escaping and how undefined or disabled variables behave.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Wirebench expands `${...}` expressions in the endpoint, envelope, headers, WS-Addressing fields,
+attachment names and paths of every send — SOAP or REST. A property's own value can reference
+another property, so expansion is recursive.
+
+## Forms
+
+**Explicit scope**, `${#Scope#name}` — resolves `name` in exactly one named scope:
+
+```
+${#Env#baseUrl}
+${#Project#apiKey}
+${#Workspace#region}
+${#Global#userAgent}
+${#System#HOME}
+```
+
+**Shorthand**, `${name}` — resolves through a fixed chain of scopes, stopping at the first one
+that defines `name`:
+
+```
+Env → Project → Workspace → Global
+```
+
+`System` (the process environment) is never reached by the shorthand form — only `${#System#name}`
+reads it. This keeps a plain `${name}` from silently picking up an unrelated environment variable
+on your machine.
+
+## Scopes
+
+| Scope | Where it comes from | Available |
+| --- | --- | --- |
+| `Env` | The active environment's properties | When a project or workspace has an active environment |
+| `Project` | The project's own `properties` | Always, for a project-scoped send |
+| `Workspace` | The workspace's `properties` | When the project is inside a workspace |
+| `Global` | Properties set once for the whole app, independent of any project | Always |
+| `System` | The OS process environment (`process.env` by default) | Always, only via the explicit `${#System#name}` form |
+
+## Precedence
+
+The shorthand `${name}` checks, in order: **Env, then Project, then Workspace, then Global.** The
+first scope that defines `name` wins, even if its value is an empty string. Use an explicit
+`${#Scope#name}` form to reach a scope that a higher one is shadowing.
+
+## Nesting and indirection
+
+A value can itself contain `${...}` expressions, and an expression's *inner* text can too — so
+`${#Project#${#Env#which}}` first resolves `${#Env#which}`, then looks up a `Project` property
+named by that result. Expansion recurses up to a depth limit (8 by default); going past it reports
+the reference as `too-deep` and leaves it verbatim rather than looping forever. A property that
+refers back to itself, directly or through a chain of other properties, is caught as a `cycle` and
+left verbatim rather than expanded.
+
+## Escaping
+
+`$${` is a literal `${` — the two characters before the brace are consumed by the escape, so
+`$${name}` produces the literal text `${name}`, unexpanded. A run of three or more `$` before a
+brace only ever has its first `$$` treated as an escape: `$$${x}` leaves a literal `$` followed by
+`${x}`, which then *is* eligible for expansion, matched left to right.
+
+## Undefined and malformed references
+
+An expression that cannot be resolved is **left in the output exactly as written** — Wirebench
+never silently drops or blanks it. Each one is reported separately (visible in validation and
+before a send) with a reason:
+
+| Reason | When it happens |
+| --- | --- |
+| `missing` | The name isn't defined in the scope (or scope chain) being checked |
+| `unknown-scope` | An explicit `${#Foo#name}` names a scope that doesn't exist |
+| `cycle` | The property refers back to itself, directly or indirectly |
+| `too-deep` | Expansion recursed past the depth limit |
+| `malformed` | A `${` was never closed with a matching `}` |
+
+<Aside type="note">
+An unresolved reference nested inside another property's value is still reported against the
+outer `${...}` you can see and edit — not against an offset inside the property's own text — so
+the message always points at something in front of you.
+</Aside>
+
+## Disabled variables
+
+A property can be switched off without deleting it: its name appears in that scope's `disabled`
+list instead of being removed from `properties`. A disabled variable is treated as **absent** for
+resolution — the shorthand form falls through to the next scope in the chain exactly as if the
+variable didn't exist, and an explicit reference to it reports `missing`. Its value stays on disk
+and is restored the moment it's re-enabled.
+
+`Global` properties have no `disabled` list of their own in the engine; a caller that wants a
+disabled global excluded from resolution filters it out before expansion.
+
+## Entitizing
+
+When expanding a SOAP envelope (never headers or the endpoint), Wirebench can XML-escape every
+substituted value — so a property containing `&`, `<` or `"` doesn't corrupt the envelope. A
+value is escaped once, at the outermost reference, even when it was reached through several
+levels of nested property values.

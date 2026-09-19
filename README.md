@@ -174,6 +174,8 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Documentation
 
+- [User guide](https://wirebench.github.io/wirebench/) — install, a ten-minute walkthrough, a guide per feature, the
+  command reference, troubleshooting and FAQ
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
 - [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
@@ -203,8 +205,8 @@ What comes next, in the order it is worth building; the [full roadmap](docs/road
 sizes, the detail per theme, and what a review of the surrounding tools changed on 2026-09-13.
 
 1. **Signed and notarised releases** — plus an MSI with silent install and an SBOM; managed fleets block unsigned apps.
-2. **Documentation site** — install and first-run pages, one guide per feature, a generated command reference, a
-   switching guide and a published benchmark.
+2. **Documentation site** — the [user guide](https://wirebench.github.io/wirebench/) is live; a switching guide and
+   a published benchmark are still to come.
 3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
    compares responses with committed golden files.
 4. **MCP server** — the engine driven by coding agents, with CLI parity and no AI inside the app.

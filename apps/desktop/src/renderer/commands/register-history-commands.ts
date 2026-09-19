@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import {
   clearHistory,
   compareLastTwoHistoryEntries,
@@ -16,17 +17,13 @@ import { useWsiStore } from '../state/wsi.js';
  */
 export function registerHistoryCommands(): void {
   registerCommand({
-    id: 'history.resend',
-    label: 'History: Re-send Last Request',
-    category: 'History',
+    ...catalogEntry('history.resend'),
     when: () => useHistoryStore.getState().entries.length > 0,
     whenScope: 'history.entries',
     run: () => void resendLastHistoryEntry(),
   });
   registerCommand({
-    id: 'history.compare',
-    label: 'History: Compare Last Two Sends',
-    category: 'History',
+    ...catalogEntry('history.compare'),
     when: () => useHistoryStore.getState().entries.length > 1,
     whenScope: 'history.pair',
     run: () => {
@@ -34,18 +31,14 @@ export function registerHistoryCommands(): void {
     },
   });
   registerCommand({
-    id: 'history.clear',
-    label: 'History: Delete All Entries',
-    category: 'History',
+    ...catalogEntry('history.clear'),
     when: () => useHistoryStore.getState().total > 0,
     whenScope: 'history.entries',
     run: () => void clearHistory(),
   });
 
   registerCommand({
-    id: 'request.exportWsiReport',
-    label: 'Export WS-I Report…',
-    category: 'Request',
+    ...catalogEntry('request.exportWsiReport'),
     // The console's WS-I Report tab holds exactly one report — whichever check ran last — so
     // there is something to export only once one has.
     when: () => useWsiStore.getState().report !== undefined,

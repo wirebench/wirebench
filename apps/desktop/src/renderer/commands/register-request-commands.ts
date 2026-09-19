@@ -1,3 +1,4 @@
+import { catalogEntry } from '@shared/command-catalog.js';
 import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import {
   addAttachmentsThroughPicker,
@@ -20,10 +21,7 @@ import { activeGrpcRequestId, activeRequestId, activeRestRequestId, onActiveRequ
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
 export function registerRequestCommands(): void {
   registerCommand({
-    id: 'request.send',
-    label: 'Send Request',
-    category: 'Request',
-    shortcut: 'Mod+Enter',
+    ...catalogEntry('request.send'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -36,10 +34,7 @@ export function registerRequestCommands(): void {
   // A REST tab's own send. It shares `Mod+Enter` with `request.send` because the two can never be
   // active at once — a tab is one kind or the other — which is what the distinct `when` scopes say.
   registerCommand({
-    id: 'rest.send',
-    label: 'Send REST Request',
-    category: 'Request',
-    shortcut: 'Mod+Enter',
+    ...catalogEntry('rest.send'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
     run: () => {
@@ -51,10 +46,7 @@ export function registerRequestCommands(): void {
   });
   // And a gRPC tab's, under the same chord for the same reason.
   registerCommand({
-    id: 'grpc.send',
-    label: 'Send gRPC Request',
-    category: 'Request',
-    shortcut: 'Mod+Enter',
+    ...catalogEntry('grpc.send'),
     when: () => activeGrpcRequestId() !== undefined,
     whenScope: 'editor.grpc',
     run: () => {
@@ -65,10 +57,7 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'request.cancel',
-    label: 'Cancel Request',
-    category: 'Request',
-    shortcut: 'Escape',
+    ...catalogEntry('request.cancel'),
     // Escape must stay available to dialogs, menus, and the palette, so this command exists
     // only while the active request is actually in flight.
     whenScope: 'editor.request',
@@ -105,10 +94,7 @@ export function registerRequestCommands(): void {
   });
 
   registerCommand({
-    id: 'request.validate',
-    label: 'Validate Request',
-    category: 'Request',
-    shortcut: 'Mod+Shift+V',
+    ...catalogEntry('request.validate'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {
@@ -123,9 +109,7 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'response.validate',
-    label: 'Validate Response',
-    category: 'Request',
+    ...catalogEntry('response.validate'),
     whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
@@ -147,9 +131,7 @@ export function registerRequestCommands(): void {
   });
 
   registerCommand({
-    id: 'request.checkWsi',
-    label: 'Check WS-I compliance',
-    category: 'Request',
+    ...catalogEntry('request.checkWsi'),
     // The message assertions judge bytes on the wire, so there has to be an exchange to judge.
     whenScope: 'editor.request',
     when: () => {
@@ -168,33 +150,25 @@ export function registerRequestCommands(): void {
   // All of them are gated the same way as `request.send`: they act on the active request tab.
 
   registerCommand({
-    id: 'request.recreateKeepValues',
-    label: 'Request: Recreate (keep values)',
-    category: 'Request',
+    ...catalogEntry('request.recreateKeepValues'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'keep-values')),
   });
   registerCommand({
-    id: 'request.recreateDiscardValues',
-    label: 'Request: Recreate (discard values)',
-    category: 'Request',
+    ...catalogEntry('request.recreateDiscardValues'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'discard-values')),
   });
   registerCommand({
-    id: 'request.createEmpty',
-    label: 'Request: Create Empty Envelope',
-    category: 'Request',
+    ...catalogEntry('request.createEmpty'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void recreateRequest(requestId, 'empty')),
   });
   registerCommand({
-    id: 'request.clone',
-    label: 'Request: Clone…',
-    category: 'Request',
+    ...catalogEntry('request.clone'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
@@ -202,25 +176,19 @@ export function registerRequestCommands(): void {
     }),
   });
   registerCommand({
-    id: 'request.copyCurl',
-    label: 'Request: Copy as cURL',
-    category: 'Request',
+    ...catalogEntry('request.copyCurl'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'posix')),
   });
   registerCommand({
-    id: 'request.copyCurlPowerShell',
-    label: 'Request: Copy as cURL (PowerShell)',
-    category: 'Request',
+    ...catalogEntry('request.copyCurlPowerShell'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void copyAsCurl(requestId, 'powershell')),
   });
   registerCommand({
-    id: 'request.importCurl',
-    label: 'Request: Import cURL…',
-    category: 'Request',
+    ...catalogEntry('request.importCurl'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
@@ -230,9 +198,7 @@ export function registerRequestCommands(): void {
   // The REST counterparts of the SOAP cURL, token and import actions. Each goes through the same
   // channel its SOAP sibling does, so the palette and the panel can never mean different things.
   registerCommand({
-    id: 'rest.copyAsCurl',
-    label: 'REST: Copy as cURL',
-    category: 'Request',
+    ...catalogEntry('rest.copyAsCurl'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
     // The same `request.curl` the SOAP command uses, and the same shell the Code panel remembers:
@@ -245,9 +211,7 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'rest.importCurl',
-    label: 'REST: Import cURL…',
-    category: 'Request',
+    ...catalogEntry('rest.importCurl'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
     run: () => {
@@ -263,9 +227,7 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'rest.getToken',
-    label: 'REST: Get OAuth2 Token',
-    category: 'Request',
+    ...catalogEntry('rest.getToken'),
     when: () => activeRestRequestId() !== undefined,
     whenScope: 'editor.rest',
     run: () => {
@@ -273,10 +235,7 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'rest.importOpenApi',
-    label: 'REST: Import OpenAPI…',
-    category: 'Definition',
-    shortcut: 'Mod+Shift+I',
+    ...catalogEntry('rest.importOpenApi'),
     run: () => {
       useUiStore.getState().setImportOpenApiDialogOpen(true);
     },
@@ -284,9 +243,7 @@ export function registerRequestCommands(): void {
   // The gRPC counterparts: the same `request.curl` channel answers with a grpcurl-style command
   // for a gRPC request, and the Import dialog opens on its `.proto` format.
   registerCommand({
-    id: 'grpc.copyAsCommand',
-    label: 'gRPC: Copy as Command',
-    category: 'Request',
+    ...catalogEntry('grpc.copyAsCommand'),
     when: () => activeGrpcRequestId() !== undefined,
     whenScope: 'editor.grpc',
     run: () => {
@@ -297,17 +254,13 @@ export function registerRequestCommands(): void {
     },
   });
   registerCommand({
-    id: 'grpc.importProto',
-    label: 'gRPC: Import .proto…',
-    category: 'Definition',
+    ...catalogEntry('grpc.importProto'),
     run: () => {
       useUiStore.getState().openImportDialog('proto');
     },
   });
   registerCommand({
-    id: 'rest.importPostman',
-    label: 'REST: Import Postman Collection…',
-    category: 'Definition',
+    ...catalogEntry('rest.importPostman'),
     run: () => {
       useUiStore.getState().setImportPostmanDialogOpen(true);
     },
@@ -315,17 +268,13 @@ export function registerRequestCommands(): void {
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.
   registerCommand({
-    id: 'request.addAttachment',
-    label: 'Request: Add Attachment…',
-    category: 'Request',
+    ...catalogEntry('request.addAttachment'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void addAttachmentsThroughPicker(requestId)),
   });
   registerCommand({
-    id: 'request.removeAttachment',
-    label: 'Request: Remove Attachment',
-    category: 'Request',
+    ...catalogEntry('request.removeAttachment'),
     whenScope: 'editor.request',
     when: () => {
       const requestId = activeRequestId();
@@ -337,9 +286,7 @@ export function registerRequestCommands(): void {
   // The four WS-Security editor actions. Unlike the request's `wssOutgoingRef` (which applies a
   // configuration on its way to the wire), these bake a header into the envelope text itself.
   registerCommand({
-    id: 'request.addWssUsernameToken',
-    label: 'Request: Add WSS Username Token…',
-    category: 'Request',
+    ...catalogEntry('request.addWssUsernameToken'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
@@ -347,9 +294,7 @@ export function registerRequestCommands(): void {
     }),
   });
   registerCommand({
-    id: 'request.addWsTimestamp',
-    label: 'Request: Add WS-Timestamp…',
-    category: 'Request',
+    ...catalogEntry('request.addWsTimestamp'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => {
@@ -357,17 +302,13 @@ export function registerRequestCommands(): void {
     }),
   });
   registerCommand({
-    id: 'request.applyOutgoingWss',
-    label: 'Request: Outgoing WSS → Apply to Editor',
-    category: 'Request',
+    ...catalogEntry('request.applyOutgoingWss'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void applyOutgoingWssToEditor(requestId)),
   });
   registerCommand({
-    id: 'request.removeOutgoingWss',
-    label: 'Request: Outgoing WSS → Remove',
-    category: 'Request',
+    ...catalogEntry('request.removeOutgoingWss'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void removeOutgoingWssFromEditor(requestId)),
@@ -377,26 +318,20 @@ export function registerRequestCommands(): void {
   // configuration: these bake the headers into the envelope text rather than applying them on
   // the way to the wire.
   registerCommand({
-    id: 'request.addWsaHeaders',
-    label: 'Request: WS-A Headers → Add to Editor',
-    category: 'Request',
+    ...catalogEntry('request.addWsaHeaders'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void addWsaHeadersToEditor(requestId)),
   });
   registerCommand({
-    id: 'request.removeWsaHeaders',
-    label: 'Request: WS-A Headers → Remove',
-    category: 'Request',
+    ...catalogEntry('request.removeWsaHeaders'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: onActiveRequest((requestId) => void removeWsaHeadersFromEditor(requestId)),
   });
 
   registerCommand({
-    id: 'request.showCode',
-    label: 'Request: Show Code',
-    category: 'Request',
+    ...catalogEntry('request.showCode'),
     when: () => activeRequestId() !== undefined,
     whenScope: 'editor.request',
     run: () => {

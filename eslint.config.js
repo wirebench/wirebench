@@ -41,6 +41,10 @@ export default tseslint.config(
       '**/test-results/**',
       '.superpowers/**',
       '**/fixtures/**',
+      'docs-site/.astro/**',
+      // Its astro:content types are generated into .astro/ by an Astro build or `astro sync`, which
+      // the lint job never runs, so typed rules would see every import as unresolved.
+      'docs-site/src/content.config.ts',
     ],
   },
   {

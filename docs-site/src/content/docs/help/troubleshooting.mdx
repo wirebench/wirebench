@@ -1,0 +1,82 @@
+---
+title: Troubleshooting
+description: Fixes for the problems you're most likely to hit installing or using Wirebench.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Install blocked by macOS or Windows
+
+Wirebench's releases aren't code-signed yet, so both systems warn on first launch. This is
+expected — see [Install and first run](/wirebench/getting-started/installation/) for the exact
+steps to get past the warning on each system.
+
+## "git was not found on this machine"
+
+A shared workspace backed by git shows this when Wirebench can't find a git executable:
+
+> git was not found on this machine. Install git, or choose it in Settings.
+
+[Install git](https://git-scm.com/downloads), or if it's already installed somewhere Wirebench
+doesn't look, point at it directly under **Preferences → Git**. The workspace still opens and
+saves as plain files while git is missing — nothing is lost, it just doesn't sync until git is
+found.
+
+## TLS, certificates and proxies
+
+Both are under **Preferences**, applied to every send:
+
+- **Preferences → SSL** — set the minimum TLS version, add a CA bundle (a PEM file of extra trust
+  anchors, added to the system store rather than replacing it), or pick a client keystore for
+  mutual TLS. There is no global "trust all certificates" option — a self-signed or otherwise
+  untrusted certificate is trusted per endpoint instead, not for every send.
+- **Preferences → Proxy** — no proxy, the system proxy, or a manual host, port and credentials.
+  **Excludes** takes a comma-separated list of hosts, `*.wildcards`, IPv4 CIDR blocks or
+  `localhost`; anything excluded always goes direct, even under a system proxy.
+
+If a send fails with a certificate or connection error, check these two sections before assuming
+the service itself is unreachable — a stale proxy exclude or a CA bundle that doesn't cover an
+internal service's certificate are common causes.
+
+## Import failures
+
+The **Import** dialog reports the underlying error inline — an
+unreachable URL, a document that doesn't parse, or (for a file) one that couldn't be read. Check:
+
+- The URL is reachable from this machine, not just a browser with different network access.
+- A `file://` or local path points at a file that exists and is readable.
+- The document is actually the format you picked — pointing "Import OpenAPI…" at a WSDL, or
+  Import cURL at something that isn't a `curl` command line, reports a clear mismatch rather than
+  guessing.
+
+For a WSDL or OpenAPI import, anything the top document imports or includes is fetched
+separately; a failure naming one of those secondary URLs means the *reference*, not the document
+you started from, couldn't be reached.
+
+## Reading a failed send in the HTTP Log
+
+The HTTP Log lists every send this session, finished or failed. A failed row shows an error code
+(for example `connection-refused`) in the **status** column instead of an HTTP status, coloured to
+stand out; hover the row for the full error message, or open it to see the same detail in the log
+entry itself. A failed send never appears with a 2xx/4xx/5xx status — those are always real
+responses from the server.
+
+## Snap: can't read files outside my home folder
+
+The `.snap` package is confined to your home folder. A WSDL, OpenAPI document, keystore or
+project stored outside it — on another mounted drive, for instance — isn't reachable by a snap
+install. Use the AppImage, `.deb` or `.rpm` package instead if you need to reach files outside
+your home folder; see [Install and first run](/wirebench/getting-started/installation/) for all
+four Linux packages.
+
+## Where your data lives
+
+Workspaces, projects, preferences and secrets all live in one data folder per system — see
+[Where your data lives](/wirebench/getting-started/installation/#where-your-data-lives) for the
+exact path on macOS, Windows and Linux (and the snap's own subfolder). There's no separate log
+file to check: Wirebench doesn't write one, and nothing is ever sent off your machine.
+
+<Aside type="tip" title="Back up the whole folder">
+Back up that folder to back up everything. To move a single project elsewhere, use **Export
+project…** instead of copying files out of app data by hand.
+</Aside>
