@@ -134,11 +134,19 @@ WIREBENCH_SECRET_DEMO_PASSWORD  missing  basic password for "svc"  demo/secure
 Exit 0 when every variable a run of the selection would need is set, exit 3 when at least one is
 missing.
 
+`secrets list` is conservative: it lists every secret the selected requests' configuration names,
+without sending anything, so it cannot know which ones a particular run will actually ask for. A
+WS-Security incoming configuration's decryption-key password, for example, is only needed when a
+response arrives encrypted. So `secrets list` can exit 3 for a selection that `run` passes; treat
+its list as what a run *may* need.
+
 ### Masking has a floor
 
 Every value resolved from the environment is registered with the redactor and masked wherever it
 could appear — headers, URL, bodies, an assertion's `actual` text — in every reporter, the `cli`
-one included. **A resolved value shorter than 4 characters is not masked by this literal
+one included. The value is also masked in each form the wire gives it: percent-encoded, form-encoded
+(`+` for a space), with XML entities (`&amp;`, `&lt;`, …) and JSON string escapes (`\"`, `\\`),
+and inside a `Basic` credential. **A resolved value shorter than 4 characters is not masked by this literal
 replacement**: a value that short is too likely to occur by chance in ordinary text (a status code,
 a short id), and masking it would shred unrelated output rather than protect anything. Pattern-based
 redaction is unaffected by this floor — `Authorization`/`Proxy-Authorization` headers,
@@ -251,10 +259,10 @@ service has learned nothing about the service. Every error carries the engine's 
 `WirebenchError.code`, printed to stderr and present in the JSON report, so a pipeline can branch on
 it.
 
-A missing keystore file and a missing WS-Security password both surface as `secret-missing`
-(exit 3), the same as a missing `passwordEnv`/`tokenEnv` variable — none of them is a usage mistake,
-since the project loaded fine and the problem is only that this machine has nothing to authenticate
-with.
+A missing WS-Security password or keystore password surfaces as `secret-missing` (exit 3), the same
+as a missing `passwordEnv`/`tokenEnv` variable, and a missing keystore file as `keystore-unreadable`
+(exit 3) — none of them is a usage mistake, since the project loaded fine and the problem is only
+that this machine has nothing to authenticate with.
 
 ## Proxy and TLS
 
