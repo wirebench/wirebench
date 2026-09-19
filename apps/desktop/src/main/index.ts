@@ -475,6 +475,10 @@ app.on('before-quit', (event) => {
   if (windowOpen) {
     broadcast(events.workspace.flushDrafts, {});
   }
+  // No open project today aborts an in-flight send on close (checked: neither the REST/gRPC send
+  // map nor a project-close path does), so a WebSocket session is closed only here, on quit —
+  // the one place every open session must end regardless of which project it belongs to.
+  engineService.closeAllWs();
   void stashed
     .then(async () => {
       await workspaceService.close();

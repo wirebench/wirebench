@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import {
   composeUrl,
   CURL_REDACTED,
+  expandWsMessage,
   fromCurl,
   fromRestCurl,
   grpcToCommand,
@@ -13,13 +14,16 @@ import {
   prettyPrint,
   ProjectError,
   recreateRequest,
+  resolveWsUrl,
   restToCurl,
   soapToCurl,
+  toWsSessionOptions,
   WirebenchError,
   writeFileAtomic,
   joinBase,
   failedRequestOf,
   grpcMethodPath,
+  wsToCommand,
 } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -33,6 +37,8 @@ import type {
   SendAuth,
   TlsOptions,
   PropertyScopes,
+  WsSessionMaterial,
+  WsSessionOptions,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
 import { resolveAuthConfig } from '../secret-resolver.js';
@@ -45,6 +51,7 @@ import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
+import type { WsSendResolution } from '../ws-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
 import { toUnresolvedRefWire } from '../engine-wire.js';
 import type {
@@ -68,6 +75,13 @@ import type {
   RequestPatchWire,
   RequestRecreateRequest,
   RequestRecreateResponse,
+  RequestOpenWsRequest,
+  RequestWsSendRequest,
+  RequestWsCloseRequest,
+  RequestWsCloseResponse,
+  WsExchangeSummary,
+  WsFrameWire,
+  WsRequestPatchWire,
 } from '../../shared/wire-types.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
@@ -111,6 +125,10 @@ export type RequestChannelProject = Pick<
       | 'grpcTlsFor'
       | 'grpcMeta'
       | 'grpcProtoSetFor'
+      // The WebSocket fourth, optional for the same reason.
+      | 'wsSend'
+      | 'wsTlsFor'
+      | 'wsMeta'
     >
   >;
 
@@ -467,6 +485,10 @@ async function curl(
   const grpc = deps.project.grpcSend?.(request.requestId, request.grpcDraft);
   if (grpc !== undefined) {
     return await grpcCommand(deps, request, grpc);
+  }
+  const ws = deps.project.wsSend?.(request.requestId, request.wsDraft);
+  if (ws !== undefined) {
+    return await wsCommand(deps, request, ws);
   }
   const live = deps.project.buildLiveSendInput(request.requestId);
   if (live === undefined) {
@@ -958,6 +980,30 @@ async function grpcCommand(
 }
 
 /**
+ * The command-line form of a WebSocket call: what `websocat` would be told to dial the same URL
+ * with, credentials resolved and then masked unless the session shows secrets. Proxy, CA and
+ * client certificate are not reconstructable in a command line, same as the other two protocols.
+ */
+async function wsCommand(
+  deps: RequestChannelDeps,
+  request: RequestCurlRequest,
+  resolved: WsSendResolution,
+): Promise<RequestCurlResponse> {
+  const show = deps.showSecrets?.get() ?? false;
+  const auth = show
+    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+    : placeholderAuth(resolved.auth);
+  const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
+  const options = toWsSessionOptions(resolved.input, material);
+  const command = wsToCommand(options, { shell: request.shell });
+  const notes = [
+    'Proxy, CA and client certificate settings are not reconstructable in this command.',
+    ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
+  ];
+  return { command, notes };
+}
+
+/**
  * Makes one gRPC call.
  *
  * Everything the renderer did not send is resolved here: the API's target under the active
@@ -1147,6 +1193,200 @@ function preflightGrpc(
   };
 }
 
+/** The URL a WebSocket call's input resolves to, for display in a failure row — never sent anywhere. */
+function wsDisplayUrl(input: {
+  readonly serverUrl: string;
+  readonly request: {
+    readonly url: string;
+    readonly query: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
+  };
+}): string {
+  try {
+    return resolveWsUrl(input.serverUrl, input.request.url, input.request.query);
+  } catch {
+    return `${input.serverUrl}${input.request.url}`;
+  }
+}
+
+/**
+ * Opens one WebSocket session.
+ *
+ * Everything the renderer did not send is resolved here: the API's target under the active
+ * environment, the properties, the credentials the folder chain lands on, the TLS identity and the
+ * proxy (looked up against the resolved URL with `ws:`/`wss:` mapped to `http:`/`https:`, exactly as
+ * REST looks its proxy up). A call with an unresolved property is refused before it reaches the wire.
+ * The invoke stays pending for the life of the session — `service.openWsSession`'s `done` only
+ * settles once the socket has closed — while `events.ws.live` reports the handshake and each frame
+ * as they happen.
+ */
+export async function openWsRequest(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  request: RequestOpenWsRequest,
+  sender: WebContents,
+): Promise<WsExchangeSummary> {
+  const resolved = deps.project.wsSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    throw new ProjectError('unknown-entity', `No WebSocket request with id "${request.requestId}"`, {
+      details: { requestId: request.requestId },
+    });
+  }
+  if (resolved.unresolved.length > 0) {
+    throw new WirebenchError('ws-unresolved-properties', 'Some property references could not be resolved', {
+      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
+    });
+  }
+
+  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
+  let options: Omit<WsSessionOptions, 'signal'>;
+  try {
+    const tls = await deps.project.wsTlsFor?.(request.requestId);
+    const anchors = extraTrustAnchors();
+    const baseCa = tls?.ca ?? [];
+    const mergedTls = withoutUndefined<TlsOptions>({
+      ...tls,
+      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
+    });
+    const owner = deps.project.projectId(request.requestId);
+    const resolvedUrl = wsDisplayUrl(resolved.input);
+    const proxyTarget = resolvedUrl.replace(/^ws/, 'http');
+    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
+    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
+    const accessToken =
+      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
+        ? await deps.oauth2.accessToken(resolved.auth, {
+            credentials: await oauth2Credentials(deps, resolved.auth),
+            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
+            ...(proxy !== undefined ? { proxy } : {}),
+          })
+        : undefined;
+    const auth = await resolveAuthConfig(
+      resolved.auth,
+      (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
+      accessToken !== undefined ? { accessToken } : {},
+    );
+    const material: WsSessionMaterial = {
+      ...(auth !== undefined ? { auth } : {}),
+      ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
+      ...(proxy !== undefined ? { proxy } : {}),
+    };
+    options = toWsSessionOptions(resolved.input, material);
+  } catch (error) {
+    // Before the session was opened: the TLS identity, a proxy lookup, an OAuth2 token fetch.
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'websocket',
+        requestId: request.requestId,
+        url: wsDisplayUrl(resolved.input),
+        method: 'GET',
+        headers: {},
+        startedAt: prepareStartedAt,
+        durationMs: Date.now() - prepareStartedAt,
+        error,
+        stage: 'prepare',
+      }),
+    );
+    throw error;
+  }
+
+  const startedAt = Date.now();
+  try {
+    const summary = await service.openWsSession(
+      { sendId: request.sendId, requestId: request.requestId, options },
+      {
+        showSecrets: deps.showSecrets?.get() ?? false,
+        onLive: (event) => {
+          emitEvent(sender, events.ws.live, event);
+        },
+      },
+    );
+    // History and the HTTP Log: Task 10 of the #98 plan
+    return summary;
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    reportSendFailed(deps.onSendFailed, () =>
+      failedExchangeOf({
+        sendId: request.sendId,
+        protocol: 'websocket',
+        requestId: request.requestId,
+        url: options.url,
+        method: 'GET',
+        headers: options.headers ?? {},
+        startedAt,
+        durationMs,
+        error,
+      }),
+    );
+    throw error;
+  }
+}
+
+/** `true` when `text` is strictly valid base64 (including the empty string). */
+function isValidBase64(text: string): boolean {
+  return text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
+}
+
+/**
+ * One more message on an open WebSocket session.
+ *
+ * `format: 'text'` with `expand: true` property-expands `content` against the same scopes the
+ * request resolves with, using its own `escapeProperties` setting, and refuses with
+ * `ws-unresolved-properties` — sending nothing — rather than writing a literal `${…}` to the wire.
+ * `format: 'binary'` never expands; `content` must be valid base64 or the send is refused with
+ * `ws-bad-binary` before anything reaches the session.
+ */
+function sendWsMessage(service: EngineService, deps: RequestChannelDeps, request: RequestWsSendRequest): WsFrameWire {
+  if (request.format === 'binary') {
+    if (!isValidBase64(request.content)) {
+      throw new WirebenchError('ws-bad-binary', 'The message is not valid base64.', {
+        details: { sendId: request.sendId },
+      });
+    }
+    return service.sendWsMessage(request.sendId, { base64: request.content });
+  }
+  let text = request.content;
+  if (request.expand) {
+    const resolved = deps.project.wsSend?.(request.requestId);
+    const scopes = deps.project.scopesFor(request.requestId);
+    const escape = resolved?.request.settings.escapeProperties === true;
+    const expanded = expandWsMessage(text, scopes, { escape });
+    if (expanded.unresolved.length > 0) {
+      throw new WirebenchError('ws-unresolved-properties', 'Some property references could not be resolved', {
+        details: { unresolved: expanded.unresolved.map((ref) => ref.expr) },
+      });
+    }
+    text = expanded.text;
+  }
+  return service.sendWsMessage(request.sendId, { text });
+}
+
+/** Closes an open WebSocket session. `{ closed: false }` when no such session is open. */
+function closeWsRequest(service: EngineService, request: RequestWsCloseRequest): RequestWsCloseResponse {
+  return service.closeWs(request.sendId, request.code, request.reason);
+}
+
+/**
+ * The dry run of opening a WebSocket session: where it would go and what would not expand. Nothing
+ * is dialled and no secret is touched, so the editor can show the badge while the user types.
+ */
+function preflightWs(
+  deps: RequestChannelDeps,
+  request: { readonly requestId: string; readonly draft?: WsRequestPatchWire | undefined },
+): PreflightResult {
+  const resolved = deps.project.wsSend?.(request.requestId, request.draft);
+  if (resolved === undefined) {
+    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+  }
+  return {
+    endpoint: wsDisplayUrl(resolved.input),
+    endpointSource: resolved.urlSource === 'api' ? 'interface-default' : resolved.urlSource,
+    unresolved: resolved.unresolved.map(toUnresolvedRefWire),
+    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    wsa: { enabled: false },
+  };
+}
+
 /** One failure, as a history line records it. */
 function restErrorDetail(error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {
@@ -1192,6 +1432,11 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   });
 
   registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
+
+  registerHandler(channels.request.openWs, (request, sender) => openWsRequest(service, deps, request, sender));
+  registerHandler(channels.request.wsSend, (request) => Promise.resolve(sendWsMessage(service, deps, request)));
+  registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
+  registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 
   registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
 

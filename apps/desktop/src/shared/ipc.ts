@@ -22,6 +22,14 @@ import {
   apiGrpcSampleResponseSchema,
   grpcExchangeSummarySchema,
   grpcLiveEventSchema,
+  wsExchangeSummarySchema,
+  wsLiveEventSchema,
+  requestOpenWsRequestSchema,
+  requestWsSendRequestSchema,
+  requestWsSendResponseSchema,
+  requestWsCloseRequestSchema,
+  requestWsCloseResponseSchema,
+  requestPreflightWsRequestSchema,
   requestGrpcHalfCloseRequestSchema,
   requestGrpcHalfCloseResponseSchema,
   requestGrpcPushRequestSchema,
@@ -380,6 +388,17 @@ export const channels = {
       requestGrpcHalfCloseRequestSchema,
       requestGrpcHalfCloseResponseSchema,
     ),
+    /**
+     * Opens a WebSocket session from a saved request and drives it by `sendId`: this invoke stays
+     * pending for the life of the session and resolves with the whole exchange once it closes,
+     * while `events.ws.live` reports the handshake and each frame as they happen.
+     */
+    openWs: defineChannel('request.openWs', requestOpenWsRequestSchema, wsExchangeSummarySchema),
+    /** One message on an open WebSocket session, named by the same `sendId` the open used. */
+    wsSend: defineChannel('request.wsSend', requestWsSendRequestSchema, requestWsSendResponseSchema),
+    /** Closes an open WebSocket session. `{ closed: false }` when no such session is open. */
+    wsClose: defineChannel('request.wsClose', requestWsCloseRequestSchema, requestWsCloseResponseSchema),
+    preflightWs: defineChannel('request.preflightWs', requestPreflightWsRequestSchema, requestPreflightResponseSchema),
     cancel: defineChannel('request.cancel', requestCancelRequestSchema, requestCancelResponseSchema),
     preflight: defineChannel('request.preflight', requestPreflightRequestSchema, requestPreflightResponseSchema),
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
@@ -715,6 +734,10 @@ export const events = {
   grpc: {
     /** A gRPC call in flight reporting what has arrived so far, keyed by the send's id. */
     live: defineEvent('grpc.live', grpcLiveEventSchema),
+  },
+  ws: {
+    /** A WebSocket session in flight reporting what has arrived so far, keyed by the send's id. */
+    live: defineEvent('ws.live', wsLiveEventSchema),
   },
   globals: {
     changed: defineEvent('globals.changed', globalsStateSchema),

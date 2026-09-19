@@ -1057,4 +1057,5 @@ export type { WsTranscript } from './ws/transcript.js';
 export { expandWsInput, expandWsMessage } from './ws/expand.js';
 export type { WsCallInput } from './ws/expand.js';
 export { toWsSessionOptions } from './ws/call.js';
+export type { WsSessionMaterial } from './ws/call.js';
 export { wsToCommand } from './ws/command.js';

@@ -133,6 +133,8 @@ export interface ProjectRouter {
   wsTlsFor(...args: Parameters<ProjectHost['wsTlsFor']>): ReturnType<ProjectHost['wsTlsFor']>;
   /** What History names a WebSocket send by: the request, its API, and its folder path. */
   wsMeta(...args: Parameters<ProjectHost['wsMeta']>): ReturnType<ProjectHost['wsMeta']>;
+  /** Resolves one WebSocket call: target, expansion, credentials as refs, settings. */
+  wsSend(...args: Parameters<ProjectHost['wsSend']>): ReturnType<ProjectHost['wsSend']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(

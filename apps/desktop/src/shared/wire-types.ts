@@ -644,7 +644,7 @@ export type HttpExchangeWire = z.infer<typeof httpExchangeWireSchema>;
 export const failedExchangeWireSchema = z.object({
   /** The id the renderer generated for the send — the log dedupes on it. */
   sendId: z.string(),
-  protocol: z.enum(['soap', 'rest', 'grpc']),
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']),
   /** Absent for an ad-hoc resend of an orphaned History entry. */
   requestId: z.string().optional(),
   /** The same shape as `httpExchangeWireSchema.request`; headers already redacted. */
@@ -1849,6 +1849,115 @@ export const requestPreflightGrpcRequestSchema = z.object({
   draft: grpcRequestPatchSchema.optional(),
 });
 
+// ——— WebSocket session channels ————————————————————————————————————————————————————————————
+
+/** One frame sent or received during a WebSocket session, as the log/live pane shows it. */
+export const wsFrameWireSchema = z.object({
+  index: z.number(),
+  direction: z.enum(['sent', 'received']),
+  opcode: z.enum(['text', 'binary', 'ping', 'pong', 'close']),
+  /** Milliseconds since the session started. */
+  at: z.number(),
+  size: z.number(),
+  text: z.string().optional(),
+  base64: z.string().optional(),
+  close: z.object({ code: z.number(), reason: z.string() }).optional(),
+  payloadTruncated: z.boolean().optional(),
+});
+export type WsFrameWire = z.infer<typeof wsFrameWireSchema>;
+
+/** The handshake that opened (or failed to open) a WebSocket session, redacted like every other header set. */
+export const wsHandshakeWireSchema = z.object({
+  url: z.string(),
+  requestHeaders: z.record(z.string(), z.string()),
+  requestedSubprotocols: z.array(z.string()),
+  rawRequestHead: z.string().optional(),
+  status: z.number().optional(),
+  statusText: z.string().optional(),
+  responseHeaders: z.record(z.string(), z.string()).optional(),
+  protocol: z.string().optional(),
+  extensions: z.string().optional(),
+  remoteAddress: z.string().optional(),
+  startedAt: z.string(),
+  durationMs: z.number(),
+  tls: tlsInfoWireSchema.optional(),
+  error: z.string().optional(),
+});
+export type WsHandshakeWire = z.infer<typeof wsHandshakeWireSchema>;
+
+/** What one WebSocket session produced (so far, or in whole): the handshake, its frames, how it closed. */
+export const wsExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  url: z.string(),
+  handshake: wsHandshakeWireSchema,
+  frames: z.array(wsFrameWireSchema),
+  closed: z.object({ code: z.number(), reason: z.string(), by: z.enum(['client', 'server', 'error']) }),
+  counts: z.object({
+    sent: z.number(),
+    received: z.number(),
+    bytesSent: z.number(),
+    bytesReceived: z.number(),
+  }),
+  durationMs: z.number(),
+});
+export type WsExchangeSummary = z.infer<typeof wsExchangeSummarySchema>;
+
+/**
+ * One report from a WebSocket session that is still open, correlated to the invoke by `sendId`.
+ *
+ * `request.openWs` stays open for the life of the session and resolves with the whole exchange;
+ * these say what has happened so far, the same relationship `grpcLiveEventSchema` has to
+ * `request.sendGrpc`.
+ */
+export const wsLiveEventSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('handshake'), sendId: z.string(), handshake: wsHandshakeWireSchema }),
+  z.object({ kind: z.literal('frame'), sendId: z.string(), frame: wsFrameWireSchema }),
+  z.object({ kind: z.literal('closed'), sendId: z.string() }),
+]);
+export type WsLiveEvent = z.infer<typeof wsLiveEventSchema>;
+
+/** Request payload for `request.openWs`: which saved request to dial, and the editor's unsaved edits. */
+export const requestOpenWsRequestSchema = z.object({
+  sendId: z.string(),
+  requestId: z.string(),
+  draft: wsRequestPatchSchema.optional(),
+});
+export type RequestOpenWsRequest = z.infer<typeof requestOpenWsRequestSchema>;
+
+/** Request payload for `request.wsSend`: one message on an open session, named by its `sendId`. */
+export const requestWsSendRequestSchema = z.object({
+  sendId: z.string(),
+  requestId: z.string(),
+  format: z.enum(['text', 'binary']),
+  /** Text as typed for `format: 'text'`; base64 for `format: 'binary'`. */
+  content: z.string(),
+  /** Property-expand `content` (text only) against the request's scopes before sending. */
+  expand: z.boolean(),
+});
+export type RequestWsSendRequest = z.infer<typeof requestWsSendRequestSchema>;
+
+/** What `request.wsSend` answers: the frame as it went, so the pane echoes what was sent. */
+export const requestWsSendResponseSchema = wsFrameWireSchema;
+export type RequestWsSendResponse = z.infer<typeof requestWsSendResponseSchema>;
+
+/** Request payload for `request.wsClose`: which open session to close, and how. */
+export const requestWsCloseRequestSchema = z.object({
+  sendId: z.string(),
+  code: z.number().optional(),
+  reason: z.string().optional(),
+});
+export type RequestWsCloseRequest = z.infer<typeof requestWsCloseRequestSchema>;
+
+/** What `request.wsClose` answers. `false` when no such session is open. */
+export const requestWsCloseResponseSchema = z.object({ closed: z.boolean() });
+export type RequestWsCloseResponse = z.infer<typeof requestWsCloseResponseSchema>;
+
+/** Request payload for `request.preflightWs`: the same pair, with nothing sent. */
+export const requestPreflightWsRequestSchema = z.object({
+  requestId: z.string(),
+  draft: wsRequestPatchSchema.optional(),
+});
+
 /** Request payload for `request.curl`: which saved request, and which shell's quoting. */
 export const requestCurlRequestSchema = z.object({
   requestId: z.string(),
@@ -1863,6 +1972,8 @@ export const requestCurlRequestSchema = z.object({
   draft: restRequestPatchSchema.optional(),
   /** The same, for a gRPC request's editor. */
   grpcDraft: grpcRequestPatchSchema.optional(),
+  /** The same, for a WebSocket request's editor. */
+  wsDraft: wsRequestPatchSchema.optional(),
 });
 export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
 

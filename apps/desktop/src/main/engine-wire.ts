@@ -25,6 +25,9 @@ import type {
   SslInfo,
   ResponseAttachment,
   UnresolvedRef,
+  WsExchange,
+  WsFrame,
+  WsHandshake,
 } from '@wirebench/engine';
 import type {
   RestExchangeSummary,
@@ -41,6 +44,9 @@ import type {
   ServiceSummary,
   SslInfoWire,
   UnresolvedRefWire,
+  WsExchangeSummary,
+  WsFrameWire,
+  WsHandshakeWire,
 } from '../shared/wire-types.js';
 
 /** Base name of a URL or file path (its last `/`-separated, query/fragment-free segment). */
@@ -329,6 +335,68 @@ export function toGrpcExchangeSummary(
     ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
     truncated: exchange.truncated,
     problems: [],
+  };
+}
+
+/** Converts one engine `WsFrame` to its wire form. Payloads are never redacted — only headers are. */
+export function toWsFrameWire(frame: WsFrame): WsFrameWire {
+  return {
+    index: frame.index,
+    direction: frame.direction,
+    opcode: frame.opcode,
+    at: frame.at,
+    size: frame.size,
+    ...(frame.text !== undefined ? { text: frame.text } : {}),
+    ...(frame.base64 !== undefined ? { base64: frame.base64 } : {}),
+    ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
+    ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
+  };
+}
+
+/**
+ * Converts one engine `WsHandshake` to its wire form, header values redacted unless `show` — the
+ * same redactor and the same switch `toGrpcExchangeSummary` uses. `rawRequestHead` carries the
+ * same header lines as `requestHeaders`, so it is redacted line-by-line with `redactRawHttp`'s
+ * `encoding: 'text'` mode rather than dropped.
+ */
+export function toWsHandshakeWire(handshake: WsHandshake, opts?: { show?: boolean }): WsHandshakeWire {
+  const show = opts?.show ?? false;
+  return {
+    url: handshake.url,
+    requestHeaders: redactHeaders(handshake.requestHeaders, { show }),
+    requestedSubprotocols: [...handshake.requestedSubprotocols],
+    ...(handshake.rawRequestHead !== undefined
+      ? { rawRequestHead: redactRawHttp(handshake.rawRequestHead, { show, encoding: 'text' }) }
+      : {}),
+    ...(handshake.status !== undefined ? { status: handshake.status } : {}),
+    ...(handshake.statusText !== undefined ? { statusText: handshake.statusText } : {}),
+    ...(handshake.responseHeaders !== undefined
+      ? { responseHeaders: redactHeaders(handshake.responseHeaders, { show }) }
+      : {}),
+    ...(handshake.protocol !== undefined ? { protocol: handshake.protocol } : {}),
+    ...(handshake.extensions !== undefined ? { extensions: handshake.extensions } : {}),
+    ...(handshake.remoteAddress !== undefined ? { remoteAddress: handshake.remoteAddress } : {}),
+    startedAt: handshake.startedAt,
+    durationMs: handshake.durationMs,
+    ...(handshake.tls !== undefined ? { tls: toTlsWire(handshake.tls) } : {}),
+    ...(handshake.error !== undefined ? { error: handshake.error } : {}),
+  };
+}
+
+/** Converts one engine `WsExchange` plus its `sendId` into the `request.openWs` response payload. */
+export function toWsExchangeSummary(
+  exchange: WsExchange,
+  sendId: string,
+  opts?: { show?: boolean },
+): WsExchangeSummary {
+  return {
+    sendId,
+    url: exchange.url,
+    handshake: toWsHandshakeWire(exchange.handshake, opts),
+    frames: exchange.frames.map(toWsFrameWire),
+    closed: { ...exchange.closed },
+    counts: { ...exchange.counts },
+    durationMs: exchange.durationMs,
   };
 }
 

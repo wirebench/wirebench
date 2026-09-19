@@ -9,7 +9,7 @@ import { compileMatcher, matchesText, type TextMatcher } from './log-search.js';
 
 export type { StatusClass } from '../../state/exchanges.js';
 
-export type LogProtocol = 'soap' | 'rest' | 'grpc';
+export type LogProtocol = 'soap' | 'rest' | 'grpc' | 'websocket';
 
 /**
  * A gRPC summary is the one that reports `statusName`, a REST summary the one that reports
@@ -106,8 +106,13 @@ export function matchesFilterWith(
   if (filter.statuses.length > 0 && !filter.statuses.includes(statusClassOf(entry))) {
     return false;
   }
-  if (filter.protocols.length > 0 && !filter.protocols.includes(protocolOf(entry))) {
-    return false;
+  if (filter.protocols.length > 0) {
+    // No protocol filter chip exists for WebSocket yet (Task 10 of #98 wires it into the log
+    // proper), so a WebSocket row is never hidden by this filter regardless of what is checked.
+    const protocol = protocolOf(entry);
+    if (protocol !== 'websocket' && !filter.protocols.includes(protocol)) {
+      return false;
+    }
   }
   return true;
 }

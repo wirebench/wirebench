@@ -14,6 +14,7 @@ import {
   generateRequest,
   importDefinition as engineImportDefinition,
   normalizeWsa,
+  openWsSession,
   sendSoapRequest,
   toSendAuth,
   WirebenchError,
@@ -36,6 +37,8 @@ import type {
   SoapSendWss,
   TlsOptions,
   WsaConfigPatch,
+  WsSessionHandle,
+  WsSessionOptions,
 } from '@wirebench/engine';
 import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
@@ -57,6 +60,9 @@ import type {
   SoapSendInputWire,
   TlsOptionsWire,
   WsaConfigWire,
+  WsExchangeSummary,
+  WsFrameWire,
+  WsLiveEvent,
 } from '../shared/wire-types.js';
 import {
   toGrpcExchangeSummary,
@@ -66,6 +72,9 @@ import {
   toExchangeSummary,
   toGenerateResponse,
   toInterfaceSummary,
+  toWsExchangeSummary,
+  toWsFrameWire,
+  toWsHandshakeWire,
 } from './engine-wire.js';
 import { ExchangeCache } from './exchange-cache.js';
 import type { SendAttachmentInput } from './project-host.js';
@@ -256,6 +265,14 @@ export class EngineService {
    */
   private readonly grpcStreams = new Map<string, GrpcCallStreamHandle>();
   private readonly imports = new Map<string, AbortController>();
+
+  /**
+   * The open WebSocket sessions, by send id. An entry lives only from a successful handshake
+   * (`handshake.status === 101`) until the session closes, so {@link sendWsMessage} and
+   * {@link closeWs} answer `ws-session-unknown`/`{ closed: false }` for a session that never
+   * opened or has already ended, rather than writing to a dead socket.
+   */
+  private readonly wsSessions = new Map<string, WsSessionHandle>();
 
   /**
    * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
@@ -750,5 +767,94 @@ export class EngineService {
     controller.abort();
     this.sends.delete(sendId);
     return { cancelled: true };
+  }
+
+  /**
+   * Opens one WebSocket session and drives it by `sendId`, the twin of {@link sendGrpcRequest}'s
+   * live-streaming shape: this stays pending for the life of the session — handshake through
+   * close — and resolves with the whole exchange, while `options.onLive` reports the handshake
+   * and each frame as they happen.
+   *
+   * An `AbortController` is registered in the same `sends` map a REST/gRPC send uses, so
+   * `request.cancel` can abort a handshake in progress; its signal is passed into the session
+   * options. The handle is added to `wsSessions` only once the handshake actually succeeds
+   * (`handshake.status === 101`) — a refused handshake never becomes a session `sendWsMessage`
+   * or `closeWs` could address. `openWsSession` itself never rejects `done`; a synchronous
+   * `ws-bad-options` throw (a malformed URL, an illegal subprotocol) propagates as a rejected
+   * invoke instead, since that is a bad option, not a server result — both paths clean up `sends`.
+   */
+  async openWsSession(
+    args: { readonly sendId: string; readonly requestId: string; readonly options: Omit<WsSessionOptions, 'signal'> },
+    o: { readonly showSecrets?: boolean; readonly onLive?: (event: WsLiveEvent) => void } = {},
+  ): Promise<WsExchangeSummary> {
+    const controller = new AbortController();
+    this.sends.set(args.sendId, controller);
+    const { sendId } = args;
+    const onLive = o.onLive;
+    const show = o.showSecrets ?? false;
+    try {
+      const handle = openWsSession(
+        { ...args.options, signal: controller.signal },
+        {
+          onHandshake: (handshake) => {
+            if (handshake.status === 101) {
+              this.wsSessions.set(sendId, handle);
+            }
+            onLive?.({ kind: 'handshake', sendId, handshake: toWsHandshakeWire(handshake, { show }) });
+          },
+          onFrame: (frame) => {
+            onLive?.({ kind: 'frame', sendId, frame: toWsFrameWire(frame) });
+          },
+          onClosed: () => {
+            onLive?.({ kind: 'closed', sendId });
+          },
+        },
+      );
+      const exchange = await handle.done;
+      return toWsExchangeSummary(exchange, sendId, { show });
+    } finally {
+      this.sends.delete(sendId);
+      this.wsSessions.delete(sendId);
+    }
+  }
+
+  /**
+   * Writes one more message on the open WebSocket session `sendId`, returning the frame as it went.
+   *
+   * @throws WirebenchError `ws-session-unknown` when no session with that id is open
+   */
+  sendWsMessage(sendId: string, message: { readonly text: string } | { readonly base64: string }): WsFrameWire {
+    const handle = this.wsSessions.get(sendId);
+    if (handle === undefined) {
+      throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', { details: { sendId } });
+    }
+    const data = 'text' in message ? message.text : Buffer.from(message.base64, 'base64');
+    return toWsFrameWire(handle.send(data));
+  }
+
+  /** Closes the WebSocket session `sendId`. `false` when no such session is open. */
+  closeWs(sendId: string, code?: number, reason?: string): { closed: boolean } {
+    const handle = this.wsSessions.get(sendId);
+    if (handle === undefined) {
+      return { closed: false };
+    }
+    handle.close(code, reason);
+    // Removed eagerly, like `halfCloseGrpc` removes its call: once `close()` has been asked for,
+    // a second `closeWs` for the same `sendId` must answer `false`, not wait for the socket to
+    // actually finish closing — `openWsSession`'s own `finally` also deletes this entry, which is
+    // then a harmless no-op.
+    this.wsSessions.delete(sendId);
+    return { closed: true };
+  }
+
+  /**
+   * Closes every open WebSocket session. An application may not send 1001 on the wire (RFC 6455
+   * §7.4.1), so this always sends `1000 'going away'`; a caller that wants 1001 recorded (e.g. a
+   * History row for "the app is quitting") records it itself alongside this call.
+   */
+  closeAllWs(): void {
+    for (const handle of this.wsSessions.values()) {
+      handle.close(1000, 'going away');
+    }
   }
 }

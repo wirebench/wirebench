@@ -63,10 +63,12 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
     }
     case 'resend': {
       const requestId = requestIdOf(entry);
-      if (requestId === undefined) {
+      const protocol = protocolOf(entry);
+      // `log.resend` does not cover WebSocket yet (Task 10 of #98); nothing to do here until it does.
+      if (requestId === undefined || protocol === 'websocket') {
         return;
       }
-      const result = await ipc().log.resend({ protocol: protocolOf(entry), requestId });
+      const result = await ipc().log.resend({ protocol, requestId });
       if (result.ok) {
         useExchangesStore.getState().appendExchange(result.value.exchange, requestId);
       } else {

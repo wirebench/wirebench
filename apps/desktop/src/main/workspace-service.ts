@@ -2477,6 +2477,11 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostOfEntity(args[0]).wsMeta(...args);
   }
 
+  /** @inheritdoc */
+  wsSend(...args: Parameters<ProjectRouter['wsSend']>): ReturnType<ProjectRouter['wsSend']> {
+    return this.hostOfEntity(args[0]).wsSend(...args);
+  }
+
   /**
    * The TLS material a discovery started from the Import dialog should use.
    *

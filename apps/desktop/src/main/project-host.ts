@@ -142,6 +142,7 @@ import type {
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   GrpcRequestPatchWire,
+  WsRequestPatchWire,
   RestRequestPatchWire,
   ApplyUpdateWire,
   DefinitionUpdateOptions,
@@ -175,6 +176,8 @@ import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
 import { findWsRequest, locateWsRequest } from './project-ws-mutations.js';
+import { resolveWsSend } from './ws-send.js';
+import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
@@ -1606,8 +1609,38 @@ export class ProjectHost {
     };
   }
 
-  // wsSend is deliberately not added in this task: it needs resolveWsSend, which the next task
-  // (send integration) creates. Adding it here would leave a send path with no resolver behind it.
+  /**
+   * Resolves one WebSocket call the way this project is open: the API's target under the active
+   * environment (the same override slot a REST/gRPC target has, keyed by the API's slug), property
+   * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
+   * material-free like {@link grpcSend}; secrets are resolved by the caller.
+   */
+  wsSend(requestId: string, draft?: WsRequestPatchWire): WsSendResolution | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const context = this.workspaceContext?.();
+    const preferences = this.prefs();
+    return resolveWsSend({
+      project,
+      requestId,
+      ...(draft !== undefined ? { draft } : {}),
+      scopes: this.scopesFor(),
+      ...(preferences !== undefined ? { preferences } : {}),
+      resolveTarget: (api) => {
+        const asApi = { slug: api.slug, baseUrl: api.url };
+        return context === undefined
+          ? resolveApiBaseUrl(project, project.activeEnvironmentId, asApi)
+          : resolveWorkspaceApiBaseUrl({
+              workspace: context.workspace,
+              project,
+              projectSlug: context.projectSlug,
+              api: asApi,
+            });
+      },
+    });
+  }
 
   /** The gRPC API that is, or that holds, `entityId`. */
   private grpcApiOf(entityId: string): GrpcApi | undefined {
