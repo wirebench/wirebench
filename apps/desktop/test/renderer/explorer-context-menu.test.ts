@@ -33,6 +33,7 @@ describe('explorerMenuItems', () => {
       'Import…',
       'New API…',
       'New gRPC API…',
+      'New WebSocket API…',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -59,6 +60,7 @@ describe('explorerMenuItems', () => {
       'Import…',
       'New API…',
       'New gRPC API…',
+      'New WebSocket API…',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -131,7 +133,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api', 'new-grpc-api'],
+      ['import', 'new-api', 'new-grpc-api', 'new-ws-api'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],
@@ -255,5 +257,33 @@ describe('explorerMenuItems on a gRPC row', () => {
   it('offers nothing for a gRPC row whose ids are missing', () => {
     expect(explorerMenuItems(node({ kind: 'grpc-api' }))).toEqual([]);
     expect(explorerMenuItems(node({ kind: 'grpc-request', apiId: 'g1' }))).toEqual([]);
+  });
+});
+
+describe('explorerMenuItems on a WebSocket row', () => {
+  it('offers a WebSocket API its containers and its own lifecycle, and no cURL import', () => {
+    const items = explorerMenuItems(node({ kind: 'ws-api', id: 'ws-api:w1', apiId: 'w1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Open', 'New folder', 'New request', 'Rename…', 'Delete']);
+  });
+
+  it('offers a folder inside a WebSocket API the same entries as a gRPC folder, minus Import cURL…', () => {
+    const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'w1', folderId: 'f1', ws: true }));
+
+    expect(items.map((item) => item.label)).toEqual(['New folder', 'New request', 'Rename…', 'Auth…', 'Delete']);
+  });
+
+  it('offers a WebSocket request duplicate, rename and delete, and no Open', () => {
+    const items = explorerMenuItems(node({ kind: 'ws-request', id: 'ws:r1', apiId: 'w1', requestId: 'r1' }));
+
+    expect(items.map((item) => item.label)).toEqual(['Duplicate', 'Rename…', 'Delete']);
+    expect(
+      explorerMenuGroups(node({ kind: 'ws-request', id: 'ws:r1', apiId: 'w1', requestId: 'r1' })).at(-1),
+    ).toHaveLength(1);
+  });
+
+  it('offers nothing for a WebSocket row whose ids are missing', () => {
+    expect(explorerMenuItems(node({ kind: 'ws-api' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'ws-request', apiId: 'w1' }))).toEqual([]);
   });
 });

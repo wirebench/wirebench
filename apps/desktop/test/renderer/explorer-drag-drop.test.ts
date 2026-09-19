@@ -4,6 +4,7 @@ import type { ExplorerNode } from '../../src/renderer/features/explorer/tree-nod
 
 const api: ExplorerNode = { id: 'api:api-1', kind: 'api', label: 'Api', apiId: 'api-1' };
 const otherApi: ExplorerNode = { id: 'api:api-2', kind: 'api', label: 'Other', apiId: 'api-2' };
+const wsApi: ExplorerNode = { id: 'ws-api:ws-1', kind: 'ws-api', label: 'WS Api', apiId: 'ws-1' };
 
 function folder(id: string, apiId = 'api-1'): ExplorerNode {
   return { id: `folder:${id}`, kind: 'folder', label: id, folderId: id, apiId };
@@ -11,6 +12,10 @@ function folder(id: string, apiId = 'api-1'): ExplorerNode {
 
 function request(id: string, apiId = 'api-1'): ExplorerNode {
   return { id: `rest:${id}`, kind: 'rest-request', label: id, requestId: id, apiId };
+}
+
+function wsRequest(id: string, apiId = 'ws-1'): ExplorerNode {
+  return { id: `ws:${id}`, kind: 'ws-request', label: id, requestId: id, apiId };
 }
 
 /**
@@ -124,5 +129,14 @@ describe('isDropDisabled', () => {
     expect(isDropDisabled({ ...base, parent: api, children: [], dragged: api, index: 0 })).toBe(true);
     expect(isDropDisabled({ ...base, parent: request('b'), children: [], dragged: request('a'), index: 0 })).toBe(true);
     expect(isDropDisabled({ ...base, parent: undefined, children: [], dragged: request('a'), index: 0 })).toBe(true);
+  });
+
+  it('allows a WebSocket request among the requests of its own WebSocket API', () => {
+    const children = [folder('f1', 'ws-1'), wsRequest('a'), wsRequest('b')];
+    expect(isDropDisabled({ ...base, parent: wsApi, children, dragged: wsRequest('a'), index: 3 })).toBe(false);
+  });
+
+  it('disables a WebSocket request dropped into a REST API', () => {
+    expect(isDropDisabled({ ...base, parent: api, children: [], dragged: wsRequest('a'), index: 0 })).toBe(true);
   });
 });

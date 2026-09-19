@@ -182,10 +182,28 @@ export function registerExplorerCommands(): void {
       explorerActions.newGrpcRequest(ctx.selection?.apiId, folderOf(ctx.selection));
     },
   });
+
+  // The WebSocket creators, gated the same way on their own container.
+  registerCommand({
+    ...catalogEntry('ws.newApi'),
+    when: (ctx) => ctx.selection?.kind === 'project',
+    whenScope: 'selection.project',
+    run: (ctx) => {
+      explorerActions.newWsApi(ctx.selection?.id);
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ws.newRequest'),
+    when: (ctx) => insideWsApi(ctx.selection),
+    whenScope: 'selection.wsApi',
+    run: (ctx) => {
+      explorerActions.newWsRequest(ctx.selection?.apiId, folderOf(ctx.selection));
+    },
+  });
 }
 
 /**
- * Whether the selected node sits in a gRPC API. A folder row is one kind for both protocols, so a
+ * Whether the selected node sits in a gRPC API. A folder row is one kind for every protocol, so a
  * selected folder counts when the API it names is a gRPC one.
  */
 function insideGrpcApi(selection: { readonly kind: string; readonly apiId?: string } | undefined): boolean {
@@ -194,9 +212,18 @@ function insideGrpcApi(selection: { readonly kind: string; readonly apiId?: stri
   return selection.kind === 'folder' && selection.apiId !== undefined && selection.apiId in grpcApis();
 }
 
+/**
+ * Whether the selected node sits in a WebSocket API, for the same reason as {@link insideGrpcApi}.
+ */
+function insideWsApi(selection: { readonly kind: string; readonly apiId?: string } | undefined): boolean {
+  if (selection === undefined) return false;
+  if (selection.kind === 'ws-api' || selection.kind === 'ws-request') return true;
+  return selection.kind === 'folder' && selection.apiId !== undefined && selection.apiId in wsApis();
+}
+
 /** Whether the selected node sits in a REST API, whichever of the three kinds it is. */
 function insideApi(kind: string | undefined, apiId?: string): boolean {
-  if (kind === 'folder') return apiId === undefined || !(apiId in grpcApis());
+  if (kind === 'folder') return apiId === undefined || (!(apiId in grpcApis()) && !(apiId in wsApis()));
   return kind === 'api' || kind === 'rest-request';
 }
 
@@ -204,10 +231,16 @@ function grpcApis(): Readonly<Record<string, unknown>> {
   return useProjectStore.getState().grpcApis;
 }
 
+function wsApis(): Readonly<Record<string, unknown>> {
+  return useProjectStore.getState().wsApis;
+}
+
 /**
  * The folder a new node should land in: the selected folder itself, the folder holding the
  * selected request, or the API's root when an API row is selected.
  */
 function folderOf(selection: { readonly kind: string; readonly folderId?: string } | undefined): string | undefined {
-  return selection?.kind === 'api' || selection?.kind === 'grpc-api' ? undefined : selection?.folderId;
+  return selection?.kind === 'api' || selection?.kind === 'grpc-api' || selection?.kind === 'ws-api'
+    ? undefined
+    : selection?.folderId;
 }

@@ -48,7 +48,7 @@ import type {
   RestRequestPatchWire,
   RestRequestWire,
 } from '../../shared/wire-types.js';
-import type { ExplorerGrpcData, ExplorerRestData } from '../features/explorer/tree-nodes.js';
+import type { ExplorerGrpcData, ExplorerRestData, ExplorerWsData } from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
 import { useInterfaceEditorStore } from '../features/interface-editor/interface-editor-state.js';
 import { useEditorsStore } from './editors.js';
@@ -103,6 +103,8 @@ export interface ProjectSnapshot {
   readonly wsApis: Record<string, WsApiWire>;
   /** WebSocket requests by id, flattened across every open project. */
   readonly wsRequests: Record<string, WsRequestWire>;
+  /** Each project's WebSocket lists, per project for the same reason as `rest`. Folders are in `folders`. */
+  readonly ws: Readonly<Record<string, ExplorerWsData>>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -453,6 +455,7 @@ type Indexes = Pick<
   | 'grpc'
   | 'wsApis'
   | 'wsRequests'
+  | 'ws'
   | 'order'
   | 'projectOf'
   | 'keystores'
@@ -598,6 +601,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const grpc: Record<string, ExplorerGrpcData> = {};
   const wsApis: Record<string, WsApiWire> = {};
   const wsRequests: Record<string, WsRequestWire> = {};
+  const ws: Record<string, ExplorerWsData> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -653,6 +657,10 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       wsRequests[request.id] = layerWsEdits(request, wsDraftPatch(request.id));
       projectOf[request.id] = project.id;
     }
+    ws[project.id] = {
+      apis: project.wsApis ?? [],
+      requests: (project.wsRequests ?? []).map((request) => wsRequests[request.id] ?? request),
+    };
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -685,6 +693,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     grpc,
     wsApis,
     wsRequests,
+    ws,
     order,
     projectOf,
     keystores,
@@ -794,6 +803,7 @@ const EMPTY: ProjectSnapshot = {
   grpc: {},
   wsApis: {},
   wsRequests: {},
+  ws: {},
   order: [],
   projectOf: {},
   keystores: [],

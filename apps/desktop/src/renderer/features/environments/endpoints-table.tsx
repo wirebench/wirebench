@@ -7,6 +7,7 @@ import type {
   ProjectWire,
   RestApiWire,
   WorkspaceEnvironmentWire,
+  WsApiWire,
 } from '../../../shared/wire-types.js';
 import { queueEndpointOverride } from './environment-queue.js';
 import type { EffectiveEndpointSource } from '../../state/endpoint-override.js';
@@ -83,6 +84,11 @@ function asEndpointApi(api: GrpcApiWire): EndpointApi {
 
 function asEndpointApiWithOrder(api: GrpcApiWire): EndpointApi & { readonly order: number } {
   return { ...asEndpointApi(api), order: api.order };
+}
+
+/** A WebSocket API in the REST API's shape, so one row builder serves all three protocols. */
+function asWsEndpointApi(api: WsApiWire): EndpointApi & { readonly order: number } {
+  return { id: api.id, name: api.name, slug: api.slug, baseUrl: api.url, servers: [], order: api.order };
 }
 
 /** The row one API contributes. Its suggestions are the servers a definition recorded. */
@@ -242,10 +248,13 @@ function workspaceRows(
       );
     }
 
-    // REST and gRPC APIs share one key space and one order, so their rows interleave by `order`.
-    const apis = [...(mirrored?.apis ?? []), ...(mirrored?.grpcApis ?? []).map(asEndpointApiWithOrder)].sort(
-      (a, b) => a.order - b.order,
-    );
+    // REST, gRPC and WebSocket APIs share one key space and one order, so their rows interleave
+    // by `order`.
+    const apis = [
+      ...(mirrored?.apis ?? []),
+      ...(mirrored?.grpcApis ?? []).map(asEndpointApiWithOrder),
+      ...(mirrored?.wsApis ?? []).map(asWsEndpointApi),
+    ].sort((a, b) => a.order - b.order);
     for (const api of apis) {
       const key = `${project.slug}/${api.slug}`;
       const override = environment.endpoints[key];
@@ -328,6 +337,7 @@ export function EndpointsTable({ environmentId }: EndpointsTableProps) {
       ...[
         ...(projects[ownerProjectId]?.apis ?? []),
         ...(projects[ownerProjectId]?.grpcApis ?? []).map(asEndpointApiWithOrder),
+        ...(projects[ownerProjectId]?.wsApis ?? []).map(asWsEndpointApi),
       ]
         .sort((a, b) => a.order - b.order)
         .map((api) => apiRow({ api, projectName, key: api.slug, override: projectEnvironment.endpoints[api.slug] })),

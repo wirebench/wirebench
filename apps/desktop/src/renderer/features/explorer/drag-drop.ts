@@ -8,11 +8,13 @@
  */
 import type { ExplorerNode } from './tree-nodes.js';
 
-/** A folder or request movable within an API (REST or gRPC). */
-type MovableKind = 'folder' | 'rest-request' | 'grpc-request';
+/** A folder or request movable within an API (REST, gRPC or WebSocket). */
+type MovableKind = 'folder' | 'rest-request' | 'grpc-request' | 'ws-request';
 
 function isMovable(node: ExplorerNode): node is ExplorerNode & { readonly kind: MovableKind } {
-  return node.kind === 'folder' || node.kind === 'rest-request' || node.kind === 'grpc-request';
+  return (
+    node.kind === 'folder' || node.kind === 'rest-request' || node.kind === 'grpc-request' || node.kind === 'ws-request'
+  );
 }
 
 /** One `moveNode` call: where one dragged node goes, in its kind's list under the target parent. */
@@ -24,7 +26,9 @@ export interface PlannedMove {
 
 function movableId(node: ExplorerNode): string | undefined {
   if (node.kind === 'folder') return node.folderId;
-  if (node.kind === 'rest-request' || node.kind === 'grpc-request') return node.requestId;
+  if (node.kind === 'rest-request' || node.kind === 'grpc-request' || node.kind === 'ws-request') {
+    return node.requestId;
+  }
   return undefined;
 }
 
@@ -43,11 +47,17 @@ export function planMoves(
   index: number,
 ): PlannedMove[] {
   const draggedIds = new Set(dragged.map(movableId).filter((id): id is string => id !== undefined));
-  const lists: Record<MovableKind, string[]> = { folder: [], 'rest-request': [], 'grpc-request': [] };
+  const lists: Record<MovableKind, string[]> = {
+    folder: [],
+    'rest-request': [],
+    'grpc-request': [],
+    'ws-request': [],
+  };
   const anchors: Record<MovableKind, string | undefined> = {
     folder: undefined,
     'rest-request': undefined,
     'grpc-request': undefined,
+    'ws-request': undefined,
   };
 
   children.forEach((child, position) => {
@@ -98,7 +108,10 @@ export interface DropCandidate {
  */
 export function isDropDisabled({ parent, children, dragged, index, sameProject, ancestors }: DropCandidate): boolean {
   if (dragged === undefined || !isMovable(dragged)) return true;
-  if (parent === undefined || (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'folder')) {
+  if (
+    parent === undefined ||
+    (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'ws-api' && parent.kind !== 'folder')
+  ) {
     return true;
   }
   if (!sameProject || parent.apiId !== dragged.apiId) return true;

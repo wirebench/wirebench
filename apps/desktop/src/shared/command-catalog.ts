@@ -322,6 +322,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'gRPC: New Request',
     category: 'Explorer',
   },
+  'ws.newApi': {
+    id: 'ws.newApi',
+    label: 'WebSocket: New API',
+    category: 'Explorer',
+  },
+  'ws.newRequest': {
+    id: 'ws.newRequest',
+    label: 'WebSocket: New Request',
+    category: 'Explorer',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',

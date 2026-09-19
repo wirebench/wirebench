@@ -100,6 +100,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: New Request | — | — |
 | gRPC: New API | — | — |
 | gRPC: New Request | — | — |
+| WebSocket: New API | — | — |
+| WebSocket: New Request | — | — |
 
 ## Request
 

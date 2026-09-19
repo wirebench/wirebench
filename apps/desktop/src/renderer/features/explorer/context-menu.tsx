@@ -54,6 +54,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         // only row that names one.
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
         { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
+        { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
       ],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
@@ -219,6 +220,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
   if (node.kind === 'folder' && node.apiId !== undefined && node.folderId !== undefined) {
     const { apiId, folderId } = { apiId: node.apiId, folderId: node.folderId };
     const grpc = node.grpc === true;
+    const ws = node.ws === true;
     return groups(
       [
         { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId, folderId) },
@@ -226,10 +228,14 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
           key: 'new-request',
           label: 'New request',
           run: () =>
-            grpc ? explorerActions.newGrpcRequest(apiId, folderId) : explorerActions.newRestRequest(apiId, folderId),
+            grpc
+              ? explorerActions.newGrpcRequest(apiId, folderId)
+              : ws
+                ? explorerActions.newWsRequest(apiId, folderId)
+                : explorerActions.newRestRequest(apiId, folderId),
         },
         // A cURL line describes an HTTP request, which only a REST folder can hold.
-        ...(grpc
+        ...(grpc || ws
           ? []
           : [
               { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId, folderId) },
@@ -264,6 +270,30 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-request', requestId) },
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteGrpcRequest(requestId) }],
+    );
+  }
+
+  if (node.kind === 'ws-api' && node.apiId !== undefined) {
+    const apiId = node.apiId;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openWsApi(apiId) },
+        { key: 'new-folder', label: 'New folder', run: () => explorerActions.newFolder(apiId) },
+        { key: 'new-request', label: 'New request', run: () => explorerActions.newWsRequest(apiId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-api', apiId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeWsApi(apiId) }],
+    );
+  }
+
+  if (node.kind === 'ws-request' && node.requestId !== undefined) {
+    const requestId = node.requestId;
+    return groups(
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateWsRequest(requestId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('ws-request', requestId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteWsRequest(requestId) }],
     );
   }
 

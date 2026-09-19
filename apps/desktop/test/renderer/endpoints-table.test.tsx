@@ -10,7 +10,7 @@ import type {
   WorkspaceEnvironmentWire,
 } from '../../src/shared/wire-types.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import { restApiWire } from '../helpers/wire-defaults.js';
+import { restApiWire, wsApiWire } from '../helpers/wire-defaults.js';
 
 const iface: InterfaceWire = {
   id: 'iface-1',
@@ -223,5 +223,35 @@ describe('EndpointsTable — APIs', () => {
 
     const field = screen.getByLabelText('Endpoint override for Demo › Petstore');
     expect(field.getAttribute('placeholder')).toBe("No override — use the API's base URL");
+  });
+
+  it('lists a WebSocket API in the same slot a gRPC target uses, keyed by its own slug', () => {
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [environment],
+        projects: [{ id: 'p1', name: 'Demo', slug: 'demo', source: 'internal', dir: '/tmp/demo', status: 'ready' }],
+      }),
+      mutate: vi.fn().mockResolvedValue({}) as unknown as ReturnType<typeof useWorkspaceStore.getState>['mutate'],
+    });
+    useProjectStore.setState({
+      projects: {
+        p1: {
+          id: 'p1',
+          name: 'Demo',
+          environments: [],
+          apis: [],
+          wsApis: [wsApiWire({ order: 0 })],
+        } as unknown as ProjectWire,
+      },
+      interfaces: {},
+      order: [{ projectId: 'p1', interfaceIds: [] }],
+    });
+    render(<EndpointsTable environmentId={environment.id} />);
+
+    const rows = screen.getAllByTestId('env-endpoint-row');
+    expect(rows.map((row) => row.getAttribute('data-endpoint-key'))).toEqual(['demo/chat']);
+    expect(screen.getByTestId<HTMLInputElement>('environment-endpoint').getAttribute('placeholder')).toBe(
+      "No override — use the API's base URL",
+    );
   });
 });

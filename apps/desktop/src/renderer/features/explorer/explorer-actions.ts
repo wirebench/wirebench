@@ -8,6 +8,8 @@ import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { openApiTab } from '../rest-api/api-actions.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
 import { openGrpcApiTab } from '../grpc-api/grpc-api-actions.js';
+import { openWsRequestTab } from '../ws-editor/ws-actions.js';
+import { openWsApiTab } from '../ws-api/ws-api-actions.js';
 import { useWsiStore } from '../../state/wsi.js';
 import {
   exportDefinition,
@@ -407,9 +409,11 @@ export const explorerActions = {
       return;
     }
     const inside = folderIdsUnder(folderId);
-    const requestCount = [...Object.values(state.restRequests), ...Object.values(state.grpcRequests)].filter(
-      (request) => inside.has(request.folderId ?? ''),
-    ).length;
+    const requestCount = [
+      ...Object.values(state.restRequests),
+      ...Object.values(state.grpcRequests),
+      ...Object.values(state.wsRequests),
+    ].filter((request) => inside.has(request.folderId ?? '')).length;
     if (requestCount === 0 && !confirmsDeletes()) {
       void state.removeFolder(folderId).catch(reportDeleteFailure);
       return;
@@ -438,6 +442,105 @@ export const explorerActions = {
     if (address !== undefined) {
       void navigator.clipboard.writeText(address);
     }
+  },
+
+  /** Creates a WebSocket API in one project and opens its tab, so the user lands on its URL field. */
+  newWsApi(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addWsApi(
+        projectId,
+        nextName(
+          'WebSocket API',
+          Object.values(useProjectStore.getState().wsApis).map((api) => api.name),
+        ),
+      )
+      .then((apiId) => {
+        openWsApiTab(apiId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New WebSocket API failed');
+      });
+  },
+
+  /**
+   * Creates a WebSocket request in an API or one of its folders and opens its editor.
+   */
+  newWsRequest(apiId: string | undefined, parentId?: string): void {
+    if (apiId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addWsRequest(apiId, parentId)
+      .then((requestId) => {
+        openWsRequestTab(requestId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New request failed');
+      });
+  },
+
+  openWsRequest(requestId: string | undefined): void {
+    if (requestId !== undefined) {
+      openWsRequestTab(requestId);
+    }
+  },
+
+  openWsApi(apiId: string | undefined): void {
+    if (apiId !== undefined) {
+      openWsApiTab(apiId);
+    }
+  },
+
+  /** Copies a WebSocket request beside the original and opens the copy. */
+  duplicateWsRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .cloneWsRequest(requestId)
+      .then(openWsRequestTab)
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate request failed');
+      });
+  },
+
+  /** Deletes a WebSocket API and everything in it, under the same rule as a REST or gRPC API. */
+  removeWsApi(apiId: string | undefined): void {
+    if (apiId === undefined) {
+      return;
+    }
+    const state = useProjectStore.getState();
+    const api = state.wsApis[apiId];
+    if (api === undefined) {
+      return;
+    }
+    const requestCount = Object.values(state.wsRequests).filter((request) => request.apiId === apiId).length;
+    if (requestCount === 0 && !confirmsDeletes()) {
+      void state.removeWsApi(apiId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'ws-api', id: apiId, name: api.name, requestCount });
+  },
+
+  deleteWsRequest(requestId: string | undefined): void {
+    if (requestId === undefined) {
+      return;
+    }
+    const request = useProjectStore.getState().wsRequests[requestId];
+    if (request === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeWsRequest(requestId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'ws-request', id: requestId, name: request.name, requestCount: 0 });
   },
 };
 
