@@ -1,4 +1,5 @@
 import { access } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import {
   createSecretMasker,
@@ -19,8 +20,26 @@ import type { CliIo } from '../main.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { createCliReporter } from '../reporters/cli.js';
+import { renderJson } from '../reporters/json.js';
+import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
+import { writeReport } from '../reporters/write.js';
+
+const require = createRequire(import.meta.url);
+
+/** `{ name, version }` for the `json` report's `tool` field, read from the CLI's own `package.json`. */
+function cliTool(): { readonly name: string; readonly version: string } {
+  const { version } = require('../../package.json') as { readonly version: string };
+  return { name: 'wirebench', version };
+}
+
+/** A file reporter's `onRunDone` renders once the whole result is in, then writes it — the path
+ * resolves against the process's working directory (Node's own default for a relative path),
+ * never against the project directory. */
+function createFileReporter(file: string, render: (result: RunResult) => string): Reporter {
+  return { onRunDone: (result) => writeReport(file, render(result)) };
+}
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -69,6 +88,13 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
   return args.reporters.map((spec) => {
     if (spec.kind === 'cli') {
       return createCliReporter(io.stdout, { color, quiet: args.quiet, verbose: args.verbose });
+    }
+    if (spec.kind === 'junit') {
+      return createFileReporter(spec.file, renderJunit);
+    }
+    if (spec.kind === 'json') {
+      const tool = cliTool();
+      return createFileReporter(spec.file, (result) => renderJson(result, tool));
     }
     throw new UsageError(`--reporter ${spec.kind} is not available yet`);
   });
