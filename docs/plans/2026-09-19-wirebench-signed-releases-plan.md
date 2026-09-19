@@ -25,7 +25,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
 
 ## Phase 2 — Docs
 
-- [ ] **T5. `docs/release.md`.** The SignPath setup (programme application, project, artifact
+- [x] **T5. `docs/release.md`.** The SignPath setup (programme application, project, artifact
   configurations, secrets and variables, approval), the Apple steps end to end, the `latest.yml`
   rewrite, the SBOM and attestations.
   - Verify: `pnpm check:doc-paths`.
