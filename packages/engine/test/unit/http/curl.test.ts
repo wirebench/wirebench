@@ -72,6 +72,21 @@ describe('fromCurl', () => {
     expect(problems).toContain('ignored-flag:--compressed');
   });
 
+  it('skips the value of a flag it ignores, so the value is not read as the endpoint', () => {
+    const { input, problems } = fromCurl(`curl -o out.xml 'https://example.com/soap' -d '<x/>'`);
+    expect(input.endpoint).toBe('https://example.com/soap');
+    expect(problems).toContain('ignored-flag:-o');
+  });
+
+  it('keeps the endpoint after value-less flags, bundled or not', () => {
+    for (const command of [
+      `curl --ntlm 'https://example.com/soap' -d '<x/>'`,
+      `curl -sSL 'https://example.com/soap' -d '<x/>'`,
+    ]) {
+      expect(fromCurl(command).input.endpoint).toBe('https://example.com/soap');
+    }
+  });
+
   it('detects SOAP 1.2 from Content-Type', () => {
     const { input } = fromCurl(
       `curl 'https://example.com' -H 'Content-Type: application/soap+xml;charset=UTF-8;action="Foo"' -d '<x/>'`,

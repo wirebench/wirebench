@@ -15,7 +15,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   `summary.warnings` with a Copy report button, reusing the legacy summary's list. Remove the wire
   schema's unused `skipped` field, or fill it.
   - Verify: renderer unit test; an e2e step in the Postman import spec asserts that a warning is shown.
-- [ ] **T3. cURL value-less flags, `--json`, `-G`.** Extend `BOOLEAN_FLAGS` in
+- [x] **T3. cURL value-less flags, `--json`, `-G`.** Extend `BOOLEAN_FLAGS` in
   `packages/engine/src/rest/curl.ts`. Parse `--json` as a JSON body with its Content-Type and Accept
   headers. Make `-G` move the `-d` data into the query. Check the SOAP parser's flag handling for the same
   swallowing.

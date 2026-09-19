@@ -19,6 +19,7 @@ import { entry, RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
 import type { RestSendInput } from './send.js';
 import { applyAuth } from './auth.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
+import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { composeUrl, splitQuery, trimTrailingSlashes } from './url.js';
 
 /** What a redacted secret reads as in an exported command. Matches the host's own marker. */
@@ -158,29 +159,6 @@ export interface FromRestCurlOptions {
   readonly baseUrl?: string;
 }
 
-/** Flags that take no value, so a parser must not eat the token after them. */
-const BOOLEAN_FLAGS = new Set([
-  '-k',
-  '--insecure',
-  '-L',
-  '--location',
-  '-s',
-  '--silent',
-  '-v',
-  '--verbose',
-  '-i',
-  '--include',
-  '-f',
-  '--fail',
-  '-g',
-  '--globoff',
-  '--compressed',
-  '-4',
-  '-6',
-  '--http1.1',
-  '--http2',
-]);
-
 /** The raw-body language a content type implies. */
 function languageOf(contentType: string | undefined): RawLanguage {
   if (contentType === undefined) {
@@ -220,7 +198,9 @@ function splitField(argument: string): { readonly name: string; readonly value: 
  */
 export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): FromRestCurlResult {
   const problems: string[] = [];
-  const { tokens, heredoc } = tokenizeCommand(text);
+  const tokenized = tokenizeCommand(text);
+  const tokens = expandBundles(tokenized.tokens);
+  const { heredoc } = tokenized;
 
   let method: RestMethod | undefined;
   let url: string | undefined;
@@ -231,6 +211,10 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
   let binaryPath: string | undefined;
   let basic: { username: string; password?: string } | undefined;
   const settings: { trustInvalid?: boolean; followRedirects?: boolean; maxRedirects?: number } = {};
+  // `-G` sends the `-d` data as the query of a GET; `-I` asks for HEAD. Both are read after the loop,
+  // because the flag may come before or after the data it changes.
+  let dataInQuery = false;
+  let head = false;
 
   let index = tokens[0] === 'curl' || tokens[0] === 'curl.exe' ? 1 : 0;
   while (index < tokens.length) {
@@ -293,6 +277,30 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
       index += 2;
       continue;
     }
+    if (token === '--json') {
+      // curl's shorthand for a JSON body: `-d` plus the two headers, unless the command sets its own.
+      rawData = next;
+      for (const [name, value] of [
+        ['Content-Type', 'application/json'],
+        ['Accept', 'application/json'],
+      ] as const) {
+        if (!headers.some((row) => row.name.toLowerCase() === name.toLowerCase())) {
+          headers.push(entry(name, value));
+        }
+      }
+      index += 2;
+      continue;
+    }
+    if (token === '-G' || token === '--get') {
+      dataInQuery = true;
+      index += 1;
+      continue;
+    }
+    if (token === '-I' || token === '--head') {
+      head = true;
+      index += 1;
+      continue;
+    }
     if (token === '-k' || token === '--insecure') {
       settings.trustInvalid = true;
       index += 1;
@@ -315,7 +323,7 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
       // A flag with no field here. Boolean ones are simply dropped; one that takes a value must also
       // consume it, or its argument would be read as the URL.
       problems.push(`Ignored ${token}`);
-      index += BOOLEAN_FLAGS.has(token) || token.includes('=') ? 1 : 2;
+      index += takesNoValue(token) ? 1 : 2;
       continue;
     }
     if (url === undefined) {
@@ -328,6 +336,21 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
     problems.push('No URL in the command');
   }
 
+  // Rows, not text appended to the URL: `--data-urlencode` values are unencoded, as the table holds
+  // them, and the `-d` text is read the way a URL's own query string is.
+  const dataQuery: KeyValueEntry[] = [];
+  if (dataInQuery) {
+    if (rawData !== undefined) {
+      dataQuery.push(...splitQuery(`?${rawData}`).query);
+    }
+    dataQuery.push(...formFields);
+    rawData = undefined;
+    formFields.length = 0;
+    method ??= 'GET';
+  }
+  if (head) {
+    method ??= 'HEAD';
+  }
   const body = bodyFrom({ parts, formFields, rawData, binaryPath, headers });
   const split = url === undefined ? undefined : splitAgainstBase(url, options.baseUrl);
   const pathParams = split === undefined ? [] : paramRows(split.path);
@@ -337,7 +360,7 @@ export function fromRestCurl(text: string, options: FromRestCurlOptions = {}): F
       // A command with no `-X` sends a GET, unless it carries a body, which makes it a POST — the
       // same rule curl itself applies.
       method: method ?? (body.kind === 'none' ? 'GET' : 'POST'),
-      ...(split !== undefined ? { url: split.path, query: split.query } : {}),
+      ...(split !== undefined ? { url: split.path, query: [...split.query, ...dataQuery] } : {}),
       ...(pathParams.length > 0 ? { pathParams } : {}),
       ...(headers.length > 0 ? { headers } : {}),
       body,
