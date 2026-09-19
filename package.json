@@ -38,7 +38,8 @@
     "licenses:third-party": "node scripts/third-party-licenses.ts",
     "docs:commands": "node scripts/docs-commands.ts",
     "check:docs-images": "node scripts/check-docs-images.ts",
-    "docs:screenshots": "pnpm build && WIREBENCH_DOCS_SCREENSHOTS=1 pnpm test:e2e -- docs-screenshots.spec.ts"
+    "docs:screenshots": "pnpm build && WIREBENCH_DOCS_SCREENSHOTS=1 pnpm test:e2e -- docs-screenshots.spec.ts",
+    "pack:check": "pnpm build && node scripts/pack-check.ts"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

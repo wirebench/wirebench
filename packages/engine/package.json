@@ -1,9 +1,52 @@
 {
   "name": "@wirebench/engine",
   "version": "2.1.1",
-  "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wirebench/wirebench.git",
+    "directory": "packages/engine"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./xml": {
+        "types": "./dist/xml/index.d.ts",
+        "default": "./dist/xml/index.js"
+      },
+      "./rest": {
+        "types": "./dist/rest/browser.d.ts",
+        "default": "./dist/rest/browser.js"
+      },
+      "./json": {
+        "types": "./dist/json/cursor.d.ts",
+        "default": "./dist/json/cursor.js"
+      },
+      "./grpc": {
+        "types": "./dist/grpc/browser.d.ts",
+        "default": "./dist/grpc/browser.js"
+      },
+      "./detect": {
+        "types": "./dist/import-detect.d.ts",
+        "default": "./dist/import-detect.js"
+      }
+    }
+  },
+  "prepack": "node -e \"require('fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
   "exports": {
     ".": {
       "development": "./src/index.ts",
