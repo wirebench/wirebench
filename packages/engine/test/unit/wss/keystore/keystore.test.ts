@@ -320,6 +320,26 @@ describe('keystore registry refs', () => {
     expect(ref.document['defaultAlias']).toBeUndefined();
   });
 
+  it('round-trips a committed passwordEnv beside the password ref', () => {
+    const ref = toKeystoreRef({
+      id: 'k1',
+      name: 'Client',
+      path: '/tmp/client.p12',
+      type: 'pkcs12',
+      passwordSecretRef: 'ref:1',
+      passwordEnv: 'BILLING_KEYSTORE_PASSWORD',
+    });
+    expect(ref.document['passwordEnv']).toBe('BILLING_KEYSTORE_PASSWORD');
+    expect(toKeystoreDef(ref)).toEqual({
+      id: 'k1',
+      name: 'Client',
+      path: '/tmp/client.p12',
+      type: 'pkcs12',
+      passwordSecretRef: 'ref:1',
+      passwordEnv: 'BILLING_KEYSTORE_PASSWORD',
+    });
+  });
+
   it('rejects a document that is not a keystore entry', () => {
     expect(() => toKeystoreDef({ id: 'k1', name: 'C', document: { id: 'k1', name: 'C' } })).toThrow(
       /missing a path or type/,

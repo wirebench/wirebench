@@ -290,6 +290,7 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     ...optional('wssOutgoingRef'),
     ...optional('wssIncomingRef'),
     properties: request.properties,
+    assertions: request.assertions,
     envelopeXml: patch.envelopeXml ?? request.envelopeXml,
   };
 
@@ -337,6 +338,7 @@ function toEngineAuth(auth: {
   type: EndpointAuth['type'];
   username?: string | undefined;
   passwordRef?: string | undefined;
+  passwordEnv?: string | undefined;
   domain?: string | undefined;
   preemptive?: boolean | undefined;
 }): EndpointAuth {
@@ -344,6 +346,7 @@ function toEngineAuth(auth: {
     type: auth.type,
     ...(auth.username !== undefined ? { username: auth.username } : {}),
     ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+    ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
     ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
     ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
   };
@@ -402,6 +405,7 @@ function updateRequestAuth(project: Project, requestId: string, auth: EndpointAu
     ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),
     ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     properties: request.properties,
+    assertions: request.assertions,
     envelopeXml: request.envelopeXml,
   };
   const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));

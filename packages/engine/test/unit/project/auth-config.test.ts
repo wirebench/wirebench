@@ -73,6 +73,17 @@ describe('authConfigSchema', () => {
     expect(JSON.stringify(result.error?.issues)).toContain(key);
   });
 
+  it.each([
+    { type: 'basic', username: 'u', passwordRef: 'sec_1', passwordEnv: 'BILLING_PASSWORD' },
+    { type: 'bearer', tokenRef: 'sec_2', tokenEnv: 'API_TOKEN' },
+    { type: 'api-key', name: 'k', in: 'header', valueRef: 'sec_3', valueEnv: 'API_KEY' },
+    { type: 'oauth2', grant: 'client-credentials', tokenUrl: 't', clientId: 'c', clientSecretEnv: 'CLIENT_SECRET' },
+  ])('accepts a committed …Env name beside a ref (%#)', (document) => {
+    const result = authConfigSchema.safeParse(document);
+    expect(result.error?.issues).toBeUndefined();
+    expect(result.success).toBe(true);
+  });
+
   it('accepts inherit where an interface would not', () => {
     expect(authConfigSchema.safeParse({ type: 'inherit' }).success).toBe(true);
     expect(endpointAuthSchema.safeParse({ type: 'inherit' }).success).toBe(false);

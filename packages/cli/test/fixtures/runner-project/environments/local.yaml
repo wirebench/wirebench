@@ -1,0 +1,8 @@
+endpoints:
+  Echo: ${soapUrl}
+id: RUNNER0008
+name: local
+order: 0
+properties:
+  baseUrl: ""
+  soapUrl: ""

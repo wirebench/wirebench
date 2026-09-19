@@ -69,6 +69,7 @@ function projectWithRequest(base: Project, wssOutgoingRef?: string, wssIncomingR
                 ...(wssOutgoingRef !== undefined ? { wssOutgoingRef } : {}),
                 ...(wssIncomingRef !== undefined ? { wssIncomingRef } : {}),
                 properties: { encoding: 'UTF-8' },
+                assertions: [],
               },
             ],
           },

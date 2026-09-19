@@ -915,6 +915,8 @@ export const endpointAuthSchema = z.object({
   type: z.enum(['none', 'basic', 'ntlm']),
   username: z.string().optional(),
   passwordRef: z.string().optional(),
+  /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
+  passwordEnv: z.string().optional(),
   domain: z.string().optional(),
   workstation: z.string().optional(),
   preemptive: z.boolean().optional(),
@@ -1286,6 +1288,8 @@ export const keystoreWireSchema = z.object({
   type: z.enum(['pkcs12', 'pem']),
   /** Present when a password was stored; the value itself never crosses the bridge. */
   passwordSecretRef: z.string().optional(),
+  /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
+  passwordEnv: z.string().optional(),
   defaultAlias: z.string().optional(),
 });
 export type KeystoreWire = z.infer<typeof keystoreWireSchema>;
@@ -1299,19 +1303,24 @@ export const authConfigWireSchema = z.object({
   type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
   username: z.string().optional(),
   passwordRef: z.string().optional(),
+  /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
+  passwordEnv: z.string().optional(),
   domain: z.string().optional(),
   workstation: z.string().optional(),
   preemptive: z.boolean().optional(),
   tokenRef: z.string().optional(),
+  tokenEnv: z.string().optional(),
   scheme: z.string().optional(),
   name: z.string().optional(),
   valueRef: z.string().optional(),
+  valueEnv: z.string().optional(),
   in: z.enum(['header', 'query']).optional(),
   grant: z.enum(['client-credentials', 'authorization-code']).optional(),
   tokenUrl: z.string().optional(),
   authorizationUrl: z.string().optional(),
   clientId: z.string().optional(),
   clientSecretRef: z.string().optional(),
+  clientSecretEnv: z.string().optional(),
   scopes: z.array(z.string()).optional(),
   audience: z.string().optional(),
   clientAuth: z.enum(['basic', 'body']).optional(),

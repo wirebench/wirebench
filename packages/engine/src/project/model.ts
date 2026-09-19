@@ -13,6 +13,7 @@
  */
 
 import { ulid } from 'ulidx';
+import type { Assertion } from '../assert/model.js';
 import { slugify } from './paths.js';
 import { DEFAULT_WSA_CONFIG } from '../wsa/model.js';
 import type { WsaConfig } from '../wsa/model.js';
@@ -21,8 +22,14 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
-/** The on-disk format version written to (and required by) `wirebench.yaml`. */
-export const FORMAT_VERSION = 3;
+/**
+ * The on-disk format version written to (and required by) `wirebench.yaml`.
+ *
+ * 4 added `assertions` on a request and the `…Env` name beside each secret reference. Both are
+ * additive, and both still bump the version: this format does not round-trip unknown keys, so an
+ * older build would delete them on its next save (see `schema.ts` and ADR-0003).
+ */
+export const FORMAT_VERSION = 4;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
@@ -42,6 +49,8 @@ export interface EndpointAuth {
   readonly username?: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a password. */
   readonly passwordRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly passwordEnv?: string;
   /** NTLM domain. */
   readonly domain?: string;
   /** NTLM workstation name; optional, and only ever advertised, never verified. */
@@ -64,6 +73,8 @@ export interface BearerAuth {
   readonly type: 'bearer';
   /** Opaque reference into the OS-keychain-backed secret store. Never a token value. */
   readonly tokenRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly tokenEnv?: string;
   /** Authentication scheme placed before the token. Defaults to `Bearer`. */
   readonly scheme?: string;
 }
@@ -75,6 +86,8 @@ export interface ApiKeyAuth {
   readonly name: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a key value. */
   readonly valueRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly valueEnv?: string;
   readonly in: 'header' | 'query';
 }
 
@@ -94,6 +107,8 @@ export interface OAuth2Auth {
   readonly clientId: string;
   /** Opaque reference into the OS-keychain-backed secret store. Never a secret value. */
   readonly clientSecretRef?: string;
+  /** The name CI supplies this secret under: `WIREBENCH_SECRET_<name>`. Not a secret; committed. */
+  readonly clientSecretEnv?: string;
   readonly scopes: readonly string[];
   readonly audience?: string;
   /** Whether the client credentials go in an `Authorization: Basic` header or the request body. */
@@ -260,6 +275,8 @@ export interface SoapRequestDef {
   /** Name of a `wss/incoming/<name>.yaml` configuration. */
   readonly wssIncomingRef?: string;
   readonly properties: RequestProperties;
+  /** Declarative checks a runner evaluates against this request's response. Empty when none. */
+  readonly assertions: readonly Assertion[];
   /**
    * True when the operation this request belongs to is no longer in the interface's definition
    * (see `wsdl/update-definition.ts`). Nothing is ever deleted on an update, so the request
@@ -489,6 +506,7 @@ export function createRequest(name: string, input: CreateRequestInput): RequestD
     headers: input.headers ?? [],
     attachments: [],
     properties: { ...DEFAULT_REQUEST_PROPERTIES, ...input.properties },
+    assertions: [],
     envelopeXml: input.envelopeXml,
   };
 }

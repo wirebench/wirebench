@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A minimal, hand-written JUnit XML schema — not a copy of any CI vendor's XSD, so its licence is
+  this project's own. It encodes exactly what `renderJunit` (packages/cli/src/reporters/junit.ts)
+  emits and what the widely used JUnit consumers (GitHub Actions' test reporters, GitLab CI,
+  Jenkins) require to render a report as a test tab: a `<testsuites>` root wrapping `<testsuite>`
+  elements, each holding `<testcase>` elements that may carry `<failure>`, `<error>`, `<skipped/>`
+  or `<system-out>`. Nothing beyond that surface is modelled.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="testsuites">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="testsuite" type="testsuiteType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="tests" type="xs:nonNegativeInteger" use="required"/>
+      <xs:attribute name="failures" type="xs:nonNegativeInteger" use="required"/>
+      <xs:attribute name="errors" type="xs:nonNegativeInteger" use="required"/>
+      <xs:attribute name="skipped" type="xs:nonNegativeInteger" use="required"/>
+      <xs:attribute name="time" type="xs:decimal" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="testsuiteType">
+    <xs:sequence>
+      <xs:element name="testcase" type="testcaseType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="tests" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="failures" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="errors" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="skipped" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="time" type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="testcaseType">
+    <xs:sequence>
+      <xs:element name="failure" type="failureType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="error" type="errorType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="skipped" type="emptyType" minOccurs="0"/>
+      <xs:element name="system-out" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="classname" type="xs:string" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="time" type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="failureType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="message" type="xs:string" use="required"/>
+        <xs:attribute name="type" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="errorType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="message" type="xs:string" use="required"/>
+        <xs:attribute name="type" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="emptyType">
+    <xs:sequence/>
+  </xs:complexType>
+</xs:schema>

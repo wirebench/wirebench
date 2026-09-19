@@ -1,0 +1,15 @@
+description: Round-trip fixture
+disabled:
+  - tier
+formatVersion: 3
+id: ID0001
+name: Demo Project
+properties:
+  region: eu-west-1
+  tier: gold
+settings:
+  cacheDefinitions: true
+  defaultTimeoutMs: 60000
+  prettyPrintResponses: true
+  resourceRoot: ./res
+writtenBy: wirebench

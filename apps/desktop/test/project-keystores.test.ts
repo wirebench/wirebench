@@ -98,6 +98,21 @@ describe('keystore mutations', () => {
     expect(cleared.wss.keystores[0]?.document['defaultAlias']).toBeUndefined();
   });
 
+  it('carries a committed passwordEnv through an unrelated patch, though it never edits it', () => {
+    const { project, keystoreId } = addKeystore(base, { path: 'a.p12', passwordSecretRef: 'secret:1' });
+    const withEnv = {
+      ...project,
+      wss: {
+        ...project.wss,
+        keystores: project.wss.keystores.map((ref) =>
+          ref.id === keystoreId ? { ...ref, document: { ...ref.document, passwordEnv: 'BILLING_KEYSTORE' } } : ref,
+        ),
+      },
+    };
+    const renamed = updateKeystore(withEnv, keystoreId, { name: 'Prod' });
+    expect(renamed.wss.keystores[0]?.document).toMatchObject({ name: 'Prod', passwordEnv: 'BILLING_KEYSTORE' });
+  });
+
   it('reports an unknown id', () => {
     expect(() => updateKeystore(base, 'nope', { name: 'x' })).toThrow(/No keystore with id/);
     expect(() => removeKeystore(base, 'nope')).toThrow(/No keystore with id/);

@@ -12,6 +12,22 @@ All notable changes to this project are documented here. The format follows
   macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
   shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on
   every push, and its screenshots are shot from the app by the e2e suite.
+- **CLI runner: `wirebench run` and `wirebench secrets list`.** A new package, `@wirebench/cli`
+  (binary `wirebench`), runs the requests already saved in a project from a pipeline: `status`,
+  `soap-fault`, `match` (XPath/XQuery/JSONPath), `schema` and `sla` assertions declared per request;
+  `cli`, `junit`, `json` and `html` reports; secrets resolved from `WIREBENCH_SECRET_<NAME>` /
+  `WIREBENCH_SECRET_<REF>` environment variables, never from the desktop's keychain-backed store;
+  and exit codes a pipeline can branch on (0 pass, 1 assertion failed, 2 usage/load, 3 run error,
+  130 interrupted). gRPC unary and OAuth2 client-credentials are not in this release. See
+  [`docs/cli.md`](docs/cli.md) and
+  [`docs/specs/2026-09-18-cli-runner-design.md`](docs/specs/2026-09-18-cli-runner-design.md).
+
+  **Project format moves to version 4.** Saving a request now carries an optional `assertions:`
+  list and an optional `…Env` name beside a `passwordRef`/`tokenRef`/`valueRef`/`clientSecretRef`.
+  Both are additive, and a version-3 project migrates in memory without any data moving — but
+  because this format drops unknown keys on save, **saving a project with this version writes
+  `formatVersion: 4`, and an older Wirebench refuses to open it** (`format-too-new`). Everyone
+  working on a project a 2.3+ build has saved needs to be on 2.3 or later too.
 - **HTTP Log: rows kept and Preserve log.** The number of rows kept is a setting (Preferences › Behaviour,
   100–5000, default 500). Preserve log keeps the rows in memory across closing or switching a workspace;
   it is never written to disk and is off again at every launch.

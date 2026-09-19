@@ -1,0 +1,28 @@
+/**
+ * Characters XML 1.0 cannot carry at all, escaped or not: the C0 control characters other than
+ * tab/newline/CR, lone surrogate halves, and the two permanently-reserved noncharacters. A
+ * response body captured into a report may well contain one of these — dropping it, rather than
+ * refusing to write the report, is the only choice that does not lose the rest of the run.
+ */
+const XML_FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/g;
+
+const XML_ENTITIES: Readonly<Record<string, string>> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&apos;',
+};
+
+/**
+ * Escapes text for an XML attribute or element. Forbidden characters are dropped rather than
+ * escaped: `&#0;` is as ill-formed as the raw byte, and one of them makes a whole report unreadable.
+ */
+export function escapeXml(text: string): string {
+  return text.replace(XML_FORBIDDEN, '').replace(/[&<>"']/g, (char) => XML_ENTITIES[char] ?? char);
+}
+
+/** Escapes text for HTML element content or a double-quoted attribute. */
+export function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (char) => XML_ENTITIES[char] ?? char).replace(/'/g, '&#39;');
+}

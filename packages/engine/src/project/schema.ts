@@ -20,12 +20,22 @@
  */
 
 import { z } from 'zod';
+import { assertionsSchema } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
 import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
 
 const nonEmpty = z.string().min(1);
 const propertyMapSchema = z.record(z.string(), z.string());
+
+/**
+ * A committed, human-chosen name for a secret reference — not the secret itself — used to build
+ * the environment variable a CI run reads it from (see `secrets/env-names.ts`).
+ */
+const envName = z
+  .string()
+  .regex(/^[A-Z][A-Z0-9_]*$/)
+  .optional();
 
 /**
  * Credentials as persisted: usernames and a `secretRef`, never a password
@@ -38,6 +48,7 @@ export const endpointAuthSchema = z
     type: z.enum(['none', 'basic', 'ntlm']),
     username: z.string().optional(),
     passwordRef: z.string().optional(),
+    passwordEnv: envName,
     domain: z.string().optional(),
     workstation: z.string().optional(),
     preemptive: z.boolean().optional(),
@@ -84,6 +95,7 @@ const bearerAuthSchema = refuseSecretValues(
   z.looseObject({
     type: z.literal('bearer'),
     tokenRef: z.string().optional(),
+    tokenEnv: envName,
     scheme: z.string().optional(),
   }),
 );
@@ -93,6 +105,7 @@ const apiKeyAuthSchema = refuseSecretValues(
     type: z.literal('api-key'),
     name: z.string(),
     valueRef: z.string().optional(),
+    valueEnv: envName,
     in: z.enum(['header', 'query']),
   }),
 );
@@ -105,6 +118,7 @@ const oauth2AuthSchema = refuseSecretValues(
     authorizationUrl: z.string().optional(),
     clientId: z.string(),
     clientSecretRef: z.string().optional(),
+    clientSecretEnv: envName,
     scopes: z.array(z.string()).default([]),
     audience: z.string().optional(),
     clientAuth: z.enum(['basic', 'body']).default('basic'),
@@ -261,6 +275,7 @@ export const requestFileSchema = z.looseObject({
   wssOutgoingRef: z.string().optional(),
   wssIncomingRef: z.string().optional(),
   properties: requestPropertiesSchema,
+  assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
 });
 
@@ -349,6 +364,7 @@ export const restRequestFileSchema = z.looseObject({
   body: restBodySchema.default({ kind: 'none' }),
   auth: authConfigSchema.default({ type: 'inherit' }),
   settings: restSettingsSchema.default({}),
+  assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
 });
 
@@ -618,6 +634,7 @@ export const keystoreEntrySchema = z.looseObject({
   path: nonEmpty,
   type: z.enum(['pkcs12', 'pem']),
   passwordSecretRef: z.string().optional(),
+  passwordEnv: envName,
   defaultAlias: z.string().optional(),
 });
 

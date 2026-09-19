@@ -1,0 +1,16 @@
+assertions:
+  - equals: 200
+    type: status
+auth:
+  passwordEnv: DEMO_PASSWORD
+  passwordRef: sec_demo
+  type: basic
+  username: svc
+body:
+  kind: none
+id: RUNNER0012
+kind: rest
+method: GET
+name: echo
+order: 4
+url: /echo

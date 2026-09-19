@@ -1,3 +1,19 @@
+export { evaluateAssertions } from './assert/index.js';
+export type {
+  Assertion,
+  AssertionLanguage,
+  AssertionResult,
+  AssertionSubject,
+  MatchAssertion,
+  SchemaAssertion,
+  SlaAssertion,
+  SoapFaultAssertion,
+  StatusAssertion,
+} from './assert/model.js';
+export { assertionsSchema } from './assert/schema.js';
+
+export * from './run/index.js';
+
 export {
   WirebenchError,
   WsdlParseError,
@@ -976,3 +992,22 @@ export { isReflectionService, reflectProtoSet, reflectServices } from './grpc/re
 export type { GrpcReflectInput, GrpcReflectedProtoSet, GrpcReflectionResult } from './grpc/reflection/client.js';
 export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
 export type { GrpcToCommandOptions } from './grpc/command.js';
+
+export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, toSendAuth } from './secrets/resolve.js';
+export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
+export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
+export type { SecretNeed } from './secrets/env-names.js';
+
+export {
+  REDACTED_MARKER,
+  SECRET_BODY_KEYS,
+  containsRedaction,
+  redactHeaderPairs,
+  redactHeaders,
+  redactRawHttp,
+  redactResponseAttachments,
+  redactStructuredBody,
+  redactUrl,
+  redactXml,
+} from './redact/index.js';
+export { createSecretMasker } from './redact/literal.js';

@@ -15,6 +15,7 @@ import {
   importDefinition as engineImportDefinition,
   normalizeWsa,
   sendSoapRequest,
+  toSendAuth,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
@@ -156,28 +157,10 @@ export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth):
 }
 
 /**
- * Converts resolved credentials into the engine's `SendAuth`, or `undefined` when there is
- * nothing to send (no auth configured, `type: 'none'`, or an incomplete pair). Basic defaults
- * to preemptive; a non-preemptive send waits for the 401 challenge.
+ * Converts resolved credentials into the engine's `SendAuth`. The mapping lives in the engine
+ * (`toSendAuth`) so the CLI runner authenticates exactly as the app does; this is its old name.
  */
-export function toEngineAuth(auth?: ResolvedAuth): SendAuth | undefined {
-  if (auth === undefined || auth.type === 'none') {
-    return undefined;
-  }
-  if (auth.username === undefined || auth.password === undefined) {
-    return undefined;
-  }
-  if (auth.type === 'ntlm') {
-    return {
-      type: 'ntlm',
-      username: auth.username,
-      password: auth.password,
-      ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
-      ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
-    };
-  }
-  return { type: 'basic', username: auth.username, password: auth.password, preemptive: auth.preemptive !== false };
-}
+export const toEngineAuth = toSendAuth;
 
 /**
  * Drops the explicitly-`undefined` keys a zod-parsed optional leaves behind, so the result is

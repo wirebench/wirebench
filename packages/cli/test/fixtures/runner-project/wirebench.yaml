@@ -1,0 +1,9 @@
+formatVersion: 4
+id: RUNNER0001
+name: Runner fixture
+properties: {}
+settings:
+  cacheDefinitions: true
+  defaultTimeoutMs: 60000
+  prettyPrintResponses: true
+writtenBy: wirebench

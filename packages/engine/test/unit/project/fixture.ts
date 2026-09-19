@@ -70,6 +70,7 @@ export function sampleProject(): Project {
     ],
     attachments: [],
     properties: { ...DEFAULT_REQUEST_PROPERTIES, timeoutMs: 30_000 },
+    assertions: [],
     envelopeXml,
   });
 

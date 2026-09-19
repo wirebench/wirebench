@@ -112,6 +112,19 @@ the workspace switcher; it has no default keyboard shortcuts of its own.
 
 `Mod+Shift+F` is deliberately unassigned here: it is reserved for Format XML.
 
+## Run in CI
+
+`@wirebench/cli` (binary `wirebench`) runs the requests already saved in a project from a
+pipeline, with assertions, exit codes and reports a CI system understands:
+
+```bash
+WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
+  wirebench run ./project --env staging --reporter junit=reports/wirebench.xml
+```
+
+See [`docs/cli.md`](docs/cli.md) for the full command reference — assertions, environment-variable
+secrets, all four reporters and the exit-code table.
+
 ## Development
 
 ```
@@ -177,6 +190,7 @@ repository. It is what the opt-in update feed is derived from.
 - [User guide](https://wirebench.github.io/wirebench/) — install, a ten-minute walkthrough, a guide per feature, the
   command reference, troubleshooting and FAQ
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
+- [CLI reference](docs/cli.md) — `wirebench run`/`secrets list`, assertions, secrets, reports and exit codes
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
 - [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
 - [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it

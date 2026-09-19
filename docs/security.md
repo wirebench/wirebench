@@ -87,6 +87,25 @@ plaintext, marks that entry `encrypted: false`, and logs one warning rather than
 run. That is a real weakening on such systems, and it is stated in the file rather than
 hidden. Full reasoning: [ADR-0004](adr/0004-secrets-outside-project-files.md).
 
+## The CLI runner has no keychain, only environment variables
+
+`wirebench run` and `wirebench secrets list` (`@wirebench/cli`) never open `userData/secrets.json`
+and never touch the OS keychain — a pipeline has no per-user keychain to read. A ref resolves only
+from `WIREBENCH_SECRET_<NAME>` (when the file declares a friendlier name beside the ref, e.g.
+`passwordEnv: BILLING_PASSWORD`) or `WIREBENCH_SECRET_<REF>` (the ref itself); neither set is a
+`secret-missing` error, never a silent empty credential. Every value resolved this way is
+registered with the redactor and masked wherever it could reach an output — headers, URL, bodies,
+an assertion's reported "actual" text — in every reporter (`cli`, `junit`, `json`, `html`) alike; a
+report file is written already masked, the same as anything printed to the terminal.
+
+That literal masking has a floor: a resolved value shorter than 4 characters is not replaced,
+because a string that short is too likely to occur by chance elsewhere in ordinary output and
+masking it would shred unrelated text rather than protect anything. This does not weaken the
+pattern-based redaction next to it — `Authorization`/`Proxy-Authorization` headers, `wsse:Password`
+elements and the JSON/form secret-key list (`SECRET_BODY_KEYS`) are always redacted by pattern
+regardless of the value's length. Choose secret values of ordinary length (not four-character test
+placeholders) to get the literal-masking guarantee as well.
+
 ## Paths from the renderer are proven, not trusted
 
 Main never opens a path just because the renderer named one. A path is usable only if it is

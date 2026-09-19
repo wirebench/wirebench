@@ -1,0 +1,27 @@
+import { describe, expect, it } from 'vitest';
+import { escapeHtml, escapeXml } from '../../../src/reporters/escape.js';
+
+describe('escapeXml', () => {
+  it('escapes the five specials', () => {
+    expect(escapeXml(`a & b < c > d " e ' f`)).toBe('a &amp; b &lt; c &gt; d &quot; e &apos; f');
+  });
+
+  it('drops characters XML 1.0 forbids instead of escaping them', () => {
+    expect(escapeXml('a\u0000b\u0001c')).toBe('abc');
+    expect(escapeXml('x\uD800y')).toBe('xy');
+  });
+
+  it('keeps tab, newline and carriage return, which XML 1.0 does allow', () => {
+    expect(escapeXml('a\tb\nc\rd')).toBe('a\tb\nc\rd');
+  });
+});
+
+describe('escapeHtml', () => {
+  it('neutralises markup', () => {
+    expect(escapeHtml('<script>alert("x")</script>')).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;');
+  });
+
+  it('escapes a single quote too, for a double-quoted attribute context', () => {
+    expect(escapeHtml("it's")).toBe('it&#39;s');
+  });
+});

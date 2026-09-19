@@ -52,3 +52,4 @@ export {
 } from './ntlm-server.js';
 export { SOURCE_SNIPPET_CASES, type SourceSnippetCase } from './source-snippet-cases.js';
 export { readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtures.js';
+export { parseXmlDocument, validateAgainstXsd, type XsdValidationResult } from './xml-helpers.js';

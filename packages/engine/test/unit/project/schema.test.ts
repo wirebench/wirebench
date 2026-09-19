@@ -22,7 +22,7 @@ import {
 import { stringifyYaml, parseYaml } from '../../../src/project/yaml.js';
 
 const validManifest = {
-  formatVersion: 3,
+  formatVersion: 4,
   id: 'X',
   name: 'p',
   settings: { ...DEFAULT_PROJECT_SETTINGS },
@@ -155,10 +155,10 @@ describe('migrate', () => {
     ['version 1', v1Manifest],
     ['version 2', v2Manifest],
   ])('brings %s up to the current format version, otherwise unchanged', (_label, document) => {
-    expect(migrate(document, 'wirebench.yaml')).toEqual({ ...document, formatVersion: 3 });
+    expect(migrate(document, 'wirebench.yaml')).toEqual({ ...document, formatVersion: 4 });
   });
 
-  it('passes a version-3 document through with the same formatVersion', () => {
+  it('passes a version-4 document through with the same formatVersion', () => {
     expect(migrate(validManifest, 'wirebench.yaml')).toEqual(validManifest);
   });
 
@@ -172,7 +172,7 @@ describe('migrate', () => {
       return undefined;
     })();
     expect(error?.code).toBe('project-format-too-new');
-    expect(error?.details).toMatchObject({ formatVersion: 7, supported: 3 });
+    expect(error?.details).toMatchObject({ formatVersion: 7, supported: 4 });
   });
 
   it.each([[{ formatVersion: 0 }], [{ formatVersion: '1' }], [{}], [{ formatVersion: 1.5 }]])(
@@ -221,7 +221,7 @@ describe('factories', () => {
   it('creates a project with defaults and a ULID id', () => {
     const project = createProject('Demo');
     expect(project).toMatchObject({
-      formatVersion: 3,
+      formatVersion: 4,
       name: 'Demo',
       settings: DEFAULT_PROJECT_SETTINGS,
       disabledProperties: [],

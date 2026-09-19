@@ -12,7 +12,7 @@
     "docs:dev": "pnpm --filter @wirebench/docs-site dev",
     "docs:build": "pnpm --filter @wirebench/docs-site build",
     "docs:preview": "pnpm --filter @wirebench/docs-site preview",
-    "build": "pnpm -r --filter ./packages/* --filter ./apps/* build",
+    "build": "pnpm -r --filter \"./packages/*\" --filter \"./apps/*\" build",
     "package": "pnpm build && pnpm --filter @wirebench/desktop package",
     "package:mac": "pnpm build && pnpm --filter @wirebench/desktop package:mac",
     "package:win": "pnpm build && pnpm --filter @wirebench/desktop package:win",

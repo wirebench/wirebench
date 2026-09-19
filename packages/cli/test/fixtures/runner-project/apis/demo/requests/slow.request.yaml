@@ -1,0 +1,13 @@
+assertions:
+  - maxMs: 50
+    type: sla
+auth:
+  type: inherit
+body:
+  kind: none
+id: RUNNER0003
+kind: rest
+method: GET
+name: slow
+order: 1
+url: /slow
