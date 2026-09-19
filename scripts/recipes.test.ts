@@ -382,7 +382,8 @@ describe('.github/workflows/release.yml', () => {
   it('leaves the existing jobs untouched', () => {
     expect(workflow.jobs.check).toBeDefined();
     expect(workflow.jobs.build?.needs).toBe('check');
-    expect(workflow.jobs.release?.needs).toBe('build');
+    // The release also waits for the signed Windows installers and the SBOM it attaches.
+    expect(workflow.jobs.release?.needs).toEqual(['build', 'win-sign-installers', 'sbom']);
   });
 
   it('gates every push, publish and release on a tag push, never on workflow_dispatch', () => {
