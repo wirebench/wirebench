@@ -272,7 +272,7 @@ export class EngineService {
    * {@link closeWs} answer `ws-session-unknown`/`{ closed: false }` for a session that never
    * opened or has already ended, rather than writing to a dead socket.
    */
-  private readonly wsSessions = new Map<string, WsSessionHandle>();
+  private readonly wsSessions = new Map<string, { readonly handle: WsSessionHandle; readonly requestId: string }>();
 
   /**
    * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
@@ -829,7 +829,7 @@ export class EngineService {
         {
           onHandshake: (handshake) => {
             if (handshake.status === 101) {
-              this.wsSessions.set(sendId, handle);
+              this.wsSessions.set(sendId, { handle, requestId: args.requestId });
               // The handshake is over, so `request.cancel` (Escape) has nothing left to abort: an
               // open session ends only through `closeWs`, with a close code, never a torn socket.
               this.sends.delete(sendId);
@@ -858,21 +858,21 @@ export class EngineService {
    * @throws WirebenchError `ws-session-unknown` when no session with that id is open
    */
   sendWsMessage(sendId: string, message: { readonly text: string } | { readonly base64: string }): WsFrameWire {
-    const handle = this.wsSessions.get(sendId);
-    if (handle === undefined) {
+    const session = this.wsSessions.get(sendId);
+    if (session === undefined) {
       throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', { details: { sendId } });
     }
     const data = 'text' in message ? message.text : Buffer.from(message.base64, 'base64');
-    return toWsFrameWire(handle.send(data));
+    return toWsFrameWire(session.handle.send(data));
   }
 
   /** Closes the WebSocket session `sendId`. `false` when no such session is open. */
   closeWs(sendId: string, code?: number, reason?: string): { closed: boolean } {
-    const handle = this.wsSessions.get(sendId);
-    if (handle === undefined) {
+    const session = this.wsSessions.get(sendId);
+    if (session === undefined) {
       return { closed: false };
     }
-    handle.close(code, reason);
+    session.handle.close(code, reason);
     // Removed eagerly, like `halfCloseGrpc` removes its call: once `close()` has been asked for,
     // a second `closeWs` for the same `sendId` must answer `false`, not wait for the socket to
     // actually finish closing — `openWsSession`'s own `finally` also deletes this entry, which is
@@ -884,19 +884,39 @@ export class EngineService {
   /**
    * Closes every open WebSocket session. An application may not send 1001 on the wire (RFC 6455
    * §7.4.1), so this always sends `1000 'going away'`; a caller that wants 1001 recorded (e.g. a
-   * History row for "the app is quitting") records it itself alongside this call.
+   * History row for "the app is quitting") records it itself alongside this call. Answers how
+   * many sessions were asked to close, so a caller can skip waiting when there were none.
    */
-  closeAllWs(): void {
-    for (const [sendId, handle] of this.wsSessions) {
+  closeAllWs(): number {
+    return this.closeWsWhere(() => true);
+  }
+
+  /**
+   * Closes every open session whose request `matches`, and answers how many were asked to close.
+   *
+   * The caller that needs the sessions of one *project* supplies the predicate, since the engine
+   * knows which request a session belongs to but nothing about which project owns that request.
+   * Like {@link closeAllWs} this always sends `1000 'going away'` (RFC 6455 §7.4.1 forbids an
+   * application sending 1001), and a session's History entry is written by whoever is awaiting
+   * its `openWsSession` — this only asks the socket to close.
+   */
+  closeWsWhere(matches: (requestId: string) => boolean): number {
+    let asked = 0;
+    for (const [sendId, session] of this.wsSessions) {
+      if (!matches(session.requestId)) {
+        continue;
+      }
+      asked += 1;
       // One session refusing to close (an already-closing socket throwing on a second close,
       // say) must not stop the rest of them from being asked to close too.
       try {
-        handle.close(1000, 'going away');
+        session.handle.close(1000, 'going away');
       } catch (error) {
         console.warn(
           `[ws] closeAllWs: closing "${sendId}" failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    return asked;
   }
 }

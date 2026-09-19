@@ -1342,6 +1342,65 @@ function wsDisplayUrl(input: {
 }
 
 /**
+ * The `openWsRequest` calls still running: one per open session, each settling only once its
+ * History entry has been written.
+ *
+ * A session's History entry is written by whoever awaits `openWsSession`, which is the pending
+ * `request.openWs` invoke — so closing a session is not the same as having recorded it. The two
+ * moments that close sessions on the app's behalf (quitting, and closing a project) must wait for
+ * the recording, or the entry is written into a history file that has already been closed, or not
+ * at all because the process exited first. {@link whenWsSessionsRecorded} is that wait.
+ */
+const openWsCalls = new Map<Promise<unknown>, string>();
+
+/**
+ * Resolves once every `request.openWs` in flight whose request `matches` — every one of them when
+ * it is omitted — has finished recording its History entry, or after `timeoutMs`: a socket that
+ * will not finish closing must never be the reason the app cannot quit.
+ *
+ * `matches` is what keeps a project close from waiting on another project's session, which is
+ * still open and would hold it for the whole timeout.
+ */
+export async function whenWsSessionsRecorded(
+  timeoutMs: number,
+  matches?: (requestId: string) => boolean,
+): Promise<void> {
+  const waiting = [...openWsCalls]
+    .filter(([, requestId]) => matches === undefined || matches(requestId))
+    .map(([call]) => call);
+  if (waiting.length === 0) {
+    return;
+  }
+  const pending = Promise.all(waiting);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      pending,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/** Registers one `request.openWs` call in {@link openWsCalls} for the life of its session. */
+function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promise<WsExchangeSummary> {
+  // A rejection is a fact about that one session, not about the wait: `whenWsSessionsRecorded`
+  // only cares that the call has *finished*, and the caller still gets the original promise.
+  const settled = call.then(
+    () => undefined,
+    () => undefined,
+  );
+  openWsCalls.set(settled, requestId);
+  void settled.finally(() => openWsCalls.delete(settled));
+  return call;
+}
+
+/**
  * Opens one WebSocket session.
  *
  * Everything the renderer did not send is resolved here: the API's target under the active
@@ -1584,7 +1643,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
 
-  registerHandler(channels.request.openWs, (request, sender) => openWsRequest(service, deps, request, sender));
+  registerHandler(channels.request.openWs, (request, sender) =>
+    trackOpenWs(request.requestId, openWsRequest(service, deps, request, sender)),
+  );
   registerHandler(channels.request.wsSend, (request) => Promise.resolve(sendWsMessage(service, deps, request)));
   registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));

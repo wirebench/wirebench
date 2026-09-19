@@ -263,6 +263,36 @@ describe('WorkspaceService.removeProject', () => {
     await service.close();
   }, 60_000);
 
+  it('closes that project’s WebSocket sessions before its history file goes with it', async () => {
+    // A session records its History entry when it closes, and the entry has nowhere to go once
+    // `history.close` has run — so the sessions must be closed, and awaited, first.
+    const order: string[] = [];
+    const history = new HistoryService(root);
+    const close = history.close.bind(history);
+    vi.spyOn(history, 'close').mockImplementation((projectId: string) => {
+      order.push(`history.close:${projectId}`);
+      close(projectId);
+    });
+    const closeWsSessions = vi.fn(async (projectId?: string) => {
+      await Promise.resolve();
+      order.push(`ws:${projectId ?? 'all'}`);
+    });
+    const service = newService({ history, closeWsSessions });
+    await service.create('Payments');
+    const { projectId } = await service.addProject('Billing API');
+    order.length = 0;
+
+    await service.removeProject(projectId, { deleteFiles: false });
+
+    expect(closeWsSessions).toHaveBeenCalledWith(projectId);
+    expect(order).toEqual([`ws:${projectId}`, `history.close:${projectId}`]);
+
+    // Closing the workspace asks for every remaining session, once.
+    order.length = 0;
+    await service.close();
+    expect(order).toContain('ws:all');
+  }, 60_000);
+
   it('refuses an id that is not in the workspace', async () => {
     const service = newService();
     await service.create('Payments');

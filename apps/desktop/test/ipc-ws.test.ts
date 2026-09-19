@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { startTestProxy, startTestWsServer, type TestProxy, type TestWsServer } from '@wirebench/engine/test-helpers';
 import { WirebenchError, type WsCallInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, whenWsSessionsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { WsSendResolution } from '../src/main/ws-send.js';
 import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 
@@ -478,6 +478,58 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(projectId).toBe('p1');
     expect(record).toMatchObject({ requestId: 'ws-1', requestName: 'Echo', apiName: 'Chat', folderPath: '' });
     expect(onHistoryAppended).toHaveBeenCalledWith({ id: 'h1', kind: 'websocket' });
+  });
+
+  it('a session closed by the app still records its History entry before the wait resolves', async () => {
+    // The shutdown path in `main/index.ts`: ask every socket to close, then wait for each pending
+    // `request.openWs` to have written its entry. Quitting (or closing the project) before that
+    // wait would drop the entry — the history file closes with the project, and the process with
+    // the app.
+    let recorded = false;
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(async () => {
+      // A real record writes to disk; the wait must outlast that, not just the socket closing.
+      await new Promise((resolve) => setImmediate(resolve));
+      recorded = true;
+      return { id: 'h-quit', kind: 'websocket' } as HistoryEntryWire;
+    });
+    const service = register({ history: { recordWsSession } as never });
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 'quit-1', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+
+    expect(service.closeAllWs()).toBe(1);
+    expect(recorded).toBe(false);
+    await whenWsSessionsRecorded(8000);
+
+    expect(recorded).toBe(true);
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    await openPromise;
+  });
+
+  it('closes only the sessions of the project being closed, and waits for those', async () => {
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
+      Promise.resolve({ id: 'h-close', kind: 'websocket' } as HistoryEntryWire),
+    );
+    // Two sessions, one per project, exactly as `closeWsSessions(projectId)` sees them.
+    const owners: Record<string, string> = { 'ws-1': 'p1', 'ws-2': 'p2' };
+    const service = register({ history: { recordWsSession } as never }, { projectId: (id: string) => owners[id] });
+    const first = fakeSender();
+    const second = fakeSender();
+    const openOne = invoke('request.openWs', { sendId: 'c-1', requestId: 'ws-1' }, first.sender);
+    const openTwo = invoke('request.openWs', { sendId: 'c-2', requestId: 'ws-2' }, second.sender);
+    await waitForHandshake(first.events);
+    await waitForHandshake(second.events);
+
+    expect(service.closeWsWhere((requestId) => owners[requestId] === 'p1')).toBe(1);
+    await whenWsSessionsRecorded(8000, (requestId) => owners[requestId] === 'p1');
+
+    // The other project's session is untouched: its invoke is still pending.
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    expect(recordWsSession.mock.calls[0]![0]).toBe('p1');
+    await openOne;
+
+    unwrap(await invoke('request.wsClose', { sendId: 'c-2' }));
+    await openTwo;
   });
 
   it('a refused handshake (401) produces both a failed log row and a History entry with closedBy: error', async () => {

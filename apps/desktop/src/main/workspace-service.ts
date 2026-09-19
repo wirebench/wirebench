@@ -183,6 +183,15 @@ export interface WorkspaceServiceDeps {
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** One history file per open project. */
   readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'>;
+  /**
+   * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
+   * and resolves once each has written its History entry.
+   *
+   * Awaited before a project's history file is closed, so a session the user left open does not
+   * lose its entry to the project closing under it. Injected (the engine in the app, nothing in
+   * tests that never open one) so this file stays free of the engine.
+   */
+  readonly closeWsSessions?: (projectId?: string) => Promise<void>;
   readonly hooks?: WorkspaceHooks;
   /**
    * Moves a folder to the OS trash. Injected (`shell.trashItem` in the app, a folder move in
@@ -902,6 +911,9 @@ export class WorkspaceService implements ProjectRouter {
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
+    // Every session, before `history.closeAll()` below: same reason as in `releaseEntry`, and one
+    // call rather than one per entry so sessions close in parallel.
+    await this.deps.closeWsSessions?.().catch(() => undefined);
     // A snapshot: an in-flight `releaseEntry` splicing the live array must not make this skip one.
     for (const entry of [...open.entries]) {
       await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
@@ -1063,6 +1075,10 @@ export class WorkspaceService implements ProjectRouter {
     options: { discardUnsaved: boolean },
   ): Promise<void> {
     this.cancelUnsavedWrite(entry.ref.id);
+    // Before the host and the history file go: a session still open against one of this project's
+    // requests records its entry when it closes, and `history.close` below would leave that entry
+    // nowhere to be written.
+    await this.deps.closeWsSessions?.(entry.projectId).catch(() => undefined);
     await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
     if (options.discardUnsaved) {
       await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
