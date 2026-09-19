@@ -1903,6 +1903,29 @@ export const wsExchangeSummarySchema = z.object({
 export type WsExchangeSummary = z.infer<typeof wsExchangeSummarySchema>;
 
 /**
+ * The HTTP Log's row for a WebSocket session: the handshake, and only the handshake — written the
+ * moment it settles, not when the session closes (the frames live in History, via
+ * {@link WsExchangeSummary}). `url` is `http(s)://` so the row filters and searches like every
+ * other, `wsUrl` keeps the original `ws(s)://` form for display. Discriminated from the other
+ * `logEntryWireSchema` exchange shapes by `protocol` (they carry none).
+ */
+export const wsHandshakeExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  protocol: z.literal('websocket'),
+  method: z.literal('GET'),
+  url: z.string(),
+  wsUrl: z.string(),
+  requestHeaders: z.record(z.string(), z.string()),
+  rawRequestHead: z.string().optional(),
+  status: z.literal(101),
+  responseHeaders: z.record(z.string(), z.string()),
+  startedAt: z.string(),
+  durationMs: z.number(),
+  tls: tlsInfoWireSchema.optional(),
+});
+export type WsHandshakeExchangeSummary = z.infer<typeof wsHandshakeExchangeSummarySchema>;
+
+/**
  * One report from a WebSocket session that is still open, correlated to the invoke by `sendId`.
  *
  * `request.openWs` stays open for the life of the session and resolves with the whole exchange;
@@ -1993,13 +2016,26 @@ export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 export const logEntryWireSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('exchange'),
-    exchange: z.union([grpcExchangeSummarySchema, restExchangeSummarySchema, exchangeSummarySchema]),
+    exchange: z.union([
+      grpcExchangeSummarySchema,
+      restExchangeSummarySchema,
+      exchangeSummarySchema,
+      wsHandshakeExchangeSummarySchema,
+    ]),
     /** The saved request the send came from; absent for an ad-hoc send. */
     requestId: z.string().optional(),
   }),
   z.object({ kind: z.literal('failure'), failure: failedExchangeWireSchema }),
 ]);
 export type LogEntryWire = z.infer<typeof logEntryWireSchema>;
+
+/**
+ * Payload for the `exchange.logged` event: a row for the HTTP Log that exists before its send's
+ * own invoke resolves — currently only a WebSocket handshake (`request.openWs` stays pending for
+ * the life of the session, so this is the log row's only way to appear while it is still open).
+ */
+export const exchangeLoggedEventSchema = z.object({ entry: logEntryWireSchema });
+export type ExchangeLoggedEvent = z.infer<typeof exchangeLoggedEventSchema>;
 
 /** Request payload for `log.curl`; the response is `requestCurlResponseSchema`. */
 export const logCurlRequestSchema = z.object({ entry: logEntryWireSchema, shell: z.enum(['posix', 'powershell']) });
@@ -2009,7 +2045,10 @@ export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
  * Request payload for `log.resend`: the saved request behind a row, replayed as it is now. A
  * logged row's own headers and body are redacted and are never the source of a send.
  */
-export const logResendRequestSchema = z.object({ protocol: z.enum(['soap', 'rest', 'grpc']), requestId: z.string() });
+export const logResendRequestSchema = z.object({
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']),
+  requestId: z.string(),
+});
 export type LogResendRequest = z.infer<typeof logResendRequestSchema>;
 
 /** Response payload for `log.resend`: the new exchange, tagged by protocol. */
@@ -2868,7 +2907,7 @@ export const historyEntrySchema = z.object({
    * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
    * main writes from now on names its kind.
    */
-  kind: z.enum(['soap', 'rest', 'grpc']).optional(),
+  kind: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -2906,6 +2945,29 @@ export const historyEntrySchema = z.object({
       requestMessages: z.array(z.string()),
       responseMessages: z.array(z.string()),
       trailers: z.array(headerEntrySchema),
+    })
+    .optional(),
+  /** The session record of a WebSocket send: the handshake outcome, how it closed, its frames. */
+  ws: z
+    .object({
+      url: z.string(),
+      status: z.number().optional(),
+      protocol: z.string().optional(),
+      closeCode: z.number(),
+      closeReason: z.string(),
+      closedBy: z.enum(['client', 'server', 'error']),
+      counts: z.object({
+        sent: z.number(),
+        received: z.number(),
+        bytesSent: z.number(),
+        bytesReceived: z.number(),
+      }),
+      frames: z.array(wsFrameWireSchema),
+      /** Set only when the cap actually trimmed something (frames, or just a payload). */
+      truncated: z.boolean().optional(),
+      omittedFrames: z.number().optional(),
+      /** The handshake's transport error, absent when the handshake succeeded (or never ran). */
+      error: z.string().optional(),
     })
     .optional(),
   sizeBytes: z.number(),

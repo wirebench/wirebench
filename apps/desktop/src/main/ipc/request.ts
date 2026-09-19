@@ -81,7 +81,9 @@ import type {
   RequestWsCloseResponse,
   WsExchangeSummary,
   WsFrameWire,
+  WsHandshakeWire,
   WsRequestPatchWire,
+  LogEntryWire,
 } from '../../shared/wire-types.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
@@ -166,6 +168,12 @@ export interface RequestChannelDeps {
    * object for the SOAP path.
    */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
+  /**
+   * Called with a row for the HTTP Log that exists before its own send's invoke resolves —
+   * currently only a WebSocket handshake, the moment it settles — so main can broadcast
+   * `exchange.logged`. Omitted in tests that don't care.
+   */
+  readonly onExchange?: (entry: LogEntryWire) => void;
   /**
    * The user's preferences: the WSDL section supplies the generation defaults and the Editor
    * section the indent a recreated envelope is formatted with. Omitted in tests, which then get
@@ -1173,6 +1181,116 @@ async function recordGrpc(
 }
 
 /**
+ * The HTTP Log's row for a successful WebSocket handshake, written the moment it settles — not
+ * when the session closes, since `request.openWs` stays pending for the whole session. Reported
+ * through `deps.onExchange`, the live twin `onSendFailed` is for a send whose own invoke never
+ * leaves main until long after the row should appear.
+ *
+ * Only ever called with a `status === 101` handshake: the engine's `onHandshake` hook (which this
+ * is driven by, through `ws.live`'s `handshake` event) fires only for a handshake that actually
+ * completed — a refused or failed one reaches `openWsRequest` solely through the settled
+ * `summary` (see `reportWsHandshakeFailure`, called there instead).
+ */
+function reportWsHandshake(
+  deps: RequestChannelDeps,
+  sendId: string,
+  requestId: string,
+  handshake: WsHandshakeWire,
+): void {
+  if (deps.onExchange === undefined) {
+    return;
+  }
+  const entry: LogEntryWire = {
+    kind: 'exchange',
+    requestId,
+    exchange: {
+      sendId,
+      protocol: 'websocket',
+      method: 'GET',
+      // `http(s)://` so the row filters/searches like every other; `wsUrl` keeps `ws(s)://` for display.
+      url: handshake.url.replace(/^ws/, 'http'),
+      wsUrl: handshake.url,
+      requestHeaders: handshake.requestHeaders,
+      ...(handshake.rawRequestHead !== undefined ? { rawRequestHead: handshake.rawRequestHead } : {}),
+      status: 101,
+      responseHeaders: handshake.responseHeaders ?? {},
+      startedAt: handshake.startedAt,
+      durationMs: handshake.durationMs,
+      ...(handshake.tls !== undefined ? { tls: handshake.tls } : {}),
+    },
+  };
+  try {
+    deps.onExchange(entry);
+  } catch {
+    // Deliberately ignored — a broadcast that fails must never affect the session, like `onSendFailed`'s own catch.
+  }
+}
+
+/**
+ * The HTTP Log's row for a handshake that never reached 101: a refusal (e.g. 401) or a transport
+ * failure before any response. Checked against the *settled* `summary` rather than a live event —
+ * `openWsSession`'s `done` never rejects for this, and the engine's `onHandshake` hook never fires
+ * for it either (only a handshake that actually opened reaches it) — so this is the one place such
+ * a failure can be seen and reported, exactly like a prepare/send-stage failure. `recordWs` still
+ * writes History for it afterwards (`closedBy: 'error'`).
+ */
+function reportWsHandshakeFailure(
+  deps: RequestChannelDeps,
+  sendId: string,
+  requestId: string,
+  summary: WsExchangeSummary,
+  keyParams: readonly string[] | undefined,
+): void {
+  if (summary.handshake.status === 101) {
+    return;
+  }
+  const { handshake } = summary;
+  reportSendFailed(deps.onSendFailed, () =>
+    failedExchangeOf({
+      sendId,
+      protocol: 'websocket',
+      requestId,
+      url: handshake.url,
+      method: 'GET',
+      headers: handshake.requestHeaders,
+      startedAt: new Date(handshake.startedAt).getTime(),
+      durationMs: handshake.durationMs,
+      error:
+        handshake.error !== undefined
+          ? new WirebenchError('ws-handshake-failed', handshake.error)
+          : new WirebenchError('ws-handshake-refused', 'The server refused the WebSocket handshake.'),
+      keyParams,
+    }),
+  );
+}
+
+/** Appends one WebSocket session's history entry, on close — successful or not. A no-op without a history service. */
+async function recordWs(
+  deps: RequestChannelDeps,
+  requestId: string,
+  resolved: WsSendResolution,
+  summary: WsExchangeSummary,
+  keyParams: readonly string[] | undefined,
+): Promise<void> {
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.wsMeta?.(requestId);
+  const entry = await deps.history.recordWsSession(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? resolved.request.name,
+    apiName: meta?.apiName ?? resolved.api.name,
+    folderPath: meta?.folderPath ?? '',
+    exchange: summary,
+    ...(keyParams !== undefined ? { keyParams } : {}),
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/**
  * The dry run of a gRPC call: the target it would go to and what would not expand. Nothing is sent
  * and no secret is touched, so the editor can show the badge while the user types.
  */
@@ -1303,11 +1421,16 @@ export async function openWsRequest(
         showSecrets: deps.showSecrets?.get() ?? false,
         ...(keyParams !== undefined ? { keyParams } : {}),
         onLive: (event) => {
+          if (event.kind === 'handshake') {
+            // Only ever a `status === 101` handshake — see `reportWsHandshake`'s own doc.
+            reportWsHandshake(deps, request.sendId, request.requestId, event.handshake);
+          }
           emitEvent(sender, events.ws.live, event);
         },
       },
     );
-    // History and the HTTP Log: Task 10 of the #98 plan
+    reportWsHandshakeFailure(deps, request.sendId, request.requestId, summary, keyParams);
+    await recordWs(deps, request.requestId, resolved, summary, keyParams);
     return summary;
   } catch (error) {
     const durationMs = Date.now() - startedAt;

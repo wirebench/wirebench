@@ -12,7 +12,7 @@ import { WirebenchError, type WsCallInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { WsSendResolution } from '../src/main/ws-send.js';
-import type { FailedExchangeWire } from '../src/shared/wire-types.js';
+import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -414,6 +414,71 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     );
     expect(reply.command).toContain('websocat');
     expect(reply.command).toContain(`${server.url}/echo`);
+  });
+
+  it('the HTTP Log row exists (through onExchange) the moment the handshake settles — before the session closes', async () => {
+    const onExchange = vi.fn<(entry: LogEntryWire) => void>();
+    register({ onExchange });
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 's8', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+
+    // Not resolved yet: the log row already exists (assertion below), long before `wsClose`.
+    expect(onExchange).toHaveBeenCalledTimes(1);
+    const entry = onExchange.mock.calls[0]![0];
+    expect(entry.kind).toBe('exchange');
+    if (entry.kind !== 'exchange') throw new Error('unreachable');
+    expect(entry.requestId).toBe('ws-1');
+    expect(entry.exchange).toMatchObject({ protocol: 'websocket', method: 'GET', status: 101 });
+    expect((entry.exchange as { url: string }).url).toMatch(/^http:\/\//);
+    expect((entry.exchange as { wsUrl: string }).wsUrl).toMatch(/^ws:\/\//);
+
+    unwrap(await invoke('request.wsClose', { sendId: 's8' }));
+    await openPromise;
+  });
+
+  it('writes one History entry on close, through wsMeta and the resolved request/api names', async () => {
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
+      Promise.resolve({ id: 'h1', kind: 'websocket' } as HistoryEntryWire),
+    );
+    const onHistoryAppended = vi.fn<(entry: HistoryEntryWire) => void>();
+    register({ history: { recordWsSession } as never, onHistoryAppended });
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 's9', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+    unwrap(await invoke('request.wsClose', { sendId: 's9' }));
+    await openPromise;
+
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    const [projectId, record] = recordWsSession.mock.calls[0]!;
+    expect(projectId).toBe('p1');
+    expect(record).toMatchObject({ requestId: 'ws-1', requestName: 'Echo', apiName: 'Chat', folderPath: '' });
+    expect(onHistoryAppended).toHaveBeenCalledWith({ id: 'h1', kind: 'websocket' });
+  });
+
+  it('a refused handshake (401) produces both a failed log row and a History entry with closedBy: error', async () => {
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+    const onExchange = vi.fn<(entry: LogEntryWire) => void>();
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
+      Promise.resolve({ id: 'h2', kind: 'websocket' } as HistoryEntryWire),
+    );
+    register(
+      { onSendFailed, onExchange, history: { recordWsSession } as never },
+      { wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/refuse') : undefined) },
+    );
+    const { sender } = fakeSender();
+    const summary = unwrap<{ closed: { by: string } }>(
+      await invoke('request.openWs', { sendId: 's10', requestId: 'ws-1' }, sender),
+    );
+    expect(summary.closed.by).toBe('error');
+
+    expect(onExchange).not.toHaveBeenCalled();
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+    expect(onSendFailed.mock.calls[0]![0]).toMatchObject({ protocol: 'websocket' });
+
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    const record = recordWsSession.mock.calls[0]![1] as { exchange: { closed: { by: string } } };
+    expect(record.exchange.closed.by).toBe('error');
   });
 
   it('request.preflightWs returns the resolved URL, its source and unresolved expressions, without dialling', async () => {

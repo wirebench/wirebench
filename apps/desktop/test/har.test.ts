@@ -2,7 +2,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { harFileName, harOf, type HarEntry } from '../src/main/har.js';
-import { b64, makeExchange, makeFailure, makeGrpcExchange, makeRestExchange } from './mocks/wire-fixtures.js';
+import {
+  b64,
+  makeExchange,
+  makeFailure,
+  makeGrpcExchange,
+  makeRestExchange,
+  makeWsHandshakeExchange,
+} from './mocks/wire-fixtures.js';
 
 const CREATOR = { name: 'Wirebench', version: '0.0.0-test' } as const;
 const golden = (name: string): unknown =>
@@ -137,6 +144,34 @@ describe('harOf', () => {
     ]) {
       expect(text).not.toContain(secret);
     }
+  });
+});
+
+describe('harOf — WebSocket', () => {
+  it('exports the handshake as an ordinary GET/101 pair, _resourceType: websocket, no _webSocketMessages', () => {
+    const entry = harOf([{ kind: 'exchange', exchange: makeWsHandshakeExchange() }], CREATOR).log.entries[0]!;
+    expect(entry.request.method).toBe('GET');
+    expect(entry.request.url).toBe('https://api.test/chat');
+    expect(entry.response.status).toBe(101);
+    expect(entry.response.headers).toEqual([{ name: 'sec-websocket-accept', value: 'abc123=' }]);
+    expect(entry._resourceType).toBe('websocket');
+    expect(entry).not.toHaveProperty('_webSocketMessages');
+    requiredFieldsPresent(entry);
+  });
+
+  it('masks the handshake headers unless shown; the wsUrl is not part of the HAR (only the masked http(s):// url)', () => {
+    const text = JSON.stringify(
+      harOf(
+        [
+          {
+            kind: 'exchange',
+            exchange: makeWsHandshakeExchange({ requestHeaders: { Authorization: 'Bearer secret-tok' } }),
+          },
+        ],
+        CREATOR,
+      ),
+    );
+    expect(text).not.toContain('secret-tok');
   });
 });
 

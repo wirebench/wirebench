@@ -270,6 +270,7 @@ void app.whenReady().then(() => {
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
+    onExchange: (entry) => broadcast(events.exchange.logged, { entry }),
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,

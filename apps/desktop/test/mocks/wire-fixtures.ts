@@ -7,6 +7,8 @@ import type {
   FailedExchangeWire,
   GrpcExchangeSummary,
   RestExchangeSummary,
+  WsExchangeSummary,
+  WsHandshakeExchangeSummary,
 } from '../../src/shared/wire-types.js';
 
 /** Base64 of a UTF-8 string, for the `*Base64` fields the wire types carry. */
@@ -96,6 +98,50 @@ export function makeRestExchange(overrides: Partial<RestExchangeSummary> = {}): 
       redirects: [],
       request: { url: 'https://api.test/pet/1', method: 'GET', headers: {} },
     },
+    ...overrides,
+  };
+}
+
+/** The HTTP Log's row for a successful WebSocket handshake; every field can be overridden per test. */
+export function makeWsHandshakeExchange(
+  overrides: Partial<WsHandshakeExchangeSummary> = {},
+): WsHandshakeExchangeSummary {
+  return {
+    sendId: 'send-1',
+    protocol: 'websocket',
+    method: 'GET',
+    url: 'https://api.test/chat',
+    wsUrl: 'wss://api.test/chat',
+    requestHeaders: { Authorization: '<redacted>' },
+    status: 101,
+    responseHeaders: { 'sec-websocket-accept': 'abc123=' },
+    startedAt: '2026-09-19T08:30:05.000Z',
+    durationMs: 25,
+    ...overrides,
+  };
+}
+
+/** A finished WebSocket session, as `HistoryService.recordWsSession` records it; overridable per test. */
+export function makeWsExchange(overrides: Partial<WsExchangeSummary> = {}): WsExchangeSummary {
+  return {
+    sendId: 'send-1',
+    url: 'wss://api.test/chat',
+    handshake: {
+      url: 'wss://api.test/chat',
+      requestHeaders: { Authorization: 'Bearer plain-token' },
+      requestedSubprotocols: [],
+      status: 101,
+      responseHeaders: { 'sec-websocket-accept': 'abc123=' },
+      startedAt: '2026-09-19T08:30:05.000Z',
+      durationMs: 25,
+    },
+    frames: [
+      { index: 0, direction: 'sent', opcode: 'text', at: 5, size: 2, text: 'hi' },
+      { index: 1, direction: 'received', opcode: 'text', at: 8, size: 2, text: 'hi' },
+    ],
+    closed: { code: 1000, reason: 'normal', by: 'client' },
+    counts: { sent: 1, received: 1, bytesSent: 2, bytesReceived: 2 },
+    durationMs: 120,
     ...overrides,
   };
 }

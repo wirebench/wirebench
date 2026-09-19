@@ -107,6 +107,7 @@ import {
   projectMoveToWorkspaceRequestSchema,
   engineProgressEventSchema,
   exchangeFailedEventSchema,
+  exchangeLoggedEventSchema,
   exchangeSummarySchema,
   exchangesGetRequestSchema,
   exchangesGetResponseSchema,
@@ -767,6 +768,11 @@ export const events = {
   exchange: {
     /** A send failed before a response arrived; the console's HTTP Log records it as a failure row. */
     failed: defineEvent('exchange.failed', exchangeFailedEventSchema),
+    /**
+     * A row for the HTTP Log exists before its own invoke resolved — currently only a WebSocket
+     * handshake, the moment it settles.
+     */
+    logged: defineEvent('exchange.logged', exchangeLoggedEventSchema),
   },
   git: {
     /** The open workspace's sync needs `user.name`/`user.email` before it can commit. */

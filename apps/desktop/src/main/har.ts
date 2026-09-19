@@ -3,7 +3,7 @@
  * URL parameters, WS-Security passwords and JSON/form secrets — whatever the show-secrets toggle
  * says: a HAR file is made to be shared.
  */
-import type { LogEntryWire } from '../shared/wire-types.js';
+import type { LogEntryWire, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
 import { loggedRequestOf } from './log-curl.js';
 import { redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
@@ -67,6 +67,8 @@ export interface HarEntry {
   readonly timings: HarTimings;
   readonly _error?: { readonly code: string; readonly message: string; readonly stage: 'prepare' | 'send' };
   readonly _truncated?: true;
+  /** Set only for a WebSocket row: the `GET`/`101` pair that opened the session. */
+  readonly _resourceType?: 'websocket';
 }
 
 export interface Har {
@@ -129,8 +131,48 @@ function requestOf(entry: LogEntryWire, httpVersion: string, isGrpc: boolean): H
   };
 }
 
+/**
+ * A WebSocket row's HAR entry: the handshake as an ordinary `GET`/`101` pair, `_resourceType:
+ * 'websocket'` so a reader knows it opened a session — never `_webSocketMessages`; the log holds
+ * only the handshake, History the frames.
+ */
+function wsExchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
+  const exchange = entry.exchange as WsHandshakeExchangeSummary;
+  const httpVersion = 'HTTP/1.1';
+  return {
+    startedDateTime: exchange.startedAt,
+    time: exchange.durationMs,
+    request: requestOf(entry, httpVersion, false),
+    response: {
+      status: exchange.status,
+      statusText: '',
+      httpVersion,
+      cookies: [],
+      headers: harHeaders(Object.entries(exchange.responseHeaders)),
+      content: { size: 0, mimeType: 'x-unknown' },
+      redirectURL: '',
+      headersSize: -1,
+      bodySize: 0,
+    },
+    cache: {},
+    timings: {
+      blocked: -1,
+      dns: -1,
+      connect: -1,
+      ssl: exchange.tls !== undefined ? exchange.durationMs : -1,
+      send: 0,
+      wait: exchange.durationMs,
+      receive: 0,
+    },
+    _resourceType: 'websocket',
+  };
+}
+
 function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarEntry {
-  const { exchange } = entry;
+  if ('protocol' in entry.exchange && entry.exchange.protocol === 'websocket') {
+    return wsExchangeEntry(entry);
+  }
+  const exchange = entry.exchange as Exclude<typeof entry.exchange, WsHandshakeExchangeSummary>;
   const { http } = exchange;
   const isGrpc = 'statusName' in exchange;
   const httpVersion = harVersion(http.httpVersion);

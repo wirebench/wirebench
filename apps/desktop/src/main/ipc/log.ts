@@ -51,6 +51,13 @@ export function registerLogChannels(deps: LogChannelDeps): void {
         exchange: await sendGrpcRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),
       };
     }
+    if (request.protocol === 'websocket') {
+      // A WebSocket row is a whole session's handshake, not one request/response pair; like a
+      // streaming gRPC call, it needs the live panel to drive it and cannot be replayed from a row.
+      throw new WirebenchError('ws-resend-streaming', 'Only a unary gRPC call can be resent from the log.', {
+        details: { requestId: request.requestId },
+      });
+    }
     // History's resend Path 1: the live request, never a redacted copy.
     const input = deps.request.project.buildLiveSendInput(request.requestId);
     if (input === undefined) {
