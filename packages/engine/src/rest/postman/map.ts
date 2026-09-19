@@ -456,7 +456,12 @@ function mapPostmanAuth(
       const authUrlAttr = auth.oauth2?.find((a) => a.key === 'authUrl' || a.key === 'authorizationUrl');
       const clientIdAttr = auth.oauth2?.find((a) => a.key === 'clientId');
       const scopeAttr = auth.oauth2?.find((a) => a.key === 'scope');
-      const isAuthCode = grantAttr?.value === 'authorization_code';
+      const grant = asText(grantAttr?.value) ?? 'client_credentials';
+      const isAuthCode = grant === 'authorization_code' || grant === 'authorization_code_with_pkce';
+      if (!isAuthCode && grant !== 'client_credentials') {
+        warnings?.push(`OAuth 2.0 grant "${grant}" is not supported; set to "none"`);
+        return { type: 'none' };
+      }
       const authUrl = asText(authUrlAttr?.value);
       const scopeText = asText(scopeAttr?.value);
 

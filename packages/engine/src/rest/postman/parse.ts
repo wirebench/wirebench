@@ -144,7 +144,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
 
   const rawItems = Array.isArray(doc['item']) ? doc['item'] : [];
   const item = parseItems(rawItems, ctx, 1);
-  const auth = isRecord(doc['auth']) ? parseAuth(doc['auth']) : undefined;
+  const auth = isRecord(doc['auth']) ? parseAuth(doc['auth'], ctx) : undefined;
   const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable'], ctx) : undefined;
   if (hasEvents(doc)) ctx.scriptedItems += 1;
 
@@ -193,7 +193,7 @@ function parseItems(raw: readonly unknown[], ctx: ParseContext, depth: number): 
 function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem | undefined {
   const name = tv(ctx, asString(raw['name']) ?? 'Request');
   const description = extractDescription(raw['description']);
-  const auth = isRecord(raw['auth']) ? parseAuth(raw['auth']) : undefined;
+  const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
   const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable'], ctx) : undefined;
   if (hasEvents(raw)) ctx.scriptedItems += 1;
 
@@ -240,7 +240,7 @@ function parseRequest(raw: string | Record_, ctx: ParseContext): PostmanRequest 
   ) {
     header = [...header, { key: 'Content-Type', value: 'application/json' }];
   }
-  const auth = isRecord(raw['auth']) ? parseAuth(raw['auth']) : undefined;
+  const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
   const description = extractDescription(raw['description']);
 
   return {
@@ -484,7 +484,9 @@ function parseGraphqlVariables(raw: unknown): unknown {
   }
 }
 
-function parseAuth(raw: Record_): PostmanAuth {
+/** Auth attributes, with `{{var}}` in string values translated like every other field. */
+function parseAuth(raw: Record_, ctx: ParseContext): PostmanAuth {
+  const value = (v: unknown): unknown => (typeof v === 'string' ? tv(ctx, v) : v);
   const type = asString(raw['type'])?.toLowerCase();
   const extractAttributes = (field: string): readonly PostmanAuthAttribute[] | undefined => {
     const list = raw[field];
@@ -497,7 +499,7 @@ function parseAuth(raw: Record_): PostmanAuth {
         if (key !== undefined) {
           attrs.push({
             key,
-            value: entry['value'],
+            value: value(entry['value']),
             ...(attrType !== undefined ? { type: attrType } : {}),
           });
         }
@@ -510,13 +512,13 @@ function parseAuth(raw: Record_): PostmanAuth {
         if (isRecord(val) && 'value' in val) {
           attrs.push({
             key,
-            value: val['value'],
+            value: value(val['value']),
             ...(typeof val['type'] === 'string' ? { type: val['type'] } : {}),
           });
         } else {
           attrs.push({
             key,
-            value: val,
+            value: value(val),
           });
         }
       }

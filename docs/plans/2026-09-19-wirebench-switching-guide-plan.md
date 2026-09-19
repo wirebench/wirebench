@@ -7,7 +7,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
 
 ## Phase 1 — Fixes
 
-- [ ] **T1. Postman mapping gaps.** An OAuth 2 grant other than authorization code or client credentials
+- [x] **T1. Postman mapping gaps.** An OAuth 2 grant other than authorization code or client credentials
   maps to `none` with a warning instead of silently becoming client credentials. `{{var}}` in auth fields
   (username, token and auth URLs, client ID, scope, API key name) is translated to `${var}`.
   - Verify: engine unit tests in `packages/engine/test/unit/rest/postman/`.
