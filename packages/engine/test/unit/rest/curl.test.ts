@@ -327,4 +327,64 @@ describe('heredoc scan', () => {
     const result = fromRestCurl(crlf, { baseUrl: 'https://api.test' });
     expect(result.request.body).toMatchObject({ kind: 'raw', text: '{\r\n  "a": 1\r\n}' });
   });
+
+  describe('flags that take no value', () => {
+    it.each([
+      '--ntlm',
+      '--digest',
+      '--basic',
+      '--anyauth',
+      '--negotiate',
+      '-O',
+      '--compressed',
+      '-S',
+      '--http1.0',
+      '--tlsv1.2',
+    ])('%s does not swallow the token after it', (flag) => {
+      const result = fromRestCurl(`curl ${flag} -u ada:pw https://api.test/pets`);
+      expect(result.request.url).toBe('https://api.test/pets');
+      expect(result.basic).toEqual({ username: 'ada', password: 'pw' });
+      expect(result.problems).toContain(`Ignored ${flag}`);
+    });
+
+    it('splits bundled value-less short flags and applies the ones it knows', () => {
+      const result = fromRestCurl('curl -sSkL https://api.test/pets');
+      expect(result.request.url).toBe('https://api.test/pets');
+      expect(result.request.settings).toEqual({ trustInvalid: true, followRedirects: true });
+      expect(result.problems).toEqual(['Ignored -s', 'Ignored -S']);
+    });
+
+    it('leaves a short flag with its value attached to be read as written', () => {
+      const put = fromRestCurl('curl -XPUT https://api.test/pets');
+      expect(put.request).toMatchObject({ method: 'PUT', url: 'https://api.test/pets' });
+      const bundled = fromRestCurl('curl -sXPOST -uada:pw https://api.test/pets');
+      expect(bundled.request).toMatchObject({ method: 'POST', url: 'https://api.test/pets' });
+      expect(bundled.basic).toEqual({ username: 'ada', password: 'pw' });
+    });
+  });
+
+  it('reads --json as a JSON body with its headers, keeping headers the command set', () => {
+    const result = fromRestCurl(`curl --json '{"name":"Fido"}' https://api.test/pets`);
+    expect(result.request.method).toBe('POST');
+    expect(result.request.body).toEqual({ kind: 'raw', language: 'json', text: '{"name":"Fido"}' });
+    expect(result.request.headers).toEqual([
+      entry('Content-Type', 'application/json'),
+      entry('Accept', 'application/json'),
+    ]);
+
+    const own = fromRestCurl(`curl -H 'Accept: */*' --json '{}' https://api.test/pets`);
+    expect(own.request.headers).toEqual([entry('Accept', '*/*'), entry('Content-Type', 'application/json')]);
+  });
+
+  it('moves -d data into the query of a GET with -G', () => {
+    const result = fromRestCurl(`curl -G https://api.test/pets?limit=10 -d tag=dog --data-urlencode 'q=a b'`);
+    expect(result.request.method).toBe('GET');
+    expect(result.request.body).toEqual({ kind: 'none' });
+    expect(result.request.query).toEqual([entry('limit', '10'), entry('tag', 'dog'), entry('q', 'a b')]);
+  });
+
+  it('asks for HEAD with -I, unless -X says otherwise', () => {
+    expect(fromRestCurl('curl -I https://api.test/pets').request.method).toBe('HEAD');
+    expect(fromRestCurl('curl -I -X GET https://api.test/pets').request.method).toBe('GET');
+  });
 });

@@ -11,6 +11,7 @@
 import type { SoapSendInput } from '../types.js';
 import { soapActionHeaders } from '../soap/soap-action.js';
 import { findHeredoc, findHereString } from './heredoc.js';
+import { expandBundles, takesNoValue } from './curl-flags.js';
 
 /** One header of an exported command, in the order the user wrote it. */
 export interface CurlHeader {
@@ -235,7 +236,7 @@ export function fromCurl(text: string): FromCurlResult {
     .replace(/\\\r?\n/g, ' ')
     .replace(/`\r?\n/g, ' ')
     .trim();
-  const tokens = tokenize(normalized);
+  const tokens = expandBundles(tokenize(normalized));
 
   let endpoint: string | undefined;
   let envelopeXml: string | undefined;
@@ -284,9 +285,9 @@ export function fromCurl(text: string): FromCurlResult {
       continue;
     }
     if (tok.startsWith('-')) {
-      // unknown flag; assume it takes no value unless it's a long flag with '=' embedded
+      // A flag with no field here: skip its value too, unless it is one that takes none.
       problems.push(`ignored-flag:${tok}`);
-      i += 1;
+      i += takesNoValue(tok) ? 1 : 2;
       continue;
     }
     // bare token: the URL

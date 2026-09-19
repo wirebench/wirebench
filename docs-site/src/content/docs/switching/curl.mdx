@@ -1,0 +1,87 @@
+---
+title: From cURL commands
+description: Which curl flags a pasted command brings into Wirebench, which it ignores, and how a REST import differs from a SOAP one.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A pasted `curl` command becomes **one request**. What it holds depends on where you import it:
+- into a REST API or folder, the command becomes a full REST request, with Basic auth if it has `-u`;
+- into a SOAP operation, it becomes a request whose envelope, endpoint and SOAPAction come from the
+  command.
+
+The toast after the import names every flag the import could not use.
+
+To run the import, see [cURL commands](/wirebench/guides/importers/#curl-commands) in the importers
+guide. The same section covers **Copy as cURL**, which turns a request back into a command.
+
+![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/images/importers/curl-preview.png)
+
+## What carries over into a REST request
+
+| Flag | In Wirebench | More |
+| --- | --- | --- |
+| The URL, or `--url` | The request's URL. If it starts with the API's **Base URL**, it becomes a relative path, so it follows the API's environments. The query string becomes rows in the **Params** table | [Path and query parameters](/wirebench/guides/rest-client/#path-and-query-parameters) |
+| `-X` / `--request`, also written `-XPUT` | The method. Without it: GET, or POST when the command sends a body | |
+| `-I` / `--head` | HEAD, unless `-X` says otherwise | |
+| `-H` / `--header` | Rows in the **Headers** table | |
+| `-u` / `--user` `name:password` | Basic auth, sent preemptively. The password is stored as a secret, outside the project | [Secrets](/wirebench/guides/secrets/) |
+| `-u name`, with no password | Basic auth with the username. The toast asks you to set the password on the **Auth** tab | |
+| `-d`, `--data`, `--data-raw`, `--data-binary` | A raw body, in the language its `Content-Type` names | [Request body](/wirebench/guides/rest-client/#request-body) |
+| `-d @file` | A binary body that reads that file when sent | |
+| A heredoc or PowerShell here-string after `-d @-` | A raw body with the heredoc's text | |
+| `--json` | A raw JSON body. `Content-Type` and `Accept` are set to `application/json`, unless the command sets them itself | |
+| `--data-urlencode name=value` | A form body | |
+| `-F` / `--form` | A multipart body. `name=@file` and `name=<file` become file parts | |
+| `-G` / `--get` | A GET, with the `-d` and `--data-urlencode` data moved into **Params** rows | |
+| `-k` / `--insecure` | **Trust an invalid certificate**, on for this request | |
+| `-L` / `--location`, `--max-redirs` | **Follow redirects** on, and **Max redirects** set | |
+| Bundled short flags, such as `-sSL` or `-sXPOST` | Read one by one, as curl reads them | |
+
+## What carries over into a SOAP request
+
+| Flag | In Wirebench |
+| --- | --- |
+| The URL, or `--url` | The request's endpoint |
+| `-d`, `--data`, `--data-raw`, `--data-binary`, or a heredoc | The envelope, exactly as written |
+| A `SOAPAction` header | The request's SOAPAction |
+| A `Content-Type` of `application/soap+xml` | SOAP 1.2 |
+| Other `-H` headers | The request's headers |
+
+## What does not carry over
+
+| In the command | What happens | What to do |
+| --- | --- | --- |
+| An `Authorization` header (REST) | Kept as an ordinary header, so the token lands in the project files as plain text | Move it to the **Auth** tab, where it is stored as a secret |
+| `-u` (SOAP) | Not imported. The preview says so | Set Basic or NTLM auth in the request's **Auth** inspector |
+| `-d @file` (SOAP) | Not imported. The preview says so | Paste the envelope into the request |
+| `-X` (SOAP) | Ignored: a SOAP request is always a POST | Nothing |
+| `-d` given more than once | Only the last one is kept. curl itself would join them with `&` | Join the data into one `-d` before pasting |
+| A header with no `:` | Dropped | Add it on the **Headers** tab |
+| Any other flag, such as `--retry`, `-o` or `--compressed` | Ignored. The toast after the import names each one | Set the equivalent in Wirebench, if there is one |
+
+<Aside type="note" title="Flags that take a value">
+When the import ignores a flag that takes a value, it skips the value too. So in
+`-o out.json https://…`, the URL is never mistaken for `out.json`. Flags that take no value, such as
+`--ntlm`, `--digest` or `--compressed`, don't swallow the word after them.
+</Aside>
+
+## After importing
+
+<Steps>
+
+1. Read the toast: it names each flag the import ignored.
+
+2. If the command had an `Authorization` header, move the token to the **Auth** tab.
+
+3. If the toast asks for a password, set it on the **Auth** tab.
+
+4. Send the request.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/guides/importers/): the Import cURL dialog and **Copy as cURL**.
+- [REST](/wirebench/guides/rest-client/): the request the import created.
+- [Authentication](/wirebench/guides/auth/): Basic auth and the other schemes.

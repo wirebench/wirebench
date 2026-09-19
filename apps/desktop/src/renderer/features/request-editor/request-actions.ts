@@ -11,6 +11,7 @@ import { useProjectStore } from '../../state/project.js';
 import type { RequestCurlRequest, RequestImportCurlTarget } from '../../../shared/wire-types.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { getActiveRequestPaneHandle } from '../../editor/active-request-editor.js';
+import { describeCurlProblem } from './curl-preview.js';
 
 /** Which of the three Recreate menu items was chosen. */
 export type RecreateMode = 'keep-values' | 'discard-values' | 'empty';
@@ -117,7 +118,7 @@ export async function importCurl(
     showToast(result.error.message);
     return undefined;
   }
-  const { requestId, problems, basicUsername } = result.value;
+  const { requestId, problems, basicUsername, passwordStored } = result.value;
   // The snapshot main broadcast for the new request may not have landed yet; refresh so the
   // tab (and the explorer row) can be opened against a mirror that actually contains it.
   const owner = target.kind === 'soap' ? target.interfaceId : target.apiId;
@@ -131,12 +132,11 @@ export async function importCurl(
     openRequestTab(requestId, 'Imported request');
   }
   const notes: string[] = [];
-  if (problems.length > 0) {
-    notes.push(`${String(problems.length)} problem(s)`);
-  }
+  // Each problem in words: a count alone left the user to guess what the import dropped.
+  notes.push(...problems.map(describeCurlProblem));
   // A `-u` with no password pasted leaves the request configured but unable to authenticate, which
   // is worth saying once rather than leaving the user to a 401.
-  if (basicUsername !== undefined && options.passwordRef === undefined) {
+  if (basicUsername !== undefined && passwordStored !== true && options.passwordRef === undefined) {
     notes.push(`set a password for “${basicUsername}” on the Auth tab`);
   }
   showToast(notes.length === 0 ? 'Imported cURL command' : `Imported — ${notes.join('; ')}`);
