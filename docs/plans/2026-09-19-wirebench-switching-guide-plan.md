@@ -35,7 +35,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
   `switching/postman.mdx`, following the page shape in spec §3, with a summary screenshot added to
   `docs-screenshots.spec.ts`.
   - Verify: `pnpm docs:build`; `pnpm check:docs-images`.
-- [ ] **T7. Legacy SOAP project page.** `switching/legacy-soap-project.mdx`.
+- [x] **T7. Legacy SOAP project page.** `switching/legacy-soap-project.mdx`.
   - Verify: `pnpm docs:build`; `pnpm check:banned-terms`.
 - [ ] **T8. OpenAPI and Swagger page.** `switching/openapi.mdx`.
   - Verify: `pnpm docs:build`.

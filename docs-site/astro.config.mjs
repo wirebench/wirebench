@@ -49,7 +49,10 @@ export default defineConfig({
         },
         {
           label: 'Switching',
-          items: [{ label: 'From Postman collections', slug: 'switching/postman' }],
+          items: [
+            { label: 'From Postman collections', slug: 'switching/postman' },
+            { label: 'From a legacy SOAP project', slug: 'switching/legacy-soap-project' },
+          ],
         },
         {
           label: 'Reference',
