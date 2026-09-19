@@ -170,6 +170,25 @@ export interface WsLiveState {
   readonly frames: readonly WsFrameWire[];
   /** True while the session is open. */
   readonly open: boolean;
+  /** How many of the oldest frames were let go to keep {@link WS_LIVE_FRAME_LIMIT}; absent when none. */
+  readonly droppedFrames?: number;
+}
+
+/**
+ * The most frames a session's live half keeps in renderer memory. A session can run for hours; the
+ * timeline already paints only a window of rows past a thousand, and this bounds what that window
+ * is cut from, dropping the oldest first — the newest frames are the ones a person is watching.
+ */
+export const WS_LIVE_FRAME_LIMIT = 5000;
+
+/** Appends a frame to a live half, letting the oldest go past {@link WS_LIVE_FRAME_LIMIT}. */
+function pushLiveFrame(live: Draft<WsLiveState>, frame: WsFrameWire): void {
+  live.frames.push(frame);
+  const excess = live.frames.length - WS_LIVE_FRAME_LIMIT;
+  if (excess > 0) {
+    live.frames.splice(0, excess);
+    live.droppedFrames = (live.droppedFrames ?? 0) + excess;
+  }
 }
 
 /** What is known about the most recent session of one WebSocket request. */
@@ -588,7 +607,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         if (state?.sendId !== sendId || state.live === undefined) {
           return;
         }
-        state.live.frames.push(result.value);
+        pushLiveFrame(state.live, result.value);
       });
     },
 
@@ -644,7 +663,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
             }
             return;
           case 'frame':
-            state.live.frames.push(event.frame);
+            pushLiveFrame(state.live, event.frame);
             return;
           case 'closed':
             state.live.open = false;
