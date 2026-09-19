@@ -289,7 +289,11 @@ jobs:
           # pnpm's default layout, and would list almost nothing.
           pnpm --filter @wirebench/desktop deploy --prod --config.node-linker=hoisted sbom-root
           echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_ENV"
+      # On a directory, Syft reads lockfiles and CI files by default, and `pnpm deploy` writes no
+      # lockfile: the installed-package cataloger is the one that reads what is actually there.
       - uses: anchore/sbom-action@v0
+        env:
+          SYFT_DEFAULT_CATALOGERS: javascript-package-cataloger
         with:
           path: sbom-root
           format: cyclonedx-json
