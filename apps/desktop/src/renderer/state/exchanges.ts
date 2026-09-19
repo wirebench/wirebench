@@ -940,6 +940,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
 
     appendLoggedEntry: (entry) => {
       update((draft) => {
+        if (draft.log.some((existing) => sendIdOf(existing) === sendIdOf(entry))) {
+          return;
+        }
         draft.log.push(entry);
         trimLog(draft);
       });

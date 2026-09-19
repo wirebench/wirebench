@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   headersText,
+  projectLookup,
   responseBodyText,
   rowActions,
   type RequestLookup,
 } from '../../src/renderer/features/console/log-row-actions.js';
-import { b64, logExchange, makeFailure, makeGrpcExchange, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
+import {
+  b64,
+  logExchange,
+  makeFailure,
+  makeGrpcExchange,
+  makeRestExchange,
+  makeWsHandshakeEntry,
+} from '../mocks/exchange-fixtures.js';
 
 const known: RequestLookup = { has: () => true, unaryGrpc: () => true };
 const gone: RequestLookup = { has: () => false, unaryGrpc: () => true };
@@ -73,6 +82,27 @@ describe('rowActions', () => {
     });
   });
 
+  it('a WebSocket handshake row offers open (when the request exists) but not resend or copy body', () => {
+    const actions = rowActions(makeWsHandshakeEntry({}, 'ws-1'), known);
+    expect(actions.find((a) => a.id === 'open-request')).toMatchObject({ enabled: true });
+    expect(actions.find((a) => a.id === 'resend')).toMatchObject({
+      enabled: false,
+      reason: 'A WebSocket session reconnects from the request',
+    });
+    expect(actions.find((a) => a.id === 'copy-response-body')).toMatchObject({
+      enabled: false,
+      reason: 'A handshake has no body',
+    });
+  });
+
+  it('a WebSocket row with no matching request disables open, still for the missing-request reason', () => {
+    const actions = rowActions(makeWsHandshakeEntry({}, 'ws-1'), gone);
+    expect(actions.find((a) => a.id === 'open-request')).toMatchObject({
+      enabled: false,
+      reason: 'The request no longer exists',
+    });
+  });
+
   it('no request headers disables copying them', () => {
     const actions = rowActions(logExchange(restWithHeaders(), 'rest-1'), known);
     expect(actions.find((a) => a.id === 'copy-request-headers')?.enabled).toBe(true);
@@ -80,6 +110,34 @@ describe('rowActions', () => {
     expect(
       rowActions({ kind: 'failure', failure: bare }, known).find((a) => a.id === 'copy-request-headers')?.enabled,
     ).toBe(false);
+  });
+});
+
+describe('projectLookup', () => {
+  it('looks a websocket row up in wsRequests, not grpcRequests', () => {
+    useProjectStore.setState({
+      wsRequests: {
+        'ws-1': {
+          kind: 'websocket',
+          id: 'ws-1',
+          apiId: 'ws-api-1',
+          name: 'Lobby',
+          slug: 'Lobby',
+          order: 0,
+          url: '/lobby',
+          query: [],
+          headers: [],
+          subprotocols: [],
+          auth: { type: 'inherit' },
+          settings: {},
+          messages: [],
+        },
+      },
+      grpcRequests: {},
+    });
+    const lookup = projectLookup();
+    expect(lookup.has('websocket', 'ws-1')).toBe(true);
+    expect(lookup.has('websocket', 'not-there')).toBe(false);
   });
 });
 
@@ -93,5 +151,6 @@ describe('copy text', () => {
     const entry = logExchange({ ...exchange, http: { ...exchange.http, bodyBase64: b64('{"ok":true}') } });
     expect(responseBodyText(entry)).toBe('{"ok":true}');
     expect(responseBodyText({ kind: 'failure', failure: makeFailure() })).toBeUndefined();
+    expect(responseBodyText(makeWsHandshakeEntry())).toBeUndefined();
   });
 });

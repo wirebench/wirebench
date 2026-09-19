@@ -1,13 +1,30 @@
-import type { InterfaceWire } from '../../src/shared/wire-types.js';
+import type { InterfaceWire, WsHandshakeExchangeSummary } from '../../src/shared/wire-types.js';
 import type { LogEntry } from '../../src/renderer/state/exchanges.js';
 import type { AnyExchangeSummary } from '../../src/renderer/features/request-editor/response-status.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
+import { makeWsHandshakeExchange } from './wire-fixtures.js';
 
-export { b64, makeExchange, makeFailure, makeGrpcExchange, makeRestExchange, makeWsExchange } from './wire-fixtures.js';
+export {
+  b64,
+  makeExchange,
+  makeFailure,
+  makeGrpcExchange,
+  makeRestExchange,
+  makeWsExchange,
+  makeWsHandshakeExchange,
+} from './wire-fixtures.js';
 
 /** Wraps an exchange of either protocol as the HTTP Log entry the store keeps; `requestId` names its saved request. */
 export function logExchange(exchange: AnyExchangeSummary, requestId?: string): LogEntry {
   return requestId === undefined ? { kind: 'exchange', exchange } : { kind: 'exchange', exchange, requestId };
+}
+
+/** A WebSocket handshake row, as the HTTP Log entry the store keeps; `requestId` names its saved request. */
+export function makeWsHandshakeEntry(
+  overrides: Partial<WsHandshakeExchangeSummary> = {},
+  requestId?: string,
+): LogEntry {
+  return logExchange(makeWsHandshakeExchange(overrides), requestId);
 }
 
 /** The minimal interface the toolbar's endpoint picker and the explorer tree read. */

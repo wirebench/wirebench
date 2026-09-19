@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sortEntries } from '../../src/renderer/features/console/log-sort.js';
 import { sendIdOf, type LogEntry } from '../../src/renderer/state/exchanges.js';
-import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeFailure, makeRestExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 const at = (id: string, status: number, durationMs: number, startedAt: string): LogEntry => {
   const e = makeRestExchange({ sendId: id, durationMs });
@@ -26,6 +26,15 @@ describe('sortEntries', () => {
   });
   it('status puts failures first ascending', () => {
     expect(ids(sortEntries([a, b, f], { column: 'status', direction: 'asc' }, name))).toEqual(['f', 'b', 'a']);
+  });
+  it('status sorts a handshake (101) between failures and a 200', () => {
+    const ws = makeWsHandshakeEntry({ sendId: 'ws' });
+    expect(ids(sortEntries([a, b, f, ws], { column: 'status', direction: 'asc' }, name))).toEqual([
+      'f',
+      'ws',
+      'b',
+      'a',
+    ]);
   });
   it('duration desc', () => {
     expect(ids(sortEntries([a, b, f], { column: 'duration', direction: 'desc' }, name))).toEqual(['a', 'f', 'b']);

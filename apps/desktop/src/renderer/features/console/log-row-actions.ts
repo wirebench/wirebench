@@ -79,7 +79,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
 
   const missingReason = requestId === undefined ? 'Not from a saved request' : 'The request no longer exists';
   let resend: RowAction;
-  if (!exists) {
+  if (protocol === 'websocket') {
+    resend = off('resend', 'Resend', 'A WebSocket session reconnects from the request');
+  } else if (!exists) {
     resend = off('resend', 'Resend', missingReason);
   } else if (stageOf(entry) === 'prepare') {
     resend = off('resend', 'Resend', 'Never sent');
@@ -101,7 +103,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
       : on('copy-response-headers', 'Copy response headers'),
     failed
       ? off('copy-response-body', 'Copy response body', 'No response')
-      : on('copy-response-body', 'Copy response body'),
+      : protocol === 'websocket'
+        ? off('copy-response-body', 'Copy response body', 'A handshake has no body')
+        : on('copy-response-body', 'Copy response body'),
     resend,
     exists ? on('open-request', 'Open request') : off('open-request', 'Open request', missingReason),
   ];
@@ -113,7 +117,13 @@ export function projectLookup(): RequestLookup {
     has: (protocol, requestId) => {
       const state = useProjectStore.getState();
       const records =
-        protocol === 'soap' ? state.requests : protocol === 'rest' ? state.restRequests : state.grpcRequests;
+        protocol === 'soap'
+          ? state.requests
+          : protocol === 'rest'
+            ? state.restRequests
+            : protocol === 'websocket'
+              ? state.wsRequests
+              : state.grpcRequests;
       return records[requestId] !== undefined;
     },
     unaryGrpc: (requestId) => useProjectStore.getState().grpcRequests[requestId]?.methodKind === 'unary',

@@ -12,6 +12,7 @@ export interface NameSources {
   readonly requests: Readonly<Record<string, { readonly name: string }>>;
   readonly restRequests: Readonly<Record<string, { readonly name: string }>>;
   readonly grpcRequests: Readonly<Record<string, { readonly service: string; readonly method: string }>>;
+  readonly wsRequests: Readonly<Record<string, { readonly name: string }>>;
 }
 
 function requestIdOf(entry: LogEntry): string | undefined {
@@ -41,7 +42,12 @@ export function nameOf(entry: LogEntry, sources: NameSources, full = false): str
         return `${service}/${request.method}`;
       }
     } else {
-      const request = protocol === 'rest' ? sources.restRequests[id] : sources.requests[id];
+      const request =
+        protocol === 'rest'
+          ? sources.restRequests[id]
+          : protocol === 'websocket'
+            ? sources.wsRequests[id]
+            : sources.requests[id];
       if (request !== undefined) {
         return request.name;
       }
@@ -50,12 +56,16 @@ export function nameOf(entry: LogEntry, sources: NameSources, full = false): str
   return pathOf(urlOf(entry));
 }
 
-/** The three records the name comes from, each selected on its own so other store changes do not rerender. */
+/** The four records the name comes from, each selected on its own so other store changes do not rerender. */
 export function useNameSources(): NameSources {
   const requests = useProjectStore((state) => state.requests);
   const restRequests = useProjectStore((state) => state.restRequests);
   const grpcRequests = useProjectStore((state) => state.grpcRequests);
-  return useMemo(() => ({ requests, restRequests, grpcRequests }), [requests, restRequests, grpcRequests]);
+  const wsRequests = useProjectStore((state) => state.wsRequests);
+  return useMemo(
+    () => ({ requests, restRequests, grpcRequests, wsRequests }),
+    [requests, restRequests, grpcRequests, wsRequests],
+  );
 }
 
 /** Memoised over the three records. */

@@ -3,7 +3,14 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LogDetail, type LogDetailTab } from '../../src/renderer/features/console/log-detail.js';
 import type { LogEntry } from '../../src/renderer/state/exchanges.js';
-import { b64, logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import {
+  b64,
+  logExchange,
+  makeExchange,
+  makeFailure,
+  makeRestExchange,
+  makeWsHandshakeEntry,
+} from '../mocks/exchange-fixtures.js';
 
 afterEach(() => {
   cleanup();
@@ -106,6 +113,29 @@ describe('LogDetail for an exchange', () => {
     expect(connection.textContent).toContain('This request was not redirected.');
     expect(connection.textContent).toContain('No TLS — plain HTTP');
     expect(connection.textContent).not.toContain('Arrived as');
+  });
+});
+
+describe('LogDetail for a WebSocket handshake', () => {
+  const handshake = makeWsHandshakeEntry({
+    requestHeaders: { Authorization: '<redacted>' },
+    responseHeaders: { 'sec-websocket-accept': 'abc123=' },
+  });
+
+  it('Headers: request and response headers, from the handshake itself', () => {
+    renderDetail(handshake, 'headers');
+
+    expect(screen.getByTestId('log-detail-request-headers').textContent).toContain('Authorization');
+    const response = screen.getByTestId('log-detail-response-headers');
+    expect(response.textContent).toContain('sec-websocket-accept');
+  });
+
+  it('Request/Response/Timing/Connection: a note pointing at the WebSocket pane, not the raw-bytes views', () => {
+    for (const tab of ['request', 'response', 'timing', 'connection'] as const) {
+      renderDetail(handshake, tab);
+      expect(screen.getByText(/Only the handshake is logged here/)).toBeDefined();
+      cleanup();
+    }
   });
 });
 
