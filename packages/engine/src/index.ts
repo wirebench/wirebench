@@ -1054,3 +1054,7 @@ export { openWsSession } from './ws/session.js';
 export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
 export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
 export type { WsTranscript } from './ws/transcript.js';
+export { expandWsInput, expandWsMessage } from './ws/expand.js';
+export type { WsCallInput } from './ws/expand.js';
+export { toWsSessionOptions } from './ws/call.js';
+export { wsToCommand } from './ws/command.js';
