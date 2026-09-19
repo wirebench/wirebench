@@ -63,7 +63,7 @@ export interface LogFilter {
   /** Upper-case method names. */
   readonly methods: readonly string[];
   readonly statuses: readonly StatusClass[];
-  readonly protocols: readonly ('soap' | 'rest' | 'grpc')[];
+  readonly protocols: readonly ('soap' | 'rest' | 'grpc' | 'websocket')[];
 }
 
 /** The filter that shows every row. */

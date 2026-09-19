@@ -2,7 +2,9 @@
 /**
  * The three WebSocket channels end to end: `request.openWs` against a real server, driven by
  * `request.wsSend`/`request.wsClose`, with `ws.live` events collected on a fake sender, plus the
- * prepare-stage failure row, the proxy path, `request.curl` and `request.cancel`.
+ * prepare-stage failure row, the URL-masking of an API key configured "in query", the proxy path,
+ * `request.preflightWs`, `request.curl` and `request.cancel`. Every wait is a bounded poll on an
+ * observable condition — never a fixed sleep.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestProxy, startTestWsServer, type TestProxy, type TestWsServer } from '@wirebench/engine/test-helpers';
@@ -59,6 +61,32 @@ function fakeSender(): {
   };
 }
 
+/** Waits, with a bounded deadline, until `predicate()` is true — never a fixed sleep. */
+async function waitFor(predicate: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/** True once `events` (from {@link fakeSender}) has recorded a `ws.live` event of `kind`. */
+function hasKind(events: readonly unknown[], kind: string): boolean {
+  return events.some((e) => (e as { kind?: string }).kind === kind);
+}
+
+/** Waits until a `ws.live` `handshake` event has arrived on `events`. */
+function waitForHandshake(events: readonly unknown[]): Promise<void> {
+  return waitFor(() => hasKind(events, 'handshake'), 'the handshake live event');
+}
+
+/** Reads `EngineService`'s private `sends` map; test-only, for "the prepare stage has registered". */
+function hasSend(service: EngineService, sendId: string): boolean {
+  return (service as unknown as { sends: Map<string, unknown> }).sends.has(sendId);
+}
+
 let server: TestWsServer;
 
 beforeAll(async () => {
@@ -74,14 +102,22 @@ function resolution(
   path: string,
   overrides: {
     readonly headers?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
-    readonly unresolved?: readonly { readonly expr: string; readonly name?: string }[];
+    readonly query?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
+    readonly auth?: WsSendResolution['auth'];
+    readonly unresolved?: readonly {
+      readonly expr: string;
+      readonly name?: string;
+      readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed';
+      readonly start: number;
+      readonly end: number;
+    }[];
   } = {},
 ): WsSendResolution {
   const input: WsCallInput = {
     serverUrl: server.url,
     request: {
       url: path,
-      query: [],
+      query: overrides.query ?? [],
       headers: overrides.headers ?? [{ name: 'Authorization', value: 'Bearer plain-token', enabled: true }],
       subprotocols: [],
       settings: {},
@@ -99,15 +135,15 @@ function resolution(
       slug: 'echo',
       order: 0,
       url: path,
-      query: [],
+      query: input.request.query,
       headers: input.request.headers,
       subprotocols: [],
-      auth: { type: 'none' },
+      auth: overrides.auth ?? { type: 'none' },
       settings: {},
       messages: [],
     },
     urlSource: 'api',
-    auth: { type: 'none' },
+    auth: overrides.auth ?? { type: 'none' },
   } as unknown as WsSendResolution;
 }
 
@@ -150,29 +186,23 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     const { sender, events } = fakeSender();
 
     const openPromise = invoke('request.openWs', { sendId: 's1', requestId: 'ws-1' }, sender);
-
-    // Wait for the handshake live event before sending.
-    const deadline = Date.now() + 5000;
-    while (!events.some((e) => (e as { kind?: string }).kind === 'handshake') && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    expect(events.some((e) => (e as { kind?: string }).kind === 'handshake')).toBe(true);
+    await waitForHandshake(events);
 
     const sendReply = unwrap<{ text: string }>(
       await invoke('request.wsSend', { sendId: 's1', requestId: 'ws-1', format: 'text', content: 'hi', expand: false }),
     );
     expect(sendReply.text).toBe('hi');
 
-    while (
-      !events.some(
-        (e) =>
-          (e as { opcode?: string; direction?: string }).opcode === 'text' &&
-          (e as { direction?: string }).direction === 'received',
-      ) &&
-      Date.now() < deadline
-    ) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await waitFor(
+      () =>
+        events.some(
+          (e) =>
+            (e as { kind?: string; frame?: { direction?: string; opcode?: string } }).kind === 'frame' &&
+            (e as { frame: { direction: string; opcode: string } }).frame.direction === 'received' &&
+            (e as { frame: { direction: string; opcode: string } }).frame.opcode === 'text',
+        ),
+      'the text echo to arrive live',
+    );
 
     const closeReply = unwrap<{ closed: boolean }>(await invoke('request.wsClose', { sendId: 's1' }));
     expect(closeReply).toEqual({ closed: true });
@@ -184,27 +214,67 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
 
     // Authorization was masked on the wire (no show-secrets flag configured).
     expect(summary.handshake.requestHeaders['Authorization']).toBe('<redacted>');
-  }, 15000);
+  });
 
   it('shows the real Authorization value when the session shows secrets', async () => {
     register({ showSecrets: { get: () => true } });
     const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 's2', requestId: 'ws-1' }, sender);
-    const deadline = Date.now() + 8000;
-    while (!events.some((e) => (e as { kind?: string }).kind === 'handshake') && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await waitForHandshake(events);
     unwrap(await invoke('request.wsClose', { sendId: 's2' }));
     const summary = unwrap<{ handshake: { requestHeaders: Record<string, string> } }>(await openPromise);
     expect(summary.handshake.requestHeaders['Authorization']).toBe('Bearer plain-token');
-  }, 15000);
+  });
+
+  it('masks an API key configured "in query" everywhere the URL leaves main, and shows it when secrets are shown', async () => {
+    // The real value is always resolved and always dialled with — REST masks the *display* of its
+    // URL the same way, never the credential the send itself actually uses. The parameter is named
+    // something `redactUrl`'s own built-in sensitive-name list would never catch on its own (that
+    // list already masks `api_key`), so this actually exercises the `keyParams` plumbing derived
+    // from the resolved auth, not the built-in default.
+    const withKeyInQuery = (requestId: string) =>
+      requestId.startsWith('ws-')
+        ? resolution('/echo', {
+            auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
+          })
+        : undefined;
+    const getSecret = () => Promise.resolve('shh-secret');
+
+    // Hidden (default show-secrets).
+    register({ getSecret }, { wsSend: withKeyInQuery });
+    const { sender: senderHidden, events: eventsHidden } = fakeSender();
+    const openHidden = invoke('request.openWs', { sendId: 'k1', requestId: 'ws-1' }, senderHidden);
+    await waitForHandshake(eventsHidden);
+    unwrap(await invoke('request.wsClose', { sendId: 'k1' }));
+    const summaryHidden = unwrap<{ url: string; handshake: { url: string } }>(await openHidden);
+    expect(summaryHidden.url).not.toContain('shh-secret');
+    expect(summaryHidden.handshake.url).not.toContain('shh-secret');
+    const handshakeEventHidden = eventsHidden.find((e) => (e as { kind?: string }).kind === 'handshake') as {
+      handshake: { url: string };
+    };
+    expect(handshakeEventHidden.handshake.url).not.toContain('shh-secret');
+
+    // Shown.
+    register({ showSecrets: { get: () => true }, getSecret }, { wsSend: withKeyInQuery });
+    const { sender: senderShown, events: eventsShown } = fakeSender();
+    const openShown = invoke('request.openWs', { sendId: 'k2', requestId: 'ws-1' }, senderShown);
+    await waitForHandshake(eventsShown);
+    unwrap(await invoke('request.wsClose', { sendId: 'k2' }));
+    const summaryShown = unwrap<{ url: string; handshake: { url: string } }>(await openShown);
+    expect(summaryShown.url).toContain('shh-secret');
+    expect(summaryShown.handshake.url).toContain('shh-secret');
+    const handshakeEventShown = eventsShown.find((e) => (e as { kind?: string }).kind === 'handshake') as {
+      handshake: { url: string };
+    };
+    expect(handshakeEventShown.handshake.url).toContain('shh-secret');
+  });
 
   it('refuses wsSend with an unresolved ${nope} when expand is true, and the server receives nothing', async () => {
     register();
-    const { sender } = fakeSender();
+    const { sender, events } = fakeSender();
     const before = server.received.length;
     const openPromise = invoke('request.openWs', { sendId: 's3', requestId: 'ws-1' }, sender);
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForHandshake(events);
 
     const reply = (await invoke('request.wsSend', {
       sendId: 's3',
@@ -223,9 +293,9 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
 
   it('refuses wsSend with invalid base64 for a binary message', async () => {
     register();
-    const { sender } = fakeSender();
+    const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 's4', requestId: 'ws-1' }, sender);
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForHandshake(events);
 
     const reply = (await invoke('request.wsSend', {
       sendId: 's4',
@@ -238,6 +308,28 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(reply.error?.code).toBe('ws-bad-binary');
 
     unwrap(await invoke('request.wsClose', { sendId: 's4' }));
+    await openPromise;
+  });
+
+  it('accepts an empty binary message', async () => {
+    register();
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 's4b', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+
+    const reply = unwrap<{ opcode: string; size: number }>(
+      await invoke('request.wsSend', {
+        sendId: 's4b',
+        requestId: 'ws-1',
+        format: 'binary',
+        content: '',
+        expand: false,
+      }),
+    );
+    expect(reply.opcode).toBe('binary');
+    expect(reply.size).toBe(0);
+
+    unwrap(await invoke('request.wsClose', { sendId: 's4b' }));
     await openPromise;
   });
 
@@ -254,11 +346,44 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(reply.error?.code).toBe('ws-session-unknown');
   });
 
+  it('an illegal close code is refused with ws-bad-close, and the session is still open and closable with 1000', async () => {
+    register();
+    const { sender, events } = fakeSender();
+    const openPromise = invoke('request.openWs', { sendId: 's4c', requestId: 'ws-1' }, sender);
+    await waitForHandshake(events);
+
+    const badClose = (await invoke('request.wsClose', { sendId: 's4c', code: 1002 })) as {
+      ok: boolean;
+      error?: { code: string };
+    };
+    expect(badClose.ok).toBe(false);
+    expect(badClose.error?.code).toBe('ws-bad-close');
+
+    // Still open: an ordinary send still goes through.
+    const sendReply = unwrap<{ text: string }>(
+      await invoke('request.wsSend', {
+        sendId: 's4c',
+        requestId: 'ws-1',
+        format: 'text',
+        content: 'still here',
+        expand: false,
+      }),
+    );
+    expect(sendReply.text).toBe('still here');
+
+    const closeReply = unwrap<{ closed: boolean }>(await invoke('request.wsClose', { sendId: 's4c' }));
+    expect(closeReply).toEqual({ closed: true });
+    await openPromise;
+  });
+
   it('request.cancel aborts a handshake still in flight', async () => {
-    register({}, { wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/hang') : undefined) });
+    const service = register(
+      {},
+      { wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/hang') : undefined) },
+    );
     const { sender } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 's5', requestId: 'ws-1' }, sender);
-    await new Promise((r) => setTimeout(r, 50));
+    await waitFor(() => hasSend(service, 's5'), 'the prepare stage to register the send');
     unwrap(await invoke('request.cancel', { sendId: 's5' }));
     const summary = unwrap<{ closed: { by: string } }>(await openPromise);
     expect(summary.closed.by).toBe('error');
@@ -290,6 +415,33 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(reply.command).toContain('websocat');
     expect(reply.command).toContain(`${server.url}/echo`);
   });
+
+  it('request.preflightWs returns the resolved URL, its source and unresolved expressions, without dialling', async () => {
+    register(
+      {},
+      {
+        wsSend: (requestId: string) =>
+          requestId.startsWith('ws-')
+            ? resolution('/echo', {
+                unresolved: [{ expr: '${nope}', name: 'nope', code: 'missing', start: 0, end: 7 }],
+              })
+            : undefined,
+      },
+    );
+    const before = server.received.length;
+    const handshakesBefore = server.handshakes.length;
+    const reply = unwrap<{
+      endpoint: string;
+      endpointSource: string;
+      unresolved: readonly { expr: string }[];
+    }>(await invoke('request.preflightWs', { requestId: 'ws-1' }));
+    expect(reply.endpoint).toBe(`${server.url}/echo`);
+    expect(reply.endpointSource).toBe('interface-default');
+    expect(reply.unresolved.map((ref) => ref.expr)).toEqual(['${nope}']);
+    // Nothing was sent, and no connection was attempted.
+    expect(server.received.length).toBe(before);
+    expect(server.handshakes.length).toBe(handshakesBefore);
+  });
 });
 
 describe('request.openWs through a proxy', () => {
@@ -308,13 +460,10 @@ describe('request.openWs through a proxy', () => {
     register({}, { proxyFor: () => Promise.resolve({ url: proxy.url }) });
     const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 's7', requestId: 'ws-1' }, sender);
-    const deadline = Date.now() + 8000;
-    while (!events.some((e) => (e as { kind?: string }).kind === 'handshake') && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await waitForHandshake(events);
     unwrap(await invoke('request.wsClose', { sendId: 's7' }));
     const summary = unwrap<{ handshake: { status: number } }>(await openPromise);
     expect(summary.handshake.status).toBe(101);
     expect(proxy.tunnelCount()).toBeGreaterThan(0);
-  }, 15000);
+  });
 });

@@ -358,11 +358,19 @@ export function toWsFrameWire(frame: WsFrame): WsFrameWire {
  * same redactor and the same switch `toGrpcExchangeSummary` uses. `rawRequestHead` carries the
  * same header lines as `requestHeaders`, so it is redacted line-by-line with `redactRawHttp`'s
  * `encoding: 'text'` mode rather than dropped.
+ *
+ * `url` is redacted too, the same way a REST exchange's `url` is (`toRestExchangeSummary`): an
+ * API key configured "in query" lives in the URL itself, not in a header, so a header-only
+ * redaction would leak it into every `ws.live` handshake event and the final summary alike.
+ * `opts.keyParams` names the query parameter(s) to mask regardless of what they are called.
  */
-export function toWsHandshakeWire(handshake: WsHandshake, opts?: { show?: boolean }): WsHandshakeWire {
+export function toWsHandshakeWire(
+  handshake: WsHandshake,
+  opts?: { readonly show?: boolean; readonly keyParams?: readonly string[] },
+): WsHandshakeWire {
   const show = opts?.show ?? false;
   return {
-    url: handshake.url,
+    url: redactUrl(handshake.url, { show, ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}) }),
     requestHeaders: redactHeaders(handshake.requestHeaders, { show }),
     requestedSubprotocols: [...handshake.requestedSubprotocols],
     ...(handshake.rawRequestHead !== undefined
@@ -383,15 +391,22 @@ export function toWsHandshakeWire(handshake: WsHandshake, opts?: { show?: boolea
   };
 }
 
-/** Converts one engine `WsExchange` plus its `sendId` into the `request.openWs` response payload. */
+/**
+ * Converts one engine `WsExchange` plus its `sendId` into the `request.openWs` response payload.
+ * `opts.keyParams` masks the same query parameter(s) in both `url` (this exchange's) and the
+ * handshake's own `url` — see {@link toWsHandshakeWire}.
+ */
 export function toWsExchangeSummary(
   exchange: WsExchange,
   sendId: string,
-  opts?: { show?: boolean },
+  opts?: { readonly show?: boolean; readonly keyParams?: readonly string[] },
 ): WsExchangeSummary {
   return {
     sendId,
-    url: exchange.url,
+    url: redactUrl(exchange.url, {
+      show: opts?.show ?? false,
+      ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}),
+    }),
     handshake: toWsHandshakeWire(exchange.handshake, opts),
     frames: exchange.frames.map(toWsFrameWire),
     closed: { ...exchange.closed },

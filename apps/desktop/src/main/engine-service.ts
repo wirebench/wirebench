@@ -785,33 +785,64 @@ export class EngineService {
    */
   async openWsSession(
     args: { readonly sendId: string; readonly requestId: string; readonly options: Omit<WsSessionOptions, 'signal'> },
-    o: { readonly showSecrets?: boolean; readonly onLive?: (event: WsLiveEvent) => void } = {},
+    o: {
+      readonly showSecrets?: boolean;
+      readonly keyParams?: readonly string[];
+      readonly onLive?: (event: WsLiveEvent) => void;
+    } = {},
   ): Promise<WsExchangeSummary> {
-    const controller = new AbortController();
-    this.sends.set(args.sendId, controller);
     const { sendId } = args;
+    // A reused `sendId` must never overwrite a session already in flight: silently replacing the
+    // map entry would orphan the first session — nothing could `sendWsMessage`/`closeWs` it again,
+    // and its own `finally` would delete whatever the *second* open just installed. Refused before
+    // either map is touched, so the first session's entries are left exactly as they were.
+    if (this.sends.has(sendId) || this.wsSessions.has(sendId)) {
+      throw new WirebenchError('ws-session-exists', 'That connection is already open.', { details: { sendId } });
+    }
+    const controller = new AbortController();
+    this.sends.set(sendId, controller);
     const onLive = o.onLive;
     const show = o.showSecrets ?? false;
+    const wireOpts = { show, ...(o.keyParams !== undefined ? { keyParams: o.keyParams } : {}) };
+    // A live event that cannot be delivered (the renderer window is gone, or — a programming
+    // error — the payload does not match its schema, which `emitEvent` throws on by design) must
+    // never affect the session itself: it is only ever told *what happened*, never asked to allow
+    // it. Every call is guarded so a throw here can't leave `onClosed` unresolved, which would hang
+    // this invoke forever (the engine's `settle()` calls `onClosed` before resolving `done`).
+    const safeOnLive = (event: WsLiveEvent): void => {
+      try {
+        onLive?.(event);
+      } catch (error) {
+        console.warn(
+          `[ws] a live event ("${event.kind}") for send "${sendId}" could not be delivered: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    };
+    // Declared before the session is opened so the hooks below never see a temporal-dead-zone
+    // reference to it, in case the engine were ever to call a hook synchronously.
+    let handle: WsSessionHandle;
     try {
-      const handle = openWsSession(
+      handle = openWsSession(
         { ...args.options, signal: controller.signal },
         {
           onHandshake: (handshake) => {
             if (handshake.status === 101) {
               this.wsSessions.set(sendId, handle);
             }
-            onLive?.({ kind: 'handshake', sendId, handshake: toWsHandshakeWire(handshake, { show }) });
+            safeOnLive({ kind: 'handshake', sendId, handshake: toWsHandshakeWire(handshake, wireOpts) });
           },
           onFrame: (frame) => {
-            onLive?.({ kind: 'frame', sendId, frame: toWsFrameWire(frame) });
+            safeOnLive({ kind: 'frame', sendId, frame: toWsFrameWire(frame) });
           },
           onClosed: () => {
-            onLive?.({ kind: 'closed', sendId });
+            safeOnLive({ kind: 'closed', sendId });
           },
         },
       );
       const exchange = await handle.done;
-      return toWsExchangeSummary(exchange, sendId, { show });
+      return toWsExchangeSummary(exchange, sendId, wireOpts);
     } finally {
       this.sends.delete(sendId);
       this.wsSessions.delete(sendId);
@@ -853,8 +884,16 @@ export class EngineService {
    * History row for "the app is quitting") records it itself alongside this call.
    */
   closeAllWs(): void {
-    for (const handle of this.wsSessions.values()) {
-      handle.close(1000, 'going away');
+    for (const [sendId, handle] of this.wsSessions) {
+      // One session refusing to close (an already-closing socket throwing on a second close,
+      // say) must not stop the rest of them from being asked to close too.
+      try {
+        handle.close(1000, 'going away');
+      } catch (error) {
+        console.warn(
+          `[ws] closeAllWs: closing "${sendId}" failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 }

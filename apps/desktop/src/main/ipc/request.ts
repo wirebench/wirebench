@@ -1237,6 +1237,10 @@ export async function openWsRequest(
     });
   }
 
+  // The one query parameter an API key may be configured to travel in, so the URL is masked
+  // wherever it is logged even when the key is called something this build has never heard of —
+  // the same rule REST's `sendRestRequest` applies to its own `keyParams`.
+  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let options: Omit<WsSessionOptions, 'signal'>;
   try {
@@ -1285,6 +1289,7 @@ export async function openWsRequest(
         durationMs: Date.now() - prepareStartedAt,
         error,
         stage: 'prepare',
+        keyParams,
       }),
     );
     throw error;
@@ -1296,6 +1301,7 @@ export async function openWsRequest(
       { sendId: request.sendId, requestId: request.requestId, options },
       {
         showSecrets: deps.showSecrets?.get() ?? false,
+        ...(keyParams !== undefined ? { keyParams } : {}),
         onLive: (event) => {
           emitEvent(sender, events.ws.live, event);
         },
@@ -1316,6 +1322,7 @@ export async function openWsRequest(
         startedAt,
         durationMs,
         error,
+        keyParams,
       }),
     );
     throw error;
