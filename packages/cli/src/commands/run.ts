@@ -1,20 +1,25 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  createSecretMasker,
+  envVariablesFor,
   isWirebenchError,
   loadProject,
   loadWorkspace,
   runRequests,
+  secretNeedsOf,
   selectRequests,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { Environment, Project, RunResult } from '@wirebench/engine';
+import type { Environment, Project, RequestResult, RunResult, SecretNeed, SelectedRequest } from '@wirebench/engine';
 import { UsageError } from '../args.js';
 import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
+import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { createCliReporter } from '../reporters/cli.js';
+import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
 
 async function exists(path: string): Promise<boolean> {
@@ -69,12 +74,21 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
   });
 }
 
+/** A loaded project, its chosen environment and the requests a selection covers. */
+export interface LoadedSelection {
+  readonly project: Project;
+  readonly environment?: Environment;
+  readonly selected: readonly SelectedRequest[];
+}
+
 /**
- * `wirebench run`: everything that can be refused is refused before the first send — a workspace
- * for a project, an unloadable project, an unknown environment, a selector that matches nothing —
- * because a pipeline that tested nothing must not be told it passed.
+ * What `run` and `secrets list` share: load the project, pick the environment, select. Returns an
+ * exit code instead when the path is refused; throws `UsageError` for a bad environment or selector.
  */
-export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
+export async function loadSelection(
+  args: { readonly path: string; readonly env?: string; readonly selectors: readonly string[] },
+  io: CliIo,
+): Promise<LoadedSelection | ExitCode> {
   const { path } = args;
   let project: Project;
   try {
@@ -102,7 +116,44 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   if (selected.length === 0) {
     throw new UsageError('nothing to run: the project has no requests');
   }
-  const reporters = buildReporters(args, io);
+  return { project, ...(environment !== undefined ? { environment } : {}), selected };
+}
+
+/** `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's. */
+function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
+  const ref = result.error?.code === 'secret-missing' ? result.error.details?.['ref'] : undefined;
+  if (result.error === undefined || typeof ref !== 'string') {
+    return result;
+  }
+  const [first, ...rest] = envVariablesFor(needs.find((need) => need.ref === ref) ?? { ref });
+  const alternatives = rest.length > 0 ? ` (or ${rest.join(', ')})` : '';
+  return {
+    ...result,
+    error: { ...result.error, message: `Set ${first ?? ''}${alternatives} to run "${result.path}".` },
+  };
+}
+
+/**
+ * `wirebench run`: everything that can be refused is refused before the first send — a workspace
+ * for a project, an unloadable project, an unknown environment, a selector that matches nothing —
+ * because a pipeline that tested nothing must not be told it passed.
+ *
+ * This function is the only holder of raw results: reporters are built straight into the masking
+ * wrapper, so no reporter — one added later included — can be handed a secret value.
+ */
+export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
+  const loaded = await loadSelection(args, io);
+  if (typeof loaded === 'number') {
+    return loaded;
+  }
+  const { project, environment, selected } = loaded;
+  const needs = secretNeedsOf(selected, project);
+  const secrets = createEnvSecrets(needs, io.env);
+  const output = createMaskedReporters(
+    buildReporters(args, io),
+    () => createSecretMasker(secrets.values()),
+    (raw) => explainMissingSecret(raw, needs),
+  );
   const proxyFor = proxyFromEnv(io.env);
 
   const controller = new AbortController();
@@ -118,11 +169,10 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       selected,
       {
         project,
-        projectDir: path,
+        projectDir: args.path,
         ...(environment !== undefined ? { environmentId: environment.id } : {}),
         overrides: args.vars,
-        // Task 14 reads secrets from the environment; until then every secret is missing.
-        getSecret: () => Promise.resolve(undefined),
+        getSecret: secrets.getSecret,
         ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
         insecure: args.insecure,
         proxyFor,
@@ -132,20 +182,20 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
         bail: args.bail,
         ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
         requireAssertions: args.requireAssertions,
-        onRequestDone: (request) => {
-          for (const reporter of reporters) {
-            reporter.onRequestDone?.(request);
-          }
-        },
+        onRequestDone: (request) => output.onRequestDone(request),
       },
     );
+  } catch (error) {
+    // An unexpected failure is printed by `main`; its message must not carry a value either.
+    if (error instanceof Error) {
+      error.message = createSecretMasker(secrets.values())(error.message);
+    }
+    throw error;
   } finally {
     process.removeListener('SIGINT', onSigint);
   }
 
-  for (const reporter of reporters) {
-    await reporter.onRunDone(result);
-  }
+  await output.onRunDone(result);
   // A request cut off mid-flight comes back errored; the interruption is what the pipeline needs.
   return interrupted ? ExitCode.Interrupted : exitCodeFor(result.summary);
 }

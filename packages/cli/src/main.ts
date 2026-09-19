@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { runCommand } from './commands/run.js';
+import { secretsListCommand } from './commands/secrets-list.js';
 import { ExitCode } from './exit-codes.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
 
@@ -34,8 +35,7 @@ export async function main(
         return await runCommand(args, io);
       }
       case 'secrets-list': {
-        io.stderr.write('not implemented\n');
-        return ExitCode.Usage;
+        return await secretsListCommand(args, io);
       }
     }
   } catch (error) {

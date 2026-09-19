@@ -14,14 +14,12 @@ import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
-import { effectiveAuth } from '../project/endpoints.js';
-import { resolveApiBaseUrl, resolveAuthEndpoint, resolveEndpoint, resolveScopes } from '../project/environments.js';
+import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
 import type { Attachment, AttachmentSource, Project, PropertyMap } from '../project/model.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
-import { resolveAuthChain } from '../rest/auth.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
 import { resolveAuthConfig, resolveEndpointAuth, toSendAuth } from '../secrets/resolve.js';
@@ -33,6 +31,7 @@ import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
 import { createWssContext } from '../wss/model.js';
+import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
 
 /** Everything a run supplies around the saved requests it sends. */
@@ -257,11 +256,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
       details: { path: selected.path },
     });
   }
-  const authEndpoint = resolveAuthEndpoint(iface, request);
-  const auth = await resolveEndpointAuth(
-    effectiveAuth(request.auth, authEndpoint?.auth, authEndpoint?.authMode ?? 'override', iface.auth),
-    context.getSecret,
-  );
+  const auth = await resolveEndpointAuth(soapEffectiveAuth(selected), context.getSecret);
   const base = toSendInput({
     request: {
       properties: request.properties,
@@ -302,9 +297,8 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
 }
 
 async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedSend> {
-  const { api, chain, request } = selected;
-  // Innermost first, as `authChainFor` builds it: request, its folders from the inside out, the API.
-  const configured = resolveAuthChain([request.auth, ...[...chain].reverse().map((f) => f.auth), api.auth]);
+  const { api, request } = selected;
+  const configured = restEffectiveAuth(selected);
   if (configured.type === 'oauth2') {
     throw new WirebenchError(
       'auth-grant-unsupported',

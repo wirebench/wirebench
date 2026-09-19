@@ -34,15 +34,20 @@ export interface DemoServer {
   readonly url: string;
   /** Paths of every request received, in order. */
   readonly requests: string[];
+  /** The `Authorization` header of every request to `/secure`, in order. */
+  readonly secureAuth: (string | undefined)[];
   close(): Promise<void>;
 }
 
 /**
- * The fixture's REST API: `/ok`, `/slow` (200 ms late) and `/broken` (500). The engine's test
+ * The fixture's REST API: `/ok`, `/slow` (200 ms late), `/broken` (500) and `/secure` (Basic
+ * `svc:hunter2-long`, else 401). The engine's test
  * server has no per-route delay, and this is small enough not to be worth adding one there.
  */
 export async function startDemoServer(): Promise<DemoServer> {
   const requests: string[] = [];
+  const secureAuth: (string | undefined)[] = [];
+  const expected = `Basic ${Buffer.from('svc:hunter2-long').toString('base64')}`;
   const server = createServer((req, res) => {
     const path = req.url ?? '/';
     requests.push(path);
@@ -56,6 +61,9 @@ export async function startDemoServer(): Promise<DemoServer> {
       setTimeout(() => json(200, { ok: true }), 200);
     } else if (path === '/broken') {
       json(500, { ok: false });
+    } else if (path === '/secure') {
+      secureAuth.push(req.headers.authorization);
+      json(req.headers.authorization === expected ? 200 : 401, {});
     } else {
       json(404, {});
     }
@@ -65,6 +73,7 @@ export async function startDemoServer(): Promise<DemoServer> {
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    secureAuth,
     close: () =>
       new Promise((resolve, reject) => {
         server.closeAllConnections();
