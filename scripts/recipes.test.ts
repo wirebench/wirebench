@@ -259,3 +259,127 @@ describe('templates/gitlab/wirebench.gitlab-ci.yml', () => {
     expect(job.artifacts?.reports?.junit).toBe('$WIREBENCH_JUNIT');
   });
 });
+
+/**
+ * Static checks on `.github/workflows/release.yml` (Task 6 of #31): the `image` and `npm` jobs
+ * exist with the permissions and gating spec §3 promises, alongside the untouched packaging jobs.
+ */
+interface WorkflowStep {
+  readonly uses?: string;
+  readonly if?: string;
+  readonly run?: string;
+  readonly with?: Record<string, unknown>;
+  readonly env?: Record<string, unknown>;
+}
+
+interface WorkflowJob {
+  readonly needs?: string | readonly string[];
+  readonly permissions?: Record<string, string>;
+  readonly steps: readonly WorkflowStep[];
+}
+
+interface ReleaseWorkflow {
+  readonly permissions?: Record<string, string>;
+  readonly jobs: Record<string, WorkflowJob>;
+}
+
+function loadReleaseWorkflow(): ReleaseWorkflow {
+  const text = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8');
+  return parse(text) as ReleaseWorkflow;
+}
+
+const TAG_GATE = "startsWith(github.ref, 'refs/tags/v')";
+
+describe('.github/workflows/release.yml', () => {
+  const workflow = loadReleaseWorkflow();
+
+  it('keeps the workflow-level permissions read-only', () => {
+    expect(workflow.permissions).toEqual({ contents: 'read' });
+  });
+
+  it('declares the image and npm jobs, both needing check', () => {
+    expect(workflow.jobs.image?.needs).toBe('check');
+    expect(workflow.jobs.npm?.needs).toBe('check');
+  });
+
+  it('grants packages: write only to the image job', () => {
+    expect(workflow.jobs.image?.permissions).toEqual({ contents: 'read', packages: 'write' });
+  });
+
+  it('grants id-token: write only to the npm job', () => {
+    expect(workflow.jobs.npm?.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+  });
+
+  describe('image job', () => {
+    const steps = workflow.jobs.image?.steps ?? [];
+
+    it('sets up qemu and buildx', () => {
+      expect(steps.some((step) => step.uses?.startsWith('docker/setup-qemu-action@'))).toBe(true);
+      expect(steps.some((step) => step.uses?.startsWith('docker/setup-buildx-action@'))).toBe(true);
+    });
+
+    it('logs in to GHCR only on a tag', () => {
+      const login = steps.find((step) => step.uses?.startsWith('docker/login-action@'));
+      expect(login).toBeDefined();
+      expect(login?.if).toBe(TAG_GATE);
+      expect(login?.with?.['registry']).toBe('ghcr.io');
+      expect(login?.with?.['username']).toBe('${{ github.actor }}');
+      expect(login?.with?.['password']).toBe('${{ secrets.GITHUB_TOKEN }}');
+    });
+
+    it('derives tags with metadata-action per spec §3', () => {
+      const meta = steps.find((step) => step.uses?.startsWith('docker/metadata-action@'));
+      expect(meta).toBeDefined();
+      expect(meta?.with?.['images']).toBe('ghcr.io/wirebench/wirebench-cli');
+      expect(meta?.with?.['flavor']).toBe('latest=auto');
+      const tags = String(meta?.with?.['tags']);
+      expect(tags).toContain('type=semver,pattern={{version}}');
+      expect(tags).toContain("type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}");
+    });
+
+    it('builds both platforms and pushes only on a tag', () => {
+      const build = steps.find((step) => step.uses?.startsWith('docker/build-push-action@'));
+      expect(build).toBeDefined();
+      expect(build?.with?.['platforms']).toBe('linux/amd64,linux/arm64');
+      expect(build?.with?.['push']).toBe('${{ ' + TAG_GATE + ' }}');
+      const buildArgs = String(build?.with?.['build-args']);
+      expect(buildArgs).toContain('VERSION=');
+      expect(buildArgs).toContain('REVISION=');
+    });
+  });
+
+  describe('npm job', () => {
+    const steps = workflow.jobs.npm?.steps ?? [];
+
+    it('sets up node 24 with the npm registry', () => {
+      const setupNode = steps.find((step) => step.uses?.startsWith('actions/setup-node@'));
+      expect(setupNode).toBeDefined();
+      expect(setupNode?.with?.['node-version']).toBe(24);
+      expect(setupNode?.with?.['registry-url']).toBe('https://registry.npmjs.org');
+    });
+
+    it('packs and checks the tarballs only on workflow_dispatch', () => {
+      const packCheck = steps.find((step) => step.run?.includes('pnpm pack:check'));
+      expect(packCheck).toBeDefined();
+      expect(packCheck?.if).toBe("github.event_name == 'workflow_dispatch'");
+    });
+
+    it('publishes only on a tag, versioning both packages and picking the dist-tag', () => {
+      const publish = steps.find((step) => step.run?.includes('pnpm publish'));
+      expect(publish).toBeDefined();
+      expect(publish?.if).toBe(TAG_GATE);
+      expect(publish?.run).toContain(
+        'pnpm --filter @wirebench/engine --filter @wirebench/cli exec npm version "$v" --no-git-tag-version',
+      );
+      expect(publish?.run).toContain(
+        'pnpm publish -r --filter @wirebench/engine --filter @wirebench/cli --access public --tag "$dist" --no-git-checks',
+      );
+    });
+  });
+
+  it('leaves the existing jobs untouched', () => {
+    expect(workflow.jobs.check).toBeDefined();
+    expect(workflow.jobs.build?.needs).toBe('check');
+    expect(workflow.jobs.release?.needs).toBe('build');
+  });
+});
