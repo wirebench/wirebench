@@ -70,6 +70,7 @@ export default defineConfig({
           items: [
             { label: 'Troubleshooting', slug: 'help/troubleshooting' },
             { label: 'FAQ', slug: 'help/faq' },
+            { label: 'Code-signing policy', slug: 'help/code-signing-policy' },
           ],
         },
       ],

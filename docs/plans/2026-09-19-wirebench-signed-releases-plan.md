@@ -29,7 +29,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
   configurations, secrets and variables, approval), the Apple steps end to end, the `latest.yml`
   rewrite, the SBOM and attestations.
   - Verify: `pnpm check:doc-paths`.
-- [ ] **T6. Site: silent install, verification, policy.** Add silent installs for NSIS and MSI and
+- [x] **T6. Site: silent install, verification, policy.** Add silent installs for NSIS and MSI and
   `gh attestation verify` to **Install and first run**, an enterprise FAQ entry, and
   `help/code-signing-policy.md` in the sidebar.
   - Verify: `pnpm docs:build`.
