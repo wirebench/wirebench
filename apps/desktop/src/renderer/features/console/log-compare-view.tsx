@@ -69,8 +69,12 @@ function BodyDiff({ label, left, right }: { readonly label: string; readonly lef
   );
 }
 
-const responseHeadersOf = (entry: LogEntry): Readonly<Record<string, string>> =>
-  entry.kind === 'exchange' ? entry.exchange.http.headers : {};
+const responseHeadersOf = (entry: LogEntry): Readonly<Record<string, string>> => {
+  if (entry.kind !== 'exchange') {
+    return {};
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.responseHeaders : entry.exchange.http.headers;
+};
 
 /** Two HTTP Log rows side by side: a summary of each, the headers that differ, and a diff of both bodies. */
 export function LogCompare({ left, right }: { readonly left: LogEntry; readonly right: LogEntry }) {

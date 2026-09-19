@@ -9,7 +9,7 @@ import type { LogEntry } from '../../state/exchanges.js';
 import { SslInspector } from '../request-editor/inspectors/ssl-inspector.js';
 import { RedirectsView } from '../rest-editor/response/redirects-view.js';
 import { TimingsBar } from './timings-bar.js';
-import type { FailedExchangeWire, HttpExchangeWire } from '../../../shared/wire-types.js';
+import type { FailedExchangeWire, HttpExchangeWire, WsHandshakeExchangeSummary } from '../../../shared/wire-types.js';
 
 export type LogDetailTab = 'headers' | 'request' | 'response' | 'timing' | 'connection';
 
@@ -182,7 +182,13 @@ function FailureTiming({ failure }: { readonly failure: FailedExchangeWire }) {
   );
 }
 
-function ExchangeConnection({ entry }: { readonly entry: Extract<LogEntry, { kind: 'exchange' }> }) {
+function ExchangeConnection({
+  entry,
+}: {
+  readonly entry: Extract<LogEntry, { kind: 'exchange' }> & {
+    readonly exchange: Exclude<Extract<LogEntry, { kind: 'exchange' }>['exchange'], WsHandshakeExchangeSummary>;
+  };
+}) {
   const { exchange } = entry;
   const arrival = 'methodChanged' in exchange ? { method: exchange.method, methodChanged: exchange.methodChanged } : {};
   return (
@@ -229,6 +235,64 @@ export interface LogDetailProps {
   readonly onMenu?: (anchor: HTMLElement) => void;
 }
 
+/**
+ * The handshake tabs a WebSocket row's detail pane offers: headers (request/response), and a note
+ * on Request/Response/Timing/Connection — none of those apply to a handshake, only the session
+ * that followed it (which the ws pane, not the log, is where that lives).
+ */
+function WsHandshakeDetail({
+  tab,
+  exchange,
+}: {
+  readonly tab: LogDetailTab;
+  readonly exchange: WsHandshakeExchangeSummary;
+}) {
+  if (tab === 'headers') {
+    return (
+      <div className="grid grid-cols-2 gap-3 p-2">
+        <HeaderTable
+          label="Request headers"
+          testId="log-detail-request-headers"
+          rows={Object.entries(exchange.requestHeaders)}
+        />
+        <HeaderTable
+          label="Response headers"
+          testId="log-detail-response-headers"
+          rows={Object.entries(exchange.responseHeaders)}
+        />
+      </div>
+    );
+  }
+  return (
+    <p className="p-3 text-sm text-fg-subtle">
+      Only the handshake is logged here; the frames that followed it are in the WebSocket pane.
+    </p>
+  );
+}
+
+/** The four exchange tabs' content, split out so `'protocol' in exchange` alone narrows the type. */
+function ExchangeDetailTabs({
+  entry,
+  tab,
+}: {
+  readonly entry: Extract<LogEntry, { kind: 'exchange' }>;
+  readonly tab: LogDetailTab;
+}) {
+  const { exchange } = entry;
+  if ('protocol' in exchange) {
+    return <WsHandshakeDetail tab={tab} exchange={exchange} />;
+  }
+  return (
+    <>
+      {tab === 'headers' && <ExchangeHeaders http={exchange.http} />}
+      {tab === 'request' && <RawPane label="Raw request" base64={exchange.http.rawRequestBase64} />}
+      {tab === 'response' && <RawPane label="Raw response" base64={exchange.http.rawResponseBase64} />}
+      {tab === 'timing' && <ExchangeTiming http={exchange.http} />}
+      {tab === 'connection' && <ExchangeConnection entry={{ ...entry, exchange }} />}
+    </>
+  );
+}
+
 /** The detail pane beside the HTTP Log table, on its right. */
 export function LogDetail({ entry, tab, onTabChange, onClose, onMenu }: LogDetailProps) {
   return (
@@ -273,13 +337,7 @@ export function LogDetail({ entry, tab, onTabChange, onClose, onMenu }: LogDetai
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {entry.kind === 'exchange' ? (
-          <>
-            {tab === 'headers' && <ExchangeHeaders http={entry.exchange.http} />}
-            {tab === 'request' && <RawPane label="Raw request" base64={entry.exchange.http.rawRequestBase64} />}
-            {tab === 'response' && <RawPane label="Raw response" base64={entry.exchange.http.rawResponseBase64} />}
-            {tab === 'timing' && <ExchangeTiming http={entry.exchange.http} />}
-            {tab === 'connection' && <ExchangeConnection entry={entry} />}
-          </>
+          <ExchangeDetailTabs entry={entry} tab={tab} />
         ) : (
           <>
             {tab === 'headers' && <FailureHeaders failure={entry.failure} />}

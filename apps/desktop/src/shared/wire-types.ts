@@ -4235,6 +4235,8 @@ export const workspaceStashDraftsRequestSchema = z.object({
   restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
   /** The gRPC editor's unsaved edits, by gRPC request id; absent in a stash from an older build. */
   grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
+  /** The WebSocket editor's unsaved edits, by ws request id; absent in a stash from an older build. */
+  wsRequests: z.record(z.string(), wsRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 

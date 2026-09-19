@@ -122,6 +122,18 @@ describe('applyWsLive', () => {
     expect(useExchangesStore.getState().wsByRequest['ws-1']?.live?.frames).toEqual([]);
   });
 
+  it('drops the live half on a failed handshake, so a later frame cannot append to it', () => {
+    void startConnect();
+    const sendId = sendIdOf();
+
+    live({ kind: 'handshake', sendId, handshake: handshake({ error: 'connection refused' }) });
+    expect(useExchangesStore.getState().wsByRequest['ws-1']?.status).toBe('error');
+    expect(useExchangesStore.getState().wsByRequest['ws-1']?.live).toBeUndefined();
+
+    live({ kind: 'frame', sendId, frame: frame({ text: 'too late' }) });
+    expect(useExchangesStore.getState().wsByRequest['ws-1']?.live).toBeUndefined();
+  });
+
   it('drops the live half once the exchange arrives, so no frame is shown twice', async () => {
     openWs.mockResolvedValue({ ok: true, value: makeWsExchange() });
     await useExchangesStore.getState().connectWs('ws-1');

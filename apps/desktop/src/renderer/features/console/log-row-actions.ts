@@ -42,7 +42,10 @@ export function requestIdOf(entry: LogEntry): string | undefined {
 
 /** The request headers the row shows. */
 export function requestHeadersOf(entry: LogEntry): Readonly<Record<string, string>> {
-  return entry.kind === 'exchange' ? entry.exchange.http.request.headers : entry.failure.request.headers;
+  if (entry.kind !== 'exchange') {
+    return entry.failure.request.headers;
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.requestHeaders : entry.exchange.http.request.headers;
 }
 
 /** One `Name: value` line per header. */
@@ -54,7 +57,10 @@ export function headersText(headers: Readonly<Record<string, string>>): string {
 
 /** The response body as text; undefined for a failure, which has none. */
 export function responseBodyText(entry: LogEntry): string | undefined {
-  return entry.kind === 'exchange' ? decodeBase64Text(entry.exchange.http.bodyBase64) : undefined;
+  if (entry.kind !== 'exchange' || 'protocol' in entry.exchange) {
+    return undefined;
+  }
+  return decodeBase64Text(entry.exchange.http.bodyBase64);
 }
 
 function on(id: RowActionId, label: string, hint?: string): RowAction {

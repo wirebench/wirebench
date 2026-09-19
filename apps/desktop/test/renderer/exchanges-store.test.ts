@@ -6,6 +6,7 @@ import {
   lastExchangeOf,
   sendIdOf,
   subscribeToExchangeFailures,
+  subscribeToExchangeLogged,
 } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -467,6 +468,24 @@ describe('useExchangesStore: failures and the filter', () => {
 
     const unsubscribe = subscribeToExchangeFailures();
     listeners.get('exchange.failed')?.({ failure: makeFailure({ sendId: 'evt-1' }) });
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
+    unsubscribe();
+    expect(off).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribeToExchangeLogged appends what exchange.logged carries, once, and unsubscribes', () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const off = vi.fn();
+    installWirebenchApi({
+      on: vi.fn((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return off;
+      }) as never,
+    });
+
+    const unsubscribe = subscribeToExchangeLogged();
+    listeners.get('exchange.logged')?.({ entry: logExchange(exchangeSummary('evt-1')) });
 
     expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
     unsubscribe();

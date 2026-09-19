@@ -885,10 +885,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     useExchangesStore.getState().clearGrpcRequest(requestId);
   };
 
-  /** The WebSocket counterpart of {@link forgetRestRequest}. */
+  /**
+   * The WebSocket counterpart of {@link forgetRestRequest}: also closes an open session, so a
+   * deleted request cannot leak one running against a URL nothing points at anymore.
+   */
   const forgetWsRequest = (requestId: string): void => {
     useDraftsStore.getState().discardWsRequest(requestId);
     useEditorsStore.getState().close(`ws:${requestId}`);
+    void useExchangesStore
+      .getState()
+      .disconnectWs(requestId)
+      .catch(() => undefined);
     useExchangesStore.getState().clearWsRequest(requestId);
   };
 

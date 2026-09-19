@@ -13,7 +13,10 @@ function keyOf(entry: LogEntry, column: SortColumn, nameOf: (e: LogEntry) => str
     case 'name':
       return nameOf(entry);
     case 'status':
-      return entry.kind === 'failure' ? 0 : entry.exchange.http.status;
+      if (entry.kind === 'failure') {
+        return 0;
+      }
+      return 'protocol' in entry.exchange ? entry.exchange.status : entry.exchange.http.status;
     case 'duration':
       return durationOf(entry);
     case 'size':

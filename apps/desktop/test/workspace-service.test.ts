@@ -578,6 +578,20 @@ describe('WorkspaceService saving', () => {
     await service.close();
   }, 60_000);
 
+  it('keeps stashed WebSocket drafts across a close and reopen, alongside the other protocols', async () => {
+    const service = newService();
+    const first = await service.create('WS drafts');
+    await service.stashDrafts(first.id, {}, {}, {}, { ws1: { url: 'wss://example.test' } });
+    await service.close();
+
+    await service.open(first.id);
+    expect(service.takeRestored()).toMatchObject({
+      workspaceId: first.id,
+      wsDrafts: { ws1: { url: 'wss://example.test' } },
+    });
+    await service.close();
+  }, 60_000);
+
   it('restores unsaved changes after a crash, from the record kept current while running', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Crash');

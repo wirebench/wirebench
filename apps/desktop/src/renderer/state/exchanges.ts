@@ -7,6 +7,7 @@ import { runValidation } from '../features/request-editor/validate-actions.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type {
   ExchangeFailedEvent,
+  ExchangeLoggedEvent,
   ExchangeSummary,
   FailedExchangeWire,
   GrpcExchangeSummary,
@@ -243,6 +244,8 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly appendExchange: (exchange: AnyExchangeSummary, requestId?: string) => void;
   /** Appends a failed send's row. A `sendId` already in the log (either kind) is ignored. */
   readonly appendFailure: (failure: FailedExchangeWire) => void;
+  /** Appends a row main already built (`exchange.logged`) — currently a WebSocket handshake. */
+  readonly appendLoggedEntry: (entry: LogEntry) => void;
   /** Merges a patch into the HTTP Log filter. */
   readonly setFilter: (patch: Partial<LogFilter>) => void;
   /** Shows every row again. Distinct from `clearLog`, which empties the log. */
@@ -619,7 +622,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         if (found === undefined) {
           return;
         }
-        const [, state] = found;
+        const [requestId, state] = found;
         // An event for a send this request has already replaced, or one whose exchange has
         // already arrived, is dropped rather than written over the newer state.
         if (state.live === undefined) {
@@ -627,12 +630,17 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         }
         switch (event.kind) {
           case 'handshake':
-            state.live.handshake = event.handshake;
             if (event.handshake.error === undefined) {
+              state.live.handshake = event.handshake;
               state.status = 'open';
               state.live.open = true;
             } else {
-              state.status = 'error';
+              // A failed handshake ends the session: drop the live half so a frame that arrives
+              // afterwards (the guard above checks `state.live === undefined`) cannot append to it.
+              draft.wsByRequest[requestId] = {
+                status: 'error',
+                ...(state.sendId !== undefined ? { sendId: state.sendId } : {}),
+              };
             }
             return;
           case 'frame':
@@ -930,6 +938,13 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    appendLoggedEntry: (entry) => {
+      update((draft) => {
+        draft.log.push(entry);
+        trimLog(draft);
+      });
+    },
+
     setFilter: (patch) => {
       set((state) => ({ filter: { ...state.filter, ...patch } }));
     },
@@ -982,5 +997,29 @@ export function subscribeToWsLive(): () => void {
 export function subscribeToExchangeFailures(): () => void {
   return window.wirebench.on('exchange.failed', ((payload: ExchangeFailedEvent) => {
     useExchangesStore.getState().appendFailure(payload.failure);
+  }) as (payload: unknown) => void);
+}
+
+/**
+ * Subscribes the log to `exchange.logged` — a row main puts there before its own invoke resolves
+ * (currently only a WebSocket handshake). Called once from the shell, beside
+ * `subscribeToExchangeFailures`; returns the unsubscribe for symmetry with React effects.
+ */
+export function subscribeToExchangeLogged(): () => void {
+  return window.wirebench.on('exchange.logged', ((payload: ExchangeLoggedEvent) => {
+    const { entry } = payload;
+    if (entry.kind === 'failure') {
+      useExchangesStore.getState().appendFailure(entry.failure);
+      return;
+    }
+    // Normalized rather than spread as-is: the wire type allows an explicit `requestId: undefined`,
+    // which `LogEntry`'s optional field does not.
+    useExchangesStore
+      .getState()
+      .appendLoggedEntry(
+        entry.requestId === undefined
+          ? { kind: 'exchange', exchange: entry.exchange }
+          : { kind: 'exchange', exchange: entry.exchange, requestId: entry.requestId },
+      );
   }) as (payload: unknown) => void);
 }

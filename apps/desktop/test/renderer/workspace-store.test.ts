@@ -269,6 +269,7 @@ describe('useWorkspaceStore', () => {
       requests: { r1: { envelopeXml: '<unsaved/>' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
@@ -289,6 +290,7 @@ describe('useWorkspaceStore', () => {
       requests: { r1: { name: 'Renamed' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });

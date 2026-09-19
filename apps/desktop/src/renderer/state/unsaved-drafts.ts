@@ -33,16 +33,13 @@ function cancelPending(): void {
 /** Hands every current draft to main for `workspaceId` now, replacing what it held. */
 export async function stashDrafts(workspaceId: string): Promise<void> {
   cancelPending();
-  // `workspace.stashDrafts` does not yet carry a WebSocket field (its wire schema, shared with
-  // main, has none) — a WS draft is not handed over across a restart. Restoring one on the next
-  // launch (`workspace.takeRestored`'s `wsDrafts`) still works; only this session's own crash
-  // recovery is the gap, and closing that is main-side wire work outside this task.
-  const { requests, restRequests, grpcRequests } = useDraftsStore.getState();
+  const { requests, restRequests, grpcRequests, wsRequests } = useDraftsStore.getState();
   await ipc().workspace.stashDrafts({
     workspaceId,
     requests: { ...requests },
     restRequests: { ...restRequests },
     grpcRequests: { ...grpcRequests },
+    wsRequests: { ...wsRequests },
   });
 }
 

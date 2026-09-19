@@ -55,7 +55,10 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
       return copy(headersText(requestHeadersOf(entry)), 'Copied request headers');
     case 'copy-response-headers':
       return entry.kind === 'exchange'
-        ? copy(headersText(entry.exchange.http.headers), 'Copied response headers')
+        ? copy(
+            headersText('protocol' in entry.exchange ? entry.exchange.responseHeaders : entry.exchange.http.headers),
+            'Copied response headers',
+          )
         : undefined;
     case 'copy-response-body': {
       const body = responseBodyText(entry);
