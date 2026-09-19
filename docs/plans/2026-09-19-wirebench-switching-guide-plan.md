@@ -47,7 +47,7 @@ task, each after `WIREBENCH_SKIP_PERF=1 pnpm check` passes.
 
 ## Phase 3 — Close-out
 
-- [ ] **T11. Close-out.** Update the roadmap row for item 2 and the changelog, tick the spec's success
+- [x] **T11. Close-out.** Update the roadmap row for item 2 and the changelog, tick the spec's success
   criteria, and open the PR with `Closes #54`.
   - Verify: `WIREBENCH_SKIP_PERF=1 pnpm check`; `pnpm test:perf`.
 

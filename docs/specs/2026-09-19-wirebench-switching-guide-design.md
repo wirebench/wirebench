@@ -116,16 +116,16 @@ button rather than adding a second implementation. Pages follow the docs site's 
 
 ## Success criteria
 
-- [ ] The Postman summary shows the import warnings with a Copy report button. OAuth 2 grants and
+- [x] The Postman summary shows the import warnings with a Copy report button. OAuth 2 grants and
       variables in auth fields are handled as assumption 4 says.
-- [ ] A pasted `curl -u user:pass` sends authenticated without the password being entered again.
-- [ ] The cURL preview is correct for both REST and SOAP targets, and the problems are listed after an
+- [x] A pasted `curl -u user:pass` sends authenticated without the password being entered again.
+- [x] The cURL preview is correct for both REST and SOAP targets, and the problems are listed after an
       import.
-- [ ] Value-less cURL flags no longer swallow the next token, and `--json` and `-G` work.
-- [ ] Four switching pages exist under a Switching section, each with a carries-over table and a
+- [x] Value-less cURL flags no longer swallow the next token, and `--json` and `-G` work.
+- [x] Four switching pages exist under a Switching section, each with a carries-over table and a
       does-not table.
-- [ ] The four contradictions in the importers guide are corrected.
-- [ ] `pnpm check` and `pnpm docs:build` pass.
+- [x] The four contradictions in the importers guide are corrected.
+- [x] `pnpm check` and `pnpm docs:build` pass.
 
 ## Open questions
 
