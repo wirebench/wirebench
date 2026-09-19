@@ -1,0 +1,11 @@
+**/node_modules
+apps
+docs-site
+e2e
+git-worktrees
+**/dist
+**/tsconfig.tsbuildinfo
+.git
+.superpowers
+coverage
+release

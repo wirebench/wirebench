@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -135,3 +138,146 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: e2e/test-results
+
+  # Builds the container image the way a release tag will and proves it actually runs a
+  # project: `docker run --version` sanity-checks the entrypoint, then `cli:smoke --via docker`
+  # runs the same four checks the other recipes run (packages/cli/Dockerfile, task 3 of #31).
+  image-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/cli/Dockerfile
+          load: true
+          push: false
+          platforms: linux/amd64
+          tags: wirebench-cli:ci
+      - run: docker run --rm wirebench-cli:ci --version
+      - run: pnpm cli:smoke --via docker --image wirebench-cli:ci
+      - run: pnpm cli:smoke --via docker --image wirebench-cli:ci --gitlab
+
+  # Proves the npm recipe end to end: pack both packages the way a release would, install the
+  # tarballs into an empty directory (no workspace, no `workspace:*` protocol to fall back on),
+  # then run the same four checks against that install (packages/cli, task 1 of #31).
+  npm-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm cli:smoke --via npm
+
+  # Proves the GitHub Action end to end, against the packed tarballs rather than a published
+  # `@wirebench/cli` (nothing is published yet, and `npx` cannot resolve an unpublished
+  # `@wirebench/engine` from a tarball on its own — see action/action.yml's `WB_PACKAGES`
+  # override). One project run against the fixture's passing selection must exit 0 and leave a
+  # JUnit file; the same run against the failing selection must exit 1, without failing this job
+  # (`continue-on-error`) since a red assertion is the expected outcome under test.
+  action-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Pack tarballs
+        id: pack
+        run: node scripts/pack-check.ts "${{ runner.temp }}/pkgs"
+
+      - name: Start the demo server
+        id: serve
+        run: |
+          nohup node scripts/cli-smoke.ts --serve-only > "${{ runner.temp }}/serve.log" 2>&1 &
+          disown
+          for _ in $(seq 1 100); do
+            if [ -f "$GITHUB_OUTPUT" ] && grep -q '^url=' "$GITHUB_OUTPUT"; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "demo server did not report a url in time" >&2
+          cat "${{ runner.temp }}/serve.log" >&2
+          exit 1
+
+      - name: Passing selection
+        id: pass
+        uses: ./action
+        with:
+          project: packages/cli/test/fixtures/runner-project
+          env: local
+          select: demo/ok
+          vars: baseUrl=${{ steps.serve.outputs.url }}
+          junit: out/pass.xml
+        env:
+          WB_PACKAGES: |
+            ${{ steps.pack.outputs.engine }}
+            ${{ steps.pack.outputs.cli }}
+
+      - name: Failing selection
+        id: fail
+        continue-on-error: true
+        uses: ./action
+        with:
+          project: packages/cli/test/fixtures/runner-project
+          env: local
+          select: demo/broken
+          vars: baseUrl=${{ steps.serve.outputs.url }}
+        env:
+          WB_PACKAGES: |
+            ${{ steps.pack.outputs.engine }}
+            ${{ steps.pack.outputs.cli }}
+
+      - name: Check outcomes
+        run: |
+          if [ "${{ steps.pass.outputs.exit-code }}" != "0" ]; then
+            echo "expected the passing selection to exit 0, got ${{ steps.pass.outputs.exit-code }}" >&2
+            exit 1
+          fi
+          # A failed composite step may not surface its outputs, so the failing case accepts an
+          # empty exit-code as long as the step's outcome is failure; any other code fails.
+          if [ "${{ steps.fail.outcome }}" != "failure" ]; then
+            echo "expected the failing selection's outcome to be failure, got ${{ steps.fail.outcome }}" >&2
+            exit 1
+          fi
+          fail_code="${{ steps.fail.outputs.exit-code }}"
+          if [ -n "$fail_code" ] && [ "$fail_code" != "1" ]; then
+            echo "expected the failing selection to exit 1, got $fail_code" >&2
+            exit 1
+          fi
+          if [ ! -f out/pass.xml ]; then
+            echo "expected out/pass.xml to exist" >&2
+            exit 1
+          fi

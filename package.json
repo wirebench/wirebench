@@ -38,7 +38,9 @@
     "licenses:third-party": "node scripts/third-party-licenses.ts",
     "docs:commands": "node scripts/docs-commands.ts",
     "check:docs-images": "node scripts/check-docs-images.ts",
-    "docs:screenshots": "pnpm build && WIREBENCH_DOCS_SCREENSHOTS=1 pnpm test:e2e -- docs-screenshots.spec.ts"
+    "docs:screenshots": "pnpm build && WIREBENCH_DOCS_SCREENSHOTS=1 pnpm test:e2e -- docs-screenshots.spec.ts",
+    "pack:check": "pnpm build && node scripts/pack-check.ts",
+    "cli:smoke": "node scripts/cli-smoke.ts"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",
@@ -52,7 +54,8 @@
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "yaml": "^2.9"
   },
   "pnpm": {
     "overrides": {

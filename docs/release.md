@@ -153,6 +153,47 @@ The workflow runs `pnpm check`, packages on all three runners, uploads the artif
 creates a **draft** release (a tag containing `-`, such as `v1.0.0-rc.1`, is marked as a
 pre-release). Review the draft, install one artifact per OS, then publish it by hand.
 
+## Publishing the CLI: image and npm
+
+The same tag that triggers the desktop packaging jobs also runs two more jobs in `release.yml`,
+`needs: check`, so a red `pnpm check` blocks publishing exactly the way it blocks packaging:
+
+- **`image`** builds `packages/cli/Dockerfile` for `linux/amd64` and `linux/arm64` with Buildx
+  (arm64 through QEMU) and pushes it to `ghcr.io/wirebench/wirebench-cli` on a tag. It logs in to
+  GHCR with the workflow's own `GITHUB_TOKEN` and runs with `permissions: contents: read, packages:
+  write` — no workflow-wide write.
+- **`npm`** builds `@wirebench/engine` and `@wirebench/cli`, sets both packages' `version` from the
+  tag, and runs `pnpm publish -r --filter @wirebench/engine --filter @wirebench/cli` with
+  provenance (`permissions: contents: read, id-token: write`; npm trusted publishing, no
+  `NPM_TOKEN`).
+
+### Tag → published version
+
+| Tag | Image tags on `ghcr.io/wirebench/wirebench-cli` | npm dist-tag |
+| --- | --- | --- |
+| `v2.3.0` | `2.3.0`, `2.3`, `latest` | `2.3.0` under `latest` |
+| `v2.3.0-rc.1` (pre-release, contains `-`) | `2.3.0-rc.1` only | `2.3.0-rc.1` under `next`, never `latest` |
+
+### Rehearsal
+
+A `workflow_dispatch` run of `release.yml` exercises both jobs without a tag: `image` builds the
+image but skips the GHCR login and the push, and `npm` builds the packages and runs `pnpm
+pack:check` instead of `pnpm publish`. Nothing is pushed or published from a `workflow_dispatch`
+run or a PR — only a push of a `v*` tag does that. Run it once, from the Actions tab, before the
+first tag that is meant to publish.
+
+### Before the first publishing release
+
+Three things the repository can't do for itself, outside `release.yml`:
+
+1. Create (or confirm) the `wirebench` npm organisation, and register `release.yml` as a trusted
+   publisher for both `@wirebench/engine` and `@wirebench/cli` — or add an `NPM_TOKEN` secret if
+   trusted publishing isn't set up yet.
+2. After the first image push, make `ghcr.io/wirebench/wirebench-cli` **public** and link it to
+   this repository — a GHCR package starts private.
+3. Run `release.yml` by `workflow_dispatch` once and check the rehearsal (previous section) before
+   pushing the first tag meant to publish.
+
 ## Windows signing (SignPath)
 
 Windows builds are signed through the [SignPath Foundation](https://signpath.org/) programme for

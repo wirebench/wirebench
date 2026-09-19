@@ -276,15 +276,75 @@ conventions every other tool on the runner already obeys:
   password resolves through §Secrets above.
 - `--insecure` skips TLS verification, the CLI equivalent of the desktop's per-environment switch.
 
-## A pipeline step
+## Run in CI
 
-A minimal CI step is a shell command; vendor-specific recipes (GitHub Actions, GitLab CI, …) are
-tracked separately (`#31`):
+Four ways to run a project in a pipeline, from the same package. Every secret is the caller's: map
+each one to `WIREBENCH_SECRET_<NAME>` (the same variable `secrets list` reports) in the CI system's
+own environment or variables, and the runner's masking hides the value in every reporter, the `cli`
+one included — nothing here holds or asks for a secret itself. See the [docs-site "Run in
+CI" guide](https://wirebench.github.io/wirebench/guides/run-in-ci/) for the same recipes with more
+walkthrough.
+
+### GitHub Actions
+
+```yaml
+- uses: wirebench/wirebench/action@v2.3.0
+  with:
+    project: ./api-tests
+    env: staging
+    junit: reports/wirebench.xml
+  env:
+    WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
+```
+
+The action installs Node 24 (`node-version`, default `24` — this replaces `node` for later steps
+of the same job), runs `@wirebench/cli` via `npx`, and exposes the exit code as the `exit-code`
+output. Every input arrives through `env:`, never interpolated into the step's script. See
+[`action/README.md`](../action/README.md) for the full input and output table.
+
+### GitLab CI
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v2.3.0/templates/gitlab/wirebench.gitlab-ci.yml
+
+api-tests:
+  extends: .wirebench-run
+  variables:
+    WIREBENCH_VERSION: '2.3.0'
+    WIREBENCH_PROJECT: api-tests
+    WIREBENCH_ENV: staging
+```
+
+`.wirebench-run` runs `ghcr.io/wirebench/wirebench-cli:${WIREBENCH_VERSION}` and reports
+`WIREBENCH_JUNIT` (default `wirebench-junit.xml`) as a JUnit artifact with `when: always`, so
+results show even on a red pipeline. The template is not rewritten when a release tag is cut —
+the tagged file must equal the tagged commit — so always pin `WIREBENCH_VERSION` explicitly
+rather than relying on the `latest` default. Map a CI/CD variable to
+`WIREBENCH_SECRET_<NAME>` and turn on "Mask variable" for it (Settings → CI/CD → Variables).
+
+### Docker
+
+```bash
+docker run --rm -v "$PWD:/work" \
+  -e WIREBENCH_SECRET_BILLING_PASSWORD \
+  ghcr.io/wirebench/wirebench-cli:2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+```
+
+The image (`linux/amd64` and `linux/arm64`) runs as the non-root `node` user with `WORKDIR /work`
+and `ENTRYPOINT ["node", "/app/dist/bin.js"]`, so `run <path>` (and any other subcommand) follows
+the image reference directly. Mount the project at `/work` (or a subdirectory of it) and pass
+secrets with `-e`.
+
+### npx
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  wirebench run ./project --env staging --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
-The step exits non-zero on a broken service (1) or a broken pipeline (2, 3), and the JUnit report
-names the request and the assertion that failed.
+Works on any CI runner with Node 24 already available and no other setup — the same package the
+GitHub Action installs under the hood.
+
+Each recipe above exits non-zero on a broken service (1) or a broken pipeline (2, 3), and the
+JUnit report names the request and the assertion that failed.
