@@ -10,7 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { packPackages } from './pack-check.ts';
@@ -29,9 +29,17 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+/**
+ * Runs `tar` in `cwd` with the tarball as a relative path: the GNU tar on Windows
+ * runners reads a `C:\…` argument as `host:path` and tries a remote archive.
+ */
+function tar(tarballPath: string, args: readonly string[], cwd: string): string {
+  return execFileSync('tar', [...args, relative(cwd, tarballPath)], { cwd, encoding: 'utf-8' });
+}
+
 /** Lists a tarball's entries via `tar -tzf`, stripped of the npm `package/` prefix. */
 function listTarballEntries(tarballPath: string): string[] {
-  const output = execFileSync('tar', ['-tzf', tarballPath], { encoding: 'utf-8' });
+  const output = tar(tarballPath, ['-tzf'], tmpdir());
   return output
     .split('\n')
     .filter((line) => line.length > 0)
@@ -63,7 +71,7 @@ describe('packPackages', () => {
     const tarballs = await packPackages(outDir);
 
     const extractDir = await makeTempDir('wirebench-pack-check-extract-');
-    execFileSync('tar', ['-xzf', tarballs.engine, '-C', extractDir]);
+    tar(tarballs.engine, ['-xzf'], extractDir);
     const manifest = JSON.parse(await readFile(join(extractDir, 'package', 'package.json'), 'utf-8')) as {
       exports: Record<string, unknown>;
     };
@@ -77,7 +85,7 @@ describe('packPackages', () => {
     const tarballs = await packPackages(outDir);
 
     const extractDir = await makeTempDir('wirebench-pack-check-extract-');
-    execFileSync('tar', ['-xzf', tarballs.cli, '-C', extractDir]);
+    tar(tarballs.cli, ['-xzf'], extractDir);
     const manifest = JSON.parse(await readFile(join(extractDir, 'package', 'package.json'), 'utf-8')) as {
       dependencies?: Record<string, string>;
     };

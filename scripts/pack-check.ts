@@ -24,7 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -92,6 +92,6 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] !== undefined && import.meta.url === new URL(process.argv[1], 'file:').href) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
