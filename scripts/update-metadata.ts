@@ -8,7 +8,9 @@
  * recomputes both fields for every `url` entry and for the top-level `path`, and changes nothing else.
  *
  * `node scripts/update-metadata.ts <dir>` rewrites `<dir>/latest.yml`; with `--check` it exits
- * non-zero when the manifest disagrees with the files instead. Line-based on purpose: the manifest's
+ * non-zero when the manifest disagrees with the files instead. `--add <file>` (repeatable) first
+ * lists another installer in `<dir>`: each Windows architecture is packaged in its own run, from its
+ * own signed app, and each run writes a manifest naming only itself. Line-based on purpose: the manifest's
  * shape is fixed by electron-builder, and a YAML round-trip would reformat the rest of it.
  */
 import { createHash } from 'node:crypto';
@@ -59,6 +61,33 @@ function unquote(value: string): string {
   return value.replace(/^(['"])(.*)\1$/, '$2');
 }
 
+/** `manifest` with a `files` entry for each of `names` it does not list yet, after the last one. */
+export function addFiles(manifest: string, names: readonly string[]): string {
+  const lines = manifest.split('\n');
+  const listed = new Set(
+    lines.flatMap((line) => {
+      const url = /^\s*-\s+url:\s*(.+?)\s*$/.exec(line);
+      return url === null ? [] : [unquote(url[1] as string)];
+    }),
+  );
+  const fresh = names.filter((name) => !listed.has(name));
+  if (fresh.length === 0) {
+    return manifest;
+  }
+  // The `files` list ends at the first top-level key after `files:`.
+  const start = lines.findIndex((line) => line === 'files:');
+  if (start === -1) {
+    throw new Error('latest.yml has no files list');
+  }
+  let end = start + 1;
+  while (end < lines.length && /^\s/.test(lines[end] as string)) {
+    end += 1;
+  }
+  // Placeholders: `updateManifest` fills in the real values right after.
+  const entries = fresh.flatMap((name) => [`  - url: ${name}`, '    sha512: -', '    size: 0']);
+  return [...lines.slice(0, end), ...entries, ...lines.slice(end)].join('\n');
+}
+
 /** The sha512 (base64, as electron-builder writes it) and byte size of `file`. */
 async function factsOf(file: string): Promise<FileFacts> {
   const [bytes, info] = await Promise.all([readFile(file), stat(file)]);
@@ -66,14 +95,16 @@ async function factsOf(file: string): Promise<FileFacts> {
 }
 
 async function main(): Promise<void> {
-  const dir = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
+  const dir = process.argv.slice(2).find((arg, index, args) => !arg.startsWith('--') && args[index - 1] !== '--add');
   if (dir === undefined) {
-    process.stderr.write('usage: node scripts/update-metadata.ts <dir> [--check]\n');
+    process.stderr.write('usage: node scripts/update-metadata.ts <dir> [--add <file>]... [--check]\n');
     process.exitCode = 2;
     return;
   }
   const target = join(dir, 'latest.yml');
-  const manifest = await readFile(target, 'utf-8');
+  const added = process.argv.flatMap((arg, index) => (process.argv[index - 1] === '--add' ? [arg] : []));
+  const original = await readFile(target, 'utf-8');
+  const manifest = addFiles(original, added);
   const names = new Set<string>();
   updateManifest(manifest, (file) => {
     names.add(file);
@@ -85,7 +116,7 @@ async function main(): Promise<void> {
   }
   const updated = updateManifest(manifest, (file) => known.get(file) as FileFacts);
 
-  if (updated === manifest) {
+  if (updated === original) {
     process.stdout.write(`${target} matches its files\n`);
     return;
   }

@@ -14,7 +14,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
 - [x] **T2. `update-metadata.ts`.** Rewrite `sha512` and `size` in `latest.yml` from the files beside it,
   and add `--check`.
   - Verify: Vitest (rewrite, other fields untouched, stale `--check` fails).
-- [ ] **T3. Windows pipeline.** Split the Windows build into `win-unpacked`, `sign-app`,
+- [x] **T3. Windows pipeline.** Split the Windows build into `win-unpacked`, `sign-app`,
   `win-installers`, `sign-installers` and `win-update-metadata`. The signing jobs pass the files
   through when `SIGNPATH_API_TOKEN` is unset.
   - Verify: a rehearsal with no secrets goes green, and its `latest.yml` passes `--check`.

@@ -45,9 +45,6 @@ jobs:
           - os: macos-latest
             script: package:mac
             artifact: macos
-          - os: windows-latest
-            script: package:win
-            artifact: windows
           - os: ubuntu-latest
             script: package:linux
             artifact: linux
@@ -82,16 +79,13 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows code signing, when a certificate is configured.
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           # Never publish from the build job; the release job below attaches the artifacts.
           GH_TOKEN: ''
         # A secret that is not configured arrives as an empty string, and electron-builder
         # treats an empty `CSC_LINK` as a certificate path (resolving to the project directory,
         # "not a file") rather than as absent — so anything empty is unset before packaging.
         run: |
-          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!name}" ]; then unset "$name"; fi
           done
           pnpm ${{ matrix.script }}
@@ -104,8 +98,6 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
-            apps/desktop/release/*.exe
-            apps/desktop/release/*.msi
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.rpm
@@ -113,8 +105,168 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
 
+  # Windows is packaged in stages so that SignPath can sign the app before the installers are built
+  # around it, then sign the installers: a fleet's application-control policy checks the installed
+  # Wirebench.exe, not only the setup file. Each signing job passes its input through unsigned when
+  # SIGNPATH_API_TOKEN is not configured, so the pipeline works before SignPath does.
+  win-unpacked:
+    needs: check
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
+      - run: pnpm build && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: win-app-unsigned
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/win-unpacked/
+            apps/desktop/release/win-arm64-unpacked/
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+
+  win-sign-app:
+    needs: win-unpacked
+    runs-on: ubuntu-latest
+    # SignPath fetches the artifact through this job's token.
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Is SignPath configured?
+        id: signpath
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Sign the app with SignPath
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.win-unpacked.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: win-app
+      - name: Pass the app through unsigned
+        if: steps.signpath.outputs.enabled != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: win-app-unsigned
+          path: win-app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: win-app
+          if-no-files-found: error
+          path: win-app/
+
+  win-installers:
+    needs: win-sign-app
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: win-app
+          path: apps/desktop/prepackaged
+      # One run per architecture: `--prepackaged` takes a single app. Each run writes a latest.yml
+      # naming only its own installer, so arm64 builds into a directory of its own and is folded
+      # into the x64 manifest below.
+      - name: Build the installers around the (signed) app
+        working-directory: apps/desktop
+        run: |
+          pnpm exec electron-builder --win nsis msi --x64 --prepackaged prepackaged/win-unpacked --publish never
+          pnpm exec electron-builder --win nsis msi --arm64 --prepackaged prepackaged/win-arm64-unpacked \
+            --config.directories.output=release-arm64 --publish never
+          cp release-arm64/*.exe release-arm64/*.msi release-arm64/*.blockmap release/
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: win-installers-unsigned
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.msi
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+
+  win-sign-installers:
+    needs: win-installers
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Is SignPath configured?
+        id: signpath
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # SignPath signs the .exe and .msi files and returns the rest of the artifact unchanged.
+      - name: Sign the installers with SignPath
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLERS_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.win-installers.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: windows
+      - name: Pass the installers through unsigned
+        if: steps.signpath.outputs.enabled != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: win-installers-unsigned
+          path: windows
+      # A signed installer's bytes differ from the ones its blockmap describes; without one, the
+      # updater downloads the whole installer instead of the changed blocks, which is correct.
+      - name: Drop blockmaps that signing made stale
+        if: steps.signpath.outputs.enabled == 'true'
+        run: rm -f windows/*.blockmap
+      - name: Fold arm64 into latest.yml, and match it to the final installers
+        run: |
+          arm64="$(cd windows && ls *-windows-arm64-setup.exe)"
+          node scripts/update-metadata.ts windows --add "$arm64"
+          node scripts/update-metadata.ts windows --check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wirebench-windows
+          if-no-files-found: error
+          path: windows/
+
   release:
-    needs: build
+    needs: [build, win-sign-installers]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # The only job that writes: it creates the draft release and attaches the artifacts.

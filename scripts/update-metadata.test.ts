@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { updateManifest } from './update-metadata.ts';
+import { addFiles, updateManifest } from './update-metadata.ts';
 
 const SCRIPT = fileURLToPath(new URL('./update-metadata.ts', import.meta.url));
 
@@ -37,6 +37,24 @@ describe('updateManifest', () => {
   });
 });
 
+describe('addFiles', () => {
+  const ONE = MANIFEST.replace(
+    '  - url: Wirebench-2.2.0-windows-arm64-setup.exe\n    sha512: OLDARM\n    size: 2\n',
+    '',
+  );
+
+  it('lists another installer after the last entry, for updateManifest to fill in', () => {
+    const added = addFiles(ONE, ['Wirebench-2.2.0-windows-arm64-setup.exe']);
+    expect(added).toContain(
+      '    size: 1\n  - url: Wirebench-2.2.0-windows-arm64-setup.exe\n    sha512: -\n    size: 0\npath: ',
+    );
+  });
+
+  it('leaves a manifest alone when it already lists the file', () => {
+    expect(addFiles(MANIFEST, ['Wirebench-2.2.0-windows-arm64-setup.exe'])).toBe(MANIFEST);
+  });
+});
+
 describe('update-metadata.ts', () => {
   let dir: string | undefined;
   afterEach(() => {
@@ -52,6 +70,22 @@ describe('update-metadata.ts', () => {
     }
   }
 
+  it('adds the other architecture from a one-entry manifest', () => {
+    dir = mkdtempSync(join(tmpdir(), 'wb-meta-'));
+    writeFileSync(join(dir, 'Wirebench-2.2.0-windows-x64-setup.exe'), 'x');
+    writeFileSync(join(dir, 'Wirebench-2.2.0-windows-arm64-setup.exe'), 'arm');
+    writeFileSync(
+      join(dir, 'latest.yml'),
+      MANIFEST.replace('  - url: Wirebench-2.2.0-windows-arm64-setup.exe\n    sha512: OLDARM\n    size: 2\n', ''),
+    );
+
+    expect(run(dir, '--add', 'Wirebench-2.2.0-windows-arm64-setup.exe').code).toBe(0);
+    const written = readFileSync(join(dir, 'latest.yml'), 'utf-8');
+    const arm = createHash('sha512').update('arm').digest('base64');
+    expect(written).toContain(`  - url: Wirebench-2.2.0-windows-arm64-setup.exe\n    sha512: ${arm}\n    size: 3`);
+    expect(run(dir, '--check').code).toBe(0);
+  });
+
   it('fails --check on a stale manifest, then writes one that passes it', () => {
     dir = mkdtempSync(join(tmpdir(), 'wb-meta-'));
     writeFileSync(join(dir, 'Wirebench-2.2.0-windows-x64-setup.exe'), 'signed x64');
@@ -63,6 +97,7 @@ describe('update-metadata.ts', () => {
     expect(run(dir, '--check').code).toBe(0);
 
     const written = readFileSync(join(dir, 'latest.yml'), 'utf-8');
+    expect(written.match(/- url:/g)).toHaveLength(2);
     const x64 = createHash('sha512').update('signed x64').digest('base64');
     expect(written).toContain(`    sha512: ${x64}\n    size: 10`);
     expect(written).toContain(`\nsha512: ${x64}\n`);
