@@ -63,6 +63,24 @@ import {
   updateGrpcRequest,
 } from './project-grpc-mutations.js';
 import {
+  addWsApi,
+  addWsFolder,
+  addWsMessage,
+  addWsRequest,
+  cloneWsRequest,
+  findWsFolder,
+  removeWsApi,
+  removeWsFolder,
+  removeWsMessage,
+  removeWsRequest,
+  updateWsApi,
+  updateWsFolder,
+  updateWsMessage,
+  updateWsRequest,
+  moveWsNode,
+  wsApiOwning,
+} from './project-ws-mutations.js';
+import {
   addApi,
   addFolder,
   addRestRequest,
@@ -760,10 +778,16 @@ export async function applyChange(
     case 'remove-api':
       return removeApi(project, change.apiId);
 
-    // The folder changes serve both API kinds: a folder is a folder, and the change names the
+    // The folder changes serve every API kind: a folder is a folder, and the change names the
     // folder or its API, from which the model knows which kind of tree it sits in.
     case 'add-folder':
-      return (project.grpcApis.some((api) => api.id === change.apiId) ? addGrpcFolder : addFolder)(project, {
+      return (
+        project.grpcApis.some((api) => api.id === change.apiId)
+          ? addGrpcFolder
+          : project.wsApis.some((api) => api.id === change.apiId)
+            ? addWsFolder
+            : addFolder
+      )(project, {
         apiId: change.apiId,
         ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
         name: change.name,
@@ -772,12 +796,16 @@ export async function applyChange(
     case 'update-folder':
       return findGrpcFolder(project, change.folderId) !== undefined
         ? updateGrpcFolder(project, change.folderId, change.patch)
-        : updateFolder(project, change.folderId, change.patch);
+        : findWsFolder(project, change.folderId) !== undefined
+          ? updateWsFolder(project, change.folderId, change.patch)
+          : updateFolder(project, change.folderId, change.patch);
 
     case 'remove-folder':
       return findGrpcFolder(project, change.folderId) !== undefined
         ? removeGrpcFolder(project, change.folderId)
-        : removeFolder(project, change.folderId);
+        : findWsFolder(project, change.folderId) !== undefined
+          ? removeWsFolder(project, change.folderId)
+          : removeFolder(project, change.folderId);
 
     case 'add-rest-request':
       return addRestRequest(project, {
@@ -796,7 +824,13 @@ export async function applyChange(
       return cloneRestRequest(project, change.requestId);
 
     case 'move-node':
-      return (grpcApiOwning(project, change.nodeId) !== undefined ? moveGrpcNode : moveNode)(project, {
+      return (
+        grpcApiOwning(project, change.nodeId) !== undefined
+          ? moveGrpcNode
+          : wsApiOwning(project, change.nodeId) !== undefined
+            ? moveWsNode
+            : moveNode
+      )(project, {
         nodeId: change.nodeId,
         ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
         index: change.index,
@@ -834,6 +868,54 @@ export async function applyChange(
 
     case 'clone-grpc-request':
       return cloneGrpcRequest(project, change.requestId);
+
+    case 'add-ws-api':
+      return addWsApi(project, { name: change.name, ...(change.url !== undefined ? { url: change.url } : {}) });
+
+    case 'update-ws-api':
+      return updateWsApi(project, change.apiId, change.patch);
+
+    case 'remove-ws-api':
+      return removeWsApi(project, change.apiId);
+
+    case 'add-ws-request':
+      return addWsRequest(project, {
+        apiId: change.apiId,
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.url !== undefined ? { url: change.url } : {}),
+      });
+
+    case 'update-ws-request':
+      return updateWsRequest(project, change.requestId, change.patch);
+
+    case 'remove-ws-request':
+      return removeWsRequest(project, change.requestId);
+
+    case 'clone-ws-request':
+      return cloneWsRequest(project, change.requestId);
+
+    case 'add-ws-message':
+      return addWsMessage(project, {
+        requestId: change.requestId,
+        name: change.name,
+        ...(change.format !== undefined ? { format: change.format } : {}),
+        ...(change.content !== undefined ? { content: change.content } : {}),
+      });
+
+    case 'update-ws-message':
+      return updateWsMessage(project, {
+        requestId: change.requestId,
+        messageId: change.messageId,
+        patch: {
+          ...(change.patch.name !== undefined ? { name: change.patch.name } : {}),
+          ...(change.patch.format !== undefined ? { format: change.patch.format } : {}),
+          ...(change.patch.content !== undefined ? { content: change.patch.content } : {}),
+        },
+      });
+
+    case 'remove-ws-message':
+      return removeWsMessage(project, { requestId: change.requestId, messageId: change.messageId });
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);

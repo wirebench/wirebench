@@ -72,6 +72,8 @@ const SNAPSHOT = {
   restRequests: [],
   grpcApis: [],
   grpcRequests: [],
+  wsApis: [],
+  wsRequests: [],
   properties: {},
   disabledProperties: [],
   environments: [],

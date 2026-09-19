@@ -174,6 +174,7 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
+import { findWsRequest, locateWsRequest } from './project-ws-mutations.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
@@ -1567,6 +1568,46 @@ export class ProjectHost {
       ...(trustInvalid ? { rejectUnauthorized: false } : {}),
     };
   }
+
+  /** What History names a WebSocket send by: the request, its API, and the folder path inside it. */
+  wsMeta(
+    requestId: string,
+  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const located = locateWsRequest(this.open.project, requestId);
+    if (located === undefined) {
+      return undefined;
+    }
+    return {
+      requestName: located.request.name,
+      apiName: located.api.name,
+      folderPath: located.folders.map((folder) => folder.name).join(' / '),
+    };
+  }
+
+  /** The TLS material a WebSocket call needs, read from the request's settings as {@link grpcTlsFor} does. */
+  async wsTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findWsRequest(this.open.project, requestId);
+    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
+    const ca = await this.trustAnchors();
+    const trustInvalid = request?.settings.trustInvalid === true;
+    if (identity === undefined && ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return {
+      ...(identity !== undefined ? identity : {}),
+      ...(ca !== undefined ? { ca: [...ca] } : {}),
+      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
+    };
+  }
+
+  // wsSend is deliberately not added in this task: it needs resolveWsSend, which the next task
+  // (send integration) creates. Adding it here would leave a send path with no resolver behind it.
 
   /** The gRPC API that is, or that holds, `entityId`. */
   private grpcApiOf(entityId: string): GrpcApi | undefined {

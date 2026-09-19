@@ -1575,6 +1575,96 @@ export const grpcRequestPatchSchema = z.object({
 });
 export type GrpcRequestPatchWire = z.infer<typeof grpcRequestPatchSchema>;
 
+/** A WebSocket folder, sharing the project's `folders` list with REST and gRPC. */
+export const wsFolderWireSchema = restFolderWireSchema;
+export type WsFolderWire = z.infer<typeof wsFolderWireSchema>;
+
+/** Per-request WebSocket transport settings; an absent field means *inherit*, never *off*. */
+export const wsSettingsWireSchema = z.object({
+  handshakeTimeoutMs: z.number().int().nonnegative().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxMessageBytes: z.number().int().nonnegative().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+export type WsSettingsWire = z.infer<typeof wsSettingsWireSchema>;
+
+/** One message saved under a WebSocket request, ready to send without retyping it. */
+export const wsSavedMessageWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  format: z.enum(['text', 'binary']),
+  content: z.string(),
+});
+export type WsSavedMessageWire = z.infer<typeof wsSavedMessageWireSchema>;
+
+/** One WebSocket request as the renderer sees it. */
+export const wsRequestWireSchema = z.object({
+  kind: z.literal('websocket'),
+  id: z.string(),
+  apiId: z.string(),
+  /** Id of the folder it sits in, absent at the API's root. */
+  folderId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  url: z.string(),
+  query: z.array(keyValueWireSchema),
+  headers: z.array(keyValueWireSchema),
+  subprotocols: z.array(z.string()),
+  auth: authConfigWireSchema,
+  settings: wsSettingsWireSchema,
+  messages: z.array(wsSavedMessageWireSchema),
+  orphaned: z.boolean().optional(),
+});
+export type WsRequestWire = z.infer<typeof wsRequestWireSchema>;
+
+/** One WebSocket API as the renderer sees it. Its folders share the project's `folders` list. */
+export const wsApiWireSchema = z.object({
+  kind: z.literal('websocket'),
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  url: z.string(),
+  headers: z.array(keyValueWireSchema),
+  auth: authConfigWireSchema.optional(),
+  definition: z.object({ kind: z.literal('asyncapi'), source: z.string(), cache: z.boolean() }).optional(),
+});
+export type WsApiWire = z.infer<typeof wsApiWireSchema>;
+
+/** The fields of a WebSocket API the renderer may patch; `null` clears an optional one. */
+export const wsApiPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  url: z.string().optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type WsApiPatchWire = z.infer<typeof wsApiPatchSchema>;
+
+/**
+ * The fields of a WebSocket request the renderer may patch. Tables and settings are replaced
+ * wholesale, as a REST request's are: an absent setting means *inherit*. `messages` REPLACES the
+ * whole saved-message list, which is how reordering is expressed.
+ */
+export const wsRequestPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  url: z.string().optional(),
+  query: z.array(keyValueWireSchema).optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  subprotocols: z.array(z.string()).optional(),
+  auth: authConfigWireSchema.optional(),
+  settings: wsSettingsWireSchema.optional(),
+  messages: z.array(wsSavedMessageWireSchema).optional(),
+});
+export type WsRequestPatchWire = z.infer<typeof wsRequestPatchSchema>;
+
 /** One cookie a response set, as the Cookies tab shows it. */
 export const cookieWireSchema = z.object({
   name: z.string(),
@@ -1848,6 +1938,10 @@ export const projectWireSchema = z.object({
   grpcApis: z.array(grpcApiWireSchema),
   /** Every gRPC request of every gRPC API, flat. */
   grpcRequests: z.array(grpcRequestWireSchema),
+  /** The project's WebSocket APIs; their folders are in `folders`, keyed by `apiId` like the rest. */
+  wsApis: z.array(wsApiWireSchema),
+  /** Every WebSocket request of every WebSocket API, flat. */
+  wsRequests: z.array(wsRequestWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -2004,6 +2098,37 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-grpc-request'), requestId: z.string(), patch: grpcRequestPatchSchema }),
   z.object({ kind: z.literal('remove-grpc-request'), requestId: z.string() }),
   z.object({ kind: z.literal('clone-grpc-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('add-ws-api'), name: z.string(), url: z.string().optional() }),
+  z.object({ kind: z.literal('update-ws-api'), apiId: z.string(), patch: wsApiPatchSchema }),
+  z.object({ kind: z.literal('remove-ws-api'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-ws-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+    url: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-ws-request'), requestId: z.string(), patch: wsRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-ws-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-ws-request'), requestId: z.string() }),
+  z.object({
+    kind: z.literal('add-ws-message'),
+    requestId: z.string(),
+    name: z.string(),
+    format: z.enum(['text', 'binary']).optional(),
+    content: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-ws-message'),
+    requestId: z.string(),
+    messageId: z.string(),
+    patch: z.object({
+      name: z.string().optional(),
+      format: z.enum(['text', 'binary']).optional(),
+      content: z.string().optional(),
+    }),
+  }),
+  z.object({ kind: z.literal('remove-ws-message'), requestId: z.string(), messageId: z.string() }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -3669,7 +3794,7 @@ export const searchMatchSchema = z.object({
    * reads as what it was. It decides both the badge in the results list and which editor a click
    * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
    */
-  protocol: z.enum(['soap', 'rest', 'grpc']).optional(),
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.
@@ -3964,6 +4089,8 @@ export const workspaceRestoredResponseSchema = z.object({
   /** The REST drafts the last session left unsaved, by REST request id. */
   restDrafts: z.record(z.string(), restRequestPatchSchema),
   grpcDrafts: z.record(z.string(), grpcRequestPatchSchema).default({}),
+  /** The WebSocket drafts the last session left unsaved, by WebSocket request id. */
+  wsDrafts: z.record(z.string(), wsRequestPatchSchema).default({}),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

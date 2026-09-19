@@ -1,6 +1,6 @@
 import { REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest } from '@wirebench/engine';
+import { createInterface, createProject, createRequest, createWsApi, createWsRequest } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import type { InterfaceSummary } from '../src/shared/wire-types.js';
 import {
@@ -141,6 +141,35 @@ describe('project-wire', () => {
     expect(findRequest(project, 'req-1')?.operation.name).toBe('Add');
     expect(findRequest(project, 'nope')).toBeUndefined();
     expect(toRequestWires(project)).toHaveLength(1);
+  });
+
+  it('projects a WebSocket API and its requests, flattened like a gRPC API', () => {
+    const wsProject: Project = {
+      ...buildProject(),
+      wsApis: [
+        createWsApi('Chat', {
+          id: 'ws-1',
+          url: 'wss://chat.test',
+          requests: [
+            createWsRequest('Lobby', {
+              id: 'ws-req-1',
+              url: '/lobby',
+              messages: [{ id: 'm-1', name: 'Hi', slug: 'Hi', format: 'text', content: 'hi' }],
+            }),
+          ],
+        }),
+      ],
+    };
+    const wire = toProjectWire(wsProject, {
+      dir: '/tmp/demo',
+      dirty: false,
+      problems: [],
+      runtime: new Map(),
+    });
+    expect(wire.wsApis).toMatchObject([{ kind: 'websocket', id: 'ws-1', name: 'Chat', url: 'wss://chat.test' }]);
+    expect(wire.wsRequests).toMatchObject([
+      { kind: 'websocket', id: 'ws-req-1', apiId: 'ws-1', url: '/lobby', messages: [{ name: 'Hi', content: 'hi' }] },
+    ]);
   });
 });
 

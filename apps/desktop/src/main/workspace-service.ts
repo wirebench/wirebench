@@ -118,6 +118,7 @@ import type {
   RestRequestPatchWire,
   UnsavedRestoreNoticeWire,
   WorkspaceRestoredResponse,
+  WsRequestPatchWire,
 } from '../shared/wire-types.js';
 
 /**
@@ -436,6 +437,8 @@ export class WorkspaceService implements ProjectRouter {
   private restDrafts: Record<string, RestRequestPatchWire> = {};
   /** The gRPC editor's unsaved edits, the third of the same set. */
   private grpcDrafts: Record<string, GrpcRequestPatchWire> = {};
+  /** The WebSocket editor's unsaved edits, the fourth of the same set. */
+  private wsDrafts: Record<string, WsRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -635,6 +638,7 @@ export class WorkspaceService implements ProjectRouter {
     this.drafts = {};
     this.restDrafts = {};
     this.grpcDrafts = {};
+    this.wsDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -667,11 +671,13 @@ export class WorkspaceService implements ProjectRouter {
       this.drafts = stashed.requests;
       this.restDrafts = stashed.restRequests;
       this.grpcDrafts = stashed.grpcRequests;
+      this.wsDrafts = stashed.wsRequests;
       this.restored = {
         workspaceId: workspace.id,
         drafts: { ...this.drafts },
         restDrafts: { ...this.restDrafts },
         grpcDrafts: { ...this.grpcDrafts },
+        wsDrafts: { ...this.wsDrafts },
         notices,
       };
 
@@ -904,6 +910,7 @@ export class WorkspaceService implements ProjectRouter {
     this.drafts = {};
     this.restDrafts = {};
     this.grpcDrafts = {};
+    this.wsDrafts = {};
     this.restored = undefined;
     this.deps.history.closeAll();
     this.index.clear();
@@ -1779,7 +1786,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
+    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
     await store.idle();
   }
 
@@ -1831,6 +1838,7 @@ export class WorkspaceService implements ProjectRouter {
     requests: Readonly<Record<string, RequestPatchWire>>,
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
     grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
+    wsRequests: Readonly<Record<string, WsRequestPatchWire>> = {},
   ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
@@ -1841,7 +1849,8 @@ export class WorkspaceService implements ProjectRouter {
       this.drafts = { ...requests };
       this.restDrafts = { ...restRequests };
       this.grpcDrafts = { ...grpcRequests };
-      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
+      this.wsDrafts = { ...wsRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -1874,6 +1883,7 @@ export class WorkspaceService implements ProjectRouter {
         drafts: {},
         restDrafts: {},
         grpcDrafts: {},
+        wsDrafts: {},
         notices: [],
       }
     );
@@ -2240,6 +2250,12 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.grpcRequests) {
         add(request.id);
       }
+      for (const api of project.wsApis) {
+        add(api.id);
+      }
+      for (const request of project.wsRequests) {
+        add(request.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }
@@ -2449,6 +2465,16 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   grpcRefresh(...args: Parameters<ProjectRouter['grpcRefresh']>): ReturnType<ProjectRouter['grpcRefresh']> {
     return this.hostOfEntity(args[0]).refreshGrpcDefinition(...args);
+  }
+
+  /** @inheritdoc */
+  wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
+    return this.hostOfEntity(args[0]).wsTlsFor(...args);
+  }
+
+  /** @inheritdoc */
+  wsMeta(...args: Parameters<ProjectRouter['wsMeta']>): ReturnType<ProjectRouter['wsMeta']> {
+    return this.hostOfEntity(args[0]).wsMeta(...args);
   }
 
   /**

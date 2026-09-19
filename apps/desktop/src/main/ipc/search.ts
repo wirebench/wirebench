@@ -164,6 +164,45 @@ function collectFrom(
     }
   }
 
+  // A WebSocket request's searchable text is its URL, its subprotocols and its saved messages —
+  // the header table is a separate document, as for the other two protocols.
+  for (const request of snapshot.wsRequests) {
+    const apiName = snapshot.wsApis.find((api) => api.id === request.apiId)?.name ?? request.apiId;
+    if (scopes.requestBodies) {
+      const lines = [request.url];
+      if (request.subprotocols.length > 0) {
+        lines.push(request.subprotocols.join(', '));
+      }
+      for (const message of request.messages) {
+        lines.push(`${message.name}: ${message.content}`);
+      }
+      documents.push({
+        kind: 'request-body',
+        protocol: 'websocket',
+        text: lines.join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
+      });
+    }
+    if (scopes.headers && request.headers.length > 0) {
+      documents.push({
+        kind: 'request-header',
+        protocol: 'websocket',
+        text: request.headers.map((header) => `${header.name}: ${header.value}`).join('\n'),
+        projectId,
+        projectName,
+        requestId: request.id,
+        requestName: request.name,
+        interfaceId: request.apiId,
+        interfaceName: apiName,
+      });
+    }
+  }
+
   if (scopes.definitions) {
     for (const summary of snapshot.interfaces) {
       let bundle;

@@ -89,6 +89,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: { r1: { envelopeXml: '<restored/>' }, gone: { envelopeXml: '<orphan/>' } },
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [],
     });
 
@@ -105,6 +106,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: { r1: { envelopeXml: '<restored/>' } },
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [],
     });
 
@@ -118,6 +120,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: {},
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [
         {
           projectId: 'p1',

@@ -30,6 +30,8 @@ import type {
   Project,
   RequestDef,
   UpdatePlan,
+  WsApi,
+  WsRequestDef,
   WssEntry,
   WssRef,
 } from '@wirebench/engine';
@@ -50,6 +52,8 @@ import type {
   UpdatePlanWire,
   InterfaceWire,
   KeystoreWire,
+  WsApiWire,
+  WsRequestWire,
   WssEntryWire,
   WssIncomingWire,
   WssOutgoingWire,
@@ -519,10 +523,84 @@ function toGrpcTreeWires(apis: readonly GrpcApi[]): {
   return { folders, requests };
 }
 
+/** A WebSocket API's own row; its folders and requests travel flat beside it like a gRPC API's. */
+function toWsApiWire(api: WsApi): WsApiWire {
+  return {
+    kind: 'websocket',
+    id: api.id,
+    name: api.name,
+    slug: api.slug,
+    order: api.order,
+    ...(api.description !== undefined ? { description: api.description } : {}),
+    url: api.url,
+    headers: toKeyValueWires(api.headers),
+    ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
+    ...(api.definition !== undefined
+      ? { definition: { kind: api.definition.kind, source: api.definition.source, cache: api.definition.cache } }
+      : {}),
+  };
+}
+
+function toWsMessageWire(message: WsRequestDef['messages'][number]): WsRequestWire['messages'][number] {
+  return { id: message.id, name: message.name, slug: message.slug, format: message.format, content: message.content };
+}
+
+function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string | undefined): WsRequestWire {
+  return {
+    kind: 'websocket',
+    id: request.id,
+    apiId,
+    ...(folderId !== undefined ? { folderId } : {}),
+    name: request.name,
+    slug: request.slug,
+    order: request.order,
+    ...(request.description !== undefined ? { description: request.description } : {}),
+    url: request.url,
+    query: toKeyValueWires(request.query),
+    headers: toKeyValueWires(request.headers),
+    subprotocols: [...request.subprotocols],
+    auth: toAuthConfigWire(request.auth),
+    settings: { ...request.settings },
+    messages: request.messages.map(toWsMessageWire),
+  };
+}
+
+/** Every folder and WebSocket request of every WebSocket API, flattened; the folders join the rest. */
+function toWsTreeWires(apis: readonly WsApi[]): {
+  readonly folders: RestFolderWire[];
+  readonly requests: WsRequestWire[];
+} {
+  const folders: RestFolderWire[] = [];
+  const requests: WsRequestWire[] = [];
+  const walk = (api: WsApi, container: Pick<WsApi, 'folders' | 'requests'>, parentId?: string): void => {
+    for (const request of container.requests) {
+      requests.push(toWsRequestWire(request, api.id, parentId));
+    }
+    for (const folder of container.folders) {
+      folders.push({
+        id: folder.id,
+        apiId: api.id,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name: folder.name,
+        slug: folder.slug,
+        order: folder.order,
+        ...(folder.description !== undefined ? { description: folder.description } : {}),
+        ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+      });
+      walk(api, folder, folder.id);
+    }
+  };
+  for (const api of apis) {
+    walk(api, api);
+  }
+  return { folders, requests };
+}
+
 /** Converts the whole open project into the snapshot the renderer mirrors. */
 export function toProjectWire(project: Project, context: ProjectWireContext): ProjectWire {
   const restTree = toRestTreeWires(project.apis);
   const grpcTree = toGrpcTreeWires(project.grpcApis);
+  const wsTree = toWsTreeWires(project.wsApis);
   return {
     id: project.id,
     name: project.name,
@@ -532,10 +610,12 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
     apis: project.apis.map(toApiWire),
-    folders: [...restTree.folders, ...grpcTree.folders],
+    folders: [...restTree.folders, ...grpcTree.folders, ...wsTree.folders],
     restRequests: restTree.requests,
     grpcApis: project.grpcApis.map(toGrpcApiWire),
     grpcRequests: grpcTree.requests,
+    wsApis: project.wsApis.map(toWsApiWire),
+    wsRequests: wsTree.requests,
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),

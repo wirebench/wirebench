@@ -25,15 +25,21 @@ export const REQUEST_PROPERTIES: RequestPropertiesWire = {
 export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTINGS };
 
 /**
- * The REST halves of a `ProjectWire`, empty. Spread into a fixture that is about SOAP so the
- * snapshot stays complete without every such test having to mention APIs it does not use.
+ * The REST/gRPC/WebSocket halves of a `ProjectWire`, empty. Spread into a fixture that is about
+ * SOAP so the snapshot stays complete without every such test having to mention APIs it does not
+ * use.
  */
-export const NO_REST: Pick<ProjectWire, 'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests'> = {
+export const NO_REST: Pick<
+  ProjectWire,
+  'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests' | 'wsApis' | 'wsRequests'
+> = {
   apis: [],
   folders: [],
   restRequests: [],
   grpcApis: [],
   grpcRequests: [],
+  wsApis: [],
+  wsRequests: [],
 };
 
 /** One gRPC API on the wire. */

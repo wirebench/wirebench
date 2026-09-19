@@ -163,19 +163,33 @@ describe('UnsavedStore', () => {
       requests: { r1: { envelopeXml: '<a/>' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
     await store.writeDrafts({});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {} });
+    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
 
-    // Both protocols' drafts live in one file, and either alone is enough to keep it.
+    // All four protocols' drafts live in one file, and any one alone is enough to keep it.
     await store.writeDrafts({}, { rest1: { url: '/pets' } });
     expect(await store.readDrafts()).toEqual({
       requests: {},
       restRequests: { rest1: { url: '/pets' } },
       grpcRequests: {},
+      wsRequests: {},
     });
     await store.writeDrafts({}, {});
-    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {} });
+    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
+    expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
+
+    // A WebSocket draft alone also keeps the file.
+    await store.writeDrafts({}, {}, {}, { ws1: { url: '/ws' } });
+    expect(await store.readDrafts()).toEqual({
+      requests: {},
+      restRequests: {},
+      grpcRequests: {},
+      wsRequests: { ws1: { url: '/ws' } },
+    });
+    await store.writeDrafts({}, {}, {}, {});
+    expect(await store.readDrafts()).toEqual({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
     expect(await readdir(join(dir, 'unsaved'))).toEqual([]);
   });
 

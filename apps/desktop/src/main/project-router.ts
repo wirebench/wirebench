@@ -129,6 +129,10 @@ export interface ProjectRouter {
   grpcRefresh(
     ...args: Parameters<ProjectHost['refreshGrpcDefinition']>
   ): ReturnType<ProjectHost['refreshGrpcDefinition']>;
+  /** The TLS material a WebSocket call needs: anchors, client identity, its own trust decision. */
+  wsTlsFor(...args: Parameters<ProjectHost['wsTlsFor']>): ReturnType<ProjectHost['wsTlsFor']>;
+  /** What History names a WebSocket send by: the request, its API, and its folder path. */
+  wsMeta(...args: Parameters<ProjectHost['wsMeta']>): ReturnType<ProjectHost['wsMeta']>;
   wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(
