@@ -11,7 +11,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
   artifact name that matches the NSIS naming and a fixed upgrade code. Add `*.msi` to the uploaded
   artifacts.
   - Verify: a rehearsal produces two `.msi` files.
-- [ ] **T2. `update-metadata.ts`.** Rewrite `sha512` and `size` in `latest.yml` from the files beside it,
+- [x] **T2. `update-metadata.ts`.** Rewrite `sha512` and `size` in `latest.yml` from the files beside it,
   and add `--check`.
   - Verify: Vitest (rewrite, other fields untouched, stale `--check` fails).
 - [ ] **T3. Windows pipeline.** Split the Windows build into `win-unpacked`, `sign-app`,
