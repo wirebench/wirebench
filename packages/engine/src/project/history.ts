@@ -11,6 +11,8 @@
 import { ulid } from 'ulidx';
 import { nodeFs, readFileIfExists, writeFileAtomic } from './fs.js';
 import type { FsLike } from './fs.js';
+import type { WsExchange, WsFrame } from '../ws/model.js';
+import { capFrames } from '../ws/transcript.js';
 
 /** One HTTP header, in author order. */
 export interface HistoryHeader {
@@ -52,6 +54,30 @@ export interface HistoryGrpc {
 }
 
 /**
+ * The WebSocket side of a history entry: one session's handshake outcome, how it closed, the
+ * frame counts, and a capped transcript ({@link capFrames}) so a chatty session doesn't blow up
+ * the history file.
+ */
+export interface HistoryWs {
+  readonly url: string;
+  /** The handshake's HTTP status, absent when the handshake never got a response. */
+  readonly status?: number;
+  /** The subprotocol the server picked, absent when none was negotiated. */
+  readonly protocol?: string;
+  readonly closeCode: number;
+  readonly closeReason: string;
+  readonly closedBy: 'client' | 'server' | 'error';
+  readonly counts: WsExchange['counts'];
+  readonly frames: readonly WsFrame[];
+  /** Set only when {@link capFrames} actually trimmed something (frames, or just a payload). */
+  readonly truncated?: boolean;
+  /** How many frames were dropped by the head/tail cap; absent when only a payload was stripped. */
+  readonly omittedFrames?: number;
+  /** The handshake's transport error, absent when the handshake succeeded (or never ran). */
+  readonly error?: string;
+}
+
+/**
  * One recorded send. Stored **already redacted** by the caller — this module has no concept of
  * secrets and never inspects `request`/`response` bodies beyond storing and searching them.
  */
@@ -66,7 +92,7 @@ export interface HistoryEntry {
    * several — a gRPC server stream — extends this union with its own shape rather than bending
    * this one, which is why the field exists before there is a second value for it to hold.
    */
-  readonly kind?: 'soap' | 'rest' | 'grpc';
+  readonly kind?: 'soap' | 'rest' | 'grpc' | 'websocket';
   /** The HTTP method, for a REST send. A SOAP send is always a POST and does not record one. */
   readonly method?: string;
   /** ISO-8601 timestamp of the send. */
@@ -98,8 +124,10 @@ export interface HistoryEntry {
     readonly statusText: string;
   };
   readonly error?: HistoryError;
-  /** The call record of a gRPC send; absent for the other two protocols. */
+  /** The call record of a gRPC send; absent for the other protocols. */
   readonly grpc?: HistoryGrpc;
+  /** The session record of a WebSocket send; absent for the other protocols. */
+  readonly ws?: HistoryWs;
   readonly sizeBytes: number;
   readonly tags?: readonly string[];
 }
@@ -159,6 +187,8 @@ function matches(entry: HistoryEntry, needle: string): boolean {
     entry.grpc?.service ?? '',
     entry.grpc?.method ?? '',
     entry.grpc?.statusName ?? '',
+    entry.ws?.url ?? '',
+    entry.ws?.protocol ?? '',
     entry.status !== undefined ? String(entry.status) : '',
     entry.fault?.reason ?? '',
     ...(entry.tags ?? []),
@@ -296,4 +326,21 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
 /** Generates a new history entry id (ulid: lexicographically time-ordered, unique). */
 export function generateHistoryId(): string {
   return ulid();
+}
+
+/** Builds a {@link HistoryWs} from a completed session, applying {@link capFrames}. */
+export function historyWsOf(exchange: WsExchange): HistoryWs {
+  const { frames, truncated, omittedFrames } = capFrames(exchange.frames);
+  return {
+    url: exchange.url,
+    ...(exchange.handshake.status !== undefined ? { status: exchange.handshake.status } : {}),
+    ...(exchange.handshake.protocol !== undefined ? { protocol: exchange.handshake.protocol } : {}),
+    closeCode: exchange.closed.code,
+    closeReason: exchange.closed.reason,
+    closedBy: exchange.closed.by,
+    counts: exchange.counts,
+    frames,
+    ...(truncated ? { truncated: true, ...(omittedFrames > 0 ? { omittedFrames } : {}) } : {}),
+    ...(exchange.handshake.error !== undefined ? { error: exchange.handshake.error } : {}),
+  };
 }

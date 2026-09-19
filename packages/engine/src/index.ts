@@ -622,7 +622,13 @@ export {
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
 export { nodeFs, writeFileAtomic } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
+export {
+  appendHistory,
+  generateHistoryId,
+  historyWsOf,
+  normalizeHistoryEntry,
+  openHistory,
+} from './project/history.js';
 export type {
   HistoryEntry,
   HistoryError,
@@ -632,6 +638,7 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryOptions,
+  HistoryWs,
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
