@@ -16,6 +16,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /** What {@link updateManifest} needs to know about one file the manifest names. */
 export interface FileFacts {
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
   process.stdout.write(`Wrote ${target}\n`);
 }
 
-if (process.argv[1] !== undefined && import.meta.url === new URL(process.argv[1], 'file:').href) {
+// `pathToFileURL`, not `new URL(path, 'file:')`: the latter mangles a Windows path such as `C:\\…`.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
