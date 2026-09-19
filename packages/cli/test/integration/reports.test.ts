@@ -35,6 +35,7 @@ describe('junit and json report files', () => {
     const dir = await tempDir();
     const junitFile = join(dir, 'out', 'r.xml');
     const jsonFile = join(dir, 'out', 'r.json');
+    const htmlFile = join(dir, 'out', 'r.html');
     const { code, stdout } = await runCli([
       'run',
       FIXTURE,
@@ -45,6 +46,8 @@ describe('junit and json report files', () => {
       `junit=${junitFile}`,
       '--reporter',
       `json=${jsonFile}`,
+      '--reporter',
+      `html=${htmlFile}`,
       '--reporter',
       'cli',
       'demo/ok',
@@ -59,6 +62,10 @@ describe('junit and json report files', () => {
 
     const json = JSON.parse(await readFile(jsonFile, 'utf8')) as { formatVersion: number };
     expect(json.formatVersion).toBe(1);
+
+    const html = await readFile(htmlFile, 'utf8');
+    expect(html.startsWith('<!doctype html>')).toBe(true);
+    expect(html).toContain('demo/ok');
   });
 
   it('still writes both reports on a failing run', async () => {
@@ -106,6 +113,7 @@ describe('junit and json report files', () => {
     const dir = await tempDir();
     const junitFile = join(dir, 'out', 'r.xml');
     const jsonFile = join(dir, 'out', 'r.json');
+    const htmlFile = join(dir, 'out', 'r.html');
     const password = 'wrong-pass-long';
     const { code } = await runCli(
       [
@@ -118,6 +126,8 @@ describe('junit and json report files', () => {
         `junit=${junitFile}`,
         '--reporter',
         `json=${jsonFile}`,
+        '--reporter',
+        `html=${htmlFile}`,
         'demo/secure',
       ],
       { WIREBENCH_SECRET_DEMO_PASSWORD: password },
@@ -126,7 +136,8 @@ describe('junit and json report files', () => {
     const basic = `Basic ${Buffer.from(`svc:${password}`).toString('base64')}`;
     const junit = await readFile(junitFile, 'utf8');
     const json = await readFile(jsonFile, 'utf8');
-    for (const content of [junit, json]) {
+    const html = await readFile(htmlFile, 'utf8');
+    for (const content of [junit, json, html]) {
       expect(content).not.toContain(password);
       expect(content).not.toContain(basic);
     }

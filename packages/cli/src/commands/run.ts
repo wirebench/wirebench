@@ -20,6 +20,7 @@ import type { CliIo } from '../main.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { createCliReporter } from '../reporters/cli.js';
+import { renderHtml } from '../reporters/html.js';
 import { renderJson } from '../reporters/json.js';
 import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
@@ -96,7 +97,8 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
       const tool = cliTool();
       return createFileReporter(spec.file, (result) => renderJson(result, tool));
     }
-    throw new UsageError(`--reporter ${spec.kind} is not available yet`);
+    const tool = cliTool();
+    return createFileReporter(spec.file, (result) => renderHtml(result, tool));
   });
 }
 

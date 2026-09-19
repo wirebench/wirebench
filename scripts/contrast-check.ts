@@ -150,6 +150,19 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-handle-active', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, dragging' },
 ];
 
+/**
+ * The `html` CLI report is a standalone document, not part of the desktop shell, but it reuses
+ * these same tokens for its outcome marks on its own page background. It has no place in `PAIRS`
+ * above (that list is annotated by the desktop component that renders each pair), so its
+ * foreground/background combinations get their own short list here.
+ */
+const REPORT_PAIRS: readonly Pair[] = [
+  { fg: '--wb-fg-default', bg: '--wb-bg-base', kind: 'text', where: 'html report body copy' },
+  { fg: '--wb-status-success', bg: '--wb-bg-base', kind: 'text', where: 'html report passed mark' },
+  { fg: '--wb-status-danger', bg: '--wb-bg-base', kind: 'text', where: 'html report failed/errored mark' },
+  { fg: '--wb-status-warning', bg: '--wb-bg-base', kind: 'text', where: 'html report skipped mark' },
+];
+
 /** One `[data-theme]`-style block's declarations, as `--wb-token` -> literal value. */
 type Declarations = ReadonlyMap<string, string>;
 
@@ -263,7 +276,7 @@ export function checkTokens(css: string): readonly CheckResult[] {
   ];
 
   return palettes.flatMap(([theme, declarations]) =>
-    PAIRS.map((pair) => {
+    [...PAIRS, ...REPORT_PAIRS].map((pair) => {
       const fgValue = resolveToken(pair.fg, declarations);
       const bgValue = resolveToken(pair.bg, declarations);
       const ratio = Math.round(contrastRatio(fgValue, bgValue) * 100) / 100;
