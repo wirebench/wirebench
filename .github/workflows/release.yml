@@ -151,7 +151,7 @@ jobs:
         run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Sign the app with SignPath
         if: steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
@@ -160,6 +160,8 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_APP_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.win-unpacked.outputs.artifact-id }}
           wait-for-completion: true
+          # Every request waits for a person to approve it in SignPath; a hosted job lives 6 hours.
+          wait-for-completion-timeout-in-seconds: 18000
           output-artifact-directory: win-app
       - name: Pass the app through unsigned
         if: steps.signpath.outputs.enabled != 'true'
@@ -233,7 +235,7 @@ jobs:
       # SignPath signs the .exe and .msi files and returns the rest of the artifact unchanged.
       - name: Sign the installers with SignPath
         if: steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
@@ -242,6 +244,8 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLERS_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.win-installers.outputs.artifact-id }}
           wait-for-completion: true
+          # Every request waits for a person to approve it in SignPath; a hosted job lives 6 hours.
+          wait-for-completion-timeout-in-seconds: 18000
           output-artifact-directory: windows
       - name: Pass the installers through unsigned
         if: steps.signpath.outputs.enabled != 'true'
@@ -265,19 +269,76 @@ jobs:
           if-no-files-found: error
           path: windows/
 
+  # A CycloneDX SBOM of what ships: the desktop app's production dependency tree, deployed on its
+  # own so development tooling is not listed as part of the product.
+  sbom:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy the production dependency tree
+        run: |
+          pnpm build
+          pnpm --filter @wirebench/desktop deploy --prod sbom-root
+          echo "version=$(node -p "require('./apps/desktop/package.json').version")" >> "$GITHUB_ENV"
+      - uses: anchore/sbom-action@v0
+        with:
+          path: sbom-root
+          format: cyclonedx-json
+          output-file: wirebench-${{ env.version }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wirebench-sbom
+          if-no-files-found: error
+          path: wirebench-${{ env.version }}.cdx.json
+
   release:
-    needs: [build, win-sign-installers]
+    needs: [build, win-sign-installers, sbom]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # The only job that writes: it creates the draft release and attaches the artifacts.
+    # `id-token` and `attestations` let it sign the provenance of what it publishes.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
+      # Only what ships: the intermediate Windows artifacts (unpacked apps, unsigned installers)
+      # are not named `wirebench-*`.
       - uses: actions/download-artifact@v8
         with:
+          pattern: wirebench-*
           path: artifacts
           merge-multiple: true
+      - name: Find the SBOM
+        id: sbom
+        run: echo "path=$(ls artifacts/*.cdx.json)" >> "$GITHUB_OUTPUT"
+
+      # Provenance for every file in the release, and the SBOM bound to each installer, so anyone
+      # can check a download with `gh attestation verify <file> --repo wirebench/wirebench`.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: artifacts/*
+      - uses: actions/attest-sbom@v4
+        with:
+          subject-path: |
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/*.msi
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.snap
+          sbom-path: ${{ steps.sbom.outputs.path }}
 
       # The tag's own section of the changelog, when there is one; otherwise GitHub's
       # generated notes. Never invents a body.

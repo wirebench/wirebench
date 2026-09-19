@@ -18,7 +18,7 @@ describe it. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1 pnp
   `win-installers`, `sign-installers` and `win-update-metadata`. The signing jobs pass the files
   through when `SIGNPATH_API_TOKEN` is unset.
   - Verify: a rehearsal with no secrets goes green, and its `latest.yml` passes `--check`.
-- [ ] **T4. SBOM and attestations.** Add an `sbom` job that writes CycloneDX JSON. On tags, the
+- [x] **T4. SBOM and attestations.** Add an `sbom` job that writes CycloneDX JSON. On tags, the
   `release` job attests every artifact and the SBOM (`id-token: write` and `attestations: write`, on
   that job only).
   - Verify: a rehearsal uploads the SBOM; the attestation steps are skipped off-tag.
