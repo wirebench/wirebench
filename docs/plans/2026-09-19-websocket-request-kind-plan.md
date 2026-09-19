@@ -688,7 +688,7 @@ describe('ws model', () => {
   it('creates a request with inherited auth and nothing saved', () => {
     expect(createWsRequest('Feed', { id: 'r1' })).toMatchObject({
       kind: 'websocket',
-      slug: 'feed',
+      slug: 'Feed',
       url: '',
       auth: { type: 'inherit' },
       messages: [],
@@ -705,11 +705,11 @@ describe('ws model', () => {
   });
   it('names a message file by what it holds', () => {
     const name = (n: string, input: Parameters<typeof createWsSavedMessage>[1]) =>
-      wsMessageFileName('feed', createWsSavedMessage(n, input));
-    expect(name('Subscribe', { content: '{"op":"sub"}' })).toBe('feed.msg-subscribe.json');
-    expect(name('Hello', { content: '<hi/>' })).toBe('feed.msg-hello.xml');
-    expect(name('Plain', { content: 'hi' })).toBe('feed.msg-plain.txt');
-    expect(name('Blob', { format: 'binary', content: 'AAEC' })).toBe('feed.msg-blob.b64');
+      wsMessageFileName('Feed', createWsSavedMessage(n, input));
+    expect(name('Subscribe', { content: '{"op":"sub"}' })).toBe('Feed.msg-Subscribe.json');
+    expect(name('Hello', { content: '<hi/>' })).toBe('Feed.msg-Hello.xml');
+    expect(name('Plain', { content: 'hi' })).toBe('Feed.msg-Plain.txt');
+    expect(name('Blob', { format: 'binary', content: 'AAEC' })).toBe('Feed.msg-Blob.b64');
   });
 });
 ```
@@ -1339,13 +1339,13 @@ it('round-trips a WebSocket API byte-identically', async () => {
     wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [request] })],
   };
   const first = serializeProject(project);
-  expect([...first.keys()].filter((k) => k.startsWith('apis/live/')).sort()).toEqual([
-    'apis/live/api.yaml',
-    'apis/live/requests/feed.msg-blob.b64',
-    'apis/live/requests/feed.msg-subscribe.json',
-    'apis/live/requests/feed.request.yaml',
+  expect([...first.keys()].filter((k) => k.startsWith('apis/Live/')).sort()).toEqual([
+    'apis/Live/api.yaml',
+    'apis/Live/requests/Feed.msg-Blob.b64',
+    'apis/Live/requests/Feed.msg-Subscribe.json',
+    'apis/Live/requests/Feed.request.yaml',
   ]);
-  expect(first.get('apis/live/api.yaml')).toMatch(/^kind: websocket\n/);
+  expect(first.get('apis/Live/api.yaml')).toMatch(/^kind: websocket\n/);
   const reloaded = await loadFrom(first);
   expect(reloaded.problems).toEqual([]);
   expect(reloaded.project.wsApis[0]?.requests[0]?.messages.map((m) => m.content)).toEqual(['{"op":"sub"}', 'AAEC']);
@@ -1360,7 +1360,7 @@ it('round-trips a WebSocket API byte-identically', async () => {
     naming the file;
   - a message slug of `../../etc` makes `serializeProject` throw the path-safety error (`/path/i`);
   - two messages with the same slug make `serializeProject` throw `duplicate-slug`;
-  - renaming the request slug `feed` → `ticker` yields the four `ticker.*` paths and none of the `feed.*` ones;
+  - renaming the request slug `Feed` → `Ticker` yields the `Ticker.*` paths and none of the `Feed.*` ones (slugs keep their case: the shared `slugify` preserves it);
   - `assertSupportedKind({ kind: 'graphql' }, 'apis/x/api.yaml')` throws
     `apis/x/api.yaml is a "graphql" document, which this build cannot open`, and `{ kind: 'websocket' }` does not throw.
 
