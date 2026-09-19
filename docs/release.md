@@ -16,10 +16,12 @@ a file keeps its meaning once it is out of the release page and sitting in a dow
 | macOS | `Wirebench-1.0.0-mac-universal.dmg`, `Wirebench-1.0.0-mac-x64.dmg`, `Wirebench-1.0.0-mac-arm64.dmg` |
 | macOS | the same three as `.zip`, which is what the updater downloads |
 | Windows | `Wirebench-1.0.0-windows-x64-setup.exe`, `Wirebench-1.0.0-windows-arm64-setup.exe` |
+| Windows | `Wirebench-1.0.0-windows-x64.msi`, `Wirebench-1.0.0-windows-arm64.msi`, for fleet deployment |
 | Linux | `Wirebench-1.0.0-linux-x86_64.AppImage`, `Wirebench-1.0.0-linux-arm64.AppImage` |
 | Linux | `wirebench_1.0.0_amd64.deb`, `wirebench_1.0.0_arm64.deb` |
 | Linux | `wirebench-1.0.0.x86_64.rpm` |
 | Linux | `wirebench_1.0.0_amd64.snap` |
+| All | `wirebench-1.0.0.cdx.json`, the CycloneDX SBOM |
 
 `${arch}` is not one vocabulary: electron-builder renders x64 as `x86_64` for the AppImage and
 the rpm, and as `amd64` for the deb, because that is what each format calls it. Only the arm64
@@ -140,8 +142,9 @@ them permanent:
 
 - **No tag exists yet**, so `release.yml` has never run. Pushing the tag is a deliberate, human
   step — see below — not something automation should do on its own.
-- **The signing and notarisation secrets** described below must be present in the repository
-  settings, or the workflow produces unsigned artifacts.
+- **The signing and notarisation setup** described below must be in place, or the workflow
+  produces unsigned artifacts: [Windows signing](#windows-signing-signpath) and
+  [macOS signing and notarisation](#macos-signing-and-notarisation).
 
 `CHANGELOG.md` already carries a prepared `## [1.0.0] - 2026-09-11` section, so step 2 above is
 done for the first release; check the date still matches the day you tag.
@@ -191,23 +194,107 @@ Three things the repository can't do for itself, outside `release.yml`:
 3. Run `release.yml` by `workflow_dispatch` once and check the rehearsal (previous section) before
    pushing the first tag meant to publish.
 
-## Required secrets
+## Windows signing (SignPath)
 
-All of these are optional: with none of them set the workflow still succeeds and produces
-unsigned artifacts.
+Windows builds are signed through the [SignPath Foundation](https://signpath.org/) programme for
+open-source projects. It is free. The certificate is issued to SignPath Foundation, so Windows names
+**SignPath Foundation** as the publisher. Every signing request waits for a person to approve it in
+SignPath.
 
-| Secret | Platform | Purpose |
-| --- | --- | --- |
-| `CSC_LINK` | macOS | Base64 `.p12` of the *Developer ID Application* certificate. |
-| `CSC_KEY_PASSWORD` | macOS | Password for that `.p12`. |
-| `APPLE_ID` | macOS | Apple ID used for notarization. |
-| `APPLE_APP_SPECIFIC_PASSWORD` | macOS | App-specific password for that Apple ID. |
-| `APPLE_TEAM_ID` | macOS | Team the certificate belongs to. |
-| `WIN_CSC_LINK` | Windows | Base64 code-signing certificate. |
-| `WIN_CSC_KEY_PASSWORD` | Windows | Password for it. |
+The release workflow signs twice:
 
-Notarization runs only when all three `APPLE_*` values are present. `GITHUB_TOKEN` is provided
-by Actions and is the only credential the draft-release step needs.
+1. **`win-sign-app`** signs the unpacked apps (`Wirebench.exe` and the other executables, both
+   architectures). The signing comes after `afterPack` has flipped the fuses, and before any installer
+   exists, so the installed program is signed too: a fleet's application-control policy checks that
+   file, not only the setup file.
+2. **`win-sign-installers`** signs the NSIS and MSI installers that `win-installers` built around the
+   signed apps with `electron-builder --prepackaged`.
+
+Signing rewrites an installer's bytes, so `scripts/update-metadata.ts` then recomputes the `sha512`
+and `size` in `latest.yml` and checks them (`--check`). Without that step, auto-update would reject
+every signed download. The same step folds the arm64 installer into the manifest, because
+`--prepackaged` packages one architecture per run. The installers' blockmaps no longer match once
+they are signed, so they are dropped. The updater then downloads a whole installer instead of the
+changed blocks.
+
+Until `SIGNPATH_API_TOKEN` is set, both signing jobs pass their input through unsigned.
+
+### Setting it up
+
+1. Apply to the SignPath Foundation programme for `wirebench/wirebench`. The programme asks for the
+   project's code-signing policy, which is published at
+   <https://wirebench.github.io/wirebench/help/code-signing-policy/>.
+2. In SignPath, create the project and connect it to this repository as a trusted build system
+   (GitHub Actions).
+3. Create two **artifact configurations**:
+   - **app**: a ZIP holding `win-unpacked/` and `win-arm64-unpacked/`, signing every
+     `*.exe` and `*.dll` inside (deep signing);
+   - **installers**: a ZIP holding the `*.exe` and `*.msi` installers, signing each one, and passing
+     `latest.yml` through unchanged.
+4. Create a release signing policy, with the approvers who may release.
+5. Add these to the repository settings:
+
+   | Name | Kind | Value |
+   | --- | --- | --- |
+   | `SIGNPATH_API_TOKEN` | Secret | An API token of a SignPath CI user with submitter rights |
+   | `SIGNPATH_ORGANIZATION_ID` | Secret | The SignPath organisation ID |
+   | `SIGNPATH_PROJECT_SLUG` | Variable | The project's slug |
+   | `SIGNPATH_POLICY_SLUG` | Variable | The release signing policy's slug |
+   | `SIGNPATH_APP_CONFIGURATION_SLUG` | Variable | The **app** configuration's slug |
+   | `SIGNPATH_INSTALLERS_CONFIGURATION_SLUG` | Variable | The **installers** configuration's slug |
+
+6. Rehearse with `gh workflow run release.yml`. Approve both requests in SignPath, then check that
+   the installer and the installed `Wirebench.exe` both show a valid signature (**Properties →
+   Digital Signatures**).
+
+A signing job waits up to five hours for its approval, inside a hosted job's six-hour limit. After
+that the run fails, and the release has to be re-run.
+
+## macOS signing and notarisation
+
+electron-builder signs the macOS builds with a *Developer ID Application* certificate and notarises
+them with Apple. It does both only when all of these secrets are set; with none of them, the builds
+are ad-hoc signed and Gatekeeper blocks them.
+
+1. Enrol in the [Apple Developer Program](https://developer.apple.com/programs/), as an organisation
+   if the publisher should read as one.
+2. In **Certificates, Identifiers & Profiles**, create a **Developer ID Application** certificate from
+   a certificate signing request made in Keychain Access.
+3. Export it with its private key as a `.p12`, and set `CSC_LINK` to its base64 (`base64 -i cert.p12`)
+   and `CSC_KEY_PASSWORD` to the export password.
+4. Create an app-specific password for the Apple ID at <https://account.apple.com>, and set `APPLE_ID`,
+   `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`.
+5. Rehearse, then check a downloaded `.dmg` with `spctl -a -vv -t install Wirebench-…dmg`. The answer
+   should be `accepted`, with `source=Notarized Developer ID`.
+
+| Secret | Purpose |
+| --- | --- |
+| `CSC_LINK` | Base64 `.p12` of the *Developer ID Application* certificate |
+| `CSC_KEY_PASSWORD` | Password for that `.p12` |
+| `APPLE_ID` | Apple ID used for notarisation |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID |
+| `APPLE_TEAM_ID` | Team the certificate belongs to |
+
+Notarisation runs only when all three `APPLE_*` values are present. `GITHUB_TOKEN` is provided by
+Actions, and it is the only credential the draft-release step needs.
+
+## SBOM and attestations
+
+Every release carries `wirebench-<version>.cdx.json`, a CycloneDX SBOM. The `sbom` job runs
+`pnpm deploy --prod` to lay out the desktop app's production dependencies on their own, then Syft
+(`anchore/sbom-action`) lists them. Build tooling is left out because it doesn't ship.
+
+On a tag, the release job:
+- attests the build provenance of every file it attaches (`actions/attest-build-provenance`);
+- binds the SBOM to each installer (`actions/attest-sbom`).
+
+Anyone can check a download:
+
+```bash
+gh attestation verify Wirebench-1.0.0-windows-x64.msi --repo wirebench/wirebench
+```
+
+A `workflow_dispatch` rehearsal builds the SBOM but attests nothing, and it creates no release.
 
 ## Auto-update
 
