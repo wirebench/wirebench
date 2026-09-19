@@ -22,6 +22,7 @@ import {
   createProject,
   createProjectWithCalculator,
   createWorkspace,
+  dismissChangedOnDiskBanners,
   expandExplorer,
   openFirstRequest,
   workspaceProjectDir,
@@ -82,10 +83,107 @@ const IMAGES_DIR = join(REPO_ROOT, 'docs-site', 'public', 'images');
 /** The same tripwire as the README's: a page of 300 KB images is slow on a phone. */
 const MAX_BYTES = 300 * 1024;
 
-/** Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`. */
+/**
+ * Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`.
+ * The status bar's last-request and last-saved clock times are masked on every shot, since any
+ * screen can show them; `mask` adds the regions a particular screen needs on top.
+ */
 async function shoot(page: Page, shot: string, options: { mask?: Locator[] } = {}): Promise<void> {
-  await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { ...options, maxBytes: MAX_BYTES });
+  const mask = [...(options.mask ?? []), page.getByTestId('status-bar-last'), page.getByTestId('status-bar-save')];
+  await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { mask, maxBytes: MAX_BYTES });
 }
+
+/**
+ * A collection that loses a little of everything a switcher might have: scripts, a folder variable,
+ * a dynamic variable, a password and an auth type there is no field for. The summary it produces is
+ * the one the Postman switching page explains.
+ */
+const SWITCHING_COLLECTION = JSON.stringify({
+  info: { name: 'Petstore', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+  variable: [
+    { key: 'baseUrl', value: 'https://petstore.example.com/v2' },
+    { key: 'tenant', value: 'acme' },
+  ],
+  auth: {
+    type: 'basic',
+    basic: [
+      { key: 'username', value: '{{user}}' },
+      { key: 'password', value: 'not-copied' },
+    ],
+  },
+  event: [{ listen: 'prerequest', script: { exec: ['pm.variables.set("ts", Date.now());'] } }],
+  item: [
+    {
+      name: 'Pets',
+      item: [
+        {
+          name: 'List pets',
+          event: [{ listen: 'test', script: { exec: ['pm.test("200", () => pm.response.to.have.status(200));'] } }],
+          request: { method: 'GET', url: '{{baseUrl}}/pets?tenant={{tenant}}' },
+        },
+        {
+          name: 'Create pet',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/pets',
+            header: [{ key: 'X-Request-Id', value: '{{$guid}}' }],
+            body: { mode: 'raw', raw: '{"name":"Fido"}', options: { raw: { language: 'json' } } },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Signed upload',
+      request: { method: 'PUT', url: '{{baseUrl}}/uploads', auth: { type: 'awsv4' } },
+    },
+  ],
+});
+
+/**
+ * An OpenAPI document with the things an import reports: two security schemes to choose from (one
+ * with a flow there is no field for), a cookie parameter, a second media type, a webhook and a
+ * vendor extension. The summary it produces is the one the OpenAPI switching page explains.
+ */
+const SWITCHING_OPENAPI = [
+  'openapi: 3.1.0',
+  'info:',
+  '  title: Petstore',
+  '  version: 1.4.0',
+  'servers:',
+  '  - url: https://petstore.example.com/v2',
+  'security:',
+  '  - apiKey: []',
+  '  - oauth: []',
+  'tags:',
+  '  - name: pets',
+  'x-internal-owner: platform',
+  'paths:',
+  '  /pets:',
+  '    get:',
+  '      tags: [pets]',
+  '      summary: List pets',
+  '      parameters:',
+  '        - { name: limit, in: query, schema: { type: integer }, example: 20 }',
+  '        - { name: session, in: cookie, schema: { type: string } }',
+  '      responses: { "200": { description: OK } }',
+  '    post:',
+  '      tags: [pets]',
+  '      summary: Create a pet',
+  '      requestBody:',
+  '        content:',
+  '          application/json: { schema: { type: object, properties: { name: { type: string } } } }',
+  '          application/xml: { schema: { type: object } }',
+  '      responses: { "201": { description: Created } }',
+  'webhooks:',
+  '  petAdopted:',
+  '    post: { responses: { "200": { description: OK } } }',
+  'components:',
+  '  securitySchemes:',
+  '    apiKey: { type: apiKey, in: header, name: X-Api-Key }',
+  '    oauth:',
+  '      type: oauth2',
+  '      flows: { password: { tokenUrl: "https://id.example.com/token", scopes: {} } }',
+].join('\n');
 
 /** A Calculator `Add` envelope summing `intA` and `intB`. */
 function addEnvelope(intA: string, intB: string): string {
@@ -267,12 +365,14 @@ test.describe('docs site screenshots', () => {
     await createWorkspace(window, 'Demo');
     await createProject(window, 'Pet Service');
     await createApi(window, 'Petstore', 'https://api.example.com');
+    // The capture cannot dismiss a watcher banner once the dialog covers it, so it goes first.
+    await dismissChangedOnDiskBanners(window);
     await apiRow(window, 'Petstore').click({ button: 'right' });
     await window.getByRole('menuitem', { name: 'Import cURL…' }).click();
     await expect(window.getByTestId('import-curl-target')).toContainText('the API “Petstore”');
     await window.getByLabel('cURL command').click();
     await window.keyboard.insertText(
-      `curl -X POST 'https://api.example.com/pets?dry=true' -H 'Content-Type: application/json' -H 'X-From: curl' -d '{"name":"Fido"}'`,
+      `curl -X POST 'https://api.example.com/pets?dry=true' -u ada:s3cret -H 'Content-Type: application/json' -H 'X-From: curl' -d '{"name":"Fido"}'`,
     );
     await expect(window.getByTestId('import-curl-submit')).toBeEnabled();
     await shoot(window, 'importers/curl-preview');
@@ -468,5 +568,37 @@ test.describe('docs site screenshots', () => {
 
     await openConflictResolver(window);
     await shoot(window, 'shared-workspaces/conflict-resolver');
+  });
+
+  test('switching: a Postman import summary', async () => {
+    launched = await launchApp();
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'light');
+    await createWorkspace(window, 'Team APIs');
+    await createProject(window, 'Pet Service');
+
+    await openImportDialog(window, 'postman');
+    await window.getByRole('tab', { name: 'Paste' }).click();
+    await window.getByTestId('import-postman-paste').fill(SWITCHING_COLLECTION);
+    await window.getByTestId('import-postman-submit').click();
+    await expect(window.getByTestId('import-postman-warnings')).toBeVisible();
+    await shoot(window, 'switching/postman-summary');
+  });
+
+  test('switching: an OpenAPI import summary', async () => {
+    launched = await launchApp();
+    const { window } = launched;
+    await resizeWindow(launched);
+    await setTheme(window, 'light');
+    await createWorkspace(window, 'Team APIs');
+    await createProject(window, 'Pet Service');
+
+    await openImportDialog(window, 'openapi');
+    await window.getByRole('tab', { name: 'Paste' }).click();
+    await window.getByTestId('import-openapi-paste').fill(SWITCHING_OPENAPI);
+    await window.getByTestId('import-openapi-submit').click();
+    await expect(window.getByTestId('import-openapi-skipped')).toBeVisible();
+    await shoot(window, 'switching/openapi-summary');
   });
 });

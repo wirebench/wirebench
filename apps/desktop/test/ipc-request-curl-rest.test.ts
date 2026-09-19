@@ -113,6 +113,7 @@ function setup(options: {
   readonly show?: boolean;
   readonly changes?: ProjectChange[];
   readonly secrets?: Record<string, string>;
+  readonly stored?: { value: string; label: string }[];
 }): void {
   handlers.clear();
   registerRequestChannels(new EngineService(), {
@@ -123,6 +124,14 @@ function setup(options: {
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     showSecrets: { get: () => options.show ?? false },
     getSecret: (ref: string) => Promise.resolve(options.secrets?.[ref]),
+    ...(options.stored !== undefined
+      ? {
+          storeSecret: (value: string, label: string) => {
+            options.stored?.push({ value, label });
+            return Promise.resolve(`sec_${String(options.stored?.length ?? 0)}`);
+          },
+        }
+      : {}),
   });
 }
 
@@ -274,6 +283,44 @@ describe('request.importCurl into an API', () => {
     });
     // The password itself never crossed this channel, so it cannot appear in what was written.
     expect(JSON.stringify(changes)).not.toContain('hunter2');
+  });
+
+  it('stores a -u password in the keychain and writes only its reference', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ basicUsername?: string; passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl https://api.test/pets -u 'ada:hunter2'`,
+        target: { kind: 'rest', apiId: 'api-1' },
+      }),
+    );
+
+    expect(stored).toEqual([{ value: 'hunter2', label: 'cURL import: ada' }]);
+    expect(result).toMatchObject({ basicUsername: 'ada', passwordStored: true });
+    expect(changes[1]).toMatchObject({
+      patch: { auth: { type: 'basic', username: 'ada', passwordRef: 'sec_1', preemptive: true } },
+    });
+    expect(JSON.stringify(changes)).not.toContain('hunter2');
+  });
+
+  it('stores nothing for a -u with no password, and says the password is still needed', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ basicUsername?: string; passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl https://api.test/pets -u ada`,
+        target: { kind: 'rest', apiId: 'api-1' },
+      }),
+    );
+
+    expect(stored).toEqual([]);
+    expect(result.basicUsername).toBe('ada');
+    expect(result.passwordStored).toBeUndefined();
+    expect(changes[1]).toMatchObject({ patch: { auth: { type: 'basic', username: 'ada', preemptive: true } } });
   });
 
   it('reports the flags it could not use', async () => {

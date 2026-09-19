@@ -86,7 +86,7 @@ The summary shows the declared version, the API version if the document gives on
 and the request and folder counts. When the document declares security schemes, they're listed
 with **Use** buttons to apply one to the API — credentials are yours to fill in afterwards on the
 API tab. Anything the import could not carry across is listed under "things not imported," with the
-reason next to each.
+reason next to each. See [From OpenAPI and Swagger](/wirebench/switching/openapi/) for every mapping.
 
 ## Postman collections
 
@@ -104,7 +104,9 @@ Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app label
 </Steps>
 
 What arrives: the collection's requests and folders, with a default authentication scheme noted if
-the collection declares one.
+the collection declares one. Below the counts, the summary lists what the collection could not bring
+across, such as scripts, variable values and credentials. **Copy report** copies that list as text.
+See [From Postman collections](/wirebench/switching/postman/) for every mapping.
 
 <Aside type="note">
 Postman import by URL is not supported. Download the collection file, or paste its JSON, instead.
@@ -121,14 +123,22 @@ you meant it — an operation, an API, or a folder.
    editor also offers it. The dialog names its target, for example "Imports into the API
    'Petstore'."
 
-2. Paste the `curl` command. A live preview below shows the endpoint, headers, and body it parsed,
-   plus any problems.
+2. Paste the `curl` command. A live preview below shows what the import will fill in, depending on the
+   target:
+   - for an API or folder: the method and URL, header names, body kind and Basic user;
+   - for a SOAP operation: the endpoint, SOAPAction, header names, body length, and anything a SOAP
+     request can't keep.
 
-3. Choose **Import**. The new request opens in its own editor.
+   Header values and passwords are never shown.
+
+3. Choose **Import**. The new request opens in its own editor, and a toast names any flag the import
+   ignored.
 
 </Steps>
 
-![The Import cURL dialog with a pasted POST command and the preview of its endpoint, headers and body](/wirebench/images/importers/curl-preview.png)
+![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/images/importers/curl-preview.png)
+
+See [From cURL commands](/wirebench/switching/curl/) for every flag.
 
 The same command runs in reverse: **Copy as cURL**, from a request, and the **Code** panel's preview
 both give you the request back as a command — with secrets masked unless you turn on show-secrets.
@@ -159,8 +169,9 @@ what reflection version.
 
 Many SOAP testers keep their work in a legacy SOAP project file (one XML file from an older desktop
 SOAP workbench). Importing it reads that file and adds its interfaces, endpoints, saved requests,
-properties and environments to a Wirebench project — no network access needed, since the
-definitions are read from the copy the file carries.
+properties and environments to a Wirebench project. Definitions are read from the copy the file
+carries. Only a definition the file holds no copy of is fetched over HTTP(S), and the report notes it.
+See [From a legacy SOAP project](/wirebench/switching/legacy-soap-project/) for every mapping.
 
 <Steps>
 
@@ -178,8 +189,10 @@ definitions are read from the copy the file carries.
 The summary counts interfaces, requests, operations, environments and properties, plus any scripts
 kept. Below the counts, two lists cover what needs attention:
 
-- **Things to look at** — warnings, such as a password that was not imported.
-- **Notes** — informational items, such as test suites or mocks the import did not map.
+- **Things to look at**: warnings about what did not come across, such as a password, test suites
+  or mock services.
+- **Notes**: informational items, such as a script saved to `imported-scripts/` or an environment
+  renamed to avoid a clash.
 
 **Copy report** copies the full list as text.
 
@@ -189,8 +202,8 @@ kept. Below the counts, two lists cover what needs attention:
 
 - **Scope.** Test suites, mock services, REST services, security configurations, database
   connections and auth profiles are not mapped. Each appears in the report with the reason.
-- **Passwords are never imported.** Every request or endpoint that had one is listed in the report,
-  to be re-entered.
+- **Passwords are never imported.** Every saved request that had one is listed in the report, to be
+  re-entered.
 - **Scripts are kept, never run.** Every script in the file is written as-is to
   `imported-scripts/` in the project folder and listed in the report. Nothing reads or executes that
   folder.

@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format follows
   macOS, Windows and Linux, a ten-minute walkthrough, a guide for every feature area, a command and
   shortcut reference generated from the app, troubleshooting and an FAQ. It is published from `main` on
   every push, and its screenshots are shot from the app by the e2e suite.
+- **Switching guide.** A Switching section on the site, one page per source — Postman collections,
+  legacy SOAP projects, OpenAPI and Swagger, and cURL commands — each saying what carries over, what
+  does not, and where the equivalent lives in Wirebench.
+- **cURL import reads `--json`, `-G` and `-I`.** `--json` becomes a JSON body with its two headers,
+  `-G` moves the data into query rows, and `-I` asks for HEAD.
 - **CLI runner: `wirebench run` and `wirebench secrets list`.** A new package, `@wirebench/cli`
   (binary `wirebench`), runs the requests already saved in a project from a pipeline: `status`,
   `soap-fault`, `match` (XPath/XQuery/JSONPath), `schema` and `sla` assertions declared per request;
@@ -122,6 +127,19 @@ All notable changes to this project are documented here. The format follows
   encoding; every JSON-mapping rule the editor relies on is applied in-house on top of it.
 
 ### Fixed
+
+- **Postman import says what it left behind.** The summary lists the scripts, variables, credentials
+  and auth types a collection could not bring across, with **Copy report**; before, they were computed
+  and never shown. An OAuth 2 password or implicit grant is reported instead of silently becoming
+  client credentials, and `{{var}}` in auth fields is translated like every other field.
+- **A pasted `curl -u user:password` keeps the password**, stored as a secret, so the request
+  authenticates on its first send instead of asking for the password again.
+- **cURL flags no longer swallow the URL.** Value-less flags such as `--ntlm`, `--digest` and `-O` left
+  the REST import without a URL, and a flag with a value such as `-o out.xml` made the file the SOAP
+  endpoint. Bundled flags (`-sSL`, `-XPUT`, `-uada:pw`) are read as curl reads them.
+- **The cURL preview follows its target.** A REST import previews the method, URL, headers, body kind
+  and Basic user, without the SOAP-only warnings about `-u` and `-d @file`; the toast after an import
+  names each ignored flag instead of counting them.
 
 - **HTTP Log: a REST row follows the show-secrets toggle.** Turning _show secrets_ on or off now
   re-renders the selected REST row too, as it already did for SOAP; before, a REST row kept the

@@ -14,7 +14,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { importCurl } from './request-actions.js';
-import { previewCurl, type CurlPreview } from './curl-preview.js';
+import { describeCurlProblem, previewCurl, type CurlPreview } from './curl-preview.js';
 import type { RequestImportCurlTarget } from '../../../shared/wire-types.js';
 
 export interface ImportCurlDialogProps {
@@ -35,17 +35,35 @@ function PreviewRow({ label, value }: { readonly label: string; readonly value: 
   );
 }
 
-function Preview({ preview }: { readonly preview: CurlPreview }) {
+function Preview({ preview, target }: { readonly preview: CurlPreview; readonly target: 'soap' | 'rest' }) {
+  const headers = preview.headers.length === 0 ? '—' : preview.headers.join(', ');
   return (
-    <div className="mt-3 flex flex-col gap-1 rounded-md border border-hairline bg-surface-sunken p-2">
-      <PreviewRow label="Endpoint" value={preview.endpoint ?? '—'} />
-      <PreviewRow label="SOAPAction" value={preview.soapAction ?? '—'} />
-      <PreviewRow label="Headers" value={preview.headers.length === 0 ? '—' : preview.headers.join(', ')} />
-      <PreviewRow label="Body" value={preview.hasBody ? `${preview.bodyLength} characters` : '—'} />
+    <div
+      data-testid="import-curl-preview"
+      className="mt-3 flex flex-col gap-1 rounded-md border border-hairline bg-surface-sunken p-2"
+    >
+      {target === 'rest' ? (
+        <>
+          <PreviewRow label="Request" value={`${preview.method} ${preview.endpoint ?? '—'}`} />
+          <PreviewRow label="Headers" value={headers} />
+          <PreviewRow label="Body" value={preview.bodyKind ?? '—'} />
+          <PreviewRow
+            label="Auth"
+            value={preview.basicUsername === undefined ? '—' : `Basic, as “${preview.basicUsername}”`}
+          />
+        </>
+      ) : (
+        <>
+          <PreviewRow label="Endpoint" value={preview.endpoint ?? '—'} />
+          <PreviewRow label="SOAPAction" value={preview.soapAction ?? '—'} />
+          <PreviewRow label="Headers" value={headers} />
+          <PreviewRow label="Body" value={preview.hasBody ? `${preview.bodyLength} characters` : '—'} />
+        </>
+      )}
       {preview.problems.length > 0 && (
         <ul aria-label="Import problems" className="mt-1 list-disc pl-5 text-sm text-fg-muted">
           {preview.problems.map((problem) => (
-            <li key={problem}>{problem}</li>
+            <li key={problem}>{describeCurlProblem(problem)}</li>
           ))}
         </ul>
       )}
@@ -57,7 +75,7 @@ function Preview({ preview }: { readonly preview: CurlPreview }) {
 export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: ImportCurlDialogProps) {
   const [command, setCommand] = useState('');
   const [busy, setBusy] = useState(false);
-  const preview = useMemo(() => previewCurl(command), [command]);
+  const preview = useMemo(() => previewCurl(command, target.kind), [command, target.kind]);
   const canImport = command.trim().length > 0 && !busy;
 
   return (
@@ -103,7 +121,7 @@ export function ImportCurlDialog({ open, onOpenChange, target, targetLabel }: Im
             className="mt-1 min-h-0 flex-1 resize-none rounded-md border border-hairline bg-surface-base p-2 font-mono text-sm text-fg-default"
           />
 
-          <Preview preview={preview} />
+          <Preview preview={preview} target={target.kind} />
 
           <div className="mt-3 flex justify-end gap-2">
             <Dialog.Close asChild>

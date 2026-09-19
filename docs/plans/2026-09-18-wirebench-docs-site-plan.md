@@ -63,7 +63,7 @@ by `pnpm check`. There is one commit per task, each after `WIREBENCH_SKIP_PERF=1
 
 ## Phase 5 — Ship
 
-- [ ] **T15. Close-out.** Update the roadmap entry, changelog and README link to the site. The owner
+- [x] **T15. Close-out.** Update the roadmap entry, changelog and README link to the site. The owner
   switches Pages to "GitHub Actions". Merge with `gh pr merge --merge`, then confirm the deploy and
   search on the live URL.
 

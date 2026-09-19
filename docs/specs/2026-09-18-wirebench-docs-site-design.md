@@ -138,7 +138,7 @@ describes behaviour directly.
 - [x] `pnpm docs:commands --check` passes, and fails after a shortcut is changed without regenerating.
 - [x] Every image comes from `docs-screenshots.spec.ts`, and `pnpm check:docs-images` passes.
 - [x] `pnpm check` passes, including banned terms and doc paths across `docs-site/`.
-- [ ] A push to `main` deploys to GitHub Pages, and the site loads with working search.
+- [x] A push to `main` deploys to GitHub Pages, and the site loads with working search.
 
 ## Resolved questions
 

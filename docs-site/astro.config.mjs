@@ -49,6 +49,15 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Switching',
+          items: [
+            { label: 'From Postman collections', slug: 'switching/postman' },
+            { label: 'From a legacy SOAP project', slug: 'switching/legacy-soap-project' },
+            { label: 'From OpenAPI and Swagger', slug: 'switching/openapi' },
+            { label: 'From cURL commands', slug: 'switching/curl' },
+          ],
+        },
+        {
           label: 'Reference',
           items: [
             { label: 'Commands and shortcuts', slug: 'reference/commands' },
