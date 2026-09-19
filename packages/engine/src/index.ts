@@ -29,6 +29,7 @@ export {
   LegacyProjectError,
   ProtoError,
   GrpcError,
+  WsError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -1011,3 +1012,34 @@ export {
   redactXml,
 } from './redact/index.js';
 export { createSecretMasker } from './redact/literal.js';
+
+// WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
+// API (ADR-0007).
+export {
+  createWsApi,
+  createWsFolder,
+  createWsRequest,
+  createWsSavedMessage,
+  wsApiFolders,
+  wsApiRequests,
+  wsFolderRequests,
+  wsMessageFileName,
+} from './ws/model.js';
+export type {
+  CreateWsApiInput,
+  CreateWsFolderInput,
+  CreateWsRequestInput,
+  WsApi,
+  WsDefinitionRef,
+  WsExchange,
+  WsFolder,
+  WsFrame,
+  WsHandshake,
+  WsOpcode,
+  WsRequestDef,
+  WsRequestSettings,
+  WsSavedMessage,
+} from './ws/model.js';
+export { resolveWsUrl } from './ws/url.js';
+export { prettyFrameText } from './ws/pretty.js';
+export type { PrettyFrameResult } from './ws/pretty.js';
