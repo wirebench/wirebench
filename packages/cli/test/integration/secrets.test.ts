@@ -44,6 +44,22 @@ describe('secrets from the environment', () => {
     expect(demo.requests).not.toContain('/secure');
   });
 
+  it('names the ref-derived variable when a WS-Security password is missing', async () => {
+    // The engine raises this as `secret-missing` with `details.ref`, the same as a missing auth
+    // password, so the one rewrite covers it; this pins that down end to end.
+    const { code, stdout } = await runCli([
+      'run',
+      FIXTURE,
+      '-e',
+      'local',
+      '--var',
+      'soapUrl=http://127.0.0.1:1/soap',
+      'Echo/Echo/Secured hello',
+    ]);
+    expect(code).toBe(3);
+    expect(stdout).toContain('secret-missing: Set WIREBENCH_SECRET_SEC_WSS to run "Echo/Echo/Secured hello".');
+  });
+
   it('never prints the value, even verbose and failing', async () => {
     const { code, stdout, stderr } = await run({ WIREBENCH_SECRET_DEMO_PASSWORD: 'wrong-pass-long' }, '-v');
     expect(code).toBe(1);

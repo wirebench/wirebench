@@ -147,8 +147,13 @@ export async function loadSelection(
   return { project, ...(environment !== undefined ? { environment } : {}), selected };
 }
 
-/** `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's. */
-function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
+/**
+ * `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's.
+ * Every missing secret reaches here as `secret-missing` with `details.ref`: an auth password, a
+ * keystore password and a WS-Security password alike (`run/prepare.ts`'s `requiredSecret`, which
+ * the WS-Security context's `secrets` also calls, and nothing on the way wraps it).
+ */
+export function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
   const ref = result.error?.code === 'secret-missing' ? result.error.details?.['ref'] : undefined;
   if (result.error === undefined || typeof ref !== 'string') {
     return result;
