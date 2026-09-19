@@ -1,0 +1,26 @@
+assertions:
+  - expect: none
+    type: soap-fault
+attachments: []
+headers: []
+id: RUNNER0006
+kind: soap
+name: Say hello
+order: 0
+properties:
+  disableMultiparts: false
+  enableInlineFiles: false
+  enableMtom: false
+  encodeAttachments: false
+  encoding: UTF-8
+  entitizeProperties: false
+  expandMtomAttachments: false
+  followRedirects: false
+  forceMtom: false
+  inlineResponseAttachments: false
+  prettyPrint: false
+  removeEmptyContent: false
+  skipSoapAction: false
+  stripWhitespaces: false
+soapAction: urn:echo/Echo
+soapVersion: "1.1"

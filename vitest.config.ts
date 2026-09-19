@@ -81,8 +81,9 @@ export default defineConfig({
         test: {
           name: 'cli-integration',
           include: ['packages/cli/test/integration/**/*.test.ts'],
-          // Each test spawns the CLI as a child process against a local server.
+          // Each test spawns the built CLI as a child process against a local server.
           testTimeout: 30_000,
+          globalSetup: ['packages/cli/test/integration/global-setup.ts'],
         },
       },
       {

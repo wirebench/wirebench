@@ -1,0 +1,13 @@
+assertions:
+  - equals: 200
+    type: status
+auth:
+  type: inherit
+body:
+  kind: none
+id: RUNNER0004
+kind: rest
+method: GET
+name: broken
+order: 2
+url: /broken

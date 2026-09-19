@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { runCommand } from './commands/run.js';
 import { ExitCode } from './exit-codes.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
 
@@ -11,21 +12,11 @@ export interface CliIo {
 
 const require = createRequire(import.meta.url);
 
-/**
- * Entry point shared by `bin.ts` and tests. Returns the process exit code; never throws.
- *
- * Not `async` today: `help`, `version` and the stubs are all synchronous. Tasks 13–14 make `run`
- * and `secrets-list` await the engine, at which point this goes back to returning a value from an
- * `async` body instead of wrapping it in `Promise.resolve`.
- */
-export function main(
+/** Entry point shared by `bin.ts` and tests. Returns the process exit code; never throws. */
+export async function main(
   argv: readonly string[],
   io: CliIo = { stdout: process.stdout, stderr: process.stderr, env: process.env },
 ): Promise<number> {
-  return Promise.resolve(run(argv, io));
-}
-
-function run(argv: readonly string[], io: CliIo): number {
   try {
     const args = parseCliArgs(argv);
 
@@ -39,7 +30,9 @@ function run(argv: readonly string[], io: CliIo): number {
         io.stdout.write(`${version}\n`);
         return ExitCode.Ok;
       }
-      case 'run':
+      case 'run': {
+        return await runCommand(args, io);
+      }
       case 'secrets-list': {
         io.stderr.write('not implemented\n');
         return ExitCode.Usage;

@@ -1,0 +1,20 @@
+cacheDefinition: false
+definitionUrl: http://example.test/Echo.wsdl
+endpoints: []
+id: RUNNER0007
+kind: soap
+name: Echo
+operations:
+  - bindingName: "{urn:echo}EchoSoap"
+    name: Echo
+    order: 0
+    slug: Echo
+order: 0
+targetNamespace: urn:echo
+wsa:
+  addDefaultAction: true
+  addDefaultTo: true
+  enabled: false
+  generateMessageId: true
+  mustUnderstand: none
+  version: 2005/08

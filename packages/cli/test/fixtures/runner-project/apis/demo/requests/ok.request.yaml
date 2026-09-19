@@ -1,0 +1,17 @@
+assertions:
+  - equals: 200
+    type: status
+  - equals: true
+    expression: $.ok
+    language: jsonpath
+    type: match
+auth:
+  type: inherit
+body:
+  kind: none
+id: RUNNER0002
+kind: rest
+method: GET
+name: ok
+order: 0
+url: /ok
