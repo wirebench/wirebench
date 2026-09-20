@@ -44,7 +44,7 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
-import { registerRequestChannels, type RequestChannelDeps } from './ipc/request.js';
+import { registerRequestChannels, whenWsSessionsRecorded, type RequestChannelDeps } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { OpenApiImportService } from './openapi-import.js';
@@ -174,6 +174,13 @@ const hooksDir = join(app.getPath('userData'), 'git-hooks-empty');
 const gitLocator = (): ReturnType<typeof findGit> =>
   findGit(gitLocatorOptions({ env: process.env, isPackaged: app.isPackaged, preferences: preferencesService.get() }));
 
+/**
+ * How long closing WebSocket sessions may hold up a project close or the quit while their History
+ * entries are written. A socket that will not finish closing must not be the reason the app cannot
+ * quit; past this the entry is the one thing lost, rather than the whole shutdown.
+ */
+const WS_SESSION_RECORD_TIMEOUT_MS = 2_000;
+
 const workspaceService = new WorkspaceService({
   userDataDir: app.getPath('userData'),
   // Located afresh for each shared workspace that opens, so a git installed (or picked in
@@ -189,6 +196,23 @@ const workspaceService = new WorkspaceService({
   preferences: preferencesService,
   picks: dialogPicks,
   history: historyService,
+  // A session's History entry is written by its own pending `request.openWs`, so a project (or a
+  // whole workspace) closing has to ask the sockets to close *and* wait for the entries before
+  // the history files go with it.
+  closeWsSessions: async (projectId) => {
+    const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
+    if (matches === undefined) {
+      engineService.closeAllWs();
+    } else {
+      engineService.closeWsWhere(matches);
+    }
+    // Always awaited, never guarded by "did we just close anything": the engine drops a session
+    // from its map as the socket finishes, *before* the pending `request.openWs` has written the
+    // History entry. A session that closed a moment ago is therefore invisible here while its
+    // write is still in flight, and skipping the wait would race it against `history.close`.
+    // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
+    await whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches);
+  },
   trash: trashFolder,
   // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
   // file or OS setting — rather than a second, subtly different guess of our own.
@@ -270,6 +294,7 @@ void app.whenReady().then(() => {
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
+    onExchange: (entry) => broadcast(events.exchange.logged, { entry }),
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,
@@ -475,6 +500,15 @@ app.on('before-quit', (event) => {
   const stashed = windowOpen ? workspaceService.nextDraftsStash(QUIT_DRAFTS_TIMEOUT_MS) : Promise.resolve();
   if (windowOpen) {
     broadcast(events.workspace.flushDrafts, {});
+  }
+  // Asked to close here so the sockets are already closing while the drafts are stashed; the
+  // *waiting* — for each session's History entry, written by its own pending `request.openWs` —
+  // happens inside `workspaceService.close()` below, which owns the history files. Guarded: a
+  // failure to close a socket must never be the reason the app fails to quit.
+  try {
+    engineService.closeAllWs();
+  } catch (error) {
+    console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }
   void stashed
     .then(async () => {

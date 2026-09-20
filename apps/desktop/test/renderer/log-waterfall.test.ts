@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { barOf, MIN_BAR_FRACTION, spanOf } from '../../src/renderer/features/console/log-waterfall.js';
-import { logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeFailure, makeRestExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 const row = (startedAt: string, totalMs: number, phases: Record<string, number> = {}) => {
   const e = makeRestExchange({ durationMs: totalMs });
@@ -38,5 +38,12 @@ describe('waterfall geometry', () => {
     expect(bar.failed).toBe(true);
     expect(bar.segments).toEqual([]);
     expect(bar.width).toBe(MIN_BAR_FRACTION);
+  });
+
+  it('a WebSocket handshake row is one unsegmented bar, but not failed', () => {
+    const handshake = makeWsHandshakeEntry({ startedAt: '2026-09-18T10:00:00.050Z', durationMs: 10 });
+    const bar = barOf(handshake, span);
+    expect(bar.failed).toBe(false);
+    expect(bar.segments).toEqual([]);
   });
 });

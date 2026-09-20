@@ -322,6 +322,39 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'gRPC: New Request',
     category: 'Explorer',
   },
+  'ws.newApi': {
+    id: 'ws.newApi',
+    label: 'WebSocket: New API',
+    category: 'Explorer',
+  },
+  'ws.newRequest': {
+    id: 'ws.newRequest',
+    label: 'WebSocket: New Request',
+    category: 'Explorer',
+  },
+  // One chord for the tab's next step: it connects a closed session and, once the session is
+  // open, sends the selected saved message. The composer keeps `Mod+Enter` for itself.
+  'ws.connect': {
+    id: 'ws.connect',
+    label: 'WebSocket: Connect or Send Selected Message',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+  },
+  'ws.disconnect': {
+    id: 'ws.disconnect',
+    label: 'WebSocket: Disconnect',
+    category: 'Request',
+  },
+  'ws.sendMessage': {
+    id: 'ws.sendMessage',
+    label: 'WebSocket: Send Selected Message',
+    category: 'Request',
+  },
+  'ws.copyAsCommand': {
+    id: 'ws.copyAsCommand',
+    label: 'WebSocket: Copy as Command',
+    category: 'Request',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',
@@ -572,7 +605,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   // inventing one here would quietly take a key away from the user's own bindings.
   'history.resend': {
     id: 'history.resend',
-    label: 'History: Re-send Last Request',
+    label: 'History: Re-send Last SOAP Request',
     category: 'History',
   },
   'history.compare': {

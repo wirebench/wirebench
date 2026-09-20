@@ -9,6 +9,7 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
+import { canResendHistoryEntry } from './history-actions.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire, WorkspaceProjectWire } from '../../../shared/wire-types.js';
@@ -104,6 +105,10 @@ function Row({
             <span data-testid="history-grpc-badge" className="w-12 shrink-0 text-fg-faint">
               gRPC
             </span>
+          ) : entry.kind === 'websocket' ? (
+            <span data-testid="history-ws-badge" className="w-12 shrink-0 text-fg-faint">
+              WS
+            </span>
           ) : (
             <span data-testid="history-soap-version" className="w-12 shrink-0 text-fg-faint">
               {entry.soapVersion === 'none' ? 'SOAP' : `SOAP ${entry.soapVersion}`}
@@ -121,9 +126,12 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
-          ↻
-        </Button>
+        {/* Only a SOAP send can be replayed from History; the others resend from their request. */}
+        {canResendHistoryEntry(entry) && (
+          <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
+            ↻
+          </Button>
+        )}
         <Button
           variant="ghost"
           onClick={onCompare}

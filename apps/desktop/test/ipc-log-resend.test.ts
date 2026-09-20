@@ -177,4 +177,24 @@ describe('log.resend', () => {
     expect(reply.error.code).toBe('grpc-resend-streaming');
     expect(sendGrpc).not.toHaveBeenCalled();
   });
+
+  it('WebSocket: a row is refused before anything is dialled — it is a session, not one request/response pair', async () => {
+    const openWs = vi.spyOn(EngineService.prototype, 'openWsSession');
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({}),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', { protocol: 'websocket', requestId: 'ws-1' })) as {
+      ok: false;
+      error: { code: string; message: string };
+    };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('ws-resend-streaming');
+    expect(reply.error.message).toBe(
+      'A WebSocket session cannot be resent from the log. Open the connection from the request.',
+    );
+    expect(openWs).not.toHaveBeenCalled();
+  });
 });

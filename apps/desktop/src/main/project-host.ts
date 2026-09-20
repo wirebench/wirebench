@@ -142,6 +142,7 @@ import type {
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
   GrpcRequestPatchWire,
+  WsRequestPatchWire,
   RestRequestPatchWire,
   ApplyUpdateWire,
   DefinitionUpdateOptions,
@@ -174,6 +175,9 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
+import { findWsRequest, locateWsRequest } from './project-ws-mutations.js';
+import { resolveWsSend } from './ws-send.js';
+import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
 import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
@@ -1566,6 +1570,76 @@ export class ProjectHost {
       ...(ca !== undefined ? { ca: [...ca] } : {}),
       ...(trustInvalid ? { rejectUnauthorized: false } : {}),
     };
+  }
+
+  /** What History names a WebSocket send by: the request, its API, and the folder path inside it. */
+  wsMeta(
+    requestId: string,
+  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const located = locateWsRequest(this.open.project, requestId);
+    if (located === undefined) {
+      return undefined;
+    }
+    return {
+      requestName: located.request.name,
+      apiName: located.api.name,
+      folderPath: located.folders.map((folder) => folder.name).join(' / '),
+    };
+  }
+
+  /** The TLS material a WebSocket call needs, read from the request's settings as {@link grpcTlsFor} does. */
+  async wsTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findWsRequest(this.open.project, requestId);
+    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
+    const ca = await this.trustAnchors();
+    const trustInvalid = request?.settings.trustInvalid === true;
+    if (identity === undefined && ca === undefined && !trustInvalid) {
+      return undefined;
+    }
+    return {
+      ...(identity !== undefined ? identity : {}),
+      ...(ca !== undefined ? { ca: [...ca] } : {}),
+      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
+    };
+  }
+
+  /**
+   * Resolves one WebSocket call the way this project is open: the API's target under the active
+   * environment (the same override slot a REST/gRPC target has, keyed by the API's slug), property
+   * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
+   * material-free like {@link grpcSend}; secrets are resolved by the caller.
+   */
+  wsSend(requestId: string, draft?: WsRequestPatchWire): WsSendResolution | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const project = this.open.project;
+    const context = this.workspaceContext?.();
+    const preferences = this.prefs();
+    return resolveWsSend({
+      project,
+      requestId,
+      ...(draft !== undefined ? { draft } : {}),
+      scopes: this.scopesFor(),
+      ...(preferences !== undefined ? { preferences } : {}),
+      resolveTarget: (api) => {
+        const asApi = { slug: api.slug, baseUrl: api.url };
+        return context === undefined
+          ? resolveApiBaseUrl(project, project.activeEnvironmentId, asApi)
+          : resolveWorkspaceApiBaseUrl({
+              workspace: context.workspace,
+              project,
+              projectSlug: context.projectSlug,
+              api: asApi,
+            });
+      },
+    });
   }
 
   /** The gRPC API that is, or that holds, `entityId`. */

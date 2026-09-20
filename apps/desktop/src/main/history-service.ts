@@ -1,3 +1,94 @@
+/** What `HistoryService.recordWsSession` needs to build one WebSocket entry. */
+export interface RecordWsSessionInput {
+  readonly requestId: string;
+  readonly requestName: string;
+  /** The API the request belongs to, in the interface name's slot. */
+  readonly apiName: string;
+  readonly folderPath: string;
+  readonly exchange: WsExchangeSummary;
+  /**
+   * Whether the live `handshake` event actually fired for this session — the one fact
+   * `ipc/request.ts`'s `reportWsHandshakeFailure` is guarded by. `ok` is derived from it rather
+   * than from `exchange.handshake.status === 101`: that status is optional on the engine's
+   * handshake (e.g. absent through a proxy tunnel) and so cannot itself distinguish an opened
+   * session from a refused one.
+   */
+  readonly handshakeOpened: boolean;
+  /** Query parameters an API key travels in, masked in the URL whatever they are called. */
+  readonly keyParams?: readonly string[];
+}
+
+/**
+ * Builds one (already redacted) WebSocket `HistoryEntry` from a finished session — written on
+ * close, whether the session closed cleanly or the handshake never got past `error`/a non-101
+ * status. The SOAP-shaped fields carry what they can, as a gRPC entry's do: the API's name as the
+ * interface, the folder path as the operation, the handshake's status as the status; `ws` is the
+ * multi-message record ADR-0007 left room for, capped by {@link historyWsOf}'s own `capFrames`.
+ *
+ * `WsExchangeSummary` (the wire shape `openWsSession` resolves with) is already redacted for the
+ * session's own show-secrets toggle; History redacts again unconditionally with `show: false`,
+ * the same way `buildGrpcHistoryEntry` re-redacts its metadata regardless of what was shown live.
+ */
+export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionInput): HistoryEntry {
+  const { exchange } = record;
+  const keyParams = record.keyParams ?? [];
+  // Built from the wire shape (`WsExchangeSummary`, zod-inferred, every optional field typed
+  // `T | undefined`) into the engine's stricter `WsExchange` (plain `?:`, no explicit `undefined`
+  // under `exactOptionalPropertyTypes`) — the same widen/narrow gap `toHistoryEntryWire`'s own
+  // JSON round trip papers over elsewhere in this file. The shapes agree field for field; only
+  // `exactOptionalPropertyTypes` disagrees, so the cast is safe.
+  const redacted = {
+    kind: 'websocket',
+    url: redactUrl(exchange.url, { show: false, extraParams: keyParams }),
+    handshake: {
+      ...exchange.handshake,
+      url: redactUrl(exchange.handshake.url, { show: false, extraParams: keyParams }),
+      requestHeaders: redactHeaders(exchange.handshake.requestHeaders, { show: false }),
+      ...(exchange.handshake.responseHeaders !== undefined
+        ? { responseHeaders: redactHeaders(exchange.handshake.responseHeaders, { show: false }) }
+        : {}),
+    },
+    frames: exchange.frames,
+    closed: exchange.closed,
+    counts: exchange.counts,
+    durationMs: exchange.durationMs,
+  } as unknown as WsExchange;
+  const ws = historyWsOf(redacted);
+  const headers: HeaderEntryWire[] = Object.entries(redacted.handshake.requestHeaders).map(([name, value]) => ({
+    name,
+    value,
+  }));
+  return {
+    id: generateHistoryId(),
+    kind: 'websocket',
+    at: new Date().toISOString(),
+    projectId,
+    requestId: record.requestId,
+    requestName: record.requestName,
+    interfaceName: record.apiName,
+    operationName: record.folderPath,
+    endpoint: ws.url,
+    soapVersion: 'none',
+    method: 'GET',
+    ...(ws.status !== undefined ? { status: ws.status } : {}),
+    durationMs: exchange.durationMs,
+    ok: record.handshakeOpened && ws.closedBy !== 'error',
+    request: { envelopeXml: '', headers },
+    ...(ws.status !== undefined
+      ? {
+          response: {
+            rawHeaders: Object.entries(redacted.handshake.responseHeaders ?? {}),
+            status: ws.status,
+            statusText: exchange.handshake.statusText ?? '',
+          },
+        }
+      : {}),
+    ...(ws.error !== undefined ? { error: { code: 'ws-handshake-failed', message: ws.error } } : {}),
+    ws,
+    sizeBytes: exchange.counts.bytesSent + exchange.counts.bytesReceived,
+  };
+}
+
 /**
  * Owns each open project's persistent request history: one jsonl file per project under
  * Electron's `userData` (never inside the project folder — the brief for Task 24 is explicit
@@ -10,9 +101,15 @@
  */
 
 import { join } from 'node:path';
-import { normalizeHistoryEntry, assertPathSegment, generateHistoryId, openHistory } from '@wirebench/engine';
-import type { HistoryEntry, HistoryFile, HistoryListQuery } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactXml } from './redact.js';
+import {
+  normalizeHistoryEntry,
+  assertPathSegment,
+  generateHistoryId,
+  historyWsOf,
+  openHistory,
+} from '@wirebench/engine';
+import type { HistoryEntry, HistoryFile, HistoryListQuery, WsExchange } from '@wirebench/engine';
+import { redactHeaderPairs, redactHeaders, redactUrl, redactXml } from './redact.js';
 import type {
   GrpcExchangeSummary,
   RestExchangeSummary,
@@ -20,6 +117,7 @@ import type {
   HeaderEntryWire,
   HistoryEntryWire,
   ResolvedSendInputWire,
+  WsExchangeSummary,
 } from '../shared/wire-types.js';
 
 /**
@@ -380,6 +478,17 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildGrpcHistoryEntry(projectId, record);
+    await file.append(entry);
+    return toHistoryEntryWire(entry);
+  }
+
+  /** Appends one WebSocket session's entry to its project's file, returning the wire shape it wrote. */
+  async recordWsSession(projectId: string, record: RecordWsSessionInput): Promise<HistoryEntryWire | undefined> {
+    const file = this.files.get(projectId);
+    if (file === undefined) {
+      return undefined;
+    }
+    const entry = buildWsHistoryEntry(projectId, record);
     await file.append(entry);
     return toHistoryEntryWire(entry);
   }

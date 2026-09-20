@@ -4,7 +4,7 @@ import { StatusBar } from '../../src/renderer/shell/status-bar.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
-import { logExchange, makeExchange } from '../mocks/exchange-fixtures.js';
+import { logExchange, makeExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -48,6 +48,18 @@ describe('StatusBar', () => {
 
     expect(screen.getByText('503').className).toContain('text-status-danger');
   });
+
+  it('summarises a WebSocket handshake as the last exchange, in a success tone', () => {
+    useExchangesStore.setState({ log: [makeWsHandshakeEntry({ durationMs: 25 })] });
+    render(<StatusBar />);
+
+    const summary = screen.getByTestId('status-bar').textContent ?? '';
+    expect(summary).toContain('last:');
+    expect(summary).toContain('101');
+    expect(summary).toContain('25 ms');
+    expect(screen.getByText('101').className).toContain('text-status-success');
+  });
+
   it('counts the problems and opens the Problems panel when clicked', () => {
     useProblemsStore.setState({
       items: [

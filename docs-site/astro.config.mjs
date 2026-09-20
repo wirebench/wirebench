@@ -37,6 +37,7 @@ export default defineConfig({
             { label: 'SOAP and WSDL', slug: 'guides/soap-wsdl' },
             { label: 'REST', slug: 'guides/rest-client' },
             { label: 'gRPC', slug: 'guides/grpc' },
+            { label: 'WebSocket', slug: 'guides/websocket' },
             { label: 'Importing APIs', slug: 'guides/importers' },
             { label: 'Environments and properties', slug: 'guides/environments' },
             { label: 'Authentication', slug: 'guides/auth' },

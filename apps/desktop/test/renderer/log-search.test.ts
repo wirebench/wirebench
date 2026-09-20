@@ -7,7 +7,7 @@ import {
 } from '../../src/renderer/features/console/log-search.js';
 import { matchesFilter } from '../../src/renderer/features/console/log-filter.js';
 import { EMPTY_FILTER } from '../../src/renderer/state/exchanges.js';
-import { b64, logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { b64, logExchange, makeFailure, makeRestExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 function rest(body: string, headers: Record<string, string> = {}) {
   const exchange = makeRestExchange();
@@ -42,6 +42,16 @@ describe('log search', () => {
 
   it('searches only the first 256 KiB of a body', () => {
     expect(matchesText(rest(`${'a'.repeat(SEARCH_BODY_CAP)}needle`), plain('needle'), undefined)).toBe(false);
+  });
+
+  it('searches a WebSocket handshake row by its request and response headers, not a body it has none of', () => {
+    const entry = makeWsHandshakeEntry({
+      requestHeaders: { 'X-Correlation-Id': 'corr-ws-1' },
+      responseHeaders: { 'sec-websocket-accept': 'abc123=' },
+    });
+    expect(matchesText(entry, plain('corr-ws-1'), undefined)).toBe(true);
+    expect(matchesText(entry, plain('abc123'), undefined)).toBe(true);
+    expect(matchesText(entry, plain('nowhere'), undefined)).toBe(false);
   });
 
   it('searches a failure row by its request headers', () => {

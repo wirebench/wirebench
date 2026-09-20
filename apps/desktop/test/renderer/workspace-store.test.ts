@@ -8,7 +8,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { ProjectWire, WorkspaceProjectWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { NO_REST, PROJECT_SETTINGS } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS, wsRequestWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const SUMMARY: WorkspaceSummaryWire = {
@@ -269,6 +269,7 @@ describe('useWorkspaceStore', () => {
       requests: { r1: { envelopeXml: '<unsaved/>' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
     expect(order).toEqual(['stash', 'open']);
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
@@ -289,6 +290,7 @@ describe('useWorkspaceStore', () => {
       requests: { r1: { name: 'Renamed' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
     expect(useDraftsStore.getState().dirtyRequestIds()).toEqual([]);
   });
@@ -517,5 +519,79 @@ describe('useWorkspaceStore stale replies', () => {
     await useWorkspaceStore.getState().mutate({ kind: 'set-workspace-property', name: 'a', value: 'b' });
 
     expect(useWorkspaceStore.getState().workspace?.name).toBe('Renamed');
+  });
+});
+
+/**
+ * A WebSocket session belongs to a request of a project of a workspace. Every lifecycle moment
+ * that drops that chain must close the session first: main otherwise holds the socket open until
+ * the app quits, against a request nothing on screen points at any more.
+ */
+describe('open WebSocket sessions and the workspace lifecycle', () => {
+  const wsClose = vi.fn();
+
+  /** Puts one open session for `requestId` (owned by `p1`) into the exchanges store. */
+  function openSession(requestId = 'ws-1'): void {
+    useProjectStore.setState({
+      wsRequests: { [requestId]: wsRequestWire({ id: requestId }) },
+      projectOf: { [requestId]: 'p1' },
+    });
+    useExchangesStore.setState({
+      wsByRequest: { [requestId]: { status: 'open', sendId: `send-${requestId}`, live: { frames: [], open: true } } },
+    });
+  }
+
+  beforeEach(() => {
+    resetStores();
+    wsClose.mockReset().mockResolvedValue({ ok: true, value: { closed: true } });
+    installWirebenchApi({ request: { wsClose } });
+  });
+
+  it('closing the workspace closes the session and clears the state', async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    openSession();
+    installWirebenchApi({
+      request: { wsClose },
+      workspace: { close: vi.fn().mockResolvedValue({ ok: true, value: { workspace: null } }) },
+    });
+
+    await useWorkspaceStore.getState().close();
+
+    expect(wsClose).toHaveBeenCalledWith({ sendId: 'send-ws-1' });
+    expect(useExchangesStore.getState().wsByRequest).toEqual({});
+  });
+
+  it('switching to another workspace closes the session it leaves behind', () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    openSession();
+
+    useWorkspaceStore.getState().applySnapshot(workspaceWire({ id: 'w2', name: 'Other' }));
+
+    expect(wsClose).toHaveBeenCalledWith({ sendId: 'send-ws-1' });
+    expect(useExchangesStore.getState().wsByRequest).toEqual({});
+  });
+
+  it('removing a project closes that project’s sessions and no others', async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    openSession();
+    useProjectStore.setState({
+      wsRequests: { 'ws-1': wsRequestWire({ id: 'ws-1' }), 'ws-2': wsRequestWire({ id: 'ws-2' }) },
+      projectOf: { 'ws-1': 'p1', 'ws-2': 'p2' },
+    });
+    useExchangesStore.setState({
+      wsByRequest: {
+        'ws-1': { status: 'open', sendId: 'send-ws-1', live: { frames: [], open: true } },
+        'ws-2': { status: 'open', sendId: 'send-ws-2', live: { frames: [], open: true } },
+      },
+    });
+    installWirebenchApi({
+      request: { wsClose },
+      workspace: { removeProject: vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } }) },
+    });
+
+    await useWorkspaceStore.getState().removeProject('p1', false);
+
+    expect(wsClose).toHaveBeenCalledTimes(1);
+    expect(wsClose).toHaveBeenCalledWith({ sendId: 'send-ws-1' });
   });
 });

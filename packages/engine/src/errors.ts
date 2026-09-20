@@ -123,6 +123,14 @@ export class GrpcError extends WirebenchError {
   }
 }
 
+/** Thrown for WebSocket transport failures: the handshake, the connection, or a malformed frame. */
+export class WsError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'WsError';
+  }
+}
+
 /** Thrown when a value fails validation against a schema or business rule. */
 export class ValidationError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

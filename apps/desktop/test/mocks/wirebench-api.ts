@@ -68,6 +68,10 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       grpcPush: fail('request.grpcPush'),
       grpcHalfClose: fail('request.grpcHalfClose'),
       preflightGrpc: fail('request.preflightGrpc'),
+      openWs: fail('request.openWs'),
+      wsSend: fail('request.wsSend'),
+      wsClose: fail('request.wsClose'),
+      preflightWs: fail('request.preflightWs'),
     },
     theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },
     globals: {

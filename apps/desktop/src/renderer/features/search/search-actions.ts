@@ -15,6 +15,7 @@ import { useInterfaceEditorStore } from '../interface-editor/interface-editor-st
 import { openRequestTab } from '../request-editor/request-actions.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
+import { openWsRequestTab } from '../ws-editor/ws-actions.js';
 
 /** How long to keep waiting for a lazily-loaded request editor to mount before giving up. */
 const REVEAL_TIMEOUT_MS = 2_000;
@@ -80,6 +81,10 @@ export function revealSearchMatch(match: SearchMatchWire): void {
   }
   if (match.protocol === 'grpc') {
     openGrpcRequestTab(match.requestId, match.requestName);
+    return;
+  }
+  if (match.protocol === 'websocket') {
+    openWsRequestTab(match.requestId, match.requestName);
     return;
   }
   openRequestTab(match.requestId, match.requestName);

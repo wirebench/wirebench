@@ -15,6 +15,7 @@ const PROTOCOLS = [
   { id: 'soap', label: 'SOAP' },
   { id: 'rest', label: 'REST' },
   { id: 'grpc', label: 'gRPC' },
+  { id: 'websocket', label: 'WS' },
 ] as const;
 /** Long enough to coalesce a burst of keystrokes, short enough to feel live. */
 const DEBOUNCE_MS = 100;

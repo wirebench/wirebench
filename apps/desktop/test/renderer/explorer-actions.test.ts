@@ -10,7 +10,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { registerExplorerTree } from '../../src/renderer/features/explorer/explorer-api.js';
-import { restApiWire, restFolderWire, restRequestWire } from '../helpers/wire-defaults.js';
+import { restApiWire, restFolderWire, restRequestWire, wsApiWire, wsRequestWire } from '../helpers/wire-defaults.js';
 
 /** Sets `preferences.ui.confirmOnDelete` on the mirror. */
 function confirmOnDelete(value: boolean): void {
@@ -233,6 +233,118 @@ describe('explorerActions for REST nodes', () => {
     expect(removeApi).not.toHaveBeenCalled();
     expect(removeFolder).not.toHaveBeenCalled();
     expect(removeRestRequest).not.toHaveBeenCalled();
+    expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
+  });
+});
+
+describe('explorerActions for WebSocket nodes', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    useEditorsStore.getState().reset();
+    useUiStore.setState({ confirmDeleteNode: undefined });
+    useProjectStore.setState({ wsApis: {}, folders: {}, wsRequests: {} });
+  });
+
+  it('names a new WebSocket API after the ones already there, and opens its tab', async () => {
+    const addWsApi = vi.fn().mockResolvedValue('ws-api-new');
+    useProjectStore.setState({
+      addWsApi,
+      wsApis: { 'ws-api-1': wsApiWire({ name: 'WebSocket API 1' }) },
+    });
+
+    explorerActions.newWsApi('p1');
+    await vi.waitFor(() => {
+      expect(addWsApi).toHaveBeenCalledWith('p1', 'WebSocket API 2');
+    });
+    useProjectStore.setState({
+      wsApis: {
+        'ws-api-1': wsApiWire({ name: 'WebSocket API 1' }),
+        'ws-api-new': wsApiWire({ id: 'ws-api-new', name: 'WebSocket API 2' }),
+      },
+    });
+    explorerActions.openWsApi('ws-api-new');
+    expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['ws-api:ws-api-new']);
+  });
+
+  it('creates a WebSocket request and opens its editor', async () => {
+    const addWsRequest = vi.fn().mockResolvedValue('ws-new');
+    useProjectStore.setState({ addWsRequest, wsRequests: { 'ws-new': wsRequestWire({ id: 'ws-new' }) } });
+
+    explorerActions.newWsRequest('ws-api-1', 'folder-1');
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs.map((tab) => tab.id)).toEqual(['ws:ws-new']);
+    });
+    expect(addWsRequest).toHaveBeenCalledWith('ws-api-1', 'folder-1');
+  });
+
+  it('duplicates a WebSocket request and opens the copy', async () => {
+    const cloneWsRequest = vi.fn().mockResolvedValue('ws-copy');
+    useProjectStore.setState({
+      cloneWsRequest,
+      wsRequests: { 'ws-copy': wsRequestWire({ id: 'ws-copy', name: 'Lobby (copy)' }) },
+    });
+
+    explorerActions.duplicateWsRequest('ws-1');
+    await vi.waitFor(() => {
+      expect(useEditorsStore.getState().tabs[0]?.title).toBe('Lobby (copy)');
+    });
+    expect(cloneWsRequest).toHaveBeenCalledWith('ws-1');
+  });
+
+  it('always confirms deleting a WebSocket API that holds requests, even with the preference off', () => {
+    confirmOnDelete(false);
+    const removeWsApi = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({
+      removeWsApi,
+      wsApis: { 'ws-api-1': wsApiWire() },
+      wsRequests: { 'ws-1': wsRequestWire(), 'ws-2': wsRequestWire({ id: 'ws-2' }) },
+    });
+
+    explorerActions.removeWsApi('ws-api-1');
+
+    expect(removeWsApi).not.toHaveBeenCalled();
+    expect(useUiStore.getState().confirmDeleteNode).toEqual({
+      kind: 'ws-api',
+      id: 'ws-api-1',
+      name: 'Chat',
+      requestCount: 2,
+    });
+  });
+
+  it('deletes an empty WebSocket API straight away when the preference is off', () => {
+    confirmOnDelete(false);
+    const removeWsApi = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ removeWsApi, wsApis: { 'ws-api-1': wsApiWire() } });
+
+    explorerActions.removeWsApi('ws-api-1');
+
+    expect(removeWsApi).toHaveBeenCalledWith('ws-api-1');
+    expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
+  });
+
+  it('deletes a WebSocket request straight away with the preference off, and asks with it on', () => {
+    const removeWsRequest = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ removeWsRequest, wsRequests: { 'ws-1': wsRequestWire() } });
+
+    confirmOnDelete(false);
+    explorerActions.deleteWsRequest('ws-1');
+    expect(removeWsRequest).toHaveBeenCalledWith('ws-1');
+
+    confirmOnDelete(true);
+    explorerActions.deleteWsRequest('ws-1');
+    expect(useUiStore.getState().confirmDeleteNode).toMatchObject({ kind: 'ws-request', id: 'ws-1' });
+  });
+
+  it('does nothing for an entity the mirror no longer holds', () => {
+    const removeWsApi = vi.fn();
+    const removeWsRequest = vi.fn();
+    useProjectStore.setState({ removeWsApi, removeWsRequest });
+
+    explorerActions.removeWsApi('gone');
+    explorerActions.deleteWsRequest('gone');
+
+    expect(removeWsApi).not.toHaveBeenCalled();
+    expect(removeWsRequest).not.toHaveBeenCalled();
     expect(useUiStore.getState().confirmDeleteNode).toBeUndefined();
   });
 });

@@ -16,7 +16,12 @@
  * anything about drafts. This store answers one question: what has not been written yet.
  */
 import { create } from 'zustand';
-import type { GrpcRequestPatchWire, RequestPatchWire, RestRequestPatchWire } from '../../shared/wire-types.js';
+import type {
+  GrpcRequestPatchWire,
+  RequestPatchWire,
+  RestRequestPatchWire,
+  WsRequestPatchWire,
+} from '../../shared/wire-types.js';
 
 interface DraftsState {
   /** Pending patch per request id. A request with no entry has nothing unsaved. */
@@ -55,6 +60,14 @@ interface DraftsState {
   readonly discardGrpcRequest: (requestId: string) => void;
   readonly isGrpcRequestDirty: (requestId: string) => boolean;
   readonly dirtyGrpcRequestIds: () => readonly string[];
+  /** Pending patch per WebSocket request id, the fourth kind of draft, kept apart for the same reason. */
+  readonly wsRequests: Readonly<Record<string, WsRequestPatchWire>>;
+  readonly stageWsRequest: (requestId: string, patch: WsRequestPatchWire) => void;
+  readonly peekWsRequest: (requestId: string) => WsRequestPatchWire | undefined;
+  readonly clearWsRequestIfUnchanged: (requestId: string, committed: WsRequestPatchWire | undefined) => void;
+  readonly discardWsRequest: (requestId: string) => void;
+  readonly isWsRequestDirty: (requestId: string) => boolean;
+  readonly dirtyWsRequestIds: () => readonly string[];
   /**
    * Forgets every draft. Called when a workspace is left: its drafts have already been handed to
    * main, which keeps them with that workspace, and they name requests the next one does not have.
@@ -66,6 +79,7 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
   requests: {},
   restRequests: {},
   grpcRequests: {},
+  wsRequests: {},
 
   stageRequest: (requestId, patch) => {
     set((state) => ({
@@ -164,7 +178,38 @@ export const useDraftsStore = create<DraftsState>((set, get) => ({
 
   dirtyGrpcRequestIds: () => Object.keys(get().grpcRequests),
 
+  stageWsRequest: (requestId, patch) => {
+    set((state) => ({
+      wsRequests: { ...state.wsRequests, [requestId]: { ...state.wsRequests[requestId], ...patch } },
+    }));
+  },
+
+  peekWsRequest: (requestId) => get().wsRequests[requestId],
+
+  clearWsRequestIfUnchanged: (requestId, committed) => {
+    const pending = get().wsRequests[requestId];
+    if (pending === undefined || JSON.stringify(pending) !== JSON.stringify(committed)) {
+      return;
+    }
+    get().discardWsRequest(requestId);
+  },
+
+  discardWsRequest: (requestId) => {
+    set((state) => {
+      if (!(requestId in state.wsRequests)) {
+        return state;
+      }
+      const wsRequests = { ...state.wsRequests };
+      delete wsRequests[requestId];
+      return { wsRequests };
+    });
+  },
+
+  isWsRequestDirty: (requestId) => get().wsRequests[requestId] !== undefined,
+
+  dirtyWsRequestIds: () => Object.keys(get().wsRequests),
+
   reset: () => {
-    set({ requests: {}, restRequests: {}, grpcRequests: {} });
+    set({ requests: {}, restRequests: {}, grpcRequests: {}, wsRequests: {} });
   },
 }));

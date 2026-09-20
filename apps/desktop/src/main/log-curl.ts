@@ -2,8 +2,8 @@
  * cURL for one HTTP Log row: what was sent, not what the editor holds now. Shares `toCurl` with
  * `request.curl`; only the input differs — the logged request (raw request when the row has one).
  */
-import { toCurl, type CurlHeader } from '@wirebench/engine';
-import type { LogEntryWire, RequestCurlResponse } from '../shared/wire-types.js';
+import { toCurl, wsToCommand, type CurlHeader } from '@wirebench/engine';
+import type { LogEntryWire, RequestCurlResponse, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
 import { redactHeaders, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
 const TRANSPORT_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding']);
@@ -38,11 +38,47 @@ function withoutTransport(headers: Readonly<Record<string, string>>): Record<str
   return Object.fromEntries(Object.entries(headers).filter(([name]) => !TRANSPORT_HEADERS.has(name.toLowerCase())));
 }
 
+/** `true` for a WebSocket row: no `.http`, since the log holds the handshake, not an HTTP exchange. */
+export function isWsExchange(entry: LogEntryWire): boolean {
+  return entry.kind === 'exchange' && 'protocol' in entry.exchange && entry.exchange.protocol === 'websocket';
+}
+
 /** The request a row records: from its raw request when it has one (body included), else its summary. */
 export function loggedRequestOf(entry: LogEntryWire): LoggedRequest {
-  const summary = entry.kind === 'exchange' ? entry.exchange.http.request : entry.failure.request;
-  const rawBase64 = entry.kind === 'exchange' ? entry.exchange.http.rawRequestBase64 : entry.failure.rawRequestBase64;
-  const truncated = entry.kind === 'exchange' ? entry.exchange.http.truncated : false;
+  if (isWsExchange(entry)) {
+    const exchange = (entry as Extract<LogEntryWire, { kind: 'exchange' }>).exchange as WsHandshakeExchangeSummary;
+    return {
+      method: exchange.method,
+      url: exchange.url,
+      headers: withoutTransport(exchange.requestHeaders),
+      bodyTruncated: false,
+    };
+  }
+  if (entry.kind === 'failure') {
+    const { failure } = entry;
+    const summary = failure.request;
+    const rawBase64 = failure.rawRequestBase64;
+    if (rawBase64 === undefined || rawBase64 === '') {
+      return {
+        method: summary.method,
+        url: summary.url,
+        headers: withoutTransport(summary.headers),
+        bodyTruncated: false,
+      };
+    }
+    const { headers, body } = parseRaw(rawBase64);
+    return {
+      method: summary.method,
+      url: summary.url,
+      headers: withoutTransport(headers),
+      ...(body !== '' ? { body } : {}),
+      bodyTruncated: false,
+    };
+  }
+  const httpExchange = entry.exchange as Exclude<typeof entry.exchange, WsHandshakeExchangeSummary>;
+  const summary = httpExchange.http.request;
+  const rawBase64 = httpExchange.http.rawRequestBase64;
+  const truncated = httpExchange.http.truncated;
   if (rawBase64 === undefined || rawBase64 === '') {
     return {
       method: summary.method,
@@ -74,6 +110,26 @@ export function curlForLogEntry(
   options: { shell: 'posix' | 'powershell'; show: boolean },
 ): RequestCurlResponse {
   const show = options.show && entry.kind === 'exchange';
+  const isWsFailure = entry.kind === 'failure' && entry.failure.protocol === 'websocket';
+  if (isWsExchange(entry) || isWsFailure) {
+    // A failure row's request is already redacted for good at emit (see `failed-exchange.ts`), so
+    // `show` never applies to it, exactly as `toCurl`'s own generic path treats one.
+    const wsExchange = entry.kind === 'exchange' ? (entry.exchange as WsHandshakeExchangeSummary) : undefined;
+    const wsUrl =
+      wsExchange !== undefined
+        ? wsExchange.wsUrl
+        : (entry as Extract<LogEntryWire, { kind: 'failure' }>).failure.request.url;
+    const requestHeaders =
+      wsExchange !== undefined
+        ? wsExchange.requestHeaders
+        : (entry as Extract<LogEntryWire, { kind: 'failure' }>).failure.request.headers;
+    const headers = show ? requestHeaders : redactHeaders(withoutTransport(requestHeaders), { show: false });
+    const command = wsToCommand(
+      { url: show ? wsUrl : redactUrl(wsUrl, { show: false }), headers },
+      { shell: options.shell },
+    );
+    return { command };
+  }
   const logged = loggedRequestOf(entry);
   const isGrpc = entry.kind === 'exchange' ? 'statusName' in entry.exchange : entry.failure.protocol === 'grpc';
   const headers = show ? logged.headers : redactHeaders(logged.headers, { show: false });

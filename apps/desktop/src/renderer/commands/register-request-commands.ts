@@ -16,7 +16,19 @@ import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
-import { activeGrpcRequestId, activeRequestId, activeRestRequestId, onActiveRequest, ui } from './command-helpers.js';
+import {
+  connectOrSendWs,
+  copyWsCommand,
+  sendSelectedWsMessageReporting,
+} from '../features/ws-editor/ws-session-actions.js';
+import {
+  activeGrpcRequestId,
+  activeRequestId,
+  activeRestRequestId,
+  activeWsRequestId,
+  onActiveRequest,
+  ui,
+} from './command-helpers.js';
 
 /** Registers every `request.*`/`response.*` command; all act on the active request tab. */
 export function registerRequestCommands(): void {
@@ -56,6 +68,47 @@ export function registerRequestCommands(): void {
       }
     },
   });
+  // A WebSocket tab's `Mod+Enter` is its next step: connect a closed session, or send the selected
+  // saved message on an open one. The composer handles the chord itself and stops it there.
+  registerCommand({
+    ...catalogEntry('ws.connect'),
+    when: () => activeWsRequestId() !== undefined,
+    whenScope: 'editor.ws',
+    run: () => {
+      const requestId = activeWsRequestId();
+      if (requestId !== undefined) {
+        connectOrSendWs(requestId);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ws.disconnect'),
+    when: () => {
+      const requestId = activeWsRequestId();
+      return requestId !== undefined && useExchangesStore.getState().wsByRequest[requestId]?.status === 'open';
+    },
+    whenScope: 'editor.ws',
+    run: () => {
+      const requestId = activeWsRequestId();
+      if (requestId !== undefined) {
+        void useExchangesStore.getState().disconnectWs(requestId, 1000);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ws.sendMessage'),
+    when: () => {
+      const requestId = activeWsRequestId();
+      return requestId !== undefined && useExchangesStore.getState().wsByRequest[requestId]?.status === 'open';
+    },
+    whenScope: 'editor.ws',
+    run: () => {
+      const requestId = activeWsRequestId();
+      if (requestId !== undefined) {
+        void sendSelectedWsMessageReporting(requestId);
+      }
+    },
+  });
   registerCommand({
     ...catalogEntry('request.cancel'),
     // Escape must stay available to dialogs, menus, and the palette, so this command exists
@@ -69,6 +122,10 @@ export function registerRequestCommands(): void {
       const restRequestId = activeRestRequestId();
       if (restRequestId !== undefined) {
         return useExchangesStore.getState().restByRequest[restRequestId]?.status === 'sending';
+      }
+      const wsRequestId = activeWsRequestId();
+      if (wsRequestId !== undefined) {
+        return useExchangesStore.getState().wsByRequest[wsRequestId]?.status === 'connecting';
       }
       const grpcRequestId = activeGrpcRequestId();
       return (
@@ -84,6 +141,11 @@ export function registerRequestCommands(): void {
       const restRequestId = activeRestRequestId();
       if (restRequestId !== undefined) {
         void useExchangesStore.getState().cancelRest(restRequestId);
+        return;
+      }
+      const wsRequestId = activeWsRequestId();
+      if (wsRequestId !== undefined) {
+        void useExchangesStore.getState().cancelWs(wsRequestId);
         return;
       }
       const grpcRequestId = activeGrpcRequestId();
@@ -250,6 +312,17 @@ export function registerRequestCommands(): void {
       const requestId = activeGrpcRequestId();
       if (requestId !== undefined) {
         void copyAsCurl(requestId, ui().slideOver.codeShell);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('ws.copyAsCommand'),
+    when: () => activeWsRequestId() !== undefined,
+    whenScope: 'editor.ws',
+    run: () => {
+      const requestId = activeWsRequestId();
+      if (requestId !== undefined) {
+        void copyWsCommand(requestId, ui().slideOver.codeShell);
       }
     },
   });

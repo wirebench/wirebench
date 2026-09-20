@@ -17,7 +17,16 @@ export interface EditorLayoutSnapshot {
  */
 export interface PersistedTab {
   readonly kind:
-    'request' | 'interface' | 'environment' | 'project' | 'rest-request' | 'api' | 'grpc-request' | 'grpc-api';
+    | 'request'
+    | 'interface'
+    | 'environment'
+    | 'project'
+    | 'rest-request'
+    | 'api'
+    | 'grpc-request'
+    | 'grpc-api'
+    | 'ws-request'
+    | 'ws-api';
   /** The entity id — the request, interface, API, environment or project the tab edits. */
   readonly id: string;
 }
@@ -32,6 +41,8 @@ const PERSISTED_TAB_KINDS: readonly PersistedTab['kind'][] = [
   'api',
   'grpc-request',
   'grpc-api',
+  'ws-request',
+  'ws-api',
 ];
 
 /** What one workspace leaves behind when it is closed, so reopening it looks the same. */

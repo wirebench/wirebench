@@ -41,6 +41,17 @@ const GrpcApiTab = lazy(async () => {
   return { default: module.GrpcApiTab };
 });
 
+const WsApiTab = lazy(async () => {
+  const module = await import('../features/ws-api/ws-api-tab.js');
+  return { default: module.WsApiTab };
+});
+
+// Split out like the gRPC editor: its saved-message editor and frame viewer are Monaco.
+const WsEditor = lazy(async () => {
+  const module = await import('../features/ws-editor/ws-editor.js');
+  return { default: module.WsEditor };
+});
+
 const HistoryEntryView = lazy(async () => {
   const module = await import('../features/history/history-entry-view.js');
   return { default: module.HistoryEntryView };
@@ -126,6 +137,9 @@ export function EditorArea() {
   const restRequests = useProjectStore((state) => state.restRequests);
   const grpcApis = useProjectStore((state) => state.grpcApis);
   const grpcRequests = useProjectStore((state) => state.grpcRequests);
+  const wsApis = useProjectStore((state) => state.wsApis);
+  const wsRequests = useProjectStore((state) => state.wsRequests);
+  const dirtyWsRequests = useDraftsStore((state) => state.wsRequests);
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -221,17 +235,20 @@ export function EditorArea() {
     (tab.restRequestId !== undefined ? restRequests[tab.restRequestId]?.name : undefined) ??
     (tab.kind === 'grpc-api' && tab.grpcApiId !== undefined ? grpcApis[tab.grpcApiId]?.name : undefined) ??
     (tab.grpcRequestId !== undefined ? grpcRequests[tab.grpcRequestId]?.name : undefined) ??
+    (tab.kind === 'ws-api' && tab.wsApiId !== undefined ? wsApis[tab.wsApiId]?.name : undefined) ??
+    (tab.wsRequestId !== undefined ? wsRequests[tab.wsRequestId]?.name : undefined) ??
     (tab.kind === 'project' && tab.projectId !== undefined ? projects[tab.projectId]?.name : undefined) ??
     (tab.requestId !== undefined ? requests[tab.requestId]?.name : undefined) ??
     (tab.environmentId !== undefined
       ? environmentName(projects, workspaceEnvironments, tab.environmentId)
       : undefined) ??
     tab.title;
-  // Only the three request kinds carry drafts; every other kind still autosaves.
+  // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean =>
     (tab.requestId !== undefined && dirtyRequests[tab.requestId] !== undefined) ||
     (tab.restRequestId !== undefined && dirtyRestRequests[tab.restRequestId] !== undefined) ||
-    (tab.grpcRequestId !== undefined && dirtyGrpcRequests[tab.grpcRequestId] !== undefined);
+    (tab.grpcRequestId !== undefined && dirtyGrpcRequests[tab.grpcRequestId] !== undefined) ||
+    (tab.wsRequestId !== undefined && dirtyWsRequests[tab.wsRequestId] !== undefined);
 
   const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     const current = order.indexOf(selectedId);
@@ -514,6 +531,14 @@ export function EditorArea() {
         ) : activeTab.kind === 'grpc-api' && activeTab.grpcApiId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <GrpcApiTab apiId={activeTab.grpcApiId} />
+          </Suspense>
+        ) : activeTab.kind === 'ws-api' && activeTab.wsApiId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <WsApiTab apiId={activeTab.wsApiId} />
+          </Suspense>
+        ) : activeTab.kind === 'ws-request' && activeTab.wsRequestId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <WsEditor requestId={activeTab.wsRequestId} />
           </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

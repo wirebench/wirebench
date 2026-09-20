@@ -67,7 +67,7 @@ is picked up.
 | 14 | Full functional testing: suites, data-driven runs, callback listener | Both | XL | phase 2 | Suites, CSV and XLSX data sources, and a listener for WS-Addressing callbacks, after Sequences and scripting have proved the model. |
 | 15 | Self-hosted Wirebench Server: sign-in, teams, SSO | Ent | XL | new | Spec 2 of the shared-workspaces design (§5.4): the same repository with the server running git, live updates, presence and OIDC-first sign-in; SCIM and audit second. The enterprise offer, with data inside their own network. |
 | 16 | JKS keystores, WS-ReliableMessaging | Ent | S each | spec 1.1 | Build when a customer asks; each is a niche. SAML tokens moved into item 7. |
-| 17 | gRPC (shipped), streaming over HTTP and WebSocket, and GraphQL | Dev | L each | gRPC shipped 2026-09-16; GraphQL later phase | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; the remaining follow-up is resend from History. That work paid for a live pane and a multi-message record, which Server-Sent Events and a WebSocket request kind reuse — see [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions). GraphQL stays demand-driven, cut in two: queries and mutations over HTTP, then subscriptions once those transports exist. |
+| 17 | gRPC (shipped), streaming over HTTP and WebSocket (shipped), and GraphQL | Dev | L each | gRPC shipped 2026-09-16; WebSocket shipped 2026-09-19; GraphQL later phase | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; the remaining follow-up is resend from History. That work paid for a live pane and a multi-message record, which the WebSocket request kind reused to land as the fourth container 2026-09-19 — see [the WebSocket spec](specs/2026-09-19-websocket-request-kind-design.md) and [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions). Server-Sent Events is still open. GraphQL stays demand-driven, cut in two: queries and mutations over HTTP, then subscriptions once those transports exist. |
 | — | Load testing, WSDL coverage and refactoring, code generation | — | XL | phase 4 | Deferred indefinitely; other tools do these better. The TCP monitor's use case, recording traffic, is absorbed by the mock recorder. |
 | — | MQTT, Kafka and JMS transports | — | L each | watch | A different buyer and native modules; only on a customer's ask. |
 | — | Hosted cloud | Ent | a business | idea | Only with a company behind it; see [Teams and sign-in](#teams-and-sign-in). |
@@ -362,11 +362,14 @@ record in History, and sending into an open call; each item here is a thin layer
   protocol, and today it shows nothing until the connection closes. Render it event by event — name, id,
   data, arrival time — let Stop close it, and record what arrived. Token-streaming APIs answer this way,
   and so does the streamable-HTTP transport the MCP request kind needs, which is why this comes first.
-- **WebSocket request kind** (milestone 3.0). Connect to `ws://` and `wss://` with headers, subprotocols,
-  the shared auth kinds, proxy, client certificates and the CA bundle; a message timeline with text and
-  binary frames; compose and send while connected; saved messages stored with the request; the handshake in
-  the HTTP Log and the session in History. It lands without a project format bump, or the bump is argued in
-  an ADR. The contract side is the AsyncAPI import under [Contracts](#contracts).
+- **WebSocket request kind** (milestone 3.0) — **shipped 2026-09-19**, as the fourth container on the shape
+  [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive; see
+  [the WebSocket spec](specs/2026-09-19-websocket-request-kind-design.md). `ws://` and `wss://` with headers,
+  subprotocols, the shared auth kinds, proxy, client certificates and the CA bundle; a message timeline with
+  text and binary frames; compose and send while connected; saved messages stored with the request; the
+  handshake in the HTTP Log and the session in History. It landed without a project format bump — `kind:
+  websocket` under the existing `formatVersion: 3`. The contract side is the AsyncAPI import under
+  [Contracts](#contracts), still open.
 - **GraphQL subscriptions** (later). A protocol layer over the two transports above — the
   `graphql-transport-ws` subprotocol and `graphql-sse` — plus incremental delivery over a multipart
   response. Queries and mutations need none of it and are their own item.

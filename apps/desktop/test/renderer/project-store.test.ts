@@ -11,6 +11,7 @@ import {
 } from '../../src/renderer/state/project.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -21,6 +22,8 @@ import {
   restApiWire,
   restFolderWire,
   restRequestWire,
+  wsApiWire,
+  wsRequestWire,
 } from '../helpers/wire-defaults.js';
 
 const BINDING = '{tns}CalculatorSoap';
@@ -1074,6 +1077,126 @@ describe('useProjectStore with REST data', () => {
     });
 
     await useProjectStore.getState().removeRestRequest('rest-1');
+
+    expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
+  it('closes an open WebSocket session before forgetting the deleted request', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({ wsApis: [wsApiWire()], wsRequests: [wsRequestWire()], ...overrides });
+    const emptied = wsWire({ wsRequests: [] });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: true } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useExchangesStore.setState({
+      wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1', live: { frames: [], open: true } } },
+    });
+
+    await useProjectStore.getState().removeWsRequest('ws-1');
+
+    expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
+  });
+
+  it('asks main to close nothing when the deleted request’s session had already finished', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({ wsApis: [wsApiWire()], wsRequests: [wsRequestWire()], ...overrides });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: false } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: wsWire({ wsRequests: [] }) } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useExchangesStore.setState({ wsByRequest: { 'ws-1': { status: 'closed', sendId: 'send-1' } } });
+
+    await useProjectStore.getState().removeWsRequest('ws-1');
+
+    expect(wsClose).not.toHaveBeenCalled();
+    expect(useExchangesStore.getState().wsByRequest['ws-1']).toBeUndefined();
+  });
+
+  it('closes an open WebSocket session and drops the tab/draft of a request removed with its folder', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({
+        wsApis: [wsApiWire()],
+        folders: [restFolderWire({ id: 'folder-1', apiId: 'ws-api-1' })],
+        wsRequests: [wsRequestWire({ folderId: 'folder-1' })],
+        ...overrides,
+      });
+    const emptied = wsWire({ folders: [], wsRequests: [] });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: true } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useDraftsStore.getState().stageWsRequest('ws-1', { url: '/lobby-2' });
+    useEditorsStore.getState().open({ id: 'ws:ws-1', kind: 'ws-request', title: 'Lobby', wsRequestId: 'ws-1' });
+    useExchangesStore.setState({
+      wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1', live: { frames: [], open: true } } },
+    });
+
+    await useProjectStore.getState().removeFolder('folder-1');
+
+    expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
+    expect(useDraftsStore.getState().isWsRequestDirty('ws-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
+  it('closes an open WebSocket session for a request two sub-folders deep in the removed folder', async () => {
+    const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      projectWire({
+        wsApis: [wsApiWire()],
+        folders: [
+          restFolderWire({ id: 'folder-1', apiId: 'ws-api-1' }),
+          restFolderWire({ id: 'folder-2', apiId: 'ws-api-1', parentId: 'folder-1' }),
+        ],
+        wsRequests: [wsRequestWire({ folderId: 'folder-2' })],
+        ...overrides,
+      });
+    const emptied = wsWire({ folders: [], wsRequests: [] });
+    const wsClose = vi.fn().mockResolvedValue({ ok: true, value: { closed: true } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+      request: { wsClose },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', wsWire());
+    useDraftsStore.getState().stageWsRequest('ws-1', { url: '/lobby-2' });
+    useEditorsStore.getState().open({ id: 'ws:ws-1', kind: 'ws-request', title: 'Lobby', wsRequestId: 'ws-1' });
+    useExchangesStore.setState({
+      wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1', live: { frames: [], open: true } } },
+    });
+
+    // Removing the outer folder is what main does — the mutation cascades to `folder-2` on its
+    // own — so this exercises exactly the renderer-side gap: `folder-2` is never named directly.
+    await useProjectStore.getState().removeFolder('folder-1');
+
+    expect(wsClose).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }));
+    expect(useDraftsStore.getState().isWsRequestDirty('ws-1')).toBe(false);
+    expect(useEditorsStore.getState().tabs).toEqual([]);
+  });
+
+  it('drops the tab and draft of a REST request two sub-folders deep in the removed folder', async () => {
+    const nestedWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
+      restWire({
+        folders: [restFolderWire({ id: 'folder-1' }), restFolderWire({ id: 'folder-2', parentId: 'folder-1' })],
+        restRequests: [restRequestWire({ id: 'rest-1', folderId: 'folder-2' })],
+        ...overrides,
+      });
+    const emptied = nestedWire({ folders: [], restRequests: [] });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+    });
+    useProjectStore.getState().applySnapshot('proj-1', nestedWire());
+    useDraftsStore.getState().stageRestRequest('rest-1', { url: '/x' });
+    useEditorsStore
+      .getState()
+      .open({ id: 'rest:rest-1', kind: 'rest-request', title: 'Get pet', restRequestId: 'rest-1' });
+
+    await useProjectStore.getState().removeFolder('folder-1');
 
     expect(useDraftsStore.getState().isRestRequestDirty('rest-1')).toBe(false);
     expect(useEditorsStore.getState().tabs).toEqual([]);

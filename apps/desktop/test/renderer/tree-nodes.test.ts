@@ -10,6 +10,8 @@ import {
   restApiWire,
   restFolderWire,
   restRequestWire,
+  wsApiWire,
+  wsRequestWire,
 } from '../helpers/wire-defaults.js';
 
 function iface(overrides: Partial<InterfaceSummary> = {}): InterfaceSummary {
@@ -475,6 +477,65 @@ describe('buildExplorerTree with gRPC APIs', () => {
   });
 
   it('builds the tree it always did when no gRPC data is given', () => {
+    const before = buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+    );
+    expect(before[0]?.children?.map((child) => child.kind)).toEqual(['interface']);
+  });
+});
+
+describe('buildExplorerTree with WebSocket APIs', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/demo', status: 'ready' } as const;
+  const api = wsApiWire({ order: 2 });
+  const folder = restFolderWire({ id: 'folder-w', apiId: api.id, name: 'Rooms', order: 0 });
+  const inFolder = wsRequestWire({ id: 'ws-2', name: 'Room chat', folderId: 'folder-w' });
+  const atRoot = wsRequestWire({ id: 'ws-1', name: 'Lobby', order: 1 });
+
+  function tree(): ExplorerNode[] {
+    return buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+      { p1: { apis: [restApiWire({ order: 3 })], folders: [folder], requests: [] } },
+      undefined,
+      { p1: { apis: [grpcApiWire({ order: 1 })], requests: [] } },
+      { p1: { apis: [api], requests: [atRoot, inFolder] } },
+    );
+  }
+
+  it('places a WebSocket API among interfaces and the other protocols’ APIs, by order', () => {
+    const [root] = tree();
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'grpc-api', 'ws-api', 'api']);
+
+    const wsApi = root?.children?.[2];
+    expect(wsApi?.id).toBe('ws-api:ws-api-1');
+    expect(wsApi?.apiId).toBe('ws-api-1');
+    expect(wsApi?.children?.map((child) => child.id)).toEqual(['folder:folder-w', 'ws:ws-1']);
+
+    const folderNode = wsApi?.children?.[0];
+    expect(folderNode?.kind).toBe('folder');
+    expect(folderNode?.ws).toBe(true);
+    expect(folderNode?.children?.[0]).toMatchObject({
+      id: 'ws:ws-2',
+      kind: 'ws-request',
+      folderId: 'folder-w',
+      apiId: 'ws-api-1',
+    });
+  });
+
+  it('addresses WebSocket rows by their entity id for move-node', () => {
+    const [root] = tree();
+    const wsApi = root?.children?.[2];
+    expect(restEntityId(wsApi)).toBe('ws-api-1');
+    expect(restEntityId(wsApi?.children?.[1])).toBe('ws-1');
+    expect(nodeProjectId(wsApi?.children?.[1], { 'ws-api-1': 'p1' })).toBe('p1');
+  });
+
+  it('builds the tree it always did when no WebSocket data is given', () => {
     const before = buildExplorerTree(
       [project],
       [{ projectId: 'p1', interfaceIds: ['iface-1'] }],

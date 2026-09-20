@@ -29,6 +29,7 @@ describe('unsaved request drafts across sessions', () => {
     const api = installWirebenchApi();
     useDraftsStore.getState().stageRequest('r1', { envelopeXml: '<unsaved/>' });
     useDraftsStore.getState().stageRestRequest('rest-1', { url: '/pets' });
+    useDraftsStore.getState().stageWsRequest('ws-1', { url: 'wss://example.test' });
 
     await stashDrafts('w1');
 
@@ -37,6 +38,7 @@ describe('unsaved request drafts across sessions', () => {
       requests: { r1: { envelopeXml: '<unsaved/>' } },
       restRequests: { 'rest-1': { url: '/pets' } },
       grpcRequests: {},
+      wsRequests: { 'ws-1': { url: 'wss://example.test' } },
     });
   });
 
@@ -57,6 +59,7 @@ describe('unsaved request drafts across sessions', () => {
       requests: { r1: { envelopeXml: '<ab/>' } },
       restRequests: {},
       grpcRequests: {},
+      wsRequests: {},
     });
 
     const flush = (on.mock.calls as [string, (payload: unknown) => void][]).find(
@@ -89,6 +92,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: { r1: { envelopeXml: '<restored/>' }, gone: { envelopeXml: '<orphan/>' } },
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [],
     });
 
@@ -105,6 +109,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: { r1: { envelopeXml: '<restored/>' } },
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [],
     });
 
@@ -118,6 +123,7 @@ describe('unsaved request drafts across sessions', () => {
       drafts: {},
       restDrafts: {},
       grpcDrafts: {},
+      wsDrafts: {},
       notices: [
         {
           projectId: 'p1',

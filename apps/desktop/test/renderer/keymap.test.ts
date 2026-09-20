@@ -109,11 +109,12 @@ describe('keymapRows', () => {
   it('treats an ungated command as overlapping everything', () => {
     const rows = keymapRows({ 'view.toggleSidebar': 'Mod+Enter' });
 
-    // Both send commands carry ⌘⏎, and an ungated command overlaps either of them.
+    // Every send command carries ⌘⏎, and an ungated command overlaps either of them.
     expect(rowFor(rows, 'view.toggleSidebar')?.conflictsWith).toEqual([
       'Send gRPC Request',
       'Send Request',
       'Send REST Request',
+      'WebSocket: Connect or Send Selected Message',
     ]);
     expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
     expect(rowFor(rows, 'rest.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
@@ -128,6 +129,7 @@ describe('keymapRows', () => {
       'Send gRPC Request',
       'Send Request',
       'Send REST Request',
+      'WebSocket: Connect or Send Selected Message',
     ]);
   });
 

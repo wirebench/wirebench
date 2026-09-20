@@ -79,7 +79,12 @@ export function comparableBodies(left: string, right: string): ComparableBodies 
 
 /** From rawRequestBase64 after the blank line; '' when there is none. */
 export function requestBodyOf(entry: LogEntry): string {
-  const raw = entry.kind === 'exchange' ? entry.exchange.http.rawRequestBase64 : entry.failure.rawRequestBase64;
+  const raw =
+    entry.kind === 'exchange'
+      ? 'protocol' in entry.exchange
+        ? undefined
+        : entry.exchange.http.rawRequestBase64
+      : entry.failure.rawRequestBase64;
   const text = raw === undefined ? undefined : decodeBase64Text(raw);
   if (text === undefined) return '';
   const crlf = text.indexOf('\r\n\r\n');
@@ -90,5 +95,8 @@ export function requestBodyOf(entry: LogEntry): string {
 
 /** Decoded bodyBase64; '' for a failure. */
 export function responseBodyOf(entry: LogEntry): string {
-  return entry.kind === 'exchange' ? (decodeBase64Text(entry.exchange.http.bodyBase64) ?? '') : '';
+  if (entry.kind !== 'exchange' || 'protocol' in entry.exchange) {
+    return '';
+  }
+  return decodeBase64Text(entry.exchange.http.bodyBase64) ?? '';
 }

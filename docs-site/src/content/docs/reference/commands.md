@@ -100,6 +100,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: New Request | — | — |
 | gRPC: New API | — | — |
 | gRPC: New Request | — | — |
+| WebSocket: New API | — | — |
+| WebSocket: New Request | — | — |
 
 ## Request
 
@@ -111,6 +113,10 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: Get OAuth2 Token | — | — |
 | Send gRPC Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | gRPC: Copy as Command | — | — |
+| WebSocket: Connect or Send Selected Message | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| WebSocket: Disconnect | — | — |
+| WebSocket: Send Selected Message | — | — |
+| WebSocket: Copy as Command | — | — |
 | Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Cancel Request | <kbd>⎋</kbd> | <kbd>Esc</kbd> |
 | Request: Recreate (keep values) | — | — |
@@ -170,7 +176,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
-| History: Re-send Last Request | — | — |
+| History: Re-send Last SOAP Request | — | — |
 | History: Compare Last Two Sends | — | — |
 | History: Delete All Entries | — | — |
 

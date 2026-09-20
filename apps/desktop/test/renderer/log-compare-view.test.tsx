@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { LogCompare } from '../../src/renderer/features/console/log-compare-view.js';
-import { b64, logExchange, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { b64, logExchange, makeRestExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 vi.mock('@monaco-editor/react', () => ({
@@ -34,5 +34,20 @@ describe('LogCompare', () => {
     const diffs = screen.getAllByTestId('diff');
     expect(diffs[1]!.dataset['language']).toBe('json');
     expect(diffs[1]!.textContent).toBe('{\n  "n": 1\n}|{\n  "n": 2\n}');
+  });
+
+  it('compares a WebSocket handshake row by its request and response headers, empty bodies', () => {
+    render(
+      <LogCompare
+        left={makeWsHandshakeEntry({ requestHeaders: { Authorization: '<redacted>' } })}
+        right={row('b', 200, '', {})}
+      />,
+    );
+    const summaries = screen.getAllByTestId('log-compare-summary');
+    expect(summaries[0]!.textContent).toContain('101');
+    const request = screen.getByRole('table', { name: 'Request headers' });
+    expect(within(request).getByText('Authorization').closest('tr')!.dataset['change']).toBe('removed');
+    const response = screen.getByRole('table', { name: 'Response headers' });
+    expect(within(response).getByText('sec-websocket-accept').closest('tr')!.dataset['change']).toBe('removed');
   });
 });

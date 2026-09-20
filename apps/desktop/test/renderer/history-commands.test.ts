@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
 
 import { registerShellCommands } from '../../src/renderer/commands/register-shell-commands.js';
@@ -85,6 +87,52 @@ describe('history commands', () => {
     await vi.waitFor(() => {
       expect(resend).toHaveBeenCalledWith({ id: 'new' });
     });
+  });
+
+  it('re-sends the newest SOAP entry, passing over newer entries of other kinds, and says so', async () => {
+    showToast.mockReset();
+    const resend = vi.fn().mockResolvedValue({ ok: true, value: { sendId: 's-1' } });
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({
+      entries: [
+        entry({ id: 'ws', kind: 'websocket' }),
+        entry({ id: 'rest', kind: 'rest' }),
+        entry({ id: 'soap', kind: 'soap' }),
+      ],
+      total: 3,
+    });
+    await runCommand('history.resend', context);
+    await vi.waitFor(() => {
+      expect(resend).toHaveBeenCalledWith({ id: 'soap' });
+    });
+    // Nothing older may be replayed in silence: the row that is being re-sent is named.
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Re-sending the newest SOAP entry'));
+  });
+
+  it('says nothing extra when the newest entry is the one it re-sends', async () => {
+    showToast.mockReset();
+    const resend = vi.fn().mockResolvedValue({ ok: true, value: { sendId: 's-1' } });
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({ entries: [entry({ id: 'soap', kind: 'soap' })], total: 1 });
+
+    await runCommand('history.resend', context);
+
+    await vi.waitFor(() => {
+      expect(resend).toHaveBeenCalledWith({ id: 'soap' });
+    });
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('says there is nothing to re-send when no entry is SOAP', async () => {
+    showToast.mockReset();
+    const resend = vi.fn();
+    installWirebenchApi({ history: { resend } });
+    useHistoryStore.setState({ entries: [entry({ id: 'g', kind: 'grpc' })], total: 1 });
+    await runCommand('history.resend', context);
+    await vi.waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Nothing to re-send: only a SOAP entry can be re-sent from History.');
+    });
+    expect(resend).not.toHaveBeenCalled();
   });
 
   it('needs two entries before it will compare, then opens one diff tab', async () => {

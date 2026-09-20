@@ -70,3 +70,16 @@ describe('HTTP Log row menu', () => {
     expect(screen.getAllByTestId('http-log-row')).toHaveLength(2);
   });
 });
+
+describe('Open request on a WebSocket row', () => {
+  it('opens the WebSocket editor tab', async () => {
+    const { runRowAction } = await import('../../src/renderer/features/console/log-row-menu.js');
+    const { useEditorsStore } = await import('../../src/renderer/state/editors.js');
+    const { makeWsHandshakeEntry } = await import('../mocks/exchange-fixtures.js');
+    const { wsRequestWire } = await import('../helpers/wire-defaults.js');
+    useProjectStore.setState({ wsRequests: { 'ws-1': wsRequestWire() } });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    await runRowAction('open-request', makeWsHandshakeEntry({}, 'ws-1'));
+    expect(useEditorsStore.getState().activeId).toBe('ws:ws-1');
+  });
+});

@@ -139,8 +139,19 @@ describe('workspace.* channels', () => {
     await expect(
       invoke('workspace.stashDrafts', { workspaceId: 'w1', requests: { r1: { envelopeXml: '<a/>' } } }),
     ).resolves.toEqual({ ok: true, value: {} });
-    // Both protocols' drafts travel together; a payload with no REST drafts arrives as an empty map.
-    expect(service.stashDrafts).toHaveBeenCalledWith('w1', { r1: { envelopeXml: '<a/>' } }, {}, {});
+    // All protocols' drafts travel together; a payload with none for a protocol arrives as an empty map.
+    expect(service.stashDrafts).toHaveBeenCalledWith('w1', { r1: { envelopeXml: '<a/>' } }, {}, {}, {});
+  });
+
+  it('workspace.stashDrafts hands the WebSocket drafts to the service too', async () => {
+    await expect(
+      invoke('workspace.stashDrafts', {
+        workspaceId: 'w1',
+        requests: {},
+        wsRequests: { ws1: { url: 'wss://example.test' } },
+      }),
+    ).resolves.toEqual({ ok: true, value: {} });
+    expect(service.stashDrafts).toHaveBeenCalledWith('w1', {}, {}, {}, { ws1: { url: 'wss://example.test' } });
   });
 
   it('workspace.takeRestored answers with what the last open restored', async () => {

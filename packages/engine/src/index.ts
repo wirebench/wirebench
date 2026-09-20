@@ -29,6 +29,7 @@ export {
   LegacyProjectError,
   ProtoError,
   GrpcError,
+  WsError,
   isWirebenchError,
 } from './errors.js';
 export type { WirebenchErrorOptions } from './errors.js';
@@ -621,7 +622,13 @@ export {
 export type { AttachmentCacheEntry, AttachmentCacheOptions } from './project/attachments-cache.js';
 export { nodeFs, writeFileAtomic } from './project/fs.js';
 export type { DirEntry, FileStat, FsLike } from './project/fs.js';
-export { appendHistory, generateHistoryId, normalizeHistoryEntry, openHistory } from './project/history.js';
+export {
+  appendHistory,
+  generateHistoryId,
+  historyWsOf,
+  normalizeHistoryEntry,
+  openHistory,
+} from './project/history.js';
 export type {
   HistoryEntry,
   HistoryError,
@@ -631,6 +638,7 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryOptions,
+  HistoryWs,
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
@@ -1011,3 +1019,43 @@ export {
   redactXml,
 } from './redact/index.js';
 export { createSecretMasker } from './redact/literal.js';
+
+// WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
+// API (ADR-0007).
+export {
+  createWsApi,
+  createWsFolder,
+  createWsRequest,
+  createWsSavedMessage,
+  wsApiFolders,
+  wsApiRequests,
+  wsFolderRequests,
+  wsMessageFileName,
+} from './ws/model.js';
+export type {
+  CreateWsApiInput,
+  CreateWsFolderInput,
+  CreateWsRequestInput,
+  WsApi,
+  WsDefinitionRef,
+  WsExchange,
+  WsFolder,
+  WsFrame,
+  WsHandshake,
+  WsOpcode,
+  WsRequestDef,
+  WsRequestSettings,
+  WsSavedMessage,
+} from './ws/model.js';
+export { resolveWsUrl } from './ws/url.js';
+export { prettyFrameText } from './ws/pretty.js';
+export type { PrettyFrameResult } from './ws/pretty.js';
+export { openWsSession } from './ws/session.js';
+export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
+export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
+export type { WsTranscript } from './ws/transcript.js';
+export { expandWsInput, expandWsMessage } from './ws/expand.js';
+export type { WsCallInput } from './ws/expand.js';
+export { toWsSessionOptions } from './ws/call.js';
+export type { WsSessionMaterial } from './ws/call.js';
+export { wsToCommand } from './ws/command.js';

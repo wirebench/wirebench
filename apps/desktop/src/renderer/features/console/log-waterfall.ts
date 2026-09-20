@@ -71,7 +71,13 @@ export function barOf(entry: LogEntry, span: WaterfallSpan): WaterfallBar {
   const ms = durationOf(entry);
   const left = Number.isNaN(at) ? 0 : Math.min(Math.max((at - span.start) / total, 0), 1);
   const width = Math.max(ms / total, MIN_BAR_FRACTION);
-  if (entry.kind === 'failure') return { left, width, failed: true, ms, segments: [] };
+  if (entry.kind === 'failure') {
+    return { left, width, failed: true, ms, segments: [] };
+  }
+  if ('protocol' in entry.exchange) {
+    // A handshake row has no phase timings to break down; show it as a plain bar, not a failure.
+    return { left, width, failed: false, ms, segments: [] };
+  }
 
   const timings = entry.exchange.http.timings;
   const measured: { id: WaterfallSegment['id']; className: string; ms: number }[] = [];

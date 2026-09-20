@@ -9,7 +9,7 @@ import { compileMatcher, matchesText, type TextMatcher } from './log-search.js';
 
 export type { StatusClass } from '../../state/exchanges.js';
 
-export type LogProtocol = 'soap' | 'rest' | 'grpc';
+export type LogProtocol = 'soap' | 'rest' | 'grpc' | 'websocket';
 
 /**
  * A gRPC summary is the one that reports `statusName`, a REST summary the one that reports
@@ -19,6 +19,9 @@ export function protocolOf(entry: LogEntry): LogProtocol {
   if (entry.kind === 'failure') {
     return entry.failure.protocol;
   }
+  if ('protocol' in entry.exchange) {
+    return 'websocket';
+  }
   if ('statusName' in entry.exchange) {
     return 'grpc';
   }
@@ -26,16 +29,25 @@ export function protocolOf(entry: LogEntry): LogProtocol {
 }
 
 export function methodOf(entry: LogEntry): string {
-  return entry.kind === 'failure' ? entry.failure.request.method : entry.exchange.http.request.method;
+  if (entry.kind === 'failure') {
+    return entry.failure.request.method;
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.method : entry.exchange.http.request.method;
 }
 
 export function urlOf(entry: LogEntry): string {
-  return entry.kind === 'failure' ? entry.failure.request.url : entry.exchange.http.request.url;
+  if (entry.kind === 'failure') {
+    return entry.failure.request.url;
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.url : entry.exchange.http.request.url;
 }
 
 /** Wall-clock start, ISO 8601. */
 export function startedAtOf(entry: LogEntry): string {
-  return entry.kind === 'failure' ? entry.failure.startedAt : entry.exchange.http.timings.startedAt;
+  if (entry.kind === 'failure') {
+    return entry.failure.startedAt;
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.startedAt : entry.exchange.http.timings.startedAt;
 }
 
 /** Start to response, or start to failure, in milliseconds. */
@@ -51,7 +63,8 @@ export function stageOf(entry: LogEntry): 'prepare' | 'send' | undefined {
 /** The status cell text: HTTP status, the error code, or `Failed · before send`. */
 export function statusLabelOf(entry: LogEntry): string {
   if (entry.kind === 'exchange') {
-    return String(entry.exchange.http.status);
+    const { exchange } = entry;
+    return String('protocol' in exchange ? exchange.status : exchange.http.status);
   }
   return entry.failure.stage === 'prepare' ? 'Failed · before send' : entry.failure.error.code;
 }
@@ -65,7 +78,12 @@ export function statusClassOf(entry: LogEntry): StatusClass {
   if (entry.kind === 'failure') {
     return 'failed';
   }
-  const status = entry.exchange.http.status;
+  const { exchange } = entry;
+  if ('protocol' in exchange) {
+    // Always 101 — a successful handshake is what gets logged this way, so it reads as 2xx.
+    return '2xx';
+  }
+  const status = exchange.http.status;
   if (status >= 500) {
     return '5xx';
   }

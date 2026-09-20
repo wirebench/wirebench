@@ -118,6 +118,7 @@ import type {
   RestRequestPatchWire,
   UnsavedRestoreNoticeWire,
   WorkspaceRestoredResponse,
+  WsRequestPatchWire,
 } from '../shared/wire-types.js';
 
 /**
@@ -182,6 +183,15 @@ export interface WorkspaceServiceDeps {
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** One history file per open project. */
   readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'>;
+  /**
+   * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
+   * and resolves once each has written its History entry.
+   *
+   * Awaited before a project's history file is closed, so a session the user left open does not
+   * lose its entry to the project closing under it. Injected (the engine in the app, nothing in
+   * tests that never open one) so this file stays free of the engine.
+   */
+  readonly closeWsSessions?: (projectId?: string) => Promise<void>;
   readonly hooks?: WorkspaceHooks;
   /**
    * Moves a folder to the OS trash. Injected (`shell.trashItem` in the app, a folder move in
@@ -436,6 +446,8 @@ export class WorkspaceService implements ProjectRouter {
   private restDrafts: Record<string, RestRequestPatchWire> = {};
   /** The gRPC editor's unsaved edits, the third of the same set. */
   private grpcDrafts: Record<string, GrpcRequestPatchWire> = {};
+  /** The WebSocket editor's unsaved edits, the fourth of the same set. */
+  private wsDrafts: Record<string, WsRequestPatchWire> = {};
   /** What the last open restored, until the renderer takes it. */
   private restored: WorkspaceRestoredResponse | undefined;
   /** Resolvers waiting for the renderer's next `stashDrafts` (the quit flush). */
@@ -635,6 +647,7 @@ export class WorkspaceService implements ProjectRouter {
     this.drafts = {};
     this.restDrafts = {};
     this.grpcDrafts = {};
+    this.wsDrafts = {};
     this.restored = undefined;
     const notices: UnsavedRestoreNoticeWire[] = [];
 
@@ -667,11 +680,13 @@ export class WorkspaceService implements ProjectRouter {
       this.drafts = stashed.requests;
       this.restDrafts = stashed.restRequests;
       this.grpcDrafts = stashed.grpcRequests;
+      this.wsDrafts = stashed.wsRequests;
       this.restored = {
         workspaceId: workspace.id,
         drafts: { ...this.drafts },
         restDrafts: { ...this.restDrafts },
         grpcDrafts: { ...this.grpcDrafts },
+        wsDrafts: { ...this.wsDrafts },
         notices,
       };
 
@@ -896,6 +911,9 @@ export class WorkspaceService implements ProjectRouter {
       // is kept so the caller (or the picker) can surface it.
       this.failure = errorMessage(error);
     }
+    // Every session, before `history.closeAll()` below: same reason as in `releaseEntry`, and one
+    // call rather than one per entry so sessions close in parallel.
+    await this.deps.closeWsSessions?.().catch(() => undefined);
     // A snapshot: an in-flight `releaseEntry` splicing the live array must not make this skip one.
     for (const entry of [...open.entries]) {
       await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
@@ -904,6 +922,7 @@ export class WorkspaceService implements ProjectRouter {
     this.drafts = {};
     this.restDrafts = {};
     this.grpcDrafts = {};
+    this.wsDrafts = {};
     this.restored = undefined;
     this.deps.history.closeAll();
     this.index.clear();
@@ -997,7 +1016,10 @@ export class WorkspaceService implements ProjectRouter {
       }
       const nextRef = nextRefs.get(entry.ref.id);
       if (nextRef === undefined || !refsEqual(nextRef, entry.ref)) {
-        await this.releaseEntry(open, entry, { discardUnsaved: nextRef === undefined });
+        await this.releaseEntry(open, entry, {
+          discardUnsaved: nextRef === undefined,
+          closeSessions: nextRef === undefined,
+        });
       }
     }
     for (const ref of loaded.projects) {
@@ -1049,13 +1071,25 @@ export class WorkspaceService implements ProjectRouter {
    * id) passes `discardUnsaved: false`, because the very next step re-adds the same id and
    * `openEntry` restores from that record — deleting it here would silently drop the local user's
    * uncommitted work on a routine pulled rename.
+   *
+   * `closeSessions` follows the same split. A project that is genuinely gone takes its WebSocket
+   * sessions with it, and waits for their History entries. A relocation must not: the project is
+   * about to be re-added under the same id, so killing the user's open sessions — and blocking the
+   * reload for up to the recording timeout — would make a teammate's rename look like a dropped
+   * connection.
    */
   private async releaseEntry(
     open: OpenWorkspace,
     entry: OpenProjectEntry,
-    options: { discardUnsaved: boolean },
+    options: { discardUnsaved: boolean; closeSessions: boolean },
   ): Promise<void> {
     this.cancelUnsavedWrite(entry.ref.id);
+    // Before the host and the history file go: a session still open against one of this project's
+    // requests records its entry when it closes, and `history.close` below would leave that entry
+    // nowhere to be written.
+    if (options.closeSessions) {
+      await this.deps.closeWsSessions?.(entry.projectId).catch(() => undefined);
+    }
     await entry.host?.close({ keepUnsaved: true }).catch(() => undefined);
     if (options.discardUnsaved) {
       await this.unsaved?.deleteProject(entry.ref.id).catch(() => undefined);
@@ -1523,7 +1557,7 @@ export class WorkspaceService implements ProjectRouter {
       });
     }
     // Removing a project discards its unsaved changes: there is no project left to restore into.
-    await this.releaseEntry(open, entry, { discardUnsaved: true });
+    await this.releaseEntry(open, entry, { discardUnsaved: true, closeSessions: true });
     this.reindex();
     await this.saveManifest(open);
     if (trashFolder && trash !== undefined) {
@@ -1779,7 +1813,7 @@ export class WorkspaceService implements ProjectRouter {
         await this.writeUnsaved(entry);
       }
     }
-    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
+    await store.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
     await store.idle();
   }
 
@@ -1831,6 +1865,7 @@ export class WorkspaceService implements ProjectRouter {
     requests: Readonly<Record<string, RequestPatchWire>>,
     restRequests: Readonly<Record<string, RestRequestPatchWire>> = {},
     grpcRequests: Readonly<Record<string, GrpcRequestPatchWire>> = {},
+    wsRequests: Readonly<Record<string, WsRequestPatchWire>> = {},
   ): Promise<void> {
     const waiters = this.stashWaiters;
     this.stashWaiters = [];
@@ -1841,7 +1876,8 @@ export class WorkspaceService implements ProjectRouter {
       this.drafts = { ...requests };
       this.restDrafts = { ...restRequests };
       this.grpcDrafts = { ...grpcRequests };
-      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts);
+      this.wsDrafts = { ...wsRequests };
+      await this.unsaved.writeDrafts(this.drafts, this.restDrafts, this.grpcDrafts, this.wsDrafts);
     } finally {
       for (const resolve of waiters) {
         resolve();
@@ -1874,6 +1910,7 @@ export class WorkspaceService implements ProjectRouter {
         drafts: {},
         restDrafts: {},
         grpcDrafts: {},
+        wsDrafts: {},
         notices: [],
       }
     );
@@ -2240,6 +2277,12 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.grpcRequests) {
         add(request.id);
       }
+      for (const api of project.wsApis) {
+        add(api.id);
+      }
+      for (const request of project.wsRequests) {
+        add(request.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }
@@ -2449,6 +2492,21 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   grpcRefresh(...args: Parameters<ProjectRouter['grpcRefresh']>): ReturnType<ProjectRouter['grpcRefresh']> {
     return this.hostOfEntity(args[0]).refreshGrpcDefinition(...args);
+  }
+
+  /** @inheritdoc */
+  wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
+    return this.hostOfEntity(args[0]).wsTlsFor(...args);
+  }
+
+  /** @inheritdoc */
+  wsMeta(...args: Parameters<ProjectRouter['wsMeta']>): ReturnType<ProjectRouter['wsMeta']> {
+    return this.hostOfEntity(args[0]).wsMeta(...args);
+  }
+
+  /** @inheritdoc */
+  wsSend(...args: Parameters<ProjectRouter['wsSend']>): ReturnType<ProjectRouter['wsSend']> {
+    return this.hostOfEntity(args[0]).wsSend(...args);
   }
 
   /**

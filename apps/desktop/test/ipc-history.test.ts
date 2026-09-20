@@ -137,6 +137,20 @@ describe('registerHistoryChannels', () => {
     expect(result).toEqual({ ok: true, value: { cleared: 2 } });
   });
 
+  it.each(['websocket', 'rest', 'grpc'] as const)(
+    'history.resend refuses a %s entry with history-resend-unsupported, sending nothing',
+    async (kind) => {
+      const service = new EngineService();
+      const send = vi.spyOn(service, 'send');
+      registerHistoryChannels(service, fakeHistory([makeEntry({ id: 'k', kind })]) as never, {
+        project: noLiveRequests(),
+      });
+      const result = await invoke('history.resend', { id: 'k' });
+      expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-unsupported' } });
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
   it('history.resend rejects an unknown id with unknown-history-entry', async () => {
     const history = fakeHistory([]);
     registerHistoryChannels(new EngineService(), history as never, {

@@ -116,3 +116,33 @@ one place it deviated:
 - **History.** `HistoryEntry.kind` gained `'grpc'` and an optional `grpc` record holding the status, both message
   lists and the trailers — the "several messages" extension this ADR left room for, added beside the single-message
   REST shape rather than by bending it.
+
+## Update (2026-09-19): WebSocket landed as the fourth container
+
+`docs/specs/2026-09-19-websocket-request-kind-design.md` built the fourth protocol this ADR's shape was chosen to
+survive. What it kept, the deviation it repeats, and what is new:
+
+- **Kept.** A WebSocket API is written to `apis/<slug>/` beside the REST and gRPC ones, with `kind: websocket` at
+  the top of `api.yaml` and of every request file; `formatVersion` stayed at 3, so an older build meets
+  `kind: websocket` and refuses it by name, exactly as this ADR reserved for a protocol it did not yet know the
+  shape of. Environments, history, search, the tab host and the send dispatcher each branch on `kind` at exactly
+  one place per layer, as before.
+- **Deviation, repeated.** The gRPC update's `grpcApis` list beside `Project.apis` set the precedent this protocol
+  follows rather than breaks: `Project.wsApis` is a fourth list, because `WsApi`/`WsRequestDef` (a URL, headers,
+  subprotocols, no method or body) would have forced every REST and gRPC reader to narrow on `kind` before touching
+  a field shared by neither. The compiler points at every place that handles APIs and has no WebSocket branch yet,
+  the same mitigation the *Consequences* section hoped for.
+- **New: a request owns several sibling files.** A REST or gRPC request is one file; a WebSocket request's saved
+  messages are siblings of its own — `<name>.msg-<message>.json` for text, `<name>.msg-<message>.b64` for binary
+  (saved binary content is base64, never raw bytes on disk) — tracked and swept the way a REST raw body or a gRPC
+  message file already are, so a removed message, a renamed request or a message whose format changed leaves no
+  orphan behind.
+- **New: History's `ws` record is a capped transcript, not a single message or a short list.** A session can run
+  far longer than a request/response pair or a bounded gRPC stream, so the renderer holds at most 5 000 live
+  frames, and what History keeps is a *sample* rather than the whole run: the first 400 frames plus the last 100,
+  capped at 1 MB — enough to show how a session opened and how it ended without keeping an unbounded log per entry.
+  Re-send from History stays offered for a SOAP entry only; a WebSocket entry's HTTP Log row is named after its
+  request with Resend off, the same as REST and gRPC.
+- **New: the transport is container-agnostic on purpose.** Nothing in `packages/engine/src/ws/` reads from
+  `project/` — the seam the plan's §6 left for whatever comes after WebSocket (a request/response protocol that
+  wants the same session machinery) to reuse the transport without reusing the project model.

@@ -6,12 +6,14 @@ import {
   makeFailure,
   makeGrpcExchange,
   makeRestExchange,
+  makeWsHandshakeEntry,
 } from '../mocks/exchange-fixtures.js';
 
 const sources = {
   requests: { 'req-1': { name: 'Add numbers' } },
   restRequests: { 'rest-1': { name: 'List pets' } },
   grpcRequests: { 'grpc-1': { service: 'pets.v1.PetService', method: 'GetPet' } },
+  wsRequests: { 'ws-1': { name: 'Lobby' } },
 };
 
 describe('nameOf', () => {
@@ -19,6 +21,7 @@ describe('nameOf', () => {
     expect(nameOf(logExchange(makeExchange(), 'req-1'), sources)).toBe('Add numbers');
     expect(nameOf(logExchange(makeRestExchange(), 'rest-1'), sources)).toBe('List pets');
     expect(nameOf(logExchange(makeGrpcExchange(), 'grpc-1'), sources)).toBe('PetService/GetPet');
+    expect(nameOf(makeWsHandshakeEntry({}, 'ws-1'), sources)).toBe('Lobby');
   });
 
   it('falls back to the URL path for an unknown or missing request', () => {

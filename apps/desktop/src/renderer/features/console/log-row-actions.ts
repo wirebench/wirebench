@@ -42,7 +42,10 @@ export function requestIdOf(entry: LogEntry): string | undefined {
 
 /** The request headers the row shows. */
 export function requestHeadersOf(entry: LogEntry): Readonly<Record<string, string>> {
-  return entry.kind === 'exchange' ? entry.exchange.http.request.headers : entry.failure.request.headers;
+  if (entry.kind !== 'exchange') {
+    return entry.failure.request.headers;
+  }
+  return 'protocol' in entry.exchange ? entry.exchange.requestHeaders : entry.exchange.http.request.headers;
 }
 
 /** One `Name: value` line per header. */
@@ -54,7 +57,10 @@ export function headersText(headers: Readonly<Record<string, string>>): string {
 
 /** The response body as text; undefined for a failure, which has none. */
 export function responseBodyText(entry: LogEntry): string | undefined {
-  return entry.kind === 'exchange' ? decodeBase64Text(entry.exchange.http.bodyBase64) : undefined;
+  if (entry.kind !== 'exchange' || 'protocol' in entry.exchange) {
+    return undefined;
+  }
+  return decodeBase64Text(entry.exchange.http.bodyBase64);
 }
 
 function on(id: RowActionId, label: string, hint?: string): RowAction {
@@ -73,7 +79,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
 
   const missingReason = requestId === undefined ? 'Not from a saved request' : 'The request no longer exists';
   let resend: RowAction;
-  if (!exists) {
+  if (protocol === 'websocket') {
+    resend = off('resend', 'Resend', 'A WebSocket session reconnects from the request');
+  } else if (!exists) {
     resend = off('resend', 'Resend', missingReason);
   } else if (stageOf(entry) === 'prepare') {
     resend = off('resend', 'Resend', 'Never sent');
@@ -95,7 +103,9 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
       : on('copy-response-headers', 'Copy response headers'),
     failed
       ? off('copy-response-body', 'Copy response body', 'No response')
-      : on('copy-response-body', 'Copy response body'),
+      : protocol === 'websocket'
+        ? off('copy-response-body', 'Copy response body', 'A handshake has no body')
+        : on('copy-response-body', 'Copy response body'),
     resend,
     exists ? on('open-request', 'Open request') : off('open-request', 'Open request', missingReason),
   ];
@@ -107,7 +117,13 @@ export function projectLookup(): RequestLookup {
     has: (protocol, requestId) => {
       const state = useProjectStore.getState();
       const records =
-        protocol === 'soap' ? state.requests : protocol === 'rest' ? state.restRequests : state.grpcRequests;
+        protocol === 'soap'
+          ? state.requests
+          : protocol === 'rest'
+            ? state.restRequests
+            : protocol === 'websocket'
+              ? state.wsRequests
+              : state.grpcRequests;
       return records[requestId] !== undefined;
     },
     unaryGrpc: (requestId) => useProjectStore.getState().grpcRequests[requestId]?.methodKind === 'unary',

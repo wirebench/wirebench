@@ -73,6 +73,11 @@
       "types": "./dist/grpc/browser.d.ts",
       "default": "./dist/grpc/browser.js"
     },
+    "./ws": {
+      "development": "./src/ws/browser.ts",
+      "types": "./dist/ws/browser.d.ts",
+      "default": "./dist/ws/browser.js"
+    },
     "./detect": {
       "development": "./src/import-detect.ts",
       "types": "./dist/import-detect.d.ts",

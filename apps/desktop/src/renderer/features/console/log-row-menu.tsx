@@ -4,6 +4,7 @@ import { showToast } from '../../components/toast.js';
 import { type LogEntry, useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
+import { openWsRequestTab } from '../ws-editor/ws-actions.js';
 import { openRequestTab } from '../request-editor/request-actions.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
 import { protocolOf, urlOf } from './log-filter.js';
@@ -55,7 +56,10 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
       return copy(headersText(requestHeadersOf(entry)), 'Copied request headers');
     case 'copy-response-headers':
       return entry.kind === 'exchange'
-        ? copy(headersText(entry.exchange.http.headers), 'Copied response headers')
+        ? copy(
+            headersText('protocol' in entry.exchange ? entry.exchange.responseHeaders : entry.exchange.http.headers),
+            'Copied response headers',
+          )
         : undefined;
     case 'copy-response-body': {
       const body = responseBodyText(entry);
@@ -63,10 +67,12 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
     }
     case 'resend': {
       const requestId = requestIdOf(entry);
-      if (requestId === undefined) {
+      const protocol = protocolOf(entry);
+      // `log.resend` does not cover WebSocket yet (Task 10 of #98); nothing to do here until it does.
+      if (requestId === undefined || protocol === 'websocket') {
         return;
       }
-      const result = await ipc().log.resend({ protocol: protocolOf(entry), requestId });
+      const result = await ipc().log.resend({ protocol, requestId });
       if (result.ok) {
         useExchangesStore.getState().appendExchange(result.value.exchange, requestId);
       } else {
@@ -84,6 +90,8 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
         openRestRequestTab(requestId);
       } else if (protocol === 'grpc') {
         openGrpcRequestTab(requestId);
+      } else if (protocol === 'websocket') {
+        openWsRequestTab(requestId);
       } else {
         openRequestTab(requestId);
       }

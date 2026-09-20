@@ -41,8 +41,14 @@ describe('LogFilterBar', () => {
       within(protocol)
         .getAllByRole('button')
         .map((chip) => chip.textContent),
-    ).toEqual(['SOAP', 'REST', 'gRPC']);
+    ).toEqual(['SOAP', 'REST', 'gRPC', 'WS']);
     expect(screen.getByTestId('http-log-count').textContent).toBe('3 of 3');
+  });
+
+  it('filters to WebSocket handshakes with the WS chip', async () => {
+    render(<LogFilterBar shown={3} total={3} />);
+    await userEvent.click(within(screen.getByRole('group', { name: 'Protocol' })).getByRole('button', { name: 'WS' }));
+    expect(useExchangesStore.getState().filter.protocols).toEqual(['websocket']);
   });
 
   it('toggles a chip into and out of the filter and reflects it as aria-pressed', async () => {

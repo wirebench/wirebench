@@ -33,12 +33,13 @@ function cancelPending(): void {
 /** Hands every current draft to main for `workspaceId` now, replacing what it held. */
 export async function stashDrafts(workspaceId: string): Promise<void> {
   cancelPending();
-  const { requests, restRequests, grpcRequests } = useDraftsStore.getState();
+  const { requests, restRequests, grpcRequests, wsRequests } = useDraftsStore.getState();
   await ipc().workspace.stashDrafts({
     workspaceId,
     requests: { ...requests },
     restRequests: { ...restRequests },
     grpcRequests: { ...grpcRequests },
+    wsRequests: { ...wsRequests },
   });
 }
 
@@ -58,7 +59,8 @@ export function subscribeToDraftStash(workspaceId: () => string | undefined): ()
     if (
       state.requests === previous.requests &&
       state.restRequests === previous.restRequests &&
-      state.grpcRequests === previous.grpcRequests
+      state.grpcRequests === previous.grpcRequests &&
+      state.wsRequests === previous.wsRequests
     ) {
       return;
     }
@@ -145,6 +147,14 @@ export function applyRestored(workspaceId: string, restored: WorkspaceRestoredRe
       continue;
     }
     projects.editGrpcRequest(requestId, patch);
+    restoredDrafts += 1;
+  }
+  for (const [requestId, patch] of Object.entries(restored.wsDrafts)) {
+    if (projects.wsRequests[requestId] === undefined) {
+      droppedDrafts += 1;
+      continue;
+    }
+    projects.editWsRequest(requestId, patch);
     restoredDrafts += 1;
   }
   for (const notice of restored.notices) {

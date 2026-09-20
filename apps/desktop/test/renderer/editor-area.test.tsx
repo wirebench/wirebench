@@ -5,6 +5,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { makeDraft } from '../mocks/exchange-fixtures.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { wsRequestWire } from '../helpers/wire-defaults.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -132,5 +133,25 @@ describe('EditorArea tabs', () => {
     const items = await screen.findAllByRole('menuitem');
     expect(items.map((item) => item.textContent)).toEqual(['Start', 'Request 1 · Add', 'Request 1 · Subtract']);
     useProjectStore.setState({ requests: {} });
+  });
+});
+
+describe('EditorArea — a WebSocket request tab', () => {
+  afterEach(() => {
+    cleanup();
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+    useProjectStore.setState({ wsRequests: {} });
+  });
+
+  it('opens the WebSocket editor, named for the request', async () => {
+    installWirebenchApi();
+    useProjectStore.setState({ wsRequests: { 'ws-1': wsRequestWire({ id: 'ws-1', name: 'Lobby' }) } });
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+    useEditorsStore.getState().open({ id: 'ws:ws-1', kind: 'ws-request', title: 'Lobby', wsRequestId: 'ws-1' });
+
+    render(<EditorArea />);
+
+    expect(await screen.findByTestId('ws-editor')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Request Lobby' })).toBeTruthy();
   });
 });

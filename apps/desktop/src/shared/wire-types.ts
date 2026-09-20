@@ -646,7 +646,7 @@ export type HttpExchangeWire = z.infer<typeof httpExchangeWireSchema>;
 export const failedExchangeWireSchema = z.object({
   /** The id the renderer generated for the send — the log dedupes on it. */
   sendId: z.string(),
-  protocol: z.enum(['soap', 'rest', 'grpc']),
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']),
   /** Absent for an ad-hoc resend of an orphaned History entry. */
   requestId: z.string().optional(),
   /** The same shape as `httpExchangeWireSchema.request`; headers already redacted. */
@@ -1577,6 +1577,96 @@ export const grpcRequestPatchSchema = z.object({
 });
 export type GrpcRequestPatchWire = z.infer<typeof grpcRequestPatchSchema>;
 
+/** A WebSocket folder, sharing the project's `folders` list with REST and gRPC. */
+export const wsFolderWireSchema = restFolderWireSchema;
+export type WsFolderWire = z.infer<typeof wsFolderWireSchema>;
+
+/** Per-request WebSocket transport settings; an absent field means *inherit*, never *off*. */
+export const wsSettingsWireSchema = z.object({
+  handshakeTimeoutMs: z.number().int().nonnegative().optional(),
+  trustInvalid: z.boolean().optional(),
+  sslKeystoreRef: z.string().optional(),
+  bindAddress: z.string().optional(),
+  maxMessageBytes: z.number().int().nonnegative().optional(),
+  escapeProperties: z.boolean().optional(),
+});
+export type WsSettingsWire = z.infer<typeof wsSettingsWireSchema>;
+
+/** One message saved under a WebSocket request, ready to send without retyping it. */
+export const wsSavedMessageWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  format: z.enum(['text', 'binary']),
+  content: z.string(),
+});
+export type WsSavedMessageWire = z.infer<typeof wsSavedMessageWireSchema>;
+
+/** One WebSocket request as the renderer sees it. */
+export const wsRequestWireSchema = z.object({
+  kind: z.literal('websocket'),
+  id: z.string(),
+  apiId: z.string(),
+  /** Id of the folder it sits in, absent at the API's root. */
+  folderId: z.string().optional(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  url: z.string(),
+  query: z.array(keyValueWireSchema),
+  headers: z.array(keyValueWireSchema),
+  subprotocols: z.array(z.string()),
+  auth: authConfigWireSchema,
+  settings: wsSettingsWireSchema,
+  messages: z.array(wsSavedMessageWireSchema),
+  orphaned: z.boolean().optional(),
+});
+export type WsRequestWire = z.infer<typeof wsRequestWireSchema>;
+
+/** One WebSocket API as the renderer sees it. Its folders share the project's `folders` list. */
+export const wsApiWireSchema = z.object({
+  kind: z.literal('websocket'),
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  url: z.string(),
+  headers: z.array(keyValueWireSchema),
+  auth: authConfigWireSchema.optional(),
+  definition: z.object({ kind: z.literal('asyncapi'), source: z.string(), cache: z.boolean() }).optional(),
+});
+export type WsApiWire = z.infer<typeof wsApiWireSchema>;
+
+/** The fields of a WebSocket API the renderer may patch; `null` clears an optional one. */
+export const wsApiPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  url: z.string().optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  auth: authConfigWireSchema.nullable().optional(),
+});
+export type WsApiPatchWire = z.infer<typeof wsApiPatchSchema>;
+
+/**
+ * The fields of a WebSocket request the renderer may patch. Tables and settings are replaced
+ * wholesale, as a REST request's are: an absent setting means *inherit*. `messages` REPLACES the
+ * whole saved-message list, which is how reordering is expressed.
+ */
+export const wsRequestPatchSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  url: z.string().optional(),
+  query: z.array(keyValueWireSchema).optional(),
+  headers: z.array(keyValueWireSchema).optional(),
+  subprotocols: z.array(z.string()).optional(),
+  auth: authConfigWireSchema.optional(),
+  settings: wsSettingsWireSchema.optional(),
+  messages: z.array(wsSavedMessageWireSchema).optional(),
+});
+export type WsRequestPatchWire = z.infer<typeof wsRequestPatchSchema>;
+
 /** One cookie a response set, as the Cookies tab shows it. */
 export const cookieWireSchema = z.object({
   name: z.string(),
@@ -1761,6 +1851,138 @@ export const requestPreflightGrpcRequestSchema = z.object({
   draft: grpcRequestPatchSchema.optional(),
 });
 
+// ——— WebSocket session channels ————————————————————————————————————————————————————————————
+
+/** One frame sent or received during a WebSocket session, as the log/live pane shows it. */
+export const wsFrameWireSchema = z.object({
+  index: z.number(),
+  direction: z.enum(['sent', 'received']),
+  opcode: z.enum(['text', 'binary', 'ping', 'pong', 'close']),
+  /** Milliseconds since the session started. */
+  at: z.number(),
+  size: z.number(),
+  text: z.string().optional(),
+  base64: z.string().optional(),
+  close: z.object({ code: z.number(), reason: z.string() }).optional(),
+  payloadTruncated: z.boolean().optional(),
+});
+export type WsFrameWire = z.infer<typeof wsFrameWireSchema>;
+
+/** The handshake that opened (or failed to open) a WebSocket session, redacted like every other header set. */
+export const wsHandshakeWireSchema = z.object({
+  url: z.string(),
+  requestHeaders: z.record(z.string(), z.string()),
+  requestedSubprotocols: z.array(z.string()),
+  rawRequestHead: z.string().optional(),
+  status: z.number().optional(),
+  statusText: z.string().optional(),
+  responseHeaders: z.record(z.string(), z.string()).optional(),
+  protocol: z.string().optional(),
+  extensions: z.string().optional(),
+  remoteAddress: z.string().optional(),
+  startedAt: z.string(),
+  durationMs: z.number(),
+  tls: tlsInfoWireSchema.optional(),
+  error: z.string().optional(),
+});
+export type WsHandshakeWire = z.infer<typeof wsHandshakeWireSchema>;
+
+/** What one WebSocket session produced (so far, or in whole): the handshake, its frames, how it closed. */
+export const wsExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  url: z.string(),
+  handshake: wsHandshakeWireSchema,
+  frames: z.array(wsFrameWireSchema),
+  closed: z.object({ code: z.number(), reason: z.string(), by: z.enum(['client', 'server', 'error']) }),
+  counts: z.object({
+    sent: z.number(),
+    received: z.number(),
+    bytesSent: z.number(),
+    bytesReceived: z.number(),
+  }),
+  durationMs: z.number(),
+});
+export type WsExchangeSummary = z.infer<typeof wsExchangeSummarySchema>;
+
+/**
+ * The HTTP Log's row for a WebSocket session: the handshake, and only the handshake — written the
+ * moment it settles, not when the session closes (the frames live in History, via
+ * {@link WsExchangeSummary}). `url` is `http(s)://` so the row filters and searches like every
+ * other, `wsUrl` keeps the original `ws(s)://` form for display. Discriminated from the other
+ * `logEntryWireSchema` exchange shapes by `protocol` (they carry none).
+ */
+export const wsHandshakeExchangeSummarySchema = z.object({
+  sendId: z.string(),
+  protocol: z.literal('websocket'),
+  method: z.literal('GET'),
+  url: z.string(),
+  wsUrl: z.string(),
+  requestHeaders: z.record(z.string(), z.string()),
+  rawRequestHead: z.string().optional(),
+  status: z.literal(101),
+  responseHeaders: z.record(z.string(), z.string()),
+  startedAt: z.string(),
+  durationMs: z.number(),
+  tls: tlsInfoWireSchema.optional(),
+});
+export type WsHandshakeExchangeSummary = z.infer<typeof wsHandshakeExchangeSummarySchema>;
+
+/**
+ * One report from a WebSocket session that is still open, correlated to the invoke by `sendId`.
+ *
+ * `request.openWs` stays open for the life of the session and resolves with the whole exchange;
+ * these say what has happened so far, the same relationship `grpcLiveEventSchema` has to
+ * `request.sendGrpc`.
+ */
+export const wsLiveEventSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('handshake'), sendId: z.string(), handshake: wsHandshakeWireSchema }),
+  z.object({ kind: z.literal('frame'), sendId: z.string(), frame: wsFrameWireSchema }),
+  z.object({ kind: z.literal('closed'), sendId: z.string() }),
+]);
+export type WsLiveEvent = z.infer<typeof wsLiveEventSchema>;
+
+/** Request payload for `request.openWs`: which saved request to dial, and the editor's unsaved edits. */
+export const requestOpenWsRequestSchema = z.object({
+  sendId: z.string(),
+  requestId: z.string(),
+  draft: wsRequestPatchSchema.optional(),
+});
+export type RequestOpenWsRequest = z.infer<typeof requestOpenWsRequestSchema>;
+
+/** Request payload for `request.wsSend`: one message on an open session, named by its `sendId`. */
+export const requestWsSendRequestSchema = z.object({
+  sendId: z.string(),
+  requestId: z.string(),
+  format: z.enum(['text', 'binary']),
+  /** Text as typed for `format: 'text'`; base64 for `format: 'binary'`. */
+  content: z.string(),
+  /** Property-expand `content` (text only) against the request's scopes before sending. */
+  expand: z.boolean(),
+});
+export type RequestWsSendRequest = z.infer<typeof requestWsSendRequestSchema>;
+
+/** What `request.wsSend` answers: the frame as it went, so the pane echoes what was sent. */
+export const requestWsSendResponseSchema = wsFrameWireSchema;
+export type RequestWsSendResponse = z.infer<typeof requestWsSendResponseSchema>;
+
+/** Request payload for `request.wsClose`: which open session to close, and how. */
+export const requestWsCloseRequestSchema = z.object({
+  sendId: z.string(),
+  code: z.number().optional(),
+  reason: z.string().optional(),
+});
+export type RequestWsCloseRequest = z.infer<typeof requestWsCloseRequestSchema>;
+
+/** What `request.wsClose` answers. `false` when no such session is open. */
+export const requestWsCloseResponseSchema = z.object({ closed: z.boolean() });
+export type RequestWsCloseResponse = z.infer<typeof requestWsCloseResponseSchema>;
+
+/** Request payload for `request.preflightWs`: the same pair, with nothing sent. */
+export const requestPreflightWsRequestSchema = z.object({
+  requestId: z.string(),
+  draft: wsRequestPatchSchema.optional(),
+});
+
 /** Request payload for `request.curl`: which saved request, and which shell's quoting. */
 export const requestCurlRequestSchema = z.object({
   requestId: z.string(),
@@ -1775,6 +1997,8 @@ export const requestCurlRequestSchema = z.object({
   draft: restRequestPatchSchema.optional(),
   /** The same, for a gRPC request's editor. */
   grpcDraft: grpcRequestPatchSchema.optional(),
+  /** The same, for a WebSocket request's editor. */
+  wsDraft: wsRequestPatchSchema.optional(),
 });
 export type RequestCurlRequest = z.infer<typeof requestCurlRequestSchema>;
 
@@ -1794,13 +2018,26 @@ export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 export const logEntryWireSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('exchange'),
-    exchange: z.union([grpcExchangeSummarySchema, restExchangeSummarySchema, exchangeSummarySchema]),
+    exchange: z.union([
+      grpcExchangeSummarySchema,
+      restExchangeSummarySchema,
+      exchangeSummarySchema,
+      wsHandshakeExchangeSummarySchema,
+    ]),
     /** The saved request the send came from; absent for an ad-hoc send. */
     requestId: z.string().optional(),
   }),
   z.object({ kind: z.literal('failure'), failure: failedExchangeWireSchema }),
 ]);
 export type LogEntryWire = z.infer<typeof logEntryWireSchema>;
+
+/**
+ * Payload for the `exchange.logged` event: a row for the HTTP Log that exists before its send's
+ * own invoke resolves — currently only a WebSocket handshake (`request.openWs` stays pending for
+ * the life of the session, so this is the log row's only way to appear while it is still open).
+ */
+export const exchangeLoggedEventSchema = z.object({ entry: logEntryWireSchema });
+export type ExchangeLoggedEvent = z.infer<typeof exchangeLoggedEventSchema>;
 
 /** Request payload for `log.curl`; the response is `requestCurlResponseSchema`. */
 export const logCurlRequestSchema = z.object({ entry: logEntryWireSchema, shell: z.enum(['posix', 'powershell']) });
@@ -1810,7 +2047,10 @@ export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
  * Request payload for `log.resend`: the saved request behind a row, replayed as it is now. A
  * logged row's own headers and body are redacted and are never the source of a send.
  */
-export const logResendRequestSchema = z.object({ protocol: z.enum(['soap', 'rest', 'grpc']), requestId: z.string() });
+export const logResendRequestSchema = z.object({
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']),
+  requestId: z.string(),
+});
 export type LogResendRequest = z.infer<typeof logResendRequestSchema>;
 
 /** Response payload for `log.resend`: the new exchange, tagged by protocol. */
@@ -1850,6 +2090,10 @@ export const projectWireSchema = z.object({
   grpcApis: z.array(grpcApiWireSchema),
   /** Every gRPC request of every gRPC API, flat. */
   grpcRequests: z.array(grpcRequestWireSchema),
+  /** The project's WebSocket APIs; their folders are in `folders`, keyed by `apiId` like the rest. */
+  wsApis: z.array(wsApiWireSchema),
+  /** Every WebSocket request of every WebSocket API, flat. */
+  wsRequests: z.array(wsRequestWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -2006,6 +2250,37 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-grpc-request'), requestId: z.string(), patch: grpcRequestPatchSchema }),
   z.object({ kind: z.literal('remove-grpc-request'), requestId: z.string() }),
   z.object({ kind: z.literal('clone-grpc-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('add-ws-api'), name: z.string(), url: z.string().optional() }),
+  z.object({ kind: z.literal('update-ws-api'), apiId: z.string(), patch: wsApiPatchSchema }),
+  z.object({ kind: z.literal('remove-ws-api'), apiId: z.string() }),
+  z.object({
+    kind: z.literal('add-ws-request'),
+    apiId: z.string(),
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+    url: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('update-ws-request'), requestId: z.string(), patch: wsRequestPatchSchema }),
+  z.object({ kind: z.literal('remove-ws-request'), requestId: z.string() }),
+  z.object({ kind: z.literal('clone-ws-request'), requestId: z.string() }),
+  z.object({
+    kind: z.literal('add-ws-message'),
+    requestId: z.string(),
+    name: z.string(),
+    format: z.enum(['text', 'binary']).optional(),
+    content: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('update-ws-message'),
+    requestId: z.string(),
+    messageId: z.string(),
+    patch: z.object({
+      name: z.string().optional(),
+      format: z.enum(['text', 'binary']).optional(),
+      content: z.string().optional(),
+    }),
+  }),
+  z.object({ kind: z.literal('remove-ws-message'), requestId: z.string(), messageId: z.string() }),
   z.object({ kind: z.literal('add-environment'), name: z.string() }),
   z.object({
     kind: z.literal('update-environment'),
@@ -2633,7 +2908,7 @@ export const historyEntrySchema = z.object({
    * carries none, and a reader treats its absence as SOAP (`normalizeHistoryEntry`). Every entry
    * main writes from now on names its kind.
    */
-  kind: z.enum(['soap', 'rest', 'grpc']).optional(),
+  kind: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
   at: z.string(),
   projectId: z.string(),
   requestId: z.string().optional(),
@@ -2671,6 +2946,29 @@ export const historyEntrySchema = z.object({
       requestMessages: z.array(z.string()),
       responseMessages: z.array(z.string()),
       trailers: z.array(headerEntrySchema),
+    })
+    .optional(),
+  /** The session record of a WebSocket send: the handshake outcome, how it closed, its frames. */
+  ws: z
+    .object({
+      url: z.string(),
+      status: z.number().optional(),
+      protocol: z.string().optional(),
+      closeCode: z.number(),
+      closeReason: z.string(),
+      closedBy: z.enum(['client', 'server', 'error']),
+      counts: z.object({
+        sent: z.number(),
+        received: z.number(),
+        bytesSent: z.number(),
+        bytesReceived: z.number(),
+      }),
+      frames: z.array(wsFrameWireSchema),
+      /** Set only when the cap actually trimmed something (frames, or just a payload). */
+      truncated: z.boolean().optional(),
+      omittedFrames: z.number().optional(),
+      /** The handshake's transport error, absent when the handshake succeeded (or never ran). */
+      error: z.string().optional(),
     })
     .optional(),
   sizeBytes: z.number(),
@@ -3670,7 +3968,7 @@ export const searchMatchSchema = z.object({
    * reads as what it was. It decides both the badge in the results list and which editor a click
    * opens — a REST request id in a SOAP tab would open an editor with nothing in it.
    */
-  protocol: z.enum(['soap', 'rest', 'grpc']).optional(),
+  protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']).optional(),
   /**
    * Which project of the open workspace the match came from, and its display name — search
    * spans every open project, so a row has to say where it is before it can be revealed.
@@ -3938,6 +4236,8 @@ export const workspaceStashDraftsRequestSchema = z.object({
   restRequests: z.record(z.string(), restRequestPatchSchema).optional(),
   /** The gRPC editor's unsaved edits, by gRPC request id; absent in a stash from an older build. */
   grpcRequests: z.record(z.string(), grpcRequestPatchSchema).optional(),
+  /** The WebSocket editor's unsaved edits, by ws request id; absent in a stash from an older build. */
+  wsRequests: z.record(z.string(), wsRequestPatchSchema).optional(),
 });
 export type WorkspaceStashDraftsRequest = z.infer<typeof workspaceStashDraftsRequestSchema>;
 
@@ -3965,6 +4265,8 @@ export const workspaceRestoredResponseSchema = z.object({
   /** The REST drafts the last session left unsaved, by REST request id. */
   restDrafts: z.record(z.string(), restRequestPatchSchema),
   grpcDrafts: z.record(z.string(), grpcRequestPatchSchema).default({}),
+  /** The WebSocket drafts the last session left unsaved, by WebSocket request id. */
+  wsDrafts: z.record(z.string(), wsRequestPatchSchema).default({}),
   notices: z.array(unsavedRestoreNoticeSchema),
 });
 export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponseSchema>;

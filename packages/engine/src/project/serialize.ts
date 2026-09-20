@@ -10,6 +10,8 @@ import { ProjectError } from '../errors.js';
 import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
 import type { KeyValueEntry, RestApi, RestBody, RestRequestDef } from '../rest/model.js';
 import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
+import type { WsApi, WsRequestDef } from '../ws/model.js';
+import { wsMessageFileName } from '../ws/model.js';
 import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
 import {
   API_FILE,
@@ -231,6 +233,50 @@ const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) =>
 };
 
 /**
+ * A WebSocket request as written: each saved message goes to a sibling file, so a JSON message is a
+ * JSON file in git. Siblings rather than a directory, because every directory here loads as a folder.
+ *
+ * @throws ProjectError `duplicate-slug` when two of the request's messages share a slug.
+ */
+const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
+  const messages = request.messages.map((message) => {
+    const file = wsMessageFileName(request.slug, message);
+    assertPathSegment(file);
+    if (files.has(`${dir}/${file}`)) {
+      throw new ProjectError('duplicate-slug', `Request "${request.name}" has two messages named "${message.slug}"`, {
+        details: { file: `${dir}/${file}` },
+      });
+    }
+    files.set(`${dir}/${file}`, message.content);
+    return compact({
+      id: message.id,
+      name: message.name,
+      format: message.format === 'binary' ? 'binary' : undefined,
+      file,
+    });
+  });
+  files.set(
+    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
+    stringifyYaml(
+      compact({
+        kind: request.kind,
+        id: request.id,
+        name: request.name,
+        order: request.order,
+        description: request.description,
+        url: request.url,
+        query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
+        headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
+        subprotocols: request.subprotocols.length > 0 ? [...request.subprotocols] : undefined,
+        auth: authDocument(request.auth),
+        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+        messages: messages.length > 0 ? messages : undefined,
+      }),
+    ),
+  );
+};
+
+/**
  * Adds one folder's own file, its requests (and their body files) and, recursively, the folders
  * below it.
  *
@@ -331,6 +377,29 @@ function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
   addFolderFiles<GrpcRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeGrpcRequest);
 }
 
+/** Every file one WebSocket API occupies. It shares `apis/` with the others; its `kind` says which it is. */
+function addWsApiFiles(files: Map<string, string>, api: WsApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        url: api.url,
+        headers: api.headers.length > 0 ? keyValueDocuments(api.headers) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition: api.definition === undefined ? undefined : compact({ ...api.definition }),
+      }),
+    ),
+  );
+  addFolderFiles<WsRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeWsRequest);
+}
+
 function wssDocument(ref: WssRef): string {
   return stringifyYaml(ref.document);
 }
@@ -422,6 +491,9 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
   }
   for (const api of project.grpcApis) {
     addGrpcApiFiles(files, api);
+  }
+  for (const api of project.wsApis) {
+    addWsApiFiles(files, api);
   }
 
   for (const [direction, refs] of [

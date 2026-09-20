@@ -14,6 +14,8 @@ import type {
   RestApiWire,
   RestFolderWire,
   RestRequestWire,
+  WsApiWire,
+  WsRequestWire,
 } from '../../src/shared/wire-types.js';
 
 /** The default §6.3 request properties, as the renderer mirrors them. */
@@ -25,15 +27,21 @@ export const REQUEST_PROPERTIES: RequestPropertiesWire = {
 export const PROJECT_SETTINGS: ProjectSettingsWire = { ...DEFAULT_PROJECT_SETTINGS };
 
 /**
- * The REST halves of a `ProjectWire`, empty. Spread into a fixture that is about SOAP so the
- * snapshot stays complete without every such test having to mention APIs it does not use.
+ * The REST/gRPC/WebSocket halves of a `ProjectWire`, empty. Spread into a fixture that is about
+ * SOAP so the snapshot stays complete without every such test having to mention APIs it does not
+ * use.
  */
-export const NO_REST: Pick<ProjectWire, 'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests'> = {
+export const NO_REST: Pick<
+  ProjectWire,
+  'apis' | 'folders' | 'restRequests' | 'grpcApis' | 'grpcRequests' | 'wsApis' | 'wsRequests'
+> = {
   apis: [],
   folders: [],
   restRequests: [],
   grpcApis: [],
   grpcRequests: [],
+  wsApis: [],
+  wsRequests: [],
 };
 
 /** One gRPC API on the wire. */
@@ -107,6 +115,40 @@ export function restRequestWire(overrides: Partial<RestRequestWire> = {}): RestR
     body: { kind: 'none' },
     auth: { type: 'inherit' },
     settings: {},
+    ...overrides,
+  };
+}
+
+/** One WebSocket API on the wire. */
+export function wsApiWire(overrides: Partial<WsApiWire> = {}): WsApiWire {
+  return {
+    kind: 'websocket',
+    id: 'ws-api-1',
+    name: 'Chat',
+    slug: 'chat',
+    order: 0,
+    url: 'wss://chat.test',
+    headers: [],
+    ...overrides,
+  };
+}
+
+/** One WebSocket request on the wire, with no saved messages unless the caller says otherwise. */
+export function wsRequestWire(overrides: Partial<WsRequestWire> = {}): WsRequestWire {
+  return {
+    kind: 'websocket',
+    id: 'ws-1',
+    apiId: 'ws-api-1',
+    name: 'Lobby',
+    slug: 'Lobby',
+    order: 0,
+    url: '/lobby',
+    query: [],
+    headers: [],
+    subprotocols: [],
+    auth: { type: 'inherit' },
+    settings: {},
+    messages: [],
     ...overrides,
   };
 }

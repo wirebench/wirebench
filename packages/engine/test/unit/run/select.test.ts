@@ -70,6 +70,7 @@ function makeProject(): Project {
     interfaces: [alpha, beta],
     apis: [billing],
     grpcApis: [],
+    wsApis: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

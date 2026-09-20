@@ -1,7 +1,23 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { curlForLogEntry, loggedRequestOf } from '../src/main/log-curl.js';
-import type { FailedExchangeWire, RestExchangeSummary } from '../src/shared/wire-types.js';
+import type { FailedExchangeWire, RestExchangeSummary, WsHandshakeExchangeSummary } from '../src/shared/wire-types.js';
+
+function makeWsHandshakeExchange(overrides: Partial<WsHandshakeExchangeSummary> = {}): WsHandshakeExchangeSummary {
+  return {
+    sendId: 'send-1',
+    protocol: 'websocket',
+    method: 'GET',
+    url: 'https://api.test/chat',
+    wsUrl: 'wss://api.test/chat',
+    requestHeaders: { Authorization: 'Bearer plain-token' },
+    status: 101,
+    responseHeaders: { 'sec-websocket-accept': 'abc123=' },
+    startedAt: '2026-09-19T08:30:05.000Z',
+    durationMs: 25,
+    ...overrides,
+  };
+}
 
 // Local fixtures: the shared ones import renderer modules, which this node-side project cannot type.
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64');
@@ -69,6 +85,16 @@ function restEntry(rawRequest: string, truncated = false) {
 }
 
 describe('loggedRequestOf', () => {
+  it('a WebSocket row reads as a GET with the http(s):// URL and the handshake request headers', () => {
+    const entry = { kind: 'exchange' as const, exchange: makeWsHandshakeExchange() };
+    expect(loggedRequestOf(entry)).toEqual({
+      method: 'GET',
+      url: 'https://api.test/chat',
+      headers: { Authorization: 'Bearer plain-token' },
+      bodyTruncated: false,
+    });
+  });
+
   it('reads method, URL, headers and body from the raw request, dropping transport headers', () => {
     const entry = restEntry(
       'POST /pets?page=2 HTTP/1.1\r\nHost: api.test\r\nContent-Type: application/json\r\nContent-Length: 11\r\nX-Trace: 1\r\n\r\n{"name":"a"}',
@@ -123,5 +149,16 @@ describe('curlForLogEntry', () => {
     const fromFailure = curlForLogEntry(failure, { shell: 'posix', show: true }).command;
     expect(fromFailure).not.toContain('k-placeholder');
     expect(fromFailure).toContain('<redacted>');
+  });
+
+  it('a WebSocket row uses wsToCommand with the original ws(s):// URL, masked unless shown', () => {
+    const entry = { kind: 'exchange' as const, exchange: makeWsHandshakeExchange() };
+    const masked = curlForLogEntry(entry, { shell: 'posix', show: false });
+    expect(masked.command).toContain('websocat');
+    expect(masked.command).toContain("'wss://api.test/chat'");
+    expect(masked.command).not.toContain('plain-token');
+
+    const shown = curlForLogEntry(entry, { shell: 'posix', show: true });
+    expect(shown.command).toContain('plain-token');
   });
 });

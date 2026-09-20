@@ -79,8 +79,11 @@ function CertCard({ cert, index }: { readonly cert: PeerCertWire; readonly index
   );
 }
 
-/** The connection summary plus the peer chain, once we know there was a TLS handshake. */
-function TlsDetails({ tls }: { readonly tls: SslInfoWire }) {
+/**
+ * The connection summary plus the peer chain, once we know there was a TLS handshake. Exported for
+ * a pane that holds the TLS record without an HTTP exchange around it (a WebSocket handshake).
+ */
+export function TlsDetails({ tls }: { readonly tls: SslInfoWire }) {
   return (
     <div className="flex flex-col gap-2 p-2 text-xs">
       <div className="flex flex-col gap-1">

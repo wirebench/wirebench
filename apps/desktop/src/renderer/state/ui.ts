@@ -39,7 +39,7 @@ export interface Selection {
  * because the dialog only needs to name the thing and say how much goes with it.
  */
 export interface PendingNodeDeletion {
-  readonly kind: 'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request';
+  readonly kind: 'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request' | 'ws-api' | 'ws-request';
   readonly id: string;
   readonly name: string;
   /** How many requests are inside it; `0` for an empty folder or API, and for a request. */

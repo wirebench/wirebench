@@ -85,7 +85,8 @@ export function StatusBar() {
   const trustInvalid = useProjectStore((state) =>
     activeRequestId === undefined ? false : selectRequestTrustsInvalid(state, workspace, activeRequestId),
   );
-  const tlsLabel = last?.http.tls?.protocol ?? `TLS —`;
+  const tlsLabel =
+    (last === undefined ? undefined : 'protocol' in last ? last.tls?.protocol : last.http.tls?.protocol) ?? `TLS —`;
   const saveLabel = saving ? 'Saving…' : lastSavedAt !== undefined ? `Saved ${formatClock(lastSavedAt)}` : undefined;
 
   return (
@@ -201,7 +202,7 @@ export function StatusBar() {
         <span data-testid="status-bar-last" className="font-mono">
           last:{' '}
           <span className={toneFor(last) === 'bad' ? 'text-status-danger' : 'text-status-success'}>
-            {last.http.status}
+            {'protocol' in last ? last.status : last.http.status}
           </span>{' '}
           in {formatDuration(last.durationMs)} · {formatBytes(responseSize(last))}
         </span>

@@ -54,9 +54,12 @@ function headerLines(headers: Readonly<Record<string, string>> | undefined): str
 const cache = new Map<string, readonly string[]>();
 
 function cacheKey(entry: LogEntry): string {
-  return entry.kind === 'exchange'
-    ? `${entry.exchange.sendId}:${entry.exchange.http.bodyBase64.length}`
-    : `${entry.failure.sendId}:${entry.failure.rawRequestBase64?.length ?? 0}`;
+  if (entry.kind === 'exchange') {
+    return 'protocol' in entry.exchange
+      ? `${entry.exchange.sendId}:handshake`
+      : `${entry.exchange.sendId}:${entry.exchange.http.bodyBase64.length}`;
+  }
+  return `${entry.failure.sendId}:${entry.failure.rawRequestBase64?.length ?? 0}`;
 }
 
 /** The searchable text of one row (URL, header lines, first 256 KiB of each body), cached by sendId. */
@@ -68,13 +71,15 @@ export function searchTextOf(entry: LogEntry): readonly string[] {
   }
   const texts =
     entry.kind === 'exchange'
-      ? [
-          urlOf(entry),
-          ...headerLines(entry.exchange.http.request.headers),
-          ...headerLines(entry.exchange.http.headers),
-          decodeCapped(entry.exchange.http.rawRequestBase64),
-          decodeCapped(entry.exchange.http.bodyBase64),
-        ]
+      ? 'protocol' in entry.exchange
+        ? [urlOf(entry), ...headerLines(entry.exchange.requestHeaders), ...headerLines(entry.exchange.responseHeaders)]
+        : [
+            urlOf(entry),
+            ...headerLines(entry.exchange.http.request.headers),
+            ...headerLines(entry.exchange.http.headers),
+            decodeCapped(entry.exchange.http.rawRequestBase64),
+            decodeCapped(entry.exchange.http.bodyBase64),
+          ]
       : [urlOf(entry), ...headerLines(entry.failure.request.headers), decodeCapped(entry.failure.rawRequestBase64)];
   cache.set(key, texts);
   if (cache.size > CACHE_CAP) {

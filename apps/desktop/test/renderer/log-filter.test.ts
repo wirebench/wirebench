@@ -11,7 +11,13 @@ import {
   statusLabelOf,
   urlOf,
 } from '../../src/renderer/features/console/log-filter.js';
-import { logExchange, makeExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import {
+  logExchange,
+  makeExchange,
+  makeFailure,
+  makeRestExchange,
+  makeWsHandshakeEntry,
+} from '../mocks/exchange-fixtures.js';
 
 function withStatus(status: number): LogEntry {
   const base = makeRestExchange();
@@ -21,6 +27,7 @@ function withStatus(status: number): LogEntry {
 const soap = logExchange(makeExchange());
 const rest = logExchange(makeRestExchange());
 const failed: LogEntry = { kind: 'failure', failure: makeFailure() };
+const handshake = makeWsHandshakeEntry();
 
 describe('entry accessors', () => {
   it('reads protocol, method and URL from either kind', () => {
@@ -31,14 +38,19 @@ describe('entry accessors', () => {
     expect(methodOf(failed)).toBe('GET');
     expect(urlOf(rest)).toBe('https://api.test/pet/1');
     expect(urlOf(failed)).toBe('http://127.0.0.1:1/nope');
+    expect(protocolOf(handshake)).toBe('websocket');
+    expect(methodOf(handshake)).toBe('GET');
+    expect(urlOf(handshake)).toBe('https://api.test/chat');
   });
 
-  it('classes a status by its hundreds; a failure is failed; a SOAP fault with a 200 is still 2xx', () => {
+  it('classes a status by its hundreds; a failure is failed; a SOAP fault with a 200 is still 2xx; a handshake is 2xx', () => {
     expect(statusClassOf(withStatus(204))).toBe('2xx');
     expect(statusClassOf(withStatus(302))).toBe('3xx');
     expect(statusClassOf(withStatus(404))).toBe('4xx');
     expect(statusClassOf(withStatus(503))).toBe('5xx');
     expect(statusClassOf(failed)).toBe('failed');
+    expect(statusClassOf(handshake)).toBe('2xx');
+    expect(statusLabelOf(handshake)).toBe('101');
     const faulted = logExchange(
       makeExchange({
         response: {
@@ -80,6 +92,8 @@ describe('matchesFilter', () => {
     expect(matchesFilter(failed, { ...EMPTY_FILTER, statuses: ['failed'] })).toBe(true);
     expect(matchesFilter(rest, { ...EMPTY_FILTER, protocols: ['soap'] })).toBe(false);
     expect(matchesFilter(soap, { ...EMPTY_FILTER, protocols: ['soap'] })).toBe(true);
+    expect(matchesFilter(handshake, { ...EMPTY_FILTER, protocols: ['websocket'] })).toBe(true);
+    expect(matchesFilter(rest, { ...EMPTY_FILTER, protocols: ['websocket'] })).toBe(false);
   });
 
   it('combines the groups with AND and the values within a group with OR', () => {

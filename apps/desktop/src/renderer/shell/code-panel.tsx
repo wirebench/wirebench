@@ -12,7 +12,7 @@ import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.
 import { useEditorsStore } from '../state/editors.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
-import { grpcDraftPatch, restDraftPatch, useProjectStore } from '../state/project.js';
+import { grpcDraftPatch, restDraftPatch, useProjectStore, wsDraftPatch } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import { highlightCurl, type CurlTokenKind } from './curl-highlight.js';
 import { useSecretsVisibilityStore } from '../state/secrets-visibility.js';
@@ -77,6 +77,15 @@ function useCodePanelGrpcRequestId(): string | undefined {
   return selected ?? active;
 }
 
+/** The WebSocket request the panel would describe, on the same terms as the gRPC one. */
+function useCodePanelWsRequestId(): string | undefined {
+  const selected = useUiStore((state) =>
+    state.selection?.kind === 'ws-request' ? state.selection.requestId : undefined,
+  );
+  const active = useEditorsStore((state) => state.tabs.find((tab) => tab.id === state.activeId)?.wsRequestId);
+  return selected ?? active;
+}
+
 /** What the last `request.curl` call produced: the command, or the failure to show in its place. */
 interface Generated {
   readonly command: string;
@@ -89,6 +98,7 @@ export function CodePanel() {
   const requestId = useCodePanelRequestId();
   const restRequestId = useCodePanelRestRequestId();
   const grpcRequestId = useCodePanelGrpcRequestId();
+  const wsRequestId = useCodePanelWsRequestId();
   // Persisted on `slideOver.codeShell`: the slide-over hosts only the Code panel, so its shell
   // choice is remembered there rather than in a per-tab slot.
   const shell = useUiStore((state) => state.slideOver.codeShell);
@@ -176,14 +186,29 @@ export function CodePanel() {
     environments,
   ]);
 
+  // And for a WebSocket request: its own fields plus the API's server URL, which the command dials.
+  const wsDraft = useProjectStore((state) => (wsRequestId === undefined ? undefined : state.wsRequests[wsRequestId]));
+  const wsApiUrl = useProjectStore((state) => (wsDraft === undefined ? undefined : state.wsApis[wsDraft.apiId]?.url));
+  const wsDraftKey = JSON.stringify([
+    wsDraft?.url,
+    wsDraft?.query,
+    wsDraft?.headers,
+    wsDraft?.subprotocols,
+    wsDraft?.auth,
+    wsDraft?.settings,
+    wsApiUrl,
+    activeEnvironmentId,
+    environments,
+  ]);
+
   // Answers can land out of order (a slow first call, a fast second); only the newest may win.
   const sequence = useRef(0);
   // The request the panel last generated for, so switching requests shows a command at once
   // rather than after the edit debounce.
   const generatedFor = useRef<string | undefined>(undefined);
 
-  // Whichever protocol's id the user is looking at: `request.curl` takes all three.
-  const subject = requestId ?? restRequestId ?? grpcRequestId;
+  // Whichever protocol's id the user is looking at: `request.curl` takes all four.
+  const subject = requestId ?? restRequestId ?? grpcRequestId ?? wsRequestId;
 
   useEffect(() => {
     if (subject === undefined) {
@@ -200,11 +225,13 @@ export function CodePanel() {
       // screen rather than what was last written. A SOAP draft reaches main through its own path.
       const draft = restRequestId === undefined ? undefined : restDraftPatch(restRequestId);
       const grpcDraft = grpcRequestId === undefined ? undefined : grpcDraftPatch(grpcRequestId);
+      const wsDraft = wsRequestId === undefined ? undefined : wsDraftPatch(wsRequestId);
       const result = await ipc().request.curl({
         requestId: subject,
         shell,
         ...(draft !== undefined ? { draft } : {}),
         ...(grpcDraft !== undefined ? { grpcDraft } : {}),
+        ...(wsDraft !== undefined ? { wsDraft } : {}),
       });
       if (token !== sequence.current) {
         return;
@@ -229,7 +256,7 @@ export function CodePanel() {
     return () => {
       clearTimeout(timer);
     };
-  }, [subject, shell, draftKey, restDraftKey, grpcDraftKey, showSecrets]);
+  }, [subject, shell, draftKey, restDraftKey, grpcDraftKey, wsDraftKey, showSecrets]);
 
   if (subject === undefined) {
     return (
@@ -250,7 +277,9 @@ export function CodePanel() {
     try {
       await navigator.clipboard.writeText(generated.command);
       showToast(
-        grpcRequestId !== undefined && requestId === undefined && restRequestId === undefined
+        (grpcRequestId !== undefined || wsRequestId !== undefined) &&
+          requestId === undefined &&
+          restRequestId === undefined
           ? 'Copied as command'
           : shell === 'powershell'
             ? 'Copied as cURL (PowerShell)'

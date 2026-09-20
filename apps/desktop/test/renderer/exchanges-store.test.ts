@@ -6,6 +6,7 @@ import {
   lastExchangeOf,
   sendIdOf,
   subscribeToExchangeFailures,
+  subscribeToExchangeLogged,
 } from '../../src/renderer/state/exchanges.js';
 import type { RequestDraft } from '../../src/renderer/state/project.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -471,6 +472,51 @@ describe('useExchangesStore: failures and the filter', () => {
     expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
     unsubscribe();
     expect(off).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribeToExchangeLogged appends what exchange.logged carries, once, and unsubscribes', () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const off = vi.fn();
+    installWirebenchApi({
+      on: vi.fn((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return off;
+      }) as never,
+    });
+
+    const unsubscribe = subscribeToExchangeLogged();
+    listeners.get('exchange.logged')?.({ entry: logExchange(exchangeSummary('evt-1')) });
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
+    unsubscribe();
+    expect(off).toHaveBeenCalledTimes(1);
+  });
+
+  it('appendLoggedEntry ignores a sendId already in the log, like its siblings', () => {
+    useExchangesStore.setState({ log: [logExchange(exchangeSummary('send-1'))] });
+
+    useExchangesStore.getState().appendLoggedEntry(logExchange(exchangeSummary('send-1')));
+    useExchangesStore.getState().appendLoggedEntry(logExchange(exchangeSummary('send-2')));
+    useExchangesStore.getState().appendLoggedEntry(logExchange(exchangeSummary('send-2')));
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['send-1', 'send-2']);
+  });
+
+  it('a replayed exchange.logged event appears in the log once', () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    installWirebenchApi({
+      on: vi.fn((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return vi.fn();
+      }) as never,
+    });
+
+    subscribeToExchangeLogged();
+    const payload = { entry: logExchange(exchangeSummary('evt-1')) };
+    listeners.get('exchange.logged')?.(payload);
+    listeners.get('exchange.logged')?.(payload);
+
+    expect(useExchangesStore.getState().log.map(sendIdOf)).toEqual(['evt-1']);
   });
 
   it('cycleSort goes asc → desc → off; another column restarts at asc; resetFilter clears it', () => {

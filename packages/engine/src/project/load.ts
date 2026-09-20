@@ -27,6 +27,7 @@ import type {
 } from './model.js';
 import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSettings } from '../rest/model.js';
 import type { GrpcApi, GrpcRequestDef, GrpcRequestSettings } from '../grpc/model.js';
+import type { WsApi, WsRequestDef, WsRequestSettings, WsSavedMessage } from '../ws/model.js';
 import { FORMAT_VERSION } from './model.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
@@ -35,6 +36,7 @@ import { normalizeWsa } from '../wsa/model.js';
 import {
   API_FILE,
   APIS_DIR,
+  assertPathSegment,
   ENVIRONMENTS_DIR,
   FOLDER_FILE,
   INTERFACES_DIR,
@@ -59,6 +61,8 @@ import {
   requestFileSchema,
   restFolderFileSchema,
   restRequestFileSchema,
+  wsApiFileSchema,
+  wsRequestFileSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from './schema.js';
@@ -432,6 +436,59 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
 }
 
 /**
+ * Reads a WebSocket request and its saved messages, each in its own sibling file. A message whose
+ * file is gone loads with empty content and a `missing-body` problem, exactly as a gRPC message
+ * does; its slug is recovered from the file name between the `.msg-` marker and the extension.
+ */
+function wsRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<WsRequestDef> {
+  return async (dir, fileName, unclaimed) => {
+    const relative = `${dir}/${fileName}`;
+    const document = await readYaml(fs, root, relative);
+    assertSupportedKind(document, relative);
+    const parsed = parseFile(wsRequestFileSchema, document, relative);
+    unclaimed.delete(fileName);
+    const requestSlug = fileName.slice(0, -REQUEST_SUFFIX.length);
+    const messages: WsSavedMessage[] = [];
+    for (const entry of parsed.messages) {
+      assertPathSegment(entry.file);
+      unclaimed.delete(entry.file);
+      const messageRelative = `${dir}/${entry.file}`;
+      const text = await readFileIfExists(fs, abs(root, messageRelative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${parsed.name}" has no message file; loaded with an empty message`,
+          file: messageRelative,
+        });
+      }
+      const slug = entry.file.slice(`${requestSlug}.msg-`.length, entry.file.lastIndexOf('.'));
+      messages.push({
+        id: entry.id,
+        name: entry.name,
+        slug,
+        format: entry.format,
+        content: text === undefined ? '' : text.toString('utf8'),
+      });
+    }
+    return {
+      kind: 'websocket',
+      id: parsed.id,
+      name: parsed.name,
+      slug: requestSlug,
+      order: parsed.order,
+      ...optional('description', parsed.description),
+      url: parsed.url,
+      query: keyValueEntries(parsed.query),
+      headers: keyValueEntries(parsed.headers),
+      subprotocols: parsed.subprotocols,
+      auth: authConfig(parsed.auth),
+      settings: exact<WsRequestSettings>(parsed.settings),
+      messages,
+    };
+  };
+}
+
+/**
  * Loads one directory of an API's request tree: its `*.request.yaml` files as requests (through
  * the protocol's reader), its subdirectories as folders, recursively.
  *
@@ -497,8 +554,11 @@ async function loadFolderContents<R extends { readonly order: number; readonly n
   return { folders: folders.sort(byOrder), requests: requests.sort(byOrder) };
 }
 
-/** One `apis/<slug>/` directory as loaded: a REST or a gRPC API, whichever its `api.yaml` says. */
-type LoadedApi = { readonly kind: 'rest'; readonly api: RestApi } | { readonly kind: 'grpc'; readonly api: GrpcApi };
+/** One `apis/<slug>/` directory as loaded: whichever protocol its `api.yaml` says. */
+type LoadedApi =
+  | { readonly kind: 'rest'; readonly api: RestApi }
+  | { readonly kind: 'grpc'; readonly api: GrpcApi }
+  | { readonly kind: 'websocket'; readonly api: WsApi };
 
 /** Loads one `apis/<slug>/` directory, or records a problem and returns nothing. */
 async function loadApi(
@@ -519,73 +579,120 @@ async function loadApi(
   }
   assertSupportedKind(document, relative);
   const requestsDir = `${APIS_DIR}/${slug}/${REQUESTS_DIR}`;
-  if (apiKindOf(document) === 'grpc') {
-    const parsed = parseFile(grpcApiFileSchema, document, relative);
-    const contents = await loadFolderContents(
-      fs,
-      root,
-      requestsDir,
-      0,
-      problems,
-      grpcRequestReader(fs, root, problems),
-    );
-    return {
-      kind: 'grpc',
-      api: {
+  switch (apiKindOf(document)) {
+    case 'grpc': {
+      const parsed = parseFile(grpcApiFileSchema, document, relative);
+      const contents = await loadFolderContents(
+        fs,
+        root,
+        requestsDir,
+        0,
+        problems,
+        grpcRequestReader(fs, root, problems),
+      );
+      return {
         kind: 'grpc',
-        id: parsed.id,
-        name: parsed.name,
-        slug,
-        order: parsed.order,
-        ...optional('description', parsed.description),
-        target: parsed.target,
-        tls: parsed.tls,
-        metadata: keyValueEntries(parsed.metadata),
-        ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
-        ...(parsed.definition !== undefined
-          ? {
-              definition: {
-                kind: parsed.definition.kind,
-                source: parsed.definition.source,
-                cache: parsed.definition.cache,
-                roots: parsed.definition.roots,
-                ...optional('reflectionVersion', parsed.definition.reflectionVersion),
-                ...optional('trustInvalid', parsed.definition.trustInvalid),
-              },
-            }
-          : {}),
-        folders: contents.folders,
-        requests: contents.requests,
-      },
-    };
+        api: {
+          kind: 'grpc',
+          id: parsed.id,
+          name: parsed.name,
+          slug,
+          order: parsed.order,
+          ...optional('description', parsed.description),
+          target: parsed.target,
+          tls: parsed.tls,
+          metadata: keyValueEntries(parsed.metadata),
+          ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+          ...(parsed.definition !== undefined
+            ? {
+                definition: {
+                  kind: parsed.definition.kind,
+                  source: parsed.definition.source,
+                  cache: parsed.definition.cache,
+                  roots: parsed.definition.roots,
+                  ...optional('reflectionVersion', parsed.definition.reflectionVersion),
+                  ...optional('trustInvalid', parsed.definition.trustInvalid),
+                },
+              }
+            : {}),
+          folders: contents.folders,
+          requests: contents.requests,
+        },
+      };
+    }
+    case 'websocket': {
+      const parsed = parseFile(wsApiFileSchema, document, relative);
+      const contents = await loadFolderContents(
+        fs,
+        root,
+        requestsDir,
+        0,
+        problems,
+        wsRequestReader(fs, root, problems),
+      );
+      return {
+        kind: 'websocket',
+        api: {
+          kind: 'websocket',
+          id: parsed.id,
+          name: parsed.name,
+          slug,
+          order: parsed.order,
+          ...optional('description', parsed.description),
+          url: parsed.url,
+          headers: keyValueEntries(parsed.headers),
+          ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+          ...(parsed.definition !== undefined
+            ? {
+                definition: {
+                  kind: parsed.definition.kind,
+                  source: parsed.definition.source,
+                  cache: parsed.definition.cache,
+                },
+              }
+            : {}),
+          folders: contents.folders,
+          requests: contents.requests,
+        },
+      };
+    }
+    default: {
+      const parsed = parseFile(apiFileSchema, document, relative);
+      const contents = await loadFolderContents(
+        fs,
+        root,
+        requestsDir,
+        0,
+        problems,
+        restRequestReader(fs, root, problems),
+      );
+      return {
+        kind: 'rest',
+        api: {
+          kind: 'rest',
+          id: parsed.id,
+          name: parsed.name,
+          slug,
+          order: parsed.order,
+          ...optional('description', parsed.description),
+          baseUrl: parsed.baseUrl,
+          servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
+          ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+          ...(parsed.definition !== undefined
+            ? {
+                definition: {
+                  source: parsed.definition.source,
+                  cache: parsed.definition.cache,
+                  version: parsed.definition.version,
+                },
+              }
+            : {}),
+          folders: contents.folders,
+          requests: contents.requests,
+        },
+      };
+    }
   }
-  const parsed = parseFile(apiFileSchema, document, relative);
-  const contents = await loadFolderContents(fs, root, requestsDir, 0, problems, restRequestReader(fs, root, problems));
-  return {
-    kind: 'rest',
-    api: {
-      kind: 'rest',
-      id: parsed.id,
-      name: parsed.name,
-      slug,
-      order: parsed.order,
-      ...optional('description', parsed.description),
-      baseUrl: parsed.baseUrl,
-      servers: parsed.servers.map((server) => exact<{ url: string; description?: string }>(server)),
-      ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
-      ...(parsed.definition !== undefined
-        ? {
-            definition: {
-              source: parsed.definition.source,
-              cache: parsed.definition.cache,
-              version: parsed.definition.version,
-            },
-          }
-        : {}),
-      folders: contents.folders,
-      requests: contents.requests,
-    },
-  };
 }
 
 async function loadEnvironments(fs: FsLike, root: string): Promise<Environment[]> {
@@ -656,6 +763,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
   const interfaceSlugs = new Set(interfaces.map((iface) => iface.slug.toLowerCase()));
   const apis: RestApi[] = [];
   const grpcApis: GrpcApi[] = [];
+  const wsApis: WsApi[] = [];
   for (const entry of await readdirIfExists(fs, abs(root, APIS_DIR))) {
     if (!entry.isDirectory) {
       continue;
@@ -677,6 +785,8 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     }
     if (loaded.kind === 'grpc') {
       grpcApis.push(loaded.api);
+    } else if (loaded.kind === 'websocket') {
+      wsApis.push(loaded.api);
     } else {
       apis.push(loaded.api);
     }
@@ -704,6 +814,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     interfaces: interfaces.sort(byOrder),
     apis: apis.sort(byOrder),
     grpcApis: grpcApis.sort(byOrder),
+    wsApis: wsApis.sort(byOrder),
     environments: await loadEnvironments(fs, root),
     wss: {
       outgoing: await loadWssRefs(fs, root, 'outgoing'),

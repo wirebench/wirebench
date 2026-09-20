@@ -6,7 +6,7 @@ import {
   responseBodyOf,
 } from '../../src/renderer/features/console/log-compare.js';
 import type { LogEntry } from '../../src/renderer/state/exchanges.js';
-import { b64, logExchange, makeFailure, makeRestExchange } from '../mocks/exchange-fixtures.js';
+import { b64, logExchange, makeFailure, makeRestExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
 describe('diffHeaders', () => {
   it('marks added, removed, changed and same, case-insensitively, sorted by name', () => {
@@ -52,6 +52,12 @@ describe('bodies of a row', () => {
 
   it('gives a failure no response body', () => {
     const entry: LogEntry = { kind: 'failure', failure: makeFailure() };
+    expect(responseBodyOf(entry)).toBe('');
+  });
+
+  it('gives a WebSocket handshake row no request or response body', () => {
+    const entry = makeWsHandshakeEntry();
+    expect(requestBodyOf(entry)).toBe('');
     expect(responseBodyOf(entry)).toBe('');
   });
 });

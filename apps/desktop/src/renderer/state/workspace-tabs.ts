@@ -36,6 +36,10 @@ function tabIdFor(tab: PersistedTab): string {
       return `grpc:${tab.id}`;
     case 'grpc-api':
       return `grpc-api:${tab.id}`;
+    case 'ws-request':
+      return `ws:${tab.id}`;
+    case 'ws-api':
+      return `ws-api:${tab.id}`;
   }
 }
 
@@ -64,6 +68,12 @@ function persist(tab: EditorTab): PersistedTab | undefined {
   }
   if (tab.kind === 'grpc-api' && tab.grpcApiId !== undefined) {
     return { kind: 'grpc-api', id: tab.grpcApiId };
+  }
+  if (tab.kind === 'ws-request' && tab.wsRequestId !== undefined) {
+    return { kind: 'ws-request', id: tab.wsRequestId };
+  }
+  if (tab.kind === 'ws-api' && tab.wsApiId !== undefined) {
+    return { kind: 'ws-api', id: tab.wsApiId };
   }
   return undefined;
 }
@@ -101,6 +111,10 @@ function titleFor(tab: PersistedTab): string | undefined {
       return projects.grpcRequests[tab.id]?.name;
     case 'grpc-api':
       return projects.grpcApis[tab.id]?.name;
+    case 'ws-request':
+      return projects.wsRequests[tab.id]?.name;
+    case 'ws-api':
+      return projects.wsApis[tab.id]?.name;
   }
 }
 
@@ -153,6 +167,8 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
       ...(tab.kind === 'api' ? { apiId: tab.id } : {}),
       ...(tab.kind === 'grpc-request' ? { grpcRequestId: tab.id } : {}),
       ...(tab.kind === 'grpc-api' ? { grpcApiId: tab.id } : {}),
+      ...(tab.kind === 'ws-request' ? { wsRequestId: tab.id } : {}),
+      ...(tab.kind === 'ws-api' ? { wsApiId: tab.id } : {}),
     });
     if (tab.id === entry.activeId) {
       activeTabId = id;

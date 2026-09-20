@@ -134,6 +134,7 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
       request.requests,
       request.restRequests ?? {},
       request.grpcRequests ?? {},
+      request.wsRequests ?? {},
     );
     return {};
   });

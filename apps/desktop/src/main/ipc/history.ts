@@ -78,6 +78,19 @@ export function registerHistoryChannels(
       });
     }
 
+    // Only a SOAP send can be replayed here: both paths below build a SOAP send input, so a REST,
+    // gRPC or WebSocket entry would go out as a POST of its body wrapped as an envelope — a
+    // different request from the one recorded. Refuse it, typed, rather than misfire. (An entry
+    // without a kind predates the other protocols and is SOAP.)
+    const kind = entry.kind ?? 'soap';
+    if (kind !== 'soap') {
+      throw new WirebenchError(
+        'history-resend-unsupported',
+        `A ${kind === 'websocket' ? 'WebSocket session' : `${kind === 'grpc' ? 'gRPC' : 'REST'} call`} is resent from its request, not from History`,
+        { details: { id: request.id, kind } },
+      );
+    }
+
     // Path 1: the original request still exists — replay the LIVE request (current envelope,
     // headers and effective endpoint), exactly like a normal `request.send`. The stored entry
     // was redacted before being written to disk, so it must never be the source of a resend

@@ -8,3 +8,4 @@
 export { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 export { startTestRestServer, type TestRestServer, type TestRestServerDocument } from '@wirebench/engine/test-helpers';
 export { startTestGrpcServer, type TestGrpcServer } from '@wirebench/engine/test-helpers';
+export { startTestWsServer, type TestWsServer } from '@wirebench/engine/test-helpers';
