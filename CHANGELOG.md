@@ -52,7 +52,7 @@ All notable changes to this project are documented here. The format follows
   Both are additive, and a version-3 project migrates in memory without any data moving — but
   because this format drops unknown keys on save, **saving a project with this version writes
   `formatVersion: 4`, and an older Wirebench refuses to open it** (`format-too-new`). Everyone
-  working on a project a 2.3+ build has saved needs to be on 2.3 or later too.
+  working on a project a 2.2+ build has saved needs to be on 2.2 or later too.
 - **CI recipes for the runner.** `@wirebench/cli` and `@wirebench/engine` are published to npm; a
   container image is published to `ghcr.io/wirebench/wirebench-cli` (`linux/amd64` +
   `linux/arm64`); a GitHub Action (`wirebench/wirebench/action@<tag>`) and a GitLab template

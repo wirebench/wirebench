@@ -177,9 +177,18 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: pnpm pack:check
 
+      # Authenticated by NPM_TOKEN, not by the `id-token` permission above: npm can only be told to
+      # trust this workflow once a package exists, and neither package is published yet. The
+      # permission stays so that switching to trusted publishing later is a small change.
       - name: Publish
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN is not set, so the npm packages cannot be published."
+            exit 1
+          fi
           v="${GITHUB_REF_NAME#v}"
           pnpm --filter @wirebench/engine --filter @wirebench/cli exec npm version "$v" --no-git-tag-version
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then dist=next; else dist=latest; fi
