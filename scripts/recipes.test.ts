@@ -366,16 +366,26 @@ describe('.github/workflows/release.yml', () => {
       expect(packCheck?.if).toBe("github.event_name == 'workflow_dispatch'");
     });
 
-    it('publishes only on a tag, versioning both packages and picking the dist-tag', () => {
-      const publish = steps.find((step) => step.run?.includes('pnpm publish'));
-      expect(publish).toBeDefined();
-      expect(publish?.if).toBe(TAG_GATE);
-      expect(publish?.run).toContain(
+    it('packs with pnpm on a tag, so the CLI ships a real engine version', () => {
+      const pack = steps.find((step) => step.run?.includes('node scripts/pack-check.ts'));
+      expect(pack).toBeDefined();
+      expect(pack?.if).toBe(TAG_GATE);
+      expect(pack?.run).toContain(
         'pnpm --filter @wirebench/engine --filter @wirebench/cli exec npm version "$v" --no-git-tag-version',
       );
-      expect(publish?.run).toContain(
-        'pnpm publish -r --filter @wirebench/engine --filter @wirebench/cli --access public --tag "$dist" --no-git-checks',
-      );
+    });
+
+    it('publishes the packed tarballs with npm, engine first, and holds no token', () => {
+      const publish = steps.find((step) => step.run?.includes('npm publish'));
+      expect(publish).toBeDefined();
+      expect(publish?.if).toBe(TAG_GATE);
+      const run = publish?.run ?? '';
+      expect(run).toContain('npm publish "${{ steps.pack.outputs.engine }}" --access public --tag "$dist"');
+      expect(run).toContain('npm publish "${{ steps.pack.outputs.cli }}" --access public --tag "$dist"');
+      expect(run.indexOf('outputs.engine')).toBeLessThan(run.indexOf('outputs.cli'));
+      // Trusted publishing: the OIDC token stands in for a stored credential.
+      expect(JSON.stringify(publish?.env ?? {})).not.toContain('NODE_AUTH_TOKEN');
+      expect(workflow.jobs.npm?.permissions?.['id-token']).toBe('write');
     });
   });
 

@@ -177,22 +177,30 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: pnpm pack:check
 
-      # Authenticated by NPM_TOKEN, not by the `id-token` permission above: npm can only be told to
-      # trust this workflow once a package exists, and neither package is published yet. The
-      # permission stays so that switching to trusted publishing later is a small change.
-      - name: Publish
+      # Packed by pnpm, uploaded by npm, and no publish token anywhere. Each tool does the half only
+      # it can: pnpm rewrites the CLI's `workspace:*` dependency to the engine's real version (plain
+      # `npm publish` would ship that literal and the package would not install), and npm is what
+      # exchanges this run's OIDC token — the `id-token: write` permission above — for a short-lived
+      # registry credential. Both packages must have a trusted publisher configured on npmjs.com
+      # naming this repository and workflow; npm cannot be told to trust a package that does not
+      # exist yet, so the first version of each was published by hand.
+      - name: Pack the tarballs
+        id: pack
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::NPM_TOKEN is not set, so the npm packages cannot be published."
-            exit 1
-          fi
           v="${GITHUB_REF_NAME#v}"
           pnpm --filter @wirebench/engine --filter @wirebench/cli exec npm version "$v" --no-git-tag-version
+          node scripts/pack-check.ts "$RUNNER_TEMP/pkgs"
+
+      - name: Publish
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # OIDC publishing needs npm 11.5.1+; Node 24 ships a newer npm, but say so if it ever does not.
+          npm --version
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then dist=next; else dist=latest; fi
-          pnpm publish -r --filter @wirebench/engine --filter @wirebench/cli --access public --tag "$dist" --no-git-checks
+          # The engine first: the CLI tarball depends on the version being published beside it.
+          npm publish "${{ steps.pack.outputs.engine }}" --access public --tag "$dist"
+          npm publish "${{ steps.pack.outputs.cli }}" --access public --tag "$dist"
 
   # Windows is packaged in stages so that SignPath can sign the app before the installers are built
   # around it, then sign the installers: a fleet's application-control policy checks the installed
