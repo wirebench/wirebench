@@ -235,6 +235,14 @@ jobs:
         run: |
           # OIDC publishing needs npm 11.5.1+; Node 24 ships a newer npm, but say so if it ever does not.
           npm --version
+          # `setup-node` with `registry-url` always writes `_authToken=${NODE_AUTH_TOKEN}` into an
+          # .npmrc and points npm at it. With no token set that expands to empty, and npm takes the
+          # classic auth path with a blank credential instead of exchanging this run's OIDC token —
+          # the registry then answers the unauthenticated PUT with a 404 that blames the package.
+          # Dropping the line is what lets npm see it has no credential and reach for OIDC.
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+          fi
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then dist=next; else dist=latest; fi
           # The engine first: the CLI tarball depends on the version being published beside it.
           npm publish "${{ steps.pack.outputs.engine }}" --access public --tag "$dist"
