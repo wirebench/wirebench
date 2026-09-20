@@ -386,6 +386,8 @@ describe('.github/workflows/release.yml', () => {
       // Trusted publishing: the OIDC token stands in for a stored credential.
       expect(JSON.stringify(publish?.env ?? {})).not.toContain('NODE_AUTH_TOKEN');
       expect(workflow.jobs.npm?.permissions?.['id-token']).toBe('write');
+      // …and setup-node's `_authToken` placeholder is cleared, or npm never reaches for OIDC.
+      expect(run).toContain('sed -i \'/_authToken/d\' "$NPM_CONFIG_USERCONFIG"');
     });
   });
 
