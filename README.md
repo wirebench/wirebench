@@ -226,7 +226,8 @@ Explore-and-send works across workspaces, for SOAP, REST and gRPC, and a workspa
 What comes next, in the order it is worth building; the [full roadmap](docs/roadmap.md) has the reasoning,
 sizes, the detail per theme, and what a review of the surrounding tools changed on 2026-09-13.
 
-1. **Signed and notarised releases** — plus an MSI with silent install and an SBOM; managed fleets block unsigned apps.
+1. **Windows code signing** — macOS releases are signed and notarised, and the MSI and SBOM ship; Windows signing
+   through SignPath Foundation is waiting on their review ([#114](https://github.com/wirebench/wirebench/issues/114)).
 2. **Documentation site** — the [user guide](https://wirebench.github.io/wirebench/) is live; a switching guide and
    a published benchmark are still to come.
 3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
