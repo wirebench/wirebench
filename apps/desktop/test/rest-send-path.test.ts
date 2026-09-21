@@ -265,6 +265,34 @@ describe('a REST history line', () => {
     expect(line.request.envelopeXml.length).toBeLessThan(300 * 1024);
     expect(line.request.envelopeXml).toContain('truncated');
   });
+
+  it('a stopped stream writes one rest entry with sse, ok decided by status same as any other', async () => {
+    const summary = await service().sendRestRequest(
+      { sendId: 's13', requestId: 'req-1', input: input({ url: '/sse/ticks?n=3&every=1' }) },
+      { onLive: () => undefined },
+    );
+    expect(summary.stream).toBeDefined();
+
+    const line = buildRestHistoryEntry('p1', {
+      requestId: 'req-1',
+      requestName: 'Watch ticks',
+      apiName: 'Petstore',
+      folderPath: '',
+      method: 'GET',
+      url: summary.url,
+      requestHeaders: {},
+      requestBody: '',
+      exchange: summary,
+      durationMs: 12,
+    });
+
+    expect(line.kind).toBe('rest');
+    expect(line.ok).toBe(true);
+    expect(line.status).toBe(200);
+    expect(line.sse).toBeDefined();
+    expect(line.sse?.counts.events).toBe(3);
+    expect(line.sse?.endedBy).toBe('server');
+  });
 });
 
 describe('redactUrl', () => {

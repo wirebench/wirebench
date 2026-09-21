@@ -52,6 +52,8 @@ export interface CurlCommand {
   /** `-L`, with `--max-redirs` when a limit is set. */
   readonly followRedirects?: boolean;
   readonly maxRedirects?: number;
+  /** `-N`/`--no-buffer`: don't hold output back waiting for a full buffer, for a streamed response. */
+  readonly noBuffer?: boolean;
 }
 
 /** Options for {@link toCurl} and {@link soapToCurl}. */
@@ -106,6 +108,9 @@ export function toCurl(command: CurlCommand, options: ToCurlOptions = {}): strin
   }
   if (command.insecure === true) {
     args.push('--insecure');
+  }
+  if (command.noBuffer === true) {
+    args.push('-N');
   }
   if (command.followRedirects === true) {
     args.push('--location');

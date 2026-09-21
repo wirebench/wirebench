@@ -32,6 +32,21 @@ export function registerLogChannels(deps: LogChannelDeps): void {
   registerHandler(channels.log.resend, async (request, sender) => {
     const sendId = randomUUID();
     if (request.protocol === 'rest') {
+      // The row menu only offers Resend when the request does not ask for an event stream; main
+      // holds the same line, since a stream needs the live panel to watch rows arrive and cannot
+      // be replayed from a row that just waits for one final answer.
+      const resolved = deps.request.project.restSend?.(request.requestId);
+      const acceptsEventStream = resolved?.input.request.headers.some(
+        (header) =>
+          header.enabled &&
+          header.name.toLowerCase() === 'accept' &&
+          header.value.toLowerCase().includes('text/event-stream'),
+      );
+      if (acceptsEventStream === true) {
+        throw new WirebenchError('rest-resend-streaming', 'Event streams resend from the editor.', {
+          details: { requestId: request.requestId },
+        });
+      }
       return {
         protocol: 'rest' as const,
         exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),

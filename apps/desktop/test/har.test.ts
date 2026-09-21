@@ -82,6 +82,48 @@ describe('harOf', () => {
     expect(entry.response.content.text).toBeUndefined();
   });
 
+  it('an event-stream row writes its rows as text/event-stream, flagged when capped', () => {
+    const exchange = makeRestExchange({
+      stream: {
+        rows: [
+          { kind: 'event', index: 0, at: 0, size: 20, event: 'message', data: 'hi', lastEventId: '' },
+          { kind: 'event', index: 1, at: 1, size: 20, event: 'ping', data: 'pong', lastEventId: '' },
+        ],
+        counts: { events: 2, comments: 0, retries: 0, bytes: 40 },
+        lastEventId: '',
+        endedBy: 'server',
+        droppedRows: 3,
+        truncated: true,
+        omittedRows: 2,
+      },
+    });
+    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    expect(entry.response.content).toEqual({
+      size: 8,
+      mimeType: 'text/event-stream',
+      text: 'data: hi\n\nevent: ping\ndata: pong\n\n',
+    });
+    expect(entry._sseTruncated).toBe(true);
+    expect(entry._sseOmittedRows).toBe(2);
+  });
+
+  it('an untruncated event stream carries no _sseTruncated/_sseOmittedRows', () => {
+    const exchange = makeRestExchange({
+      stream: {
+        rows: [{ kind: 'event', index: 0, at: 0, size: 20, event: 'message', data: 'hi', lastEventId: '' }],
+        counts: { events: 1, comments: 0, retries: 0, bytes: 20 },
+        lastEventId: '',
+        endedBy: 'client',
+        droppedRows: 0,
+        truncated: false,
+        omittedRows: 0,
+      },
+    });
+    const entry = harOf([{ kind: 'exchange', exchange }], CREATOR).log.entries[0]!;
+    expect(entry._sseTruncated).toBeUndefined();
+    expect(entry._sseOmittedRows).toBeUndefined();
+  });
+
   it('writes no secret: header, URL param, wsse:Password, JSON body key', () => {
     const exchange = makeRestExchange();
     const secretRaw =

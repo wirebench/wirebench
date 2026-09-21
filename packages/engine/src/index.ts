@@ -638,6 +638,7 @@ export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export {
   appendHistory,
   generateHistoryId,
+  historySseOf,
   historyWsOf,
   normalizeHistoryEntry,
   openHistory,
@@ -651,7 +652,9 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryOptions,
+  HistorySse,
   HistoryWs,
+  RestEventStreamLike,
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';

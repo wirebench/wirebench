@@ -71,10 +71,10 @@ function restExchange(): RestExchangeSummary {
   };
 }
 
-function restResolution() {
+function restResolution(headers: RestSendInput['request']['headers'] = []) {
   const input: RestSendInput = {
     baseUrl: 'http://h',
-    request: { method: 'GET', url: '/r', pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+    request: { method: 'GET', url: '/r', pathParams: [], query: [], headers, body: { kind: 'none' } },
     settings: { timeoutMs: 2_000, followRedirects: true },
   };
   return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
@@ -155,6 +155,24 @@ describe('log.resend', () => {
     const call = sendRest.mock.calls[0]![0];
     expect(call.requestId).toBe('rest-1');
     expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('REST: a request that accepts an event stream is refused before anything is sent', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({ restSend }),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as {
+      ok: false;
+      error: { code: string };
+    };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('rest-resend-streaming');
+    expect(sendRest).not.toHaveBeenCalled();
   });
 
   it('gRPC: a streaming method is refused before anything is sent', async () => {

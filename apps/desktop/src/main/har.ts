@@ -3,7 +3,9 @@
  * URL parameters, WS-Security passwords and JSON/form secrets — whatever the show-secrets toggle
  * says: a HAR file is made to be shared.
  */
-import type { LogEntryWire, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
+import { serializeEventStream } from '@wirebench/engine';
+import type { SseRow } from '@wirebench/engine';
+import type { LogEntryWire, RestExchangeSummary, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
 import { loggedRequestOf } from './log-curl.js';
 import { redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
@@ -69,6 +71,10 @@ export interface HarEntry {
   readonly _truncated?: true;
   /** Set only for a WebSocket row: the `GET`/`101` pair that opened the session. */
   readonly _resourceType?: 'websocket';
+  /** Set only for a REST row whose event stream was capped before this summary was built. */
+  readonly _sseTruncated?: true;
+  /** How many event-stream rows are missing from `response.content.text`, when `_sseTruncated`. */
+  readonly _sseOmittedRows?: number;
 }
 
 export interface Har {
@@ -175,17 +181,27 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
   const exchange = entry.exchange as Exclude<typeof entry.exchange, WsHandshakeExchangeSummary>;
   const { http } = exchange;
   const isGrpc = 'statusName' in exchange;
+  const stream = !isGrpc ? (exchange as RestExchangeSummary).stream : undefined;
   const httpVersion = harVersion(http.httpVersion);
   const bytes = Buffer.from(http.bodyBase64, 'base64');
   const mimeType = headerValue(http.headers, 'content-type') ?? 'x-unknown';
   const textual = !isGrpc && TEXT_TYPE.test(mimeType);
-  const content: HarContent = http.truncated
-    ? { size: bytes.length, mimeType }
-    : textual
-      ? { size: bytes.length, mimeType, text: redactBody(bytes.toString('utf8'), mimeType) }
-      : bytes.length === 0
-        ? { size: 0, mimeType }
-        : { size: bytes.length, mimeType, text: http.bodyBase64, encoding: 'base64' };
+  const content: HarContent =
+    stream !== undefined
+      ? {
+          size: bytes.length,
+          mimeType: 'text/event-stream',
+          // Same `exactOptionalPropertyTypes` gap as `historySseOf`'s own cast: the wire's
+          // `id?: string | undefined` vs. the engine's plain `id?: string`.
+          text: serializeEventStream(stream.rows as unknown as readonly SseRow[]),
+        }
+      : http.truncated
+        ? { size: bytes.length, mimeType }
+        : textual
+          ? { size: bytes.length, mimeType, text: redactBody(bytes.toString('utf8'), mimeType) }
+          : bytes.length === 0
+            ? { size: 0, mimeType }
+            : { size: bytes.length, mimeType, text: http.bodyBase64, encoding: 'base64' };
   const location = headerValue(http.headers, 'location');
   const { timings } = http;
   return {
@@ -216,6 +232,9 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
       receive: timings.downloadMs ?? 0,
     },
     ...(http.truncated ? { _truncated: true as const } : {}),
+    ...(stream?.truncated
+      ? { _sseTruncated: true as const, ...(stream.omittedRows > 0 ? { _sseOmittedRows: stream.omittedRows } : {}) }
+      : {}),
   };
 }
 
