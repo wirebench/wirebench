@@ -19,8 +19,13 @@ export interface UpdaterBackend {
   autoDownload: boolean;
   /** Set to `false` on construction: quitting the app must never silently install anything. */
   autoInstallOnAppQuit: boolean;
-  /** Resolves with the release info when one is available, `null`/`undefined` when none is. */
-  checkForUpdates(): Promise<{ readonly updateInfo: { readonly version: string } } | null | undefined>;
+  /**
+   * Resolves with the newest release's info **whether or not it is newer than the running app** —
+   * `isUpdateAvailable` is what says so — or `null`/`undefined` when the check could not run.
+   */
+  checkForUpdates(): Promise<
+    { readonly isUpdateAvailable: boolean; readonly updateInfo: { readonly version: string } } | null | undefined
+  >;
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(): void;
   on(event: 'download-progress', listener: (progress: { readonly percent: number }) => void): void;
@@ -123,15 +128,16 @@ export class UpdateController {
         this.ui.report({ kind: 'checking' });
       }
       const result = await this.backend.checkForUpdates().catch(() => undefined);
-      const version = result?.updateInfo.version;
-      if (version === undefined) {
-        // `undefined` covers both "no update" and a failed check; the two are indistinguishable
-        // to the user (nothing to install) and neither is worth a dialog on launch.
-        return this.settle(
-          result === undefined ? { kind: 'error', message: CHECK_FAILED } : { kind: 'up-to-date' },
-          trigger,
-        );
+      if (result === undefined) {
+        return this.settle({ kind: 'error', message: CHECK_FAILED }, trigger);
       }
+      // A result carries the newest release's version even when that release is *older* than the
+      // one running — only `isUpdateAvailable` says it is an update. Reading the version alone
+      // offered the last public release to anyone ahead of it: a downgrade behind "Download".
+      if (result === null || !result.isUpdateAvailable) {
+        return this.settle({ kind: 'up-to-date' }, trigger);
+      }
+      const version = result.updateInfo.version;
       if (!(await this.ui.confirmDownload(version))) {
         return this.settle({ kind: 'declined', version }, 'user');
       }
