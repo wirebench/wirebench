@@ -1,10 +1,11 @@
 import { Agent, ProxyAgent, request as undiciRequest, type buildConnector, type Dispatcher } from 'undici';
-import { decompressBody } from './decompress.js';
+import { pipeline, type Readable } from 'node:stream';
+import { createDecompressStream, decompressBody } from './decompress.js';
 import { failedRequestFor, withFailedRequest, type FailedRequest } from './failed-request.js';
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
-import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from './types.js';
+import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from './types.js';
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -282,6 +283,35 @@ interface PhysicalResult {
   readonly rawRequest: Uint8Array;
   readonly finalUrl: string;
   readonly finalMethod: string;
+  readonly streamEnd?: HttpExchange['streamEnd'];
+}
+
+/**
+ * Forwards an accepted stream's body to the sink until it ends, decoding it on the way when asked.
+ * Never throws: how the stream ended is the result. With the deadline cleared, the only abort left
+ * is the caller's own, so an abort reads as the client ending it and anything else as an error.
+ */
+async function pumpStream(
+  body: Readable,
+  contentEncoding: string | undefined,
+  decompress: boolean,
+  sink: HttpStreamSink,
+  signal: AbortSignal | undefined,
+): Promise<NonNullable<HttpExchange['streamEnd']>> {
+  const decoder = decompress ? createDecompressStream(contentEncoding) : undefined;
+  const source: Readable = decoder === undefined ? body : pipeline(body, decoder, () => undefined);
+  try {
+    for await (const chunk of source as AsyncIterable<Uint8Array>) {
+      sink.onChunk(chunk);
+    }
+    return { by: 'server' };
+  } catch (err) {
+    if (signal?.aborted === true) return { by: 'client' };
+    return { by: 'error', error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    body.destroy();
+    decoder?.destroy();
+  }
 }
 
 /**
@@ -369,7 +399,9 @@ export async function sendHttp(
             dispatcher,
             signal: combinedSignal ?? null,
             headersTimeout: req.timeoutMs,
-            bodyTimeout: req.timeoutMs,
+            // An accepted stream may sit idle between events for as long as the server likes; a
+            // buffered response stays bounded by the overall deadline, always the tighter limit.
+            bodyTimeout: req.stream !== undefined ? 0 : req.timeoutMs,
           }),
         );
       } catch (err) {
@@ -416,6 +448,32 @@ export async function sendHttp(
         currentHeaders = scopeHeadersToOrigin(currentHeaders, currentUrl, nextUrl);
         currentUrl = nextUrl;
         continue;
+      }
+
+      const sink = req.stream?.accept(response.statusCode, headers);
+      if (sink !== undefined) {
+        // From here the stream runs until the server, the caller, or the network ends it.
+        clearTimeout(timer);
+        const streamEnd = await pumpStream(
+          response.body,
+          headers['content-encoding'],
+          req.decompress ?? true,
+          sink,
+          req.signal,
+        );
+        result = {
+          status: response.statusCode,
+          headers,
+          rawHeaders,
+          rawBody: new Uint8Array(),
+          body: new Uint8Array(),
+          truncated: false,
+          rawRequest,
+          finalUrl: currentUrl.toString(),
+          finalMethod: currentMethod,
+          streamEnd,
+        };
+        break;
       }
 
       const { data: rawBodyRaw, truncated } = await readBody(response.body, req.maxSizeBytes);
@@ -476,6 +534,7 @@ export async function sendHttp(
       rawResponse,
       redirects,
       ...(tlsInfo !== undefined ? { tls: tlsInfo } : {}),
+      ...(result.streamEnd !== undefined ? { streamEnd: result.streamEnd } : {}),
     };
   } catch (err) {
     throw lastAttempt === undefined ? err : withFailedRequest(err, lastAttempt);

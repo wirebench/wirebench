@@ -42,6 +42,24 @@ export interface HttpRequest {
    * HTTP is always HTTP/1.1 — there is no ALPN to negotiate over.
    */
   readonly allowH2?: boolean;
+  /**
+   * Opt-in streaming. When set, the final (non-redirect) response is offered to the hook; a sink it
+   * returns receives the body as it arrives instead of it being buffered, the request's deadline
+   * stops applying once the headers are in, and `maxSizeBytes` does not apply. A hook that returns
+   * `undefined` leaves the response buffered exactly as without one.
+   */
+  readonly stream?: HttpStreamHook;
+}
+
+/** Where an accepted stream's body goes, chunk by chunk, already decompressed when `decompress` is on. */
+export interface HttpStreamSink {
+  onChunk(bytes: Uint8Array): void;
+}
+
+/** Decides, from the final response's status and headers, whether its body is streamed. */
+export interface HttpStreamHook {
+  /** Called once with the final (non-redirect) response; returning a sink switches to streaming. */
+  accept(status: number, headers: Readonly<Record<string, string>>): HttpStreamSink | undefined;
 }
 
 /**
@@ -118,6 +136,11 @@ export interface HttpExchange {
    * peer chain verified, and the chain itself. Absent for plain HTTP.
    */
   readonly tls?: SslInfo;
+  /**
+   * Present only when a stream hook accepted the response: who ended the stream. `body` and
+   * `rawBody` are then empty and `rawResponse` holds the status line and headers only.
+   */
+  readonly streamEnd?: { readonly by: 'server' | 'client' | 'error'; readonly error?: string };
 }
 
 /** Stable, machine-readable classification for {@link HttpError}. */

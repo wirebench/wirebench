@@ -11,7 +11,7 @@
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
+import { createGzip, gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import type { Socket } from 'node:net';
 
 /** One request the server recorded, for assertions the response cannot carry. */
@@ -130,6 +130,11 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/big-json/<megabytes>` — a well-formed JSON body of about that size
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
+ * - `/sse/ticks?n=&every=` — `n` events (default 3), one every `every` ms (default 20), then the end
+ * - `/sse/forever` — a comment every 50 ms, never ending
+ * - `/sse/drop` — two events, then the socket torn down mid-stream
+ * - `/sse/gzip` — the ticks, gzip-encoded and flushed per event
+ * - `/sse/slow-headers` — the headers only after 500 ms, then one event
  */
 export async function startTestRestServer(options: TestRestServerOptions = {}): Promise<TestRestServer> {
   const requests: RecordedRestRequest[] = [];
@@ -295,6 +300,11 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
           'content-length': String(encoded.byteLength),
         });
         response.end(encoded);
+        return;
+      }
+
+      if (path.startsWith('/sse/')) {
+        handleEventStream(path, url, request, response);
         return;
       }
 
@@ -539,4 +549,68 @@ function handleToken(input: {
 /** The S256 challenge for a verifier, so the stub can check PKCE the way a provider does. */
 function pkceChallenge(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
+}
+
+const EVENT_STREAM_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' };
+
+/** The `/sse/*` routes: event streams that end, never end, break, compress, or keep the client waiting. */
+function handleEventStream(path: string, url: URL, request: IncomingMessage, response: ServerResponse): void {
+  const tick = (index: number): string => `id: ${String(index)}\ndata: {"tick":${String(index)}}\n\n`;
+  const timers: NodeJS.Timeout[] = [];
+  const stop = (): void => {
+    for (const timer of timers) clearInterval(timer);
+  };
+  response.on('close', stop);
+
+  if (path === '/sse/ticks' || path === '/sse/gzip') {
+    const n = Math.min(Math.max(Number(url.searchParams.get('n') ?? '3'), 0), 1000);
+    const every = Math.min(Math.max(Number(url.searchParams.get('every') ?? '20'), 1), MAX_SLOW_MS);
+    const gzip = path === '/sse/gzip' ? createGzip() : undefined;
+    response.writeHead(200, { ...EVENT_STREAM_HEADERS, ...(gzip !== undefined ? { 'content-encoding': 'gzip' } : {}) });
+    gzip?.pipe(response);
+    const write = (text: string): void => {
+      if (gzip === undefined) {
+        response.write(text);
+      } else {
+        gzip.write(text);
+        gzip.flush();
+      }
+    };
+    let sent = 0;
+    const timer = setInterval(() => {
+      if (sent >= n) {
+        clearInterval(timer);
+        if (gzip === undefined) response.end();
+        else gzip.end();
+        return;
+      }
+      sent += 1;
+      write(tick(sent));
+    }, every);
+    timers.push(timer);
+    return;
+  }
+  if (path === '/sse/forever') {
+    response.writeHead(200, EVENT_STREAM_HEADERS);
+    response.write(': open\n\n');
+    timers.push(setInterval(() => response.write(': keep-alive\n\n'), 50));
+    return;
+  }
+  if (path === '/sse/drop') {
+    response.writeHead(200, EVENT_STREAM_HEADERS);
+    response.write(tick(1) + tick(2), () => {
+      timers.push(setTimeout(() => request.socket.destroy(), 20));
+    });
+    return;
+  }
+  if (path === '/sse/slow-headers') {
+    timers.push(
+      setTimeout(() => {
+        response.writeHead(200, EVENT_STREAM_HEADERS);
+        response.end(tick(1));
+      }, 500),
+    );
+    return;
+  }
+  sendJson(response, 404, { error: 'no such stream' });
 }

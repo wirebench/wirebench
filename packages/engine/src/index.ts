@@ -250,7 +250,16 @@ export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './
 export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from './http/failed-request.js';
 export type { FailedRequest } from './http/failed-request.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
-export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
+export type {
+  HttpErrorCode,
+  HttpExchange,
+  HttpRequest,
+  HttpStreamHook,
+  HttpStreamSink,
+  ProxyOptions,
+  Timings,
+  TlsOptions,
+} from './http/types.js';
 export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
 export type { SystemProxyResolution } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
