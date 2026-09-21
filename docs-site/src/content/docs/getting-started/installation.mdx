@@ -9,10 +9,10 @@ Download the file for your system from the
 [latest release](https://github.com/wirebench/wirebench/releases/latest). Every file name carries
 the version, the system and the processor, for example `Wirebench-1.1.0-mac-universal.dmg`.
 
-<Aside type="caution" title="Releases are not code-signed yet">
-macOS and Windows warn the first time you open an unsigned app. The steps below get past that
-warning once; later launches open normally. Signed and notarised releases are next on the
-[roadmap](https://github.com/wirebench/wirebench/blob/main/docs/roadmap.md).
+<Aside type="caution" title="Windows releases are not code-signed yet">
+macOS releases are signed and notarised, so they open without a warning. Windows releases are not
+signed yet, so Windows warns the first time you run the installer; the Windows steps below get past
+that once. See the [code-signing policy](/wirebench/help/code-signing-policy/).
 </Aside>
 
 <Tabs syncKey="os">
@@ -23,12 +23,12 @@ warning once; later launches open normally. Signed and notarised releases are ne
 
 **Install.** Open the `.dmg` and drag **Wirebench** into **Applications**.
 
-**First launch.** macOS says it cannot verify the app and offers only to cancel or move it to the
-Bin. Choose **Done**, then:
+**First launch.** Open Wirebench from **Applications**. It is signed and notarised, so macOS opens it
+after asking once whether you want to open an app downloaded from the internet.
 
-1. Open **System Settings → Privacy & Security**.
-2. Scroll to the message about Wirebench and choose **Open Anyway**.
-3. Confirm with your password or Touch ID.
+Releases before 2.2.0 were not signed. If you run one of those, macOS says it cannot verify the app:
+choose **Done**, then open **System Settings → Privacy & Security** and choose **Open Anyway** beside
+the message about Wirebench.
 
 </TabItem>
 <TabItem label="Windows">
