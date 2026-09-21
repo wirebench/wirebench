@@ -225,6 +225,90 @@ describe('request.sendRest streaming an event-stream response', () => {
   });
 });
 
+describe('a live event that cannot be delivered', () => {
+  it('is guarded so an onLive that always throws never affects the stream or the invoke', async () => {
+    const service = new EngineService();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const summary = await service.sendRestRequest(
+        {
+          sendId: 'g1',
+          requestId: 'req-1',
+          input: {
+            baseUrl: server.url,
+            request: {
+              method: 'GET',
+              url: '/sse/ticks?n=3&every=5',
+              pathParams: [],
+              query: [],
+              headers: [],
+              body: { kind: 'none' },
+            },
+            settings: { timeoutMs: 5_000, followRedirects: true },
+          },
+        },
+        {
+          onLive: () => {
+            throw new Error('renderer window is gone');
+          },
+        },
+      );
+
+      expect(summary.stream?.rows).toHaveLength(3);
+      expect(summary.stream?.endedBy).toBe('server');
+      expect((service as unknown as { sends: Map<string, unknown> }).sends.has('g1')).toBe(false);
+
+      expect(warn).toHaveBeenCalled();
+      const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(logged).toContain('g1');
+      // The guard logs that delivery failed, never the row/stream data itself.
+      expect(logged).not.toContain('tick');
+      expect(logged).not.toContain('"data"');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('a second request.cancel for the same sendId', () => {
+  it('is a no-op once the first has already ended the send', async () => {
+    const service = register({}, (requestId) =>
+      requestId === 'rest-1' ? resolution(server.url, '/sse/forever') : undefined,
+    );
+    const { sender } = fakeSender();
+
+    const sendPromise = invoke('request.sendRest', { sendId: 'r6', requestId: 'rest-1' }, sender);
+    await waitFor(() => hasSend(service, 'r6'), 'the send to register');
+
+    const first = unwrap<{ cancelled: boolean }>(await invoke('request.cancel', { sendId: 'r6' }));
+    expect(first).toEqual({ cancelled: true });
+    await sendPromise;
+
+    // The entry is gone once the first cancel ended the send: a second one finds nothing to cancel.
+    const second = unwrap<{ cancelled: boolean }>(await invoke('request.cancel', { sendId: 'r6' }));
+    expect(second).toEqual({ cancelled: false });
+  });
+});
+
+describe('/sse/drop, a socket torn down mid-stream', () => {
+  it('ends with endedBy error, an error message, and never a failure row', async () => {
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+    register({ onSendFailed }, (requestId) =>
+      requestId === 'rest-1' ? resolution(server.url, '/sse/drop') : undefined,
+    );
+    const { sender, events } = fakeSender();
+
+    const summary = unwrap<RestExchangeSummary>(
+      await invoke('request.sendRest', { sendId: 'r7', requestId: 'rest-1' }, sender),
+    );
+
+    expect(summary.stream?.endedBy).toBe('error');
+    expect(summary.stream?.error).toBeDefined();
+    expect(onSendFailed).not.toHaveBeenCalled();
+    expect(events.filter((e) => e.kind === 'row')).toHaveLength(2);
+  });
+});
+
 describe('toRestEventStreamWire', () => {
   it("caps a 12 000-row stream's summary to SSE_SUMMARY_LIMITS' 5 000-row window", () => {
     const rows = Array.from({ length: 12_000 }, (_unused, index) => ({

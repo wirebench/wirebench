@@ -1741,6 +1741,9 @@ export const restEventStreamWireSchema = z.object({
   truncated: z.boolean(),
   /** How many rows `capSseRows` omitted, on top of `droppedRows`. */
   omittedRows: z.number(),
+  // The total number of rows missing from `rows` compared to the live stream is `droppedRows +
+  // omittedRows`: the former left the in-memory store before this summary was ever built, the
+  // latter were in it but didn't fit this summary's own cap.
 });
 export type RestEventStreamWire = z.infer<typeof restEventStreamWireSchema>;
 
