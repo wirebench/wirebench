@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-21
+
+### Fixed
+
+- **The update check no longer offers an older release.** A build newer than the latest published
+  release — 2.2.0 while 1.1.0 was still the newest public one — was offered that older release as an
+  "update", and **Download** would have installed it over the running version. An update is now
+  offered only when the release is newer than the one running.
+
 ## [2.2.0] - 2026-09-20
 
 ### Added
@@ -506,7 +515,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/wirebench/wirebench/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/wirebench/wirebench/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/wirebench/wirebench/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/wirebench/wirebench/compare/v2.0.0...v2.1.0
