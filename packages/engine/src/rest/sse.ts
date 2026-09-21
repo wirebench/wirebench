@@ -54,14 +54,14 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
   let eventType = '';
   let dataLines: string[] = [];
   let eventId: string | undefined;
-  let dataFieldLines: string[] = [];
+  let eventLines: string[] = [];
   let lastEventId = '';
   let hasData = false;
 
   function resetEvent(): void {
     eventType = '';
     dataLines = [];
-    dataFieldLines = [];
+    eventLines = [];
     eventId = undefined;
     hasData = false;
   }
@@ -75,7 +75,7 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
           kind: 'event',
           index: index++,
           at,
-          size: lineSize(...dataFieldLines),
+          size: lineSize(...eventLines),
           event: eventType === '' ? 'message' : eventType,
           data,
           ...(eventId !== undefined ? { id: eventId } : {}),
@@ -104,10 +104,11 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
     switch (field) {
       case 'event':
         eventType = value;
+        eventLines.push(line);
         break;
       case 'data':
         dataLines.push(value);
-        dataFieldLines.push(line);
+        eventLines.push(line);
         hasData = true;
         break;
       case 'id':
@@ -115,6 +116,7 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
           eventId = value;
           lastEventId = value;
         }
+        eventLines.push(line);
         break;
       case 'retry':
         if (/^[0-9]+$/.test(value)) {
@@ -122,7 +124,8 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
         }
         break;
       default:
-        // unknown field, ignored
+        // unknown field: not dispatched, but its bytes still belong to the event they arrived in
+        eventLines.push(line);
         break;
     }
   }

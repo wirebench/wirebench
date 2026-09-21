@@ -73,6 +73,26 @@ describe('createSseParser', () => {
   it('discards an unterminated event at the end', () => {
     expect(events(parse('data: never\n'))).toEqual([]);
   });
+  it('counts every line an event was built from — event:, id: and data: — in its size', () => {
+    const text = 'event: tick\nid: 7\ndata: 1\n\n';
+    const lines = ['event: tick', 'id: 7', 'data: 1'];
+    expect(events(parse(text))[0]).toMatchObject({
+      size: lines.reduce((sum, line) => sum + enc.encode(line).length + 1, 0),
+    });
+  });
+  it('counts a CRLF variant the same way, one byte per terminator', () => {
+    const text = 'event: tick\r\nid: 7\r\ndata: 1\r\n\r\n';
+    const lines = ['event: tick', 'id: 7', 'data: 1'];
+    expect(events(parse(text))[0]).toMatchObject({
+      size: lines.reduce((sum, line) => sum + enc.encode(line).length + 1, 0),
+    });
+  });
+  it('keeps size split-invariant along with the rest of the row', () => {
+    const text = 'event: tick\nid: 7\ndata: 1\n\n';
+    const whole = events(parse(text))[0];
+    const bytewise = events(parse(...[...enc.encode(text)].map((b) => Uint8Array.of(b))))[0];
+    expect(bytewise?.size).toBe(whole?.size);
+  });
   it('numbers rows contiguously and stamps the push time', () => {
     const rows = parse(': a\n', 'data: b\n\n');
     expect(rows.map((r) => [r.index, r.at])).toEqual([
