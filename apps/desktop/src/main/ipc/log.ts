@@ -34,7 +34,7 @@ export function registerLogChannels(deps: LogChannelDeps): void {
     if (request.protocol === 'rest') {
       return {
         protocol: 'rest' as const,
-        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
+        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),
       };
     }
     if (request.protocol === 'grpc') {

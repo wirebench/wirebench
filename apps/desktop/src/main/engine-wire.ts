@@ -4,7 +4,7 @@
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
 
-import { findBinding, qnameToString } from '@wirebench/engine';
+import { capSseRows, findBinding, qnameToString, SSE_SUMMARY_LIMITS } from '@wirebench/engine';
 import {
   redactHeaderPairs,
   redactHeaders,
@@ -14,6 +14,7 @@ import {
   redactXml,
 } from './redact.js';
 import type {
+  RestEventStream,
   RestExchange,
   GeneratedRequest,
   GrpcCallResult,
@@ -23,6 +24,7 @@ import type {
   SoapExchange,
   SoapFault,
   SslInfo,
+  SseRow,
   ResponseAttachment,
   UnresolvedRef,
   WsExchange,
@@ -30,6 +32,7 @@ import type {
   WsHandshake,
 } from '@wirebench/engine';
 import type {
+  RestEventStreamWire,
   RestExchangeSummary,
   ExchangeSummary,
   FaultWire,
@@ -43,6 +46,7 @@ import type {
   ResponseAttachmentWire,
   ServiceSummary,
   SslInfoWire,
+  SseRowWire,
   UnresolvedRefWire,
   WsExchangeSummary,
   WsFrameWire,
@@ -217,6 +221,48 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
   };
 }
 
+/** Converts one engine `SseRow` to its wire form. Rows are already plain JSON; this copies field by field. */
+export function toSseRowWire(row: SseRow): SseRowWire {
+  if (row.kind === 'event') {
+    return {
+      kind: 'event',
+      index: row.index,
+      at: row.at,
+      size: row.size,
+      event: row.event,
+      data: row.data,
+      ...(row.id !== undefined ? { id: row.id } : {}),
+      lastEventId: row.lastEventId,
+      ...(row.payloadTruncated !== undefined ? { payloadTruncated: row.payloadTruncated } : {}),
+    };
+  }
+  if (row.kind === 'comment') {
+    return { kind: 'comment', index: row.index, at: row.at, size: row.size, text: row.text };
+  }
+  return { kind: 'retry', index: row.index, at: row.at, size: row.size, ms: row.ms };
+}
+
+/**
+ * Converts the engine's `RestEventStream` to its wire form, capping the rows to
+ * `SSE_SUMMARY_LIMITS` — the same head/tail/byte-budget shape the WebSocket transcript uses — so a
+ * long-running stream's summary never puts every row on the wire at once. The rows this drops were
+ * already reported live, one `rest.live` `row` event each, as they arrived.
+ */
+export function toRestEventStreamWire(stream: RestEventStream): RestEventStreamWire {
+  const capped = capSseRows(stream.rows, SSE_SUMMARY_LIMITS);
+  return {
+    rows: capped.rows.map(toSseRowWire),
+    counts: { ...stream.counts },
+    lastEventId: stream.lastEventId,
+    ...(stream.retryMs !== undefined ? { retryMs: stream.retryMs } : {}),
+    endedBy: stream.endedBy,
+    ...(stream.error !== undefined ? { error: stream.error } : {}),
+    droppedRows: stream.droppedRows,
+    truncated: capped.truncated,
+    omittedRows: capped.omittedRows,
+  };
+}
+
 /**
  * Converts a `RestExchange` plus its `sendId` into the `request.sendRest` response payload.
  *
@@ -257,6 +303,7 @@ export function toRestExchangeSummary(
           },
         }
       : {}),
+    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream) } : {}),
   };
 }
 

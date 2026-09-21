@@ -1684,6 +1684,67 @@ export const cookieWireSchema = z.object({
 export type CookieWire = z.infer<typeof cookieWireSchema>;
 
 /**
+ * One row of a `text/event-stream` response, as the engine's `SseRow` parses it. Mirrors that type
+ * field for field; `payloadTruncated` is set only when `capSseRows` stripped an event row's `data`
+ * to fit the summary's byte budget.
+ */
+export const sseRowWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('event'),
+    index: z.number(),
+    at: z.number(),
+    size: z.number(),
+    event: z.string(),
+    data: z.string(),
+    id: z.string().optional(),
+    lastEventId: z.string(),
+    payloadTruncated: z.literal(true).optional(),
+  }),
+  z.object({
+    kind: z.literal('comment'),
+    index: z.number(),
+    at: z.number(),
+    size: z.number(),
+    text: z.string(),
+  }),
+  z.object({
+    kind: z.literal('retry'),
+    index: z.number(),
+    at: z.number(),
+    size: z.number(),
+    ms: z.number(),
+  }),
+]);
+export type SseRowWire = z.infer<typeof sseRowWireSchema>;
+
+/**
+ * The rows and outcome of an event-stream REST response, once the send resolved — the engine's
+ * `RestEventStream` plus `capSseRows(SSE_SUMMARY_LIMITS)`'s own verdict, so a long-running stream's
+ * summary never puts every row on the wire at once (the live `rest.live` `row` events already told
+ * the renderer about the ones this cap drops).
+ */
+export const restEventStreamWireSchema = z.object({
+  rows: z.array(sseRowWireSchema),
+  counts: z.object({
+    events: z.number(),
+    comments: z.number(),
+    retries: z.number(),
+    bytes: z.number(),
+  }),
+  lastEventId: z.string(),
+  retryMs: z.number().optional(),
+  endedBy: z.enum(['server', 'client', 'error']),
+  error: z.string().optional(),
+  /** Rows the engine's in-memory store had already evicted before the summary was built. */
+  droppedRows: z.number(),
+  /** `capSseRows` cut further rows to fit the summary's own byte budget. */
+  truncated: z.boolean(),
+  /** How many rows `capSseRows` omitted, on top of `droppedRows`. */
+  omittedRows: z.number(),
+});
+export type RestEventStreamWire = z.infer<typeof restEventStreamWireSchema>;
+
+/**
  * What one REST send produced. The same `http` projection a SOAP exchange carries — so the HTTP
  * log, the raw view and the timing waterfall are one implementation — plus what the body turned out
  * to be.
@@ -1706,8 +1767,30 @@ export const restExchangeSummarySchema = z.object({
   problems: z.array(exchangeProblemSchema),
   auth: authSummaryWireSchema.optional(),
   unresolved: z.array(unresolvedRefWireSchema).optional(),
+  /** Present only when the response was a `text/event-stream` and the send asked to parse it as one. */
+  stream: restEventStreamWireSchema.optional(),
 });
 export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
+
+/**
+ * One report from a REST send whose response is a `text/event-stream`, correlated to the invoke by
+ * `sendId`. `request.sendRest` stays open for the life of the stream and still resolves with the
+ * whole exchange (`stream` on its summary); these say what has arrived so far, the same
+ * relationship `grpcLiveEventSchema` and `wsLiveEventSchema` have to their own invokes. A renderer
+ * that ignores them sees exactly the behaviour it saw before streaming existed.
+ */
+export const restLiveEventSchema = z.discriminatedUnion('kind', [
+  /** The response's status and headers, the moment they arrive — before any row. */
+  z.object({
+    kind: z.literal('open'),
+    sendId: z.string(),
+    status: z.number(),
+    headers: z.record(z.string(), z.string()),
+  }),
+  /** One row, in arrival order. */
+  z.object({ kind: z.literal('row'), sendId: z.string(), row: sseRowWireSchema }),
+]);
+export type RestLiveEvent = z.infer<typeof restLiveEventSchema>;
 
 /**
  * Response payload for `exchanges.get`: one cached exchange, re-redacted for the show-secrets flag

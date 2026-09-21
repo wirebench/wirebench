@@ -747,6 +747,7 @@ export async function sendRestRequest(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestSendRestRequest,
+  sender: WebContents,
 ): Promise<RestExchangeSummary> {
   const resolved = deps.project.restSend?.(request.requestId, request.draft);
   if (resolved === undefined) {
@@ -822,6 +823,11 @@ export async function sendRestRequest(
         auth: resolved.auth,
         ...(accessToken !== undefined ? { accessToken } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
+        // The stream as it happens, alongside the invoke that is still open and will resolve with
+        // the whole exchange. A window that has gone away swallows its own events.
+        onLive: (event) => {
+          emitEvent(sender, events.rest.live, event);
+        },
       },
     );
     deps.project.rememberRestCookies?.(
@@ -1640,7 +1646,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 
-  registerHandler(channels.request.sendRest, (request) => sendRestRequest(service, deps, request));
+  registerHandler(channels.request.sendRest, (request, sender) => sendRestRequest(service, deps, request, sender));
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 

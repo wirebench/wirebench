@@ -41,12 +41,14 @@ import type {
   WsSessionOptions,
 } from '@wirebench/engine';
 import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
+import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import type {
   GrpcExchangeSummary,
   GrpcLiveEvent,
   RequestGrpcPushResponse,
   RestExchangeSummary,
+  RestLiveEvent,
   DefinitionImportRequest,
   EngineProgressEvent,
   ExchangeSummary,
@@ -68,6 +70,7 @@ import {
   toGrpcExchangeSummary,
   toGrpcResponseMessageWire,
   toRestExchangeSummary,
+  toSseRowWire,
   redactExchangeSummary,
   toExchangeSummary,
   toGenerateResponse,
@@ -622,6 +625,12 @@ export class EngineService {
    * proxy are all settled before this is called, so this method only runs the exchange and projects
    * the result. The unredacted summary stays in main's cache; what crosses IPC is redacted per the
    * session's flag, exactly as a SOAP send's is.
+   *
+   * `options.onLive` is told what arrives while an event-stream response is read — the initial
+   * status/headers and each row — the same relationship {@link sendGrpcRequest}'s `onLive` has to
+   * that invoke. A live event that cannot be delivered (the renderer window is gone, or a payload
+   * that fails its schema) must never affect the stream or this invoke: it is guarded exactly as the
+   * WebSocket session's `safeOnLive` guards its own calls.
    */
   async sendRestRequest(
     request: { readonly sendId: string; readonly requestId: string; readonly input: RestSendInput },
@@ -632,10 +641,25 @@ export class EngineService {
       readonly auth?: AuthConfig;
       /** An OAuth2 access token the host already obtained; never read from the secret store. */
       readonly accessToken?: string;
+      readonly onLive?: (event: RestLiveEvent) => void;
     } = {},
   ): Promise<RestExchangeSummary> {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
+    const { sendId } = request;
+    const onLive = options.onLive;
+    const show = options.showSecrets ?? false;
+    const safeOnLive = (event: RestLiveEvent): void => {
+      try {
+        onLive?.(event);
+      } catch (error) {
+        console.warn(
+          `[rest] a live event ("${event.kind}") for send "${sendId}" could not be delivered: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    };
     try {
       const auth = await resolveAuthConfig(
         options.auth,
@@ -646,14 +670,26 @@ export class EngineService {
         ...request.input,
         ...(auth !== undefined ? { auth } : {}),
         signal: controller.signal,
+        ...(onLive !== undefined
+          ? {
+              onStream: {
+                onOpen: (status: number, headers: Readonly<Record<string, string>>): void => {
+                  safeOnLive({ kind: 'open', sendId, status, headers: redactHeaders(headers, { show }) });
+                },
+                onRow: (row) => {
+                  safeOnLive({ kind: 'row', sendId, row: toSseRowWire(row) });
+                },
+              },
+            }
+          : {}),
       });
       const context = {
         method: request.input.request.method,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
       };
       const full = toRestExchangeSummary(exchange, request.sendId, { ...context, show: true });
-      this.exchanges.putRest(request.sendId, full, exchange.body, (show) =>
-        toRestExchangeSummary(exchange, request.sendId, { ...context, show }),
+      this.exchanges.putRest(request.sendId, full, exchange.body, (rerenderShow) =>
+        toRestExchangeSummary(exchange, request.sendId, { ...context, show: rerenderShow }),
       );
       return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
     } finally {

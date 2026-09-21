@@ -41,6 +41,7 @@ import {
   requestPreflightRestRequestSchema,
   requestSendRestRequestSchema,
   restExchangeSummarySchema,
+  restLiveEventSchema,
   definitionCancelImportRequestSchema,
   definitionCancelImportResponseSchema,
   definitionCloseRequestSchema,
@@ -735,6 +736,10 @@ export const events = {
   grpc: {
     /** A gRPC call in flight reporting what has arrived so far, keyed by the send's id. */
     live: defineEvent('grpc.live', grpcLiveEventSchema),
+  },
+  rest: {
+    /** A REST send whose response is an event stream, reporting rows as they arrive, keyed by `sendId`. */
+    live: defineEvent('rest.live', restLiveEventSchema),
   },
   ws: {
     /** A WebSocket session in flight reporting what has arrived so far, keyed by the send's id. */
