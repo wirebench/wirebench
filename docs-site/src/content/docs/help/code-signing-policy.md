@@ -1,6 +1,6 @@
 ---
 title: Code-signing policy
-description: How Wirebench releases are built, signed and approved, and what each signature covers.
+description: How Wirebench releases are built, signed and approved, who holds each role, and what each signature covers.
 ---
 
 Wirebench releases are built only by the project's
@@ -14,16 +14,28 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 
 - **What is signed:** the program files (`Wirebench.exe` and the other executables it ships) and the
   installers built around them (`…-setup.exe` and `.msi`), for x64 and arm64.
-- **Who approves:** every signing request is approved in SignPath by a project maintainer before it is
-  signed. The approvers are the maintainers who can publish a release on GitHub.
+- **Who approves:** every signing request is approved in SignPath by an approver named under
+  [Team roles](#team-roles) before it is signed.
 - **What the workflow checks first:** a release is built only after the project's full check suite
   (`pnpm check`) passes.
+
+Windows signing is being set up. Releases up to and including 2.2.1 ship unsigned Windows
+installers, so Windows names an unknown publisher when they run.
+
+## Team roles
+
+| Role | Who | What the role covers |
+| --- | --- | --- |
+| Authors | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Trusted to change the source code without a further review. |
+| Reviewers | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Review every change proposed by someone who is not an author before it is merged. |
+| Approvers | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Approve each signing request in SignPath. |
+
+Everyone in these roles uses multi-factor authentication on GitHub and on SignPath.
 
 ## macOS
 
 Releases are signed with the project's Apple *Developer ID Application* certificate and notarised by
-Apple, once that certificate is in place. Until then, macOS builds are unsigned, and the
-[install guide](/wirebench/getting-started/installation/) explains how to open them.
+Apple, so Gatekeeper opens them without a warning.
 
 ## Every release
 
@@ -32,9 +44,12 @@ Apple, once that certificate is in place. Until then, macOS builds are unsigned,
   built it. Each release also includes a CycloneDX SBOM of the app's dependencies. See
   [Verify a download](/wirebench/getting-started/installation/#verify-a-download).
 - The app talks to no server of the project's own. Update checks go to GitHub Releases, and only when
-  you ask for one or turn on checking at launch.
+  you ask for one or turn on checking at launch, which is off by default.
 
 ## Privacy
 
-Wirebench sends no telemetry and collects no data. See the
-[FAQ](/wirebench/help/faq/#does-wirebench-send-any-telemetry-or-usage-data).
+This program will not transfer any information to other networked systems unless specifically
+requested by the user.
+
+Wirebench sends no telemetry and collects no data. The requests it sends are the ones you send. See
+the [FAQ](/wirebench/help/faq/#does-wirebench-send-any-telemetry-or-usage-data).
