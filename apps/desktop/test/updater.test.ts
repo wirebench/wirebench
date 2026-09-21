@@ -39,7 +39,7 @@ function fakeUi(answers: { download?: boolean; install?: boolean } = {}): Update
   };
 }
 
-const AVAILABLE = { updateInfo: { version: '9.9.9' } };
+const AVAILABLE = { isUpdateAvailable: true, updateInfo: { version: '9.9.9' } };
 
 describe('githubFeedFrom', () => {
   it('reads owner and repo out of a git URL', () => {
@@ -90,6 +90,21 @@ describe('UpdateController', () => {
     const ui = fakeUi({ download: true });
 
     expect(await new UpdateController(backend, ui).check({ trigger: 'user' })).toEqual({ kind: 'up-to-date' });
+    expect(backend.calls).toEqual(['check']);
+  });
+
+  it('offers nothing when the newest release is older than the running app', async () => {
+    // What electron-updater really returns with no update: the newest release's info, filled in,
+    // beside `isUpdateAvailable: false`. Running 2.2.0 against a feed whose newest public release
+    // is 1.1.0 once offered 1.1.0 as an "update" — a downgrade behind a Download button.
+    const backend = fakeBackend({
+      checkForUpdates: () => Promise.resolve({ isUpdateAvailable: false, updateInfo: { version: '1.1.0' } }),
+    });
+    const confirmDownload = vi.fn(() => Promise.resolve(true));
+    const ui = { ...fakeUi(), confirmDownload };
+
+    expect(await new UpdateController(backend, ui).check({ trigger: 'launch' })).toEqual({ kind: 'up-to-date' });
+    expect(confirmDownload).not.toHaveBeenCalled();
     expect(backend.calls).toEqual(['check']);
   });
 
