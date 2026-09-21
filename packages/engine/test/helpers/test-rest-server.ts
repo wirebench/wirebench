@@ -566,6 +566,7 @@ function handleEventStream(path: string, url: URL, request: IncomingMessage, res
     const n = Math.min(Math.max(Number(url.searchParams.get('n') ?? '3'), 0), 1000);
     const every = Math.min(Math.max(Number(url.searchParams.get('every') ?? '20'), 1), MAX_SLOW_MS);
     const gzip = path === '/sse/gzip' ? createGzip() : undefined;
+    if (gzip !== undefined) response.on('close', () => gzip.destroy());
     response.writeHead(200, { ...EVENT_STREAM_HEADERS, ...(gzip !== undefined ? { 'content-encoding': 'gzip' } : {}) });
     gzip?.pipe(response);
     const write = (text: string): void => {

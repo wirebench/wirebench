@@ -306,6 +306,7 @@ async function pumpStream(
     }
     return { by: 'server' };
   } catch (err) {
+    // Only the caller's signal can abort here: the deadline timer is cleared before streaming starts.
     if (signal?.aborted === true) return { by: 'client' };
     return { by: 'error', error: err instanceof Error ? err.message : String(err) };
   } finally {
@@ -450,7 +451,14 @@ export async function sendHttp(
         continue;
       }
 
-      const sink = req.stream?.accept(response.statusCode, headers);
+      let sink: HttpStreamSink | undefined;
+      try {
+        sink = req.stream?.accept(response.statusCode, headers);
+      } catch (err) {
+        // The body is never read now, so release its connection rather than leave it checked out.
+        response.body.destroy();
+        throw err;
+      }
       if (sink !== undefined) {
         // From here the stream runs until the server, the caller, or the network ends it.
         clearTimeout(timer);

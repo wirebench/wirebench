@@ -5,6 +5,7 @@
  * arrived before the call ended" is a fact about ordering, not a guess about timing. Waits are
  * bounded polls against a deadline, never sleeps standing in for an assertion.
  */
+import { Agent } from 'undici';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendHttp } from '../../../src/http/client.js';
@@ -170,11 +171,18 @@ describe('sendHttp stream hook', () => {
           return undefined;
         },
       };
-      // Warm the keep-alive pool first, so both compared sends reuse a connection alike and the
-      // timings differ only in their numbers, not in whether a connect phase happened.
-      await sendHttp(req(path));
-      const today = await sendHttp(req(path));
-      const declined = await sendHttp(req(path, { stream: declining }));
+      // A fresh connection each, so both compared sends go through the same phases and their
+      // timings differ only in their numbers.
+      const send = async (request: HttpRequest): Promise<HttpExchange> => {
+        const dispatcher = new Agent();
+        try {
+          return await sendHttp(request, { dispatcher });
+        } finally {
+          await dispatcher.destroy();
+        }
+      };
+      const today = await send(req(path));
+      const declined = await send(req(path, { stream: declining }));
       expect(asked).toBe(1);
       expect(comparable(declined)).toEqual(comparable(today));
       expect(declined.streamEnd).toBeUndefined();
@@ -186,5 +194,44 @@ describe('sendHttp stream hook', () => {
     const statuses: number[] = [];
     await sendHttp(req('/redirect/302?to=/status/200', { stream: { accept: (s) => void statuses.push(s) } }));
     expect(statuses).toEqual([200]);
+  });
+
+  it('rejects when accept throws, and leaves no connection checked out', async () => {
+    // One connection per origin: a socket the failed send kept would starve the next one.
+    const dispatcher = new Agent({ connections: 1 });
+    const error = await sendHttp(
+      req('/sse/forever', {
+        stream: {
+          accept: () => {
+            throw new Error('hook failed');
+          },
+        },
+      }),
+      { dispatcher },
+    ).catch((e: unknown) => e);
+    expect((error as Error).message).toContain('hook failed');
+    const next = await sendHttp(req('/status/200', { timeoutMs: 1000 }), { dispatcher });
+    expect(next.status).toBe(200);
+    await dispatcher.destroy();
+  });
+
+  it('ends by error when onChunk throws, and leaves no connection checked out', async () => {
+    const dispatcher = new Agent({ connections: 1 });
+    const exchange = await sendHttp(
+      req('/sse/forever', {
+        stream: {
+          accept: () => ({
+            onChunk: () => {
+              throw new Error('sink failed');
+            },
+          }),
+        },
+      }),
+      { dispatcher },
+    );
+    expect(exchange.streamEnd).toEqual({ by: 'error', error: 'sink failed' });
+    const next = await sendHttp(req('/status/200', { timeoutMs: 1000 }), { dispatcher });
+    expect(next.status).toBe(200);
+    await dispatcher.destroy();
   });
 });
