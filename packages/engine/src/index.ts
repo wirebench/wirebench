@@ -372,7 +372,11 @@ export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from 
 export { expandRestSendInput } from './rest/expand.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
-export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
+export type { SseParser, SseRow } from './rest/sse.js';
+export { capSseRows, createSseRowStore, SSE_HISTORY_LIMITS, SSE_SUMMARY_LIMITS } from './rest/sse-transcript.js';
+export type { SseRowStore, SseTranscript } from './rest/sse-transcript.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
