@@ -62,6 +62,11 @@ const DiffView = lazy(async () => {
   return { default: module.DiffView };
 });
 
+const EnvCompareView = lazy(async () => {
+  const module = await import('../features/multi-env/env-compare-view.js');
+  return { default: module.EnvCompareView };
+});
+
 const InterfaceEditor = lazy(async () => {
   const module = await import('../features/interface-editor/interface-editor.js');
   return { default: module.InterfaceEditor };
@@ -515,6 +520,10 @@ export function EditorArea() {
         ) : activeTab.kind === 'diff' && activeTab.diff !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <DiffView {...activeTab.diff} />
+          </Suspense>
+        ) : activeTab.kind === 'env-compare' && activeTab.envCompare !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
+            <EnvCompareView {...activeTab.envCompare} />
           </Suspense>
         ) : activeTab.kind === 'rest-request' && activeTab.restRequestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>

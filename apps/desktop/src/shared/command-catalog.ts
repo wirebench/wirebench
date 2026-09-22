@@ -383,6 +383,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     category: 'Request',
     shortcut: 'Escape',
   },
+  'request.sendToEnvironments': {
+    id: 'request.sendToEnvironments',
+    label: 'Request: Send to Environments…',
+    category: 'Request',
+  },
   'request.recreateKeepValues': {
     id: 'request.recreateKeepValues',
     label: 'Request: Recreate (keep values)',

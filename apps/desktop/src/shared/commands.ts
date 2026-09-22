@@ -76,6 +76,7 @@ export const COMMAND_IDS = [
   'secrets.toggleShowSecrets',
   'request.send',
   'request.cancel',
+  'request.sendToEnvironments',
   'request.recreateKeepValues',
   'request.recreateDiscardValues',
   'request.createEmpty',

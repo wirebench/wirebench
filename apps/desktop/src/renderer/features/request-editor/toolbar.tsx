@@ -4,6 +4,7 @@ import { Button } from '../../components/button.js';
 import { TrustInvalidBadge } from '../../components/trust-invalid-badge.js';
 import type { RequestDraft } from '../../state/project.js';
 import type { EndpointSourceWire, InterfaceSummary } from '../../../shared/wire-types.js';
+import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
 import { EndpointSelect } from './endpoint-select.js';
 import { EndpointsDialog } from './endpoints-dialog.js';
 import { flipMode, flipOrientation, setEditorLayout, useEditorLayout } from './layout.js';
@@ -82,6 +83,7 @@ export function RequestToolbar({
           Send
         </Button>
       )}
+      <SendToEnvironmentsButton requestId={draft.id} kind="soap" />
 
       {endpointSource === 'environment' || endpointSource === 'workspace-environment' ? (
         // The active environment overrides this interface's address, so the request's own
