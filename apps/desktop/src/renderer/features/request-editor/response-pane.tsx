@@ -18,6 +18,7 @@ import { WssInspector, wssTabLabel } from './inspectors/wss-inspector.js';
 import { ResponseAttachmentsInspector } from './inspectors/response-attachments-inspector.js';
 import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
+import { SnapshotPanel } from '../snapshot/snapshot-panel.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
@@ -90,6 +91,11 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     }
     return decodeBase64Text(exchange.http.bodyBase64) ?? '';
   }, [exchange, response, autoFormat, tabSize]);
+  // The Snapshot tab compares the body as it came off the wire, never the pretty-printed copy.
+  const snapshotBody = useMemo(
+    () => (exchange === undefined ? undefined : (decodeBase64Text(exchange.http.bodyBase64) ?? '')),
+    [exchange],
+  );
 
   // Warm the view chunks as soon as the pane exists, so the first click on Raw, Outline, Query
   // or Fault renders synchronously instead of suspending. Idempotent; the request pane does the
@@ -157,6 +163,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     { id: 'outline', label: 'Outline' },
     { id: 'raw', label: 'Raw' },
     { id: 'query', label: 'Query' },
+    { id: 'snapshot', label: 'Snapshot' },
     ...(fault !== undefined ? [{ id: 'fault', label: 'Fault' }] : []),
   ];
 
@@ -190,6 +197,14 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
             />
           ) : view === 'query' ? (
             <QueryView requestId={requestId} xml={body} onReveal={handleReveal} />
+          ) : view === 'snapshot' ? (
+            <SnapshotPanel
+              requestId={requestId}
+              body={snapshotBody}
+              {...(exchange?.http.headers['content-type'] !== undefined
+                ? { contentType: exchange.http.headers['content-type'] }
+                : {})}
+            />
           ) : view === 'fault' && fault !== undefined ? (
             <FaultOverview fault={fault} />
           ) : exchange === undefined ? (
