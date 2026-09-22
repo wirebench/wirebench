@@ -37,6 +37,7 @@ import type {
   UnresolvedRefWire,
 } from '../shared/wire-types.js';
 import { findRequest } from './project-wire.js';
+import { isSecretTokenRef } from './secret-resolver.js';
 
 /** What `request.preflight` answers: where the request would go, and what would not expand. */
 export interface PreflightResult {
@@ -168,7 +169,10 @@ export function preflightRequest(
   const unresolved: UnresolvedRefWire[] = [];
   const check = (text: string, field: ExpansionField, headerName?: string): void => {
     for (const ref of expand(text, scopes).unresolved) {
-      unresolved.push(toWire(ref, field, headerName));
+      // A `${secret:name}` token resolves only at send, which refuses it there if nothing is stored.
+      if (!isSecretTokenRef(ref)) {
+        unresolved.push(toWire(ref, field, headerName));
+      }
     }
   };
 

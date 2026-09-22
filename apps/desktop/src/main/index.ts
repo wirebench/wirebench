@@ -252,9 +252,7 @@ const workspaceService = new WorkspaceService({
       applyWindowTitle(workspace);
     },
     onProjectChanged: (projectId, project) => {
-      if (project === null) {
-        secretScans.close(projectId);
-      }
+      secretScans.projectChanged(projectId, project);
       broadcast(events.project.changed, { projectId, project });
     },
     onProjectChangedOnDisk: (projectId, paths) => {

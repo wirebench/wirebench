@@ -40,11 +40,12 @@ import type {
   TlsOptions,
   GetSecret,
   PropertyScopes,
+  UnresolvedRef,
   WsSessionMaterial,
   WsSessionOptions,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { resolveAuthConfig, resolveWithSecretTokens } from '../secret-resolver.js';
+import { isSecretTokenRef, resolveAuthConfig, resolveWithSecretTokens } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
@@ -488,9 +489,11 @@ async function restCurl(
     { shell: request.shell, redactSecrets: !show },
   );
   const notes: string[] = [];
-  if (resolved.unresolved.length > 0) {
+  // A `${secret:name}` token stays in the command as written: it is resolved only by a send.
+  const unresolved = resolved.unresolved.filter((reference) => !isSecretTokenRef(reference));
+  if (unresolved.length > 0) {
     notes.push(
-      `Unresolved propert${resolved.unresolved.length === 1 ? 'y' : 'ies'}: ${resolved.unresolved
+      `Unresolved propert${unresolved.length === 1 ? 'y' : 'ies'}: ${unresolved
         .map((reference) => reference.expr)
         .join(', ')}.`,
     );
@@ -968,6 +971,14 @@ function withoutUndefined<T extends object>(value: { readonly [K in keyof T]: T[
 }
 
 /**
+ * A dry run's unresolved references onto the wire, without the `${secret:name}` tokens: a dry run
+ * reads no secret, and a send resolves them (refusing as `secret-missing` when nothing is stored).
+ */
+function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRefWire[] {
+  return unresolved.filter((ref) => !isSecretTokenRef(ref)).map(toUnresolvedRefWire);
+}
+
+/**
  * The dry run of a REST send: where it would go, what would not expand, and which credentials it
  * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
  * badge while the user types.
@@ -1004,7 +1015,7 @@ function preflightRest(
     // The base URL's source uses the same vocabulary an interface endpoint's does, so the badge in
     // the editor reads identically for either protocol.
     endpointSource: resolved.baseUrlSource === 'api' ? 'interface-default' : resolved.baseUrlSource,
-    unresolved: [...resolved.unresolved.map(toUnresolvedRefWire), ...missing],
+    unresolved: [...preflightUnresolved(resolved.unresolved), ...missing],
     auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
     wsa: { enabled: false },
   };
@@ -1375,7 +1386,7 @@ function preflightGrpc(
   return {
     endpoint: resolved.input.target,
     endpointSource: resolved.targetSource === 'api' ? 'interface-default' : resolved.targetSource,
-    unresolved: resolved.unresolved.map(toUnresolvedRefWire),
+    unresolved: preflightUnresolved(resolved.unresolved),
     auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
     wsa: { enabled: false },
   };
@@ -1637,33 +1648,61 @@ function isValidBase64(text: string): boolean {
 }
 
 /**
+ * The tail of each open WebSocket session's queue of `request.wsSend` calls, by `sendId`. A message
+ * holding a `${secret:name}` token waits on the keychain before it can be written, so without the
+ * queue a plain message sent right after it would reach the wire first.
+ */
+const wsSendQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs `send` once every earlier `request.wsSend` of session `sendId` has settled (sent or
+ * refused), so a session's messages go out in the order the renderer sent them.
+ */
+function queueWsSend<T>(sendId: string, send: () => Promise<T>): Promise<T> {
+  const previous = wsSendQueues.get(sendId) ?? Promise.resolve();
+  const result = previous.then(send, send);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  wsSendQueues.set(sendId, tail);
+  void tail.then(() => {
+    if (wsSendQueues.get(sendId) === tail) {
+      wsSendQueues.delete(sendId);
+    }
+  });
+  return result;
+}
+
+/**
  * One more message on an open WebSocket session.
  *
  * `format: 'text'` with `expand: true` property-expands `content` against the same scopes the
  * request resolves with, using its own `escapeProperties` setting, and refuses with
  * `ws-unresolved-properties` — sending nothing — rather than writing a literal `${…}` to the wire.
  * `format: 'binary'` never expands; `content` must be valid base64 or the send is refused with
- * `ws-bad-binary` before anything reaches the session.
+ * `ws-bad-binary` before anything reaches the session. The frame it answers with has its text's
+ * secret values masked unless the session shows secrets, as the live `frame` events do.
  */
 async function sendWsMessage(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestWsSendRequest,
 ): Promise<WsFrameWire> {
+  const show = deps.showSecrets?.get() ?? false;
   if (request.format === 'binary') {
     if (!isValidBase64(request.content)) {
       throw new WirebenchError('ws-bad-binary', 'The message is not valid base64.', {
         details: { sendId: request.sendId },
       });
     }
-    return service.sendWsMessage(request.sendId, { base64: request.content });
+    return service.sendWsMessage(request.sendId, { base64: request.content }, { showSecrets: show });
   }
   let text = request.content;
   if (request.expand) {
     const resolved = deps.project.wsSend?.(request.requestId);
     let scopes = deps.project.scopesFor(request.requestId);
-    // Awaited only when the message holds a token, so a plain message still goes out before the
-    // next one the renderer sends.
+    // Awaited only when the message holds a token; `queueWsSend` keeps the next message behind it.
     const names = secretNamesIn(text, scopes);
     if (names.length > 0) {
       scopes = { ...scopes, secrets: await resolveSecretTokens(names, tokenSecrets(deps, request.requestId)) };
@@ -1677,7 +1716,7 @@ async function sendWsMessage(
     }
     text = expanded.text;
   }
-  return service.sendWsMessage(request.sendId, { text });
+  return service.sendWsMessage(request.sendId, { text }, { showSecrets: show });
 }
 
 /** Closes an open WebSocket session. `{ closed: false }` when no such session is open. */
@@ -1700,7 +1739,7 @@ function preflightWs(
   return {
     endpoint: wsDisplayUrl(resolved.input),
     endpointSource: resolved.urlSource === 'api' ? 'interface-default' : resolved.urlSource,
-    unresolved: resolved.unresolved.map(toUnresolvedRefWire),
+    unresolved: preflightUnresolved(resolved.unresolved),
     auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
     wsa: { enabled: false },
   };
@@ -1768,7 +1807,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.openWs, (request, sender) =>
     trackOpenWs(request.requestId, openWsRequest(service, deps, request, sender)),
   );
-  registerHandler(channels.request.wsSend, (request) => sendWsMessage(service, deps, request));
+  registerHandler(channels.request.wsSend, (request) =>
+    queueWsSend(request.sendId, () => sendWsMessage(service, deps, request)),
+  );
   registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 

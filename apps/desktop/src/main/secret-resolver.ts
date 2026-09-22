@@ -49,12 +49,20 @@ export function projectSecretGetter(
   };
 }
 
+/**
+ * True for a well-formed `${secret:name}` token an expansion without its value left unresolved.
+ * A dry run (a preflight, a cURL export) reads no secret, so it leaves every token so; the send
+ * resolves it, and refuses as `secret-missing` when nothing is stored — so it is not "unresolved".
+ */
+export function isSecretTokenRef(ref: Pick<UnresolvedRef, 'scope' | 'name' | 'code'>): boolean {
+  return (
+    ref.scope === 'Secret' && ref.code === 'missing' && ref.name !== undefined && SECRET_NAME_PATTERN.test(ref.name)
+  );
+}
+
 /** The names of the `${secret:name}` tokens an expansion reached and had no value for. */
 export function missingSecretNames(unresolved: readonly UnresolvedRef[]): string[] {
-  const names = unresolved
-    .filter((ref) => ref.scope === 'Secret' && ref.code === 'missing')
-    .map((ref) => ref.name)
-    .filter((name): name is string => name !== undefined && SECRET_NAME_PATTERN.test(name));
+  const names = unresolved.filter(isSecretTokenRef).map((ref) => ref.name as string);
   return [...new Set(names)];
 }
 

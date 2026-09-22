@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SKIP_PERF } from '../bench/budgets.js';
+import { CI_GATE_FACTOR, GATE_SAMPLES, SKIP_PERF, median } from '../bench/budgets.js';
 import { createProject } from '../../src/project/model.js';
 import { createApi, createRestRequest, entry as kv } from '../../src/rest/model.js';
 import { scanProjectForSecrets } from '../../src/secrets/scan/scan.js';
@@ -23,11 +23,16 @@ describe.skipIf(SKIP_PERF)('secret scan', () => {
       }),
     );
     const project = { ...createProject('P'), apis: [createApi('A', { requests })] };
-    scanProjectForSecrets(project);
-    const start = performance.now();
-    const findings = scanProjectForSecrets(project);
-    const ms = performance.now() - start;
-    expect(findings).toHaveLength(40);
-    expect(ms).toBeLessThan(100);
+    expect(scanProjectForSecrets(project)).toHaveLength(40);
+    // Median of several runs against budget × gate factor, like the other engine budgets.
+    const samples: number[] = [];
+    for (let i = 0; i < GATE_SAMPLES; i++) {
+      const start = performance.now();
+      scanProjectForSecrets(project);
+      samples.push(performance.now() - start);
+    }
+    expect(median(samples), `samples: ${samples.map((s) => s.toFixed(1)).join(', ')} ms`).toBeLessThan(
+      100 * CI_GATE_FACTOR,
+    );
   });
 });

@@ -48,7 +48,11 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
         ? { responseHeaders: redactHeaders(exchange.handshake.responseHeaders, { show: false }) }
         : {}),
     },
-    frames: exchange.frames,
+    // A frame's text may carry a `${secret:name}` value (sent, or echoed back); the summary shows
+    // it while secrets are shown, and History, written to disk, never does.
+    frames: exchange.frames.map((frame) =>
+      frame.text === undefined ? frame : { ...frame, text: redactSecretValues(frame.text) },
+    ),
     closed: exchange.closed,
     counts: exchange.counts,
     durationMs: exchange.durationMs,

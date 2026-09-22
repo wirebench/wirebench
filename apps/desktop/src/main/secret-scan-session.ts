@@ -24,7 +24,7 @@ import type { SecretStore } from './secrets.js';
 export type SecretScanHost = Pick<ProjectHost, 'model' | 'applyModelUpdate'>;
 
 /** What a session needs from the secret store. */
-export type SecretScanStore = Pick<SecretStore, 'set' | 'replace' | 'findByLabel' | 'list'>;
+export type SecretScanStore = Pick<SecretStore, 'set' | 'replace' | 'delete' | 'findByLabel' | 'list'>;
 
 /** One finding to move, by id, and the name its token will carry. */
 export interface SecretMoveItem {
@@ -109,8 +109,15 @@ export class SecretScanSession {
    * URL-escaped where it was), because a token expands verbatim. Each name is stored once: `set`
    * under the project's label, or `replace` when the name exists and the item asks to; a name that
    * exists without `replace` is reported in `nameTaken` and that finding stays. Then every stored
-   * move is applied to the model as one change. A move the model no longer allows by then (edited
-   * during the store writes) is `stale`, its value already stored.
+   * move is applied to the model as one change.
+   *
+   * The store writes are awaited while the user may still be editing, so a finding can go stale
+   * part-way. Each one is checked against the model as it stands just before its write (skipped,
+   * `stale`, if it no longer applies) and again by the final update. An entry this call created
+   * with `set` whose findings all went stale by then is deleted again. A `replace` cannot be undone
+   * that way: a finding edited after its check but before the update (while its own or a later
+   * item's write is in flight) leaves the name's old value replaced, though no token is written
+   * for it — a narrow race, left as is.
    */
   async move(items: readonly SecretMoveItem[]): Promise<SecretMoveResult> {
     const model = this.host().model();
@@ -119,17 +126,18 @@ export class SecretScanSession {
     const nameTaken: string[] = [];
     const moves: SecretMove[] = [];
     // Two findings may share a name in one call (the same token pasted twice): one store write.
-    const storedNow = new Map<string, string>();
+    const storedNow = new Map<string, { readonly value: string; readonly created?: string }>();
     for (const item of items) {
       const finding = found.get(item.id);
       if (finding === undefined || !SECRET_NAME_PATTERN.test(item.name)) {
         stale.push(item.id);
         continue;
       }
+      const move: SecretMove = { finding, name: item.name };
       const already = storedNow.get(item.name);
       if (already !== undefined) {
-        if (already === finding.value) {
-          moves.push({ finding, name: item.name });
+        if (already.value === finding.value) {
+          moves.push(move);
         } else {
           nameTaken.push(item.id);
         }
@@ -141,13 +149,18 @@ export class SecretScanSession {
         nameTaken.push(item.id);
         continue;
       }
+      // After the lookup, right before the write: edited meanwhile, and nothing is stored for it.
+      if (!this.applies(move)) {
+        stale.push(item.id);
+        continue;
+      }
       if (ref === undefined) {
-        await this.store.set(finding.value, { label });
+        storedNow.set(item.name, { value: finding.value, created: await this.store.set(finding.value, { label }) });
       } else {
         await this.store.replace(ref, finding.value);
+        storedNow.set(item.name, { value: finding.value });
       }
-      storedNow.set(item.name, finding.value);
-      moves.push({ finding, name: item.name });
+      moves.push(move);
     }
 
     let applied = new Set<string>();
@@ -161,10 +174,23 @@ export class SecretScanSession {
     const ids = [...new Set(moves.map((m) => m.finding.id))];
     const moved = ids.filter((id) => applied.has(id));
     stale.push(...ids.filter((id) => !applied.has(id)));
+    // An entry created here that no token names: its findings went stale during the writes.
+    for (const [name, stored] of storedNow) {
+      const used = moves.some((m) => m.name === name && applied.has(m.finding.id));
+      if (stored.created !== undefined && !used) {
+        await this.store.delete(stored.created);
+      }
+    }
     if (moved.length > 0) {
       this.emit();
     }
     return { moved, stale, nameTaken };
+  }
+
+  /** True while `move` would still rewrite the model as it stands now. */
+  private applies(move: SecretMove): boolean {
+    const model = this.host().model();
+    return model !== undefined && move.finding.id in applySecretMoves(model, [move]).values;
   }
 
   /** Called after every keep and every move that changed something; returns the unsubscribe. */
@@ -224,6 +250,16 @@ export class SecretScanSessions {
       this.sessions.set(projectId, session);
     }
     return session;
+  }
+
+  /**
+   * What main's `onProjectChanged` hook calls with every change it announces: `null` is the project
+   * closing, which ends its session; anything else is an edit, which a session reads as it goes.
+   */
+  projectChanged(projectId: string, project: unknown): void {
+    if (project === null) {
+      this.close(projectId);
+    }
   }
 
   /** Ends the session of a project that closed: its kept findings are found again next time. */

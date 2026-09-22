@@ -213,6 +213,27 @@ describe('request.curl for a REST request', () => {
     expect(result.notes?.join(' ')).toContain('${#Project#missing}');
   });
 
+  it('does not note a ${secret:name} token as unresolved, leaving it in the command as written', async () => {
+    const rest = resolution({
+      unresolved: [{ expr: '${secret:api_key}', scope: 'Secret', name: 'api_key', code: 'missing' } as never],
+    });
+    rest.input = {
+      ...rest.input,
+      request: {
+        ...rest.input.request,
+        headers: [{ name: 'X-Key', value: '${secret:api_key}', enabled: true }],
+      },
+    };
+    setup({ rest });
+
+    const result = unwrap<{ command: string; notes?: string[] }>(
+      await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }),
+    );
+
+    expect(result.notes).toBeUndefined();
+    expect(result.command).toContain('${secret:api_key}');
+  });
+
   it('still answers unknown-request for an id no project holds', async () => {
     setup({});
 

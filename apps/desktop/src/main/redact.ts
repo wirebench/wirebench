@@ -53,6 +53,14 @@ export function redactSecretValues(text: string): string {
   return maskRecorded(text);
 }
 
+/**
+ * `text` with every recorded value masked unless `show`: for payloads no pattern rule applies to
+ * (a WebSocket frame, a gRPC request message) on their way to the renderer.
+ */
+export function redactSecretText(text: string, opts?: { show?: boolean }): string {
+  return opts?.show === true ? text : maskRecorded(text);
+}
+
 /** See the engine's `redactHeaders`; recorded values are masked in every other header too. */
 export function redactHeaders(
   headers: Readonly<Record<string, string>>,
