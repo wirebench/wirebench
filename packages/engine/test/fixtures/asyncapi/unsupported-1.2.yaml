@@ -1,0 +1,10 @@
+asyncapi: 1.2.0
+info:
+  title: Chat service
+  version: 1.0.0
+baseTopic: chat
+topics:
+  message:
+    publish:
+      payload:
+        type: object

@@ -215,3 +215,23 @@ describe('detectImportFormat: legacy SOAP projects', () => {
     expect(detectImportFormat({ filename: 'project.xml' }).kind).toBe('unknown');
   });
 });
+
+describe('detectImportFormat: AsyncAPI', () => {
+  it('is definite on the asyncapi key, in JSON and YAML', () => {
+    expect(detectImportFormat({ text: '{"asyncapi":"2.6.0","info":{}}' })).toEqual({
+      kind: 'asyncapi',
+      label: 'AsyncAPI 2.6.0',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: 'asyncapi: 3.0.0\nchannels: {}', filename: 'x.yaml' }).kind).toBe('asyncapi');
+  });
+
+  it('is probable from a file name that says so, before the YAML fallback', () => {
+    expect(detectImportFormat({ filename: 'chat.asyncapi.yaml' })).toEqual({
+      kind: 'asyncapi',
+      label: 'AsyncAPI',
+      confidence: 'probable',
+    });
+    expect(detectImportFormat({ filename: 'chat.yaml' }).kind).toBe('openapi');
+  });
+});

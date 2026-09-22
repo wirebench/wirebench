@@ -1,0 +1,28 @@
+SendChat:
+  type: object
+  required: [type, text]
+  properties:
+    type:
+      const: message
+    text:
+      type: string
+ChatMessage:
+  type: object
+  required: [type, from, text]
+  properties:
+    type:
+      const: message
+    from:
+      type: string
+    text:
+      type: string
+Presence:
+  type: object
+  required: [type, user, online]
+  properties:
+    type:
+      const: presence
+    user:
+      type: string
+    online:
+      type: boolean

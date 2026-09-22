@@ -40,6 +40,10 @@
         "types": "./dist/grpc/browser.d.ts",
         "default": "./dist/grpc/browser.js"
       },
+      "./asyncapi": {
+        "types": "./dist/asyncapi/browser.d.ts",
+        "default": "./dist/asyncapi/browser.js"
+      },
       "./detect": {
         "types": "./dist/import-detect.d.ts",
         "default": "./dist/import-detect.js"
@@ -72,6 +76,11 @@
       "development": "./src/grpc/browser.ts",
       "types": "./dist/grpc/browser.d.ts",
       "default": "./dist/grpc/browser.js"
+    },
+    "./asyncapi": {
+      "development": "./src/asyncapi/browser.ts",
+      "types": "./dist/asyncapi/browser.d.ts",
+      "default": "./dist/asyncapi/browser.js"
     },
     "./ws": {
       "development": "./src/ws/browser.ts",

@@ -1,0 +1,116 @@
+asyncapi: 2.6.0
+info:
+  title: Chat service
+  version: 1.0.0
+defaultContentType: application/json
+servers:
+  public:
+    url: wss://{region}.chat.example.test/ws
+    protocol: wss
+    variables:
+      region:
+        default: eu
+        enum: [eu, us]
+    security:
+      - apiKeyQuery: []
+  broker:
+    url: broker.chat.example.test:9092
+    protocol: kafka
+channels:
+  /chat/{roomId}:
+    servers: [public]
+    parameters:
+      roomId:
+        schema:
+          type: string
+          default: lobby
+          examples: [lobby, general]
+    bindings:
+      ws:
+        query:
+          type: object
+          properties:
+            token:
+              type: string
+        headers:
+          type: object
+          properties:
+            Sec-WebSocket-Protocol:
+              type: string
+              const: chat.v1
+    publish:
+      operationId: sendMessage
+      message:
+        $ref: '#/components/messages/sendMessage'
+    subscribe:
+      operationId: receiveMessages
+      message:
+        oneOf:
+          - $ref: '#/components/messages/chatMessage'
+          - $ref: '#/components/messages/presence'
+  audit:
+    servers: [broker]
+    bindings:
+      kafka:
+        topic: chat-audit
+    subscribe:
+      operationId: auditTrail
+      message:
+        $ref: '#/components/messages/auditRecord'
+components:
+  securitySchemes:
+    apiKeyQuery:
+      type: httpApiKey
+      in: query
+      name: token
+  messages:
+    sendMessage:
+      name: sendMessage
+      payload:
+        type: object
+        required: [type, text]
+        properties:
+          type:
+            const: message
+          text:
+            type: string
+      examples:
+        - payload:
+            type: message
+            text: Hello
+    chatMessage:
+      name: chatMessage
+      payload:
+        type: object
+        required: [type, from, text]
+        properties:
+          type:
+            const: message
+          from:
+            type: string
+          text:
+            type: string
+    presence:
+      name: presence
+      payload:
+        type: object
+        required: [type, user, online]
+        properties:
+          type:
+            const: presence
+          user:
+            type: string
+          online:
+            type: boolean
+    auditRecord:
+      name: auditRecord
+      contentType: application/octet-stream
+      schemaFormat: application/vnd.apache.avro;version=1.9.0
+      payload:
+        type: record
+        name: AuditRecord
+        fields:
+          - name: room
+            type: string
+          - name: at
+            type: long

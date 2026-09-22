@@ -25,6 +25,7 @@ export {
   ValidationError,
   WorkspaceError,
   OpenApiError,
+  AsyncApiError,
   PostmanError,
   LegacyProjectError,
   ProtoError,
@@ -379,6 +380,9 @@ export { capSseRows, createSseRowStore, SSE_HISTORY_LIMITS, SSE_SUMMARY_LIMITS }
 export type { SseRowStore, SseTranscript } from './rest/sse-transcript.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
+export { parseAsyncApi } from './asyncapi/parse.js';
+export type { ParseAsyncApiOptions, ParsedAsyncApi } from './asyncapi/parse.js';
+export type * from './asyncapi/model.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
 export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
