@@ -21,8 +21,13 @@ function withoutQuery(url: string): string {
   return end === -1 ? url : url.slice(0, end);
 }
 
+/** `value` without trailing slashes; a loop, since `/\/+$/` backtracks on a long run of them. */
 function trimSlash(value: string): string {
-  return value.replace(/\/+$/, '');
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+  return value.slice(0, end);
 }
 
 /** The URL's path relative to the API: the longest matching base URL, a leading variable, or the origin gone. */
