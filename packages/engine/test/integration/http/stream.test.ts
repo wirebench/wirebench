@@ -78,9 +78,24 @@ async function send(request: HttpRequest, rec: Recorder): Promise<HttpExchange> 
   return exchange;
 }
 
-/** An exchange with its timings dropped, for comparing two sends of the same request. */
+/**
+ * An exchange ready to compare with another send of the same request: its timings dropped, and the
+ * server's `Date` header left out wherever it appears. Two sends can straddle a second, so the date
+ * is the one header that may differ; every other header and byte is still compared.
+ */
 function comparable(exchange: HttpExchange): Record<string, unknown> {
-  return { ...exchange, timings: null };
+  const isDate = (name: string): boolean => name.toLowerCase() === 'date';
+  const raw = Buffer.from(exchange.rawResponse).toString('latin1');
+  const end = raw.indexOf('\r\n\r\n');
+  const head = end === -1 ? raw : raw.slice(0, end);
+  const rawResponse = head.replace(/\r\ndate:[^\r]*/gi, '') + (end === -1 ? '' : raw.slice(end));
+  return {
+    ...exchange,
+    timings: null,
+    headers: Object.fromEntries(Object.entries(exchange.headers).filter(([name]) => !isDate(name))),
+    rawHeaders: exchange.rawHeaders.filter(([name]) => !isDate(name)),
+    rawResponse,
+  };
 }
 
 describe('sendHttp stream hook', () => {
@@ -189,6 +204,33 @@ describe('sendHttp stream hook', () => {
       expect(Object.keys(declined.timings).sort()).toEqual(Object.keys(today.timings).sort());
     },
   );
+
+  it('compares two sends that differ only in their Date header as equal, and nothing else', () => {
+    const at = (date: string, body = 'ok'): HttpExchange => {
+      const raw = `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nDate: ${date}\r\n\r\n${body}`;
+      return {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/plain', date },
+        rawHeaders: [
+          ['Content-Type', 'text/plain'],
+          ['Date', date],
+        ],
+        rawResponse: new Uint8Array(Buffer.from(raw, 'latin1')),
+      } as unknown as HttpExchange;
+    };
+    const first = at('Tue, 22 Sep 2026 19:54:02 GMT');
+    expect(comparable(at('Tue, 22 Sep 2026 19:54:03 GMT'))).toEqual(comparable(first));
+    // A `date:` in the body is a byte of the body, not a header.
+    expect(comparable(at('Tue, 22 Sep 2026 19:54:03 GMT', 'x\r\ndate: y'))).not.toEqual(
+      comparable(at('Tue, 22 Sep 2026 19:54:02 GMT', 'x\r\ndate: z')),
+    );
+    expect(comparable(at('Tue, 22 Sep 2026 19:54:02 GMT', 'changed'))).not.toEqual(comparable(first));
+    const other = at('Tue, 22 Sep 2026 19:54:02 GMT');
+    expect(comparable({ ...other, headers: { ...other.headers, 'content-type': 'text/html' } })).not.toEqual(
+      comparable(first),
+    );
+  });
 
   it('is asked only for the final response, not a redirect', async () => {
     const statuses: number[] = [];
