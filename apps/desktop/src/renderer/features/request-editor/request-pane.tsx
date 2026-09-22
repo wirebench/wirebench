@@ -243,7 +243,7 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
       // envelope rather than what is on screen.
       editor.addCommand(SAVE_KEYBINDING, () => {
         flush();
-        void useProjectStore.getState().saveRequest(requestIdRef.current);
+        void useProjectStore.getState().saveRequest(requestIdRef.current, { manual: true });
       });
       editor.addCommand(FORMAT_KEYBINDING, () => {
         formatAndCommit();

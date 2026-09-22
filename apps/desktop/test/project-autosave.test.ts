@@ -148,6 +148,40 @@ describe('autosave is opt-in', () => {
   });
 });
 
+/**
+ * Secret scanning reviews a *manual* save only (the renderer asks before writing). The saves main
+ * makes by itself — autosave, and the write on close — go ahead with a plain-text credential in
+ * the project: the files are local, and nothing here is waiting on a person to answer.
+ */
+describe('the saves main makes by itself never wait for a secret review', () => {
+  /** Obviously fake, under a name the scanner flags. */
+  const FAKE_PASSWORD = 'fake-password-for-tests';
+
+  it('autosave writes a project holding a possible secret', async () => {
+    const dir = join(root!, 'AutoSecret');
+    const { host } = hostWith(true);
+    await host.create({ dir, name: 'AutoSecret' });
+
+    await host.mutate({ kind: 'set-project-property', name: 'api_password', value: FAKE_PASSWORD });
+    await waitForAutosave(host);
+
+    expect(host.snapshot()?.dirty).toBe(false);
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain(FAKE_PASSWORD);
+    await host.close();
+  });
+
+  it('closing writes a held edit holding a possible secret', async () => {
+    const dir = join(root!, 'CloseSecret');
+    const { host } = hostWith(false);
+    await host.create({ dir, name: 'CloseSecret' });
+    await host.mutate({ kind: 'set-project-property', name: 'api_password', value: FAKE_PASSWORD });
+
+    await host.close();
+
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain(FAKE_PASSWORD);
+  });
+});
+
 describe('the project manifest does not record why it was saved', () => {
   it('a manual save followed by an autosave of the same model leaves wirebench.yaml byte-identical', async () => {
     const dir = join(root!, 'Stable');

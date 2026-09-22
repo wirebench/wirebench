@@ -151,7 +151,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             onChange={stage}
             onSend={onSend}
             onSave={() => {
-              void useProjectStore.getState().saveRestRequest(requestId);
+              void useProjectStore.getState().saveRestRequest(requestId, { manual: true });
             }}
           />
         )}

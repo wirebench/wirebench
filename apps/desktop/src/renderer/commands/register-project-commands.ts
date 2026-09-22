@@ -30,7 +30,8 @@ export function registerProjectCommands(): void {
       ui().openImportDialog('legacy-soap-project');
     },
   });
-  // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`.
+  // `Mod+S` saves the tab in front of you; saving every project moved up to `Mod+Alt+S`. Both are
+  // manual saves, so both review the project for plain-text secrets before writing.
   registerCommand({
     ...catalogEntry('item.save'),
     when: () =>
@@ -43,19 +44,19 @@ export function registerProjectCommands(): void {
       // A WebSocket tab writes its staged edits (saved messages included) the way a gRPC one does.
       const wsRequestId = activeWsRequestId();
       if (wsRequestId !== undefined) {
-        void useProjectStore.getState().saveWsRequest(wsRequestId);
+        void useProjectStore.getState().saveWsRequest(wsRequestId, { manual: true });
         return;
       }
       const grpcRequestId = activeGrpcRequestId();
       if (grpcRequestId !== undefined) {
-        void useProjectStore.getState().saveGrpcRequest(grpcRequestId);
+        void useProjectStore.getState().saveGrpcRequest(grpcRequestId, { manual: true });
         return;
       }
       // A REST tab saves the same way, minus the flush: its fields commit on Enter or blur, so
       // there is no debounce holding the last keystroke.
       const restRequestId = activeRestRequestId();
       if (restRequestId !== undefined) {
-        void useProjectStore.getState().saveRestRequest(restRequestId);
+        void useProjectStore.getState().saveRestRequest(restRequestId, { manual: true });
         return;
       }
       const requestId = activeRequestId();
@@ -70,7 +71,7 @@ export function registerProjectCommands(): void {
       // like it did nothing. Clicking the same menu item worked only because the debounce had
       // long since fired by the time the mouse got there.
       getActiveRequestPaneHandle()?.flush();
-      void useProjectStore.getState().saveRequest(requestId);
+      void useProjectStore.getState().saveRequest(requestId, { manual: true });
     },
   });
 

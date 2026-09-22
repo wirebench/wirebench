@@ -20,6 +20,9 @@ export {
   type UrlProblem,
 } from './url.js';
 export type { KeyValueEntry } from './model.js';
+// The `${secret:name}` name rule, so the renderer's secret review checks a name typed into it
+// exactly as main's move will — a request's headers, query and body are where those tokens land.
+export { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 export {
   createSseParser,
   eventStreamDocument,

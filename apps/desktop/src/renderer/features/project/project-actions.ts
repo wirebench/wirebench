@@ -10,14 +10,18 @@ import { useProjectStore } from '../../state/project.js';
  * those are `useWorkspaceStore` actions driven from the explorer.
  */
 export const projectActions = {
-  /** Saves every open project immediately, bypassing the autosave debounce. */
+  /**
+   * Saves every open project immediately, bypassing the autosave debounce. A manual save: the
+   * projects are reviewed for plain-text secrets first, and a cancelled review writes nothing.
+   */
   async save(): Promise<void> {
     if (Object.keys(useProjectStore.getState().projects).length === 0) {
       return;
     }
     try {
-      await useProjectStore.getState().save();
-      showToast('Saved');
+      if (await useProjectStore.getState().save(undefined, { manual: true })) {
+        showToast('Saved');
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not save the project');
     }

@@ -166,7 +166,8 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       getShowSecrets: fail('secrets.getShowSecrets'),
     },
     secretScan: {
-      scan: fail('secretScan.scan'),
+      // Every manual save scans first; nothing found is what a test that is not about secrets means.
+      scan: vi.fn().mockResolvedValue({ ok: true, value: { findings: [], proposedNames: {}, storedNames: [] } }),
       keep: fail('secretScan.keep'),
       move: fail('secretScan.move'),
     },

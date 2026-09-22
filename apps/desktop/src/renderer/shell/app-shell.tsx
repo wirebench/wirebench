@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
+import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
@@ -433,6 +434,7 @@ export function AppShell() {
       <SyncPanel />
       <ConflictResolver />
       <IdentityDialog />
+      <SecretReviewDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

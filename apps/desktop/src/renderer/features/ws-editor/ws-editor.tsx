@@ -141,7 +141,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
   );
 
   const onSave = useCallback(() => {
-    void useProjectStore.getState().saveWsRequest(requestId);
+    void useProjectStore.getState().saveWsRequest(requestId, { manual: true });
   }, [requestId]);
 
   const onSendSaved = useCallback(
