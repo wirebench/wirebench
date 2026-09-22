@@ -10,9 +10,20 @@
  * serialises them: {@link sameStructure} walks both sides together and remembers the pairs it is
  * already comparing.
  *
+ * Applying one follows the AsyncAPI rule: both documents are re-mapped with the importer's own
+ * {@link apiFromDocument}, and a generated value follows the new document only while it still equals
+ * what the old document generated. Nothing is ever deleted: a request whose operation is gone is
+ * flagged `orphaned`, and one whose operation came back has the flag cleared.
+ *
  * Pure: it reads two parsed documents and writes nothing.
  */
 
+import type { IdGenerator } from '../../project/model.js';
+import { generateId } from '../../project/model.js';
+import { uniqueSlug } from '../../project/paths.js';
+import type { KeyValueEntry, RestApi, RestFolder, RestRequestDef } from '../model.js';
+import { createFolder } from '../model.js';
+import { apiFromDocument } from './map.js';
 import type { OpenApiDocument, OpenApiOperation, OpenApiParameter } from './model.js';
 
 export type RestChangeReason = 'parameters' | 'request-body' | 'responses' | 'security' | 'servers';
@@ -129,4 +140,218 @@ export function planRestUpdate(old: OpenApiDocument, next: OpenApiDocument): Res
   const removed = [...before.entries()].filter(([key]) => !after.has(key)).map(([, op]) => opRef(op));
 
   return { added, removed, changed, api: apiReasons(old, next) };
+}
+
+/** What {@link applyRestUpdate} changed, counted for the toast. */
+export interface RestApplyResult {
+  readonly api: RestApi;
+  readonly requestsAdded: number;
+  readonly requestsOrphaned: number;
+  readonly requestsRestored: number;
+  /** Requests where at least one generated field followed the new document. */
+  readonly requestsRewritten: number;
+  readonly rowsAdded: number;
+  readonly rowsRemoved: number;
+}
+
+export interface ApplyRestUpdateOptions {
+  readonly newId?: IdGenerator;
+}
+
+const contractKey = (request: RestRequestDef): string | undefined =>
+  request.contract === undefined ? undefined : `${request.contract.method} ${request.contract.path}`;
+
+function requestsOf(api: RestApi): RestRequestDef[] {
+  const walk = (folder: RestFolder): RestRequestDef[] => [...folder.requests, ...folder.folders.flatMap(walk)];
+  return [...api.requests, ...api.folders.flatMap(walk)];
+}
+
+function byContract(api: RestApi): Map<string, RestRequestDef> {
+  const map = new Map<string, RestRequestDef>();
+  for (const request of requestsOf(api)) {
+    const key = contractKey(request);
+    if (key !== undefined && !map.has(key)) map.set(key, request);
+  }
+  return map;
+}
+
+/** A row's identity within its table: headers are case-insensitive, path and query names are not. */
+const rowKey = (row: KeyValueEntry, caseless: boolean): string => (caseless ? row.name.toLowerCase() : row.name);
+
+const sameRow = (a: KeyValueEntry, b: KeyValueEntry): boolean => a.value === b.value && a.enabled === b.enabled;
+
+/**
+ * One parameter table under the per-row rule: an untouched generated row follows (or goes, when the
+ * new document dropped it), an edited or user-added row stays, and a row new to the document is
+ * appended.
+ */
+function mergeRows(
+  current: readonly KeyValueEntry[],
+  before: readonly KeyValueEntry[],
+  after: readonly KeyValueEntry[],
+  caseless: boolean,
+): { rows: KeyValueEntry[]; added: number; removed: number; changed: boolean } {
+  const index = (rows: readonly KeyValueEntry[]): Map<string, KeyValueEntry> => {
+    const map = new Map<string, KeyValueEntry>();
+    for (const row of rows) if (!map.has(rowKey(row, caseless))) map.set(rowKey(row, caseless), row);
+    return map;
+  };
+  const oldRows = index(before);
+  const newRows = index(after);
+  const rows: KeyValueEntry[] = [];
+  let removed = 0;
+  let changed = false;
+  for (const row of current) {
+    const key = rowKey(row, caseless);
+    const generated = oldRows.get(key);
+    if (generated === undefined || !sameRow(row, generated)) {
+      rows.push(row);
+      continue;
+    }
+    const replacement = newRows.get(key);
+    if (replacement === undefined) {
+      removed += 1;
+      changed = true;
+      continue;
+    }
+    if (!sameStructure(row, replacement)) changed = true;
+    rows.push(replacement);
+  }
+  const present = new Set(current.map((row) => rowKey(row, caseless)));
+  let added = 0;
+  for (const [key, row] of newRows) {
+    if (oldRows.has(key) || present.has(key)) continue;
+    rows.push(row);
+    added += 1;
+    changed = true;
+  }
+  return { rows, added, removed, changed };
+}
+
+/**
+ * Applies `next` to an API imported from `old`: the request of every operation still in `next`
+ * follows it where untouched, the request of every operation gone is orphaned, and every new
+ * operation gets a request in the folder the importer would have put it in. Never deletes a request
+ * or a folder.
+ */
+export function applyRestUpdate(
+  api: RestApi,
+  old: OpenApiDocument,
+  next: OpenApiDocument,
+  options: ApplyRestUpdateOptions = {},
+): RestApplyResult {
+  const newId = options.newId ?? generateId;
+  // The old mapping's ids are never kept: only its generated values are compared.
+  const oldMapped = apiFromDocument(old, { newId: () => 'old' }).api;
+  const nextMapped = apiFromDocument(next, { newId }).api;
+  const oldReqs = byContract(oldMapped);
+  const nextReqs = byContract(nextMapped);
+
+  let requestsOrphaned = 0;
+  let requestsRestored = 0;
+  let requestsRewritten = 0;
+  let rowsAdded = 0;
+  let rowsRemoved = 0;
+
+  const update = (request: RestRequestDef): RestRequestDef => {
+    const key = contractKey(request);
+    if (key === undefined) return request;
+    const target = nextReqs.get(key);
+    if (target === undefined) {
+      if (request.orphaned === true) return request;
+      requestsOrphaned += 1;
+      return { ...request, orphaned: true };
+    }
+    let out: RestRequestDef = request;
+    if (request.orphaned === true) {
+      requestsRestored += 1;
+      const { orphaned, ...rest } = request;
+      void orphaned;
+      out = rest;
+    }
+    const before = oldReqs.get(key);
+    if (before === undefined) return out;
+    let rewritten = false;
+    if (out.url === before.url && out.url !== target.url) {
+      out = { ...out, url: target.url };
+      rewritten = true;
+    }
+    for (const table of ['pathParams', 'query', 'headers'] as const) {
+      const merged = mergeRows(out[table], before[table], target[table], table === 'headers');
+      if (!merged.changed) continue;
+      out = { ...out, [table]: merged.rows };
+      rowsAdded += merged.added;
+      rowsRemoved += merged.removed;
+      rewritten = true;
+    }
+    if (sameStructure(out.body, before.body) && !sameStructure(out.body, target.body)) {
+      out = { ...out, body: target.body };
+      rewritten = true;
+    }
+    if (sameStructure(out.auth, before.auth) && !sameStructure(out.auth, target.auth)) {
+      out = { ...out, auth: target.auth };
+      rewritten = true;
+    }
+    if (rewritten) requestsRewritten += 1;
+    return out;
+  };
+
+  const updateFolder = (folder: RestFolder): RestFolder => ({
+    ...folder,
+    folders: folder.folders.map(updateFolder),
+    requests: folder.requests.map(update),
+  });
+  let result: RestApi = { ...api, folders: api.folders.map(updateFolder), requests: api.requests.map(update) };
+
+  // Operations the API has no request for yet: into the folder the importer names, else the root.
+  const have = byContract(result);
+  let requestsAdded = 0;
+  for (const [key, fresh] of nextReqs) {
+    if (have.has(key)) continue;
+    const home = nextMapped.folders.find((folder) => folder.requests.some((r) => r.id === fresh.id));
+    const place = (siblings: readonly RestRequestDef[]): RestRequestDef => ({
+      ...fresh,
+      slug: uniqueSlug(fresh.name, new Set(siblings.map((r) => r.slug))),
+      order: siblings.reduce((n, r) => Math.max(n, r.order + 1), 0),
+    });
+    requestsAdded += 1;
+    if (home === undefined) {
+      result = { ...result, requests: [...result.requests, place(result.requests)] };
+    } else if (result.folders.some((folder) => folder.name === home.name)) {
+      let placed = false;
+      result = {
+        ...result,
+        folders: result.folders.map((folder) => {
+          if (placed || folder.name !== home.name) return folder;
+          placed = true;
+          return { ...folder, requests: [...folder.requests, place(folder.requests)] };
+        }),
+      };
+    } else {
+      const folder = createFolder(home.name, {
+        id: newId(),
+        slug: uniqueSlug(home.name, new Set(result.folders.map((f) => f.slug))),
+        order: result.folders.reduce((n, f) => Math.max(n, f.order + 1), 0),
+        ...(home.description !== undefined ? { description: home.description } : {}),
+        requests: [place([])],
+      });
+      result = { ...result, folders: [...result.folders, folder] };
+    }
+  }
+
+  // API level: the same follow rule, against what the old document mapped to.
+  const followed: { baseUrl?: string; servers?: RestApi['servers'] } = {};
+  if (result.baseUrl === oldMapped.baseUrl) followed.baseUrl = nextMapped.baseUrl;
+  if (sameStructure(result.servers, oldMapped.servers)) followed.servers = nextMapped.servers;
+  result = { ...result, ...followed };
+  if (sameStructure(result.auth, oldMapped.auth) && !sameStructure(result.auth, nextMapped.auth)) {
+    const { auth, ...rest } = result;
+    void auth;
+    result = nextMapped.auth === undefined ? rest : { ...rest, auth: nextMapped.auth };
+  }
+  if (result.definition !== undefined) {
+    result = { ...result, definition: { ...result.definition, version: next.declaredVersion } };
+  }
+
+  return { api: result, requestsAdded, requestsOrphaned, requestsRestored, requestsRewritten, rowsAdded, rowsRemoved };
 }
