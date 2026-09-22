@@ -43,6 +43,14 @@ The **Body** tab switches between five kinds, each keeping its own draft while y
 
 ![The Body tab of a POST request set to Raw, holding a small JSON object](/wirebench/images/rest-client/body-tab.png)
 
+When a request was imported from an OpenAPI document and its operation declares a JSON request body,
+a **Text / Form** switch appears next to the language picker while the body is Raw and set to JSON.
+Form shows one field per property, labelled by its path (`owner.first`, `tags[0]`), with buttons to
+add or remove optional properties and array items and a variant picker for a schema with alternatives
+(`oneOf`). Every edit is written back to the same JSON text underneath, so switching to Text and back
+never changes anything you didn't touch. If the text doesn't parse as JSON, Form shows a message and
+a way back to Text instead of fields.
+
 ## Headers and auth
 
 The **Headers** tab adds request headers as key/value rows. The **Auth** tab sets this request's
