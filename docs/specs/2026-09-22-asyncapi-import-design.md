@@ -16,7 +16,8 @@ Grounded in the code on 2026-09-22; each is decided here, none waits on the owne
 1. **No container change, no format bump.** `WsApi.definition` (`{ kind: 'asyncapi', source, cache }`) already
    exists in `ws/model.ts` and in `wsApiFileSchema` (`project/schema.ts`), reserved for this issue. The cached
    document lives in `apis/<slug>/definition/`, the directory `apiDefinitionDir` already names for REST and gRPC.
-   `formatVersion` stays **3**; ADR-0007 gets a short update note, not a new decision.
+   `formatVersion` stays **4**, the version the project format already writes; ADR-0007 gets a short update
+   note, not a new decision.
 2. **The closest model is the OpenAPI cache, not gRPC's.** An AsyncAPI document is JSON or YAML with `$ref`s to
    sibling files, exactly what `resolveRefs` and `writeApiDefinitionCache` already handle byte-exact with a
    SHA-256 manifest. The only change there: `writeApiDefinitionCache` gains a `rootFile` option (default
@@ -79,11 +80,14 @@ Grounded in the code on 2026-09-22; each is decided here, none waits on the owne
     `if`/`then`/`else`, `dependencies`/`dependentSchemas`, `propertyNames`, `contains`, `unevaluated*`, and an
     unresolved `$ref` (passes). A document that uses any of them gets one summary line naming the keywords.
     Each problem carries a JSON pointer `path`, the `keyword` and a sentence.
-12. **Frame validation runs in main, per frame, synchronously**, inside the `onFrame` hook the session already
-    calls (`engine-service.ts`). It is cheap by construction: text frames only (binary, ping, pong, close are
-    not validated), frames over **256 KiB** are marked `skipped`, the validator stops after **10 000** schema
-    nodes and **20** problems, and each message's schema is prepared once per session. No worker: a bounded
-    walk over one frame costs microseconds, and moving it would add a hop to every frame. A perf test pins it.
+12. **Frame validation runs in a worker, per frame, off the main thread**, fed from the `onFrame` hook the
+    session already calls (`engine-service.ts`). It is bounded by construction: text frames only (binary, ping,
+    pong, close are not validated), frames over **256 KiB** are marked `skipped` before they are queued, the
+    validator stops after **10 000** schema nodes and **20** problems, and each message's schema is prepared once
+    per session. Each frame's check has a **1000 ms** deadline from the moment it reaches the worker; a check that
+    runs past it (or a frame refused because more than 1 000 frames or 8 MiB are waiting) gets the status
+    `not-checked`, which says nothing either way about the frame, and a fresh worker takes the next one. A perf
+    test pins the cost.
 13. **Matching a frame to a message.** Candidates are the channel's messages for that direction. One candidate →
     validate against it. Several → validate against each in document order; the **first with no problems**
     wins. None clean → the frame is a `violation` reported against the candidate with the fewest problems (tie:

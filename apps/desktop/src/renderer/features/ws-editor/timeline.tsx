@@ -186,7 +186,10 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
           Control frames
         </label>
         {checked && (
-          <label className="flex items-center gap-1 text-fg-muted">
+          <label
+            className="flex items-center gap-1 text-fg-muted"
+            title="Keeps frames that break the contract or that it has no message for. Frames that were not checked are left out."
+          >
             <input
               type="checkbox"
               data-testid="ws-timeline-contract-only"

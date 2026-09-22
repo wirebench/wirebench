@@ -62,7 +62,7 @@ these results:
 | Matches | The frame is valid against one of the direction's messages. | none |
 | Does not match | JSON that no message accepts, or text that is not JSON; the detail lists each problem with its path. | warning triangle |
 | Not in the contract | The channel declares no messages for that direction. | slashed circle |
-| Not checked (skipped) | Larger than 256 KB, or the direction has no JSON Schema message to check against. | none |
+| Not checked (skipped) | Larger than 256 KiB, or the direction has no JSON Schema message to check against. | none |
 | Not checked — check took too long | One frame's check ran past its 1 000 ms deadline. | clock |
 
 Select a frame to see its **Contract** section in the detail: the message it matched or came
@@ -71,7 +71,7 @@ above the timeline keeps just the frames that do not match or are not in the con
 that was not checked is not a contract problem and is not kept by it.
 
 <Aside>
-Checks queue behind one another. When more than 1 000 frames or 8 MB of frame text are waiting, the
+Checks queue behind one another. When more than 1 000 frames or 8 MiB of frame text are waiting, the
 newly arriving frames are marked *not checked* rather than holding the session back.
 </Aside>
 
