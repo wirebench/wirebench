@@ -47,6 +47,8 @@ import {
   oauth2StatusSchema,
   requestPreflightRestRequestSchema,
   requestSendRestRequestSchema,
+  requestSendToEnvironmentsRequestSchema,
+  requestSendToEnvironmentsResponseSchema,
   restExchangeSummarySchema,
   restLiveEventSchema,
   definitionCancelImportRequestSchema,
@@ -373,6 +375,15 @@ export const channels = {
      * reads.
      */
     sendRest: defineChannel('request.sendRest', requestSendRestRequestSchema, restExchangeSummarySchema),
+    /**
+     * One saved request sent under several environments in parallel, each resolved in main as if
+     * it were active. `request.cancel` with the `batchId` stops every send still running.
+     */
+    sendToEnvironments: defineChannel(
+      'request.sendToEnvironments',
+      requestSendToEnvironmentsRequestSchema,
+      requestSendToEnvironmentsResponseSchema,
+    ),
     preflightRest: defineChannel(
       'request.preflightRest',
       requestPreflightRestRequestSchema,

@@ -1860,6 +1860,52 @@ export const requestSendRestRequestSchema = z.object({
 });
 export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
 
+/** The most environments one `request.sendToEnvironments` fans out to. */
+export const MAX_SEND_ENVIRONMENTS = 10;
+
+/**
+ * Request payload for `request.sendToEnvironments`: one saved request sent under several of the
+ * project's environments at once, the active environment left as it is. Strict, and with no
+ * endpoint field: main resolves the endpoint (or base URL) per environment, never the renderer.
+ * `batchId` names the whole fan-out for `request.cancel`; each child send is `${batchId}:${envId}`.
+ */
+export const requestSendToEnvironmentsRequestSchema = z
+  .object({
+    batchId: z.string(),
+    requestId: z.string(),
+    environmentIds: z.array(z.string()).min(2).max(MAX_SEND_ENVIRONMENTS),
+    /** The SOAP editor's unsaved envelope and headers, used for every environment. */
+    soap: z.object({ envelopeXml: z.string(), headers: z.record(z.string(), z.string()).optional() }).optional(),
+    /** The REST editor's unsaved edits, used for every environment. */
+    restDraft: restRequestPatchSchema.optional(),
+  })
+  .strict();
+export type RequestSendToEnvironmentsRequest = z.infer<typeof requestSendToEnvironmentsRequestSchema>;
+
+/** How one environment of a `request.sendToEnvironments` settled; one never cancels another. */
+export const envSendResultSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('ok'),
+    environmentId: z.string(),
+    environmentName: z.string(),
+    kind: z.enum(['soap', 'rest']),
+    soap: exchangeSummarySchema.optional(),
+    rest: restExchangeSummarySchema.optional(),
+  }),
+  z.object({
+    outcome: z.literal('error'),
+    environmentId: z.string(),
+    environmentName: z.string(),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+export type EnvSendResult = z.infer<typeof envSendResultSchema>;
+
+/** Response payload for `request.sendToEnvironments`: one result per id, in the order asked. */
+export const requestSendToEnvironmentsResponseSchema = z.object({ results: z.array(envSendResultSchema) });
+export type RequestSendToEnvironmentsResponse = z.infer<typeof requestSendToEnvironmentsResponseSchema>;
+
 /** Request payload for `request.preflightRest`: the same pair, with nothing sent. */
 export const requestPreflightRestRequestSchema = z.object({
   requestId: z.string(),
