@@ -1097,11 +1097,17 @@ export {
   secretToken,
   parseSecretPseudoRef,
 } from './secrets/secret-token.js';
+export { detectInText, SECRET_TEXT_SCAN_LIMIT } from './secrets/scan/rules.js';
+export type { DetectContext, SecretMatch, SecretRule } from './secrets/scan/rules.js';
+export { maskedPreview, scanProjectForSecrets } from './secrets/scan/scan.js';
+export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
 export {
   REDACTED_MARKER,
   SECRET_BODY_KEYS,
   containsRedaction,
+  isSensitiveHeaderName,
+  isSensitiveQueryParam,
   redactHeaderPairs,
   redactHeaders,
   redactRawHttp,
