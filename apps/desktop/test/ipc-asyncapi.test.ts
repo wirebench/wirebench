@@ -123,6 +123,9 @@ beforeEach(async () => {
       addApi: unused,
       addGrpcApi: unused,
       importAsyncApi: (projectId, input) => hostFor(projectId).importAsyncApi(input),
+      asyncApiSource: (apiId) => hostFor('p1').asyncApiSource(apiId),
+      asyncApiPlanUpdate: (apiId, next) => hostFor('p1').planAsyncApiUpdate(apiId, next),
+      asyncApiApplyUpdate: (apiId, next) => hostFor('p1').applyAsyncApiUpdate(apiId, next),
       apiDefinitionDocuments: unused,
       apiDefinitionText: unused,
       exportApiDefinitionTo: unused,
@@ -372,5 +375,90 @@ describe('contract on the wire', () => {
     const after =
       patchedApi === undefined ? undefined : all(patchedApi).find((candidate) => candidate.id === request.id);
     expect(after?.messages.map((m) => m.contract)).toEqual(request.messages.map((m) => m.contract));
+  });
+});
+
+describe('the contract a live session is checked against', () => {
+  async function importNext(): Promise<Imported> {
+    // Imported from the *next* document, so updating to the original loses the `typing` channel.
+    await copyFile(join(fixtures, 'chat-3.0-next.yaml'), docPath);
+    return value<Imported>('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: docPath },
+    });
+  }
+
+  function requestFor(apiId: string, channel: string): WsRequestWire | undefined {
+    return (hostFor('p1').snapshot() as ProjectWire).wsRequests.find(
+      (request) => request.apiId === apiId && request.contract?.channel === channel,
+    );
+  }
+
+  it("answers a request's channel messages from the cache, and nothing for a request without a contract", async () => {
+    const imported = await importNext();
+    const host = hostFor('p1');
+    const typing = requestFor(imported.apiId, 'typing');
+    const messages = await host.wsContractFor(typing?.id ?? '');
+    expect(messages?.sent.map((m) => m.name)).toEqual(['typing']);
+    // Memoised: a second ask is the same parse.
+    expect(host.asyncApiContractFor(imported.apiId)).toBe(host.asyncApiContractFor(imported.apiId));
+    expect(host.wsContractFor('no-such-request')).toBeUndefined();
+  });
+
+  it('a broken cache rejects the contract, and is read again once fixed', async () => {
+    const imported = await importNext();
+    const host = hostFor('p1');
+    const slug = (host.snapshot() as ProjectWire).wsApis[0]?.slug ?? '';
+    const cached = join(projectDir, 'project', 'apis', slug, 'definition', 'asyncapi.yaml');
+    const good = await readFile(cached, 'utf8');
+    await writeFile(cached, 'tampered');
+    await expect(host.asyncApiContractFor(imported.apiId)).rejects.toThrow();
+    await writeFile(cached, good);
+    await expect(host.asyncApiContractFor(imported.apiId)).resolves.toBeDefined();
+  });
+
+  it('plans an update against the cached document, then applies it: orphans, rewrites the cache, drops the memo', async () => {
+    const imported = await importNext();
+    const host = hostFor('p1');
+    const before = await host.asyncApiContractFor(imported.apiId);
+    expect(before?.channels.some((c) => c.key === 'typing')).toBe(true);
+
+    // The source now holds the original document.
+    const original = await readFile(join(fixtures, 'chat-3.0.yaml'), 'utf8');
+    await writeFile(docPath, original);
+
+    const plan = await value<{
+      added: { key: string }[];
+      removed: { key: string }[];
+      changed: { op: { key: string }; reasons: string[] }[];
+    }>('api.asyncApiPlanUpdate', { apiId: imported.apiId });
+    expect(plan.added.map((op) => op.key)).toEqual(['onChat']);
+    expect(plan.removed.map((op) => op.key)).toEqual(['onTyping']);
+    expect(plan.changed.find((c) => c.op.key === 'sendChat')?.reasons).toContain('payload');
+    // Planning changed nothing.
+    expect(requestFor(imported.apiId, 'typing')?.orphaned).toBeUndefined();
+
+    const applied = await value<{
+      project: ProjectWire;
+      plan: typeof plan;
+      applied: { requestsOrphaned: string[]; requestsAdded: string[]; messagesAdded: string[] };
+    }>('api.asyncApiApplyUpdate', { apiId: imported.apiId });
+    const typing = requestFor(imported.apiId, 'typing');
+    expect(applied.applied.requestsOrphaned).toEqual([typing?.id]);
+    expect(typing?.orphaned).toBe(true);
+    expect(applied.plan).toEqual(plan);
+    expect(applied.project.wsRequests.find((r) => r.id === typing?.id)?.orphaned).toBe(true);
+
+    const slug = applied.project.wsApis[0]?.slug ?? '';
+    const cached = await readFile(join(projectDir, 'project', 'apis', slug, 'definition', 'asyncapi.yaml'), 'utf8');
+    expect(cached).toBe(original);
+    const after = await host.asyncApiContractFor(imported.apiId);
+    expect(after).not.toBe(before);
+    expect(after?.channels.some((c) => c.key === 'typing')).toBe(false);
+  });
+
+  it('refuses to plan for an API that is not AsyncAPI-imported', async () => {
+    const error = await failure('api.asyncApiPlanUpdate', { apiId: 'nope' });
+    expect(error.code).toBe('not-found');
   });
 });

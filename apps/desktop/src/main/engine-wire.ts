@@ -29,6 +29,7 @@ import type {
   UnresolvedRef,
   WsExchange,
   WsFrame,
+  WsFrameContract,
   WsHandshake,
 } from '@wirebench/engine';
 import type {
@@ -49,6 +50,7 @@ import type {
   SseRowWire,
   UnresolvedRefWire,
   WsExchangeSummary,
+  WsFrameContractWire,
   WsFrameWire,
   WsHandshakeWire,
 } from '../shared/wire-types.js';
@@ -385,6 +387,16 @@ export function toGrpcExchangeSummary(
   };
 }
 
+/** A frame's contract check result onto the wire. */
+export function toWsFrameContractWire(contract: WsFrameContract): WsFrameContractWire {
+  return {
+    status: contract.status,
+    ...(contract.message !== undefined ? { message: contract.message } : {}),
+    ...(contract.problems !== undefined ? { problems: contract.problems.map((problem) => ({ ...problem })) } : {}),
+    ...(contract.reason !== undefined ? { reason: contract.reason } : {}),
+  };
+}
+
 /** Converts one engine `WsFrame` to its wire form. Payloads are never redacted — only headers are. */
 export function toWsFrameWire(frame: WsFrame): WsFrameWire {
   return {
@@ -397,18 +409,7 @@ export function toWsFrameWire(frame: WsFrame): WsFrameWire {
     ...(frame.base64 !== undefined ? { base64: frame.base64 } : {}),
     ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
-    ...(frame.contract !== undefined
-      ? {
-          contract: {
-            status: frame.contract.status,
-            ...(frame.contract.message !== undefined ? { message: frame.contract.message } : {}),
-            ...(frame.contract.problems !== undefined
-              ? { problems: frame.contract.problems.map((problem) => ({ ...problem })) }
-              : {}),
-            ...(frame.contract.reason !== undefined ? { reason: frame.contract.reason } : {}),
-          },
-        }
-      : {}),
+    ...(frame.contract !== undefined ? { contract: toWsFrameContractWire(frame.contract) } : {}),
   };
 }
 

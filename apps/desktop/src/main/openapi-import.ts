@@ -8,8 +8,20 @@
  * makes a cancelled import trivially leave nothing behind.
  */
 
-import { createDefaultFetchDocument, importAsyncApi, importOpenApi, WirebenchError } from '@wirebench/engine';
-import type { FetchDocument, ImportedAsyncApi, ImportedOpenApi, OpenApiSource } from '@wirebench/engine';
+import {
+  createDefaultFetchDocument,
+  importAsyncApi,
+  importOpenApi,
+  parseAsyncApi,
+  WirebenchError,
+} from '@wirebench/engine';
+import type {
+  FetchDocument,
+  ImportedAsyncApi,
+  ImportedOpenApi,
+  OpenApiSource,
+  ParsedAsyncApi,
+} from '@wirebench/engine';
 import type { EngineProgressEvent } from '../shared/wire-types.js';
 
 /** What one import needs beyond where to read from. */
@@ -88,6 +100,14 @@ export class OpenApiImportService {
       progress('done', `Imported ${String(imported.summary.requests)} requests`);
       return imported;
     });
+  }
+
+  /**
+   * Reads and resolves an AsyncAPI document without mapping it — what an Update Definition compares
+   * against the cached one. Fetched through the same fetcher an import uses.
+   */
+  async readAsyncApi(source: OpenApiSource): Promise<ParsedAsyncApi> {
+    return this.track(undefined, {}, (fetchDocument, signal) => parseAsyncApi(source, { fetchDocument, signal }));
   }
 
   /** Runs one import under `token`'s controller, naming every document fetched as progress. */

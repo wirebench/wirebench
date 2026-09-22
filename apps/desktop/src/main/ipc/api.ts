@@ -9,9 +9,9 @@
 
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
-import type { OpenApiSource } from '@wirebench/engine';
+import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
-import type { OpenApiSourceWire } from '../../shared/wire-types.js';
+import type { AsyncApiUpdatePlanWire, OpenApiSourceWire } from '../../shared/wire-types.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
@@ -32,6 +32,9 @@ export interface ApiChannelDeps {
     | 'addApi'
     | 'addGrpcApi'
     | 'importAsyncApi'
+    | 'asyncApiSource'
+    | 'asyncApiPlanUpdate'
+    | 'asyncApiApplyUpdate'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -45,7 +48,7 @@ export interface ApiChannelDeps {
    * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
    * it through `imports.cancel`. Optional so the OpenAPI-only tests need not build one.
    */
-  readonly asyncApiImports?: Pick<OpenApiImportService, 'runAsyncApi'>;
+  readonly asyncApiImports?: Pick<OpenApiImportService, 'runAsyncApi' | 'readAsyncApi'>;
   /** The `.proto` import service; optional so the OpenAPI-only tests need not build one. */
   readonly protoImports?: Pick<ProtoImportService, 'run' | 'cancel'>;
   /** Creates a project inside the open workspace; used only by an import that asks for one. */
@@ -67,6 +70,16 @@ function toEngineSource(source: OpenApiSourceWire): OpenApiSource {
     return { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
   }
   return source;
+}
+
+/** An update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
+function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanWire {
+  const ref = (op: AsyncApiOpRef) => ({ key: op.key, channel: op.channel, direction: op.direction });
+  return {
+    added: plan.added.map(ref),
+    removed: plan.removed.map(ref),
+    changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+  };
 }
 
 /** What the API records as where its definition came from: the location as the user gave it. */
@@ -236,6 +249,54 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  /**
+   * Reads an AsyncAPI-imported API's source again, the way the import read it: a URL as written, a
+   * file only when it passes the same path check an import does.
+   */
+  const readAsyncApiSource = async (apiId: string) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    const recorded = router.asyncApiSource(apiId);
+    if (recorded.startsWith('inline:')) {
+      throw new WirebenchError(
+        'definition-source-unavailable',
+        'This API was imported from pasted text, so there is no source to read again',
+        {
+          details: { apiId },
+        },
+      );
+    }
+    const wire: OpenApiSourceWire = /^https?:\/\//i.test(recorded)
+      ? { kind: 'url', url: recorded }
+      : { kind: 'file', path: recorded };
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
+    return asyncApiImports.readAsyncApi(toEngineSource(checked));
+  };
+
+  registerHandler(channels.api.asyncApiPlanUpdate, async (request) => {
+    const next = await readAsyncApiSource(request.apiId);
+    return toAsyncApiUpdatePlanWire(await router.asyncApiPlanUpdate(request.apiId, next.document));
+  });
+
+  registerHandler(channels.api.asyncApiApplyUpdate, async (request) => {
+    const next = await readAsyncApiSource(request.apiId);
+    const { project, plan, applied } = await router.asyncApiApplyUpdate(request.apiId, next);
+    return {
+      project,
+      plan: toAsyncApiUpdatePlanWire(plan),
+      applied: {
+        requestsAdded: [...applied.requestsAdded],
+        requestsOrphaned: [...applied.requestsOrphaned],
+        requestsRestored: [...applied.requestsRestored],
+        requestsRewritten: [...applied.requestsRewritten],
+        messagesReplaced: [...applied.messagesReplaced],
+        messagesAdded: [...applied.messagesAdded],
+      },
+    };
   });
 
   registerHandler(channels.api.importPostman, async (request) => {

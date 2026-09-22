@@ -2045,6 +2045,16 @@ export type WsHandshakeExchangeSummary = z.infer<typeof wsHandshakeExchangeSumma
 export const wsLiveEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('handshake'), sendId: z.string(), handshake: wsHandshakeWireSchema }),
   z.object({ kind: z.literal('frame'), sendId: z.string(), frame: wsFrameWireSchema }),
+  /**
+   * A frame's contract check, which follows its `frame` event: the check runs on a worker thread,
+   * so the frame is never held back waiting for it. `index` names the frame.
+   */
+  z.object({
+    kind: z.literal('contract'),
+    sendId: z.string(),
+    index: z.number(),
+    contract: wsFrameContractWireSchema,
+  }),
   z.object({ kind: z.literal('closed'), sendId: z.string() }),
 ]);
 export type WsLiveEvent = z.infer<typeof wsLiveEventSchema>;
@@ -2718,6 +2728,40 @@ export const apiImportAsyncApiResponseSchema = z.object({
   summary: asyncApiImportSummarySchema,
 });
 export type ApiImportAsyncApiResponse = z.infer<typeof apiImportAsyncApiResponseSchema>;
+
+const asyncApiOpRefSchema = z.object({
+  key: z.string(),
+  channel: z.string(),
+  direction: z.enum(['sent', 'received']),
+});
+
+/** What updating an AsyncAPI-imported API would change, per operation (`api.asyncApiPlanUpdate`). */
+export const asyncApiUpdatePlanSchema = z.object({
+  added: z.array(asyncApiOpRefSchema),
+  removed: z.array(asyncApiOpRefSchema),
+  changed: z.array(
+    z.object({
+      op: asyncApiOpRefSchema,
+      reasons: z.array(z.enum(['address', 'payload', 'bindings', 'security', 'messages'])),
+    }),
+  ),
+});
+export type AsyncApiUpdatePlanWire = z.infer<typeof asyncApiUpdatePlanSchema>;
+
+/** What `api.asyncApiApplyUpdate` did: the saved project, the plan it applied, and the ids it touched. */
+export const apiAsyncApiApplyUpdateResponseSchema = z.object({
+  project: projectWireSchema,
+  plan: asyncApiUpdatePlanSchema,
+  applied: z.object({
+    requestsAdded: z.array(z.string()),
+    requestsOrphaned: z.array(z.string()),
+    requestsRestored: z.array(z.string()),
+    requestsRewritten: z.array(z.string()),
+    messagesReplaced: z.array(z.string()),
+    messagesAdded: z.array(z.string()),
+  }),
+});
+export type ApiAsyncApiApplyUpdateResponse = z.infer<typeof apiAsyncApiApplyUpdateResponseSchema>;
 
 /** Source for Postman collection import: file path or pasted JSON text. */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [

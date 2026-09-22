@@ -43,6 +43,14 @@ import type {
 import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
+import {
+  createWorkerFrameChecker,
+  type ChannelMessages,
+  type WorkerFrameChecker,
+  type WorkerFrameCheckerOptions,
+  type WsFrame,
+  type WsFrameContract,
+} from '@wirebench/engine';
 import type {
   GrpcExchangeSummary,
   GrpcLiveEvent,
@@ -76,6 +84,7 @@ import {
   toGenerateResponse,
   toInterfaceSummary,
   toWsExchangeSummary,
+  toWsFrameContractWire,
   toWsFrameWire,
   toWsHandshakeWire,
 } from './engine-wire.js';
@@ -278,6 +287,8 @@ export class EngineService {
    * opened or has already ended, rather than writing to a dead socket.
    */
   private readonly wsSessions = new Map<string, { readonly handle: WsSessionHandle; readonly requestId: string }>();
+  /** The contract checker of each session that has one, keyed by `sendId`; ended with the session. */
+  private readonly frameCheckers = new Map<string, WorkerFrameChecker>();
 
   /**
    * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
@@ -845,6 +856,13 @@ export class EngineService {
       readonly showSecrets?: boolean;
       readonly keyParams?: readonly string[];
       readonly onLive?: (event: WsLiveEvent) => void;
+      /**
+       * The messages of the request's contract channel. Never awaited before dialling: frames flow
+       * while it loads, and one that fails leaves the session unchecked with one console line.
+       */
+      readonly contract?: Promise<ChannelMessages | undefined>;
+      /** For tests: substitutes the checker's worker script or its deadline. */
+      readonly frameCheckerOptions?: WorkerFrameCheckerOptions;
     } = {},
   ): Promise<WsExchangeSummary> {
     const { sendId } = args;
@@ -876,6 +894,7 @@ export class EngineService {
         );
       }
     };
+    const checks = this.contractChecks(sendId, o.contract, o.frameCheckerOptions, safeOnLive);
     // Declared before the session is opened so the hooks below never see a temporal-dead-zone
     // reference to it, in case the engine were ever to call a hook synchronously.
     let handle: WsSessionHandle;
@@ -894,6 +913,7 @@ export class EngineService {
           },
           onFrame: (frame) => {
             safeOnLive({ kind: 'frame', sendId, frame: toWsFrameWire(frame) });
+            checks?.check(frame);
           },
           onClosed: () => {
             safeOnLive({ kind: 'closed', sendId });
@@ -901,11 +921,97 @@ export class EngineService {
         },
       );
       const exchange = await handle.done;
-      return toWsExchangeSummary(exchange, sendId, wireOpts);
+      const results = (await checks?.settle()) ?? new Map<number, WsFrameContract>();
+      const checked =
+        results.size === 0
+          ? exchange
+          : {
+              ...exchange,
+              frames: exchange.frames.map((frame) => {
+                const contract = results.get(frame.index);
+                return contract === undefined ? frame : { ...frame, contract };
+              }),
+            };
+      return toWsExchangeSummary(checked, sendId, wireOpts);
     } finally {
       this.sends.delete(sendId);
       this.wsSessions.delete(sendId);
+      // The worker ends with the session however it ended — a close, a drop, a quit's closeAllWs.
+      await checks?.dispose();
     }
+  }
+
+  /**
+   * Checks a session's frames against its contract on a worker thread (see
+   * `createWorkerFrameChecker`): each result is reported as a `contract` live event after the frame's
+   * own event, and kept by index for the session's summary. `undefined` when the session has no
+   * contract. A contract that fails to load turns checking off for the session with one console line.
+   */
+  private contractChecks(
+    sendId: string,
+    contract: Promise<ChannelMessages | undefined> | undefined,
+    options: WorkerFrameCheckerOptions | undefined,
+    onLive: (event: WsLiveEvent) => void,
+  ):
+    | {
+        readonly check: (frame: WsFrame) => void;
+        readonly settle: () => Promise<Map<number, WsFrameContract>>;
+        readonly dispose: () => Promise<void>;
+      }
+    | undefined {
+    if (contract === undefined) {
+      return undefined;
+    }
+    const results = new Map<number, WsFrameContract>();
+    const pending = new Set<Promise<void>>();
+    let checker: WorkerFrameChecker | undefined;
+    let ended = false;
+    const ready: Promise<WorkerFrameChecker | undefined> = contract.then(
+      (messages) => {
+        if (messages === undefined || ended) {
+          return undefined;
+        }
+        checker = createWorkerFrameChecker(messages, options);
+        this.frameCheckers.set(sendId, checker);
+        return checker;
+      },
+      (error: unknown) => {
+        console.warn(
+          `[ws] the contract for send "${sendId}" could not be loaded, so its frames are not checked: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return undefined;
+      },
+    );
+    return {
+      check: (frame) => {
+        const job = ready
+          .then((ready) => ready?.check(frame))
+          .then((result) => {
+            if (result === undefined) {
+              return;
+            }
+            results.set(frame.index, result);
+            onLive({ kind: 'contract', sendId, index: frame.index, contract: toWsFrameContractWire(result) });
+          });
+        pending.add(job);
+        void job.finally(() => pending.delete(job));
+      },
+      // Each check is bounded by the checker's own deadline, so this wait is too.
+      settle: async () => {
+        await Promise.all([...pending]);
+        return results;
+      },
+      dispose: async () => {
+        ended = true;
+        await ready;
+        if (checker !== undefined && this.frameCheckers.get(sendId) === checker) {
+          this.frameCheckers.delete(sendId);
+        }
+        await checker?.dispose();
+      },
+    };
   }
 
   /**

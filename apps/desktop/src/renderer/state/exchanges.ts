@@ -813,6 +813,14 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           case 'frame':
             pushLiveFrame(state.live, event.frame);
             return;
+          case 'contract': {
+            // The check follows its frame; one already past the live cap is simply gone.
+            const frame = state.live.frames.find((candidate) => candidate.index === event.index);
+            if (frame !== undefined) {
+              frame.contract = event.contract;
+            }
+            return;
+          }
           case 'closed':
             state.live.open = false;
             state.status = 'closing';

@@ -131,6 +131,7 @@ export type RequestChannelProject = Pick<
       // The WebSocket fourth, optional for the same reason.
       | 'wsSend'
       | 'wsTlsFor'
+      | 'wsContractFor'
       | 'wsMeta'
     >
   >;
@@ -1554,11 +1555,15 @@ export async function openWsRequest(
   // rather than re-deriving it from `summary.handshake.status`, which is *optional* (e.g. absent
   // through a proxy tunnel) and so cannot itself tell a success from a refusal.
   let handshakeLogged = false;
+  // Asked for, never awaited: the contract loads while the handshake runs, and a session never
+  // waits on it (see `openWsSession`'s `contract`).
+  const contract = deps.project.wsContractFor?.(request.requestId);
   try {
     const summary = await service.openWsSession(
       { sendId: request.sendId, requestId: request.requestId, options },
       {
         showSecrets: deps.showSecrets?.get() ?? false,
+        ...(contract !== undefined ? { contract } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
         onLive: (event) => {
           if (event.kind === 'handshake') {

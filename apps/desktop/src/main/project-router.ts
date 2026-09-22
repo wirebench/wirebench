@@ -134,6 +134,8 @@ export interface ProjectRouter {
   grpcRefresh(
     ...args: Parameters<ProjectHost['refreshGrpcDefinition']>
   ): ReturnType<ProjectHost['refreshGrpcDefinition']>;
+  /** The messages of a WebSocket request's contract channel, for checking its live frames. */
+  wsContractFor(...args: Parameters<ProjectHost['wsContractFor']>): ReturnType<ProjectHost['wsContractFor']>;
   /** The TLS material a WebSocket call needs: anchors, client identity, its own trust decision. */
   wsTlsFor(...args: Parameters<ProjectHost['wsTlsFor']>): ReturnType<ProjectHost['wsTlsFor']>;
   /** What History names a WebSocket send by: the request, its API, and its folder path. */
@@ -187,6 +189,14 @@ export interface ProjectRouter {
   exportApiDefinitionTo(
     ...args: Parameters<ProjectHost['exportApiDefinitionTo']>
   ): ReturnType<ProjectHost['exportApiDefinitionTo']>;
+  /** Where an AsyncAPI-imported API's definition came from, for an update to re-read. */
+  asyncApiSource(...args: Parameters<ProjectHost['asyncApiSource']>): ReturnType<ProjectHost['asyncApiSource']>;
+  asyncApiPlanUpdate(
+    ...args: Parameters<ProjectHost['planAsyncApiUpdate']>
+  ): ReturnType<ProjectHost['planAsyncApiUpdate']>;
+  asyncApiApplyUpdate(
+    ...args: Parameters<ProjectHost['applyAsyncApiUpdate']>
+  ): ReturnType<ProjectHost['applyAsyncApiUpdate']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

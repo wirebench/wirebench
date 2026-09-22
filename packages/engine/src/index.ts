@@ -404,6 +404,12 @@ export {
   MAX_CHECKED_FRAME_BYTES,
 } from './asyncapi/frame-check.js';
 export type { ChannelMessages, FrameChecker, FrameCheckOptions } from './asyncapi/frame-check.js';
+export {
+  createWorkerFrameChecker,
+  DEFAULT_FRAME_CHECK_DEADLINE_MS,
+  DEFAULT_FRAME_CHECK_QUEUE,
+} from './asyncapi/frame-check-worker-host.js';
+export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/frame-check-worker-host.js';
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';

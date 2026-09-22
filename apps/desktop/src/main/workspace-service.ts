@@ -2502,6 +2502,30 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  wsContractFor(...args: Parameters<ProjectRouter['wsContractFor']>): ReturnType<ProjectRouter['wsContractFor']> {
+    return this.hostOfEntity(args[0]).wsContractFor(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiSource(...args: Parameters<ProjectRouter['asyncApiSource']>): ReturnType<ProjectRouter['asyncApiSource']> {
+    return this.hostOfEntity(args[0]).asyncApiSource(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiPlanUpdate(
+    ...args: Parameters<ProjectRouter['asyncApiPlanUpdate']>
+  ): ReturnType<ProjectRouter['asyncApiPlanUpdate']> {
+    return this.hostOfEntity(args[0]).planAsyncApiUpdate(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiApplyUpdate(
+    ...args: Parameters<ProjectRouter['asyncApiApplyUpdate']>
+  ): ReturnType<ProjectRouter['asyncApiApplyUpdate']> {
+    return this.hostOfEntity(args[0]).applyAsyncApiUpdate(...args);
+  }
+
+  /** @inheritdoc */
   wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
     return this.hostOfEntity(args[0]).wsTlsFor(...args);
   }

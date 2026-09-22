@@ -64,6 +64,11 @@ import {
   toSendInput,
   uniqueSlug,
   writeApiDefinitionCache,
+  applyAsyncApiUpdate,
+  asyncApiChannelMessages,
+  createCachedApiFetch,
+  parseAsyncApi,
+  planAsyncApiUpdate,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
   writeFileAtomic,
@@ -90,6 +95,11 @@ import type {
   ProtoSources,
   TlsOptions,
   ResolvedDocument,
+  AsyncApiApplyResult,
+  AsyncApiDocument,
+  AsyncApiUpdatePlan,
+  ChannelMessages,
+  ParsedAsyncApi,
   RestApi,
   WsApi,
   RestFolder,
@@ -176,7 +186,7 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
-import { findWsRequest, locateWsRequest, takenApiSlugs } from './project-ws-mutations.js';
+import { findWsRequest, locateWsRequest, takenApiSlugs, wsApiOwning } from './project-ws-mutations.js';
 import { resolveWsSend } from './ws-send.js';
 import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
@@ -390,6 +400,8 @@ export class ProjectHost {
    * when the API is removed or re-imported.
    */
   private readonly protoSets = new Map<string, Promise<ProtoSet>>();
+  /** Each AsyncAPI-imported API's parsed contract, read from its cache once per session and API. */
+  private readonly asyncApiContracts = new Map<string, Promise<AsyncApiDocument | undefined>>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
@@ -2822,6 +2834,133 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
+  }
+
+  /** The open project's AsyncAPI-imported WebSocket API with `apiId`, or a `not-found` error. */
+  private requireAsyncApi(apiId: string): WsApi & { readonly definition: NonNullable<WsApi['definition']> } {
+    const api = this.require().project.wsApis.find((candidate) => candidate.id === apiId);
+    if (api?.definition?.kind !== 'asyncapi') {
+      throw new ProjectError('not-found', `No AsyncAPI-imported API with id "${apiId}"`, { details: { id: apiId } });
+    }
+    return api as WsApi & { readonly definition: NonNullable<WsApi['definition']> };
+  }
+
+  /**
+   * The contract an AsyncAPI-imported API was made from, parsed from its definition cache — never
+   * the network — and kept for the session; `undefined` for an API with no cached definition. A
+   * failed read is not remembered, so a fixed cache is read again on the next ask. An update drops it.
+   */
+  asyncApiContractFor(apiId: string): Promise<AsyncApiDocument | undefined> {
+    const known = this.asyncApiContracts.get(apiId);
+    if (known !== undefined) {
+      return known;
+    }
+    const api = this.require().project.wsApis.find((candidate) => candidate.id === apiId);
+    if (api?.definition?.kind !== 'asyncapi' || !api.definition.cache) {
+      return Promise.resolve(undefined);
+    }
+    const dir = apiDefinitionDir(this.require().dir, api.slug);
+    const loading = readApiDefinitionCache(dir).then(async (cached) => {
+      const offline = createCachedApiFetch(cached.manifest, dir, (location) =>
+        Promise.reject(
+          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+            details: { location },
+          }),
+        ),
+      );
+      const parsed = await parseAsyncApi(
+        { kind: 'url', url: cached.manifest.rootLocation },
+        { fetchDocument: offline },
+      );
+      return parsed.document;
+    });
+    loading.catch(() => {
+      if (this.asyncApiContracts.get(apiId) === loading) {
+        this.asyncApiContracts.delete(apiId);
+      }
+    });
+    this.asyncApiContracts.set(apiId, loading);
+    return loading;
+  }
+
+  /**
+   * The messages of the channel a WebSocket request was imported from, for checking its live frames;
+   * `undefined` (not a promise) when the request has no contract link, so a session without one
+   * never starts a checker. The promise rejects when the cache cannot be read.
+   */
+  wsContractFor(requestId: string): Promise<ChannelMessages | undefined> | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findWsRequest(this.open.project, requestId);
+    const api = wsApiOwning(this.open.project, requestId);
+    if (request?.contract === undefined || api?.definition?.kind !== 'asyncapi') {
+      return undefined;
+    }
+    const channel = request.contract.channel;
+    return this.asyncApiContractFor(api.id).then((document) =>
+      document === undefined ? undefined : asyncApiChannelMessages(document, channel),
+    );
+  }
+
+  /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */
+  asyncApiSource(apiId: string): string {
+    return this.requireAsyncApi(apiId).definition.source;
+  }
+
+  /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
+  async planAsyncApiUpdate(apiId: string, next: AsyncApiDocument): Promise<AsyncApiUpdatePlan> {
+    return planAsyncApiUpdate(await this.cachedAsyncApi(apiId), next);
+  }
+
+  /**
+   * Applies `next` to `apiId`: nothing is deleted (a channel that went away orphans its request),
+   * the definition cache is rewritten with the new documents, the memoised contract is dropped so
+   * the next session is checked against the new one, and the project is saved.
+   */
+  async applyAsyncApiUpdate(
+    apiId: string,
+    next: ParsedAsyncApi,
+  ): Promise<{
+    readonly project: ProjectWire;
+    readonly plan: AsyncApiUpdatePlan;
+    readonly applied: Omit<AsyncApiApplyResult, 'api'>;
+  }> {
+    const open = this.require();
+    const api = this.requireAsyncApi(apiId);
+    const old = await this.cachedAsyncApi(apiId);
+    const plan = planAsyncApiUpdate(old, next.document);
+    const { api: updated, ...applied } = applyAsyncApiUpdate(api, old, next.document);
+    if (api.definition.cache) {
+      await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, api.slug), {
+        declaredVersion: next.document.declaredVersion,
+        rootFile: 'asyncapi.yaml',
+      });
+    }
+    this.asyncApiContracts.delete(apiId);
+    open.project = {
+      ...open.project,
+      wsApis: open.project.wsApis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+    };
+    open.dirty = true;
+    await this.save({ reason: 'update-definition' });
+    return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** The cached document an update compares against; an API with no cache cannot be updated. */
+  private async cachedAsyncApi(apiId: string): Promise<AsyncApiDocument> {
+    this.requireAsyncApi(apiId);
+    const old = await this.asyncApiContractFor(apiId);
+    if (old === undefined) {
+      throw new ProjectError(
+        'definition-cache-missing',
+        'This API did not cache its definition, so there is nothing to compare an update against',
+        {
+          details: { apiId },
+        },
+      );
+    }
+    return old;
   }
 
   /** The open project's API with `apiId`, or a `not-found` error. */
