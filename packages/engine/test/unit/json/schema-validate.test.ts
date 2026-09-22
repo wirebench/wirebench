@@ -55,4 +55,44 @@ describe('validateJsonSchema', () => {
   it('an invalid pattern is ignored rather than thrown', () => {
     expect(validateJsonSchema('a', { pattern: '(' })).toEqual([]);
   });
+  it('a nested unbounded quantifier pattern is reported not checked, never evaluated', () => {
+    const evil = 'a'.repeat(35) + '!';
+    const started = Date.now();
+    const problems = validateJsonSchema(evil, { pattern: '(a+)+$' });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.keyword).toBe('pattern');
+    expect(problems[0]?.message).toContain('not checked');
+  });
+  it('a normal pattern still validates', () => {
+    expect(validateJsonSchema('abc', { pattern: '^[a-z]+$' })).toEqual([]);
+    const problems = validateJsonSchema('ABC', { pattern: '^[a-z]+$' });
+    expect(problems).toEqual([{ path: '', keyword: 'pattern', message: 'does not match /^[a-z]+$/' }]);
+  });
+  it('a value longer than the pattern length cap is reported not checked', () => {
+    const long = 'a'.repeat(5000);
+    const problems = validateJsonSchema(long, { pattern: '^[a-z]*$' });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.keyword).toBe('pattern');
+    expect(problems[0]?.message).toContain('not checked');
+  });
+  it('a lookaround or backreference pattern is reported not checked', () => {
+    expect(validateJsonSchema('ab', { pattern: '(?=a)b' })[0]?.message).toContain('not checked');
+    expect(validateJsonSchema('aa', { pattern: '(a)\\1' })[0]?.message).toContain('not checked');
+  });
+});
+
+describe('additionalItems', () => {
+  it('rejects an extra tuple item when additionalItems is false', () => {
+    const s = { items: [{ type: 'string' }], additionalItems: false };
+    expect(validateJsonSchema(['a'], s)).toEqual([]);
+    expect(validateJsonSchema(['a', 'extra'], s)).toEqual([
+      { path: '/1', keyword: 'additionalItems', message: 'unexpected item beyond the tuple' },
+    ]);
+  });
+  it('validates an extra tuple item against a schema', () => {
+    const s = { items: [{ type: 'string' }], additionalItems: { type: 'number' } };
+    expect(validateJsonSchema(['a', 5], s)).toEqual([]);
+    expect(validateJsonSchema(['a', 'x'], s)[0]?.keyword).toBe('type');
+  });
 });

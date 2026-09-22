@@ -46,6 +46,92 @@ export const UNSUPPORTED_JSON_SCHEMA_KEYWORDS: readonly string[] = [
 
 const UNSUPPORTED_SET = new Set(UNSUPPORTED_JSON_SCHEMA_KEYWORDS);
 
+/** A string longer than this is never tested against a `pattern`: a contract's regex is
+ *  untrusted, and a bounded scan of a bounded string is the only combination this validator
+ *  will pay for. */
+const MAX_PATTERN_VALUE_LENGTH = 4_096;
+
+type CompiledPattern = RegExp | 'unsafe' | 'invalid';
+
+/** Compiled (or rejected) patterns, keyed by source text so a repeated pattern — the common case,
+ *  since one contract's messages share few distinct patterns — is scanned and compiled once. */
+const patternCache = new Map<string, CompiledPattern>();
+
+/**
+ * Compiles `pattern`, refusing to run it at all when its shape can cause catastrophic
+ * backtracking: a quantified group whose body itself contains an unbounded quantifier (the
+ * `(a+)+` family), a backreference, or a lookaround. An invalid pattern compiles to `'invalid'`
+ * rather than throwing, matching this validator's existing "ignore, don't throw" rule.
+ */
+function safeCompile(pattern: string): CompiledPattern {
+  const cached = patternCache.get(pattern);
+  if (cached !== undefined) return cached;
+  let result: CompiledPattern;
+  if (isUnsafePattern(pattern)) {
+    result = 'unsafe';
+  } else {
+    try {
+      result = new RegExp(pattern);
+    } catch {
+      result = 'invalid';
+    }
+  }
+  patternCache.set(pattern, result);
+  return result;
+}
+
+/** Backreferences, lookarounds, and a quantified group whose body contains its own unbounded
+ *  quantifier — the shapes that make a regex engine's backtracking exponential in input length.
+ *  This is a heuristic scan, not a parser: it errs toward refusing rather than missing a risk. */
+function isUnsafePattern(pattern: string): boolean {
+  if (/\\[1-9]/.test(pattern) || /\\k<[^>]+>/.test(pattern)) return true; // backreference
+  if (/\(\?<?[=!]/.test(pattern)) return true; // lookahead or lookbehind
+  return hasNestedUnboundedQuantifier(pattern);
+}
+
+const UNBOUNDED_QUANTIFIER_AT_START = /^(?:[*+]|\{\d*,\})/;
+
+function hasNestedUnboundedQuantifier(pattern: string): boolean {
+  let inClass = false;
+  const groupHasUnbounded: boolean[] = [];
+  let risky = false;
+  for (let i = 0; i < pattern.length; i += 1) {
+    const c = pattern[i];
+    if (c === '\\') {
+      i += 1; // skip the escaped character, it is never a live metacharacter
+      continue;
+    }
+    if (inClass) {
+      if (c === ']') inClass = false;
+      continue;
+    }
+    if (c === '[') {
+      inClass = true;
+      continue;
+    }
+    if (c === '(') {
+      groupHasUnbounded.push(false);
+      continue;
+    }
+    if (c === ')') {
+      const bodyHasUnbounded = groupHasUnbounded.pop() ?? false;
+      const quantified = UNBOUNDED_QUANTIFIER_AT_START.test(pattern.slice(i + 1));
+      if (bodyHasUnbounded && quantified) risky = true;
+      if (groupHasUnbounded.length > 0 && (bodyHasUnbounded || quantified)) {
+        groupHasUnbounded[groupHasUnbounded.length - 1] = true;
+      }
+      continue;
+    }
+    if (groupHasUnbounded.length === 0) continue;
+    if (c === '+' || c === '*') {
+      groupHasUnbounded[groupHasUnbounded.length - 1] = true;
+    } else if (c === '{' && UNBOUNDED_QUANTIFIER_AT_START.test(pattern.slice(i))) {
+      groupHasUnbounded[groupHasUnbounded.length - 1] = true;
+    }
+  }
+  return risky;
+}
+
 type Schema = Record<string, unknown>;
 
 interface Budget {
@@ -212,13 +298,22 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
       report(budget, path, 'maxLength', `length ${value.length} is more than ${schema.maxLength}`);
     }
     if (typeof schema.pattern === 'string') {
-      try {
-        if (!new RegExp(schema.pattern).test(value)) {
+      const compiled = safeCompile(schema.pattern);
+      if (compiled === 'unsafe') {
+        report(budget, path, 'pattern', 'pattern not checked: unsafe for evaluation');
+      } else if (compiled !== 'invalid') {
+        if (value.length > MAX_PATTERN_VALUE_LENGTH) {
+          report(
+            budget,
+            path,
+            'pattern',
+            `pattern not checked: value longer than ${MAX_PATTERN_VALUE_LENGTH} characters`,
+          );
+        } else if (!compiled.test(value)) {
           report(budget, path, 'pattern', `does not match /${schema.pattern}/`);
         }
-      } catch {
-        // an invalid pattern is ignored rather than thrown
       }
+      // an invalid pattern is ignored rather than thrown
     }
   }
 
@@ -266,8 +361,14 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
       const itemSchemas: unknown[] = schema.items;
       for (let i = 0; i < value.length; i += 1) {
         if (budget.stopped) break;
-        const itemSchema = itemSchemas[i];
-        if (itemSchema !== undefined) walk(value[i], itemSchema, `${path}/${i}`, budget);
+        if (i < itemSchemas.length) {
+          const itemSchema = itemSchemas[i];
+          if (itemSchema !== undefined) walk(value[i], itemSchema, `${path}/${i}`, budget);
+        } else if (schema.additionalItems === false) {
+          report(budget, `${path}/${i}`, 'additionalItems', 'unexpected item beyond the tuple');
+        } else if (isPlainObject(schema.additionalItems)) {
+          walk(value[i], schema.additionalItems, `${path}/${i}`, budget);
+        }
       }
     } else if (isPlainObject(schema.items)) {
       for (let i = 0; i < value.length; i += 1) {
@@ -299,11 +400,13 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
     if (patternProperties) {
       for (const [pattern, sub] of Object.entries(patternProperties)) {
         if (!isPlainObject(sub)) continue;
-        try {
-          compiledPatterns.push([new RegExp(pattern), sub]);
-        } catch {
-          // an invalid pattern is ignored rather than thrown
+        const compiled = safeCompile(pattern);
+        if (compiled === 'unsafe') {
+          report(budget, path, 'patternProperties', 'pattern not checked: unsafe for evaluation');
+        } else if (compiled !== 'invalid') {
+          compiledPatterns.push([compiled, sub]);
         }
+        // an invalid pattern is ignored rather than thrown
       }
     }
 
@@ -317,7 +420,7 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
       }
       for (const [regex, sub] of compiledPatterns) {
         if (budget.stopped) break;
-        if (regex.test(key)) {
+        if (key.length <= MAX_PATTERN_VALUE_LENGTH && regex.test(key)) {
           matched = true;
           walk(value[key], sub, childPath, budget);
         }
