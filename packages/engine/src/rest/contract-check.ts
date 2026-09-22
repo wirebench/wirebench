@@ -16,8 +16,15 @@ export const MAX_CHECKED_BODY_BYTES = 1_048_576;
 export const DEFAULT_REST_CHECK_BUDGET_MS = 200;
 export const MAX_CONTRACT_PROBLEMS = 50;
 export const MAX_CONTRACT_MESSAGE_LENGTH = 300;
+/**
+ * Schema nodes one check may visit. Generous, since a real response (hundreds of rows of dozens of
+ * properties) must be checkable: the worker's deadline is what bounds the time, and this only stops a
+ * body the deadline would let through yet is still too big to finish.
+ */
+export const MAX_REST_CHECK_NODES = 200_000;
+export const MAX_CONTRACT_PATH_LENGTH = 300;
 /** Value nodes the `writeOnly` pass may visit; it walks the value, so the schema's shape cannot loop it. */
-const MAX_WRITE_ONLY_NODES = 10_000;
+const MAX_WRITE_ONLY_NODES = MAX_REST_CHECK_NODES;
 
 export type RestContractStatus =
   'ok' | 'violation' | 'unmatched' | 'no-schema' | 'no-contract' | 'skipped' | 'not-checked';
@@ -60,7 +67,7 @@ function utf8Length(text: string, limit: number): number {
 
 function capped(problems: readonly JsonSchemaProblem[]): RestContractProblem[] {
   return problems.slice(0, MAX_CONTRACT_PROBLEMS).map((p) => ({
-    path: p.path,
+    path: p.path.length > MAX_CONTRACT_PATH_LENGTH ? p.path.slice(0, MAX_CONTRACT_PATH_LENGTH) : p.path,
     keyword: p.keyword,
     message:
       p.message.length > MAX_CONTRACT_MESSAGE_LENGTH ? p.message.slice(0, MAX_CONTRACT_MESSAGE_LENGTH) : p.message,
@@ -83,6 +90,8 @@ interface WriteOnlyPass {
   readonly capped: boolean;
   /** The time budget ran out during the pass. */
   readonly expired: boolean;
+  /** An `anyOf`/`oneOf` branch could not be decided (its check hit its own cap), so was not followed. */
+  readonly undecided: boolean;
 }
 
 /** The schema that applies to item `i`: a tuple's own (`prefixItems`, or draft-07 array `items`), then the rest. */
@@ -106,6 +115,7 @@ function writeOnlyProblems(value: unknown, schema: unknown, max: number, expired
   let nodes = 0;
   let capped = false;
   let outOfTime = false;
+  let undecided = false;
   const halted = (): boolean => {
     if (problems.length >= max || capped || outOfTime) return true;
     if (nodes >= MAX_WRITE_ONLY_NODES) capped = true;
@@ -123,7 +133,9 @@ function writeOnlyProblems(value: unknown, schema: unknown, max: number, expired
       if (!Array.isArray(branches)) continue;
       for (const b of branches) {
         if (halted()) return;
-        if (validateJsonSchema(val, b, { maxProblems: 1 }).length === 0) visit(val, b, path, applied);
+        const trial = validateJsonSchema(val, b, { maxProblems: 1 });
+        if (trial.length === 0) visit(val, b, path, applied);
+        else if (trial[0]?.keyword === 'budget') undecided = true;
       }
     }
     if (Array.isArray(val)) {
@@ -146,7 +158,7 @@ function writeOnlyProblems(value: unknown, schema: unknown, max: number, expired
     }
   };
   visit(value, schema, '', new Set());
-  return { problems, capped, expired: outOfTime };
+  return { problems, capped, expired: outOfTime, undecided };
 }
 
 export function checkRestResponse(input: RestContractInput, options?: RestContractCheckOptions): RestContractResult {
@@ -156,7 +168,9 @@ export function checkRestResponse(input: RestContractInput, options?: RestContra
   const { operation, responses } = input;
   if (operation === undefined || responses === undefined) return { status: 'no-contract', problems: [], notes: [] };
 
-  const selection = selectResponse(responses, input.status, input.contentType);
+  // Only a body detected as JSON gets here, so one with no Content-Type is read as `application/json`.
+  const contentType = input.contentType?.trim() ? input.contentType : 'application/json';
+  const selection = selectResponse(responses, input.status, contentType);
   if (selection.kind === 'unmatched') {
     return {
       status: 'unmatched',
@@ -199,14 +213,25 @@ export function checkRestResponse(input: RestContractInput, options?: RestContra
   const notChecked: RestContractResult = { status: 'not-checked', ...found, problems: [], notes };
   const expired = (): boolean => now() - start > budgetMs;
   let problems: JsonSchemaProblem[];
+  let stopped: string | undefined;
   try {
-    problems = validateJsonSchema(value, schema, { maxProblems: MAX_CONTRACT_PROBLEMS });
+    const checked = validateJsonSchema(value, schema, {
+      maxProblems: MAX_CONTRACT_PROBLEMS,
+      maxNodes: MAX_REST_CHECK_NODES,
+      redactValues: true,
+    });
     if (expired()) return notChecked;
+    // A stop on the node or depth cap is not a fault of the body: it only means part went unchecked.
+    stopped = checked.find((p) => p.keyword === 'budget')?.message;
+    problems = checked.filter((p) => p.keyword !== 'budget');
     if (problems.length < MAX_CONTRACT_PROBLEMS) {
       const pass = writeOnlyProblems(value, schema, MAX_CONTRACT_PROBLEMS - problems.length, expired);
       if (pass.expired) return notChecked;
       problems.push(...pass.problems);
       if (pass.capped) notes.push(`write-only check stopped after ${MAX_WRITE_ONLY_NODES} nodes`);
+      if (pass.undecided) {
+        notes.push('write-only check could not tell which anyOf/oneOf branch a value matches, so did not follow it');
+      }
     }
   } catch (error) {
     // The validator stops self-referencing schemas itself; this is the last resort should some
@@ -215,5 +240,9 @@ export function checkRestResponse(input: RestContractInput, options?: RestContra
     throw error;
   }
   if (expired()) return notChecked;
+  if (stopped !== undefined) {
+    if (problems.length === 0) return { ...notChecked, notes: [stopped, ...notes] };
+    notes.unshift(`partial check: ${stopped}`);
+  }
   return { status: problems.length === 0 ? 'ok' : 'violation', ...found, problems: capped(problems), notes };
 }

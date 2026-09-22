@@ -2,7 +2,12 @@
  * Checking a REST response against the schema its OpenAPI operation declares for it.
  */
 import { describe, expect, it } from 'vitest';
-import { checkRestResponse, MAX_CHECKED_BODY_BYTES } from '../../../src/rest/contract-check.js';
+import {
+  checkRestResponse,
+  MAX_CHECKED_BODY_BYTES,
+  MAX_CONTRACT_PATH_LENGTH,
+  MAX_REST_CHECK_NODES,
+} from '../../../src/rest/contract-check.js';
 import type { OpenApiResponses } from '../../../src/rest/openapi/model.js';
 
 const operation = { method: 'get', path: '/pets/{id}' };
@@ -101,12 +106,15 @@ describe('checkRestResponse', () => {
   it('notes when the write-only check stops at its node cap', () => {
     const schema = { type: 'array', items: { type: 'integer' } };
     const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
-    const r = checkRestResponse({
-      ...base,
-      responses: res,
-      bodyText: JSON.stringify(Array.from({ length: 10_001 }, () => 1)),
-    });
-    expect(r.notes).toContain('write-only check stopped after 10000 nodes');
+    const r = checkRestResponse(
+      {
+        ...base,
+        responses: res,
+        bodyText: JSON.stringify(Array.from({ length: MAX_REST_CHECK_NODES + 1 }, () => 1)),
+      },
+      { budgetMs: 60_000 },
+    );
+    expect(r.notes).toContain(`write-only check stopped after ${MAX_REST_CHECK_NODES} nodes`);
   });
 
   it('lists format and other unsupported keywords once each as notes', () => {
@@ -192,5 +200,89 @@ describe('checkRestResponse', () => {
     const r2 = checkRestResponse({ ...base, responses: res, bodyText: '"x"' }, { budgetMs: 5, now: () => (u += 10) });
     expect(r2.status).toBe('not-checked');
     expect(r2.notes).toEqual(['`format` is not checked']);
+  });
+
+  describe('the node cap', () => {
+    const row = {
+      type: 'object',
+      properties: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, { type: 'integer' }])),
+    };
+    const rows: OpenApiResponses = {
+      '200': { content: { 'application/json': { schema: { type: 'array', items: row } } } },
+    };
+    const body = (n: number) =>
+      JSON.stringify(
+        Array.from({ length: n }, () => Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i]))),
+      );
+
+    it('checks a real list response of a few hundred rows to the end', () => {
+      const r = checkRestResponse({ ...base, responses: rows, bodyText: body(415) }, { budgetMs: 60_000 });
+      expect(r.status).toBe('ok');
+      expect(r.notes).toEqual([]);
+    });
+
+    it('is not-checked, not a violation, when only the cap stopped the check', () => {
+      const ints: OpenApiResponses = {
+        '200': { content: { 'application/json': { schema: { type: 'array', items: { type: 'integer' } } } } },
+      };
+      const bodyText = JSON.stringify(Array.from({ length: MAX_REST_CHECK_NODES + 10 }, () => 1));
+      const r = checkRestResponse({ ...base, responses: ints, bodyText }, { budgetMs: 60_000 });
+      expect(r.status).toBe('not-checked');
+      expect(r.problems).toEqual([]);
+      expect(r.notes).toContain(`validation stopped after ${MAX_REST_CHECK_NODES} nodes`);
+    });
+
+    it('is a violation with a partial-check note when real problems came before the cap', () => {
+      const ints: OpenApiResponses = {
+        '200': { content: { 'application/json': { schema: { type: 'array', items: { type: 'integer' } } } } },
+      };
+      const values: unknown[] = Array.from({ length: MAX_REST_CHECK_NODES + 10 }, () => 1);
+      values[0] = 'x';
+      const r = checkRestResponse({ ...base, responses: ints, bodyText: JSON.stringify(values) }, { budgetMs: 60_000 });
+      expect(r.status).toBe('violation');
+      expect(r.problems.map((p) => p.keyword)).toEqual(['type']);
+      expect(r.notes).toContain(`partial check: validation stopped after ${MAX_REST_CHECK_NODES} nodes`);
+    });
+
+    it('says so when a writeOnly branch could not be decided', () => {
+      const big = { type: 'array', items: { type: 'integer' } };
+      const schema = { anyOf: [big, { type: 'string' }] };
+      const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+      const bodyText = JSON.stringify(Array.from({ length: 10_010 }, () => 1));
+      const r = checkRestResponse({ ...base, responses: res, bodyText }, { budgetMs: 60_000 });
+      expect(r.status).toBe('ok');
+      expect(r.notes.some((n) => n.includes('could not tell'))).toBe(true);
+    });
+  });
+
+  it('keeps the body out of problem messages', () => {
+    const schema = {
+      type: 'object',
+      properties: { n: { type: 'integer', minimum: 0 }, s: { type: 'string', maxLength: 10 }, e: { enum: ['a', 'b'] } },
+    };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    const r = checkRestResponse({ ...base, responses: res, bodyText: '{"n":-7345,"s":"zqxjkvbnmwpt","e":"hunter2"}' });
+    expect(r.status).toBe('violation');
+    expect(r.problems.map((p) => p.message)).toEqual([
+      'below the minimum 0',
+      'longer than the maximum length 10',
+      'not one of the allowed values',
+    ]);
+    const text = JSON.stringify(r);
+    for (const leaked of ['7345', 'zqxjkvbnmwpt', 'hunter2', '12']) expect(text).not.toContain(leaked);
+  });
+
+  it('clips a long problem path', () => {
+    const key = 'k'.repeat(1000);
+    const schema = { type: 'object', properties: { [key]: { type: 'integer' } } };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    const r = checkRestResponse({ ...base, responses: res, bodyText: JSON.stringify({ [key]: 'x' }) });
+    expect(r.problems[0]?.path.length).toBe(MAX_CONTRACT_PATH_LENGTH);
+  });
+
+  it('reads a JSON body with no Content-Type as application/json', () => {
+    const r = checkRestResponse({ ...base, contentType: undefined, bodyText: '{"id":"1"}' });
+    expect(r).toMatchObject({ status: 'violation', mediaType: 'application/json' });
+    expect(checkRestResponse({ ...base, contentType: '', bodyText: '{"id":1,"name":"a"}' }).status).toBe('ok');
   });
 });

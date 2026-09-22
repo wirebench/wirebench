@@ -75,4 +75,20 @@ describe('createFrameChecker', () => {
     );
     expect(structuredClone(r)).toEqual({ status: 'ok', message: 'presence' });
   });
+  it('a message whose check only hit the node cap is not the closest violation: not-checked', () => {
+    const many = Array.from({ length: 12_000 }, () => 1);
+    const frame: WsFrame = { ...text('received', many), size: JSON.stringify(many).length };
+    const capped = {
+      key: 'ints',
+      name: 'ints',
+      contentType: 'application/json',
+      payload: { type: 'array', items: { type: 'integer' } },
+    };
+    const wrong = { key: 'obj', name: 'obj', contentType: 'application/json', payload: { type: 'object' } };
+    expect(checkFrame(frame, [capped, wrong], { budgetMs: 60_000 })).toEqual({
+      status: 'not-checked',
+      reason: 'validation stopped after 10000 nodes',
+    });
+    expect(checkFrame(frame, [wrong], { budgetMs: 60_000 })).toMatchObject({ status: 'violation', message: 'obj' });
+  });
 });

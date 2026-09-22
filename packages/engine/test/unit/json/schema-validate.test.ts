@@ -225,3 +225,33 @@ describe('validateJsonSchema on self-referencing schemas', () => {
     expect(validateJsonSchema(value, tree).at(-1)?.keyword).toBe('budget');
   });
 });
+
+describe('a combinator branch already being applied to the same value', () => {
+  it('gives no not verdict (it would otherwise look like a match)', () => {
+    const node: Record<string, unknown> = { type: 'integer' };
+    node['not'] = node;
+    expect(validateJsonSchema(1, node)).toEqual([]);
+  });
+});
+
+describe('redactValues', () => {
+  it('words bounds without the value', () => {
+    const schema = { type: 'array', minItems: 5, items: { type: 'number', maximum: 1, multipleOf: 2 } };
+    const problems = validateJsonSchema([3.5], schema, { redactValues: true });
+    expect(problems.map((p) => p.message)).toEqual([
+      'fewer items than the minimum 5',
+      'above the maximum 1',
+      'not a multiple of 2',
+    ]);
+    expect(validateJsonSchema('ab', { minLength: 3 }, { redactValues: true })[0]?.message).toBe(
+      'shorter than the minimum length 3',
+    );
+  });
+  it('names the depth cap when that is what stopped the walk', () => {
+    const tree: Record<string, unknown> = { type: 'object' };
+    tree['properties'] = { c: tree };
+    let value: Record<string, unknown> = {};
+    for (let i = 0; i < 1000; i++) value = { c: value };
+    expect(validateJsonSchema(value, tree).at(-1)?.message).toBe('validation stopped at nesting depth 256');
+  });
+});

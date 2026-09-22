@@ -80,9 +80,16 @@ export function checkFrame(
   const budgetMs = options?.budgetMs ?? DEFAULT_FRAME_CHECK_BUDGET_MS;
   const start = now();
   let closest: { name: string; problems: readonly JsonSchemaProblem[] } | undefined;
+  // A message whose check stopped on the node or depth cap with nothing wrong found so far: the
+  // frame may well be that message, so it is neither the closest violation nor a match.
+  let undecided: string | undefined;
   for (const message of json) {
     if (now() - start > budgetMs) return { status: 'not-checked', reason: 'time budget exceeded' };
     const problems = message.payload === undefined ? [] : validateJsonSchema(value, message.payload);
+    if (problems.length > 0 && problems.every((p) => p.keyword === 'budget')) {
+      undecided ??= problems[0]!.message;
+      continue;
+    }
     if (problems.length === 0) {
       if (now() - start > budgetMs) return { status: 'not-checked', reason: 'time budget exceeded' };
       return { status: 'ok', message: message.name };
@@ -90,5 +97,6 @@ export function checkFrame(
     if (closest === undefined || problems.length < closest.problems.length) closest = { name: message.name, problems };
   }
   if (now() - start > budgetMs) return { status: 'not-checked', reason: 'time budget exceeded' };
+  if (undecided !== undefined) return { status: 'not-checked', reason: undecided };
   return { status: 'violation', message: closest!.name, problems: closest!.problems };
 }
