@@ -95,6 +95,36 @@ so far, as one JSON document.
 - Reconnecting with `Last-Event-ID`, honouring a server's `retry:` field, and event streams from
   the CLI are not built.
 
+## Response checks
+
+A request imported from an OpenAPI document remembers the operation it came from, and every JSON
+response it receives is checked against the schema that operation declares for that status. A
+request you made yourself is matched to an operation of its API's imported definition by method and
+path; where a concrete path such as `/pets/mine` and a templated one such as `/pets/{id}` both fit,
+the concrete one wins.
+
+The verdict is a chip on the response status line:
+
+- **Contract ✓** — the body matches.
+- **Contract: N problems** — it does not. Each problem is a marker on the Pretty body view at the
+  property it is about, and a row in the **Problems** panel; choosing the row opens the request and
+  shows that place in the body. At most 50 problems are listed.
+- **Unexpected status** — the operation declares no response for this status. An exact status is
+  used first, then a range such as `4XX`, then `default`.
+- **No schema** — the matching response declares no schema to compare with.
+- **Skipped** — the body is larger than 1 MiB, so it is not parsed for the check.
+- **Not checked** — the check gave up: it ran out of time (the whole wait, looking up the definition
+  included, is held to 1000 ms), the send was cancelled, too many responses were already waiting to
+  be checked, or the checker failed. It is neither a pass nor a failure.
+
+Hover or focus the chip for the operation, response key and media type it used, and for anything the
+check could not evaluate, such as a schema keyword it does not support. The check runs in a worker thread,
+so a slow schema never holds up the app. History keeps each send's chip.
+
+No chip appears when there is nothing to check against — the request's API has no imported
+definition, or no operation matches — or when the response is an event stream or not JSON (XML,
+HTML, text or binary).
+
 ## Limits
 
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
