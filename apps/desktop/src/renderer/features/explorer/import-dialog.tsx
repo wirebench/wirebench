@@ -156,6 +156,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [serverTrustInvalid, setServerTrustInvalid] = useState(false);
   // AsyncAPI: the document's WebSocket servers, read from main, and the one to dial.
   const [wsServers, setWsServers] = useState<readonly { readonly key: string; readonly url: string }[]>([]);
+  // True from the moment an AsyncAPI source settles until main has answered which servers it has
+  // (the debounce included): an Import before then would dial a server the user never got to pick.
+  const [previewPending, setPreviewPending] = useState(false);
   const [wsServer, setWsServer] = useState('');
 
   // WSDL Basic Auth fields
@@ -251,22 +254,30 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setWsServers([]);
     setWsServer('');
     if (!open || asyncApiSourceKey === '') {
+      setPreviewPending(false);
       return;
     }
+    setPreviewPending(true);
     let current = true;
     const timer = setTimeout(() => {
       const source = JSON.parse(asyncApiSourceKey) as OpenApiSourceWire;
       void ipc()
         .api.asyncApiServers({ source })
         .then((res) => {
-          if (!current || !res.ok) {
+          if (!current) {
+            return; // A newer source has its own preview under way.
+          }
+          setPreviewPending(false);
+          if (!res.ok) {
             // A document that cannot be read yet says so on Import; the picker just stays away.
             return;
           }
           setWsServers(res.value.servers);
           setWsServer(res.value.servers[0]?.key ?? '');
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (current) setPreviewPending(false);
+        });
     }, 250);
     return () => {
       current = false;
@@ -1238,6 +1249,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                             : 'import-submit'
                       }
                       variant="primary"
+                      disabled={effectiveFormat === 'asyncapi' && previewPending}
                       onClick={() => void onImport()}
                     >
                       Import

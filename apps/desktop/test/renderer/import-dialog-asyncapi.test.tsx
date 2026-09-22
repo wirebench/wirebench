@@ -153,7 +153,60 @@ describe('ImportDialog — AsyncAPI', () => {
     });
     mount();
     await paste(chat26);
+    await waitFor(() => {
+      expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(false);
+    });
     await userEvent.click(screen.getByTestId('import-submit'));
     expect((await screen.findByRole('alert')).textContent).toContain('The document has no server "x"');
+  });
+  it('keeps Import disabled while the server preview is outstanding, debounce included', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    asyncApiServers.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    mount();
+    await paste(chat26);
+    // Before the debounce has even asked, an import could not know which server to dial.
+    expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(true);
+    await waitFor(() => {
+      expect(asyncApiServers).toHaveBeenCalled();
+    });
+    expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(true);
+    answer({ ok: true, value: { servers: [{ key: 'public', url: 'wss://eu.chat.example.test/ws' }] } });
+    await waitFor(() => {
+      expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(false);
+    });
+  });
+
+  it('an older preview answering after a newer one does not replace its servers', async () => {
+    const answers: ((value: unknown) => void)[] = [];
+    asyncApiServers.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    mount();
+    await paste(chat26);
+    await waitFor(() => {
+      expect(answers).toHaveLength(1);
+    });
+    fireEvent.change(screen.getByTestId('import-paste'), { target: { value: `${chat26}\n` } });
+    await waitFor(() => {
+      expect(answers).toHaveLength(2);
+    });
+    const servers = (keys: string[]) => ({
+      ok: true,
+      value: { servers: keys.map((key) => ({ key, url: `wss://${key}.example.test` })) },
+    });
+    answers[1]?.(servers(['newer', 'newest']));
+    const picker = await screen.findByTestId('import-asyncapi-server');
+    answers[0]?.(servers(['older', 'oldest']));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const options = [...(picker as HTMLSelectElement).options].map((option) => option.value);
+    expect(options).toEqual(['newer', 'newest']);
+    expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(false);
   });
 });
