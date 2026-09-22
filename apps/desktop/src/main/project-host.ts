@@ -2971,8 +2971,9 @@ export class ProjectHost {
   }
 
   /**
-   * What a REST request's response is checked against: the operation it calls — its import link,
-   * or else the one operation `sent`'s method and URL match — and that operation's declared
+   * What a REST request's response is checked against: the operation it calls — its import link when
+   * `sent`'s method is the link's and its URL fits the link's path, or else the one operation `sent`'s
+   * method and URL match — and that operation's declared
    * responses. `undefined` (not a promise) when the request's API has no cached definition, so such
    * a send never touches the checker; the promise rejects when the cache cannot be read.
    */
@@ -2993,10 +2994,15 @@ export class ProjectHost {
     const link = request.contract;
     const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
     return this.openApiDocumentFor(api.id).then((document) => {
-      const operation =
-        link !== undefined
-          ? { method: link.method, path: link.path }
-          : matchOperation(document.operations, sent.method, sent.url, baseUrls);
+      // The import link names the operation only while the request still calls it: a request whose
+      // method or URL was edited since (or a clone pointed elsewhere) is matched afresh.
+      const linked =
+        link !== undefined &&
+        link.method.toLowerCase() === sent.method.toLowerCase() &&
+        matchOperation([link], sent.method, sent.url, baseUrls) !== undefined;
+      const operation = linked
+        ? { method: link.method, path: link.path }
+        : matchOperation(document.operations, sent.method, sent.url, baseUrls);
       if (operation === undefined) {
         return {};
       }

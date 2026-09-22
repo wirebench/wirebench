@@ -114,4 +114,23 @@ describe('ProjectHost.restContractFor', () => {
     await host.openProject(join(dir, 'project'));
     expect(host.openApiDocumentFor(apiId)).not.toBe(first);
   });
+
+  it('rematches a linked request whose method was changed since import', async () => {
+    const { api } = await importPets(true);
+    const get = requestNamed(api, 'GET');
+    expect(get.contract).toEqual({ method: 'get', path: '/pets/{id}' });
+    const target = await host.restContractFor(get.id, { method: 'POST', url: 'https://pets.example.test/v1/pets' });
+    expect(target?.operation).toEqual({ method: 'post', path: '/pets' });
+  });
+
+  it('rematches a linked request pointed at another path, and has nothing when that path is undeclared', async () => {
+    const { api } = await importPets(true);
+    const post = requestNamed(api, 'POST');
+    expect(post.contract).toEqual({ method: 'post', path: '/pets' });
+    const moved = await host.restContractFor(post.id, { method: 'POST', url: 'https://pets.example.test/v1/pets/3' });
+    expect(moved).toEqual({});
+    const get = requestNamed(api, 'GET');
+    const same = await host.restContractFor(get.id, { method: 'get', url: 'https://pets.example.test/v1/pets/9' });
+    expect(same?.operation).toEqual({ method: 'get', path: '/pets/{id}' });
+  });
 });
