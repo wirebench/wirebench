@@ -98,6 +98,86 @@ describe('additionalItems', () => {
   });
 });
 
+describe('number checks', () => {
+  it('minimum, maximum and multipleOf pass when the value is within bounds', () => {
+    expect(validateJsonSchema(5, { minimum: 1, maximum: 10, multipleOf: 1 })).toEqual([]);
+  });
+  it('reports a value below minimum, above maximum, and not a multiple', () => {
+    expect(validateJsonSchema(0, { minimum: 1 })[0]).toMatchObject({ keyword: 'minimum' });
+    expect(validateJsonSchema(11, { maximum: 10 })[0]).toMatchObject({ keyword: 'maximum' });
+    expect(validateJsonSchema(4, { multipleOf: 3 })[0]).toMatchObject({ keyword: 'multipleOf' });
+  });
+  it('exclusiveMinimum and exclusiveMaximum as numbers pass and fail correctly', () => {
+    expect(validateJsonSchema(5, { exclusiveMinimum: 1, exclusiveMaximum: 10 })).toEqual([]);
+    expect(validateJsonSchema(1, { exclusiveMinimum: 1 })[0]).toMatchObject({ keyword: 'exclusiveMinimum' });
+    expect(validateJsonSchema(10, { exclusiveMaximum: 10 })[0]).toMatchObject({ keyword: 'exclusiveMaximum' });
+  });
+  it('draft-04 style exclusiveMinimum/Maximum booleans pass and fail correctly', () => {
+    expect(validateJsonSchema(5, { minimum: 1, exclusiveMinimum: true })).toEqual([]);
+    expect(validateJsonSchema(1, { minimum: 1, exclusiveMinimum: true })[0]).toMatchObject({
+      keyword: 'exclusiveMinimum',
+    });
+    expect(validateJsonSchema(5, { maximum: 10, exclusiveMaximum: true })).toEqual([]);
+    expect(validateJsonSchema(10, { maximum: 10, exclusiveMaximum: true })[0]).toMatchObject({
+      keyword: 'exclusiveMaximum',
+    });
+  });
+});
+
+describe('array checks', () => {
+  it('minItems and maxItems pass within bounds and fail outside them', () => {
+    expect(validateJsonSchema([1, 2], { minItems: 1, maxItems: 3 })).toEqual([]);
+    expect(validateJsonSchema([], { minItems: 1 })[0]).toMatchObject({ keyword: 'minItems' });
+    expect(validateJsonSchema([1, 2, 3, 4], { maxItems: 3 })[0]).toMatchObject({ keyword: 'maxItems' });
+  });
+  it('uniqueItems passes distinct items and reports a duplicate', () => {
+    expect(validateJsonSchema([1, 2, 3], { uniqueItems: true })).toEqual([]);
+    expect(validateJsonSchema([1, 2, 1], { uniqueItems: true })[0]).toMatchObject({ keyword: 'uniqueItems' });
+  });
+  it('a tuple schema validates each position against its own schema', () => {
+    const s = { items: [{ type: 'string' }, { type: 'number' }] };
+    expect(validateJsonSchema(['a', 1], s)).toEqual([]);
+    expect(validateJsonSchema([1, 1], s)[0]).toMatchObject({ path: '/0', keyword: 'type' });
+  });
+});
+
+describe('object checks', () => {
+  it('minProperties and maxProperties pass within bounds and fail outside them', () => {
+    expect(validateJsonSchema({ a: 1 }, { minProperties: 1, maxProperties: 2 })).toEqual([]);
+    expect(validateJsonSchema({}, { minProperties: 1 })[0]).toMatchObject({ keyword: 'minProperties' });
+    expect(validateJsonSchema({ a: 1, b: 2, c: 3 }, { maxProperties: 2 })[0]).toMatchObject({
+      keyword: 'maxProperties',
+    });
+  });
+  it('patternProperties validates a matching key and lets an unsafe pattern through unchecked', () => {
+    const s = { patternProperties: { '^x-': { type: 'string' } } };
+    expect(validateJsonSchema({ 'x-a': 'ok' }, s)).toEqual([]);
+    expect(validateJsonSchema({ 'x-a': 1 }, s)[0]).toMatchObject({ keyword: 'type' });
+    expect(
+      validateJsonSchema({ 'x-a': 'ok' }, { patternProperties: { '(a+)+$': { type: 'string' } } })[0],
+    ).toMatchObject({ keyword: 'patternProperties' });
+  });
+  it('additionalProperties as a schema validates the extra property', () => {
+    const s = { properties: { a: { type: 'string' } }, additionalProperties: { type: 'number' } };
+    expect(validateJsonSchema({ a: 'x', b: 5 }, s)).toEqual([]);
+    expect(validateJsonSchema({ a: 'x', b: 'nope' }, s)[0]).toMatchObject({ path: '/b', keyword: 'type' });
+  });
+});
+
+describe('allOf', () => {
+  it('passes when every branch passes, and reports the first branch that fails', () => {
+    const s = { allOf: [{ type: 'string' }, { minLength: 2 }] };
+    expect(validateJsonSchema('ab', s)).toEqual([]);
+    expect(validateJsonSchema('a', s)[0]).toMatchObject({ keyword: 'minLength' });
+  });
+});
+
+describe('not', () => {
+  it('passes when the value does not match the disallowed schema', () => {
+    expect(validateJsonSchema('x', { not: { type: 'number' } })).toEqual([]);
+  });
+});
+
 describe('a combinator branch that runs out of nodes', () => {
   // Twenty strings: walking them against `items` costs more nodes than the budget allows.
   const many = Array.from({ length: 20 }, () => 'x');
