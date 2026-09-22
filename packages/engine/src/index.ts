@@ -428,6 +428,22 @@ export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
+export {
+  checkRestResponse,
+  DEFAULT_REST_CHECK_BUDGET_MS,
+  MAX_CHECKED_BODY_BYTES,
+  MAX_CONTRACT_MESSAGE_LENGTH,
+  MAX_CONTRACT_PROBLEMS,
+} from './rest/contract-check.js';
+export type {
+  RestContractCheckOptions,
+  RestContractInput,
+  RestContractProblem,
+  RestContractResult,
+  RestContractStatus,
+} from './rest/contract-check.js';
+export { pointerRange } from './json/pointer-range.js';
+export type { PointerTextRange } from './json/pointer-range.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';

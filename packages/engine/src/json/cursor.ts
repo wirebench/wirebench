@@ -212,3 +212,6 @@ export function jsonCompletionContextAt(text: string, offset: number): JsonCompl
     siblings: [...frame.keys],
   };
 }
+
+export { pointerRange } from './pointer-range.js';
+export type { PointerTextRange } from './pointer-range.js';
