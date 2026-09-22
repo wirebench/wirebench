@@ -45,6 +45,7 @@ export default defineConfig({
             { label: 'Secrets', slug: 'guides/secrets' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
+            { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
