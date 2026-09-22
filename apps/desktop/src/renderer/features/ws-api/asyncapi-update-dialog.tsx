@@ -6,7 +6,7 @@
  * the source the user looked at — if it changed in between, main refuses with `definition-changed`
  * and the dialog says so and offers to preview again rather than applying something unseen.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -59,6 +59,14 @@ export function AsyncApiUpdateDialog({ apiId, open, onOpenChange }: AsyncApiUpda
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [stale, setStale] = useState(false);
+  // A plan or apply can land after the dialog is gone; it must not drive a dialog that no longer exists.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const runPlan = useCallback(async (): Promise<void> => {
     setBusy(true);
@@ -66,6 +74,7 @@ export function AsyncApiUpdateDialog({ apiId, open, onOpenChange }: AsyncApiUpda
     setStale(false);
     setPlan(undefined);
     const result = await ipc().api.asyncApiPlanUpdate({ apiId });
+    if (!mounted.current) return;
     setBusy(false);
     if (!result.ok) {
       setError(result.error.message);
@@ -83,8 +92,9 @@ export function AsyncApiUpdateDialog({ apiId, open, onOpenChange }: AsyncApiUpda
     setBusy(true);
     setError(undefined);
     const result = await ipc().api.asyncApiApplyUpdate({ apiId, fingerprint: plan.fingerprint });
-    setBusy(false);
     if (!result.ok) {
+      if (!mounted.current) return;
+      setBusy(false);
       if (result.error.code === 'definition-changed') {
         setStale(true);
         return;
@@ -97,7 +107,11 @@ export function AsyncApiUpdateDialog({ apiId, open, onOpenChange }: AsyncApiUpda
     if (projectId !== undefined) {
       store.applySnapshot(projectId, result.value.project);
     }
-    onOpenChange(false);
+    // The update happened whether or not the dialog is still open: the snapshot and the toast stand.
+    if (mounted.current) {
+      setBusy(false);
+      onOpenChange(false);
+    }
     const { requestsAdded, requestsOrphaned, requestsRewritten } = result.value.applied;
     showToast(
       `Definition updated — ${String(requestsAdded.length)} added, ${String(requestsRewritten.length)} rewritten, ${String(

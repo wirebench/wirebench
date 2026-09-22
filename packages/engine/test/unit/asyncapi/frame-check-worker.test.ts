@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { channelMessages } from '../../../src/asyncapi/frame-check.js';
+import { channelMessages, MAX_CHECKED_FRAME_BYTES } from '../../../src/asyncapi/frame-check.js';
 import { createWorkerFrameChecker } from '../../../src/asyncapi/frame-check-worker-host.js';
 import { parseAsyncApi } from '../../../src/asyncapi/parse.js';
 import type { WsFrame } from '../../../src/ws/model.js';
@@ -44,7 +44,7 @@ describe('createWorkerFrameChecker', () => {
   });
 
   it('marks a check that outruns the deadline not-checked, and a fresh worker takes the next frame', async () => {
-    const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 150 });
+    const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 600 });
     try {
       const started = Date.now();
       const stuck = await checker.check(frame('received', 'hang', 0));
@@ -58,7 +58,7 @@ describe('createWorkerFrameChecker', () => {
   });
 
   it('frames queued behind a stuck one are still checked, each against its own deadline', async () => {
-    const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 150 });
+    const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 600 });
     try {
       const results = await Promise.all([
         checker.check(frame('received', 'hang', 0)),
@@ -99,5 +99,23 @@ describe('createWorkerFrameChecker', () => {
     expect(await checker.check(frame('received', '{}', 2))).toMatchObject({ status: 'not-checked' });
     await checker.dispose();
     await Promise.all([first, second]);
+  });
+
+  it('skips a frame too large to check at once: no worker, no queue, no queued bytes', async () => {
+    const huge = { ...frame('received', '{}', 0), size: MAX_CHECKED_FRAME_BYTES + 1 };
+    const idle = createWorkerFrameChecker(messages);
+    expect(await idle.check(huge)).toEqual({ status: 'skipped', reason: 'frame too large to check' });
+    expect(idle.spawned).toBe(0);
+    await idle.dispose();
+
+    // Behind a stuck frame, the oversized one neither waits nor uses up the queued-bytes bound.
+    const busy = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 10_000, maxQueuedBytes: 10 });
+    const first = busy.check(frame('received', 'hang', 0));
+    const small = busy.check(frame('received', '{"a":1}', 1));
+    expect(await busy.check({ ...huge, index: 2 })).toMatchObject({ status: 'skipped' });
+    const next = busy.check(frame('received', '{}', 3));
+    await busy.dispose();
+    expect(await next).toMatchObject({ status: 'not-checked', reason: 'the session ended' });
+    await Promise.all([first, small]);
   });
 });

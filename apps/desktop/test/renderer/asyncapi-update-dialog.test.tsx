@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AsyncApiDefinitionCard } from '../../src/renderer/features/ws-api/asyncapi-definition-card.js';
+import { AsyncApiUpdateDialog } from '../../src/renderer/features/ws-api/asyncapi-update-dialog.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
@@ -53,6 +54,57 @@ describe('AsyncApiDefinitionCard', () => {
     installWirebenchApi({});
     renderCard();
     expect(screen.getByTestId('asyncapi-definition-card').textContent).toContain('https://example.com/chat.yaml');
+  });
+
+  it('shows the declared version and the WebSocket servers, the chosen one marked', () => {
+    installWirebenchApi({});
+    render(
+      <AsyncApiDefinitionCard
+        apiId="ws-api-1"
+        definition={{
+          kind: 'asyncapi',
+          source: 'https://example.com/chat.yaml',
+          cache: true,
+          server: 'staging',
+          version: '3.0.0',
+          servers: ['public', 'staging'],
+        }}
+      />,
+    );
+    expect(screen.getByTestId('asyncapi-definition-version').textContent).toContain('3.0.0');
+    expect(screen.getByTestId('asyncapi-definition-servers').textContent).toContain('public, staging (chosen)');
+  });
+
+  it('falls back to the first server as the chosen one when none was recorded', () => {
+    installWirebenchApi({});
+    render(
+      <AsyncApiDefinitionCard
+        apiId="ws-api-1"
+        definition={{ kind: 'asyncapi', source: 's', cache: true, version: '2.6.0', servers: ['public', 'staging'] }}
+      />,
+    );
+    expect(screen.getByTestId('asyncapi-definition-servers').textContent).toContain('public (chosen), staging');
+  });
+
+  it('still records an apply that lands after the dialog unmounted, but no longer drives the dialog', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN });
+    const apply = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    installWirebenchApi({ api: { asyncApiPlanUpdate: plan, asyncApiApplyUpdate: apply } });
+    const applySnapshot = vi.fn();
+    useProjectStore.setState({ applySnapshot, projectOf: { 'ws-api-1': 'p1' } } as never);
+    const onOpenChange = vi.fn();
+    const view = render(<AsyncApiUpdateDialog apiId="ws-api-1" open onOpenChange={onOpenChange} />);
+    fireEvent.click(await screen.findByTestId('asyncapi-update-apply'));
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    view.unmount();
+    answer({ ok: true, value: APPLIED });
+    await waitFor(() => expect(applySnapshot).toHaveBeenCalledWith('p1', APPLIED.project));
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 
   it('lists added, removed and changed operations with reasons, and applies with the fingerprint', async () => {

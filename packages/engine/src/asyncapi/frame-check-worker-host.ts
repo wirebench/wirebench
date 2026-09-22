@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { WsFrame, WsFrameContract } from '../ws/model.js';
-import type { ChannelMessages } from './frame-check.js';
+import { MAX_CHECKED_FRAME_BYTES, type ChannelMessages } from './frame-check.js';
 import type { FrameCheckWorkerData } from './frame-check-worker.js';
 
 /** How long one frame's check may take, worker round trip included, before the worker is replaced. */
@@ -173,6 +173,11 @@ export function createWorkerFrameChecker(
   return {
     check(frame) {
       if (disposed || frame.opcode !== 'text' || frame.text === undefined) return Promise.resolve(undefined);
+      // Answered here, as the worker would: a frame this large is never walked, so it must not wait
+      // behind others or count against the queued-bytes bound.
+      if (frame.size > MAX_CHECKED_FRAME_BYTES) {
+        return Promise.resolve({ status: 'skipped', reason: 'frame too large to check' });
+      }
       if (queue.length >= maxQueued) return Promise.resolve(notChecked('too many frames waiting to be checked'));
       if (queue.length > 0 && queuedBytes + frame.size > maxQueuedBytes) {
         return Promise.resolve(notChecked('too much data waiting to be checked'));

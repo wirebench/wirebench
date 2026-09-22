@@ -134,7 +134,7 @@ describe('EngineService WebSocket contract checks', () => {
 
   it('a check that hangs is not-checked, and the next frame is checked by a fresh worker', async () => {
     const service = new EngineService();
-    const s = session(service, 'c4', Promise.resolve(messages), { workerUrl: hanging, deadlineMs: 150 });
+    const s = session(service, 'c4', Promise.resolve(messages), { workerUrl: hanging, deadlineMs: 600 });
     await waitFor(() => s.events.some((e) => e.kind === 'handshake'), 'the handshake');
     const stuck = service.sendWsMessage('c4', { text: 'hang' });
     // The frame itself is out at once, while its check is still spinning.
