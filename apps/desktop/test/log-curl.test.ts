@@ -151,6 +151,14 @@ describe('curlForLogEntry', () => {
     expect(fromFailure).toContain('<redacted>');
   });
 
+  it('adds -N when the request asked for an event stream, and not otherwise', () => {
+    const streaming = restEntry('GET /pets HTTP/1.1\r\nAccept: text/event-stream\r\n\r\n');
+    expect(curlForLogEntry(streaming, { shell: 'posix', show: false }).command).toContain('-N');
+
+    const plain = restEntry('GET /pets HTTP/1.1\r\nAccept: application/json\r\n\r\n');
+    expect(curlForLogEntry(plain, { shell: 'posix', show: false }).command).not.toContain('-N');
+  });
+
   it('a WebSocket row uses wsToCommand with the original ws(s):// URL, masked unless shown', () => {
     const entry = { kind: 'exchange' as const, exchange: makeWsHandshakeExchange() };
     const masked = curlForLogEntry(entry, { shell: 'posix', show: false });

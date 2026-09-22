@@ -1082,6 +1082,22 @@ describe('useProjectStore with REST data', () => {
     expect(useEditorsStore.getState().tabs).toEqual([]);
   });
 
+  it('cancels a REST send still in flight before forgetting the deleted request', async () => {
+    const emptied = restWire({ restRequests: [] });
+    withMutate(restWire(), undefined);
+    const cancel = vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } });
+    installWirebenchApi({
+      project: { mutate: vi.fn().mockResolvedValue({ ok: true, value: { project: emptied } }) },
+      request: { cancel },
+    });
+    useExchangesStore.setState({ restByRequest: { 'rest-1': { status: 'sending', sendId: 'send-rest-1' } } });
+
+    await useProjectStore.getState().removeRestRequest('rest-1');
+
+    expect(cancel).toHaveBeenCalledWith({ sendId: 'send-rest-1' });
+    expect(useExchangesStore.getState().restByRequest['rest-1']).toBeUndefined();
+  });
+
   it('closes an open WebSocket session before forgetting the deleted request', async () => {
     const wsWire = (overrides: Partial<ProjectWire> = {}): ProjectWire =>
       projectWire({ wsApis: [wsApiWire()], wsRequests: [wsRequestWire()], ...overrides });

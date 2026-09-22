@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Server-Sent Events responses.** A REST response of type `text/event-stream` renders event by event —
+  name, id, data and arrival time — while the connection is open, rather than showing nothing until it
+  closes. *Stop* (the same button as Cancel, relabelled) ends it as a normal completion, not an error, and
+  the events received so far are kept; a dropped connection is recorded the same way, with its error.
+  Comment lines and `retry:` fields appear as their own rows, hidden by one toggle. The Body tab is
+  replaced by an Events tab; the Query view evaluates XPath 3.1 and JSONPath over the kept events as one
+  JSON document. History and the HTTP Log record the exchange as a capped, multi-message entry; its HAR
+  export re-serialises the kept rows as event-stream text, redacted like any other response body; History
+  search matches event names and data. *Copy as cURL* adds `-N` when the request's enabled `Accept` asks
+  for `text/event-stream`. Re-send from the HTTP Log is refused for a row whose response streamed.
+  Reconnecting with `Last-Event-ID`, honouring `retry:`, and the CLI runner are out of scope.
+
 ## [2.2.1] - 2026-09-21
 
 ### Fixed

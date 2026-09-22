@@ -66,6 +66,35 @@ An environment can override an API's base URL. Switch environments from the stat
 environment switcher; see [Environments](/wirebench/guides/environments/).
 </Aside>
 
+## Event streams
+
+When a response's `Content-Type` is `text/event-stream`, it renders event by event instead of
+waiting for the connection to close — no separate request kind, no setting to turn on. **Send**
+reads **Stop** for as long as the stream is open; an **Events** tab replaces Body, listing each
+row's name, id, data and arrival time as it arrives, with comment lines and `retry:` fields shown
+alongside (a toggle hides them). **Headers** is there while the stream runs, too; the other tabs
+appear once it ends. The **Query** tab runs XPath 3.1 or JSONPath over the events kept
+so far, as one JSON document.
+
+- **Stop** ends the stream as a normal response, shown as "stopped" — never as an error. A
+  connection the server or the network drops mid-stream is recorded the same way, with its error
+  and the events already received.
+- There is no idle timeout once the stream is accepted: a server's keep-alive comments every
+  15–60 seconds are expected. The request's own timeout still governs until the response headers
+  arrive.
+- A long stream is kept at three sizes. While it is live, the pane holds the newest 5,000 rows.
+  The finished response, the HTTP Log and HAR export keep the first 400 and the last 4,600 rows,
+  within 32 MB of event data. History keeps the first 400 and the last 100, within 1 MB, and says
+  how many rows it did not keep. The Events tab's count is always the true total, including
+  anything let go.
+- Cookies a stream's `Set-Cookie` headers set are remembered once the stream ends, as for any other
+  response.
+- History and the HTTP Log keep the stream as a multi-message exchange; its HAR export and cURL command work as they do for any other response — *Copy as cURL* adds `-N`
+  when the request's enabled `Accept` header asks for `text/event-stream`. Re-sending a streamed
+  row from the HTTP Log is refused; see [HTTP Log](/wirebench/guides/http-log/).
+- Reconnecting with `Last-Event-ID`, honouring a server's `retry:` field, and event streams from
+  the CLI are not built.
+
 ## Limits
 
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or

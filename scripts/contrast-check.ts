@@ -126,6 +126,10 @@ const PAIRS: readonly Pair[] = [
     where: 'custom method text (selected explorer row)',
   },
 
+  // The selected row of a response's Events list: every part of it (time, chip, id, preview) turns
+  // to the default foreground on the selection, since the quieter tokens do not hold on it.
+  { fg: '--wb-fg-default', bg: '--wb-accent-muted', kind: 'text', where: 'selected event row' },
+
   // Status text: response codes in the status bar, problem rows, keystore chips.
   { fg: '--wb-status-success', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar 2xx' },
   { fg: '--wb-status-success', bg: '--wb-bg-raised', kind: 'text', where: 'keystore "Loaded" chip' },

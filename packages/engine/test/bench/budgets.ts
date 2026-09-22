@@ -59,6 +59,11 @@ export const BUDGETS_MS = {
   'rest-pretty-5mb': 500,
   /** `sendRest` wall-clock time minus the test server's own handling time (`x-server-ms`). */
   'rest-send-overhead': 20,
+  /**
+   * Parse 100 000 small `text/event-stream` events, fed to `createSseParser` in 4 KB chunks.
+   * Measured at ~52 ms on a development laptop; budgeted at 2x that.
+   */
+  'sse-parse-100k-events': 104,
 } as const satisfies Readonly<Record<string, number>>;
 
 /** The name of a budgeted scenario. */

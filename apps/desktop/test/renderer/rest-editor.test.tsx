@@ -256,6 +256,20 @@ describe('RestEditor', () => {
     });
   });
 
+  it('shows Cancel, not Stop, while a plain send is in flight', () => {
+    useExchangesStore.setState({ restByRequest: { 'rest-1': { status: 'sending', sendId: 's1' } } });
+    mount();
+    expect(screen.getByTestId('rest-send').textContent).toContain('Cancel');
+    expect(screen.getByTestId('rest-send').textContent).not.toContain('Stop');
+  });
+
+  it('does not start a second send on Enter while one is in flight', () => {
+    useExchangesStore.setState({ restByRequest: { 'rest-1': { status: 'sending', sendId: 's1' } } });
+    mount();
+    fireEvent.keyDown(screen.getByTestId('rest-url'), { key: 'Enter' });
+    expect(sendRest).not.toHaveBeenCalled();
+  });
+
   it('shows the status of a completed send', () => {
     useExchangesStore.setState({
       restByRequest: { 'rest-1': { status: 'done', sendId: 's1', exchange: makeRestExchange() } },

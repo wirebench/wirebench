@@ -8,7 +8,7 @@ import { useUiStore } from '../../src/renderer/state/ui.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { ProjectWire, WorkspaceProjectWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
-import { NO_REST, PROJECT_SETTINGS, wsRequestWire } from '../helpers/wire-defaults.js';
+import { NO_REST, PROJECT_SETTINGS, restRequestWire, wsRequestWire } from '../helpers/wire-defaults.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
 const SUMMARY: WorkspaceSummaryWire = {
@@ -593,5 +593,49 @@ describe('open WebSocket sessions and the workspace lifecycle', () => {
 
     expect(wsClose).toHaveBeenCalledTimes(1);
     expect(wsClose).toHaveBeenCalledWith({ sendId: 'send-ws-1' });
+  });
+});
+
+/** The REST counterpart: a send in flight may be an event stream, which holds its socket until stopped. */
+describe('REST sends in flight and the workspace lifecycle', () => {
+  const cancel = vi.fn();
+
+  beforeEach(() => {
+    resetStores();
+    cancel.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
+    installWirebenchApi({ request: { cancel } });
+  });
+
+  it('switching to another workspace cancels the send it leaves behind', () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    useExchangesStore.setState({ restByRequest: { 'rest-1': { status: 'sending', sendId: 'send-rest-1' } } });
+
+    useWorkspaceStore.getState().applySnapshot(workspaceWire({ id: 'w2', name: 'Other' }));
+
+    expect(cancel).toHaveBeenCalledWith({ sendId: 'send-rest-1' });
+    expect(useExchangesStore.getState().restByRequest).toEqual({});
+  });
+
+  it('removing a project cancels that project’s sends and no others', async () => {
+    useWorkspaceStore.getState().applySnapshot(workspaceWire());
+    useProjectStore.setState({
+      restRequests: { 'rest-1': restRequestWire({ id: 'rest-1' }), 'rest-2': restRequestWire({ id: 'rest-2' }) },
+      projectOf: { 'rest-1': 'p1', 'rest-2': 'p2' },
+    });
+    useExchangesStore.setState({
+      restByRequest: {
+        'rest-1': { status: 'sending', sendId: 'send-rest-1' },
+        'rest-2': { status: 'sending', sendId: 'send-rest-2' },
+      },
+    });
+    installWirebenchApi({
+      request: { cancel },
+      workspace: { removeProject: vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } }) },
+    });
+
+    await useWorkspaceStore.getState().removeProject('p1', false);
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith({ sendId: 'send-rest-1' });
   });
 });

@@ -141,12 +141,16 @@ export function curlForLogEntry(
         ? logged.body
         : redactStructuredBody(redactXml(logged.body), contentType);
   const curlHeaders: CurlHeader[] = Object.entries(headers).map(([name, value]) => ({ name, value }));
+  const acceptsEventStream = Object.entries(logged.headers).some(
+    ([name, value]) => name.toLowerCase() === 'accept' && value.toLowerCase().includes('text/event-stream'),
+  );
   const command = toCurl(
     {
       method: logged.method,
       url: show ? logged.url : redactUrl(logged.url, { show: false }),
       headers: curlHeaders,
       ...(body !== undefined ? { body: { kind: 'raw' as const, text: body } } : {}),
+      ...(acceptsEventStream ? { noBuffer: true } : {}),
     },
     { shell: options.shell },
   );

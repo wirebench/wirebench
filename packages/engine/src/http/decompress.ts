@@ -1,4 +1,13 @@
-import { brotliDecompress, gunzip, inflate } from 'node:zlib';
+import type { Transform } from 'node:stream';
+import {
+  brotliDecompress,
+  constants,
+  createBrotliDecompress,
+  createGunzip,
+  createInflate,
+  gunzip,
+  inflate,
+} from 'node:zlib';
 
 /**
  * Decompresses `data` according to the response's `content-encoding` header
@@ -28,5 +37,28 @@ export async function decompressBody(data: Uint8Array, contentEncoding: string |
       );
     default:
       return data;
+  }
+}
+
+/**
+ * An incremental decoder for a streamed body with the given `content-encoding`, or `undefined` when
+ * the encoding needs none. Sync-flushes, so each chunk's decoded bytes come out as soon as they can
+ * rather than waiting for more input, and a stream cut short still yields what it decoded.
+ */
+export function createDecompressStream(contentEncoding: string | undefined): Transform | undefined {
+  const zlibFlush = { flush: constants.Z_SYNC_FLUSH, finishFlush: constants.Z_SYNC_FLUSH };
+  switch (contentEncoding?.trim().toLowerCase()) {
+    case 'gzip':
+    case 'x-gzip':
+      return createGunzip(zlibFlush);
+    case 'deflate':
+      return createInflate(zlibFlush);
+    case 'br':
+      return createBrotliDecompress({
+        flush: constants.BROTLI_OPERATION_FLUSH,
+        finishFlush: constants.BROTLI_OPERATION_FLUSH,
+      });
+    default:
+      return undefined;
   }
 }

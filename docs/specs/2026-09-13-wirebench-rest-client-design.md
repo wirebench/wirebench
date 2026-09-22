@@ -79,7 +79,7 @@ third-party OpenAPI document; teams that want SOAP and REST calls in one reviewa
   is anywhere in the folder.
 
 **Non-goals (this spec).** GraphQL, ~~WebSocket~~ (built — see `docs/specs/2026-09-19-websocket-request-kind-design.md`),
-Server-Sent Events and gRPC (§8 for gRPC); OpenAPI 2.0 and
+~~Server-Sent Events~~ (built — see `docs/specs/2026-09-21-rest-sse-responses-design.md`) and gRPC (§8 for gRPC); OpenAPI 2.0 and
 AsyncAPI; a cookie jar that persists across sends (§15); mock servers for REST; pre-request scripts, tests and
 assertions (functional-testing phase); an OpenAPI _Update Definition_ that preserves edits (roadmap, §15); response
 validation against the OpenAPI schema (§15); code generation; certificate pinning.

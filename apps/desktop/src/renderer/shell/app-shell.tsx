@@ -17,6 +17,7 @@ import {
   subscribeToExchangeFailures,
   subscribeToExchangeLogged,
   subscribeToGrpcLive,
+  subscribeToRestLive,
   subscribeToWsLive,
 } from '../state/exchanges.js';
 import { useDraftsStore } from '../state/drafts.js';
@@ -258,6 +259,7 @@ export function AppShell() {
   useEffect(() => subscribeToExchangeFailures(), []);
   useEffect(() => subscribeToExchangeLogged(), []);
   useEffect(() => subscribeToGrpcLive(), []);
+  useEffect(() => subscribeToRestLive(), []);
   useEffect(() => subscribeToWsLive(), []);
 
   const openPalette = useCallback((mode: PaletteMode = 'commands') => {

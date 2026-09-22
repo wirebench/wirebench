@@ -72,7 +72,8 @@ export async function runRowAction(id: RowActionId, entry: LogEntry): Promise<vo
       if (requestId === undefined || protocol === 'websocket') {
         return;
       }
-      const result = await ipc().log.resend({ protocol, requestId });
+      const sendId = entry.kind === 'exchange' ? entry.exchange.sendId : undefined;
+      const result = await ipc().log.resend({ protocol, requestId, ...(sendId !== undefined ? { sendId } : {}) });
       if (result.ok) {
         useExchangesStore.getState().appendExchange(result.value.exchange, requestId);
       } else {

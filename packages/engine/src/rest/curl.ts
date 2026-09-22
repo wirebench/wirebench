@@ -107,6 +107,11 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
   for (const [name, value] of Object.entries(applied.headers)) {
     headers.push({ name, value: redact ? CURL_REDACTED : value });
   }
+  // A request that asks the server for an event stream must not have curl buffer its output either,
+  // or `-N`'s whole point — seeing rows as they arrive — is lost.
+  const noBuffer = headers.some(
+    (header) => header.name.toLowerCase() === 'accept' && header.value.toLowerCase().includes('text/event-stream'),
+  );
 
   const transport = applied.transportAuth;
   const basic =
@@ -125,6 +130,7 @@ export function restToCurl(input: RestSendInput, options: RestToCurlOptions = {}
     ...(input.settings.followRedirects && input.settings.maxRedirects !== undefined
       ? { maxRedirects: input.settings.maxRedirects }
       : {}),
+    ...(noBuffer ? { noBuffer: true } : {}),
   };
   return toCurl(command, options.shell !== undefined ? { shell: options.shell } : {});
 }

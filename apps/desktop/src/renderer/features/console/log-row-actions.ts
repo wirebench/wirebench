@@ -33,6 +33,16 @@ export interface RequestLookup {
   unaryGrpc(requestId: string): boolean;
 }
 
+/** Whether a REST row's own exchange is an event stream — a `RestExchangeSummary` carrying `stream`. */
+function isSseExchange(entry: LogEntry): boolean {
+  return (
+    entry.kind === 'exchange' &&
+    !('protocol' in entry.exchange) &&
+    'stream' in entry.exchange &&
+    entry.exchange.stream !== undefined
+  );
+}
+
 const RESEND_HINT = 'Sends the saved request as it is now';
 
 /** The saved request a row came from; absent for an ad-hoc send. */
@@ -87,6 +97,8 @@ export function rowActions(entry: LogEntry, lookup: RequestLookup): RowAction[] 
     resend = off('resend', 'Resend', 'Never sent');
   } else if (protocol === 'grpc' && !lookup.unaryGrpc(requestId)) {
     resend = off('resend', 'Resend', 'Streaming calls resend from the editor');
+  } else if (protocol === 'rest' && isSseExchange(entry)) {
+    resend = off('resend', 'Resend', 'Event streams resend from the editor');
   } else {
     resend = on('resend', 'Resend', RESEND_HINT);
   }

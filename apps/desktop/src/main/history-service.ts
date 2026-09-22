@@ -105,10 +105,11 @@ import {
   normalizeHistoryEntry,
   assertPathSegment,
   generateHistoryId,
+  historySseOf,
   historyWsOf,
   openHistory,
 } from '@wirebench/engine';
-import type { HistoryEntry, HistoryFile, HistoryListQuery, WsExchange } from '@wirebench/engine';
+import type { HistoryEntry, HistoryFile, HistoryListQuery, RestEventStreamLike, WsExchange } from '@wirebench/engine';
 import { redactHeaderPairs, redactHeaders, redactUrl, redactXml } from './redact.js';
 import type {
   GrpcExchangeSummary,
@@ -303,6 +304,10 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
         }
       : {}),
     ...(record.error !== undefined ? { error: record.error } : {}),
+    // Cast for the same `exactOptionalPropertyTypes` gap `buildWsHistoryEntry` papers over above: the
+    // wire's zod-inferred `id?: string | undefined` vs. the engine's plain `id?: string`. The shapes
+    // agree field for field; only that strictness setting disagrees.
+    ...(exchange?.stream !== undefined ? { sse: historySseOf(exchange.stream as unknown as RestEventStreamLike) } : {}),
     sizeBytes:
       exchange === undefined
         ? Buffer.byteLength(record.requestBody, 'utf8')

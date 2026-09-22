@@ -16,10 +16,20 @@ import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { b64, makeRestExchange } from '../mocks/exchange-fixtures.js';
-import type { RestExchangeSummary } from '../../src/shared/wire-types.js';
+import type { RestEventStreamWire, RestExchangeSummary, SseRowWire } from '../../src/shared/wire-types.js';
+import { eventStreamDocument } from '@wirebench/engine/rest';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
+
+/** The Query view's own behaviour is tested apart; here what matters is the document it is handed. */
+const queryViewProps = vi.fn();
+vi.mock('../../src/renderer/features/request-editor/views/lazy-views.js', () => ({
+  QueryView: (props: Record<string, unknown>) => {
+    queryViewProps(props);
+    return <div data-testid="query-view-stub" />;
+  },
+}));
 
 const saveRestBody = vi.fn();
 
@@ -260,5 +270,150 @@ describe('hexLines', () => {
 
   it('stops at the line limit, so a huge body cannot freeze the pane', () => {
     expect(hexLines(new Uint8Array(1024), 2)).toHaveLength(2);
+  });
+});
+
+const SSE_ROWS: SseRowWire[] = [
+  { kind: 'event', index: 0, at: 10, size: 7, event: 'tick', data: '{"n":1}', id: '1', lastEventId: '1' },
+  { kind: 'comment', index: 1, at: 20, size: 3, text: 'ka' },
+];
+
+function streamExchange(stream: Partial<RestEventStreamWire> = {}): RestExchangeSummary {
+  return makeRestExchange({
+    text: '',
+    language: 'text',
+    http: {
+      ...makeRestExchange().http,
+      headers: { 'content-type': 'text/event-stream' },
+      bodyBase64: '',
+      rawResponseBase64: b64('HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n'),
+    },
+    stream: {
+      rows: SSE_ROWS,
+      counts: { events: 1, comments: 1, retries: 0, bytes: 10 },
+      lastEventId: '1',
+      endedBy: 'server',
+      droppedRows: 0,
+      truncated: false,
+      omittedRows: 0,
+      ...stream,
+    },
+  });
+}
+
+describe('RestResponsePane with an event stream', () => {
+  it('opens on Events, first, with no Body tab', () => {
+    mount(streamExchange());
+    const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent);
+    expect(tabs[0]).toContain('Events');
+    expect(screen.queryByRole('tab', { name: 'Body' })).toBeNull();
+    expect(screen.getAllByTestId('sse-row')).toHaveLength(2);
+  });
+
+  it('shows the live half while the stream is still open', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'sending',
+            sendId: 'send-1',
+            live: {
+              status: 200,
+              headers: { 'content-type': 'text/event-stream' },
+              rows: SSE_ROWS,
+              droppedRows: 40,
+              counts: { events: 41, comments: 1, retries: 0, bytes: 900 },
+            },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getAllByRole('tab')[0]!.textContent).toContain('Events');
+    expect(screen.getAllByTestId('sse-row')).toHaveLength(2);
+    const status = screen.getByTestId('rest-response-status');
+    expect(status.textContent).toContain('200');
+    expect(status.textContent).toContain('41 events');
+    expect(status.textContent).toContain('last id 1');
+    // It changes with every event: not a live region, or a screen reader would read each one.
+    expect(status.getAttribute('role')).toBeNull();
+    expect(status.getAttribute('aria-live')).toBeNull();
+  });
+
+  it('offers Headers beside Events while live, from the headers the stream opened with', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'sending',
+            sendId: 'send-1',
+            live: {
+              status: 200,
+              headers: { 'content-type': 'text/event-stream' },
+              rows: SSE_ROWS,
+              counts: { events: 1, comments: 1, retries: 0, bytes: 9 },
+            },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    expect(screen.getByTestId('rest-response-headers').textContent).toContain('text/event-stream');
+  });
+
+  it('reads as an ordinary send until a stream opens', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={{ status: 'sending', sendId: 'send-1' }} />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull();
+    expect(screen.queryByText('No events yet.')).toBeNull();
+    const status = screen.getByTestId('rest-response-status').textContent ?? '';
+    expect(status).toContain('Sending');
+    expect(status).not.toContain('events');
+  });
+
+  it('does not announce a finished stream, only one that failed', () => {
+    mount(streamExchange({ endedBy: 'server' }));
+    expect(screen.getByTestId('rest-response-status').getAttribute('role')).toBeNull();
+    cleanup();
+    mount(streamExchange({ endedBy: 'error', error: 'socket hang up' }));
+    expect(screen.getByTestId('rest-response-status').getAttribute('role')).toBe('status');
+  });
+
+  it('hands Query the events document as JSON', () => {
+    queryViewProps.mockReset();
+    mount(streamExchange());
+    fireEvent.click(screen.getByRole('tab', { name: 'Query' }));
+    expect(queryViewProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        xml: eventStreamDocument(SSE_ROWS as Parameters<typeof eventStreamDocument>[0]),
+        documentKind: 'json',
+      }),
+    );
+  });
+
+  it('shows the headers in Raw and says the body is an event stream', () => {
+    mount(streamExchange({ droppedRows: 3, omittedRows: 2 }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }));
+    const raw = screen.getByTestId('rest-response-raw-exchange').textContent ?? '';
+    expect(raw).toContain('content-type: text/event-stream');
+    expect(raw).toContain('event stream of 7 rows');
+  });
+
+  it('adds the events, the last id and stopped to the status line', () => {
+    mount(streamExchange({ endedBy: 'client' }));
+    const status = screen.getByTestId('rest-response-status').textContent ?? '';
+    expect(status).toContain('200 OK');
+    expect(status).toContain('1 event');
+    expect(status).toContain('last id 1');
+    expect(status).toContain('stopped');
+  });
+
+  it('says a stream that failed part-way failed', () => {
+    mount(streamExchange({ endedBy: 'error', error: 'socket hang up' }));
+    expect(screen.getByTestId('rest-response-status').textContent).toContain('socket hang up');
   });
 });

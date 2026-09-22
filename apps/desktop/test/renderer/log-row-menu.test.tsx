@@ -66,7 +66,7 @@ describe('HTTP Log row menu', () => {
     const item = await screen.findByRole('menuitem', { name: 'Resend' });
     expect(item.getAttribute('title')).toBe('Sends the saved request as it is now');
     await userEvent.click(item);
-    expect(resend).toHaveBeenCalledWith({ protocol: 'rest', requestId: 'rest-1' });
+    expect(resend).toHaveBeenCalledWith({ protocol: 'rest', requestId: 'rest-1', sendId: 'send-1' });
     expect(screen.getAllByTestId('http-log-row')).toHaveLength(2);
   });
 });
