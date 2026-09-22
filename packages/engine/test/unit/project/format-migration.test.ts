@@ -152,6 +152,26 @@ describe('loading a version-4 project folder', () => {
     expect(project.interfaces.length).toBeGreaterThan(0);
   });
 
+  it("loads the v4 fixture's Basic (interface) and NTLM (endpoint) auth unchanged", async () => {
+    const { project } = await loadProject(V4_DIR);
+    const countryInfo = project.interfaces.find((iface) => iface.slug === 'CountryInfo');
+    expect(countryInfo?.auth).toMatchInlineSnapshot(`
+      {
+        "passwordRef": "secret://country/iface-basic",
+        "type": "basic",
+        "username": "iface-user",
+      }
+    `);
+    expect(countryInfo?.endpoints[0]?.auth).toMatchInlineSnapshot(`
+      {
+        "domain": "CORP",
+        "passwordRef": "secret://country/endpoint-ntlm",
+        "type": "ntlm",
+        "username": "endpoint-user",
+      }
+    `);
+  });
+
   it('is rewritten with nothing changed but the formatVersion line', async () => {
     const dir = await tempProjectDir();
     await cp(V4_DIR, dir, { recursive: true });

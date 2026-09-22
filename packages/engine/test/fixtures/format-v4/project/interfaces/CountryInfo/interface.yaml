@@ -1,8 +1,17 @@
+auth:
+  passwordRef: secret://country/iface-basic
+  type: basic
+  username: iface-user
 cacheDefinition: true
 defaultEndpointId: EP-country
 definitionUrl: http://example.test/CountryInfo.wsdl
 endpoints:
-  - authMode: complement
+  - auth:
+      domain: CORP
+      passwordRef: secret://country/endpoint-ntlm
+      type: ntlm
+      username: endpoint-user
+    authMode: complement
     id: EP-country
     name: prod
     url: https://prod.example.test/country

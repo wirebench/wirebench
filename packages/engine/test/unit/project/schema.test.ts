@@ -167,22 +167,33 @@ describe('loose schemas', () => {
     expect(parsedRequest.auth).toMatchObject({ scopes: [], clientAuth: 'basic', pkce: true });
   });
 
-  it('refuses inherit at every SOAP auth site', () => {
-    const iface = {
+  /** Minimal valid interface document, with `auth` set on the interface itself, or on its one endpoint. */
+  function ifaceDoc(options: { interfaceAuth?: unknown; endpointAuth?: unknown }) {
+    return {
       kind: 'soap',
       id: 'I',
       name: 'n',
       order: 0,
       definitionUrl: 'u',
       cacheDefinition: true,
-      endpoints: [],
+      endpoints: [
+        {
+          id: 'E1',
+          name: 'prod',
+          url: 'https://x',
+          authMode: 'override',
+          ...(options.endpointAuth !== undefined ? { auth: options.endpointAuth } : {}),
+        },
+      ],
       wsa: { enabled: false, version: '2005/08' },
       operations: [],
-      auth: { type: 'inherit' },
+      ...(options.interfaceAuth !== undefined ? { auth: options.interfaceAuth } : {}),
     };
-    expect(() => parseFile(interfaceFileSchema, iface, 'i.yaml')).toThrow(ProjectError);
+  }
 
-    const request = {
+  /** Minimal valid request document, with `auth` set on the request itself. */
+  function requestDoc(auth: unknown) {
+    return {
       kind: 'soap',
       id: 'R',
       name: 'n',
@@ -191,25 +202,33 @@ describe('loose schemas', () => {
       headers: [],
       attachments: [],
       properties: { ...DEFAULT_REQUEST_PROPERTIES },
-      auth: { type: 'inherit' },
+      auth,
     };
-    expect(() => parseFile(requestFileSchema, request, 'r.yaml')).toThrow(ProjectError);
+  }
+
+  /** The three places a SOAP project can carry auth, each as a function from a raw `auth` value to a parse call. */
+  const soapAuthSites: readonly [string, (auth: unknown) => unknown][] = [
+    ['interface', (auth) => parseFile(interfaceFileSchema, ifaceDoc({ interfaceAuth: auth }), 'i.yaml')],
+    ['endpoint', (auth) => parseFile(interfaceFileSchema, ifaceDoc({ endpointAuth: auth }), 'i.yaml')],
+    ['request', (auth) => parseFile(requestFileSchema, requestDoc(auth), 'r.yaml')],
+  ];
+
+  it.each(soapAuthSites)('refuses inherit at the %s auth site', (_label, parse) => {
+    expect(() => parse({ type: 'inherit' })).toThrow(ProjectError);
   });
 
-  it('refuses a plaintext token/apiKey/clientSecret at a SOAP auth site', () => {
-    const request = {
-      kind: 'soap',
-      id: 'R',
-      name: 'n',
-      order: 0,
-      soapVersion: '1.2',
-      headers: [],
-      attachments: [],
-      properties: { ...DEFAULT_REQUEST_PROPERTIES },
-      auth: { type: 'bearer', token: 'eyJ...' },
-    };
-    expect(() => parseFile(requestFileSchema, request, 'r.yaml')).toThrow(ProjectError);
-  });
+  const plaintextDocuments: readonly [string, unknown][] = [
+    ['token', { type: 'bearer', token: 'eyJ...' }],
+    ['clientSecret', { type: 'oauth2', grant: 'client-credentials', tokenUrl: 't', clientId: 'c', clientSecret: 's' }],
+    ['apiKey', { type: 'api-key', name: 'k', in: 'header', apiKey: 'abc' }],
+    ['password', { type: 'basic', username: 'u', password: 'hunter2' }],
+  ];
+
+  for (const [siteLabel, parse] of soapAuthSites) {
+    it.each(plaintextDocuments)(`refuses a plaintext %s at the ${siteLabel} auth site`, (_key, auth) => {
+      expect(() => parse(auth)).toThrow(ProjectError);
+    });
+  }
 });
 
 describe('extension-point schemas', () => {

@@ -387,9 +387,14 @@ function toEngineAuth(auth: AuthConfigWire): SoapOwnerAuth {
         ...(auth.refreshTokenRef !== undefined ? { refreshTokenRef: auth.refreshTokenRef } : {}),
       };
     case 'inherit':
-      // Refused by `soapOwnerAuthWireSchema` before a mutation reaches here; `none` is the
-      // closest engine-representable fallback rather than throwing mid-mutation.
-      return { type: 'none' };
+      // `soapOwnerAuthWireSchema` already refuses `type: 'inherit'` at the IPC boundary, so a
+      // renderer built against the current wire types cannot reach this. A stale renderer (or a
+      // hand-crafted IPC call) that gets past that check must still fail loudly here rather than
+      // silently landing on `none` — a SOAP owner has nothing to inherit from either way.
+      throw new ProjectError(
+        'auth-inherit-unsupported',
+        'A SOAP interface, endpoint or request auth cannot be "inherit"',
+      );
     default:
       return {
         type: auth.type,
