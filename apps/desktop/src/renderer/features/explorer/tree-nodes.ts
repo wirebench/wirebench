@@ -101,6 +101,8 @@ export interface ExplorerNode {
    * which ones no longer correspond to anything the service offers.
    */
   readonly orphaned?: boolean;
+  /** Set on `api` nodes whose API records the definition it was imported from (Update Definition). */
+  readonly hasDefinition?: boolean;
   /**
    * Set on `project` and `request` nodes an unresolved sync conflict touches (Task 11):
    * {@link conflictTargets}'s `projectIds`/`requestIds`, joined into the tree so
@@ -282,6 +284,7 @@ function apiNode(
     kind: 'api',
     label: api.name,
     apiId: api.id,
+    ...(api.definition !== undefined ? { hasDefinition: true } : {}),
     children: restChildren(api, undefined, folders, requests),
   };
 }

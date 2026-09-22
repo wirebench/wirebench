@@ -12,7 +12,11 @@
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
+import { Button } from '../../components/button.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
+import { updateRestDefinition } from './api-actions.js';
+import { RestUpdateDialog } from './rest-update-dialog.js';
+import { useRestUpdateStore } from './rest-update-state.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { AuthConfigWire, RestApiWire } from '../../../shared/wire-types.js';
@@ -60,6 +64,8 @@ export function ApiTab({ apiId }: ApiTabProps) {
   const updateApi = useProjectStore((state) => state.updateApi);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments);
   const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const updating = useRestUpdateStore((state) => state.apiId === apiId);
+  const closeUpdate = useRestUpdateStore((state) => state.close);
 
   if (api === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This API is no longer in the project.</p>;
@@ -161,7 +167,31 @@ export function ApiTab({ apiId }: ApiTabProps) {
       {api.definition !== undefined && (
         <SettingsGroup title="Definition">
           <ApiDefinitionCard apiId={apiId} definition={api.definition} />
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              variant="secondary"
+              data-testid="rest-definition-update"
+              onClick={() => {
+                updateRestDefinition(apiId);
+              }}
+            >
+              Update definition…
+            </Button>
+          </div>
+          <p className="text-xs text-fg-subtle">
+            The source is read again and the change is shown before it is applied. Nothing is deleted: a request whose
+            operation is gone is kept, badged orphaned.
+          </p>
         </SettingsGroup>
+      )}
+      {updating && api.definition !== undefined && (
+        <RestUpdateDialog
+          apiId={apiId}
+          open
+          onOpenChange={(open) => {
+            if (!open) closeUpdate();
+          }}
+        />
       )}
     </section>
   );

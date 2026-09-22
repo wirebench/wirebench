@@ -371,6 +371,17 @@ describe('buildExplorerTree with APIs', () => {
     expect(children.map((node) => node.label)).toEqual(['Calculator', 'Second', 'Early', 'Late']);
   });
 
+  it('marks an API that records a definition, and not one made by hand', () => {
+    const imported = restApiWire({
+      id: 'api-1',
+      definition: { source: 'https://x.test/o.yaml', cache: true, version: '1' },
+    });
+    const byHand = restApiWire({ id: 'api-2', name: 'Hand', order: 1 });
+    const children = treeWith({ apis: [imported, byHand] });
+    expect(children.find((n) => n.apiId === 'api-1')?.hasDefinition).toBe(true);
+    expect(children.find((n) => n.apiId === 'api-2')?.hasDefinition).toBeUndefined();
+  });
+
   it('badges a REST request whose operation an import dropped', () => {
     const children = treeWith({ apis: [restApiWire()], requests: [restRequestWire({ orphaned: true })] });
     expect(children[0]?.children?.[0]?.orphaned).toBe(true);
