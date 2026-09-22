@@ -26,7 +26,7 @@ function install(read: SnapshotReadResponse) {
 
 describe('SnapshotPanel', () => {
   beforeEach(() => {
-    useSnapshotsStore.setState({ entries: {} });
+    useSnapshotsStore.setState({ entries: {}, failed: {} });
     useEditorsStore.setState({ tabs: [], activeId: undefined });
   });
   afterEach(cleanup);
@@ -89,7 +89,9 @@ describe('SnapshotPanel', () => {
     fireEvent.change(textarea, { target: { value: '/x\n# note\n//id' } });
     expect(api.setIgnore).not.toHaveBeenCalled();
     fireEvent.blur(textarea);
-    await waitFor(() => expect(api.setIgnore).toHaveBeenCalledWith({ requestId: 'r1', ignore: ['/x', '//id'] }));
+    await waitFor(() =>
+      expect(api.setIgnore).toHaveBeenCalledWith({ requestId: 'r1', ignore: ['/x', '# note', '//id'] }),
+    );
   });
 
   it('asks before Update snapshot overwrites the golden', async () => {
@@ -130,5 +132,62 @@ describe('SnapshotPanel', () => {
     render(<SnapshotPanel requestId="r1" body={big} contentType="application/json" />);
     expect(await screen.findByText('Too large to compare semantically')).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByLabelText('Ignore rules')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Update snapshot' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete snapshot' })).toBeTruthy();
+  });
+
+  it('composes a typed rule with a row Ignore clicked straight after', async () => {
+    const api = install(present('{"a":1}'));
+    render(<SnapshotPanel requestId="r1" body='{"a":2}' contentType="application/json" />);
+    await userEvent.type(await screen.findByLabelText('Ignore rules'), '/x');
+    await userEvent.click(screen.getByRole('button', { name: 'Ignore /a' }));
+    await waitFor(() => expect(api.setIgnore).toHaveBeenLastCalledWith({ requestId: 'r1', ignore: ['/x', '/a'] }));
+  });
+
+  it('composes two quick Ignore clicks', async () => {
+    const api = install(present('{"a":1,"b":1}'));
+    render(<SnapshotPanel requestId="r1" body='{"a":2,"b":2}' contentType="application/json" />);
+    // The first write never answers, so the second click happens while it is still in flight.
+    api.setIgnore.mockReturnValueOnce(new Promise(() => undefined));
+    fireEvent.click(await screen.findByRole('button', { name: 'Ignore /a' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Ignore /b' }));
+    await waitFor(() => expect(api.setIgnore).toHaveBeenLastCalledWith({ requestId: 'r1', ignore: ['/a', '/b'] }));
+  });
+
+  it('keeps comment lines in the saved rules and skips them when diffing', async () => {
+    const api = install(present('{"a":1}'));
+    render(<SnapshotPanel requestId="r1" body='{"a":2}' contentType="application/json" />);
+    const textarea = await screen.findByLabelText<HTMLTextAreaElement>('Ignore rules');
+    fireEvent.change(textarea, { target: { value: '  # volatile  \n\n/a' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(api.setIgnore).toHaveBeenCalledWith({ requestId: 'r1', ignore: ['# volatile', '/a'] }));
+    expect(await screen.findByText('Matches the snapshot (1 ignored)')).toBeTruthy();
+    expect(textarea.value).toContain('# volatile');
+  });
+
+  it('drops a read that lands after a newer write', async () => {
+    let resolveRead: (value: unknown) => void = () => undefined;
+    const read = vi.fn().mockReturnValue(new Promise((resolve) => (resolveRead = resolve)));
+    const remove = vi.fn().mockResolvedValue(ok({ removed: true }));
+    installWirebenchApi({ snapshot: { read, remove } });
+    const loading = useSnapshotsStore.getState().load('r1');
+    await useSnapshotsStore.getState().remove('r1');
+    resolveRead(ok(present('{"a":1}')));
+    await loading;
+    expect(useSnapshotsStore.getState().entries['r1']).toEqual({ status: 'none' });
+  });
+
+  it('says so when the read is rejected instead of loading forever', async () => {
+    installWirebenchApi({ snapshot: { read: vi.fn().mockRejectedValue(new Error('gone')) } });
+    render(<SnapshotPanel requestId="r1" body="{}" contentType="application/json" />);
+    expect(await screen.findByText('The snapshot could not be read.')).toBeTruthy();
+  });
+
+  it('does not claim a match for a binary response', async () => {
+    install(present(''));
+    render(<SnapshotPanel requestId="r1" body="" contentType="image/png" binary />);
+    expect(await screen.findByText('This response has no text body to compare.')).toBeTruthy();
+    expect(screen.queryByText(/Matches the snapshot/)).toBeNull();
   });
 });

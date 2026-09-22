@@ -171,6 +171,7 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
               <SnapshotPanel
                 requestId={requestId}
                 body={exchange.text}
+                binary={exchange.language === 'image' || exchange.language === 'binary'}
                 {...(exchange.http.headers['content-type'] !== undefined
                   ? { contentType: exchange.http.headers['content-type'] }
                   : {})}

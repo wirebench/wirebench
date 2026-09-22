@@ -36,6 +36,18 @@ export interface SnapshotPanelProps {
   readonly body: string | undefined;
   /** The response's `Content-Type`, used when the golden recorded none. */
   readonly contentType?: string;
+  /** Set when the response body has no text form (an image or other binary body). */
+  readonly binary?: boolean;
+}
+
+const NO_TEXT = 'This response has no text body to compare.';
+
+/** The textarea's lines as the sidecar keeps them: trimmed, blanks dropped, comments kept. */
+function ruleLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 function Message({ children }: { readonly children: React.ReactNode }) {
@@ -43,8 +55,9 @@ function Message({ children }: { readonly children: React.ReactNode }) {
 }
 
 /** The Snapshot tab. */
-export function SnapshotPanel({ requestId, body, contentType }: SnapshotPanelProps) {
+export function SnapshotPanel({ requestId, body, contentType, binary = false }: SnapshotPanelProps) {
   const entry = useSnapshotsStore((store) => store.entries[requestId]);
+  const failed = useSnapshotsStore((store) => store.failed[requestId] === true);
   const load = useSnapshotsStore((store) => store.load);
   const save = useSnapshotsStore((store) => store.save);
 
@@ -58,7 +71,7 @@ export function SnapshotPanel({ requestId, body, contentType }: SnapshotPanelPro
     return <Message>Send the request to compare its response.</Message>;
   }
   if (entry === undefined) {
-    return <Message>Loading…</Message>;
+    return <Message>{failed ? 'The snapshot could not be read.' : 'Loading…'}</Message>;
   }
   if (entry.status === 'unsaved') {
     return <Message>Save the project to keep a snapshot beside this request.</Message>;
@@ -67,25 +80,39 @@ export function SnapshotPanel({ requestId, body, contentType }: SnapshotPanelPro
     return (
       <div data-testid="snapshot-panel" className="flex flex-col items-start gap-2 p-3 text-sm">
         <p className="text-fg-subtle">No snapshot saved.</p>
-        <Button variant="primary" onClick={() => void save(requestId, body, contentType, [])}>
-          Save as snapshot
-        </Button>
+        {binary ? (
+          <p className="text-fg-subtle">{NO_TEXT}</p>
+        ) : (
+          <Button variant="primary" onClick={() => void save(requestId, body, contentType, [])}>
+            Save as snapshot
+          </Button>
+        )}
       </div>
     );
   }
-  return <SnapshotComparison requestId={requestId} body={body} contentType={contentType} golden={entry.snapshot} />;
+  return (
+    <SnapshotComparison
+      requestId={requestId}
+      body={body}
+      contentType={contentType}
+      binary={binary}
+      golden={entry.snapshot}
+    />
+  );
 }
 
 interface ComparisonProps {
   readonly requestId: string;
   readonly body: string;
   readonly contentType: string | undefined;
+  readonly binary: boolean;
   readonly golden: SnapshotWire;
 }
 
-function SnapshotComparison({ requestId, body, contentType, golden }: ComparisonProps) {
+function SnapshotComparison({ requestId, body, contentType, binary, golden }: ComparisonProps) {
   const save = useSnapshotsStore((store) => store.save);
   const setIgnore = useSnapshotsStore((store) => store.setIgnore);
+  const addIgnoreRule = useSnapshotsStore((store) => store.addIgnoreRule);
   const remove = useSnapshotsStore((store) => store.remove);
   const [confirmUpdate, setConfirmUpdate] = useState(false);
 
@@ -95,20 +122,22 @@ function SnapshotComparison({ requestId, body, contentType, golden }: Comparison
     setDraft(savedRules);
   }, [savedRules]);
 
-  const oversize = tooLarge(body) || tooLarge(golden.body);
   const diff = useMemo(() => {
-    if (oversize) {
-      return undefined;
+    if (binary) {
+      return 'binary' as const;
+    }
+    if (tooLarge(body) || tooLarge(golden.body)) {
+      return 'too-large' as const;
     }
     const format = detectSnapshotFormat(golden.body, golden.contentType ?? contentType);
-    return diffSnapshot(golden.body, body, { format, ignore: golden.ignore });
-  }, [oversize, golden.body, golden.contentType, golden.ignore, contentType, body]);
+    return diffSnapshot(golden.body, body, { format, ignore: parseIgnoreRules(golden.ignore.join('\n')) });
+  }, [binary, golden.body, golden.contentType, golden.ignore, contentType, body]);
+  const comparable = typeof diff !== 'string';
 
   function ignorePath(path: string): void {
-    const rule = path === '' ? '/' : path;
-    if (!golden.ignore.includes(rule)) {
-      void setIgnore(requestId, [...golden.ignore, rule]);
-    }
+    // Read from the store at click time, not from this render, so it composes with a rule the
+    // textarea's blur has just saved or an Ignore clicked a moment ago.
+    void addIgnoreRule(requestId, path === '' ? '/' : path);
   }
 
   function compareSideBySide(): void {
@@ -128,14 +157,18 @@ function SnapshotComparison({ requestId, body, contentType, golden }: Comparison
   return (
     <div data-testid="snapshot-panel" className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => setConfirmUpdate(true)}>Update snapshot</Button>
+        {!binary && <Button onClick={() => setConfirmUpdate(true)}>Update snapshot</Button>}
         <Button onClick={compareSideBySide}>Compare side by side</Button>
         <Button variant="ghost" onClick={() => void remove(requestId)}>
           Delete snapshot
         </Button>
       </div>
 
-      {diff === undefined ? (
+      {diff === 'binary' ? (
+        <p role="status" className="text-fg-subtle">
+          {NO_TEXT}
+        </p>
+      ) : diff === 'too-large' ? (
         <p role="status" className="text-fg-subtle">
           Too large to compare semantically
         </p>
@@ -154,23 +187,25 @@ function SnapshotComparison({ requestId, body, contentType, golden }: Comparison
         </>
       )}
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-fg-subtle">Ignore rules</span>
-        <textarea
-          value={draft}
-          rows={4}
-          spellCheck={false}
-          placeholder="One path per line; // matches at any depth; # starts a comment"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => {
-            const rules = parseIgnoreRules(draft);
-            if (rules.join('\n') !== savedRules) {
-              void setIgnore(requestId, rules);
-            }
-          }}
-          className="rounded-md border border-hairline-strong bg-surface-raised p-2 font-mono text-xs text-fg-default"
-        />
-      </label>
+      {comparable && (
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-fg-subtle">Ignore rules</span>
+          <textarea
+            value={draft}
+            rows={4}
+            spellCheck={false}
+            placeholder="One path per line; // matches at any depth; # starts a comment"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              const lines = ruleLines(draft);
+              if (lines.join('\n') !== savedRules) {
+                void setIgnore(requestId, lines);
+              }
+            }}
+            className="rounded-md border border-hairline-strong bg-surface-raised p-2 font-mono text-xs text-fg-default"
+          />
+        </label>
+      )}
 
       <ConfirmDialog
         open={confirmUpdate}
