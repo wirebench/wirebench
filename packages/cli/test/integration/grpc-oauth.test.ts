@@ -109,7 +109,7 @@ describe('wirebench run — gRPC and OAuth2 client credentials', () => {
   });
 
   it('errors the protected request, naming the variable, when the client secret is not set', async () => {
-    const { code, stdout } = await runCli([
+    const { code, stdout, stderr } = await runCli([
       'run',
       FIXTURE,
       '-e',
@@ -120,5 +120,6 @@ describe('wirebench run — gRPC and OAuth2 client credentials', () => {
     ]);
     expect(code).toBe(3);
     expect(stdout).toContain('WIREBENCH_SECRET_OAUTH_SECRET');
+    expectNoCredential([stdout, stderr]);
   });
 });

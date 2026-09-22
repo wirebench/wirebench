@@ -39,6 +39,10 @@ export interface TokenRequestContext {
 
 export interface RunTokenSource {
   /**
+   * A token the server later rejects mid-run (e.g. a 401 on the request that carried it) is not
+   * re-fetched here: only `needsRefresh` against the cached expiry triggers a new fetch, on the
+   * next call for the same configuration.
+   *
    * @throws WirebenchError `unresolved-properties` | `secret-missing` | `oauth2-no-token-url` |
    * `oauth2-token-error` | `oauth2-token-malformed`, or the send's own error
    */

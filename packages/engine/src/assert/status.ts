@@ -36,6 +36,10 @@ export function evaluateStatus(subject: AssertionSubject, assertion: StatusAsser
   if (grpcName !== undefined) {
     return { ...base, outcome: 'errored', message: `${String(grpcName)} is a gRPC status name, not an HTTP one` };
   }
+  const notHttp = expected.find((value) => typeof value === 'number' && value < 100);
+  if (notHttp !== undefined) {
+    return { ...base, outcome: 'errored', message: `${String(notHttp)} is not an HTTP status` };
+  }
   return expected.some((value) => holdsHttp(value, subject.status))
     ? { ...base, outcome: 'passed' }
     : { ...base, outcome: 'failed', expected: text, actual: String(subject.status) };

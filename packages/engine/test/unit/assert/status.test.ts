@@ -61,4 +61,29 @@ describe('status name on a non-gRPC subject', () => {
     const [r] = await evaluateAssertions(rest, [{ type: 'status', equals: 404 }]);
     expect(r!.outcome).toBe('passed');
   });
+
+  it('errors on a low numeric value that cannot be an HTTP status (a typo for 404)', async () => {
+    const rest: AssertionSubject = {
+      protocol: 'rest',
+      status: 404,
+      durationMs: 120,
+      bodyText: '{}',
+      bodyKind: 'json',
+    };
+    const [r] = await evaluateAssertions(rest, [{ type: 'status', equals: 4 }]);
+    expect(r!.outcome).toBe('errored');
+    expect(r!.message).toContain('4 is not an HTTP status');
+  });
+
+  it('errors the same way on a SOAP subject', async () => {
+    const soap: AssertionSubject = {
+      protocol: 'soap',
+      status: 200,
+      durationMs: 120,
+      bodyText: '<a/>',
+      bodyKind: 'xml',
+    };
+    const [r] = await evaluateAssertions(soap, [{ type: 'status', equals: 4 }]);
+    expect(r!.outcome).toBe('errored');
+  });
 });
