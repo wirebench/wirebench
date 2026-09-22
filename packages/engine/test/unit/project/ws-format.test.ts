@@ -271,3 +271,44 @@ describe('a WebSocket request linked to its contract', () => {
     }
   });
 });
+
+describe('the server an AsyncAPI-imported API was mapped against', () => {
+  it('round-trips a chosen server and writes no server key when none was chosen', async () => {
+    const withServer = {
+      ...emptyProject(),
+      wsApis: [
+        {
+          ...createWsApi('Chat', { id: 'a1', url: 'wss://staging.example.test' }),
+          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true, server: 'staging' },
+        },
+      ],
+    };
+    const files = serializeProject(withServer);
+    expect(files.get('apis/Chat/api.yaml')).toContain('server: staging\n');
+    const reloaded = await loadFrom(files);
+    expect(reloaded.project.wsApis[0]?.definition).toEqual({
+      kind: 'asyncapi',
+      source: 'https://x.test/a.yaml',
+      cache: true,
+      server: 'staging',
+    });
+    expect(serializeProject(reloaded.project)).toEqual(files);
+
+    const without = {
+      ...emptyProject(),
+      wsApis: [
+        {
+          ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
+          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true },
+        },
+      ],
+    };
+    const plain = serializeProject(without);
+    expect(plain.get('apis/Chat/api.yaml')).not.toContain('server');
+    expect((await loadFrom(plain)).project.wsApis[0]?.definition).toEqual({
+      kind: 'asyncapi',
+      source: 'https://x.test/a.yaml',
+      cache: true,
+    });
+  });
+});

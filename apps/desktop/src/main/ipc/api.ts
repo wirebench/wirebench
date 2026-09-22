@@ -242,6 +242,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       documents: imported.documents,
       source: checked.kind === 'text' ? (checked.location ?? 'inline:asyncapi') : sourceLabel(checked),
       declaredVersion: imported.declaredVersion,
+      ...(imported.summary.server !== undefined ? { server: imported.summary.server } : {}),
       ...(request.cache !== undefined ? { cache: request.cache } : {}),
     };
 

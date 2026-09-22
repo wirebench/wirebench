@@ -104,6 +104,9 @@ export interface WsDefinitionRef {
   readonly kind: 'asyncapi';
   readonly source: string;
   readonly cache: boolean;
+  /** The server key the API was mapped against, so an update maps the new document against the same one.
+   *  Absent means the first WebSocket server. */
+  readonly server?: string;
 }
 
 /** A WebSocket API: a server URL and a tree of folders and requests. */

@@ -506,7 +506,12 @@ export const wsApiFileSchema = z.looseObject({
   headers: z.array(keyValueEntrySchema).default([]),
   auth: authConfigSchema.optional(),
   definition: z
-    .looseObject({ kind: z.literal('asyncapi'), source: nonEmpty, cache: z.boolean().default(true) })
+    .looseObject({
+      kind: z.literal('asyncapi'),
+      source: nonEmpty,
+      cache: z.boolean().default(true),
+      server: z.string().optional(),
+    })
     .optional(),
 });
 

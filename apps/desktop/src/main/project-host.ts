@@ -199,7 +199,7 @@ import {
   contentTypeForPath,
   projectNameFromDir,
 } from './project-mutations.js';
-import type { InterfaceRuntime } from './project-wire.js';
+import type { AsyncApiDefinitionInfo, InterfaceRuntime } from './project-wire.js';
 import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js';
 import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
@@ -402,6 +402,8 @@ export class ProjectHost {
   private readonly protoSets = new Map<string, Promise<ProtoSet>>();
   /** Each AsyncAPI-imported API's parsed contract, read from its cache once per session and API. */
   private readonly asyncApiContracts = new Map<string, Promise<AsyncApiDocument | undefined>>();
+  /** The version and WebSocket servers of each cached AsyncAPI document read so far, for the Definition card. */
+  private readonly asyncApiInfo = new Map<string, AsyncApiDefinitionInfo>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
@@ -911,6 +913,7 @@ export class ProjectHost {
       ...(this.open.lastSavedAt !== undefined ? { lastSavedAt: this.open.lastSavedAt } : {}),
       problems: this.open.problems,
       runtime: this.open.runtime,
+      asyncApiInfo: this.asyncApiInfo,
     });
   }
 
@@ -1094,6 +1097,7 @@ export class ProjectHost {
     this.keystoreCache.clear();
     // A contract memo belongs to this project's cache folder; a reopen reads it again.
     this.asyncApiContracts.clear();
+    this.asyncApiInfo.clear();
     for (const iface of this.open.project.interfaces) {
       this.engine.close(iface.id);
     }
@@ -2810,6 +2814,8 @@ export class ProjectHost {
     readonly source: string;
     /** The `asyncapi` string the document declared. */
     readonly declaredVersion: string;
+    /** The server key the API was mapped against, kept so an update maps against the same one. */
+    readonly server?: string;
     /** Write the definition cache. Defaults to the definition-caching preference. */
     readonly cache?: boolean;
   }): Promise<{ project: ProjectWire; apiId: string }> {
@@ -2830,11 +2836,20 @@ export class ProjectHost {
       ...input.api,
       slug,
       order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
-      definition: { kind: 'asyncapi', source: input.source, cache },
+      definition: {
+        kind: 'asyncapi',
+        source: input.source,
+        cache,
+        ...(input.server !== undefined ? { server: input.server } : {}),
+      },
     };
     open.project = { ...project, wsApis: [...project.wsApis, api] };
     open.dirty = true;
     await this.save({ reason: 'import' });
+    // Read the cache just written, so the Definition card has the version and servers at once.
+    // The memo is dropped again: a live session reads the contract when it first needs it.
+    await this.asyncApiContractFor(api.id).catch(() => undefined);
+    this.asyncApiContracts.delete(api.id);
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
   }
 
@@ -2874,6 +2889,7 @@ export class ProjectHost {
         { kind: 'url', url: cached.manifest.rootLocation },
         { fetchDocument: offline },
       );
+      this.rememberAsyncApiInfo(apiId, parsed.document);
       return parsed.document;
     });
     loading.catch(() => {
@@ -2932,7 +2948,9 @@ export class ProjectHost {
     const api = this.requireAsyncApi(apiId);
     const old = await this.cachedAsyncApi(apiId);
     const plan = planAsyncApiUpdate(old, next.document);
-    const { api: updated, ...applied } = applyAsyncApiUpdate(api, old, next.document);
+    const { api: updated, ...applied } = applyAsyncApiUpdate(api, old, next.document, {
+      ...(api.definition.server !== undefined ? { server: api.definition.server } : {}),
+    });
     if (api.definition.cache) {
       await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, api.slug), {
         declaredVersion: next.document.declaredVersion,
@@ -2940,6 +2958,7 @@ export class ProjectHost {
       });
     }
     this.asyncApiContracts.delete(apiId);
+    this.rememberAsyncApiInfo(apiId, next.document);
     open.project = {
       ...open.project,
       wsApis: open.project.wsApis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
@@ -2947,6 +2966,16 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'update-definition' });
     return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** Keeps what the Definition card shows of a cached document: its version and WebSocket servers. */
+  private rememberAsyncApiInfo(apiId: string, document: AsyncApiDocument): void {
+    this.asyncApiInfo.set(apiId, {
+      version: document.declaredVersion,
+      servers: document.servers
+        .filter((server) => ['ws', 'wss'].includes(server.protocol.toLowerCase()))
+        .map((server) => server.key),
+    });
   }
 
   /** The cached document an update compares against; an API with no cache cannot be updated. */
@@ -3138,6 +3167,17 @@ export class ProjectHost {
         this.hooks.onHydration?.({ interfaceId: iface.id, status: 'failed', message });
       }
       this.emitChanged();
+    }
+    // The Definition card's version and servers come from each AsyncAPI API's cached document.
+    for (const api of open.project.wsApis) {
+      if (this.open !== open) {
+        return;
+      }
+      if (api.definition?.kind === 'asyncapi' && api.definition.cache) {
+        if ((await this.asyncApiContractFor(api.id).catch(() => undefined)) !== undefined) {
+          this.emitChanged();
+        }
+      }
     }
   }
 }

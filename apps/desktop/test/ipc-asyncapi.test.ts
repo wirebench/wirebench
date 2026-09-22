@@ -185,7 +185,14 @@ describe('api.importAsyncApi', () => {
     expect(snapshot.wsApis).toHaveLength(1);
     const api = snapshot.wsApis[0];
     expect(api?.id).toBe(response.apiId);
-    expect(api?.definition).toEqual({ kind: 'asyncapi', source: docPath, cache: true });
+    expect(api?.definition).toEqual({
+      kind: 'asyncapi',
+      source: docPath,
+      cache: true,
+      server: 'public',
+      version: '3.0.0',
+      servers: ['public', 'staging'],
+    });
 
     const definitionDir = join(projectDir, 'project', 'apis', api?.slug ?? '', 'definition');
     expect((await readdir(definitionDir)).sort()).toEqual(['asyncapi.yaml', 'manifest.yaml', 'schemas.yaml']);
@@ -237,6 +244,27 @@ describe('api.importAsyncApi', () => {
     const api = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === response.apiId);
     expect(api?.url).toContain('staging.chat.example.test');
     expect(api?.url).not.toContain('{region}');
+  });
+
+  it('remembers the chosen server, so an update maps the new document against that server', async () => {
+    const imported = await value<Imported>('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: docPath },
+      server: 'staging',
+    });
+    const before = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === imported.apiId);
+    expect(before?.definition?.server).toBe('staging');
+    expect(before?.definition?.version).toBe('3.0.0');
+    expect(before?.definition?.servers).toEqual(['public', 'staging']);
+
+    // The staging server moves; the API's URL was generated from it, so it follows.
+    const text = await readFile(docPath, 'utf8');
+    await writeFile(docPath, text.replace('host: staging.chat.example.test', 'host: next.chat.example.test'));
+    const plan = await value<{ fingerprint: string }>('api.asyncApiPlanUpdate', { apiId: imported.apiId });
+    await value('api.asyncApiApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint });
+    const after = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === imported.apiId);
+    expect(after?.url).toContain('next.chat.example.test');
+    expect(after?.definition?.server).toBe('staging');
   });
 
   it('stops on api.cancelImport, failing as aborted and adding nothing', async () => {

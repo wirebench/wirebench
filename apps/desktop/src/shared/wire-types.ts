@@ -1643,7 +1643,19 @@ export const wsApiWireSchema = z.object({
   url: z.string(),
   headers: z.array(keyValueWireSchema),
   auth: authConfigWireSchema.optional(),
-  definition: z.object({ kind: z.literal('asyncapi'), source: z.string(), cache: z.boolean() }).optional(),
+  definition: z
+    .object({
+      kind: z.literal('asyncapi'),
+      source: z.string(),
+      cache: z.boolean(),
+      /** The server key the API was mapped against; absent means the first WebSocket one. */
+      server: z.string().optional(),
+      /** The `asyncapi` version the cached document declares, once main has read the cache. */
+      version: z.string().optional(),
+      /** The cached document's WebSocket (`ws`/`wss`) server keys, in document order. */
+      servers: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type WsApiWire = z.infer<typeof wsApiWireSchema>;
 

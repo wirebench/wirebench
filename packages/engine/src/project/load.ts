@@ -653,6 +653,7 @@ async function loadApi(
                   kind: parsed.definition.kind,
                   source: parsed.definition.source,
                   cache: parsed.definition.cache,
+                  ...optional('server', parsed.definition.server),
                 },
               }
             : {}),
