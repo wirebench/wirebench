@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { applyJsonFormEdit, buildJsonForm, toWireSchema, type JsonFormNode } from '../../../src/rest/json-form.js';
 import type { JsonSchema } from '../../../src/rest/openapi/model.js';
 import { sampleFromSchema } from '../../../src/rest/openapi/sample.js';
+import { parseSchema } from '../../../src/rest/openapi/parse.js';
 
 function child(node: JsonFormNode, name: string): JsonFormNode {
   const found = node.children.find((candidate) => candidate.name === name);
@@ -209,5 +210,73 @@ describe('toWireSchema', () => {
     expect(JSON.parse(text)).toEqual(wire);
     expect(wire.title).toBe('Node');
     expect(wire.properties?.child?.properties?.child?.title).toBe('Node');
+  });
+});
+
+describe('choice branch selection', () => {
+  const cat: JsonSchema = { title: 'Cat', type: 'object', properties: { meow: { type: 'string' } } };
+  const dog: JsonSchema = { title: 'Dog', type: 'object', properties: { bark: { type: 'string' } } };
+
+  it('picks the branch whose properties cover the value when nothing is required', () => {
+    const schema: JsonSchema = { oneOf: [cat, dog] };
+    expect(buildJsonForm(schema, { bark: 'woof' }).chosen).toBe(1);
+    expect(buildJsonForm(schema, { meow: 'x' }).chosen).toBe(0);
+  });
+
+  it('keeps the branch a select-choice wrote', () => {
+    const schema: JsonSchema = { oneOf: [cat, dog] };
+    const next = applyJsonFormEdit(schema, { meow: 'x' }, { kind: 'select-choice', id: '', index: 1 });
+    expect(buildJsonForm(schema, next).chosen).toBe(1);
+  });
+
+  it('follows the discriminator when branches differ only by its value', () => {
+    const typed = (name: string): JsonSchema => ({
+      title: name,
+      type: 'object',
+      required: ['petType'],
+      properties: { petType: { type: 'string', enum: [name] }, name: { type: 'string' } },
+    });
+    const schema: JsonSchema = { oneOf: [typed('Cat'), typed('Dog')], discriminator: { propertyName: 'petType' } };
+    expect(buildJsonForm(schema, { petType: 'Dog', name: 'x' }).chosen).toBe(1);
+    const constTyped: JsonSchema = {
+      oneOf: [
+        { type: 'object', properties: { kind: { const: 'a' } } },
+        { type: 'object', properties: { kind: { const: 'b' } } },
+      ],
+      discriminator: { propertyName: 'kind' },
+    };
+    expect(buildJsonForm(constTyped, { kind: 'b' }).chosen).toBe(1);
+  });
+
+  it('parse keeps the discriminator', () => {
+    const schema = parseSchema({
+      oneOf: [{ type: 'object' }],
+      discriminator: { propertyName: 'petType', mapping: { dog: '#/components/schemas/Dog' } },
+    });
+    expect(schema.discriminator).toEqual({ propertyName: 'petType', mapping: { dog: '#/components/schemas/Dog' } });
+  });
+});
+
+describe('nullable fields', () => {
+  it('marks a field whose schema allows null', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: { a: { type: 'string', nullable: true }, b: { type: ['string', 'null'] }, c: { type: 'string' } },
+    };
+    const root = buildJsonForm(schema, { a: null, b: 'x', c: 'y' });
+    expect(root.children.map((child) => child.nullable === true)).toEqual([true, true, false]);
+  });
+});
+
+describe('toWireSchema keys', () => {
+  it('drops subschema keys the form does not use, cycles included', () => {
+    const schema: Record<string, unknown> = { type: 'object', properties: { a: { type: 'string' } } };
+    schema.not = schema;
+    schema.prefixItems = [schema];
+    const wire = toWireSchema(schema);
+    expect(() => JSON.stringify(wire)).not.toThrow();
+    expect(wire).not.toHaveProperty('not');
+    expect(wire).not.toHaveProperty('prefixItems');
+    expect(wire.properties?.a?.type).toBe('string');
   });
 });

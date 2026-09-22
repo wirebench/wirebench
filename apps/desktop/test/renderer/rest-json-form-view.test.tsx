@@ -17,6 +17,8 @@ import type { JsonSchema } from '@wirebench/engine/rest';
 import { JsonFormView } from '../../src/renderer/features/rest-editor/json-form-view.js';
 import { BodyTab, type BodySchemaSource } from '../../src/renderer/features/rest-editor/body-tab.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
+import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/wire-types.js';
 
 const PET: JsonSchema = {
@@ -39,6 +41,7 @@ const PET: JsonSchema = {
 afterEach(() => {
   cleanup();
   useEditorsStore.getState().reset();
+  usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
 });
 
 /** A stateful host, so edits accumulate the way they do under the real body tab. */
@@ -48,6 +51,29 @@ function Host({ initial, onText }: { readonly initial: string; readonly onText?:
     <JsonFormView
       text={text}
       schema={PET}
+      onChange={(next) => {
+        setText(next);
+        onText?.(next);
+      }}
+    />
+  );
+}
+
+/** A stateful host over any schema. */
+function SchemaHost({
+  schema,
+  initial,
+  onText,
+}: {
+  readonly schema: JsonSchema;
+  readonly initial: string;
+  readonly onText?: (text: string) => void;
+}) {
+  const [text, setText] = useState(initial);
+  return (
+    <JsonFormView
+      text={text}
+      schema={schema}
       onChange={(next) => {
         setText(next);
         onText?.(next);
@@ -132,6 +158,83 @@ describe('JsonFormView', () => {
     render(<JsonFormView text={'{"name":"a"}'} schema={PET} onChange={vi.fn()} readOnly />);
     expect(screen.getByRole('textbox', { name: 'name' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Add age' })).toHaveProperty('disabled', true);
+  });
+});
+
+describe('JsonFormView review fixes', () => {
+  it('keeps a picked branch that only its optional properties tell apart', async () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: {
+        pet: {
+          oneOf: [
+            { title: 'Cat', type: 'object', properties: { meow: { type: 'string' } } },
+            { title: 'Dog', type: 'object', properties: { bark: { type: 'string' } } },
+          ],
+        },
+      },
+    };
+    render(<SchemaHost schema={schema} initial={'{"pet":{"meow":"x"}}'} />);
+    const select = screen.getByRole('combobox', { name: 'pet variant' });
+    await userEvent.selectOptions(select, 'Dog');
+    expect(screen.getByRole('combobox', { name: 'pet variant' })).toHaveProperty('value', '1');
+  });
+
+  it('shows a null string as an empty input and can write null back', async () => {
+    const schema: JsonSchema = { type: 'object', properties: { nick: { type: 'string', nullable: true } } };
+    const onText = vi.fn();
+    render(<SchemaHost schema={schema} initial={'{"nick":null}'} onText={onText} />);
+    const input = screen.getByRole('textbox', { name: 'nick' });
+    expect(input).toHaveProperty('value', '');
+    expect(input).toHaveProperty('placeholder', 'null');
+    await userEvent.type(input, 'x');
+    expect(lastJson(onText)).toEqual({ nick: 'x' });
+    await userEvent.click(screen.getByRole('button', { name: 'Set nick to null' }));
+    expect(lastJson(onText)).toEqual({ nick: null });
+  });
+
+  it('offers no null button when the schema does not allow null', () => {
+    const schema: JsonSchema = { type: 'object', properties: { nick: { type: 'string' } } };
+    render(<SchemaHost schema={schema} initial={'{"nick":"a"}'} />);
+    expect(screen.queryByRole('button', { name: 'Set nick to null' })).toBeNull();
+  });
+
+  it('disables what sits inside a read-only object', () => {
+    const schema: JsonSchema = {
+      type: 'object',
+      properties: { meta: { type: 'object', readOnly: true, properties: { id: { type: 'string' } } } },
+    };
+    render(<SchemaHost schema={schema} initial={'{"meta":{"id":"a"}}'} />);
+    expect(screen.getByRole('textbox', { name: 'meta.id' })).toHaveProperty('disabled', true);
+  });
+
+  it('does not write a fraction to an integer field', async () => {
+    const onText = vi.fn();
+    render(<Host initial={'{"name":"a","age":1}'} onText={onText} />);
+    const age = screen.getByRole('spinbutton', { name: 'age' });
+    await userEvent.clear(age);
+    await userEvent.type(age, '2.5');
+    expect(lastJson(onText)).toEqual({ name: 'a', age: 2 });
+    expect(age.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('removes an optional number cleared and left', async () => {
+    const onText = vi.fn();
+    render(<Host initial={'{"name":"a","age":1}'} onText={onText} />);
+    await userEvent.clear(screen.getByRole('spinbutton', { name: 'age' }));
+    await userEvent.tab();
+    expect(lastJson(onText)).toEqual({ name: 'a' });
+  });
+
+  it('restores a required number cleared and left', async () => {
+    const schema: JsonSchema = { type: 'object', required: ['count'], properties: { count: { type: 'number' } } };
+    const onText = vi.fn();
+    render(<SchemaHost schema={schema} initial={'{"count":3}'} onText={onText} />);
+    const count = screen.getByRole('spinbutton', { name: 'count' });
+    await userEvent.clear(count);
+    await userEvent.tab();
+    expect(onText).not.toHaveBeenCalled();
+    expect(count).toHaveProperty('value', '3');
   });
 });
 
@@ -229,7 +332,29 @@ describe('BodyTab Text / Form switch', () => {
       />,
     );
     await userEvent.type(await screen.findByRole('textbox', { name: 'name' }), 'b');
-    expect(onPatch).toHaveBeenLastCalledWith({ body: { ...RAW, text: '{\n  "name": "ab"\n}' } });
+    expect(onPatch).toHaveBeenLastCalledWith({
+      body: { ...RAW, text: JSON.stringify({ name: 'ab' }, null, DEFAULT_PREFERENCES_WIRE.editor.tabSize) },
+    });
+  });
+
+  it('writes a form edit with the editor tab size', async () => {
+    usePreferencesStore.setState({
+      preferences: {
+        ...DEFAULT_PREFERENCES_WIRE,
+        editor: { ...DEFAULT_PREFERENCES_WIRE.editor, tabSize: 4 },
+      },
+    });
+    useEditorsStore.getState().setRestBodyView('r1', 'form');
+    const onPatch = vi.fn();
+    render(
+      <BodyHost
+        initial={RAW}
+        schemaSource={source({ mediaType: 'application/json', schema: PET })}
+        onPatch={onPatch}
+      />,
+    );
+    await userEvent.type(await screen.findByRole('textbox', { name: 'name' }), 'b');
+    expect(onPatch).toHaveBeenLastCalledWith({ body: { ...RAW, text: '{\n    "name": "ab"\n}' } });
   });
 
   it('goes back to Text from an invalid body', async () => {

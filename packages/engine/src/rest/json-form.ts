@@ -48,6 +48,8 @@ export interface JsonFormNode {
   readonly chosen?: number;
   readonly readOnly?: boolean;
   readonly deprecated?: boolean;
+  /** `field`: the schema allows `null` as well as `valueType`. */
+  readonly nullable?: boolean;
 }
 
 /** One structural change the form view can ask for, addressed by JSON pointer. */
@@ -136,21 +138,53 @@ function typeMatches(type: string | undefined, value: JsonValue | undefined): bo
   }
 }
 
-/** The first branch whose type and required properties the value satisfies, else 0. */
-function chosenBranch(schema: JsonSchema, value: JsonValue | undefined): number {
-  const branches = branchesOf(schema);
-  for (let index = 0; index < branches.length; index += 1) {
-    const branch = branchSchema(schema, index);
-    if (!typeMatches(effectiveType(branch), value)) {
-      continue;
-    }
-    const required = branch.required ?? [];
-    if (required.length > 0 && !(isObject(value) && required.every((name) => name in value))) {
-      continue;
-    }
-    return index;
+/** Whether a value could be a branch: its type matches and it has every required property. */
+function branchAccepts(branch: JsonSchema, value: JsonValue | undefined): boolean {
+  if (!typeMatches(effectiveType(branch), value)) {
+    return false;
   }
-  return 0;
+  const required = branch.required ?? [];
+  return required.length === 0 || (isObject(value) && required.every((name) => name in value));
+}
+
+/** Whether a branch's discriminator property pins `tag` with a `const` or `enum`. */
+function discriminatorMatches(branch: JsonSchema, propertyName: string, tag: JsonValue): boolean {
+  const property = branch.properties?.[propertyName];
+  if (property === undefined) {
+    return false;
+  }
+  const same = (member: JsonValue): boolean => JSON.stringify(member) === JSON.stringify(tag);
+  return (property.const !== undefined && same(property.const)) || (property.enum ?? []).some(same);
+}
+
+/**
+ * The branch the value is: the one its discriminator names, else the accepting branch whose declared
+ * properties cover most of the value's keys (the first on a tie), else 0.
+ */
+function chosenBranch(schema: JsonSchema, value: JsonValue | undefined): number {
+  const branches = branchesOf(schema).map((_, index) => branchSchema(schema, index));
+  const propertyName = schema.discriminator?.propertyName;
+  if (propertyName !== undefined && isObject(value) && value[propertyName] !== undefined) {
+    const tag = value[propertyName];
+    const named = branches.findIndex((branch) => discriminatorMatches(branch, propertyName, tag));
+    if (named !== -1) {
+      return named;
+    }
+  }
+  let best = -1;
+  let bestCovered = -1;
+  branches.forEach((branch, index) => {
+    if (!branchAccepts(branch, value)) {
+      return;
+    }
+    const declared = branch.properties ?? {};
+    const covered = isObject(value) ? Object.keys(value).filter((key) => Object.hasOwn(declared, key)).length : 0;
+    if (covered > bestCovered) {
+      best = index;
+      bestCovered = covered;
+    }
+  });
+  return best === -1 ? 0 : best;
 }
 
 interface Place {
@@ -244,11 +278,17 @@ function build(input: JsonSchema, value: JsonValue | undefined, place: Place, ma
       valueType: type as JsonFormValueType,
       ...(schema.format !== undefined ? { format: schema.format } : {}),
       ...(schema.enum !== undefined ? { enum: schema.enum } : {}),
+      ...(allowsNull(schema) ? { nullable: true } : {}),
       ...(value !== undefined ? { value } : {}),
       children: [],
     };
   }
   return anyNode(place, value, schema);
+}
+
+/** Whether a schema allows `null`, in either specification's spelling. */
+function allowsNull(schema: JsonSchema): boolean {
+  return schema.nullable === true || (Array.isArray(schema.type) && schema.type.includes('null'));
 }
 
 /** A type-less enum still reads as a field of its members' type. */
@@ -390,8 +430,16 @@ export function applyJsonFormEdit(schema: JsonSchema, value: JsonValue | undefin
       }
       return put([...items, sampleFromSchema(arraySchema.items ?? {})]);
     }
-    case 'select-choice':
-      return put(sampleFromSchema(branchSchema(mergeAllOf(schemaAt(schema, value, segments)), edit.index)));
+    case 'select-choice': {
+      const choice = mergeAllOf(schemaAt(schema, value, segments));
+      const branch = branchSchema(choice, edit.index);
+      // A sample of only the required properties can look like an earlier branch (two branches with
+      // nothing required both sample as `{}`); the optional ones are what tell it apart then.
+      const sample = sampleFromSchema(branch);
+      return put(
+        chosenBranch(choice, sample) === edit.index ? sample : sampleFromSchema(branch, { includeOptional: true }),
+      );
+    }
   }
 }
 
@@ -403,12 +451,43 @@ export function toWireSchema(schema: JsonSchema, maxDepth: number = MAX_SAMPLE_D
   return copySchema(schema, maxDepth, { remaining: MAX_SAMPLE_NODES });
 }
 
+/** Keys copied as they are: plain data the form and the sample generator read. */
+const WIRE_SCALAR_KEYS = [
+  'type',
+  'format',
+  'title',
+  'description',
+  'default',
+  'example',
+  'examples',
+  'enum',
+  'const',
+  'required',
+  'discriminator',
+  'nullable',
+  'deprecated',
+  'readOnly',
+  'writeOnly',
+  'xml',
+  '$ref',
+] as const;
+
+/**
+ * Only the keys the form and the sample read survive; anything else (`not`, `prefixItems`,
+ * `if`/`then`/`else`, …) is dropped, since it could hold a subschema — even a cycle — this copy
+ * would otherwise pass along by reference.
+ */
 function copySchema(schema: JsonSchema, depth: number, budget: { remaining: number }): JsonSchema {
   if (depth <= 0 || budget.remaining <= 0) {
     return {};
   }
   budget.remaining -= 1;
-  const copy: Record<string, unknown> = { ...schema };
+  const copy: Record<string, unknown> = {};
+  for (const key of WIRE_SCALAR_KEYS) {
+    if (schema[key] !== undefined) {
+      copy[key] = schema[key];
+    }
+  }
   const next = (child: JsonSchema): JsonSchema => copySchema(child, depth - 1, budget);
   if (schema.properties !== undefined) {
     copy.properties = Object.fromEntries(Object.entries(schema.properties).map(([name, child]) => [name, next(child)]));
@@ -416,8 +495,9 @@ function copySchema(schema: JsonSchema, depth: number, budget: { remaining: numb
   if (schema.items !== undefined) {
     copy.items = next(schema.items);
   }
-  if (typeof schema.additionalProperties === 'object') {
-    copy.additionalProperties = next(schema.additionalProperties);
+  if (schema.additionalProperties !== undefined) {
+    copy.additionalProperties =
+      typeof schema.additionalProperties === 'object' ? next(schema.additionalProperties) : schema.additionalProperties;
   }
   for (const key of ['allOf', 'oneOf', 'anyOf'] as const) {
     const branches = schema[key];

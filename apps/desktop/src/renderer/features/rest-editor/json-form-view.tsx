@@ -4,7 +4,8 @@
  * The view holds no copy of the body: it parses the text it is given on every render and builds the
  * tree from that, so it can never drift from what the text editor shows. It writes only when the user
  * edits something — each edit goes through the engine's `applyJsonFormEdit` and comes back as
- * `JSON.stringify(value, null, 2)` — so flipping to Form and back leaves the text byte-identical.
+ * `JSON.stringify(value, null, indent)`, the editor's tab size — so flipping to Form and back leaves the
+ * text byte-identical, while an edit reformats the whole body.
  *
  * Every control is labelled by its property path (`owner.tags[0]`), which is what a screen reader
  * announces and what a test finds it by.
@@ -29,6 +30,8 @@ export interface JsonFormViewProps {
   /** Goes back to the text editor; offered when the text does not parse. */
   readonly onShowText?: () => void;
   readonly readOnly?: boolean;
+  /** Spaces per level when an edit rewrites the body. */
+  readonly indent?: number;
 }
 
 /** The label the root takes, since it has no property name of its own. */
@@ -52,7 +55,7 @@ const CONTROL =
   'min-w-0 flex-1 rounded-sm border border-hairline bg-surface-base px-1 py-0.5 text-sm text-fg-default disabled:opacity-60';
 
 /** The JSON form. */
-export function JsonFormView({ text, schema, onChange, onShowText, readOnly = false }: JsonFormViewProps) {
+export function JsonFormView({ text, schema, onChange, onShowText, readOnly = false, indent = 2 }: JsonFormViewProps) {
   const parsed = useMemo(() => parse(text), [text]);
   const root = useMemo(() => (parsed.ok ? buildJsonForm(schema, parsed.value) : undefined), [parsed, schema]);
 
@@ -70,7 +73,7 @@ export function JsonFormView({ text, schema, onChange, onShowText, readOnly = fa
   }
 
   const edit = (change: JsonFormEdit): void => {
-    onChange(JSON.stringify(applyJsonFormEdit(schema, parsed.value, change), null, 2));
+    onChange(JSON.stringify(applyJsonFormEdit(schema, parsed.value, change), null, indent));
   };
 
   return (
@@ -109,7 +112,7 @@ function NodeView({ node, path, parent, edit, readOnly }: NodeViewProps) {
   // A choice's object branch is the same place in the value: its properties render as the choice's
   // body. A scalar or array branch falls through to an ordinary row with its own control.
   if (parent === 'choice' && node.kind === 'object') {
-    return <Children node={node} path={path} edit={edit} readOnly={readOnly} />;
+    return <Children node={node} path={path} edit={edit} readOnly={disabled} />;
   }
 
   if (!node.present) {
@@ -147,8 +150,12 @@ function NodeView({ node, path, parent, edit, readOnly }: NodeViewProps) {
   return (
     <div className="flex flex-col">
       <Row node={node} label={label}>
-        {node.kind === 'field' && <FieldControl node={node} label={label} edit={edit} disabled={disabled} />}
-        {node.kind === 'any' && <AnyControl node={node} label={label} edit={edit} disabled={disabled} />}
+        {node.kind === 'field' && (
+          <FieldControl node={node} label={label} edit={edit} disabled={disabled} removable={removable} />
+        )}
+        {node.kind === 'any' && (
+          <AnyControl node={node} label={label} edit={edit} disabled={disabled} removable={removable} />
+        )}
         {node.kind === 'choice' && (
           <select
             aria-label={`${label} variant`}
@@ -180,7 +187,8 @@ function NodeView({ node, path, parent, edit, readOnly }: NodeViewProps) {
         )}
         {remove}
       </Row>
-      <Children node={node} path={path} edit={edit} readOnly={readOnly} />
+      {/* A read-only object or array is read-only all the way down. */}
+      <Children node={node} path={path} edit={edit} readOnly={disabled} />
     </div>
   );
 }
@@ -249,10 +257,12 @@ interface ControlProps {
   readonly label: string;
   readonly edit: (change: JsonFormEdit) => void;
   readonly disabled: boolean;
+  /** Whether the value may be taken out of its parent (an optional property or an array item). */
+  readonly removable: boolean;
 }
 
 /** The editor for one scalar. */
-function FieldControl({ node, label, edit, disabled }: ControlProps) {
+function FieldControl({ node, label, edit, disabled, removable }: ControlProps) {
   const set = (value: JsonValue): void => {
     edit({ kind: 'set-value', id: node.id, value });
   };
@@ -301,38 +311,74 @@ function FieldControl({ node, label, edit, disabled }: ControlProps) {
       return <span className="font-mono text-xs text-fg-subtle">null</span>;
     case 'number':
     case 'integer':
-      return <NumberControl node={node} label={label} edit={edit} disabled={disabled} />;
+      return (
+        <>
+          <NumberControl node={node} label={label} edit={edit} disabled={disabled} removable={removable} />
+          <NullButton node={node} label={label} edit={edit} disabled={disabled} />
+        </>
+      );
     default:
       return (
-        <input
-          type="text"
-          aria-label={label}
-          disabled={disabled}
-          value={typeof node.value === 'string' ? node.value : JSON.stringify(node.value ?? '')}
-          placeholder={node.format}
-          className={CONTROL}
-          onChange={(event) => {
-            set(event.target.value);
-          }}
-        />
+        <>
+          <input
+            type="text"
+            aria-label={label}
+            disabled={disabled}
+            // `null` is not a string to edit: the input starts empty and says so, and typing writes a string.
+            value={
+              typeof node.value === 'string' ? node.value : node.value === null ? '' : JSON.stringify(node.value ?? '')
+            }
+            placeholder={node.value === null ? 'null' : node.format}
+            className={CONTROL}
+            onChange={(event) => {
+              set(event.target.value);
+            }}
+          />
+          <NullButton node={node} label={label} edit={edit} disabled={disabled} />
+        </>
       );
   }
 }
 
+/** Writes `null` to a field whose schema allows it; hidden when the value is already `null`. */
+function NullButton({ node, label, edit, disabled }: Omit<ControlProps, 'removable'>) {
+  if (node.nullable !== true || node.value === null) {
+    return null;
+  }
+  return (
+    <Button
+      variant="ghost"
+      aria-label={`Set ${label} to null`}
+      disabled={disabled}
+      onClick={() => {
+        edit({ kind: 'set-value', id: node.id, value: null });
+      }}
+    >
+      null
+    </Button>
+  );
+}
+
 /**
  * A number keeps its own draft: `1.` or `-` is on the way to a number but is not one yet, so only a
- * draft that parses is written, and the draft follows the value when it changes from elsewhere.
+ * draft that parses is written, and the draft follows the value when it changes from elsewhere. An
+ * integer field never takes a fraction: the draft stays and is marked invalid. A draft left empty
+ * takes an optional value out, or goes back to the stored value when it cannot go.
  */
-function NumberControl({ node, label, edit, disabled }: ControlProps) {
+function NumberControl({ node, label, edit, disabled, removable }: ControlProps) {
   const external = typeof node.value === 'number' ? String(node.value) : '';
   const [draft, setDraft] = useState(external);
   useEffect(() => {
     setDraft((current) => (Number(current) === Number(external) && current.trim() !== '' ? current : external));
   }, [external]);
+  const parsed = Number(draft);
+  const invalid =
+    draft.trim() !== '' && (!Number.isFinite(parsed) || (node.valueType === 'integer' && !Number.isInteger(parsed)));
   return (
     <input
       type="number"
       aria-label={label}
+      aria-invalid={invalid}
       disabled={disabled}
       value={draft}
       {...(node.valueType === 'integer' ? { step: 1 } : {})}
@@ -341,8 +387,18 @@ function NumberControl({ node, label, edit, disabled }: ControlProps) {
         const next = event.target.value;
         setDraft(next);
         const value = Number(next);
-        if (next.trim() !== '' && Number.isFinite(value)) {
+        if (next.trim() !== '' && Number.isFinite(value) && (node.valueType !== 'integer' || Number.isInteger(value))) {
           edit({ kind: 'set-value', id: node.id, value });
+        }
+      }}
+      onBlur={() => {
+        if (draft.trim() !== '') {
+          return;
+        }
+        if (removable && node.present) {
+          edit({ kind: 'remove', id: node.id });
+        } else {
+          setDraft(external);
         }
       }}
     />

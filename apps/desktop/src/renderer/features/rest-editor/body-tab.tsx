@@ -245,6 +245,7 @@ export function BodyTab({ requestId, body, settings, onChange, onSend, onSave, s
         <JsonFormView
           text={body.text}
           schema={schema}
+          indent={indent}
           onChange={(text) => {
             set({ ...body, text });
           }}

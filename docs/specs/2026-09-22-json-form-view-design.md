@@ -83,8 +83,17 @@ type JsonFormEdit =
   raw, the language is JSON, and a schema came back.
 - `JsonFormView` (`features/rest-editor/json-form-view.tsx`) parses the current text. If the text does
   not parse, it shows "The body is not valid JSON" with a button back to Text, and no fields.
-- Every edit runs `applyJsonFormEdit`, then `JSON.stringify(value, null, 2)` and `onChange({ body })`.
-  Text → Form → Text with no edits leaves the text byte-identical (the form never writes unless edited).
+- Every edit runs `applyJsonFormEdit`, then `JSON.stringify(value, null, tabSize)` (the editor's tab-size
+  preference) and `onChange({ body })`. Text → Form → Text with no edits leaves the text byte-identical
+  (the form never writes unless edited), but an edit in the form reformats the whole body: numbers are
+  written in their plain form, and very large integers can lose precision.
+- A string field holding `null` shows an empty input with a `null` placeholder; typing writes a string,
+  and a field whose schema allows `null` has a "Set to null" button. An integer field never writes a
+  fraction (the input is marked invalid instead). A number field cleared and left removes an optional
+  property, or goes back to the stored value when the property is required.
+- `readOnly` on an object or array disables everything inside it.
+- A `oneOf`/`anyOf` branch is chosen by the schema's `discriminator` when it has one, else by the branch
+  whose declared properties cover most of the value's keys.
 - The Text/Form choice is remembered per request in renderer editor state.
 - Keyboard: every input is labelled by its property path; add/remove are buttons with accessible names.
 
