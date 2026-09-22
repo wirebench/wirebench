@@ -21,6 +21,7 @@ import { readDefinitionCache } from '../wsdl/cache.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
+import { createRunTokenSource } from './oauth2-token.js';
 import { prepareSend } from './prepare.js';
 import type { RunContext } from './prepare.js';
 import type { SelectedRequest } from './select.js';
@@ -272,6 +273,17 @@ export async function runRequests(
     }
     return loaded;
   };
+  // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
+  const runContext: RunContext = {
+    ...context,
+    tokenSource:
+      context.tokenSource ??
+      createRunTokenSource({
+        getSecret: context.getSecret,
+        ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
+        ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+      }),
+  };
   const results: RequestResult[] = [];
   let stopped = false;
   for (const item of selected) {
@@ -286,7 +298,7 @@ export async function runRequests(
     } else if (item.request.assertions.length === 0 && options.requireAssertions === true) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      result = await runOne(item, context, options, definitionFor);
+      result = await runOne(item, runContext, options, definitionFor);
     }
     results.push(result);
     options.onRequestDone?.(result);

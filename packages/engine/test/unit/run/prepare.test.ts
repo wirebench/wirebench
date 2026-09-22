@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prepareSend } from '../../../src/run/prepare.js';
 import type { RunContext } from '../../../src/run/prepare.js';
+import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type {
@@ -126,6 +127,31 @@ afterAll(() => {
 function soapOf(project: Project) {
   return selectRequests(project, []).selected.find((s) => s.kind === 'soap')!;
 }
+function oauth(grant: 'client-credentials' | 'authorization-code'): AuthConfig {
+  return {
+    type: 'oauth2',
+    grant,
+    tokenUrl: 'https://auth.test/token',
+    clientId: 'c',
+    scopes: [],
+    clientAuth: 'basic',
+    pkce: true,
+  };
+}
+
+function tokenExchange(accessToken: string): HttpExchange {
+  const body = new TextEncoder().encode(JSON.stringify({ access_token: accessToken, token_type: 'Bearer' }));
+  return {
+    request: { url: 'https://auth.test/token', method: 'POST', headers: {} },
+    status: 200,
+    statusText: 'OK',
+    headers: { 'content-type': 'application/json' },
+    rawHeaders: [],
+    body,
+    rawBody: body,
+  } as unknown as HttpExchange;
+}
+
 function restOf(project: Project) {
   return selectRequests(project, []).selected.find((s) => s.kind === 'rest')!;
 }
@@ -324,29 +350,38 @@ describe('prepareSend — REST', () => {
     });
   });
 
-  it('refuses OAuth2, naming the browser grant separately', async () => {
-    const oauth = (grant: 'client-credentials' | 'authorization-code'): AuthConfig => ({
-      type: 'oauth2',
-      grant,
-      tokenUrl: 'https://auth.test/token',
-      clientId: 'c',
-      scopes: [],
-      clientAuth: 'basic',
-      pkce: true,
-    });
+  it('refuses the OAuth2 authorization-code grant, which needs a browser', async () => {
     const browser = makeProject({ restAuth: oauth('authorization-code') });
     await expect(
       prepareSend(restOf(browser), contextFor(browser, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
+    ).rejects.toMatchObject({ code: 'auth-grant-unsupported' });
+  });
+
+  it("sends a client-credentials token as a bearer header, fetched with the request's timeout and proxy", async () => {
+    const project = makeProject({ restAuth: oauth('client-credentials') });
+    const sent: HttpRequest[] = [];
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      restOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        timeoutMs: 1234,
+        proxyFor: (url) => (url === 'https://auth.test/token' ? { url: 'http://proxy.test:8080' } : undefined),
+        fetchToken: (request) => {
+          sent.push(request);
+          return Promise.resolve(tokenExchange('tok-1'));
+        },
+        onSecretValue: (value) => seen.push(value),
+      }),
+    );
+    expect(prepared.kind === 'rest' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-1' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      url: 'https://auth.test/token',
+      timeoutMs: 1234,
+      proxy: { url: 'http://proxy.test:8080' },
     });
-    const machine = makeProject({ restAuth: oauth('client-credentials') });
-    await expect(
-      prepareSend(restOf(machine), contextFor(machine, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
-      message: 'OAuth2 is not supported by the runner yet.',
-    });
+    expect(seen).toEqual(['tok-1']);
   });
 
   it('carries --timeout and --insecure, and resolves a bearer token', async () => {
