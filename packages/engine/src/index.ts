@@ -442,6 +442,12 @@ export type {
   RestContractResult,
   RestContractStatus,
 } from './rest/contract-check.js';
+export {
+  createRestContractChecker,
+  DEFAULT_REST_CHECK_DEADLINE_MS,
+  DEFAULT_REST_CHECK_QUEUE,
+} from './rest/contract-check-worker-host.js';
+export type { RestContractChecker, RestContractCheckerOptions } from './rest/contract-check-worker-host.js';
 export { pointerRange } from './json/pointer-range.js';
 export type { PointerTextRange } from './json/pointer-range.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
