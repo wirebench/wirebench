@@ -31,7 +31,9 @@ rules that decide what a secret looks like are the ones the redaction helpers al
    pseudo-ref `secret:<name>`. Desktop's getter maps a `secret:` pseudo-ref to the labelled store entry
    for the open project; the CLI's `createEnvSecrets` reads `WIREBENCH_SECRET_<NAME>` (name
    upper-cased) through `envVariablesFor({ ref: 'secret:<name>', envName: NAME })`. An unknown name is
-   an unresolved ref (the existing `UnresolvedRef` path), never an empty string.
+   refused at resolution with `secret-missing` (`details.ref` = `secret:<name>`, message from
+   `secretTokenMissingMessage`), never sent as an empty string. Expansion itself, given no
+   `secrets` value for a name, still reports it as an unresolved ref.
 4. **Masking.** Every resolved secret value joins the send's `createSecretMasker` list, so it shows as
    `<redacted>` in the HTTP log, History, run reports and CLI output like any auth secret. Editors keep
    showing the token.

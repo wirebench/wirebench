@@ -56,7 +56,11 @@ export interface RunContext {
   readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
 }
 
-/** One request, ready for `sendSoapRequest` (with `scopes`) or `sendRest`. */
+/**
+ * One request, ready for `sendSoapRequest` (with `scopes`) or `sendRest`. It carries resolved
+ * secret values (auth, `scopes.secrets`) but no list of them: the host masks what its `GetSecret`
+ * handed out (see `GetSecret`).
+ */
 export type PreparedSend =
   | { readonly kind: 'soap'; readonly input: SoapSendInput; readonly scopes: PropertyScopes }
   | { readonly kind: 'rest'; readonly input: RestSendInput };

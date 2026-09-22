@@ -173,6 +173,31 @@ describe('secretNeedsOf — ${secret:name} tokens', () => {
     expect(needs[0]?.usedBy).toHaveLength(2);
   });
 
+  it('lists a token only an environment property holds', () => {
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      requests: [createRestRequest('a', { id: 'r-a', url: '/a?k=${key}' })],
+    });
+    const p = {
+      ...project({ apis: [api] }),
+      environments: [
+        {
+          id: 'env-1',
+          name: 'Staging',
+          slug: 'staging',
+          order: 0,
+          endpoints: {},
+          properties: { key: '${secret:env_key}' },
+          disabledProperties: [],
+        },
+      ],
+    };
+    expect(needsOf(p)).toEqual([
+      { ref: 'secret:env_key', envName: 'ENV_KEY', purpose: 'secret "env_key"', usedBy: ['demo/a'] },
+    ]);
+  });
+
   it('lists a SOAP envelope token beside the auth need', () => {
     const p = project({
       interfaces: [

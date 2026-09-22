@@ -9,7 +9,14 @@ import type { AuthConfig, EndpointAuth } from '../project/model.js';
 import type { SendAuth } from '../types.js';
 import { secretPseudoRef } from './secret-token.js';
 
-/** Turns a `secretRef` into its value. The one seam every host fills in: a keychain, or `process.env`. */
+/**
+ * Turns a `secretRef` (or a `secret:<name>` pseudo-ref for a `${secret:name}` token) into its
+ * value. The one seam every host fills in: a keychain, or `process.env`.
+ *
+ * Masking contract: every value a `GetSecret` hands out must be masked by the host — in logs,
+ * History, reports and CLI output. The engine keeps no list of its own; the CLI's
+ * `createEnvSecrets` records what it returns for its masker, and every host must do the same.
+ */
 export type GetSecret = (ref: string) => Promise<string | undefined>;
 
 /**

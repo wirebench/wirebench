@@ -125,18 +125,19 @@ function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[
   ];
 }
 
-function tokenNeeds(selected: SelectedRequest, scopes: PropertyScopes): SecretNeed[] {
-  return secretNamesInValue(selected.request, scopes).map((name) => ({
+function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
+  const names = new Set(scopeSets.flatMap((scopes) => secretNamesInValue(selected.request, scopes)));
+  return [...names].map((name) => ({
     ref: secretPseudoRef(name),
     envName: secretEnvName(name),
     purpose: `secret "${name}"`,
   }));
 }
 
-function needsOf(selected: SelectedRequest, project: Project, scopes: PropertyScopes): SecretNeed[] {
+function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
   if (selected.kind === 'rest') {
     return [
-      ...tokenNeeds(selected, scopes),
+      ...tokenNeeds(selected, scopeSets),
       ...secretNeedsOfAuth(restEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
@@ -145,7 +146,7 @@ function needsOf(selected: SelectedRequest, project: Project, scopes: PropertySc
   const outgoing = findConfig(project.wss.outgoing, request.wssOutgoingRef, toWssOutgoingConfig);
   const incoming = findConfig(project.wss.incoming, request.wssIncomingRef, toWssIncomingConfig);
   return [
-    ...tokenNeeds(selected, scopes),
+    ...tokenNeeds(selected, scopeSets),
     ...secretNeedsOfAuth(soapEffectiveAuth(selected)),
     ...keystoreNeeds(project, request.properties.sslKeystoreRef),
     ...(outgoing !== undefined ? outgoingNeeds(project, outgoing) : []),
@@ -159,10 +160,14 @@ function needsOf(selected: SelectedRequest, project: Project, scopes: PropertySc
  */
 export function secretNeedsOf(selected: readonly SelectedRequest[], project: Project): LocatedSecretNeed[] {
   const byRef = new Map<string, { need: SecretNeed; usedBy: string[] }>();
-  // Project properties only: a token a property holds counts, whichever environment a run picks.
-  const scopes = resolveScopes(project, undefined, {}, {});
+  // A token a property holds counts whichever environment a run picks: project properties alone,
+  // then each environment laid over them. No process environment, so this stays pure.
+  const scopeSets = [
+    resolveScopes(project, undefined, {}, {}),
+    ...project.environments.map((environment) => resolveScopes(project, environment.id, {}, {})),
+  ];
   for (const item of selected) {
-    for (const need of needsOf(item, project, scopes)) {
+    for (const need of needsOf(item, project, scopeSets)) {
       const known = byRef.get(need.ref);
       if (known === undefined) {
         byRef.set(need.ref, { need, usedBy: [item.path] });
