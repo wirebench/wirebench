@@ -1,6 +1,6 @@
 # Spec: CLI runner slice S7 — gRPC unary calls and headless OAuth2 client credentials
 
-- Status: **Draft**
+- Status: **Shipped**
 - Date: 2026-09-22
 - Issue: [#30](https://github.com/wirebench/wirebench/issues/30), the last unticked box
 - Builds on: `docs/specs/2026-09-18-cli-runner-design.md` (S1–S6 shipped; this is its §9 slice S7),

@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
+  requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
+  `sla` assertions — streaming requests are skipped, and an API without a cached definition errors
+  with `grpc-definition-missing`. A REST or gRPC request behind OAuth2 client credentials fetches its
+  token headlessly, once per configuration per run, with the client secret from
+  `WIREBENCH_SECRET_<NAME>`; the token is masked in every report and output like any other secret.
+  The authorization-code grant is still refused. The JSON report's `protocol` can be `"grpc"`. gRPC
+  requests may now carry `assertions:` in their file. See [`docs/cli.md`](docs/cli.md).
+
 - **AsyncAPI import for WebSocket.** Import… detects AsyncAPI 2.0–2.6 and 3.0.x documents (YAML or JSON,
   from a URL, file or paste) and makes a WebSocket API: a request per WebSocket channel with its URL, query,
   headers, subprotocol and a saved sample for each outgoing message, and the API's auth from the first
@@ -82,7 +91,7 @@ All notable changes to this project are documented here. The format follows
   `cli`, `junit`, `json` and `html` reports; secrets resolved from `WIREBENCH_SECRET_<NAME>` /
   `WIREBENCH_SECRET_<REF>` environment variables, never from the desktop's keychain-backed store;
   and exit codes a pipeline can branch on (0 pass, 1 assertion failed, 2 usage/load, 3 run error,
-  130 interrupted). gRPC unary and OAuth2 client-credentials are not in this release. See
+  130 interrupted). See
   [`docs/cli.md`](docs/cli.md) and
   [`docs/specs/2026-09-18-cli-runner-design.md`](docs/specs/2026-09-18-cli-runner-design.md).
 
