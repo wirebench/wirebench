@@ -91,10 +91,10 @@ describe('request.curl with a SOAP token owner auth', () => {
 
     const redacted = await curl();
     expect(redacted.command).toContain('http://dev.test/calc.asmx?api+key=%3Credacted%3E');
-    expect(redacted.command).not.toContain('my+key');
+    expect(redacted.command).not.toMatch(/my(%20|\+|\s)key/);
 
     showSecrets = true;
-    expect((await curl()).command).toContain('http://dev.test/calc.asmx?api+key=my+key');
+    expect((await curl()).command).toContain('http://dev.test/calc.asmx?api%20key=my%20key');
   });
 
   it('a header api-key is masked by its own header name', async () => {

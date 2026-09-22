@@ -47,18 +47,25 @@ export function applySoapAuth(
   };
 }
 
+/**
+ * The endpoint with `rows` appended to its query. Built by hand rather than through
+ * `URL.searchParams`, which would re-serialise the whole query as form encoding: the endpoint's own
+ * query and fragment stay byte-for-byte as configured (an `?op` stays `?op`), as REST keeps an
+ * inline query. An endpoint that is not an absolute URL is returned unchanged.
+ */
 function withQuery(endpoint: string, rows: readonly { readonly name: string; readonly value: string }[]): string {
   if (rows.length === 0) {
     return endpoint;
   }
-  let url: URL;
   try {
-    url = new URL(endpoint);
+    new URL(endpoint);
   } catch {
     return endpoint;
   }
-  for (const row of rows) {
-    url.searchParams.append(row.name, row.value);
-  }
-  return url.toString();
+  const hash = endpoint.indexOf('#');
+  const head = hash === -1 ? endpoint : endpoint.slice(0, hash);
+  const fragment = hash === -1 ? '' : endpoint.slice(hash);
+  const separator = !head.includes('?') ? '?' : /[?&]$/.test(head) ? '' : '&';
+  const query = rows.map((row) => `${encodeURIComponent(row.name)}=${encodeURIComponent(row.value)}`).join('&');
+  return `${head}${separator}${query}${fragment}`;
 }

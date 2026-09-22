@@ -150,25 +150,30 @@ describe('SOAP send with a token owner auth', () => {
       { project: projectWith(auth), getSecret, history: { recordSend } as never },
       request('s-key'),
     );
-    // On the wire, URLSearchParams-encoded: a space is `+`.
-    expect(server.seen[0]!.url).toBe('/calc?api+key=my+key');
-    expect(summary.http.request.url).not.toContain('my+key');
+    // On the wire, percent-encoded as one appended pair: a space is `%20`.
+    expect(server.seen[0]!.url).toBe('/calc?api%20key=my%20key');
+    // Masked whichever way the key is spelt: percent-encoded, form-encoded or raw.
+    const KEY = /my(%20|\+|\s)key/;
+    expect(summary.http.request.url).not.toMatch(KEY);
     expect(summary.http.request.url).toContain('api+key=%3Credacted%3E');
-    expect(Buffer.from(summary.http.rawRequestBase64, 'base64').toString('latin1')).not.toContain('my+key');
+    expect(Buffer.from(summary.http.rawRequestBase64, 'base64').toString('latin1')).not.toMatch(KEY);
     // A later `exchanges.get` re-render masks it the same way, and shows it with show-secrets.
     const full = service.exchanges.get('s-key')!;
     const keyParams = service.exchanges.getExchange('s-key')?.keyParams;
     expect(keyParams).toEqual(['api key']);
-    expect(redactExchangeSummary(full, { show: false, keyParams: keyParams! }).http.request.url).not.toContain(
-      'my+key',
-    );
-    expect(redactExchangeSummary(full, { show: true, keyParams: keyParams! }).http.request.url).toContain('my+key');
+    expect(redactExchangeSummary(full, { show: false, keyParams: keyParams! }).http.request.url).not.toMatch(KEY);
+    expect(redactExchangeSummary(full, { show: true, keyParams: keyParams! }).http.request.url).toMatch(KEY);
+    // A redirect's first hop is the wire URL, key included: masked like the request URL.
+    const redirected = { ...full, http: { ...full.http, redirects: [{ url: full.http.request.url, status: 302 }] } };
+    const hops = redactExchangeSummary(redirected, { show: false, keyParams: keyParams! }).http.redirects;
+    expect(hops[0]!.url).not.toMatch(KEY);
+    expect(hops[0]!.url).toContain('redacted');
     // History stores the endpoint as configured, never the one carrying the key.
     const [projectId, record] = recordSend.mock.calls[0]!;
-    expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toContain('my+key');
+    expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toMatch(KEY);
     // HAR is built from the log row, which carries the already-masked summary.
     const entry = { kind: 'exchange', protocol: 'soap', exchange: summary } as unknown as LogEntryWire;
-    expect(JSON.stringify(harOf([entry], { name: 'Wirebench', version: '0' }))).not.toContain('my+key');
+    expect(JSON.stringify(harOf([entry], { name: 'Wirebench', version: '0' }))).not.toMatch(KEY);
   });
 
   it('a query API key is masked in the failed row, in both encodings', async () => {

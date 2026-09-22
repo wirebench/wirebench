@@ -110,8 +110,10 @@ export function applySoapAuth(endpoint: string, headers: Readonly<Record<string,
 
 It calls `rest/auth.ts` `applyAuth` (the single implementation of the header and query forms), merges the
 auth headers *under* the caller's (an explicit `Authorization` header wins, as it does for Basic in
-`sendWithAuth`), and appends query rows with `URL.searchParams.append` (existing query, fragment and encoding
-kept; an unparseable endpoint is left as is and the send fails where it would have). `sendSoapRequest` calls
+`sendWithAuth`), and appends query rows as percent-encoded `name=value` pairs before any fragment, by hand
+rather than through `URL.searchParams`, which would re-serialise the whole query (the existing query and
+fragment stay byte-for-byte, an `?op` stays `?op`; an unparseable endpoint is left as is and the send fails
+where it would have). `sendSoapRequest` calls
 it after property expansion and before WS-Addressing, so `wsa:To` is the endpoint the user configured, not
 the one carrying a key; `sendWithAuth` receives only `transportAuth`. `effectiveSendInput` (cURL) goes
 through the same function so the exported command matches the send.

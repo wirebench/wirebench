@@ -657,6 +657,11 @@ export function redactExchangeSummary(
         opts?.keyParams ?? [],
       ),
       rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
+      // The first hop is the wire URL, which carries a query API key as the request URL does.
+      redirects: summary.http.redirects.map((redirect) => ({
+        ...redirect,
+        url: redactUrl(redirect.url, { show, extraParams: opts?.keyParams ?? [] }),
+      })),
       request: {
         ...summary.http.request,
         // A SOAP owner's API key may travel in the query string; `keyParams` names it whatever it is

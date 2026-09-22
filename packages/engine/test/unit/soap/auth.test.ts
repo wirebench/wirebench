@@ -43,7 +43,16 @@ describe('applySoapAuth', () => {
 
   it('encodes the query value', () => {
     const auth = { type: 'api-key', name: 'key', value: 'a b&c', in: 'query' } as const;
-    expect(applySoapAuth(URL_, undefined, auth).endpoint).toBe('https://h/s?key=a+b%26c');
+    expect(applySoapAuth(URL_, undefined, auth).endpoint).toBe('https://h/s?key=a%20b%26c');
+  });
+
+  it("leaves the endpoint's own query exactly as configured", () => {
+    const auth = { type: 'api-key', name: 'key', value: 'k', in: 'query' } as const;
+    expect(applySoapAuth('http://h/svc.asmx?op', undefined, auth).endpoint).toBe('http://h/svc.asmx?op&key=k');
+    expect(applySoapAuth('https://h/s?a=x%20y&p=/a/b:c', undefined, auth).endpoint).toBe(
+      'https://h/s?a=x%20y&p=/a/b:c&key=k',
+    );
+    expect(applySoapAuth('https://h/s?', undefined, auth).endpoint).toBe('https://h/s?key=k');
   });
 
   it('returns an unparseable endpoint unchanged', () => {
