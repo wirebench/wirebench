@@ -44,6 +44,10 @@
         "types": "./dist/asyncapi/browser.d.ts",
         "default": "./dist/asyncapi/browser.js"
       },
+      "./snapshot": {
+        "types": "./dist/snapshot/index.d.ts",
+        "default": "./dist/snapshot/index.js"
+      },
       "./detect": {
         "types": "./dist/import-detect.d.ts",
         "default": "./dist/import-detect.js"
@@ -81,6 +85,11 @@
       "development": "./src/asyncapi/browser.ts",
       "types": "./dist/asyncapi/browser.d.ts",
       "default": "./dist/asyncapi/browser.js"
+    },
+    "./snapshot": {
+      "development": "./src/snapshot/index.ts",
+      "types": "./dist/snapshot/index.d.ts",
+      "default": "./dist/snapshot/index.js"
     },
     "./ws": {
       "development": "./src/ws/browser.ts",
