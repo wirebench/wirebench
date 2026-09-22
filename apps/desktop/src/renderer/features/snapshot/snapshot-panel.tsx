@@ -7,9 +7,6 @@
  * saved, which is how it notices that the project can now keep a snapshot.
  */
 import { useEffect, useMemo, useState } from 'react';
-// The snapshot subpath is as browser-safe as /xml (it depends only on it and @xmldom/xmldom), but
-// the ADR-0002 allowlist does not name it yet.
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { detectSnapshotFormat, diffSnapshot, parseIgnoreRules, type SnapshotChange } from '@wirebench/engine/snapshot';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';

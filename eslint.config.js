@@ -20,13 +20,14 @@ const MONACO_PATH = {
  * reimplemented in the renderer, since two sets of escaping rules would eventually disagree about
  * what is being sent; `/grpc` carries the pure method-kind and target rules; `/detect` carries
  * pure-text format detection for the unified import dialog; `/json` carries the cursor analysis
- * Monaco's JSON completion provider runs on every keystroke, which is why it is not an IPC call.
+ * Monaco's JSON completion provider runs on every keystroke, which is why it is not an IPC call;
+ * `/snapshot` carries the semantic diff the Snapshot tab reruns on every response.
  * All of them are pure text code with no Node dependency.
  */
 const ENGINE_PATTERN = {
-  regex: '^@wirebench/engine(?!/(xml|rest|grpc|ws|json|detect)$)(/.*)?$',
+  regex: '^@wirebench/engine(?!/(xml|rest|grpc|ws|json|detect|snapshot)$)(/.*)?$',
   message:
-    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, /grpc, /ws, /json, and /detect subpaths may be imported (ADR-0002)',
+    'the renderer reaches the engine over IPC; only the browser-safe @wirebench/engine/xml, /rest, /grpc, /ws, /json, /detect, and /snapshot subpaths may be imported (ADR-0002)',
 };
 
 export default tseslint.config(
