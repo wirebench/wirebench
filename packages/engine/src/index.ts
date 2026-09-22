@@ -1100,6 +1100,8 @@ export {
 export { detectInText, SECRET_TEXT_SCAN_LIMIT } from './secrets/scan/rules.js';
 export type { DetectContext, SecretMatch, SecretRule } from './secrets/scan/rules.js';
 export { maskedPreview, scanProjectForSecrets } from './secrets/scan/scan.js';
+export { applySecretMoves, proposeSecretName } from './secrets/scan/apply.js';
+export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
 export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
 export {
