@@ -1092,6 +1092,8 @@ export class ProjectHost {
     // Parsed keystores are decrypted key material: they must not outlive the project they
     // belong to, and a reopened project re-reads (and re-authorises) every file anyway.
     this.keystoreCache.clear();
+    // A contract memo belongs to this project's cache folder; a reopen reads it again.
+    this.asyncApiContracts.clear();
     for (const iface of this.open.project.interfaces) {
       this.engine.close(iface.id);
     }

@@ -22,6 +22,9 @@ export const DEFAULT_FRAME_CHECK_DEADLINE_MS = 1_000;
 /** How many frames may wait behind the one being checked before new ones are not checked at all. */
 export const DEFAULT_FRAME_CHECK_QUEUE = 1_000;
 
+/** Payload bytes that may wait to be checked; a frame that would pass it is not checked at all. */
+export const DEFAULT_FRAME_CHECK_QUEUE_BYTES = 8 * 1024 * 1024;
+
 export interface WorkerFrameCheckerOptions {
   /** Milliseconds one frame's check may take before the worker is terminated and replaced. */
   readonly deadlineMs?: number;
@@ -29,6 +32,8 @@ export interface WorkerFrameCheckerOptions {
   readonly budgetMs?: number;
   /** Frames that may wait behind the one being checked. */
   readonly maxQueued?: number;
+  /** Payload bytes that may wait behind the frame being checked. */
+  readonly maxQueuedBytes?: number;
   /** The worker script; tests substitute one. Defaults to the compiled `frame-check-worker.js`. */
   readonly workerUrl?: URL;
 }
@@ -82,6 +87,8 @@ export function createWorkerFrameChecker(
 ): WorkerFrameChecker {
   const deadlineMs = options.deadlineMs ?? DEFAULT_FRAME_CHECK_DEADLINE_MS;
   const maxQueued = options.maxQueued ?? DEFAULT_FRAME_CHECK_QUEUE;
+  const maxQueuedBytes = options.maxQueuedBytes ?? DEFAULT_FRAME_CHECK_QUEUE_BYTES;
+  let queuedBytes = 0;
   const data: FrameCheckWorkerData = {
     messages,
     ...(options.budgetMs !== undefined ? { budgetMs: options.budgetMs } : {}),
@@ -144,6 +151,7 @@ export function createWorkerFrameChecker(
     if (current !== undefined || disposed) return;
     const job = queue.shift();
     if (job === undefined) return;
+    queuedBytes -= job.frame.size;
     current = job;
     try {
       worker ??= spawn();
@@ -166,9 +174,13 @@ export function createWorkerFrameChecker(
     check(frame) {
       if (disposed || frame.opcode !== 'text' || frame.text === undefined) return Promise.resolve(undefined);
       if (queue.length >= maxQueued) return Promise.resolve(notChecked('too many frames waiting to be checked'));
+      if (queue.length > 0 && queuedBytes + frame.size > maxQueuedBytes) {
+        return Promise.resolve(notChecked('too much data waiting to be checked'));
+      }
       return new Promise((resolve) => {
         nextId += 1;
         queue.push({ id: nextId, frame, resolve });
+        queuedBytes += frame.size;
         pump();
       });
     },
@@ -180,6 +192,7 @@ export function createWorkerFrameChecker(
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
       const waiting = [...(current !== undefined ? [current] : []), ...queue.splice(0)];
+      queuedBytes = 0;
       current = undefined;
       for (const job of waiting) job.resolve(notChecked('the session ended'));
       if (dead !== undefined) {

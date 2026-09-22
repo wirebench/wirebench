@@ -431,7 +431,9 @@ describe('the contract a live session is checked against', () => {
       added: { key: string }[];
       removed: { key: string }[];
       changed: { op: { key: string }; reasons: string[] }[];
+      fingerprint: string;
     }>('api.asyncApiPlanUpdate', { apiId: imported.apiId });
+    expect(plan.fingerprint).toMatch(/^[0-9a-f]{64}$/);
     expect(plan.added.map((op) => op.key)).toEqual(['onChat']);
     expect(plan.removed.map((op) => op.key)).toEqual(['onTyping']);
     expect(plan.changed.find((c) => c.op.key === 'sendChat')?.reasons).toContain('payload');
@@ -442,11 +444,11 @@ describe('the contract a live session is checked against', () => {
       project: ProjectWire;
       plan: typeof plan;
       applied: { requestsOrphaned: string[]; requestsAdded: string[]; messagesAdded: string[] };
-    }>('api.asyncApiApplyUpdate', { apiId: imported.apiId });
+    }>('api.asyncApiApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint });
     const typing = requestFor(imported.apiId, 'typing');
     expect(applied.applied.requestsOrphaned).toEqual([typing?.id]);
     expect(typing?.orphaned).toBe(true);
-    expect(applied.plan).toEqual(plan);
+    expect({ ...applied.plan, fingerprint: plan.fingerprint }).toEqual(plan);
     expect(applied.project.wsRequests.find((r) => r.id === typing?.id)?.orphaned).toBe(true);
 
     const slug = applied.project.wsApis[0]?.slug ?? '';
@@ -455,6 +457,16 @@ describe('the contract a live session is checked against', () => {
     const after = await host.asyncApiContractFor(imported.apiId);
     expect(after).not.toBe(before);
     expect(after?.channels.some((c) => c.key === 'typing')).toBe(false);
+  });
+
+  it('refuses to apply when the source changed after it was planned', async () => {
+    const imported = await importNext();
+    await writeFile(docPath, await readFile(join(fixtures, 'chat-3.0.yaml'), 'utf8'));
+    const plan = await value<{ fingerprint: string }>('api.asyncApiPlanUpdate', { apiId: imported.apiId });
+    await writeFile(docPath, (await readFile(docPath, 'utf8')).replace('Chat service', 'Chat service v2'));
+    const error = await failure('api.asyncApiApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint });
+    expect(error.code).toBe('definition-changed');
+    expect(requestFor(imported.apiId, 'typing')?.orphaned).toBeUndefined();
   });
 
   it('refuses to plan for an API that is not AsyncAPI-imported', async () => {

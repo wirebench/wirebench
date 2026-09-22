@@ -2748,6 +2748,16 @@ export const asyncApiUpdatePlanSchema = z.object({
 });
 export type AsyncApiUpdatePlanWire = z.infer<typeof asyncApiUpdatePlanSchema>;
 
+/**
+ * `api.asyncApiPlanUpdate`'s answer: the plan, and a sha256 of the documents it was made from, which
+ * `api.asyncApiApplyUpdate` must be handed back so it never applies a source that changed since.
+ */
+export const apiAsyncApiPlanUpdateResponseSchema = asyncApiUpdatePlanSchema.extend({ fingerprint: z.string() });
+export type ApiAsyncApiPlanUpdateResponse = z.infer<typeof apiAsyncApiPlanUpdateResponseSchema>;
+
+export const apiAsyncApiApplyUpdateRequestSchema = z.object({ apiId: z.string(), fingerprint: z.string() });
+export type ApiAsyncApiApplyUpdateRequest = z.infer<typeof apiAsyncApiApplyUpdateRequestSchema>;
+
 /** What `api.asyncApiApplyUpdate` did: the saved project, the plan it applied, and the ids it touched. */
 export const apiAsyncApiApplyUpdateResponseSchema = z.object({
   project: projectWireSchema,

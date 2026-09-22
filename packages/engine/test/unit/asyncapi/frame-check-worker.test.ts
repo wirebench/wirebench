@@ -82,6 +82,16 @@ describe('createWorkerFrameChecker', () => {
     expect(await checker.check(frame('received', '{}', 1))).toBeUndefined();
   });
 
+  it('frames past the queued-bytes bound are not-checked at once', async () => {
+    const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 10_000, maxQueuedBytes: 10 });
+    const first = checker.check(frame('received', 'hang', 0));
+    const small = checker.check(frame('received', '{"a":1}', 1));
+    // 7 bytes are waiting; 7 more would pass the 10-byte bound.
+    expect(await checker.check(frame('received', '{"b":2}', 2))).toMatchObject({ status: 'not-checked' });
+    await checker.dispose();
+    await Promise.all([first, small]);
+  });
+
   it('a full queue answers not-checked instead of growing without bound', async () => {
     const checker = createWorkerFrameChecker(messages, { workerUrl: hanging, deadlineMs: 10_000, maxQueued: 1 });
     const first = checker.check(frame('received', 'hang', 0));

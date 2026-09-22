@@ -408,6 +408,7 @@ export {
   createWorkerFrameChecker,
   DEFAULT_FRAME_CHECK_DEADLINE_MS,
   DEFAULT_FRAME_CHECK_QUEUE,
+  DEFAULT_FRAME_CHECK_QUEUE_BYTES,
 } from './asyncapi/frame-check-worker-host.js';
 export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/frame-check-worker-host.js';
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';

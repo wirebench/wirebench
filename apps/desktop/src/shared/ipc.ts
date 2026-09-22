@@ -10,7 +10,8 @@ import {
   apiImportAsyncApiRequestSchema,
   apiImportAsyncApiResponseSchema,
   apiAsyncApiApplyUpdateResponseSchema,
-  asyncApiUpdatePlanSchema,
+  apiAsyncApiApplyUpdateRequestSchema,
+  apiAsyncApiPlanUpdateResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -434,11 +435,15 @@ export const channels = {
       apiImportAsyncApiResponseSchema,
     ),
     /** Re-reads an AsyncAPI-imported API's source and reports what updating to it would change. */
-    asyncApiPlanUpdate: defineChannel('api.asyncApiPlanUpdate', apiIdRequestSchema, asyncApiUpdatePlanSchema),
+    asyncApiPlanUpdate: defineChannel(
+      'api.asyncApiPlanUpdate',
+      apiIdRequestSchema,
+      apiAsyncApiPlanUpdateResponseSchema,
+    ),
     /** Applies that update: orphans, adds and rewrites requests, rewrites the cache, and saves. */
     asyncApiApplyUpdate: defineChannel(
       'api.asyncApiApplyUpdate',
-      apiIdRequestSchema,
+      apiAsyncApiApplyUpdateRequestSchema,
       apiAsyncApiApplyUpdateResponseSchema,
     ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),

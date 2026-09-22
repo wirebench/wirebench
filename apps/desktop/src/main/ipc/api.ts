@@ -7,6 +7,7 @@
  * has no documents to show rather than silently re-fetching them.
  */
 
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
 import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource } from '@wirebench/engine';
@@ -70,6 +71,15 @@ function toEngineSource(source: OpenApiSourceWire): OpenApiSource {
     return { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
   }
   return source;
+}
+
+/** A sha256 over every document an update read, location and bytes, in the order they were read. */
+function fingerprintOf(documents: readonly { readonly location: string; readonly bytes: Uint8Array }[]): string {
+  const hash = createHash('sha256');
+  for (const document of documents) {
+    hash.update(document.location).update('\0').update(document.bytes).update('\0');
+  }
+  return hash.digest('hex');
 }
 
 /** An update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
@@ -279,11 +289,20 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   registerHandler(channels.api.asyncApiPlanUpdate, async (request) => {
     const next = await readAsyncApiSource(request.apiId);
-    return toAsyncApiUpdatePlanWire(await router.asyncApiPlanUpdate(request.apiId, next.document));
+    const plan = toAsyncApiUpdatePlanWire(await router.asyncApiPlanUpdate(request.apiId, next.document));
+    return { ...plan, fingerprint: fingerprintOf(next.documents) };
   });
 
   registerHandler(channels.api.asyncApiApplyUpdate, async (request) => {
     const next = await readAsyncApiSource(request.apiId);
+    // The user agreed to the plan they were shown; a source edited since would apply something else.
+    if (fingerprintOf(next.documents) !== request.fingerprint) {
+      throw new WirebenchError(
+        'definition-changed',
+        'The definition changed after the update was planned. Plan the update again to see what it does now.',
+        { details: { apiId: request.apiId } },
+      );
+    }
     const { project, plan, applied } = await router.asyncApiApplyUpdate(request.apiId, next);
     return {
       project,

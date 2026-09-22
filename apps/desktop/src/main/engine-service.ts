@@ -45,6 +45,7 @@ import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import {
   createWorkerFrameChecker,
+  DEFAULT_FRAME_CHECK_DEADLINE_MS,
   type ChannelMessages,
   type WorkerFrameChecker,
   type WorkerFrameCheckerOptions,
@@ -984,6 +985,13 @@ export class EngineService {
         return undefined;
       },
     );
+    const stop = async (): Promise<void> => {
+      ended = true;
+      if (checker !== undefined && this.frameCheckers.get(sendId) === checker) {
+        this.frameCheckers.delete(sendId);
+      }
+      await checker?.dispose();
+    };
     return {
       check: (frame) => {
         const job = ready
@@ -998,19 +1006,25 @@ export class EngineService {
         pending.add(job);
         void job.finally(() => pending.delete(job));
       },
-      // Each check is bounded by the checker's own deadline, so this wait is too.
+      // One overall deadline for everything still waiting, not one per frame: a backed-up queue
+      // must not hold the summary (History, a quit, a workspace close) for minutes. Whatever has
+      // not been answered by then is ended by `dispose`, which reports it `not-checked`.
       settle: async () => {
-        await Promise.all([...pending]);
+        const deadlineMs = options?.deadlineMs ?? DEFAULT_FRAME_CHECK_DEADLINE_MS;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          Promise.all([...pending]),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, deadlineMs);
+          }),
+        ]);
+        clearTimeout(timer);
+        await stop();
+        // The checks `dispose` just answered land their results a few microtasks later.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         return results;
       },
-      dispose: async () => {
-        ended = true;
-        await ready;
-        if (checker !== undefined && this.frameCheckers.get(sendId) === checker) {
-          this.frameCheckers.delete(sendId);
-        }
-        await checker?.dispose();
-      },
+      dispose: () => stop(),
     };
   }
 

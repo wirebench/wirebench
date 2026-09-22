@@ -150,6 +150,23 @@ describe('EngineService WebSocket contract checks', () => {
     await s.done;
   });
 
+  it('closing waits at most one deadline for checks backed up behind a stuck one', async () => {
+    const service = new EngineService();
+    const s = session(service, 'c5', Promise.resolve(messages), { workerUrl: hanging, deadlineMs: 400 });
+    await waitFor(() => s.events.some((e) => e.kind === 'handshake'), 'the handshake');
+    // Each `hang` (and its echo) takes a whole deadline, so the queue holds seconds of work.
+    for (let i = 0; i < 6; i += 1) service.sendWsMessage('c5', { text: 'hang' });
+    await waitFor(() => s.events.filter((e) => e.kind === 'frame').length >= 12, 'the echoes');
+    const started = Date.now();
+    service.closeWs('c5');
+    const summary = await s.done;
+    expect(Date.now() - started).toBeLessThan(1500);
+    const texts = summary.frames.filter((f) => f.opcode === 'text');
+    expect(texts).toHaveLength(12);
+    expect(texts.every((f) => f.contract?.status === 'not-checked')).toBe(true);
+    expect(checkers(service).size).toBe(0);
+  });
+
   it('quitting (closeAllWs) tears every session’s worker down', async () => {
     const service = new EngineService();
     const a = session(service, 'q1', Promise.resolve(messages));
