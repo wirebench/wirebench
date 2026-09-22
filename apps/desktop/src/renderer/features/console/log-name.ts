@@ -66,7 +66,7 @@ export function nameOf(entry: LogEntry, sources: NameSources, full = false): str
       }
     }
   }
-  return pathOf(urlOf(entry));
+  return `${pathOf(urlOf(entry))}${eventsSuffix(entry)}`;
 }
 
 /** The four records the name comes from, each selected on its own so other store changes do not rerender. */

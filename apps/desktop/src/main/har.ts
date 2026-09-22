@@ -5,7 +5,12 @@
  */
 import { serializeEventStream } from '@wirebench/engine';
 import type { SseRow } from '@wirebench/engine';
-import type { LogEntryWire, RestExchangeSummary, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
+import type {
+  LogEntryWire,
+  RestExchangeSummary,
+  SseRowWire,
+  WsHandshakeExchangeSummary,
+} from '../shared/wire-types.js';
 import { loggedRequestOf } from './log-curl.js';
 import { redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
@@ -103,6 +108,18 @@ function redactBody(text: string, contentType: string | undefined): string {
   return redactStructuredBody(redactXml(text, { show: false }), contentType, { show: false });
 }
 
+/**
+ * An event stream's rows, each event's `data` masked exactly as any other REST response body is
+ * masked in HAR: structured (secret JSON keys) when it parses as JSON, otherwise left alone. Same
+ * `exactOptionalPropertyTypes` gap `historySseOf`'s own cast papers over: the wire's
+ * `id?: string | undefined` vs. the engine's plain `id?: string`.
+ */
+function redactedSseRows(rows: readonly SseRowWire[]): readonly SseRow[] {
+  return rows.map(
+    (row) => (row.kind === 'event' ? { ...row, data: redactBody(row.data, 'application/json') } : row) as SseRow,
+  );
+}
+
 function queryStringOf(url: string): HarNameValue[] {
   try {
     return [...new URL(url).searchParams].map(([name, value]) => ({ name, value }));
@@ -191,9 +208,7 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
       ? {
           size: bytes.length,
           mimeType: 'text/event-stream',
-          // Same `exactOptionalPropertyTypes` gap as `historySseOf`'s own cast: the wire's
-          // `id?: string | undefined` vs. the engine's plain `id?: string`.
-          text: serializeEventStream(stream.rows as unknown as readonly SseRow[]),
+          text: serializeEventStream(redactedSseRows(stream.rows)),
         }
       : http.truncated
         ? { size: bytes.length, mimeType }
@@ -232,10 +247,25 @@ function exchangeEntry(entry: Extract<LogEntryWire, { kind: 'exchange' }>): HarE
       receive: timings.downloadMs ?? 0,
     },
     ...(http.truncated ? { _truncated: true as const } : {}),
-    ...(stream?.truncated
-      ? { _sseTruncated: true as const, ...(stream.omittedRows > 0 ? { _sseOmittedRows: stream.omittedRows } : {}) }
-      : {}),
+    ...sseTruncationOf(stream),
   };
+}
+
+/**
+ * `_sseTruncated`/`_sseOmittedRows`, when a stream is missing rows for any reason: the summary's
+ * own cap (`stream.truncated`) or rows the live in-memory store had already evicted before the
+ * summary was built (`stream.droppedRows`) — the same "either can make it incomplete" rule
+ * `historySseOf` applies to `HistorySse.truncated`.
+ */
+function sseTruncationOf(stream: RestExchangeSummary['stream']): Pick<HarEntry, '_sseTruncated' | '_sseOmittedRows'> {
+  if (stream === undefined) {
+    return {};
+  }
+  const omittedRows = stream.droppedRows + stream.omittedRows;
+  if (!stream.truncated && omittedRows === 0) {
+    return {};
+  }
+  return { _sseTruncated: true, ...(omittedRows > 0 ? { _sseOmittedRows: omittedRows } : {}) };
 }
 
 function failureEntry(entry: Extract<LogEntryWire, { kind: 'failure' }>): HarEntry {

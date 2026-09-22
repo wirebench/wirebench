@@ -181,6 +181,10 @@ describe('request.sendRest streaming an event-stream response', () => {
 
     const sendPromise = invoke('request.sendRest', { sendId: 'r3', requestId: 'rest-1' }, sender);
     await waitFor(() => hasSend(service, 'r3'), 'the send to register');
+    // Wait for the first row, not just the send registering: under load, a cancel right after
+    // registration can still land before `open`/the first row ever reaches this test's `events`,
+    // making the "open event made it out" assertion below flaky.
+    await waitFor(() => events.some((e) => e.kind === 'row'), 'the first row to arrive');
     unwrap(await invoke('request.cancel', { sendId: 'r3' }));
 
     const summary = unwrap<RestExchangeSummary>(await sendPromise);

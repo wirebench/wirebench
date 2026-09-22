@@ -2136,6 +2136,13 @@ export type LogCurlRequest = z.infer<typeof logCurlRequestSchema>;
 export const logResendRequestSchema = z.object({
   protocol: z.enum(['soap', 'rest', 'grpc', 'websocket']),
   requestId: z.string(),
+  /**
+   * The row's own exchange, when it has one (absent for a failure row, which never streamed). A
+   * REST resend keys its event-stream refusal on this row — never on the saved request's *current*
+   * settings, which may have changed since — so main looks the row up by the same id the exchange
+   * cache already uses.
+   */
+  sendId: z.string().optional(),
 });
 export type LogResendRequest = z.infer<typeof logResendRequestSchema>;
 
