@@ -309,10 +309,11 @@ export function mapLegacyProject(
   resolved: readonly ResolvedLegacyInterface[],
   context: LegacyMapContext,
 ): MappedLegacyProject {
+  const original = project;
   project = rewriteProjectRefsToEnv(project);
-  // `resolved` holds one entry per `project.interfaces` element, in the same order (see above); the
-  // rewrite above touched `project.interfaces`, so carry it into `resolved`'s copies of the same data.
-  resolved = resolved.map((entry, index) => ({ ...entry, legacy: project.interfaces[index]! }));
+  // Each `resolved` entry holds one of `project.interfaces` by identity; hand it the rewritten copy.
+  const rewritten = new Map(original.interfaces.map((iface, index) => [iface, project.interfaces[index]]));
+  resolved = resolved.map((entry) => ({ ...entry, legacy: rewritten.get(entry.legacy) ?? entry.legacy }));
   const newId = context.newId ?? generateId;
   const report = new ReportBuilder();
 
