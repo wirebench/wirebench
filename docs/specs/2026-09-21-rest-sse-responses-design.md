@@ -1,6 +1,6 @@
 # Spec: Server-Sent Events responses
 
-- Status: **approved** 2026-09-21
+- Status: **built** 2026-09-21
 - Date: 2026-09-21
 - Issue: #97.
 - Builds on: the REST client design (`docs/specs/2026-09-13-wirebench-rest-client-design.md`), the gRPC live

@@ -61,6 +61,9 @@ per-row delete — only a full clear.
 
 ## Limits
 
+- A REST request whose response was an event stream (see [REST](/wirebench/guides/rest-client/#event-streams))
+  is recorded with its events, capped at both ends; re-sending from History is offered for SOAP entries
+  only.
 - History is per-workspace and stored on disk, so it survives closing and reopening Wirebench.
 - Only the recorded request and response bodies are diffed or shown — History doesn't replay
   timings, connection details or raw headers; that detail lives in the HTTP Log for the session
