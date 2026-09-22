@@ -18,6 +18,7 @@ import {
   channelParameter,
   deref,
   entries,
+  isJsonSchemaFormat,
   isRecord,
   localRef,
   message,
@@ -80,9 +81,16 @@ export function normaliseAsyncApi3(raw: Json, resolved: Json, declaredVersion: s
   const channels: AsyncApiChannel[] = entries(resolved['channels']).map(([key, channel]) => {
     channelMessages.set(
       key,
-      entries(channel['messages']).map(([messageKey, node]) =>
-        message(messageKey, node, defaultContentType, payloadOf),
-      ),
+      entries(channel['messages']).map(([messageKey, node]) => {
+        const read = message(messageKey, node, defaultContentType, payloadOf, false);
+        if (!isJsonSchemaFormat(read.schemaFormat)) {
+          notes.push({
+            where: `channels/${key}/messages/${messageKey}`,
+            reason: `the payload uses ${String(read.schemaFormat)}, which is not JSON Schema`,
+          });
+        }
+        return read;
+      }),
     );
     const rawListed = record(deref(raw, rawChannels[key]))['servers'];
     const listed = Array.isArray(rawListed)
@@ -135,6 +143,12 @@ export function normaliseAsyncApi3(raw: Json, resolved: Json, declaredVersion: s
 
     const rawReply = deref(raw, rawOperation['reply']);
     if (isRecord(rawReply)) {
+      if (rawReply['channel'] === undefined && rawReply['address'] !== undefined) {
+        notes.push({
+          where: `${where}/reply`,
+          reason: "the reply's address is set at run time; it is mapped onto the operation's channel",
+        });
+      }
       const replyChannel = channelKey(rawReply['channel']) ?? channel;
       operations.push({
         key: `${key}#reply`,

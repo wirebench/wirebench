@@ -17,6 +17,7 @@ import {
   channelParameter,
   deref,
   entries,
+  isJsonSchemaFormat,
   isRecord,
   message,
   record,
@@ -106,6 +107,11 @@ export function normaliseAsyncApi2(raw: Json, resolved: Json, declaredVersion: s
       const opKey = str(operation['operationId']) ?? `${key}#${verb}`;
       const rawMessage = record(deref(raw, rawChannel[verb]))['message'];
       const messages = messagesOf(raw, rawMessage, operation['message'], opKey, defaultContentType);
+      for (const m of messages) {
+        if (!isJsonSchemaFormat(m.schemaFormat)) {
+          notes.push({ where, reason: `message ${m.key} uses ${String(m.schemaFormat)}, which is not JSON Schema` });
+        }
+      }
       if (messages.length === 0) {
         notes.push({ where, reason: 'the operation names no message' });
       }
@@ -135,7 +141,7 @@ function messagesOf(
   const one = (rawOne: unknown, value: unknown, index: number): AsyncApiMessage[] => {
     if (!isRecord(value)) return [];
     const key = refKey(rawOne) ?? str(value['messageId']) ?? str(value['name']) ?? `${opKey}#message${String(index)}`;
-    return [message(key, value, defaultContentType, payloadOf)];
+    return [message(key, value, defaultContentType, payloadOf, true)];
   };
   const oneOf = node['oneOf'];
   if (Array.isArray(oneOf)) {

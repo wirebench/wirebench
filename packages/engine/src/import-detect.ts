@@ -153,7 +153,7 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
 
     // 4. Pattern matching fallback on raw text
-    if (/^\s*asyncapi\s*:\s*['"]?[23]\./m.test(text)) {
+    if (/^asyncapi\s*:\s*['"]?[23]\./m.test(text)) {
       return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
     }
     if (/^\s*openapi\s*:\s*['"]?3\.[012]/m.test(text)) {

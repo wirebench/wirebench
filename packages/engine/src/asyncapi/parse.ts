@@ -46,11 +46,15 @@ function locationOf(source: OpenApiSource): string {
 
 /** Which normaliser a declared version goes to, or a refusal naming it. */
 function majorOf(declared: string): '2' | '3' {
-  if (/^2\.\d+(?:\.\d+)?$/.test(declared)) return '2';
+  if (/^2\.[0-6](?:\.\d+)?$/.test(declared)) return '2';
   if (/^3\.0(?:\.\d+)?$/.test(declared)) return '3';
-  throw new AsyncApiError('asyncapi-version-unsupported', `AsyncAPI ${declared} is not supported; 2.x and 3.0 are`, {
-    details: { version: declared },
-  });
+  throw new AsyncApiError(
+    'asyncapi-version-unsupported',
+    `AsyncAPI ${declared} is not supported; 2.0 to 2.6 and 3.0 are`,
+    {
+      details: { version: declared },
+    },
+  );
 }
 
 function parseRoot(text: string, where: string): unknown {

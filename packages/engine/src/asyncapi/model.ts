@@ -35,7 +35,9 @@ export interface AsyncApiServer {
 
 export interface AsyncApiMessage {
   readonly key: string;
+  /** `name`, else `title`, else {@link key}. */
   readonly name: string;
+  readonly title?: string;
   readonly contentType: string;
   readonly schemaFormat?: string;
   readonly payload?: unknown;

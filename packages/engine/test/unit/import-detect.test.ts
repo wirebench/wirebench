@@ -234,4 +234,10 @@ describe('detectImportFormat: AsyncAPI', () => {
     });
     expect(detectImportFormat({ filename: 'chat.yaml' }).kind).toBe('openapi');
   });
+
+  it('does not take an indented asyncapi key for the document version', () => {
+    const text = 'openapi: 3.1.0\ninfo: {title: x, version: "1"}\nx-meta:\n  asyncapi: 2.6.0\n';
+    expect(detectImportFormat({ text: `  ${text}` }).kind).not.toBe('asyncapi');
+    expect(detectImportFormat({ text: 'x:\n  asyncapi: 2.6.0\n  : [' }).kind).not.toBe('asyncapi');
+  });
 });

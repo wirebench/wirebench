@@ -109,6 +109,82 @@ describe('parseAsyncApi', () => {
   });
 });
 
+describe('parseAsyncApi — traits, titles, formats, versions', () => {
+  it('2.x: traits merge into the message, a trait winning, and the title is kept', async () => {
+    const { document } = await text(
+      [
+        'asyncapi: 2.6.0',
+        'info: {title: t, version: "1"}',
+        'channels:',
+        '  c:',
+        '    publish:',
+        '      operationId: op',
+        '      message:',
+        '        title: Say hello',
+        '        contentType: text/plain',
+        '        payload: {type: string}',
+        '        traits:',
+        '          - {contentType: application/json, summary: s}',
+      ].join('\n'),
+    );
+    const message = document.operations[0]?.messages[0];
+    expect(message).toMatchObject({ name: 'Say hello', title: 'Say hello', contentType: 'application/json' });
+  });
+
+  it('3.0: traits merge into the message, the message winning', async () => {
+    const { document } = await text(
+      [
+        'asyncapi: 3.0.0',
+        'info: {title: t, version: "1"}',
+        'channels:',
+        '  c:',
+        '    messages:',
+        '      m:',
+        '        contentType: text/plain',
+        '        payload: {type: string}',
+        '        traits:',
+        '          - {name: fromTrait, title: Trait title, contentType: application/json}',
+        'operations:',
+        '  op: {action: receive, channel: {$ref: "#/channels/c"}}',
+      ].join('\n'),
+    );
+    expect(document.operations[0]?.messages[0]).toMatchObject({
+      key: 'm',
+      name: 'fromTrait',
+      title: 'Trait title',
+      contentType: 'text/plain',
+    });
+  });
+
+  it('refuses 2.7 by version', async () => {
+    await expect(text('asyncapi: 2.7.0\ninfo: {title: t, version: "1"}')).rejects.toMatchObject({
+      code: 'asyncapi-version-unsupported',
+    });
+  });
+
+  it('notes a non-JSON-Schema payload format and a reply with only an address', async () => {
+    const two = await parse('chat-2.6.yaml');
+    expect(two.document.notes.map((n) => n.where)).toContain('channels/audit/subscribe');
+    const three = await text(
+      [
+        'asyncapi: 3.0.0',
+        'info: {title: t, version: "1"}',
+        'channels:',
+        '  c:',
+        '    messages:',
+        '      m: {payload: {schemaFormat: application/vnd.apache.avro;version=1.9.0, schema: {type: record}}}',
+        '      j: {payload: {schemaFormat: application/schema+json;version=draft-07, schema: {type: object}}}',
+        'operations:',
+        '  op:',
+        '    action: receive',
+        '    channel: {$ref: "#/channels/c"}',
+        '    reply: {address: {location: "$message.header#/replyTo"}}',
+      ].join('\n'),
+    );
+    expect(three.document.notes.map((n) => n.where)).toEqual(['channels/c/messages/m', 'operations/op/reply']);
+  });
+});
+
 describe('detectImportFormat — asyncapi', () => {
   it('is definite on the asyncapi key and wins over the .yaml fallback', () => {
     expect(detectImportFormat({ text: 'asyncapi: 3.0.0\ninfo: {title: x, version: "1"}', filename: 'a.yaml' })).toEqual(

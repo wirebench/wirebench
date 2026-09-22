@@ -46,9 +46,37 @@ export function localRef(node: unknown): string[] | undefined {
   return ref.slice(2).split('/').map(unescapeToken);
 }
 
-/** The last token of a local `$ref` — the key the target is filed under. */
+/** The last pointer token of any `$ref` (local or into another file) — the key the target is filed under. */
 export function refKey(node: unknown): string | undefined {
-  return localRef(node)?.at(-1);
+  if (!isRecord(node)) return undefined;
+  const ref = str(node['$ref']);
+  const hash = ref?.indexOf('#') ?? -1;
+  if (ref === undefined || hash === -1) return undefined;
+  const last = ref
+    .slice(hash + 1)
+    .split('/')
+    .at(-1);
+  return last === undefined || last === '' ? undefined : unescapeToken(last);
+}
+
+/** Schema formats the contract check can read: JSON Schema, and the AsyncAPI schema that extends it. */
+export function isJsonSchemaFormat(format: string | undefined): boolean {
+  if (format === undefined) return true;
+  return /^application\/(?:schema\+(?:json|yaml)|vnd\.aai\.asyncapi(?:\+(?:json|yaml))?)(?:;|$)/i.test(format.trim());
+}
+
+/**
+ * A message with its `traits` shallow-merged in. In 2.x a trait is applied onto the message, so a
+ * trait's field wins; in 3.0 the message's own field wins over its traits'.
+ */
+function withTraits(node: Json, traitsWin: boolean): Json {
+  const traits = node['traits'];
+  if (!Array.isArray(traits)) return node;
+  let merged: Record<string, unknown> = traitsWin ? { ...node } : {};
+  for (const trait of traits) merged = { ...merged, ...record(trait) };
+  merged = traitsWin ? merged : { ...merged, ...node };
+  delete merged['traits'];
+  return merged;
 }
 
 /** Follows local `$ref`s in the raw document, a bounded number of hops, to the node they name. */
@@ -117,7 +145,7 @@ export function tagNames(value: unknown): string[] {
 }
 
 /**
- * One message. `payloadOf` pulls the schema (and a schema format carried with it) out of the
+ * One message, traits merged in. Its name is its `name`, else its `title`, else its key. `payloadOf` pulls the schema (and a schema format carried with it) out of the
  * version's payload shape.
  */
 export function message(
@@ -125,13 +153,17 @@ export function message(
   node: Json,
   defaultContentType: string,
   payloadOf: (node: Json) => { payload?: unknown; schemaFormat?: string },
+  traitsWin: boolean,
 ): AsyncApiMessage {
+  node = withTraits(node, traitsWin);
+  const title = str(node['title']);
   const { payload, schemaFormat } = payloadOf(node);
   const examples = node['examples'];
   const first = Array.isArray(examples) ? record(examples[0]) : {};
   return {
     key,
-    name: str(node['name']) ?? key,
+    name: str(node['name']) ?? title ?? key,
+    ...(title !== undefined ? { title } : {}),
     contentType: str(node['contentType']) ?? defaultContentType,
     ...(schemaFormat !== undefined ? { schemaFormat } : {}),
     ...(payload !== undefined ? { payload } : {}),
