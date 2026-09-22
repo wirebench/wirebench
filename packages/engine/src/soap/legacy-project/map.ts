@@ -20,6 +20,7 @@ import { slugify, uniqueSlug } from '../../project/paths.js';
 import type { OperationSummary } from '../../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';
 import { qnameToString } from '../../wsdl/qname.js';
+import { rewriteProjectRefsToEnv } from './env-refs.js';
 import type { LegacyCall, LegacyInterface, LegacyOperation, LegacyProject, LegacyScript } from './model.js';
 
 /** One operation of a resolved definition, as the mapper needs it. */
@@ -308,6 +309,11 @@ export function mapLegacyProject(
   resolved: readonly ResolvedLegacyInterface[],
   context: LegacyMapContext,
 ): MappedLegacyProject {
+  const original = project;
+  project = rewriteProjectRefsToEnv(project);
+  // Each `resolved` entry holds one of `project.interfaces` by identity; hand it the rewritten copy.
+  const rewritten = new Map(original.interfaces.map((iface, index) => [iface, project.interfaces[index]]));
+  resolved = resolved.map((entry) => ({ ...entry, legacy: rewritten.get(entry.legacy) ?? entry.legacy }));
   const newId = context.newId ?? generateId;
   const report = new ReportBuilder();
 

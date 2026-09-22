@@ -197,6 +197,55 @@ describe('mapLegacyProject', () => {
     );
   });
 
+  it('rewrites ${#Project#name} to ${name} silently when an imported environment defines the name', () => {
+    const project: LegacyProject = {
+      name: 'P',
+      properties: [],
+      interfaces: [
+        {
+          name: 'Iface',
+          soapVersion: '1.1',
+          endpoints: [],
+          operations: [
+            {
+              name: 'Op',
+              bindingOperationName: 'Op',
+              calls: [
+                {
+                  name: 'Call',
+                  envelope: '<a>${#Project#greeting}</a>',
+                  credentials: { hadPassword: false },
+                  useWsAddressing: false,
+                  assertions: 0,
+                  attachments: 0,
+                  wssRefs: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      environments: [{ name: 'Staging', properties: [{ name: 'greeting', value: 'Hi' }], endpoints: [] }],
+      scripts: [],
+      unmapped: [],
+    };
+    const resolved: ResolvedLegacyInterface[] = [
+      {
+        legacy: project.interfaces[0]!,
+        id: 'iface-0',
+        slug: 'slug-0',
+        resolved: true,
+        definitionUrl: 'http://example.invalid/service.wsdl',
+        operations: [],
+        fetchedFromNetwork: [],
+      },
+    ];
+    const mapped = mapLegacyProject(project, resolved, { ...EMPTY_CONTEXT, newId: counter() });
+    const request = mapped.interfaces[0]!.operations[0]!.requests[0]!;
+    expect(request.envelopeXml).toBe('<a>${greeting}</a>');
+    expect(mapped.report.items.some((item) => item.message.includes('#Project#'))).toBe(false);
+  });
+
   it('places each script under imported-scripts by its owners and reports it', async () => {
     const project = parsed('full.xml');
     const mapped = mapLegacyProject(project, await resolveOffline(project), EMPTY_CONTEXT);
