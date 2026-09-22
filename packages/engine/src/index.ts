@@ -388,6 +388,14 @@ export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from '
 export { authFromScheme as asyncApiAuthFromScheme } from './asyncapi/security.js';
 export type { AsyncApiSchemeInput } from './asyncapi/security.js';
 export { importAsyncApi } from './asyncapi/import.js';
+export { applyAsyncApiUpdate, planAsyncApiUpdate } from './asyncapi/update.js';
+export type {
+  ApplyAsyncApiUpdateOptions,
+  AsyncApiApplyResult,
+  AsyncApiChangeReason,
+  AsyncApiOpRef,
+  AsyncApiUpdatePlan,
+} from './asyncapi/update.js';
 export {
   channelMessages as asyncApiChannelMessages,
   checkFrame as checkAsyncApiFrame,
