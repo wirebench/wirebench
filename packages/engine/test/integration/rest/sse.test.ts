@@ -30,6 +30,24 @@ function input(url: string, extra: Partial<RestSendInput> = {}): RestSendInput {
 }
 
 describe('sendRest streaming', () => {
+  it('/sse/forever?events=1 carries real events until the client stops it', async () => {
+    const controller = new AbortController();
+    const seen: SseRow[] = [];
+    const exchange = await sendRest({
+      ...input('/sse/forever?events=1'),
+      signal: controller.signal,
+      onStream: {
+        onOpen: () => undefined,
+        onRow: (row) => {
+          seen.push(row);
+          if (seen.filter((one) => one.kind === 'event').length === 2) controller.abort();
+        },
+      },
+    });
+    expect(exchange.stream?.endedBy).toBe('client');
+    expect(seen.filter((row) => row.kind === 'event')[0]).toMatchObject({ id: '1', data: '{"tick":1}' });
+  });
+
   it('reports a method changed by a redirect on a streamed exchange too', async () => {
     const to = encodeURIComponent('/sse/ticks?n=1&every=1');
     const exchange = await sendRest(

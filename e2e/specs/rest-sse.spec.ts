@@ -41,9 +41,9 @@ test.describe('REST: an event-stream response arrives live, stops, and is record
     await createProject(page, 'Streams');
     await createApi(page, 'Streamer', server!.url);
     await createRestRequest(page, 'Streamer', 'Forever');
-    await setMethodAndUrl(page, 'GET', '/sse/forever');
+    await setMethodAndUrl(page, 'GET', '/sse/forever?events=1');
 
-    // Send: the stream never ends on its own (a comment every 50 ms), so the button reads *Stop*
+    // Send: the stream never ends on its own (an event every 50 ms), so the button reads *Stop*
     // for as long as it is open.
     await page.getByTestId('rest-send').click();
     await expect(responseStatus(page)).toBeVisible({ timeout: 20_000 });
@@ -63,9 +63,15 @@ test.describe('REST: an event-stream response arrives live, stops, and is record
     await expect(rows.nth(1)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('rest-send')).toHaveText('Stop');
 
+    // A real event row: its name, its id and its data, not only the stream's comments.
+    const firstEvent = rows.filter({ hasText: '{"tick":1}' }).first();
+    await expect(firstEvent).toBeVisible({ timeout: 20_000 });
+    await expect(firstEvent.getByTestId('sse-row-chip')).toHaveText('message');
+    await expect(firstEvent).toContainText('1');
+
     // Stop: a normal completion, never an error. The status line reads "stopped", not a failure.
     await page.getByTestId('rest-send').click();
-    await expect(page.getByTestId('rest-send')).toHaveText('Cancel', { timeout: 20_000 });
+    await expect(page.getByTestId('rest-send')).toHaveText('Send', { timeout: 20_000 });
     await expect(responseStatus(page)).toContainText('stopped', { timeout: 20_000 });
 
     // History lists the entry.
@@ -76,6 +82,7 @@ test.describe('REST: an event-stream response arrives live, stops, and is record
     // The Console's HTTP Log row names the request and reads its true event count.
     const logRow = page.locator('[data-testid="http-log-row"]').filter({ hasText: 'Forever' });
     await expect(logRow).toHaveCount(1, { timeout: 20_000 });
-    await expect(logRow.first()).toContainText(/·\s*\d+\s*events?/);
+    // At least the two events seen before Stop: a stream of comments alone would read "0 events".
+    await expect(logRow.first()).toContainText(/·\s*([2-9]|\d{2,})\s*events/);
   });
 });

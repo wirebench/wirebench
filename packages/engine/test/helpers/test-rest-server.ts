@@ -131,7 +131,8 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
  * - `/sse/ticks?n=&every=` — `n` events (default 3), one every `every` ms (default 20), then the end
- * - `/sse/forever` — a comment every 50 ms, never ending
+ * - `/sse/forever` — a comment every 50 ms, never ending; `?events=1` sends an `id`/`data` event
+ *   every 50 ms instead, for a spec that needs real events from a stream it then stops
  * - `/sse/drop` — two events, then the socket torn down mid-stream
  * - `/sse/gzip` — the ticks, gzip-encoded and flushed per event
  * - `/sse/slow-headers` — the headers only after 500 ms, then one event
@@ -594,7 +595,17 @@ function handleEventStream(path: string, url: URL, request: IncomingMessage, res
   if (path === '/sse/forever') {
     response.writeHead(200, EVENT_STREAM_HEADERS);
     response.write(': open\n\n');
-    timers.push(setInterval(() => response.write(': keep-alive\n\n'), 50));
+    if (url.searchParams.get('events') === '1') {
+      let sent = 0;
+      timers.push(
+        setInterval(() => {
+          sent += 1;
+          response.write(tick(sent));
+        }, 50),
+      );
+    } else {
+      timers.push(setInterval(() => response.write(': keep-alive\n\n'), 50));
+    }
     return;
   }
   if (path === '/sse/drop') {
