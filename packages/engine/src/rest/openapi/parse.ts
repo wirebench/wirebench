@@ -609,6 +609,9 @@ function parseSchemaFields(value: Record_): JsonSchema {
     ...(branches('allOf') !== undefined ? { allOf: branches('allOf') as readonly JsonSchema[] } : {}),
     ...(branches('oneOf') !== undefined ? { oneOf: branches('oneOf') as readonly JsonSchema[] } : {}),
     ...(branches('anyOf') !== undefined ? { anyOf: branches('anyOf') as readonly JsonSchema[] } : {}),
+    ...(isRecord(value['discriminator']) && asString(value['discriminator']['propertyName']) !== undefined
+      ? { discriminator: parseDiscriminator(value['discriminator']) }
+      : {}),
     ...(asBoolean(value['nullable']) !== undefined ? { nullable: asBoolean(value['nullable']) as boolean } : {}),
     ...(asBoolean(value['deprecated']) === true ? { deprecated: true } : {}),
     ...(asBoolean(value['readOnly']) === true ? { readOnly: true } : {}),
@@ -617,6 +620,18 @@ function parseSchemaFields(value: Record_): JsonSchema {
     // A `$ref` that survived resolution could not be resolved; the sample generator says so rather
     // than inventing a value for a schema it never saw.
     ...(asString(value['$ref']) !== undefined ? { $ref: asString(value['$ref']) as string } : {}),
+  };
+}
+
+function parseDiscriminator(value: Record_): NonNullable<JsonSchema['discriminator']> {
+  const mapping = isRecord(value['mapping'])
+    ? Object.fromEntries(
+        Object.entries(value['mapping']).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+    : undefined;
+  return {
+    propertyName: asString(value['propertyName']) as string,
+    ...(mapping !== undefined ? { mapping } : {}),
   };
 }
 

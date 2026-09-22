@@ -146,6 +146,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         {tab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
         {tab === 'body' && (
           <BodyTab
+            requestId={requestId}
             body={request.body}
             settings={request.settings}
             onChange={stage}

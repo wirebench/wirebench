@@ -113,6 +113,8 @@ export interface JsonSchema {
   readonly allOf?: readonly JsonSchema[];
   readonly oneOf?: readonly JsonSchema[];
   readonly anyOf?: readonly JsonSchema[];
+  /** Names the property whose value says which `oneOf`/`anyOf` branch an object is. */
+  readonly discriminator?: OpenApiDiscriminator;
   /** 3.0 only: 3.1 spells this as a `type` list including `'null'`. */
   readonly nullable?: boolean;
   readonly deprecated?: boolean;
@@ -122,6 +124,12 @@ export interface JsonSchema {
   readonly xml?: OpenApiXml;
   /** Left in place when a reference could not be resolved, so a sample can say so rather than guess. */
   readonly $ref?: string;
+}
+
+/** The `discriminator` object. `mapping` values are references, kept as the document spells them. */
+export interface OpenApiDiscriminator {
+  readonly propertyName: string;
+  readonly mapping?: Readonly<Record<string, string>>;
 }
 
 /** The `xml` object: how a schema's value is spelled as XML. */
