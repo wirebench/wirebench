@@ -60,6 +60,13 @@ as it comes back, and you can keep sending more messages into the same call. Cho
 to tell the server you are done sending; the call's final status appears once the server closes
 its side.
 
+## Re-send from History
+
+Every call is recorded in [History](/wirebench/guides/history/) with its request messages, response
+messages and trailers. Choose **↻** on the entry to call the method again with the messages it
+recorded. A streaming client's messages are replayed all at once, in order — see
+[Re-send a gRPC call](/wirebench/guides/history/#re-send-a-grpc-call).
+
 ## Definition storage
 
 An import from `.proto` files stores the `.proto` set itself under the API's definition, so the
