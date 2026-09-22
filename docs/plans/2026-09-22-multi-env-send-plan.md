@@ -82,7 +82,7 @@
 - Modify: `apps/desktop/src/renderer/state/editors.ts` (`kind: 'env-compare'`, session only), the SOAP request editor toolbar (`features/request-editor/`), the REST editor toolbar (`features/rest-editor/`), `apps/desktop/src/shared/command-catalog.ts` + `commands.ts` (`request.sendToEnvironments`)
 - Test: `apps/desktop/test/unit/renderer/multi-env/env-compare-view.test.tsx`, `env-picker-dialog.test.tsx`
 
-- [ ] Tests (testing-library): dialog disables Send under two ticks; compare view renders one column per env with status/time, marks the baseline, shows `DiffView` for the chosen pair and the header diff rows; action disabled with < 2 environments or in a workspace.
+- [ ] Tests (testing-library): dialog disables Send under two ticks; compare view renders one column per env with status/time, marks the baseline, shows `DiffView` for the chosen pair and the header diff rows; action disabled with < 2 environments (the workspace's inside a workspace).
 - [ ] Implement; gate; commit `feat(desktop): send to environments and compare side by side`.
 
 ### Task 6: e2e
@@ -96,6 +96,6 @@
 ### Task 7: Docs
 
 **Files:**
-- Modify: `docs-site/src/content/docs/guides/environments.mdx` (new section *Send to several environments*: picker, baseline, compare tab, History entries, workspace limitation)
+- Modify: `docs-site/src/content/docs/guides/environments.mdx` (new section *Send to several environments*: picker, baseline, compare tab, History entries, workspace environments are the ones offered)
 
 - [ ] Write the section; `pnpm check:banned-terms`; gate; commit `docs(site): send to several environments`.

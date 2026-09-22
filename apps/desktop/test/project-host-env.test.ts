@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { RestApi } from '@wirebench/engine';
+import type { RestApi, Workspace, WorkspaceEnvironment } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -102,5 +102,93 @@ describe('ProjectHost under a named environment', () => {
     expect(host.endpointFor(requestId, 'no-such-env')).toBeUndefined();
     expect(host.sendInputFor(requestId, undefined, 'no-such-env')).toBeUndefined();
     expect(host.model()?.activeEnvironmentId).toBe(dev);
+  });
+});
+
+/** A workspace environment overriding the `proj/<slug>` endpoint and one property. */
+function workspaceEnv(id: string, order: number, slug: string, url: string, tenant: string): WorkspaceEnvironment {
+  return {
+    id,
+    name: id.toUpperCase(),
+    slug: `ws-${id}`,
+    order,
+    properties: { tenant },
+    endpoints: { [`proj/${slug}`]: url },
+    disabledProperties: [],
+  };
+}
+
+/** Opens the host inside a workspace with two environments, `wdev` active. */
+function insideWorkspace(slug: string): { workspace: () => Workspace } {
+  const workspace: Workspace = {
+    formatVersion: 3,
+    id: 'ws',
+    name: 'WS',
+    createdAt: '2026-09-22T00:00:00.000Z',
+    properties: {},
+    disabledProperties: [],
+    projects: [],
+    activeEnvironmentId: 'wdev',
+    environments: [
+      workspaceEnv('wtest', 1, slug, 'https://wtest.example', 'beta'),
+      workspaceEnv('wdev', 0, slug, 'https://wdev.example', 'alpha'),
+    ],
+  };
+  host.setWorkspaceContext(() => ({ workspace, projectSlug: 'proj' }));
+  return { workspace: () => workspace };
+}
+
+describe('ProjectHost under a named workspace environment', () => {
+  it('resolves a REST send against the named workspace environment, leaving the active one alone', async () => {
+    await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
+    const api = host.model()?.apis[0] as RestApi;
+    await host.mutate({ kind: 'add-rest-request', apiId: api.id });
+    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    await host.mutate({ kind: 'update-rest-request', requestId, patch: { url: '/pets/${tenant}' } });
+    const ws = insideWorkspace(api.slug);
+
+    const before = target(host.restSend(requestId));
+    expect(before).toBe('https://wdev.example/pets/alpha');
+    const other = host.restSend(requestId, undefined, 'wtest');
+    expect(target(other)).toBe('https://wtest.example/pets/beta');
+    expect(other?.baseUrlSource).toBe('workspace-environment');
+    expect(host.scopesFor('wtest').env).toEqual({ tenant: 'beta' });
+    expect(host.scopesFor().env).toEqual({ tenant: 'alpha' });
+
+    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
+    expect(target(host.restSend(requestId))).toBe(before);
+    expect(host.sendEnvironments()).toEqual({
+      environments: [
+        { id: 'wdev', name: 'WDEV' },
+        { id: 'wtest', name: 'WTEST' },
+      ],
+      activeId: 'wdev',
+    });
+  });
+
+  it('refuses an id that is not a workspace environment, a project one included', async () => {
+    await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
+    const api = host.model()?.apis[0] as RestApi;
+    await host.mutate({ kind: 'add-rest-request', apiId: api.id });
+    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    const projectEnv = await addEnvironment('dev', { endpoints: { [api.slug]: 'https://dev.example' } });
+    insideWorkspace(api.slug);
+    expect(host.restSend(requestId, undefined, 'no-such-env')).toBeUndefined();
+    expect(host.restSend(requestId, undefined, projectEnv)).toBeUndefined();
+  });
+
+  it('resolves a SOAP endpoint under the named workspace environment', async () => {
+    await host.addInterface({ source: { kind: 'url', url: server.wsdlUrl } });
+    await host.whenHydrated();
+    const requestId = host.snapshot()?.requests[0]?.id as string;
+    const slug = host.snapshot()?.interfaces[0]?.slug as string;
+    const ws = insideWorkspace(slug);
+
+    expect(host.endpointFor(requestId)).toBe('https://wdev.example');
+    expect(host.endpointFor(requestId, 'wtest')).toBe('https://wtest.example');
+    expect(host.sendInputFor(requestId, undefined, 'wtest')?.endpoint).toBe('https://wtest.example');
+    expect(host.sendInputFor(requestId)?.endpoint).toBe('https://wdev.example');
+    expect(host.endpointFor(requestId, 'no-such-env')).toBeUndefined();
+    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
   });
 });

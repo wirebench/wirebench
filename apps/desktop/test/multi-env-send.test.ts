@@ -210,6 +210,23 @@ describe('sendToEnvironments', () => {
     });
   });
 
+  it('names and validates against the environments that apply (a workspace’s), not the project’s', async () => {
+    const project = {
+      ...fakeProject(),
+      // Inside a workspace the router answers the workspace's environments; `dev` is one, `prod` is not.
+      sendEnvironments: () => ({ environments: [{ id: 'dev', name: 'WS Dev' }], activeId: 'dev' }),
+    };
+    const response = await sendToEnvironments(fakeService() as unknown as EngineService, depsOf(project), {
+      batchId: 'b5',
+      requestId: 'r1',
+      environmentIds: ['dev', 'prod'],
+      soap: { envelopeXml: '<Envelope/>' },
+    });
+
+    expect(response.results[0]).toMatchObject({ outcome: 'ok', environmentName: 'WS Dev' });
+    expect(response.results[1]).toMatchObject({ outcome: 'error', environmentId: 'prod', code: 'unknown-environment' });
+  });
+
   it('cancels every child send of a batch', async () => {
     const service = fakeService({ hang: true });
     const pending = sendToEnvironments(service as unknown as EngineService, depsOf(fakeProject()), {

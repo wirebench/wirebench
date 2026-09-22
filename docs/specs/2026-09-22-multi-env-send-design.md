@@ -15,9 +15,14 @@ shown side by side with the semantic diff.
 ## Behaviour
 
 - **Entry point.** A *Send to environments…* action next to Send in the SOAP request editor and the
-  REST editor, plus a command-palette entry (`request.sendToEnvironments`). Disabled when the
-  project has fewer than two environments, or inside a workspace (see Non-goals).
-- **Picker.** A dialog lists the project's environments as checkboxes (the active one pre-ticked),
+  REST editor, plus a command-palette entry (`request.sendToEnvironments`). Disabled, with the
+  reason as its tooltip, when fewer than two environments apply to the request (see *Which
+  environments* below).
+- **Which environments.** The ones that already decide where a normal send goes. Inside a
+  workspace — which is how every project is opened in the app — that is the *workspace's*
+  environments (a project environment only takes part through its slug link, as it does for a
+  normal send); outside one, the project's own.
+- **Picker.** A dialog lists those environments as checkboxes (the active one pre-ticked),
   with a *Baseline* radio per row (default: the active environment, else the first ticked). Send is
   enabled with two or more ticked. The last selection per request is remembered for the session.
 - **Send.** Main resolves the request once per chosen environment — endpoint / base URL, property
@@ -72,6 +77,17 @@ environment. `request.cancel` with the `batchId` aborts every child send.
   `scopesFor` and `resolveApiBaseUrl`; a new `endpointFor(requestId, envId)` wraps the existing
   `resolveEndpoint(project, envId, iface, request)`. Both default to the active environment, so
   existing callers are unchanged.
+- Inside a workspace the `envId` those methods take is a *workspace* environment id.
+  `ProjectHost` resolves it by handing the existing workspace resolvers
+  (`resolveWorkspaceEndpoint`, `resolveWorkspaceApiBaseUrl`, `resolveWorkspaceScopes`) a copy of
+  the workspace with that environment active — so the `<projectSlug>/<interfaceSlug>` override,
+  the slug-linked project environment, the merged properties and the per-endpoint TLS decision
+  all follow it — while the real workspace and its active environment stay as they are. An id
+  the workspace does not have (a project environment id included) resolves nothing and fails
+  that environment only. With no `envId` nothing changes.
+- `ProjectHost.sendEnvironments()` (routed as `sendEnvironments(requestId)`) answers the
+  environments that apply, in order, with the active one; `sendToEnvironments` names and
+  validates the ids against it.
 - New module `apps/desktop/src/main/multi-env-send.ts`:
   `sendToEnvironments(deps, request, signal)` — validates the ids against the project, then for
   each environment builds the send exactly as the single-send handlers do (SOAP:
@@ -103,9 +119,8 @@ sessions are streaming and a side-by-side of streams is a different feature.
 
 ## Non-goals
 
-- Workspaces: `scopesFor` inside a workspace resolves the workspace's environment and ignores a
-  project environment id; fanning out over workspace environments needs its own resolver. The
-  action is disabled there for now.
+- Picking a project's own environments inside a workspace: they do not decide a send there, so
+  the picker does not offer them.
 - Saved comparisons / baselines persisted to disk (snapshot regression is #34).
 - Assertions or pass/fail across environments; gRPC and WebSocket; more than 10 environments.
 - Changing the environment model.
@@ -114,9 +129,11 @@ sessions are streaming and a side-by-side of streams is a different feature.
 
 - Unit (vitest): wire schemas (min 2 ids, unknown fields rejected); `sendToEnvironments` with a fake
   service — per-env scopes and endpoints used, active env untouched, one env failing leaves the
-  others `ok`, cancel aborts all; `ProjectHost.restSend`/`endpointFor` with an explicit `envId`;
+  others `ok`, cancel aborts all; `ProjectHost.restSend`/`endpointFor` with an explicit `envId`,
+  standalone and inside a workspace (a named workspace environment's endpoint, base URL and
+  properties; the active one unchanged; an unknown id refused);
   `env-picker.ts` and `env-compare.ts` pure helpers; the compare view renders columns and the diff.
-- e2e (`e2e/specs/multi-env-send.spec.ts`, CI): a project with two environments pointing at two
+- e2e (`e2e/specs/multi-env-send.spec.ts`, CI): a workspace with two workspace environments pointing at two
   local stub servers returning different bodies; pick both, send, see two columns with their
   statuses, the diff showing the change, and the active environment unchanged afterwards. REST and
   SOAP each get one case.

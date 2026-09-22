@@ -28,37 +28,51 @@ interface MultiEnvStore {
 export const useMultiEnvStore = create<MultiEnvStore>(() => ({ picker: undefined, remembered: {}, running: {} }));
 
 /**
- * Why *Send to environments…* is unavailable, or `undefined` when it is not. Inside a workspace
- * main resolves the workspace's environment and ignores a project environment id, so the action
- * is off there until it has a resolver of its own.
+ * Why *Send to environments…* is unavailable, or `undefined` when it is not: it needs two or
+ * more environments to choose from — the workspace's inside a workspace, else the project's.
  */
 export function sendToEnvironmentsBlocker(environmentCount: number, inWorkspace: boolean): string | undefined {
-  if (inWorkspace) {
-    return 'Not available inside a workspace yet';
-  }
   if (environmentCount < 2) {
-    return 'Needs two or more environments in this project';
+    return inWorkspace
+      ? 'Needs two or more environments in this workspace'
+      : 'Needs two or more environments in this project';
   }
   return undefined;
 }
 
-/** The request's project environments in order, and its active environment. */
-function environmentsOf(requestId: string): { environments: PickerEnvironment[]; activeId: string | undefined } {
+type EnvSource = { readonly environments?: readonly { id: string; name: string; order: number }[] } | undefined;
+
+/** `source`'s environments in order, as the picker lists them. */
+function ordered(source: EnvSource): PickerEnvironment[] {
+  return [...(source?.environments ?? [])]
+    .sort((a, b) => a.order - b.order)
+    .map((environment) => ({ id: environment.id, name: environment.name }));
+}
+
+/**
+ * The environments a request can be sent under, in order, and the active one. Inside a
+ * workspace those are the workspace's — main resolves every project there through them — else
+ * the request's project's own.
+ */
+function environmentsOf(requestId: string): {
+  environments: PickerEnvironment[];
+  activeId: string | undefined;
+  inWorkspace: boolean;
+} {
+  const workspace = useWorkspaceStore.getState().workspace;
+  if (workspace !== null) {
+    return { environments: ordered(workspace), activeId: workspace.activeEnvironmentId, inWorkspace: true };
+  }
   const state = useProjectStore.getState();
   const projectId = state.projectOf[requestId];
   const project = projectId === undefined ? undefined : state.projects[projectId];
-  const environments = [...(project?.environments ?? [])]
-    .sort((a, b) => a.order - b.order)
-    .map((environment) => ({ id: environment.id, name: environment.name }));
-  return { environments, activeId: project?.activeEnvironmentId };
+  return { environments: ordered(project), activeId: project?.activeEnvironmentId, inWorkspace: false };
 }
 
 /** The blocker for `requestId` right now, read outside React (the command's `when`). */
 export function currentBlocker(requestId: string): string | undefined {
-  return sendToEnvironmentsBlocker(
-    environmentsOf(requestId).environments.length,
-    useWorkspaceStore.getState().workspace !== null,
-  );
+  const { environments, inWorkspace } = environmentsOf(requestId);
+  return sendToEnvironmentsBlocker(environments.length, inWorkspace);
 }
 
 /** What the button and the picker need for one request, kept current. */
@@ -71,17 +85,16 @@ export function useMultiEnvState(requestId: string): {
     const projectId = state.projectOf[requestId];
     return projectId === undefined ? undefined : state.projects[projectId];
   });
-  const inWorkspace = useWorkspaceStore((state) => state.workspace !== null);
+  const workspace = useWorkspaceStore((state) => state.workspace);
   return useMemo(() => {
-    const environments = [...(project?.environments ?? [])]
-      .sort((a, b) => a.order - b.order)
-      .map((environment) => ({ id: environment.id, name: environment.name }));
+    const inWorkspace = workspace !== null;
+    const environments = ordered(inWorkspace ? workspace : project);
     return {
       environments,
-      activeId: project?.activeEnvironmentId,
+      activeId: inWorkspace ? workspace.activeEnvironmentId : project?.activeEnvironmentId,
       blocker: sendToEnvironmentsBlocker(environments.length, inWorkspace),
     };
-  }, [project, inWorkspace]);
+  }, [project, workspace]);
 }
 
 export function openEnvPicker(requestId: string, kind: MultiEnvKind): void {

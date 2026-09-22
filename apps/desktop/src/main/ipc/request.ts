@@ -121,6 +121,8 @@ export type RequestChannelProject = Pick<
       | 'restSend'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
+      // Read by *Send to environments…* to name and validate the environments asked for.
+      | 'sendEnvironments'
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'

@@ -142,8 +142,12 @@ export async function sendToEnvironments(
   deps: RequestChannelDeps,
   request: RequestSendToEnvironmentsRequest,
 ): Promise<RequestSendToEnvironmentsResponse> {
+  // The environments that apply to the request: the workspace's inside a workspace, else its
+  // project's. A router without `sendEnvironments` (a stub) falls back to the project's own.
   const owner = deps.project.projectId(request.requestId);
-  const environments = owner === undefined ? [] : (deps.project.projectSnapshot?.(owner)?.environments ?? []);
+  const environments =
+    deps.project.sendEnvironments?.(request.requestId).environments ??
+    (owner === undefined ? [] : (deps.project.projectSnapshot?.(owner)?.environments ?? []));
   const nameOf = (envId: string): string | undefined =>
     environments.find((environment) => environment.id === envId)?.name;
 
@@ -159,7 +163,7 @@ export async function sendToEnvironments(
           return errorResult(
             envId,
             envId,
-            new WirebenchError('unknown-environment', `The project has no environment "${envId}"`),
+            new WirebenchError('unknown-environment', `No environment "${envId}" applies to this request`),
           );
         }
         try {
