@@ -68,6 +68,7 @@ import {
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
+  toWireSchema,
   parseAsyncApi,
   parseOpenApi,
   planAsyncApiUpdate,
@@ -175,7 +176,7 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import type { EndpointAuth } from '@wirebench/engine';
+import type { EndpointAuth, JsonSchema } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -3012,6 +3013,49 @@ export class ProjectHost {
       );
       return declared?.responses === undefined ? { operation } : { operation, responses: declared.responses };
     });
+  }
+
+  /**
+   * The schema of the JSON body a REST request's operation declares, for the body editor's form: the
+   * operation found as `restContractFor` finds it (the import link while the request still calls it,
+   * else a match on the saved method and URL), and its first JSON media type (`application/json` or
+   * `*+json`). The schema is an acyclic copy (`toWireSchema`), because a cyclic graph cannot cross
+   * IPC. `undefined` when there is no cached definition, no matching operation, or no JSON body.
+   */
+  async restBodySchema(requestId: string): Promise<{ mediaType: string; schema: JsonSchema } | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findRestRequest(this.open.project, requestId);
+    const api = restApiOwning(this.open.project, requestId);
+    if (request === undefined || api?.definition?.cache !== true) {
+      return undefined;
+    }
+    const link = request.contract;
+    const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
+    const document = await this.openApiDocumentFor(api.id);
+    const linked =
+      link !== undefined &&
+      link.method.toLowerCase() === request.method.toLowerCase() &&
+      matchOperation([link], request.method, request.url, baseUrls) !== undefined;
+    const operation = linked
+      ? { method: link.method, path: link.path }
+      : matchOperation(document.operations, request.method, request.url, baseUrls);
+    if (operation === undefined) {
+      return undefined;
+    }
+    const declared = document.operations.find(
+      (candidate) =>
+        candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
+    );
+    const content = declared?.requestBody?.content ?? {};
+    for (const [mediaType, media] of Object.entries(content)) {
+      const bare = mediaType.split(';')[0]?.trim().toLowerCase() ?? '';
+      if ((bare === 'application/json' || bare.endsWith('+json')) && media.schema !== undefined) {
+        return { mediaType, schema: toWireSchema(media.schema) };
+      }
+    }
+    return undefined;
   }
 
   /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */
