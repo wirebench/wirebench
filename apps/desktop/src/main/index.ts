@@ -46,6 +46,7 @@ import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
 import {
   registerRequestChannels,
+  sendGrpcRequest,
   whenRestSendsRecorded,
   whenWsSessionsRecorded,
   type RequestChannelDeps,
@@ -342,6 +343,7 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
+    grpc: { send: (request, sender) => sendGrpcRequest(engineService, requestDeps, request, sender) },
   });
   registerProjectChannels({
     router: workspaceService,

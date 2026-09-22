@@ -125,6 +125,8 @@ export type RequestChannelProject = Pick<
       | 'restMeta'
       // Read after a REST send, to check the response against its OpenAPI operation.
       | 'restContractFor'
+      // Read by the body editor's form view.
+      | 'restBodySchema'
       // The gRPC third, optional for the same reason.
       | 'grpcSend'
       | 'grpcTlsFor'
@@ -1748,4 +1750,10 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.curl, (request) => curl(service, deps, request));
 
   registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
+
+  registerHandler(channels.request.restBodySchema, async (request) => {
+    const found = await deps.project.restBodySchema?.(request.requestId);
+    // The wire keeps the schema as plain JSON data; the renderer reads it back as a `JsonSchema`.
+    return found === undefined ? null : { mediaType: found.mediaType, schema: found.schema as Record<string, unknown> };
+  });
 }

@@ -32,7 +32,7 @@ export interface JsonReportRequest {
   readonly path: string;
   readonly group: string;
   readonly name: string;
-  readonly protocol: 'soap' | 'rest';
+  readonly protocol: 'soap' | 'rest' | 'grpc';
   readonly outcome: RequestResult['outcome'];
   readonly status?: number;
   readonly durationMs?: number;

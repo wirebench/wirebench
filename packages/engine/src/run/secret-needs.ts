@@ -10,7 +10,7 @@ import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
-import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
 
 /** One secret a run needs, and which requests need it. */
@@ -102,6 +102,12 @@ function needsOf(selected: SelectedRequest, project: Project): SecretNeed[] {
   if (selected.kind === 'rest') {
     return [
       ...secretNeedsOfAuth(restEffectiveAuth(selected)),
+      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
+    ];
+  }
+  if (selected.kind === 'grpc') {
+    return [
+      ...secretNeedsOfAuth(grpcEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   }

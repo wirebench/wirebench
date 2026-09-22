@@ -1,0 +1,16 @@
+auth:
+  clientAuth: basic
+  clientId: runner
+  clientSecretEnv: OAUTH_SECRET
+  clientSecretRef: sec_oauth
+  grant: client-credentials
+  pkce: false
+  scopes:
+    - read
+  tokenUrl: ${baseUrl}/token
+  type: oauth2
+baseUrl: ${baseUrl}
+id: RUNNER0030
+kind: rest
+name: oauth
+order: 3

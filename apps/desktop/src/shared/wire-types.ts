@@ -2165,6 +2165,20 @@ export const requestCurlResponseSchema = z.object({
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
+/** Request payload for `request.restBodySchema`: which saved REST request. */
+export const requestRestBodySchemaRequestSchema = z.object({ requestId: z.string() });
+export type RequestRestBodySchemaRequest = z.infer<typeof requestRestBodySchemaRequestSchema>;
+
+/**
+ * Response payload for `request.restBodySchema`: the JSON media type and the (acyclic) schema of the
+ * body the request's operation declares, or `null` when there is none. The schema is kept as plain
+ * JSON data; the engine's `JsonSchema` type is what the renderer reads it as.
+ */
+export const requestRestBodySchemaResponseSchema = z
+  .object({ mediaType: z.string(), schema: z.record(z.string(), z.unknown()) })
+  .nullable();
+export type RequestRestBodySchemaResponse = z.infer<typeof requestRestBodySchemaResponseSchema>;
+
 /** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
 export const logEntryWireSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -3271,6 +3285,9 @@ export const historyClearResponseSchema = z.object({ cleared: z.number() });
 
 /** Request payload for `history.resend`: re-sends a past entry through the normal send path. */
 export const historyResendRequestSchema = z.object({ id: z.string() });
+
+/** Request payload for `history.resendGrpc`: calls a past gRPC entry's saved request with its recorded messages. */
+export const historyResendGrpcRequestSchema = z.object({ id: z.string() });
 
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });

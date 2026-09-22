@@ -5,9 +5,10 @@ pipeline, and turns the result into an exit code and a report a CI system unders
 alongside the desktop app in this monorepo; see [Run in CI](../README.md#run-in-ci) in the README
 for the one-line pipeline step.
 
-This page documents S1–S6 (SOAP and REST, all four assertion types that apply to them, all four
-reporters, environment-variable secrets). gRPC unary and OAuth2 client-credentials are slice S7,
-not yet shipped — see the [design spec](specs/2026-09-18-cli-runner-design.md).
+This page documents S1–S7: SOAP, REST and unary gRPC requests, all four assertion types that apply
+to them, all four reporters, environment-variable secrets and OAuth2 client credentials — see the
+[design spec](specs/2026-09-18-cli-runner-design.md) and, for S7,
+[its own spec](specs/2026-09-22-cli-runner-design.md).
 
 ## Install and build
 
@@ -79,7 +80,7 @@ assertions:
 
 | Type | Holds when |
 | --- | --- |
-| `status` | the HTTP status is in the set |
+| `status` | the HTTP status is in the set — for a gRPC request, the gRPC status code (`0`–`16`, or its name: `OK`, `NOT_FOUND`, …) |
 | `soap-fault` | a fault is absent (or present, when `expect: present`) |
 | `match` | the XPath/XQuery/JSONPath expression's result equals, matches or exists |
 | `schema` | the response validates against the interface's cached contract |
@@ -89,6 +90,27 @@ assertions:
 (exit 2), not silent passes. `schema` for REST is reserved but not implemented until `#45`
 (OpenAPI response validation) lands. A `match` result is compared as a string unless `equals` is a
 boolean or a number.
+
+### gRPC requests
+
+Unary gRPC requests run like the others, in the same project order; server-, client- and
+bidirectional-streaming requests are skipped (a selector naming one matches nothing, exit 2), and so
+is a request whose method is gone from the API's definition. The schema comes from the API's
+**cached** definition (`apis/<slug>/definition/`, written when the desktop imports a `.proto` set
+with caching on) — the runner never reads the original `.proto` folder nor asks the server for
+reflection. An API without a cache errors each of its requests with `grpc-definition-missing`
+(exit 3) and sends nothing. `status`, `match` (JSONPath over the first response message as JSON)
+and `sla` apply; `--timeout` replaces the request's own deadline.
+
+```yaml
+assertions:
+  - type: status
+    equals: OK # or 0
+  - type: match
+    language: jsonpath
+    expression: $.message
+    equals: Hello, Ada
+```
 
 A request with no `assertions:` passes on any response that came back; it is reported with a note.
 `--require-assertions` turns that case into an error instead, for teams that want every request
@@ -139,6 +161,18 @@ without sending anything, so it cannot know which ones a particular run will act
 WS-Security incoming configuration's decryption-key password, for example, is only needed when a
 response arrives encrypted. So `secrets list` can exit 3 for a selection that `run` passes; treat
 its list as what a run *may* need.
+
+### OAuth2 client credentials
+
+A request, folder or API whose auth is OAuth2 with the **client-credentials** grant gets its token
+at run time: the runner posts to the token URL (property expansion applies to it, the client ID,
+the scopes and the audience) with the client secret from `clientSecretEnv` / `clientSecretRef` as
+above, and sends the token as a Bearer — REST and gRPC alike. One token is fetched per
+configuration per run and reused until it is due for refresh; a failed fetch is not cached. The
+token request honours `--timeout`, `--insecure` and the proxy variables. The access token is masked
+in every report and in stdout/stderr exactly like a secret from the environment. The
+**authorization-code** grant needs a browser and a person, so a request that uses it is errored with
+`auth-grant-unsupported`.
 
 ### Masking has a floor
 
@@ -232,7 +266,8 @@ The stable machine interface, its own `formatVersion` starting at 1:
 }
 ```
 
-`exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
+`protocol` is `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
+code. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
 shape after S5 is an ask-first.
 
 ### `html=<file>`

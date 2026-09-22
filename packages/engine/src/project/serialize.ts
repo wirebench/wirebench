@@ -228,6 +228,10 @@ const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) =>
         auth: authDocument(request.auth),
         settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
         orphaned: request.orphaned === true ? true : undefined,
+        assertions:
+          request.assertions !== undefined && request.assertions.length > 0
+            ? request.assertions.map((a) => compact({ ...a }))
+            : undefined,
       }),
     ),
   );

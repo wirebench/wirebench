@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
 import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 
@@ -98,5 +99,58 @@ describe('selectRequests', () => {
   it('accepts the on-disk path of a request file too', () => {
     const { selected } = selectRequests(makeProject(), ['./interfaces/Alpha/operations/OpA/Request 1.request.yaml']);
     expect(selected.map((s) => s.path)).toEqual(['Alpha/OpA/Request 1']);
+  });
+});
+
+describe('selectRequests — gRPC', () => {
+  function withGrpc(): Project {
+    const greeter = createGrpcApi('Greeter', {
+      id: 'api-greeter',
+      slug: 'greeter',
+      order: 1.5,
+      target: 'localhost:50051',
+      requests: [
+        createGrpcRequest('Say hello', { id: 'g-hello', order: 1, service: 's.G', method: 'SayHello' }),
+        createGrpcRequest('Chat', { id: 'g-chat', order: 0, methodKind: 'bidi-streaming' }),
+        createGrpcRequest('Replies', { id: 'g-replies', order: 2, methodKind: 'server-streaming' }),
+        { ...createGrpcRequest('Gone', { id: 'g-gone', order: 3 }), orphaned: true },
+      ],
+      folders: [
+        createGrpcFolder('Admin', {
+          id: 'g-admin',
+          slug: 'admin',
+          order: 0,
+          requests: [createGrpcRequest('Fail', { id: 'g-fail', slug: 'fail', order: 0 })],
+        }),
+      ],
+    });
+    return { ...makeProject(), grpcApis: [greeter] };
+  }
+
+  it('walks a gRPC API in the shared order, unary and non-orphaned requests only', () => {
+    const { selected } = selectRequests(withGrpc(), []);
+    expect(selected.map((s) => s.path)).toEqual([
+      'Alpha/OpA/Request 1',
+      'Billing API/Get invoice',
+      'Billing API/invoices/List',
+      'Greeter/Admin/Fail',
+      'Greeter/Say hello',
+      'Beta/OpB/Request 1',
+    ]);
+    const fail = selected[3];
+    expect(fail).toMatchObject({ kind: 'grpc', group: 'Greeter/Admin' });
+    expect(fail?.kind === 'grpc' && fail.chain.map((f) => f.name)).toEqual(['Admin']);
+  });
+
+  it('accepts display and on-disk paths, and a streaming request matches nothing', () => {
+    const project = withGrpc();
+    expect(
+      selectRequests(project, ['apis/greeter/requests/admin/fail.request.yaml']).selected.map((s) => s.path),
+    ).toEqual(['Greeter/Admin/Fail']);
+    expect(selectRequests(project, ['Greeter/Say hello']).selected).toHaveLength(1);
+    expect(selectRequests(project, ['Greeter/Chat', 'Greeter/Gone']).unmatched).toEqual([
+      'Greeter/Chat',
+      'Greeter/Gone',
+    ]);
   });
 });

@@ -53,7 +53,7 @@ export type Assertion = StatusAssertion | SoapFaultAssertion | MatchAssertion | 
 
 /** What an assertion looks at — protocol-neutral, built by the runner from an exchange. */
 export interface AssertionSubject {
-  readonly protocol: 'soap' | 'rest';
+  readonly protocol: 'soap' | 'rest' | 'grpc';
   readonly status: number;
   readonly durationMs: number;
   /** Decoded response text: the (possibly decrypted) envelope for SOAP, the body text for REST. */

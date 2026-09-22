@@ -454,6 +454,8 @@ export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
 export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
+export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
 export type {
   JsonSchema,

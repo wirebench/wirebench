@@ -1,0 +1,13 @@
+fetchedAt: 2026-09-22T00:00:00.000Z
+files:
+  - bytes: 2238
+    path: greeter.proto
+    sha256: bb816f89769e025c3015ccdb94e6d3dcd567248d6d6b674a3d4f131d691e007f
+  - bytes: 193
+    path: wirebench/common/address.proto
+    sha256: 08218d514c4103e39057cacdc0c99f43048476d11692ee803e184a2cd44ec5b7
+formatVersion: 1
+kind: proto
+roots:
+  - greeter.proto
+source: greeter.proto

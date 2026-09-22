@@ -5,12 +5,10 @@ import { MethodBadge } from '../rest-api/method-badge.js';
 import { prettyPrintBody, sniffLanguage } from './history-format.js';
 import { formatBytes, formatDuration } from '../../lib/format-size.js';
 import { Button } from '../../components/button.js';
-import { showToast } from '../../components/toast.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
-import { canResendHistoryEntry } from './history-actions.js';
+import { canResendHistoryEntry, resendHistoryEntry } from './history-actions.js';
 import { useProjectStore } from '../../state/project.js';
-import { ipc } from '../../state/ipc-client.js';
 import { WsSummaryLine, WsTimelineWithDetail } from '../ws-editor/response-pane.js';
 import { wsTabId } from '../ws-editor/ws-actions.js';
 import { EventsView } from '../rest-editor/response/events-view.js';
@@ -51,13 +49,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
   }
 
   const onResend = () => {
-    void ipc()
-      .history.resend({ id: entry.id })
-      .then((result) => {
-        if (!result.ok) {
-          showToast(result.error.code);
-        }
-      });
+    void resendHistoryEntry(entry);
   };
 
   const onGoToRequest = () => {
@@ -128,7 +120,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
               Go to request
             </Button>
           )}
-          {/* Only a SOAP send can be replayed from History; the others resend from their request. */}
+          {/* SOAP and gRPC sends replay from History; REST and WebSocket resend from their request. */}
           {canResendHistoryEntry(entry) && (
             <Button variant="secondary" onClick={onResend}>
               Re-send

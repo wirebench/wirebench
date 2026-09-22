@@ -129,6 +129,7 @@ import {
   historyListRequestSchema,
   historyListResponseSchema,
   historyResendRequestSchema,
+  historyResendGrpcRequestSchema,
   snapshotReadResponseSchema,
   snapshotRemoveResponseSchema,
   snapshotRequestSchema,
@@ -168,6 +169,8 @@ import {
   logResendResponseSchema,
   requestImportCurlRequestSchema,
   requestImportCurlResponseSchema,
+  requestRestBodySchemaRequestSchema,
+  requestRestBodySchemaResponseSchema,
   requestSendRequestSchema,
   secretsDeleteRequestSchema,
   secretsDeleteResponseSchema,
@@ -419,6 +422,12 @@ export const channels = {
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
     curl: defineChannel('request.curl', requestCurlRequestSchema, requestCurlResponseSchema),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
+    /** The JSON schema of the body a REST request's operation declares, or `null`; feeds the body form. */
+    restBodySchema: defineChannel(
+      'request.restBodySchema',
+      requestRestBodySchemaRequestSchema,
+      requestRestBodySchemaResponseSchema,
+    ),
   },
   /**
    * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
@@ -668,6 +677,7 @@ export const channels = {
     get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
     resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
+    resendGrpc: defineChannel('history.resendGrpc', historyResendGrpcRequestSchema, grpcExchangeSummarySchema),
   },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {
