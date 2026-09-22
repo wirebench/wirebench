@@ -1023,7 +1023,8 @@ describe('tolerance', () => {
       // definitions stay reachable through $ref, so they are not reported as skipped
       expect(doc.skipped.some((s) => s.kind === 'definitions')).toBe(false);
       expect(doc.skipped.some((s) => s.kind === 'produces')).toBe(true);
-      expect(doc.skipped.some((s) => s.kind === 'responses')).toBe(true);
+      // global responses stay reachable through $ref, like definitions
+      expect(doc.skipped.some((s) => s.kind === 'responses')).toBe(false);
     });
 
     it('throws OpenApiError when Swagger 1.2 Resource Listing has 0 operations (3.6)', () => {
@@ -1096,5 +1097,49 @@ describe('tolerance', () => {
       expect(versionOf({ swaggerVersion: '1.1' })).toEqual({ version: '1.1', declared: 'Swagger 1.1' });
       expect(versionOf({ swaggerVersion: '1.2' })).toEqual({ version: '1.2', declared: 'Swagger 1.2' });
     });
+  });
+});
+
+describe('operation responses', () => {
+  it('keeps OpenAPI 3 responses on the operation, schemas as resolved data', () => {
+    const pet = { type: 'object', required: ['id'], properties: { id: { type: 'integer', format: 'int64' } } };
+    const doc = parseOpenApiDocument({
+      openapi: '3.0.3',
+      info: { title: 't' },
+      paths: {
+        '/pets': {
+          get: {
+            responses: {
+              '200': { description: 'ok', content: { 'application/json': { schema: pet } } },
+              '204': { description: 'empty' },
+            },
+          },
+        },
+      },
+    });
+    const op = doc.operations[0]!;
+    expect(op.responses?.['200']).toEqual({ description: 'ok', content: { 'application/json': { schema: pet } } });
+    expect(op.responses?.['204']).toEqual({ description: 'empty' });
+    expect(doc.skipped.some((s) => s.kind === 'responses')).toBe(false);
+  });
+
+  it('maps a Swagger 2.0 response schema to application/json content', () => {
+    const doc = parseOpenApiDocument({
+      swagger: '2.0',
+      paths: {
+        '/pets': {
+          get: {
+            responses: { '200': { description: 'ok', schema: { type: 'array' } }, '404': { description: 'no' } },
+          },
+        },
+      },
+    });
+    const op = doc.operations[0]!;
+    expect(op.responses?.['200']).toEqual({
+      description: 'ok',
+      content: { 'application/json': { schema: { type: 'array' } } },
+    });
+    expect(op.responses?.['404']).toEqual({ description: 'no' });
+    expect(doc.skipped.some((s) => s.kind === 'responses')).toBe(false);
   });
 });
