@@ -7,8 +7,14 @@
  */
 import { evaluateAssertions } from '../assert/index.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
-import { isWirebenchError } from '../errors.js';
-import { definitionCacheDir } from '../project/paths.js';
+import { isWirebenchError, WirebenchError } from '../errors.js';
+import { readGrpcDefinitionCache } from '../grpc/cache.js';
+import { callGrpc } from '../grpc/call.js';
+import type { GrpcCallResult } from '../grpc/call.js';
+import { loadProtoSet } from '../grpc/proto/load.js';
+import type { ProtoSet } from '../grpc/proto/load.js';
+import { protoSetFromDescriptorSet } from '../grpc/reflection/descriptors.js';
+import { apiDefinitionDir, definitionCacheDir } from '../project/paths.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
 import { sendSoapRequest } from '../send.js';
@@ -33,7 +39,7 @@ export interface RequestResult {
   readonly path: string;
   readonly group: string;
   readonly name: string;
-  readonly protocol: 'soap' | 'rest';
+  readonly protocol: 'soap' | 'rest' | 'grpc';
   readonly outcome: RequestOutcome;
   readonly status?: number;
   readonly durationMs?: number;
@@ -74,6 +80,10 @@ export interface RunOptions {
 }
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
+type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
+
+/** A request's own assertions; a gRPC request that never had any carries none. */
+const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
 
 /** An interface's cached definition, compiled once per run. */
 interface LoadedDefinition {
@@ -103,7 +113,7 @@ function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['
     outcome: 'errored',
     assertions: [],
     error,
-    unasserted: item.request.assertions.length === 0,
+    unasserted: assertionsOf(item).length === 0,
   };
 }
 
@@ -189,6 +199,49 @@ function restSubject(exchange: RestExchange): AssertionSubject {
   };
 }
 
+/**
+ * Reads a gRPC API's schema from `apis/<slug>/definition/`, as the app's `grpcProtoSetFor` does:
+ * the `.proto` sources an import cached, or the descriptor set reflection cached. A run never
+ * reflects against a server, so an API with no cache has no schema and none of its calls can run.
+ *
+ * @throws WirebenchError `grpc-definition-missing` when there is no cache; whatever the loaders
+ * throw for one that does not load
+ */
+async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Promise<ProtoSet> {
+  let cache: Awaited<ReturnType<typeof readGrpcDefinitionCache>>;
+  try {
+    cache = await readGrpcDefinitionCache(apiDefinitionDir(projectDir, api.slug));
+  } catch (error) {
+    if (isWirebenchError(error) && error.code === 'definition-cache-missing') {
+      throw new WirebenchError(
+        'grpc-definition-missing',
+        `The gRPC API "${api.name}" has no cached definition; import its .proto files or discover it in the app first.`,
+        { details: { api: api.name }, cause: error },
+      );
+    }
+    throw error;
+  }
+  return cache.kind === 'proto'
+    ? loadProtoSet(cache.sources, { roots: cache.manifest.roots })
+    : protoSetFromDescriptorSet(cache.descriptors, { roots: cache.manifest.roots });
+}
+
+/**
+ * A unary call's answer as assertions see it: the gRPC status code (0 = OK), and the one response
+ * message as JSON. No message, or one that did not decode, leaves nothing a `match` can read.
+ */
+function grpcSubject(result: GrpcCallResult): AssertionSubject {
+  const first = result.responseMessages[0];
+  const decoded = first !== undefined && first.json !== undefined;
+  return {
+    protocol: 'grpc',
+    status: result.exchange.status,
+    durationMs: result.exchange.durationMs,
+    bodyText: decoded ? JSON.stringify(first.json) : '',
+    bodyKind: decoded ? 'json' : 'other',
+  };
+}
+
 function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   if (assertions.some((a) => a.outcome === 'errored')) return 'errored';
   if (assertions.some((a) => a.outcome === 'failed')) return 'failed';
@@ -201,9 +254,12 @@ async function runOne(
   context: RunContext,
   options: RunOptions,
   definitionFor: (iface: SoapSelected['iface']) => Promise<LoadedDefinition | undefined>,
+  protoSetFor: (api: GrpcSelected['api']) => Promise<ProtoSet>,
 ): Promise<RequestResult> {
   try {
     const loaded = item.kind === 'soap' ? await definitionFor(item.iface) : undefined;
+    // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
+    const protoSet = item.kind === 'grpc' ? await protoSetFor(item.api) : undefined;
     const prepared = await prepareSend(item, {
       ...context,
       ...(loaded !== undefined
@@ -223,10 +279,14 @@ async function runOne(
       const exchange = await sendRest(prepared.input);
       subject = restSubject(exchange);
       raw = exchange;
+    } else if (prepared.kind === 'grpc' && protoSet !== undefined) {
+      const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
+      subject = grpcSubject(result);
+      raw = result.exchange;
     } else {
       throw new Error('prepareSend returned a send of the wrong protocol');
     }
-    const own = item.request.assertions;
+    const own = assertionsOf(item);
     const withDefault: readonly Assertion[] =
       options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
         ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
@@ -273,6 +333,19 @@ export async function runRequests(
     }
     return loaded;
   };
+  // Each gRPC API's schema is loaded once per run; a failed load is remembered too, since nothing
+  // in a run can fix the cache, and every call of that API reports the same error.
+  const protoSets = new Map<string, Promise<ProtoSet>>();
+  const protoSetFor = (api: GrpcSelected['api']): Promise<ProtoSet> => {
+    let loading = protoSets.get(api.id);
+    if (loading === undefined) {
+      loading = loadProtoSetFor(context.projectDir, api);
+      // Observed here so a rejection nobody awaits yet is never reported as unhandled.
+      loading.catch(() => undefined);
+      protoSets.set(api.id, loading);
+    }
+    return loading;
+  };
   // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
   const runContext: RunContext = {
     ...context,
@@ -293,12 +366,12 @@ export async function runRequests(
         ...identity(item),
         outcome: 'skipped',
         assertions: [],
-        unasserted: item.request.assertions.length === 0,
+        unasserted: assertionsOf(item).length === 0,
       };
-    } else if (item.request.assertions.length === 0 && options.requireAssertions === true) {
+    } else if (assertionsOf(item).length === 0 && options.requireAssertions === true) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      result = await runOne(item, runContext, options, definitionFor);
+      result = await runOne(item, runContext, options, definitionFor, protoSetFor);
     }
     results.push(result);
     options.onRequestDone?.(result);

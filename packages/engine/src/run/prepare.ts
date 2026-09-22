@@ -12,6 +12,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
+import { expandGrpcInput } from '../grpc/expand.js';
+import type { GrpcSendInput } from '../grpc/send.js';
 import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
 import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
@@ -24,14 +26,14 @@ import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
 import { resolveAuthConfig, resolveEndpointAuth, toSendAuth } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
-import { toRestSendInput, toSendInput } from '../send-options.js';
+import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
 import type { SoapSendInput, SoapSendWss } from '../types.js';
 import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
 import { createWssContext } from '../wss/model.js';
-import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
 import type { RunTokenSource } from './oauth2-token.js';
 import type { SelectedRequest } from './select.js';
@@ -66,13 +68,23 @@ export interface RunContext {
   readonly tokenSource?: RunTokenSource;
 }
 
-/** One request, ready for `sendSoapRequest` (with `scopes`) or `sendRest`. */
+/**
+ * One request, ready for `sendSoapRequest` (with `scopes`), `sendRest`, or `callGrpc` (with the
+ * API's proto set, which the caller loads: preparing a call needs no schema).
+ */
 export type PreparedSend =
   | { readonly kind: 'soap'; readonly input: SoapSendInput; readonly scopes: PropertyScopes }
-  | { readonly kind: 'rest'; readonly input: RestSendInput };
+  | { readonly kind: 'rest'; readonly input: RestSendInput }
+  | {
+      readonly kind: 'grpc';
+      // The streaming hooks are left out: a run makes unary calls, and wants only the result.
+      readonly input: Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
+      readonly messageText: string;
+    };
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
+type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
 
 function scopesFor(context: RunContext): PropertyScopes {
   const scopes = resolveScopes(context.project, context.environmentId, {}, process.env);
@@ -386,9 +398,58 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
 }
 
 /**
+ * The app's `resolveGrpcSend` plus what its send handler adds: the target through the
+ * environment's override for the API (the slot a REST base URL uses), the settings ladder, one
+ * expansion pass over target, metadata and message, then the request's own TLS identity and trust
+ * decision and the chain's credentials. There is no proxy: the app sends gRPC direct as well.
+ */
+async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise<PreparedSend> {
+  const { api, request } = selected;
+  const scopes = scopesFor(context);
+  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
+  const auth = await authFor(grpcEffectiveAuth(selected), selected.path, context, tls);
+  const target = resolveApiBaseUrl(context.project, context.environmentId, { slug: api.slug, baseUrl: api.target }).url;
+  const unexpanded = toGrpcSendInput({
+    request: {
+      service: request.service,
+      method: request.method,
+      methodKind: request.methodKind,
+      metadata: request.metadata,
+      settings: request.settings,
+    },
+    target,
+    tls: api.tls,
+    apiMetadata: api.metadata,
+    projectSettings: context.project.settings,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(tls !== undefined ? { tlsOptions: tls } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  });
+  const { input, unresolved } = expandGrpcInput({ ...unexpanded, messageText: request.message }, scopes, {
+    escape: request.settings.escapeProperties === true,
+  });
+  if (unresolved.length > 0) {
+    throw unresolvedError(selected.path, unresolved);
+  }
+  const { messageText, ...transport } = input;
+  return {
+    kind: 'grpc',
+    input: { ...transport, ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}) },
+    messageText,
+  };
+}
+
+/**
  * @throws WirebenchError `unresolved-properties` | `endpoint-unresolved` | `secret-missing` |
  * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing`
  */
 export function prepareSend(selected: SelectedRequest, context: RunContext): Promise<PreparedSend> {
-  return selected.kind === 'soap' ? prepareSoap(selected, context) : prepareRest(selected, context);
+  switch (selected.kind) {
+    case 'soap':
+      return prepareSoap(selected, context);
+    case 'rest':
+      return prepareRest(selected, context);
+    case 'grpc':
+      return prepareGrpc(selected, context);
+  }
 }
