@@ -80,6 +80,27 @@ describe('createRunTokenSource', () => {
     expect(h.sent).toHaveLength(2);
   });
 
+  it('fetches again after a rejected token, and only then', async () => {
+    const h = harness([
+      exchange(200, { access_token: 'tok-1', token_type: 'Bearer', expires_in: 3600 }),
+      exchange(200, { access_token: 'tok-2', token_type: 'Bearer', expires_in: 3600 }),
+    ]);
+    await h.source.accessTokenFor(CONFIG, { scopes: SCOPES });
+    h.source.reject('tok-1');
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-2');
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-2');
+    expect(h.sent).toHaveLength(2);
+    expect(h.seen).toEqual(['tok-1', 'tok-2']);
+  });
+
+  it('ignores the rejection of a token it no longer holds', async () => {
+    const h = harness([exchange(200, { access_token: 'tok-1', token_type: 'Bearer', expires_in: 3600 })]);
+    await h.source.accessTokenFor(CONFIG, { scopes: SCOPES });
+    h.source.reject('tok-0');
+    await expect(h.source.accessTokenFor(CONFIG, { scopes: SCOPES })).resolves.toBe('tok-1');
+    expect(h.sent).toHaveLength(1);
+  });
+
   it('does not cache a failed fetch', async () => {
     const h = harness([
       exchange(400, { error: 'invalid_client' }),
