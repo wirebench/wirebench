@@ -9,6 +9,9 @@ import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));
+
 function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
   return {
     id: 'h-1',
@@ -233,5 +236,32 @@ describe('HistoryView with REST entries', () => {
 
     expect(screen.queryByTestId('method-badge')).toBeNull();
     expect(screen.getByTestId('history-soap-version')).toBeTruthy();
+  });
+
+  describe('re-sending a gRPC row', () => {
+    it('replays it through history.resendGrpc with its id', async () => {
+      const resend = vi.fn();
+      const resendGrpc = vi.fn().mockResolvedValue({ ok: true, value: {} });
+      installWirebenchApi({ history: { resend, resendGrpc } });
+      useHistoryStore.setState({ entries: [makeEntry({ id: 'g', kind: 'grpc', requestName: 'SayHello' })], total: 1 });
+      render(<HistoryView />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Re-send SayHello' }));
+      expect(resendGrpc).toHaveBeenCalledWith({ id: 'g' });
+      expect(resend).not.toHaveBeenCalled();
+    });
+
+    it('toasts the error code when the re-send fails', async () => {
+      showToast.mockClear();
+      const resendGrpc = vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: { code: 'GRPC_REQUEST_GONE', message: 'gone' } });
+      installWirebenchApi({ history: { resendGrpc } });
+      useHistoryStore.setState({ entries: [makeEntry({ id: 'g', kind: 'grpc', requestName: 'SayHello' })], total: 1 });
+      render(<HistoryView />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Re-send SayHello' }));
+      await waitFor(() => expect(showToast).toHaveBeenCalledWith('GRPC_REQUEST_GONE'));
+    });
   });
 });

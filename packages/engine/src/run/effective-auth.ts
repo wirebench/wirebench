@@ -21,3 +21,9 @@ export function restEffectiveAuth(selected: Extract<SelectedRequest, { kind: 're
   const { api, chain, request } = selected;
   return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
 }
+
+/** The same chain for a gRPC request: request, its folders inside-out, the API. */
+export function grpcEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'grpc' }>): AuthConfig {
+  const { api, chain, request } = selected;
+  return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
+}

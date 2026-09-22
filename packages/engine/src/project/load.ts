@@ -446,6 +446,7 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       auth: authConfig(parsed.auth),
       settings: exact<GrpcRequestSettings>(parsed.settings),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
+      ...(parsed.assertions.length > 0 ? { assertions: parsed.assertions.map((a) => exact<Assertion>(a)) } : {}),
     };
   };
 }

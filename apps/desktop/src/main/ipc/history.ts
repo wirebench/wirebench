@@ -1,12 +1,22 @@
 /**
  * Registers the `history.*` IPC channels: list/search, read one entry, clear, and re-send.
  * `history.resend` goes through the same `sendAndRecordHistory` path as `request.send`, so a
- * re-send is itself recorded as a new history entry.
+ * re-send is itself recorded as a new history entry. `history.resendGrpc` calls a gRPC entry's
+ * saved request through `request.sendGrpc`'s path, with the messages the entry recorded.
  */
 
+import { randomUUID } from 'node:crypto';
+import type { WebContents } from 'electron';
 import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
-import type { FailedExchangeWire, HeaderEntryWire, HistoryEntryWire } from '../../shared/wire-types.js';
+import type {
+  FailedExchangeWire,
+  GrpcExchangeSummary,
+  GrpcRequestPatchWire,
+  HeaderEntryWire,
+  HistoryEntryWire,
+  RequestSendGrpcRequest,
+} from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
@@ -18,7 +28,9 @@ import { registerHandler } from './register.js';
 
 /** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject & Pick<ProjectRouter, 'buildLiveSendInput'>;
+  readonly project: HistorySendProject &
+    Pick<ProjectRouter, 'buildLiveSendInput'> &
+    Partial<Pick<ProjectRouter, 'grpcSend'>>;
   /**
    * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
    * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
@@ -32,6 +44,34 @@ export interface HistoryChannelDeps {
   /** The OAuth2 token service and keychain reader, for a resend whose owner uses OAuth2. */
   readonly oauth2?: SendWithHistoryDeps['oauth2'];
   readonly getSecret?: SendWithHistoryDeps['getSecret'];
+  /** Sends a gRPC call the way `request.sendGrpc` does; `history.resendGrpc` is refused without it. */
+  readonly grpc?: {
+    send(request: RequestSendGrpcRequest, sender: WebContents): Promise<GrpcExchangeSummary>;
+  };
+}
+
+/**
+ * The draft a gRPC entry resends with: its method and the messages it recorded. A streaming
+ * client's messages go back as one JSON array, which is what the editor's message field holds
+ * for such a call; a unary or server-streaming call sent exactly one. An entry with no messages
+ * (the send failed before any went out) falls back to the request text it recorded.
+ */
+export function grpcResendDraft(
+  entry: HistoryEntryWire & { grpc: NonNullable<HistoryEntryWire['grpc']> },
+): GrpcRequestPatchWire {
+  const { service, method, methodKind, requestMessages } = entry.grpc;
+  const streamsIn = methodKind === 'client-streaming' || methodKind === 'bidi-streaming';
+  const message =
+    requestMessages.length === 0
+      ? entry.request.envelopeXml
+      : streamsIn
+        ? JSON.stringify(
+            requestMessages.map((text) => JSON.parse(text) as unknown),
+            null,
+            2,
+          )
+        : requestMessages[0]!;
+  return { service, method, methodKind, message };
 }
 
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
@@ -143,5 +183,29 @@ export function registerHistoryChannels(
         projectId: entry.projectId,
       },
     );
+  });
+
+  registerHandler(channels.history.resendGrpc, (request, sender) => {
+    const entry = history.get(request.id);
+    if (entry === undefined) {
+      throw new WirebenchError('unknown-history-entry', `No history entry with id "${request.id}"`, {
+        details: { id: request.id },
+      });
+    }
+    const { grpc } = entry;
+    if (entry.kind !== 'grpc' || grpc === undefined || deps.grpc === undefined) {
+      throw new WirebenchError('history-resend-unsupported', 'Only a gRPC call is resent through this channel', {
+        details: { id: request.id, kind: entry.kind ?? 'soap' },
+      });
+    }
+    // The call goes out through the saved request (its endpoint, metadata, auth and TLS), so an
+    // entry whose request is gone has nothing to resend through.
+    const { requestId } = entry;
+    if (requestId === undefined || deps.project.grpcSend?.(requestId) === undefined) {
+      throw new WirebenchError('history-resend-orphan', 'The request this call was sent from no longer exists', {
+        details: { id: request.id },
+      });
+    }
+    return deps.grpc.send({ sendId: randomUUID(), requestId, draft: grpcResendDraft({ ...entry, grpc }) }, sender);
   });
 }

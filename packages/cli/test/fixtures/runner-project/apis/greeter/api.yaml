@@ -1,0 +1,23 @@
+auth:
+  clientAuth: basic
+  clientId: runner
+  clientSecretEnv: OAUTH_SECRET
+  clientSecretRef: sec_oauth
+  grant: client-credentials
+  pkce: false
+  scopes:
+    - read
+  tokenUrl: ${baseUrl}/token
+  type: oauth2
+definition:
+  cache: true
+  kind: proto
+  roots:
+    - greeter.proto
+  source: greeter.proto
+id: RUNNER0020
+kind: grpc
+name: greeter
+order: 2
+target: ${grpcTarget}
+tls: false

@@ -5,4 +5,5 @@ name: local
 order: 0
 properties:
   baseUrl: ""
+  grpcTarget: ""
   soapUrl: ""

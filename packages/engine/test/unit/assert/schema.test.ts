@@ -27,6 +27,12 @@ describe('assertionsSchema', () => {
     ).toBe(false);
   });
 
+  it('accepts a gRPC status name and rejects an unknown name and 17', () => {
+    expect(assertionsSchema.safeParse([{ type: 'status', equals: 'NOT_FOUND' }]).success).toBe(true);
+    expect(assertionsSchema.safeParse([{ type: 'status', equals: 'NOPE' }]).success).toBe(false);
+    expect(assertionsSchema.safeParse([{ type: 'status', equals: 17 }]).success).toBe(false);
+  });
+
   it('refuses an unknown type', () => {
     expect(assertionsSchema.safeParse([{ type: 'script' }]).success).toBe(false);
   });
