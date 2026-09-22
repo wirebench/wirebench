@@ -9,15 +9,18 @@
  * A file is chosen through the same native picker attachments use. The renderer never names a path
  * of its own — the pick is what makes the file legal for main to read.
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { JsonSchema } from '@wirebench/engine/rest';
 import { formatXml } from '@wirebench/engine/xml';
 import { Button } from '../../components/button.js';
 import { KvTable } from '../../components/kv-table.js';
 import { showToast } from '../../components/toast.js';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
+import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
+import { JsonFormView } from './json-form-view.js';
 import type { KeyValueWire, RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/wire-types.js';
 
 /** The body kinds, in the order the switch offers them. */
@@ -79,7 +82,25 @@ export function formatRawBody(
   return { text };
 }
 
+/** Where the body's schema comes from; injectable so tests need no IPC. */
+export interface BodySchemaSource {
+  /** The JSON body schema of the request's operation, or `null` when it declares none. */
+  load(requestId: string): Promise<{ readonly mediaType: string; readonly schema: JsonSchema } | null>;
+}
+
+const IPC_SCHEMA_SOURCE: BodySchemaSource = {
+  async load(requestId) {
+    const result = await ipc().request.restBodySchema({ requestId });
+    // No schema is the quiet outcome: the switch simply does not appear.
+    return result.ok && result.value !== null
+      ? { mediaType: result.value.mediaType, schema: result.value.schema }
+      : null;
+  },
+};
+
 export interface BodyTabProps {
+  /** The REST request this body belongs to: what the schema is looked up by and the Text/Form choice is kept for. */
+  readonly requestId: string;
   readonly body: RestBodyWire;
   readonly settings: RestSettingsWire;
   readonly onChange: (patch: RestRequestPatchWire) => void;
@@ -90,13 +111,39 @@ export interface BodyTabProps {
   readonly onSend?: () => void;
   /** Saves the request, bound inside the editor for the same reason. */
   readonly onSave?: () => void;
+  readonly schemaSource?: BodySchemaSource;
 }
 
 /** The Body tab. */
-export function BodyTab({ body, settings, onChange, onSend, onSave }: BodyTabProps) {
+export function BodyTab({ requestId, body, settings, onChange, onSend, onSave, schemaSource }: BodyTabProps) {
   // One remembered draft per kind, seeded with the saved body's own kind.
   const [drafts, setDrafts] = useState<Partial<Record<BodyKind, RestBodyWire>>>({ [body.kind]: body });
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
+  const source = useMemo(() => schemaSource ?? IPC_SCHEMA_SOURCE, [schemaSource]);
+  const [schema, setSchema] = useState<JsonSchema | null>(null);
+  const view = useEditorsStore((state) => state.restBodyViews[requestId] ?? 'text');
+  const setView = useEditorsStore((state) => state.setRestBodyView);
+
+  useEffect(() => {
+    let current = true;
+    setSchema(null);
+    source.load(requestId).then(
+      (found) => {
+        if (current) {
+          setSchema(found?.schema ?? null);
+        }
+      },
+      () => {
+        // A failed lookup only means no form; the text editor is always there.
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [source, requestId]);
+
+  const formAvailable = body.kind === 'raw' && body.language === 'json' && schema !== null;
+  const showForm = formAvailable && view === 'form';
 
   const set = (next: RestBodyWire): void => {
     setDrafts((current) => ({ ...current, [next.kind]: next }));
@@ -146,6 +193,23 @@ export function BodyTab({ body, settings, onChange, onSend, onSave }: BodyTabPro
                 </option>
               ))}
             </select>
+            {formAvailable && (
+              <div role="group" aria-label="Body view" className="flex items-center">
+                {(['text', 'form'] as const).map((option) => (
+                  <Button
+                    key={option}
+                    variant={view === option ? 'primary' : 'secondary'}
+                    aria-pressed={view === option}
+                    data-testid={`rest-body-view-${option}`}
+                    onClick={() => {
+                      setView(requestId, option);
+                    }}
+                  >
+                    {option === 'text' ? 'Text' : 'Form'}
+                  </Button>
+                ))}
+              </div>
+            )}
             <Button
               variant="secondary"
               data-testid="rest-body-format"
@@ -177,7 +241,20 @@ export function BodyTab({ body, settings, onChange, onSend, onSave }: BodyTabPro
 
       {body.kind === 'none' && <p className="text-sm text-fg-subtle">This request sends no body.</p>}
 
-      {body.kind === 'raw' && (
+      {body.kind === 'raw' && showForm && schema !== null && (
+        <JsonFormView
+          text={body.text}
+          schema={schema}
+          onChange={(text) => {
+            set({ ...body, text });
+          }}
+          onShowText={() => {
+            setView(requestId, 'text');
+          }}
+        />
+      )}
+
+      {body.kind === 'raw' && !showForm && (
         <div data-testid="rest-body-editor" className="min-h-0 flex-1">
           <CodeEditor
             value={body.text}
