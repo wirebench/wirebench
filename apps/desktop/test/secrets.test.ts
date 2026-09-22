@@ -139,6 +139,14 @@ describe('SecretStore', () => {
     expect(await reopened.get(refB)).toBe('b');
   });
 
+  it('finds the ref stored under a label, and nothing for an unknown one', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    await store.set('other', { label: 'wirebench-secret:p1:other' });
+    const ref = await store.set('fake-token-not-real-0000', { label: 'wirebench-secret:p1:api_token' });
+    expect(await store.findByLabel('wirebench-secret:p1:api_token')).toBe(ref);
+    expect(await store.findByLabel('wirebench-secret:p2:api_token')).toBeUndefined();
+  });
+
   it('treats a malformed file as empty rather than failing to start', async () => {
     const { writeFileSync } = await import('node:fs');
     writeFileSync(join(dir, SECRETS_FILE), 'not json', 'utf8');

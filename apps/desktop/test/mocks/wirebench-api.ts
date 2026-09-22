@@ -165,6 +165,11 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       setShowSecrets: fail('secrets.setShowSecrets'),
       getShowSecrets: fail('secrets.getShowSecrets'),
     },
+    secretScan: {
+      scan: fail('secretScan.scan'),
+      keep: fail('secretScan.keep'),
+      move: fail('secretScan.move'),
+    },
     xml: {
       completions: fail('xml.completions'),
       declaration: fail('xml.declaration'),

@@ -22,6 +22,9 @@ import {
 import { findGit, GitCli } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
+import { recordSecretValue } from './redact.js';
+import { projectSecretGetter } from './secret-resolver.js';
+import { SecretScanSessions } from './secret-scan-session.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
@@ -56,6 +59,7 @@ import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerSecretScanChannels } from './ipc/secret-scan.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
@@ -86,8 +90,15 @@ const secretStore = new SecretStore(app.getPath('userData'), safeStorageBackend(
 /** Session-only "show secrets" toggle, consulted by `redact.ts` via `request.send`. */
 const showSecretsFlag = new ShowSecretsFlag();
 
+/**
+ * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
+ * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
+ * is masked in the HTTP log and History like any `Authorization` header.
+ */
+const secretsFor = (projectId: string | undefined) => projectSecretGetter(secretStore, projectId, recordSecretValue);
+
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
-const engineService = new EngineService((ref) => secretStore.get(ref));
+const engineService = new EngineService(secretsFor(undefined));
 /**
  * OAuth2 tokens for the session, and the one loopback listener a browser sign-in answers to.
  *
@@ -241,6 +252,9 @@ const workspaceService = new WorkspaceService({
       applyWindowTitle(workspace);
     },
     onProjectChanged: (projectId, project) => {
+      if (project === null) {
+        secretScans.close(projectId);
+      }
       broadcast(events.project.changed, { projectId, project });
     },
     onProjectChangedOnDisk: (projectId, paths) => {
@@ -268,6 +282,12 @@ const workspaceService = new WorkspaceService({
       broadcast(events.git.identityNeeded, { workspaceId });
     },
   },
+});
+
+/** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
+const secretScans = new SecretScanSessions({
+  host: (projectId) => workspaceService.hostFor(projectId),
+  store: secretStore,
 });
 
 // The product name, set before `ready` so the macOS application menu (`role: 'appMenu'`) and
@@ -316,14 +336,15 @@ void app.whenReady().then(() => {
     preferences: preferencesService,
     dialogPicks,
     oauth2: oauth2Service,
-    getSecret: (ref) => secretStore.get(ref),
+    getSecret: secretsFor(undefined),
     storeSecret: (value, label) => secretStore.set(value, { label }),
+    secretsFor,
   };
   registerRequestChannels(engineService, requestDeps);
   registerOAuth2Channels({
     oauth2: oauth2Service,
     project: workspaceService,
-    getSecret: (ref) => secretStore.get(ref),
+    getSecret: secretsFor(undefined),
     // A refresh token replaces the value the configuration's own reference already names; a new
     // reference is never minted here, because the project file would then have to change to match.
     setSecret: async (ref, value) => {
@@ -340,6 +361,7 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
+    secretsFor,
   });
   registerProjectChannels({
     router: workspaceService,
@@ -443,6 +465,7 @@ void app.whenReady().then(() => {
   });
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
+  registerSecretScanChannels(secretScans);
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerLogChannels({
     showSecrets: showSecretsFlag,

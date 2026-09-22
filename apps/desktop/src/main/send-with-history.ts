@@ -5,12 +5,12 @@
  * behaviour.
  */
 
-import { failedRequestOf, isWirebenchError } from '@wirebench/engine';
+import { failedRequestOf, isWirebenchError, resolveSecretTokens, secretNamesInValue } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
 import type { ProjectRouter } from './project-router.js';
-import type { PropertyScopes } from '@wirebench/engine';
+import type { GetSecret, PropertyScopes } from '@wirebench/engine';
 import type {
   ExchangeSummary,
   FailedExchangeWire,
@@ -49,6 +49,12 @@ export interface SendWithHistoryDeps {
    * caller can broadcast `exchange.failed`. Omitted in tests that don't care.
    */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
+  /**
+   * The getter the send's `${secret:name}` tokens resolve through, for the request's own project
+   * (`projectSecretGetter`). Omitted in tests that send no tokens, where a token then refuses the
+   * send as `secret-missing`.
+   */
+  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
 }
 
 /** The label used when the send's `requestId` is unknown or no longer exists. */
@@ -94,14 +100,22 @@ export async function sendAndRecordHistory(
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;
   let proxy: Awaited<ReturnType<NonNullable<HistorySendProject['proxyFor']>>> | undefined;
+  let scopes = requestId === undefined ? (deps.adHocScopes?.() ?? EMPTY_SCOPES) : deps.project.scopesFor(requestId);
   try {
+    // The engine expands the input with these scopes; every `${secret:name}` it will reach is
+    // resolved here first, and a missing one refuses the send before anything is built.
+    const names = secretNamesInValue(request.input, scopes);
+    if (names.length > 0) {
+      const getSecret = deps.secretsFor?.(owner) ?? (() => Promise.resolve(undefined));
+      scopes = { ...scopes, secrets: await resolveSecretTokens(names, getSecret) };
+    }
     wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
     // Resolved per send rather than per session: the exclude list is evaluated against *this*
     // URL, and a system proxy can change under the app while it is running.
     proxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, request.input.endpoint);
   } catch (error) {
-    // Before the request was built: the WS-Security password or the proxy lookup failed. The row
-    // says it never went on the wire; History is not written (nothing was sent).
+    // Before the request was built: a secret token, the WS-Security password or the proxy lookup
+    // failed. The row says it never went on the wire; History is not written (nothing was sent).
     reportSendFailed(deps.onSendFailed, () =>
       failedExchangeOf({
         sendId: request.sendId,
@@ -121,7 +135,7 @@ export async function sendAndRecordHistory(
   const startedAt = Date.now();
   try {
     const result = await service.send(request, {
-      scopes: requestId === undefined ? (deps.adHocScopes?.() ?? EMPTY_SCOPES) : deps.project.scopesFor(requestId),
+      scopes,
       showSecrets: deps.showSecrets?.get() ?? false,
       ...(auth !== undefined ? { auth } : {}),
       ...(attachments !== undefined ? { attachments } : {}),

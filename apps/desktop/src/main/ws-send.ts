@@ -28,6 +28,7 @@ import type {
 } from '@wirebench/engine';
 import type { WsRequestPatchWire } from '../shared/wire-types.js';
 import { locateWsRequest, wsAuthChainFor, withWsPatch } from './project-ws-mutations.js';
+import { withSecretTokenScope } from './secret-resolver.js';
 
 /** What one resolved WebSocket call knows about itself, beyond the transport input the engine consumes. */
 export interface WsSendResolution {
@@ -81,7 +82,8 @@ function effectiveWsSettings(
 
 /**
  * Resolves one WebSocket call: draft first, then the target, then the settings ladder, then one
- * expansion pass over the URL, query, headers and subprotocols.
+ * expansion pass over the URL, query, headers and subprotocols — `${secret:name}` tokens included
+ * when `resolveWithSecretTokens` runs it.
  *
  * Returns `undefined` when no such WebSocket request exists.
  */
@@ -115,8 +117,9 @@ export function resolveWsSend(args: ResolveWsSendArgs): WsSendResolution | undef
   // `expandWsInput` deliberately does not touch `serverUrl` (it expands the request's own fields
   // and the API headers only — see `ws/expand.ts`); the target is expanded here, the same one
   // extra `expand()` call `expandGrpcInput` folds into its own pass for gRPC's `target` field.
-  const expandedServer = expand(target.url, args.scopes);
-  const { input: expandedRest, unresolved: restUnresolved } = expandWsInput(unexpanded, args.scopes);
+  const scopes = withSecretTokenScope(args.scopes);
+  const expandedServer = expand(target.url, scopes);
+  const { input: expandedRest, unresolved: restUnresolved } = expandWsInput(unexpanded, scopes);
   const input: WsCallInput = { ...expandedRest, serverUrl: expandedServer.text };
   const unresolved = [...expandedServer.unresolved, ...restUnresolved];
 

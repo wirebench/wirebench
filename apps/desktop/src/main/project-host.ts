@@ -1290,6 +1290,26 @@ export class ProjectHost {
     };
   }
 
+  /**
+   * Replaces the model with `update(model)` as one change — dirty, autosave scheduled, `changed`
+   * raised — for a rewrite main computes itself rather than one `ProjectChange` (moving found
+   * secrets behind `${secret:…}` tokens). `false`, changing nothing, when no project is open or
+   * `update` returns the model it was given.
+   */
+  applyModelUpdate(update: (project: Project) => Project): boolean {
+    if (this.open === undefined) {
+      return false;
+    }
+    const next = update(this.open.project);
+    if (next === this.open.project) {
+      return false;
+    }
+    this.open.project = next;
+    this.markDirty();
+    this.emitChanged();
+    return true;
+  }
+
   /** The keystore registry entry with this id, or `undefined` when no project has one. */
   private keystoreDef(keystoreId: string): KeystoreDef | undefined {
     const ref = this.open?.project.wss.keystores.find((candidate) => candidate.id === keystoreId);

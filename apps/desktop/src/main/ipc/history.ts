@@ -11,7 +11,7 @@ import type { EngineService } from '../engine-service.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
-import type { PropertyScopes } from '@wirebench/engine';
+import type { GetSecret, PropertyScopes } from '@wirebench/engine';
 import type { HistorySendProject } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
@@ -29,6 +29,8 @@ export interface HistoryChannelDeps {
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
   /** Called with the failure row of a resend that threw, so main can broadcast `exchange.failed`. */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
+  /** The getter a resend's `${secret:name}` tokens resolve through; see `SendWithHistoryDeps`. */
+  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
 }
 
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
@@ -125,6 +127,7 @@ export function registerHistoryChannels(
         history,
         ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
         ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
+        ...(deps.secretsFor !== undefined ? { secretsFor: deps.secretsFor } : {}),
       },
       {
         sendId: crypto.randomUUID(),

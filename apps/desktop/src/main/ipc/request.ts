@@ -22,6 +22,8 @@ import {
   writeFileAtomic,
   joinBase,
   failedRequestOf,
+  resolveSecretTokens,
+  secretNamesIn,
   grpcMethodPath,
   wsToCommand,
 } from '@wirebench/engine';
@@ -36,12 +38,13 @@ import type {
   RestBody,
   SendAuth,
   TlsOptions,
+  GetSecret,
   PropertyScopes,
   WsSessionMaterial,
   WsSessionOptions,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { resolveAuthConfig } from '../secret-resolver.js';
+import { resolveAuthConfig, resolveWithSecretTokens } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
@@ -208,6 +211,17 @@ export interface RequestChannelDeps {
    * it the password is dropped and the dialog asks for it, as before.
    */
   readonly storeSecret?: (value: string, label: string) => Promise<string>;
+  /**
+   * The getter a send of one project resolves its `${secret:name}` tokens through
+   * (`projectSecretGetter`, which also records each value for the log's masking). Omitted in tests
+   * that send no tokens, where a token then refuses the send as `secret-missing`.
+   */
+  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
+}
+
+/** The token getter for a send of `requestId`: its own project's, or one that finds nothing. */
+function tokenSecrets(deps: Pick<RequestChannelDeps, 'project' | 'secretsFor'>, requestId: string): GetSecret {
+  return deps.secretsFor?.(deps.project.projectId(requestId)) ?? (() => Promise.resolve(undefined));
 }
 
 /**
@@ -759,7 +773,10 @@ export async function sendRestRequest(
   request: RequestSendRestRequest,
   onLive?: (event: RestLiveEvent) => void,
 ): Promise<RestExchangeSummary> {
-  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  const resolved = await resolveWithSecretTokens(
+    () => deps.project.restSend?.(request.requestId, request.draft),
+    tokenSecrets(deps, request.requestId),
+  );
   if (resolved === undefined) {
     throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
@@ -1061,7 +1078,10 @@ export async function sendGrpcRequest(
   request: RequestSendGrpcRequest,
   sender: WebContents,
 ): Promise<GrpcExchangeSummary> {
-  const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
+  const resolved = await resolveWithSecretTokens(
+    () => deps.project.grpcSend?.(request.requestId, request.draft),
+    tokenSecrets(deps, request.requestId),
+  );
   if (resolved === undefined) {
     throw new ProjectError('unknown-entity', `No gRPC request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
@@ -1489,7 +1509,10 @@ export async function openWsRequest(
   request: RequestOpenWsRequest,
   sender: WebContents,
 ): Promise<WsExchangeSummary> {
-  const resolved = deps.project.wsSend?.(request.requestId, request.draft);
+  const resolved = await resolveWithSecretTokens(
+    () => deps.project.wsSend?.(request.requestId, request.draft),
+    tokenSecrets(deps, request.requestId),
+  );
   if (resolved === undefined) {
     throw new ProjectError('unknown-entity', `No WebSocket request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
@@ -1622,7 +1645,11 @@ function isValidBase64(text: string): boolean {
  * `format: 'binary'` never expands; `content` must be valid base64 or the send is refused with
  * `ws-bad-binary` before anything reaches the session.
  */
-function sendWsMessage(service: EngineService, deps: RequestChannelDeps, request: RequestWsSendRequest): WsFrameWire {
+async function sendWsMessage(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  request: RequestWsSendRequest,
+): Promise<WsFrameWire> {
   if (request.format === 'binary') {
     if (!isValidBase64(request.content)) {
       throw new WirebenchError('ws-bad-binary', 'The message is not valid base64.', {
@@ -1634,7 +1661,13 @@ function sendWsMessage(service: EngineService, deps: RequestChannelDeps, request
   let text = request.content;
   if (request.expand) {
     const resolved = deps.project.wsSend?.(request.requestId);
-    const scopes = deps.project.scopesFor(request.requestId);
+    let scopes = deps.project.scopesFor(request.requestId);
+    // Awaited only when the message holds a token, so a plain message still goes out before the
+    // next one the renderer sends.
+    const names = secretNamesIn(text, scopes);
+    if (names.length > 0) {
+      scopes = { ...scopes, secrets: await resolveSecretTokens(names, tokenSecrets(deps, request.requestId)) };
+    }
     const escape = resolved?.request.settings.escapeProperties === true;
     const expanded = expandWsMessage(text, scopes, { escape });
     if (expanded.unresolved.length > 0) {
@@ -1735,7 +1768,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.openWs, (request, sender) =>
     trackOpenWs(request.requestId, openWsRequest(service, deps, request, sender)),
   );
-  registerHandler(channels.request.wsSend, (request) => Promise.resolve(sendWsMessage(service, deps, request)));
+  registerHandler(channels.request.wsSend, (request) => sendWsMessage(service, deps, request));
   registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 

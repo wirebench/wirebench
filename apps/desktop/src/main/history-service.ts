@@ -118,7 +118,7 @@ import type {
   RestEventStreamLike,
   WsExchange,
 } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactUrl, redactXml } from './redact.js';
+import { redactHeaderPairs, redactHeaders, redactSecretValues, redactUrl, redactXml } from './redact.js';
 import type {
   GrpcExchangeSummary,
   RestExchangeSummary,
@@ -260,8 +260,12 @@ export interface RecordRestSendInput {
 /** How much of a body a history line keeps. Beyond this it is truncated with a marker. */
 const MAX_HISTORY_BODY_CHARS = 256 * 1024;
 
-/** A body as stored: itself when small, or its first characters with a marker naming what was cut. */
-function storedBody(text: string): string {
+/**
+ * A body as stored: itself when small, or its first characters with a marker naming what was cut —
+ * either way with every secret value a send was handed masked, since History is written to disk.
+ */
+function storedBody(body: string): string {
+  const text = redactSecretValues(body);
   if (text.length <= MAX_HISTORY_BODY_CHARS) {
     return text;
   }
