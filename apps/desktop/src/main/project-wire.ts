@@ -542,7 +542,16 @@ function toWsApiWire(api: WsApi): WsApiWire {
 }
 
 function toWsMessageWire(message: WsRequestDef['messages'][number]): WsRequestWire['messages'][number] {
-  return { id: message.id, name: message.name, slug: message.slug, format: message.format, content: message.content };
+  return {
+    id: message.id,
+    name: message.name,
+    slug: message.slug,
+    format: message.format,
+    content: message.content,
+    ...(message.contract !== undefined
+      ? { contract: { message: message.contract.message, generated: message.contract.generated } }
+      : {}),
+  };
 }
 
 function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string | undefined): WsRequestWire {
@@ -562,6 +571,8 @@ function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string 
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     messages: request.messages.map(toWsMessageWire),
+    ...(request.contract !== undefined ? { contract: { channel: request.contract.channel } } : {}),
+    ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }
 

@@ -61,6 +61,11 @@ export interface ProjectRouter {
    * `api.importOpenApi` carries the same target union `project.addInterface` does.
    */
   addApi(projectId: string, ...args: Parameters<ProjectHost['addApi']>): ReturnType<ProjectHost['addApi']>;
+  /** Places a WebSocket API imported from an AsyncAPI document in one project, caching its documents. */
+  importAsyncApi(
+    projectId: string,
+    ...args: Parameters<ProjectHost['importAsyncApi']>
+  ): ReturnType<ProjectHost['importAsyncApi']>;
   /** Places an imported gRPC API in one project, caching its `.proto` files. */
   addGrpcApi(projectId: string, ...args: Parameters<ProjectHost['addGrpcApi']>): ReturnType<ProjectHost['addGrpcApi']>;
   /** Re-reads one project's folder from disk, discarding its unsaved in-memory changes. */

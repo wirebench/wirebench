@@ -8,8 +8,8 @@
  * makes a cancelled import trivially leave nothing behind.
  */
 
-import { createDefaultFetchDocument, importOpenApi } from '@wirebench/engine';
-import type { FetchDocument, ImportedOpenApi, OpenApiSource } from '@wirebench/engine';
+import { createDefaultFetchDocument, importAsyncApi, importOpenApi } from '@wirebench/engine';
+import type { FetchDocument, ImportedAsyncApi, ImportedOpenApi, OpenApiSource } from '@wirebench/engine';
 import type { EngineProgressEvent } from '../shared/wire-types.js';
 
 /** What one import needs beyond where to read from. */
@@ -22,6 +22,14 @@ export interface RunOpenApiImportInput {
   readonly securityScheme?: string;
   readonly includeOptional?: boolean;
   readonly sampleValues?: boolean;
+}
+
+/** What one AsyncAPI import needs: the same source and token, and which server to dial. */
+export interface RunAsyncApiImportInput {
+  readonly source: OpenApiSource;
+  readonly token?: string;
+  /** The `ws`/`wss` server, by its key in the document; absent picks the first one. */
+  readonly server?: string;
 }
 
 /** Hooks one import reports through. */
@@ -49,8 +57,50 @@ export class OpenApiImportService {
    * @throws the engine's `OpenApiError` codes, or an `AbortError` when the import was cancelled
    */
   async run(input: RunOpenApiImportInput, hooks: RunOpenApiImportHooks = {}): Promise<ImportedOpenApi> {
+    return this.track(input.token, hooks, async (fetchDocument, signal, progress) => {
+      const imported = await importOpenApi(input.source, {
+        fetchDocument,
+        signal,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+        ...(input.securityScheme !== undefined ? { securityScheme: input.securityScheme } : {}),
+        ...(input.includeOptional !== undefined ? { includeOptional: input.includeOptional } : {}),
+        ...(input.sampleValues !== undefined ? { sampleValues: input.sampleValues } : {}),
+      });
+      progress('done', `Imported ${String(imported.summary.requests)} requests`);
+      return imported;
+    });
+  }
+
+  /**
+   * Fetches, resolves, parses and maps one AsyncAPI document into a WebSocket API. It shares the
+   * token map with {@link run}, so `api.cancelImport` stops it the same way.
+   *
+   * @throws the engine's `AsyncApiError` codes, or an `AbortError` when the import was cancelled
+   */
+  async runAsyncApi(input: RunAsyncApiImportInput, hooks: RunOpenApiImportHooks = {}): Promise<ImportedAsyncApi> {
+    return this.track(input.token, hooks, async (fetchDocument, signal, progress) => {
+      const imported = await importAsyncApi(input.source, {
+        fetchDocument,
+        signal,
+        ...(input.server !== undefined ? { server: input.server } : {}),
+      });
+      progress('done', `Imported ${String(imported.summary.requests)} requests`);
+      return imported;
+    });
+  }
+
+  /** Runs one import under `token`'s controller, naming every document fetched as progress. */
+  private async track<T>(
+    token: string | undefined,
+    hooks: RunOpenApiImportHooks,
+    body: (
+      fetchDocument: FetchDocument,
+      signal: AbortSignal,
+      progress: (phase: EngineProgressEvent['phase'], message: string) => void,
+    ) => Promise<T>,
+  ): Promise<T> {
     const controller = new AbortController();
-    const token = input.token;
     if (token !== undefined) {
       // A second import under the same token replaces the first: the dialog only ever has one.
       this.inFlight.get(token)?.abort();
@@ -72,17 +122,7 @@ export class OpenApiImportService {
 
     try {
       progress('fetch', 'Starting');
-      const imported = await importOpenApi(input.source, {
-        fetchDocument,
-        signal: controller.signal,
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
-        ...(input.securityScheme !== undefined ? { securityScheme: input.securityScheme } : {}),
-        ...(input.includeOptional !== undefined ? { includeOptional: input.includeOptional } : {}),
-        ...(input.sampleValues !== undefined ? { sampleValues: input.sampleValues } : {}),
-      });
-      progress('done', `Imported ${String(imported.summary.requests)} requests`);
-      return imported;
+      return await body(fetchDocument, controller.signal, progress);
     } finally {
       if (token !== undefined && this.inFlight.get(token) === controller) {
         this.inFlight.delete(token);

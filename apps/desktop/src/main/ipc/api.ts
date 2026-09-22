@@ -31,6 +31,7 @@ export interface ApiChannelDeps {
     ProjectRouter,
     | 'addApi'
     | 'addGrpcApi'
+    | 'importAsyncApi'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -40,6 +41,11 @@ export interface ApiChannelDeps {
     | 'grpcSample'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
+  /**
+   * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
+   * it through `imports.cancel`. Optional so the OpenAPI-only tests need not build one.
+   */
+  readonly asyncApiImports?: Pick<OpenApiImportService, 'runAsyncApi'>;
   /** The `.proto` import service; optional so the OpenAPI-only tests need not build one. */
   readonly protoImports?: Pick<ProtoImportService, 'run' | 'cancel'>;
   /** Creates a project inside the open workspace; used only by an import that asks for one. */
@@ -168,6 +174,63 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     const { projectId } = await deps.addProject(request.target.newProjectName);
     try {
       const added = await router.addApi(projectId, place);
+      return { ...added, projectId, summary };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  registerHandler(channels.api.importAsyncApi, async (request, sender) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    // Checked before anything is read or created, as `api.importOpenApi` does.
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const imported = await asyncApiImports.runAsyncApi(
+      {
+        source: toEngineSource(checked),
+        ...(request.token !== undefined ? { token: request.token } : {}),
+        ...(request.server !== undefined ? { server: request.server } : {}),
+      },
+      {
+        onProgress: (progress) => {
+          emitEvent(sender, events.engine.progress, progress);
+        },
+      },
+    );
+    const api =
+      request.name !== undefined && request.name.trim() !== '' ? { ...imported.api, name: request.name } : imported.api;
+    const summary = {
+      name: api.name,
+      title: imported.summary.title,
+      declaredVersion: imported.summary.declaredVersion,
+      ...(imported.summary.server !== undefined ? { server: imported.summary.server } : {}),
+      servers: [...imported.summary.servers],
+      requests: imported.summary.requests,
+      messages: imported.summary.messages,
+      skipped: imported.summary.skipped.map((entry) => ({ where: entry.where, reason: entry.reason })),
+      unresolved: [...imported.summary.unresolved],
+      unsupportedKeywords: [...imported.summary.unsupportedKeywords],
+    };
+    const place = {
+      api,
+      documents: imported.documents,
+      source: checked.kind === 'text' ? (checked.location ?? 'inline:asyncapi') : sourceLabel(checked),
+      declaredVersion: imported.declaredVersion,
+      ...(request.cache !== undefined ? { cache: request.cache } : {}),
+    };
+
+    if ('projectId' in request.target) {
+      const added = await router.importAsyncApi(request.target.projectId, place);
+      return { ...added, projectId: request.target.projectId, summary };
+    }
+    // As for OpenAPI: the project is created only once the document has been read and mapped, and
+    // is taken back if placing the API fails.
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      const added = await router.importAsyncApi(projectId, place);
       return { ...added, projectId, summary };
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);

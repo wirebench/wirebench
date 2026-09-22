@@ -2359,6 +2359,13 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  importAsyncApi(
+    ...[projectId, input]: Parameters<ProjectRouter['importAsyncApi']>
+  ): ReturnType<ProjectRouter['importAsyncApi']> {
+    return this.hostFor(projectId).importAsyncApi(input);
+  }
+
+  /** @inheritdoc */
   addGrpcApi(...[projectId, input]: Parameters<ProjectRouter['addGrpcApi']>): ReturnType<ProjectRouter['addGrpcApi']> {
     return this.hostFor(projectId).addGrpcApi(input);
   }

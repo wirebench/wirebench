@@ -91,6 +91,7 @@ import type {
   TlsOptions,
   ResolvedDocument,
   RestApi,
+  WsApi,
   RestFolder,
   RestRequestDef,
   Cookie,
@@ -175,7 +176,7 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
-import { findWsRequest, locateWsRequest } from './project-ws-mutations.js';
+import { findWsRequest, locateWsRequest, takenApiSlugs } from './project-ws-mutations.js';
 import { resolveWsSend } from './ws-send.js';
 import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
@@ -2774,6 +2775,49 @@ export class ProjectHost {
       definition: { source: input.source, cache, version: input.declaredVersion },
     };
     open.project = { ...open.project, apis: [...open.project.apis, api] };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return { project: this.snapshot() as ProjectWire, apiId: api.id };
+  }
+
+  /**
+   * Places a WebSocket API imported from an AsyncAPI document, caching the documents it was made
+   * of under `apis/<slug>/definition/` with the root as `asyncapi.yaml` — the same cache layout an
+   * OpenAPI import writes, so Update Definition can read the old document back.
+   *
+   * The API arrives fully mapped (`importAsyncApi` in the engine); only the slug, the order and the
+   * definition record are settled here. Credentials the document describes arrive empty and stay
+   * so: the import never has a secret to write. Saves immediately, as every import does.
+   */
+  async importAsyncApi(input: {
+    readonly api: WsApi;
+    readonly documents: readonly ResolvedDocument[];
+    /** Where the user pointed at, recorded on the API as its definition's source. */
+    readonly source: string;
+    /** The `asyncapi` string the document declared. */
+    readonly declaredVersion: string;
+    /** Write the definition cache. Defaults to the definition-caching preference. */
+    readonly cache?: boolean;
+  }): Promise<{ project: ProjectWire; apiId: string }> {
+    const open = this.require();
+    const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
+    const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
+
+    if (cache) {
+      await writeApiDefinitionCache(input.documents, apiDefinitionDir(open.dir, slug), {
+        declaredVersion: input.declaredVersion,
+        rootFile: 'asyncapi.yaml',
+      });
+    }
+
+    const project = open.project;
+    const api: WsApi = {
+      ...input.api,
+      slug,
+      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+      definition: { kind: 'asyncapi', source: input.source, cache },
+    };
+    open.project = { ...project, wsApis: [...project.wsApis, api] };
     open.dirty = true;
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };

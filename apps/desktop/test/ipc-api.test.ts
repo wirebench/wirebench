@@ -137,6 +137,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     router: {
       addApi,
       addGrpcApi: vi.fn(),
+      importAsyncApi: vi.fn(),
       apiDefinitionDocuments: vi.fn(),
       apiDefinitionText: vi.fn(),
       exportApiDefinitionTo: vi.fn(),

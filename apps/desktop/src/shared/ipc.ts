@@ -7,6 +7,8 @@ import {
   apiDefinitionTextResponseSchema,
   apiExportDefinitionResponseSchema,
   apiIdRequestSchema,
+  apiImportAsyncApiRequestSchema,
+  apiImportAsyncApiResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -424,6 +426,11 @@ export const channels = {
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
+    importAsyncApi: defineChannel(
+      'api.importAsyncApi',
+      apiImportAsyncApiRequestSchema,
+      apiImportAsyncApiResponseSchema,
+    ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
     /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */
     grpcDefinition: defineChannel('api.grpcDefinition', apiIdRequestSchema, apiGrpcDefinitionResponseSchema),

@@ -397,6 +397,18 @@ export function toWsFrameWire(frame: WsFrame): WsFrameWire {
     ...(frame.base64 !== undefined ? { base64: frame.base64 } : {}),
     ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
+    ...(frame.contract !== undefined
+      ? {
+          contract: {
+            status: frame.contract.status,
+            ...(frame.contract.message !== undefined ? { message: frame.contract.message } : {}),
+            ...(frame.contract.problems !== undefined
+              ? { problems: frame.contract.problems.map((problem) => ({ ...problem })) }
+              : {}),
+            ...(frame.contract.reason !== undefined ? { reason: frame.contract.reason } : {}),
+          },
+        }
+      : {}),
   };
 }
 

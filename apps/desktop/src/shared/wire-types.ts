@@ -1599,6 +1599,11 @@ export const wsSavedMessageWireSchema = z.object({
   slug: z.string(),
   format: z.enum(['text', 'binary']),
   content: z.string(),
+  /**
+   * The contract message it was generated from, and the text it was generated as. Main keeps the
+   * one it already has on a patch: the renderer can carry it back, never invent it.
+   */
+  contract: z.object({ message: z.string(), generated: z.string() }).optional(),
 });
 export type WsSavedMessageWire = z.infer<typeof wsSavedMessageWireSchema>;
 
@@ -1620,6 +1625,9 @@ export const wsRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: wsSettingsWireSchema,
   messages: z.array(wsSavedMessageWireSchema),
+  /** The contract channel it was imported from, by its key in the document. */
+  contract: z.object({ channel: z.string() }).optional(),
+  /** The contract no longer has that channel. */
   orphaned: z.boolean().optional(),
 });
 export type WsRequestWire = z.infer<typeof wsRequestWireSchema>;
@@ -1939,6 +1947,18 @@ export const requestPreflightGrpcRequestSchema = z.object({
 
 // ——— WebSocket session channels ————————————————————————————————————————————————————————————
 
+/**
+ * How a frame fared against its channel's contract. `not-checked` means the check ran out of time:
+ * it says nothing either way about the frame.
+ */
+export const wsFrameContractWireSchema = z.object({
+  status: z.enum(['ok', 'violation', 'unmatched', 'skipped', 'not-checked']),
+  message: z.string().optional(),
+  problems: z.array(z.object({ path: z.string(), keyword: z.string(), message: z.string() })).optional(),
+  reason: z.string().optional(),
+});
+export type WsFrameContractWire = z.infer<typeof wsFrameContractWireSchema>;
+
 /** One frame sent or received during a WebSocket session, as the log/live pane shows it. */
 export const wsFrameWireSchema = z.object({
   index: z.number(),
@@ -1951,6 +1971,8 @@ export const wsFrameWireSchema = z.object({
   base64: z.string().optional(),
   close: z.object({ code: z.number(), reason: z.string() }).optional(),
   payloadTruncated: z.boolean().optional(),
+  /** Set when the session's request is linked to a contract channel. */
+  contract: wsFrameContractWireSchema.optional(),
 });
 export type WsFrameWire = z.infer<typeof wsFrameWireSchema>;
 
@@ -2654,6 +2676,48 @@ export const apiImportOpenApiResponseSchema = z.object({
   summary: openApiImportSummarySchema,
 });
 export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
+
+/** What an AsyncAPI import made, for the summary the dialog shows when it finishes. */
+export const asyncApiImportSummarySchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  /** The `asyncapi` string the document declared. */
+  declaredVersion: z.string(),
+  /** The server the API's URL came from, when there was a WebSocket one. */
+  server: z.string().optional(),
+  /** Every server key the document lists, WebSocket or not: what the server picker offers. */
+  servers: z.array(z.string()),
+  requests: z.number(),
+  messages: z.number(),
+  /** Channels, operations and schemes the import left out, each with the reason. */
+  skipped: z.array(z.object({ where: z.string(), reason: z.string() })),
+  unresolved: z.array(z.string()),
+  unsupportedKeywords: z.array(z.string()),
+});
+export type AsyncApiImportSummaryWire = z.infer<typeof asyncApiImportSummarySchema>;
+
+/** Request/response for `api.importAsyncApi`. The target is the union an OpenAPI import takes. */
+export const apiImportAsyncApiRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: openApiSourceSchema,
+  /** The `ws`/`wss` server to dial, by its key in the document; absent picks the first one. */
+  server: z.string().max(200).optional(),
+  /** Overrides `info.title` as the API's name. */
+  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+  /** Write the definition cache. Defaults to the definition-caching preference. */
+  cache: z.boolean().optional(),
+  /** Echoed back on `engine.progress` events raised while this import is in flight. */
+  token: z.string().optional(),
+});
+export type ApiImportAsyncApiRequest = z.infer<typeof apiImportAsyncApiRequestSchema>;
+
+export const apiImportAsyncApiResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: asyncApiImportSummarySchema,
+});
+export type ApiImportAsyncApiResponse = z.infer<typeof apiImportAsyncApiResponseSchema>;
 
 /** Source for Postman collection import: file path or pasted JSON text. */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [
