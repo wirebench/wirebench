@@ -288,6 +288,7 @@ async function runOne(
     let raw: { rawRequest: Uint8Array; rawResponse: Uint8Array };
     if (prepared.kind === 'soap' && item.kind === 'soap') {
       const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
+      dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
       subject = soapSubject(exchange, loaded, item);
       raw = exchange.http;
     } else if (prepared.kind === 'rest') {

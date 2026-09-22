@@ -48,7 +48,7 @@ export interface RunTokenSource {
    */
   accessTokenFor(config: OAuth2Auth, request: TokenRequestContext): Promise<string>;
   /**
-   * Drops `accessToken` from the cache after a server refused it (a REST `401`, a gRPC
+   * Drops `accessToken` from the cache after a server refused it (a REST or SOAP `401`, a gRPC
    * `UNAUTHENTICATED`), so the next request behind its configuration fetches a new one. It never
    * re-sends the refused request: that one may already have done something. A token the cache no
    * longer holds is ignored.
