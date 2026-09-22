@@ -4,7 +4,9 @@ import { create } from 'zustand';
 import { showToast } from '../components/toast.js';
 import type { IpcError } from '../../shared/ipc.js';
 import type {
+  ApiImportAsyncApiRequest,
   ApiImportOpenApiRequest,
+  AsyncApiImportSummaryWire,
   ApiGrpcRefreshRequest,
   ApiGrpcRefreshResponse,
   ApiImportProtoRequest,
@@ -207,6 +209,13 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly importOpenApi: (
     request: ApiImportOpenApiRequest,
   ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: OpenApiImportSummaryWire }>;
+  /**
+   * Imports an AsyncAPI document as a new WebSocket API. Like {@link importOpenApi}, main reads,
+   * maps, caches and saves in one call, and the mirror takes the project it answers with.
+   */
+  readonly importAsyncApi: (
+    request: ApiImportAsyncApiRequest,
+  ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: AsyncApiImportSummaryWire }>;
   readonly updateApi: (apiId: string, patch: ApiPatchWire) => Promise<void>;
   /** Deletes an API with everything inside it, and closes the tabs that named any of it. */
   readonly removeApi: (apiId: string) => Promise<void>;
@@ -1235,6 +1244,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     importOpenApi: async (request) => {
       const result = await ipc().api.importOpenApi(request);
+      if (!result.ok) {
+        throw asError(result.error);
+      }
+      apply(result.value.projectId, result.value.project);
+      return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
+    },
+
+    importAsyncApi: async (request) => {
+      const result = await ipc().api.importAsyncApi(request);
       if (!result.ok) {
         throw asError(result.error);
       }

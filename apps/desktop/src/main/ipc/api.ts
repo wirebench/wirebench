@@ -261,6 +261,21 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     }
   });
 
+  registerHandler(channels.api.asyncApiServers, async (request) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    // The same path check an import makes: a preview must not read what an import could not.
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const { document } = await asyncApiImports.readAsyncApi(toEngineSource(checked));
+    return {
+      servers: document.servers
+        .filter((server) => ['ws', 'wss'].includes(server.protocol.toLowerCase()))
+        .map((server) => ({ key: server.key, url: server.url })),
+    };
+  });
+
   /**
    * Reads an AsyncAPI-imported API's source again, the way the import read it: a URL as written, a
    * file only when it passes the same path check an import does.

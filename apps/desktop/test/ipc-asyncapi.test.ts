@@ -289,6 +289,23 @@ describe('api.importAsyncApi', () => {
   });
 });
 
+describe('api.asyncApiServers', () => {
+  it('lists the WebSocket servers, in document order, and nothing else', async () => {
+    const response = await value<{ servers: { key: string; url: string }[] }>('api.asyncApiServers', {
+      source: { kind: 'file', path: docPath },
+    });
+    expect(response.servers.map((server) => server.key)).toEqual(['public', 'staging']);
+    expect(response.servers[1]?.url).toContain('staging.chat.example.test');
+  });
+
+  it('refuses a file outside every project, like an import', async () => {
+    const outside = join(root, 'elsewhere.yaml');
+    await writeFile(outside, 'asyncapi: 3.0.0\n');
+    const error = await failure('api.asyncApiServers', { source: { kind: 'file', path: outside } });
+    expect(error.code).toBeDefined();
+  });
+});
+
 describe('contract on the wire', () => {
   it("keeps a frame's contract through the frame schema, not-checked included", () => {
     const frame: WsFrame = {

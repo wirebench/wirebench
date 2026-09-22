@@ -7,6 +7,8 @@ import {
   apiDefinitionTextResponseSchema,
   apiExportDefinitionResponseSchema,
   apiIdRequestSchema,
+  apiAsyncApiServersRequestSchema,
+  apiAsyncApiServersResponseSchema,
   apiImportAsyncApiRequestSchema,
   apiImportAsyncApiResponseSchema,
   apiAsyncApiApplyUpdateResponseSchema,
@@ -433,6 +435,12 @@ export const channels = {
       'api.importAsyncApi',
       apiImportAsyncApiRequestSchema,
       apiImportAsyncApiResponseSchema,
+    ),
+    /** Reads an AsyncAPI document's WebSocket servers, for the Import dialog's server picker. */
+    asyncApiServers: defineChannel(
+      'api.asyncApiServers',
+      apiAsyncApiServersRequestSchema,
+      apiAsyncApiServersResponseSchema,
     ),
     /** Re-reads an AsyncAPI-imported API's source and reports what updating to it would change. */
     asyncApiPlanUpdate: defineChannel(

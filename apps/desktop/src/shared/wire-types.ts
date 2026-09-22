@@ -2729,6 +2729,19 @@ export const apiImportAsyncApiResponseSchema = z.object({
 });
 export type ApiImportAsyncApiResponse = z.infer<typeof apiImportAsyncApiResponseSchema>;
 
+/**
+ * Request/response for `api.asyncApiServers`: the document's `ws`/`wss` servers, read before an
+ * import so the dialog can offer a choice of server when there is more than one.
+ */
+export const apiAsyncApiServersRequestSchema = z.object({ source: openApiSourceSchema });
+export type ApiAsyncApiServersRequest = z.infer<typeof apiAsyncApiServersRequestSchema>;
+
+export const apiAsyncApiServersResponseSchema = z.object({
+  /** In document order; the first is the one an import picks when none is named. */
+  servers: z.array(z.object({ key: z.string(), url: z.string() })),
+});
+export type ApiAsyncApiServersResponse = z.infer<typeof apiAsyncApiServersResponseSchema>;
+
 const asyncApiOpRefSchema = z.object({
   key: z.string(),
   channel: z.string(),

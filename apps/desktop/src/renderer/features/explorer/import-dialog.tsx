@@ -3,6 +3,7 @@
  *
  * Supports importing API definitions from:
  * - OpenAPI 3.0, 3.1, 3.2 and Swagger 1.x / 2.0 / 3.x (YAML / JSON)
+ * - AsyncAPI 2.0–2.6 and 3.0 (YAML / JSON), as a WebSocket API
  * - Postman Collections (v2.0, v2.1 JSON)
  * - WSDL 1.1 / 2.0 (SOAP XML)
  * - Protocol Buffers `.proto` files (gRPC)
@@ -18,6 +19,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
+  AsyncApiImportSummaryWire,
   EngineProgressEvent,
   GrpcReflectionVersionWire,
   ImportProblemWire,
@@ -121,6 +123,7 @@ export type UnifiedImportResult =
       readonly problems: ImportProblemWire[];
     }
   | { readonly kind: 'openapi'; readonly apiId: string; readonly summary: OpenApiImportSummaryWire }
+  | { readonly kind: 'asyncapi'; readonly apiId: string; readonly summary: AsyncApiImportSummaryWire }
   | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire }
   | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
   | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string };
@@ -151,6 +154,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [serverTarget, setServerTarget] = useState('');
   const [reflectionVersion, setReflectionVersion] = useState<GrpcReflectionVersionWire>('auto');
   const [serverTrustInvalid, setServerTrustInvalid] = useState(false);
+  // AsyncAPI: the document's WebSocket servers, read from main, and the one to dial.
+  const [wsServers, setWsServers] = useState<readonly { readonly key: string; readonly url: string }[]>([]);
+  const [wsServer, setWsServer] = useState('');
 
   // WSDL Basic Auth fields
   const [useAuth, setUseAuth] = useState(false);
@@ -218,6 +224,56 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   const effectiveFormat: ImportFormatKind = format !== 'auto' ? format : detected.kind;
 
+  /*
+   * An AsyncAPI document's servers are alternative addresses for one application, so the import
+   * dials one of them. Which ones speak WebSocket is main's to read (the document may reference
+   * other files); it is asked shortly after the source settles, and a stale answer is dropped.
+   */
+  const asyncApiSource: OpenApiSourceWire | undefined =
+    effectiveFormat !== 'asyncapi'
+      ? undefined
+      : tab === 'paste'
+        ? pasted.length > 0
+          ? { kind: 'text', text: pasted }
+          : undefined
+        : tab === 'file'
+          ? dropped !== undefined
+            ? { kind: 'text', text: dropped.text, location: `dropped:${dropped.name}` }
+            : filePath.length > 0
+              ? { kind: 'file', path: filePath }
+              : undefined
+          : tab === 'url' && URL.canParse(url)
+            ? { kind: 'url', url }
+            : undefined;
+  const asyncApiSourceKey = asyncApiSource === undefined ? '' : JSON.stringify(asyncApiSource);
+
+  useEffect(() => {
+    setWsServers([]);
+    setWsServer('');
+    if (!open || asyncApiSourceKey === '') {
+      return;
+    }
+    let current = true;
+    const timer = setTimeout(() => {
+      const source = JSON.parse(asyncApiSourceKey) as OpenApiSourceWire;
+      void ipc()
+        .api.asyncApiServers({ source })
+        .then((res) => {
+          if (!current || !res.ok) {
+            // A document that cannot be read yet says so on Import; the picker just stays away.
+            return;
+          }
+          setWsServers(res.value.servers);
+          setWsServer(res.value.servers[0]?.key ?? '');
+        })
+        .catch(() => undefined);
+    }, 250);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [open, asyncApiSourceKey]);
+
   const reset = useCallback((): void => {
     setImportError(undefined);
     setProgress(undefined);
@@ -233,6 +289,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setServerTarget('');
     setReflectionVersion('auto');
     setServerTrustInvalid(false);
+    setWsServers([]);
+    setWsServer('');
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -274,13 +332,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
                   { name: 'All Files', extensions: ['*'] },
                 ]
-              : [
-                  {
-                    name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                    extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                  },
-                  { name: 'All Files', extensions: ['*'] },
-                ];
+              : effectiveFormat === 'asyncapi'
+                ? [
+                    { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                    { name: 'All Files', extensions: ['*'] },
+                  ]
+                : [
+                    {
+                      name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                      extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                    },
+                    { name: 'All Files', extensions: ['*'] },
+                  ];
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
@@ -290,7 +353,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? 'Import .proto'
             : effectiveFormat === 'openapi'
               ? 'Import OpenAPI Specification'
-              : 'Import Definition';
+              : effectiveFormat === 'asyncapi'
+                ? 'Import AsyncAPI Document'
+                : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -460,7 +525,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
 
     // Determine target format
-    let targetFormat: 'wsdl' | 'openapi' | 'postman' | 'proto';
+    let targetFormat: 'wsdl' | 'openapi' | 'asyncapi' | 'postman' | 'proto';
     if (effectiveFormat === 'wsdl') {
       targetFormat = 'wsdl';
     } else if (effectiveFormat === 'proto') {
@@ -469,6 +534,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       targetFormat = 'postman';
     } else if (effectiveFormat === 'openapi') {
       targetFormat = 'openapi';
+    } else if (effectiveFormat === 'asyncapi') {
+      targetFormat = 'asyncapi';
     } else {
       // Unknown format: check hints
       if (tab === 'url' && (url.includes('?wsdl') || url.endsWith('.wsdl'))) {
@@ -544,6 +611,30 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           apiId: imported.apiId,
           summary: imported.summary,
         });
+      } else if (targetFormat === 'asyncapi') {
+        const imported = await useProjectStore.getState().importAsyncApi({
+          target: into,
+          source:
+            source.kind === 'url'
+              ? { kind: 'url', url: source.url }
+              : source.kind === 'file'
+                ? { kind: 'file', path: source.path }
+                : {
+                    kind: 'text',
+                    text: source.text,
+                    ...(source.location !== undefined ? { location: source.location } : {}),
+                  },
+          cache,
+          token,
+          // Named only when there was a choice: with one server, main's default is that server.
+          ...(wsServers.length > 1 && wsServer !== '' ? { server: wsServer } : {}),
+          ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+        });
+        if (cancelledTokensRef.current.has(token)) {
+          return;
+        }
+        getExplorerTree()?.open(`proj:${imported.projectId}`);
+        setResult({ kind: 'asyncapi', apiId: imported.apiId, summary: imported.summary });
       } else if (targetFormat === 'proto') {
         // A picked file's imports are read from beside it in main; a pasted or dropped file keeps
         // its name, which is the import path other files would reach it by.
@@ -638,6 +729,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
   const isRest = effectiveFormat === 'openapi' || effectiveFormat === 'postman';
   const isProto = effectiveFormat === 'proto';
+  const isAsyncApi = effectiveFormat === 'asyncapi';
 
   return (
     <Dialog.Root
@@ -671,13 +763,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   ? 'Import Postman Collection'
                   : format === 'openapi'
                     ? 'Import OpenAPI'
-                    : format === 'wsdl'
-                      ? 'Import WSDL'
-                      : format === 'proto'
-                        ? 'Import .proto'
-                        : format === 'legacy-soap-project'
-                          ? 'Import Legacy SOAP Project'
-                          : 'Import API or Service'}
+                    : format === 'asyncapi'
+                      ? 'Import AsyncAPI'
+                      : format === 'wsdl'
+                        ? 'Import WSDL'
+                        : format === 'proto'
+                          ? 'Import .proto'
+                          : format === 'legacy-soap-project'
+                            ? 'Import Legacy SOAP Project'
+                            : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -710,6 +804,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   >
                     <option value="auto">Auto-detect</option>
                     <option value="openapi">OpenAPI / Swagger</option>
+                    <option value="asyncapi">AsyncAPI (WebSocket)</option>
                     <option value="postman">Postman Collection</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
@@ -749,7 +844,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 {tab === 'url' && (
                   <>
                     <label className="text-sm text-fg-subtle" htmlFor="import-url">
-                      {effectiveFormat === 'openapi' || effectiveFormat === 'postman'
+                      {effectiveFormat === 'openapi' || effectiveFormat === 'postman' || isAsyncApi
                         ? 'Specification URL'
                         : effectiveFormat === 'proto'
                           ? '.proto URL'
@@ -984,6 +1079,44 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </div>
               )}
 
+              {isAsyncApi && (
+                <>
+                  <div className="mt-2 flex flex-col gap-1">
+                    <label className="text-sm text-fg-subtle" htmlFor="import-asyncapi-name">
+                      Name (optional)
+                    </label>
+                    <input
+                      id="import-asyncapi-name"
+                      data-testid="import-asyncapi-name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="As titled in the document"
+                      className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+                  {wsServers.length > 1 && (
+                    <div className="mt-2 flex flex-col gap-1">
+                      <label className="text-sm text-fg-subtle" htmlFor="import-asyncapi-server">
+                        WebSocket server
+                      </label>
+                      <select
+                        id="import-asyncapi-server"
+                        data-testid="import-asyncapi-server"
+                        value={wsServer}
+                        onChange={(e) => setWsServer(e.target.value)}
+                        className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                      >
+                        {wsServers.map((server) => (
+                          <option key={server.key} value={server.key}>
+                            {server.key} — {server.url}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              )}
+
               {/* Optional Name and Base URL (or gRPC target) overrides for REST and gRPC */}
               {(isRest || isProto) && (
                 <>
@@ -1040,7 +1173,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </>
               )}
 
-              {(effectiveFormat === 'openapi' || isProto) && (
+              {(effectiveFormat === 'openapi' || isAsyncApi || isProto) && (
                 <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
                   <input
                     type="checkbox"
@@ -1143,11 +1276,13 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
           ? 'import-postman-summary'
           : result.kind === 'openapi'
             ? 'import-openapi-summary'
-            : result.kind === 'proto'
-              ? 'import-proto-summary'
-              : result.kind === 'legacy'
-                ? 'import-legacy-summary'
-                : 'import-summary'
+            : result.kind === 'asyncapi'
+              ? 'import-asyncapi-summary'
+              : result.kind === 'proto'
+                ? 'import-proto-summary'
+                : result.kind === 'legacy'
+                  ? 'import-legacy-summary'
+                  : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1227,6 +1362,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
           )}
         </>
       )}
+
+      {result.kind === 'asyncapi' && <AsyncApiSummary summary={result.summary} />}
 
       {result.kind === 'postman' && (
         <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
@@ -1315,6 +1452,54 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * What an AsyncAPI import made — requests and the messages saved on them — and, one line each, the
+ * channels, servers and schemes it left out, since a skipped Kafka channel is otherwise silent.
+ */
+export function AsyncApiSummary({ summary }: { readonly summary: AsyncApiImportSummaryWire }) {
+  const plural = (n: number, word: string): string => `${String(n)} ${n === 1 ? word : `${word}s`}`;
+  const skipped = summary.skipped;
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-2 text-sm text-fg-default">
+        <p className="font-medium">{summary.name}</p>
+        <p className="text-xs text-fg-subtle">
+          AsyncAPI {summary.declaredVersion}
+          {summary.server !== undefined ? ` · server ${summary.server}` : ' · no WebSocket server'}
+        </p>
+        <p data-testid="import-asyncapi-counts" className="mt-1 text-sm">
+          {plural(summary.requests, 'request')}, {plural(summary.messages, 'message')}.
+        </p>
+        {summary.unresolved.length > 0 && (
+          <p data-testid="import-asyncapi-unresolved" className="mt-1 text-xs text-fg-subtle">
+            Left as properties to define: {summary.unresolved.map((name) => `\${${name}}`).join(', ')}
+          </p>
+        )}
+        {summary.unsupportedKeywords.length > 0 && (
+          <p data-testid="import-asyncapi-unsupported" className="mt-1 text-xs text-fg-subtle">
+            Schema keywords the contract check does not assert: {summary.unsupportedKeywords.join(', ')}
+          </p>
+        )}
+      </div>
+      {skipped.length > 0 && (
+        <div className="rounded border border-hairline-strong p-2">
+          <p className="text-sm text-fg-default">Skipped ({String(skipped.length)})</p>
+          <ul
+            data-testid="import-asyncapi-skipped"
+            className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto text-xs text-fg-subtle"
+          >
+            {skipped.map((entry, index) => (
+              <li key={index}>
+                <span className="text-fg-default">{entry.where}</span> — {entry.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }
 
