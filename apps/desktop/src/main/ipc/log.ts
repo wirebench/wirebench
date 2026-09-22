@@ -58,7 +58,8 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       }
       return {
         protocol: 'rest' as const,
-        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),
+        // No live hook: nothing on screen registered this send id, so it could not be stopped.
+        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
       };
     }
     if (request.protocol === 'grpc') {

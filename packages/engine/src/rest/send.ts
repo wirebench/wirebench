@@ -315,6 +315,12 @@ export function decodeRestResponse(
   sse?: SseState,
 ): RestExchange {
   const stream = buildEventStream(exchange, sse);
+  // Worked out once, for a streamed exchange and a buffered one alike: the redirect chain is the same.
+  const methodChanged =
+    sentMethod !== 'GET' &&
+    exchange.redirects.some(
+      (hop) => hop.status === 303 || ((hop.status === 301 || hop.status === 302) && sentMethod === 'POST'),
+    );
   if (stream !== undefined) {
     // A streamed response has an empty body and no text form of its own; the rows are the content.
     return {
@@ -323,7 +329,7 @@ export function decodeRestResponse(
       text: '',
       language: 'text',
       cookies: parseSetCookie(exchange.rawHeaders),
-      methodChanged: false,
+      methodChanged,
       stream,
     };
   }
@@ -331,11 +337,6 @@ export function decodeRestResponse(
   const language = detectLanguage(contentType, exchange.body);
   const decoded =
     language === 'image' || language === 'binary' ? { text: '' } : decodeResponseText(exchange.body, contentType);
-  const methodChanged =
-    sentMethod !== 'GET' &&
-    exchange.redirects.some(
-      (hop) => hop.status === 303 || ((hop.status === 301 || hop.status === 302) && sentMethod === 'POST'),
-    );
   return {
     ...exchange,
     durationMs: exchange.timings.totalMs,

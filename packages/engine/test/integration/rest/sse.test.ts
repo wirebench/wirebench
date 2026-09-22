@@ -30,6 +30,26 @@ function input(url: string, extra: Partial<RestSendInput> = {}): RestSendInput {
 }
 
 describe('sendRest streaming', () => {
+  it('reports a method changed by a redirect on a streamed exchange too', async () => {
+    const to = encodeURIComponent('/sse/ticks?n=1&every=1');
+    const exchange = await sendRest(
+      input(`/redirect/303?to=${to}`, {
+        request: {
+          method: 'POST',
+          url: `/redirect/303?to=${to}`,
+          pathParams: [],
+          query: [],
+          headers: [],
+          body: { kind: 'none' },
+        },
+        settings: { timeoutMs: 5_000, followRedirects: true },
+        onStream: { onOpen: () => undefined, onRow: () => undefined },
+      }),
+    );
+    expect(exchange.stream).toBeDefined();
+    expect(exchange.methodChanged).toBe(true);
+  });
+
   it('delivers rows through onRow before the send resolves, and the same rows on the exchange', async () => {
     const seen: SseRow[] = [];
     const opens: { status: number; headers: Readonly<Record<string, string>> }[] = [];

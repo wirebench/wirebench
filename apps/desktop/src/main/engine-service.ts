@@ -260,6 +260,8 @@ function messageFor(progress: ImportProgress): string {
 export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
+  /** The REST sends whose response is an open event stream, by send id, to the request they belong to. */
+  private readonly restStreams = new Map<string, string>();
 
   /**
    * The open interactive gRPC calls, by send id. An entry lives only while the engine holds that
@@ -648,6 +650,7 @@ export class EngineService {
     this.sends.set(request.sendId, controller);
     const { sendId } = request;
     const onLive = options.onLive;
+    const restStreams = this.restStreams;
     const show = options.showSecrets ?? false;
     const safeOnLive = (event: RestLiveEvent): void => {
       try {
@@ -674,6 +677,7 @@ export class EngineService {
           ? {
               onStream: {
                 onOpen: (status: number, headers: Readonly<Record<string, string>>): void => {
+                  restStreams.set(sendId, request.requestId);
                   safeOnLive({ kind: 'open', sendId, status, headers: redactHeaders(headers, { show }) });
                 },
                 onRow: (row) => {
@@ -694,6 +698,7 @@ export class EngineService {
       return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
     } finally {
       this.sends.delete(request.sendId);
+      this.restStreams.delete(request.sendId);
     }
   }
 
@@ -792,6 +797,21 @@ export class EngineService {
     handle.end();
     this.grpcStreams.delete(sendId);
     return { closed: true };
+  }
+
+  /**
+   * Aborts every REST send whose response turned out to be an event stream and is still open, for
+   * a request that `matches`; answers how many. An aborted stream resolves as a Stop does — ended
+   * by the client, its rows kept — so whoever awaits it still records it.
+   */
+  abortRestStreamsWhere(matches: (requestId: string) => boolean): number {
+    let asked = 0;
+    for (const [sendId, requestId] of this.restStreams) {
+      if (matches(requestId) && this.cancel(sendId).cancelled) {
+        asked += 1;
+      }
+    }
+    return asked;
   }
 
   /** Aborts the in-flight send for `sendId`. Returns `false` when no such send is pending. */

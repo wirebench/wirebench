@@ -44,7 +44,12 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
-import { registerRequestChannels, whenWsSessionsRecorded, type RequestChannelDeps } from './ipc/request.js';
+import {
+  registerRequestChannels,
+  whenRestSendsRecorded,
+  whenWsSessionsRecorded,
+  type RequestChannelDeps,
+} from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { OpenApiImportService } from './openapi-import.js';
@@ -206,12 +211,18 @@ const workspaceService = new WorkspaceService({
     } else {
       engineService.closeWsWhere(matches);
     }
+    // An event stream open on a REST request is the same kind of thing: stopped here, and its
+    // History entry — written by its own pending `request.sendRest` — waited for alongside.
+    engineService.abortRestStreamsWhere(matches ?? (() => true));
     // Always awaited, never guarded by "did we just close anything": the engine drops a session
     // from its map as the socket finishes, *before* the pending `request.openWs` has written the
     // History entry. A session that closed a moment ago is therefore invisible here while its
     // write is still in flight, and skipping the wait would race it against `history.close`.
     // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
-    await whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches);
+    await Promise.all([
+      whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+      whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+    ]);
   },
   trash: trashFolder,
   // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
@@ -507,6 +518,7 @@ app.on('before-quit', (event) => {
   // failure to close a socket must never be the reason the app fails to quit.
   try {
     engineService.closeAllWs();
+    engineService.abortRestStreamsWhere(() => true);
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }

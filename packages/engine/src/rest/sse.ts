@@ -50,6 +50,8 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
   let sawText = false;
   let pendingCr = false;
   let index = 0;
+  /** The arrival time of the last chunk pushed, which is when anything `end()` flushes arrived. */
+  let lastAt = 0;
 
   let eventType = '';
   let dataLines: string[] = [];
@@ -160,12 +162,13 @@ export function createSseParser(onRow: (row: SseRow) => void): SseParser {
 
   return {
     push(chunk: Uint8Array, at: number): void {
+      lastAt = at;
       const text = decoder.decode(chunk, { stream: true });
       consumeText(text, at);
     },
     end(): void {
       const text = decoder.decode();
-      if (text !== '') consumeText(text, index);
+      if (text !== '') consumeText(text, lastAt);
       // An unterminated event at end of stream is discarded per spec.
     },
   };

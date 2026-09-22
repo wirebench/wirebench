@@ -157,6 +157,19 @@ describe('log.resend', () => {
     expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('REST: a resend is buffered, never streamed — no live hook the renderer could not stop', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({}),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as { ok: boolean };
+    expect(reply.ok).toBe(true);
+    expect(sendRest.mock.calls[0]![1]).not.toHaveProperty('onLive');
+  });
+
   it('REST: a row with no cached exchange falls back to the request current Accept header', async () => {
     // Only an ad-hoc/failure row (no sendId, since it never produced an exchange) takes this path.
     const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');

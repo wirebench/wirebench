@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import type { RestSendInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, whenRestSendsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { toRestEventStreamWire } from '../src/main/engine-wire.js';
 import { restApiWire } from './helpers/wire-defaults.js';
 import type { FailedExchangeWire, RestExchangeSummary, RestLiveEvent } from '../src/shared/wire-types.js';
@@ -226,6 +226,49 @@ describe('request.sendRest streaming an event-stream response', () => {
     } finally {
       await new Promise((resolveClose) => sensitiveServer.close(() => resolveClose(undefined)));
     }
+  });
+});
+
+describe('closing the app or a project over an open stream', () => {
+  it('aborts the stream and waits for its History record, as a WebSocket session is', async () => {
+    let releaseRecord!: () => void;
+    const recorded = new Promise<void>((resolve) => {
+      releaseRecord = resolve;
+    });
+    const recordRestSend = vi.fn(async () => {
+      await recorded;
+      return undefined;
+    });
+    const service = register(
+      { history: { recordRestSend } as unknown as NonNullable<RequestChannelDeps['history']> },
+      (requestId) => (requestId === 'rest-1' ? resolution(server.url, '/sse/forever') : undefined),
+    );
+    const { sender, events } = fakeSender();
+
+    const sendPromise = invoke('request.sendRest', { sendId: 'q1', requestId: 'rest-1' }, sender);
+    await waitFor(() => events.some((e) => e.kind === 'open'), 'the stream to open');
+
+    // Another project's stream is left alone.
+    expect(service.abortRestStreamsWhere((requestId) => requestId === 'rest-other')).toBe(0);
+    expect(service.abortRestStreamsWhere(() => true)).toBe(1);
+
+    let waited = false;
+    const waiting = whenRestSendsRecorded(5_000).then(() => {
+      waited = true;
+    });
+    await waitFor(() => recordRestSend.mock.calls.length === 1, 'History to be asked to record the stream');
+    expect(waited).toBe(false);
+    releaseRecord();
+    await waiting;
+
+    const summary = unwrap<RestExchangeSummary>(await sendPromise);
+    expect(summary.stream?.endedBy).toBe('client');
+  });
+
+  it('a plain send is not a stream to abort', async () => {
+    const service = register({}, (requestId) => (requestId === 'rest-1' ? resolution(server.url, '/echo') : undefined));
+    unwrap(await invoke('request.sendRest', { sendId: 'q2', requestId: 'rest-1' }, fakeSender().sender));
+    expect(service.abortRestStreamsWhere(() => true)).toBe(0);
   });
 });
 
