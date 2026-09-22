@@ -624,13 +624,30 @@ function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): s
   if (match === null || !match[2]!.includes('?')) {
     return rawBase64;
   }
-  // A path-only target is resolved against a placeholder origin only to parse its query.
-  const base = 'http://request.invalid';
-  const redacted = redactUrl(`${base}${match[2]!}`, { show: false, extraParams: keyParams });
-  const target = redacted.startsWith(base) ? redacted.slice(base.length) : match[2]!;
+  const target = maskTarget(match[2]!, keyParams);
   return Buffer.concat([Buffer.from(`${match[1]!} ${target} ${match[3]!}`, 'latin1'), raw.subarray(end)]).toString(
     'base64',
   );
+}
+
+/**
+ * One request target with `keyParams` masked. An origin-form target (`/calc?key=…`) is parsed
+ * under a placeholder origin and rebuilt from the parsed path and query, never by trimming a
+ * string prefix; an absolute-form one is a URL already. Returned as sent when nothing is masked.
+ */
+function maskTarget(target: string, keyParams: readonly string[]): string {
+  const options = { show: false, extraParams: keyParams };
+  if (!target.startsWith('/')) {
+    return redactUrl(target, options);
+  }
+  // Prefixed rather than resolved, so a path that starts `//` stays a path, not a host.
+  const placed = `http://request.invalid${target}`;
+  const redacted = redactUrl(placed, options);
+  if (redacted === placed) {
+    return target;
+  }
+  const parsed = new URL(redacted);
+  return `${parsed.pathname}${parsed.search}`;
 }
 
 /**

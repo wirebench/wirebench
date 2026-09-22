@@ -168,6 +168,19 @@ describe('SOAP send with a token owner auth', () => {
     const hops = redactExchangeSummary(redirected, { show: false, keyParams: keyParams! }).http.redirects;
     expect(hops[0]!.url).not.toMatch(KEY);
     expect(hops[0]!.url).toContain('redacted');
+    // The raw request line is parsed, never prefix-trimmed: any target form is masked, and left as sent otherwise.
+    const lineOf = (target: string): string => {
+      const raw = Buffer.from(`POST ${target} HTTP/1.1\r\nHost: h\r\n\r\n`, 'latin1').toString('base64');
+      const masked = redactExchangeSummary(
+        { ...full, http: { ...full.http, rawRequestBase64: raw } },
+        { show: false, keyParams: keyParams! },
+      );
+      return Buffer.from(masked.http.rawRequestBase64, 'base64').toString('latin1').split('\r\n')[0]!;
+    };
+    expect(lineOf('/calc?op&api%20key=my%20key')).toBe('POST /calc?op=&api+key=%3Credacted%3E HTTP/1.1');
+    expect(lineOf('//calc?api%20key=my%20key')).toBe('POST //calc?api+key=%3Credacted%3E HTTP/1.1');
+    expect(lineOf('http://h/calc?api%20key=my%20key')).toBe('POST http://h/calc?api+key=%3Credacted%3E HTTP/1.1');
+    expect(lineOf('/calc?op')).toBe('POST /calc?op HTTP/1.1');
     // History stores the endpoint as configured, never the one carrying the key.
     const [projectId, record] = recordSend.mock.calls[0]!;
     expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toMatch(KEY);
