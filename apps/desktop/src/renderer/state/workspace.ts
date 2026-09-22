@@ -197,6 +197,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       // asked for synchronously and its promise deliberately not waited on — the shell must not
       // wait on a socket to finish switching workspaces.
       void useExchangesStore.getState().closeOpenWsSessions();
+      // The same for a REST send still in flight — an event stream holds its socket until stopped.
+      void useExchangesStore.getState().cancelOpenRestSends();
       useExchangesStore.getState().reset();
       useInterfaceEditorStore.getState().reset();
       useProjectStore.getState().reset();
@@ -385,6 +387,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       const mirror = useProjectStore.getState();
       const owned = Object.keys(mirror.wsRequests).filter((requestId) => mirror.projectOf[requestId] === projectId);
       void useExchangesStore.getState().closeOpenWsSessions(owned);
+      const ownedRest = Object.keys(mirror.restRequests).filter(
+        (requestId) => mirror.projectOf[requestId] === projectId,
+      );
+      void useExchangesStore.getState().cancelOpenRestSends(ownedRest);
       applyReply(sentIn, unwrap(await ipc().workspace.removeProject({ projectId, deleteFiles })).workspace);
     },
 

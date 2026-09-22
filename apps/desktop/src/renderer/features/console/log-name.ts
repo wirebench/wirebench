@@ -27,6 +27,19 @@ function pathOf(url: string): string {
   }
 }
 
+/** ` · N events` for a REST row whose exchange was an event stream; empty otherwise. */
+function eventsSuffix(entry: LogEntry): string {
+  if (entry.kind !== 'exchange' || 'protocol' in entry.exchange || !('stream' in entry.exchange)) {
+    return '';
+  }
+  const stream = entry.exchange.stream;
+  if (stream === undefined) {
+    return '';
+  }
+  const count = stream.counts.events;
+  return ` · ${String(count)} event${count === 1 ? '' : 's'}`;
+}
+
 /**
  * The saved request's name (gRPC: Service/Method); the URL path when no request is known. `full`
  * keeps a gRPC service's package (`pets.v1.PetService/GetPet`), for the cell's tooltip.
@@ -49,11 +62,11 @@ export function nameOf(entry: LogEntry, sources: NameSources, full = false): str
             ? sources.wsRequests[id]
             : sources.requests[id];
       if (request !== undefined) {
-        return request.name;
+        return `${request.name}${eventsSuffix(entry)}`;
       }
     }
   }
-  return pathOf(urlOf(entry));
+  return `${pathOf(urlOf(entry))}${eventsSuffix(entry)}`;
 }
 
 /** The four records the name comes from, each selected on its own so other store changes do not rerender. */

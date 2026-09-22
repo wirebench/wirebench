@@ -84,6 +84,7 @@ import type {
   WsHandshakeWire,
   WsRequestPatchWire,
   LogEntryWire,
+  RestLiveEvent,
 } from '../../shared/wire-types.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
@@ -742,11 +743,18 @@ async function importCurlAsRest(
  * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
  * it reaches the wire, with the problems that explain why.
  */
-/** Exported for `log.resend`, which replays a saved REST request through this same path. */
+/**
+ * Exported for `log.resend`, which replays a saved REST request through this same path.
+ *
+ * `onLive` is passed by the editor's send alone: it is what turns an event-stream response into a
+ * live one the renderer shows and can Stop. A resend has no pane registered for its send id, so it
+ * omits it and the response is read to its end like any other body.
+ */
 export async function sendRestRequest(
   service: EngineService,
   deps: RequestChannelDeps,
   request: RequestSendRestRequest,
+  onLive?: (event: RestLiveEvent) => void,
 ): Promise<RestExchangeSummary> {
   const resolved = deps.project.restSend?.(request.requestId, request.draft);
   if (resolved === undefined) {
@@ -822,6 +830,7 @@ export async function sendRestRequest(
         auth: resolved.auth,
         ...(accessToken !== undefined ? { accessToken } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
+        ...(onLive !== undefined ? { onLive } : {}),
       },
     );
     deps.project.rememberRestCookies?.(
@@ -1402,6 +1411,43 @@ export async function whenWsSessionsRecorded(
   }
 }
 
+/**
+ * The editor's `request.sendRest` calls still running, each settling only once its History entry
+ * has been written — the REST twin of {@link openWsCalls}, for an event stream that stays open
+ * until something stops it.
+ */
+const openRestCalls = new Map<Promise<unknown>, string>();
+
+/**
+ * Resolves once every editor REST send in flight whose request `matches` has recorded its History
+ * entry, or after `timeoutMs`. Paired with `EngineService.abortRestStreamsWhere` wherever
+ * WebSocket sessions are closed on the app's behalf (quitting, closing a project).
+ */
+export async function whenRestSendsRecorded(
+  timeoutMs: number,
+  matches?: (requestId: string) => boolean,
+): Promise<void> {
+  const waiting = [...openRestCalls]
+    .filter(([, requestId]) => matches === undefined || matches(requestId))
+    .map(([call]) => call);
+  if (waiting.length === 0) {
+    return;
+  }
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      Promise.all(waiting),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 /** Registers one `request.openWs` call in {@link openWsCalls} for the life of its session. */
 function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promise<WsExchangeSummary> {
   // A rejection is a fact about that one session, not about the wait: `whenWsSessionsRecorded`
@@ -1640,7 +1686,20 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 
-  registerHandler(channels.request.sendRest, (request) => sendRestRequest(service, deps, request));
+  registerHandler(channels.request.sendRest, (request, sender) => {
+    // The stream as it happens, alongside the invoke that is still open and will resolve with the
+    // whole exchange. A window that has gone away swallows its own events.
+    const call = sendRestRequest(service, deps, request, (event) => {
+      emitEvent(sender, events.rest.live, event);
+    });
+    const settled = call.then(
+      () => undefined,
+      () => undefined,
+    );
+    openRestCalls.set(settled, request.requestId);
+    void settled.finally(() => openRestCalls.delete(settled));
+    return call;
+  });
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 

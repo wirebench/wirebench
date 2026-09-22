@@ -14,6 +14,8 @@ import type {
   GrpcLiveEvent,
   GrpcResponseMessageWire,
   RestExchangeSummary,
+  RestLiveEvent,
+  SseRowWire,
   UnresolvedRefWire,
   WsExchangeSummary,
   WsFrameWire,
@@ -117,6 +119,32 @@ export interface ExchangeState {
   readonly startedAt?: string;
 }
 
+/**
+ * What a REST send with a `text/event-stream` response has produced so far.
+ *
+ * Mirrors {@link WsLiveState}: the pane shows this while `status` is `sending` and the finished
+ * `exchange` (its `stream`) replaces it once the send resolves, so a row is never shown twice.
+ */
+export interface RestLiveState {
+  /** The response's status, once its headers have arrived — before any row. */
+  readonly status?: number;
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Rows in arrival order. */
+  readonly rows: readonly SseRowWire[];
+  /** How many of the oldest rows were let go to keep {@link WS_LIVE_FRAME_LIMIT}; absent when none. */
+  readonly droppedRows?: number;
+  /**
+   * Running totals kept as rows arrive, the same reason {@link WsLiveState.counts} is: they must
+   * neither fall back when old rows are let go nor re-count thousands of rows every tick.
+   */
+  readonly counts: {
+    readonly events: number;
+    readonly comments: number;
+    readonly retries: number;
+    readonly bytes: number;
+  };
+}
+
 /** What is known about the most recent send for one REST request. */
 export interface RestExchangeState {
   readonly status: ExchangeStatus;
@@ -124,6 +152,8 @@ export interface RestExchangeState {
   readonly exchange?: RestExchangeSummary;
   readonly error?: IpcError;
   readonly startedAt?: string;
+  /** Present while an event-stream response is still arriving; dropped when the exchange arrives. */
+  readonly live?: RestLiveState;
 }
 
 /**
@@ -219,6 +249,30 @@ function pushLiveFrame(live: Draft<WsLiveState>, frame: WsFrameWire): void {
   if (excess > 0) {
     live.frames.splice(0, excess);
     live.droppedFrames = (live.droppedFrames ?? 0) + excess;
+  }
+}
+
+/**
+ * Appends a row to a REST stream's live half, letting the oldest go past {@link WS_LIVE_FRAME_LIMIT}.
+ *
+ * Mirrors {@link pushLiveFrame}: a row whose `index` is already at the tail is ignored, and the
+ * running counts rise with every row seen even once the cap starts dropping the oldest.
+ */
+function pushLiveRow(live: Draft<RestLiveState>, row: SseRowWire): void {
+  if (live.rows.at(-1)?.index === row.index) {
+    return;
+  }
+  live.rows.push(row);
+  live.counts = {
+    events: live.counts.events + (row.kind === 'event' ? 1 : 0),
+    comments: live.counts.comments + (row.kind === 'comment' ? 1 : 0),
+    retries: live.counts.retries + (row.kind === 'retry' ? 1 : 0),
+    bytes: live.counts.bytes + row.size,
+  };
+  const excess = live.rows.length - WS_LIVE_FRAME_LIMIT;
+  if (excess > 0) {
+    live.rows.splice(0, excess);
+    live.droppedRows = (live.droppedRows ?? 0) + excess;
   }
 }
 
@@ -318,6 +372,16 @@ export interface ExchangesStore extends ExchangesSnapshot {
   readonly cancelRest: (requestId: string) => Promise<void>;
   /** Clears the REST exchange state for a removed request. */
   readonly clearRestRequest: (requestId: string) => void;
+  /** Folds one `rest.live` event into the send whose event-stream response it belongs to. */
+  readonly applyRestLive: (event: RestLiveEvent) => void;
+  /**
+   * Cancels every REST send still in flight (`sending`), or only those of `requestIds`. The REST
+   * counterpart of {@link closeOpenWsSessions}: an event stream holds its socket until stopped, so
+   * leaving a workspace or removing a project must not leave one running behind it.
+   *
+   * The sends are read synchronously, so a caller may reset the store straight after.
+   */
+  readonly cancelOpenRestSends: (requestIds?: readonly string[]) => Promise<void>;
   /**
    * Makes one gRPC call, the request and its unsaved draft named; main resolves everything else.
    * `interactive` keeps the request side open afterwards, for {@link pushGrpcMessage} and
@@ -773,9 +837,20 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       useProblemsStore.getState().clearSource('expansion', requestId);
       useProblemsStore.getState().clearSource('send', requestId);
 
+      // A send this one replaces must not keep streaming unseen: its state is about to be dropped.
+      void get()
+        .cancelOpenRestSends([requestId])
+        .catch(() => undefined);
+
       const sendId = crypto.randomUUID();
       update((draft) => {
-        draft.restByRequest[requestId] = { status: 'sending', sendId, startedAt: new Date().toISOString() };
+        // No live half yet: only an `open` event says the response is an event stream, and a plain
+        // response must read as an ordinary send until it arrives.
+        draft.restByRequest[requestId] = {
+          status: 'sending',
+          sendId,
+          startedAt: new Date().toISOString(),
+        };
       });
 
       // The draft, not a resolved URL: main owns the environment, the model and the keychain, so it
@@ -820,6 +895,26 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    cancelOpenRestSends: async (requestIds) => {
+      // Collected before anything is awaited: the caller may reset this state as soon as it returns.
+      const open = Object.entries(get().restByRequest).filter(
+        ([requestId, state]) =>
+          (requestIds === undefined || requestIds.includes(requestId)) &&
+          state.status === 'sending' &&
+          state.sendId !== undefined,
+      );
+      // One send refusing to cancel must not leave the rest of them running.
+      await Promise.all(
+        open.map(async ([, state]) => {
+          try {
+            await ipc().request.cancel({ sendId: state.sendId! });
+          } catch {
+            // Nothing to report: the state this cancel was tidying is being dropped anyway.
+          }
+        }),
+      );
+    },
+
     cancelRest: async (requestId) => {
       const entry = get().restByRequest[requestId];
       if (entry?.sendId === undefined) {
@@ -829,8 +924,40 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     clearRestRequest: (requestId) => {
+      void get()
+        .cancelOpenRestSends([requestId])
+        .catch(() => undefined);
       update((draft) => {
         delete draft.restByRequest[requestId];
+      });
+    },
+
+    applyRestLive: (event) => {
+      update((draft) => {
+        const found = Object.entries(draft.restByRequest).find(([, state]) => state.sendId === event.sendId);
+        if (found === undefined) {
+          return;
+        }
+        const [, state] = found;
+        // An event for a send this request has already replaced, or one whose exchange has
+        // already arrived, is dropped rather than written over the newer state.
+        if (state.status !== 'sending') {
+          return;
+        }
+        if (event.kind === 'open') {
+          // The live half starts here: until main reports an event-stream response the send is an
+          // ordinary one, shown as "Sending…" with Cancel.
+          state.live = {
+            status: event.status,
+            headers: event.headers,
+            rows: [],
+            counts: { events: 0, comments: 0, retries: 0, bytes: 0 },
+          };
+          return;
+        }
+        if (state.live !== undefined) {
+          pushLiveRow(state.live, event.row);
+        }
       });
     },
 
@@ -1093,6 +1220,17 @@ export function subscribeToGrpcLive(): () => void {
 export function subscribeToWsLive(): () => void {
   return window.wirebench.on('ws.live', ((payload: WsLiveEvent) => {
     useExchangesStore.getState().applyWsLive(payload);
+  }) as (payload: unknown) => void);
+}
+
+/**
+ * Subscribes the REST panes to `rest.live`, the running half of an event-stream response. Called
+ * once from the shell, beside `subscribeToWsLive`; returns the unsubscribe for symmetry with React
+ * effects.
+ */
+export function subscribeToRestLive(): () => void {
+  return window.wirebench.on('rest.live', ((payload: RestLiveEvent) => {
+    useExchangesStore.getState().applyRestLive(payload);
   }) as (payload: unknown) => void);
 }
 

@@ -11,12 +11,27 @@
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
+import { createGzip, gzipSync, deflateSync, brotliCompressSync } from 'node:zlib';
 import type { Socket } from 'node:net';
 
 /** One request the server recorded, for assertions the response cannot carry. */
 /** Upper bound for `/slow?ms=`; the suite asks for hundreds of milliseconds at most. */
 const MAX_SLOW_MS = 10_000;
+
+/** The longest gap an event-stream route waits between writes; a test needs milliseconds, not more. */
+const MAX_TICK_MS = 1_000;
+
+/**
+ * A query parameter read as a whole number of milliseconds in `[min, MAX_TICK_MS]`, or `fallback`
+ * when it is absent or not a number — so no request can make the server hold a timer for long.
+ */
+function tickMs(raw: string | null, fallback: number, min: number): number {
+  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (parsed < min) return min;
+  if (parsed > MAX_TICK_MS) return MAX_TICK_MS;
+  return parsed;
+}
 
 /** Upper bound for `/large?bytes=`; the suite asks for a few megabytes at most. */
 const MAX_LARGE_BYTES = 64 * 1024 * 1024;
@@ -130,6 +145,12 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/big-json/<megabytes>` — a well-formed JSON body of about that size
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
+ * - `/sse/ticks?n=&every=` — `n` events (default 3), one every `every` ms (default 20, held to 1–1000), then the end
+ * - `/sse/forever` — a comment every 50 ms, never ending; `?events=1` sends an `id`/`data` event
+ *   every 50 ms instead, for a spec that needs real events from a stream it then stops
+ * - `/sse/drop` — two events, then the socket torn down mid-stream
+ * - `/sse/gzip` — the ticks, gzip-encoded and flushed per event
+ * - `/sse/slow-headers` — the headers only after 500 ms, then one event
  */
 export async function startTestRestServer(options: TestRestServerOptions = {}): Promise<TestRestServer> {
   const requests: RecordedRestRequest[] = [];
@@ -295,6 +316,11 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
           'content-length': String(encoded.byteLength),
         });
         response.end(encoded);
+        return;
+      }
+
+      if (path.startsWith('/sse/')) {
+        handleEventStream(path, url, request, response);
         return;
       }
 
@@ -539,4 +565,79 @@ function handleToken(input: {
 /** The S256 challenge for a verifier, so the stub can check PKCE the way a provider does. */
 function pkceChallenge(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
+}
+
+const EVENT_STREAM_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' };
+
+/** The `/sse/*` routes: event streams that end, never end, break, compress, or keep the client waiting. */
+function handleEventStream(path: string, url: URL, request: IncomingMessage, response: ServerResponse): void {
+  const tick = (index: number): string => `id: ${String(index)}\ndata: {"tick":${String(index)}}\n\n`;
+  const timers: NodeJS.Timeout[] = [];
+  const stop = (): void => {
+    for (const timer of timers) clearInterval(timer);
+  };
+  response.on('close', stop);
+
+  if (path === '/sse/ticks' || path === '/sse/gzip') {
+    const n = Math.min(Math.max(Number(url.searchParams.get('n') ?? '3'), 0), 1000);
+    const every = tickMs(url.searchParams.get('every'), 20, 1);
+    const gzip = path === '/sse/gzip' ? createGzip() : undefined;
+    if (gzip !== undefined) response.on('close', () => gzip.destroy());
+    response.writeHead(200, { ...EVENT_STREAM_HEADERS, ...(gzip !== undefined ? { 'content-encoding': 'gzip' } : {}) });
+    gzip?.pipe(response);
+    const write = (text: string): void => {
+      if (gzip === undefined) {
+        response.write(text);
+      } else {
+        gzip.write(text);
+        gzip.flush();
+      }
+    };
+    let sent = 0;
+    const timer = setInterval(() => {
+      if (sent >= n) {
+        clearInterval(timer);
+        if (gzip === undefined) response.end();
+        else gzip.end();
+        return;
+      }
+      sent += 1;
+      write(tick(sent));
+    }, every);
+    timers.push(timer);
+    return;
+  }
+  if (path === '/sse/forever') {
+    response.writeHead(200, EVENT_STREAM_HEADERS);
+    response.write(': open\n\n');
+    if (url.searchParams.get('events') === '1') {
+      let sent = 0;
+      timers.push(
+        setInterval(() => {
+          sent += 1;
+          response.write(tick(sent));
+        }, 50),
+      );
+    } else {
+      timers.push(setInterval(() => response.write(': keep-alive\n\n'), 50));
+    }
+    return;
+  }
+  if (path === '/sse/drop') {
+    response.writeHead(200, EVENT_STREAM_HEADERS);
+    response.write(tick(1) + tick(2), () => {
+      timers.push(setTimeout(() => request.socket.destroy(), 20));
+    });
+    return;
+  }
+  if (path === '/sse/slow-headers') {
+    timers.push(
+      setTimeout(() => {
+        response.writeHead(200, EVENT_STREAM_HEADERS);
+        response.end(tick(1));
+      }, 500),
+    );
+    return;
+  }
+  sendJson(response, 404, { error: 'no such stream' });
 }

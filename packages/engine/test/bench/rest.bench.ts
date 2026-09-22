@@ -12,9 +12,10 @@ const openApiImport = await SCENARIOS['openapi-import-1mb']();
 const openApiSamples = await SCENARIOS['openapi-samples']();
 const pretty = await SCENARIOS['rest-pretty-5mb']();
 const sendOverhead = await SCENARIOS['rest-send-overhead']();
+const sseParse = await SCENARIOS['sse-parse-100k-events']();
 
 afterAll(async () => {
-  for (const scenario of [openApiImport, openApiSamples, pretty, sendOverhead]) {
+  for (const scenario of [openApiImport, openApiSamples, pretty, sendOverhead, sseParse]) {
     await scenario.dispose?.();
   }
 });
@@ -33,6 +34,7 @@ describe('rest response and send', () => {
     await bench.compare(
       bench(`rest-pretty-5mb (budget ${BUDGETS_MS['rest-pretty-5mb']} ms)`, () => pretty.run()),
       bench(`rest-send-overhead (budget ${BUDGETS_MS['rest-send-overhead']} ms)`, () => sendOverhead.run()),
+      bench(`sse-parse-100k-events (budget ${BUDGETS_MS['sse-parse-100k-events']} ms)`, () => sseParse.run()),
     );
   });
 });

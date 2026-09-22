@@ -24,6 +24,7 @@ import type { JsonSchema } from '../../src/rest/openapi/model.js';
 import { sampleFromSchema, sampleXml } from '../../src/rest/openapi/sample.js';
 import { prettyBody } from '../../src/rest/response.js';
 import { sendRest } from '../../src/rest/send.js';
+import { createSseParser } from '../../src/rest/sse.js';
 import type { FetchDocument } from '../../src/wsdl/resolver.js';
 import { writeLargeOpenApiFixture } from '../helpers/large-openapi.js';
 import { startTestRestServer } from '../helpers/test-rest-server.js';
@@ -338,6 +339,37 @@ async function prepareRestSendOverhead(): Promise<PreparedScenario> {
   };
 }
 
+/**
+ * Parses 100 000 small `text/event-stream` events, split into 4 KB chunks the way the transport
+ * hands the parser its bytes — the cost of the row-by-row SSE decode itself, independent of any
+ * network.
+ */
+function prepareSseParse(): PreparedScenario {
+  const events = 100_000;
+  let text = '';
+  for (let i = 0; i < events; i++) {
+    text += `id: ${String(i)}\ndata: {"tick":${String(i)}}\n\n`;
+  }
+  const bytes = new TextEncoder().encode(text);
+  const chunkSize = 4096;
+  return {
+    run: () => {
+      let rows = 0;
+      const parser = createSseParser(() => {
+        rows++;
+      });
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        parser.push(bytes.subarray(offset, offset + chunkSize), offset);
+      }
+      parser.end();
+      if (rows !== events) {
+        throw new Error(`expected ${String(events)} rows, got ${String(rows)}`);
+      }
+      return Promise.resolve();
+    },
+  };
+}
+
 /** Every budgeted scenario, keyed exactly like {@link BUDGETS_MS}. */
 export const SCENARIOS: Readonly<Record<BudgetName, () => Promise<PreparedScenario>>> = {
   'calculator-import-generate': () =>
@@ -352,6 +384,7 @@ export const SCENARIOS: Readonly<Record<BudgetName, () => Promise<PreparedScenar
   'openapi-samples': prepareOpenApiSamples,
   'rest-pretty-5mb': () => Promise.resolve(prepareRestPretty()),
   'rest-send-overhead': prepareRestSendOverhead,
+  'sse-parse-100k-events': () => Promise.resolve(prepareSseParse()),
 };
 
 /**

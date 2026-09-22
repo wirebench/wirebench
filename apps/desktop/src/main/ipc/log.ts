@@ -32,8 +32,33 @@ export function registerLogChannels(deps: LogChannelDeps): void {
   registerHandler(channels.log.resend, async (request, sender) => {
     const sendId = randomUUID();
     if (request.protocol === 'rest') {
+      // The row menu only offers Resend when the row itself was not an event stream; main holds
+      // the same line, keyed on the *logged exchange* — never on the saved request's current
+      // settings, which may have changed since this row was sent (in either direction: a plain row
+      // whose request later grew an event-stream `Accept` must still resend, and a row that WAS one
+      // must stay refused even if the request's `Accept` has since gone back to `*/*`). A row with
+      // no cached exchange (an ad-hoc/failure row, which never streamed) falls back to the request's
+      // current `Accept` header — the only signal there is when there is no logged exchange to ask.
+      const cached = request.sendId !== undefined ? deps.service.exchanges.getRest(request.sendId) : undefined;
+      const streaming =
+        cached !== undefined
+          ? cached.stream !== undefined
+          : (deps.request.project
+              .restSend?.(request.requestId)
+              ?.input.request.headers.some(
+                (header) =>
+                  header.enabled &&
+                  header.name.toLowerCase() === 'accept' &&
+                  header.value.toLowerCase().includes('text/event-stream'),
+              ) ?? false);
+      if (streaming) {
+        throw new WirebenchError('rest-resend-streaming', 'Event streams resend from the editor.', {
+          details: { requestId: request.requestId },
+        });
+      }
       return {
         protocol: 'rest' as const,
+        // No live hook: nothing on screen registered this send id, so it could not be stopped.
         exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
       };
     }

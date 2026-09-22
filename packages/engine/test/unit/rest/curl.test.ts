@@ -171,6 +171,18 @@ describe('restToCurl', () => {
     expect(command).toContain("--data-binary @'");
     expect(command.endsWith("'@")).toBe(true);
   });
+
+  it('adds -N when Accept asks for an event stream, and not otherwise', () => {
+    expect(restToCurl(input({ headers: [entry('Accept', 'text/event-stream')] }))).toContain('-N');
+    expect(restToCurl(input({ headers: [entry('Accept', 'application/json')] }))).not.toContain('-N');
+    expect(restToCurl(input({}))).not.toContain('-N');
+    // Case-insensitive header name and a charset-qualified value still count.
+    expect(restToCurl(input({ headers: [entry('accept', 'text/event-stream;charset=utf-8')] }))).toContain('-N');
+    // A disabled Accept row is not on the wire, so it must not turn -N on either.
+    expect(restToCurl(input({ headers: [entry('Accept', 'text/event-stream', { enabled: false })] }))).not.toContain(
+      '-N',
+    );
+  });
 });
 
 describe('fromRestCurl', () => {

@@ -82,6 +82,26 @@ describe('rowActions', () => {
     });
   });
 
+  it('an event-stream row resends from the editor', () => {
+    const streamed = {
+      ...makeRestExchange(),
+      stream: {
+        rows: [],
+        counts: { events: 0, comments: 0, retries: 0, bytes: 0 },
+        lastEventId: '',
+        endedBy: 'server' as const,
+        droppedRows: 0,
+        truncated: false,
+        omittedRows: 0,
+      },
+    };
+    const actions = rowActions(logExchange(streamed, 'rest-1'), known);
+    expect(actions.find((a) => a.id === 'resend')).toMatchObject({
+      enabled: false,
+      reason: 'Event streams resend from the editor',
+    });
+  });
+
   it('a WebSocket handshake row offers open (when the request exists) but not resend or copy body', () => {
     const actions = rowActions(makeWsHandshakeEntry({}, 'ws-1'), known);
     expect(actions.find((a) => a.id === 'open-request')).toMatchObject({ enabled: true });

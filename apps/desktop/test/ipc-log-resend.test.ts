@@ -71,10 +71,10 @@ function restExchange(): RestExchangeSummary {
   };
 }
 
-function restResolution() {
+function restResolution(headers: RestSendInput['request']['headers'] = []) {
   const input: RestSendInput = {
     baseUrl: 'http://h',
-    request: { method: 'GET', url: '/r', pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+    request: { method: 'GET', url: '/r', pathParams: [], query: [], headers, body: { kind: 'none' } },
     settings: { timeoutMs: 2_000, followRedirects: true },
   };
   return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
@@ -155,6 +155,116 @@ describe('log.resend', () => {
     const call = sendRest.mock.calls[0]![0];
     expect(call.requestId).toBe('rest-1');
     expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('REST: a resend is buffered, never streamed — no live hook the renderer could not stop', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({}),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as { ok: boolean };
+    expect(reply.ok).toBe(true);
+    expect(sendRest.mock.calls[0]![1]).not.toHaveProperty('onLive');
+  });
+
+  it('REST: a row with no cached exchange falls back to the request current Accept header', async () => {
+    // Only an ad-hoc/failure row (no sendId, since it never produced an exchange) takes this path.
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({ restSend }),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as {
+      ok: false;
+      error: { code: string };
+    };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('rest-resend-streaming');
+    expect(sendRest).not.toHaveBeenCalled();
+  });
+
+  it('REST: a row whose logged exchange streamed is refused, even though the request now accepts */*', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    // The saved request's current Accept says nothing about streaming: the refusal must not depend
+    // on it once the row's own exchange is known.
+    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: '*/*', enabled: true }]));
+    const service = new EngineService();
+    service.exchanges.putRest(
+      'send-streamed',
+      {
+        ...restExchange(),
+        stream: {
+          rows: [],
+          counts: { events: 0, comments: 0, retries: 0, bytes: 0 },
+          lastEventId: '',
+          endedBy: 'server',
+          droppedRows: 0,
+          truncated: false,
+          omittedRows: 0,
+        },
+      },
+      new Uint8Array(),
+    );
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service,
+      request: requestDeps({ restSend }),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', {
+      protocol: 'rest',
+      requestId: 'rest-1',
+      sendId: 'send-streamed',
+    })) as { ok: false; error: { code: string } };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('rest-resend-streaming');
+    expect(sendRest).not.toHaveBeenCalled();
+  });
+
+  it('REST: a buffered row resends even though the saved request has since grown a streaming Accept', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
+    const service = new EngineService();
+    service.exchanges.putRest('send-buffered', restExchange(), new Uint8Array());
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service,
+      request: requestDeps({ restSend }),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', {
+      protocol: 'rest',
+      requestId: 'rest-1',
+      sendId: 'send-buffered',
+    })) as { ok: boolean };
+    expect(reply.ok).toBe(true);
+    expect(sendRest).toHaveBeenCalled();
+  });
+
+  it('REST: a deleted request behind a logged (non-streaming) row gets unknown-entity, not a silent send', async () => {
+    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    const service = new EngineService();
+    service.exchanges.putRest('send-gone', restExchange(), new Uint8Array());
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service,
+      request: requestDeps({ restSend: () => undefined }),
+      ...LOG_EXTRA,
+    });
+    const reply = (await invoke('log.resend', {
+      protocol: 'rest',
+      requestId: 'gone',
+      sendId: 'send-gone',
+    })) as { ok: false; error: { code: string } };
+    expect(reply.ok).toBe(false);
+    expect(reply.error.code).toBe('unknown-entity');
+    expect(sendRest).not.toHaveBeenCalled();
   });
 
   it('gRPC: a streaming method is refused before anything is sent', async () => {

@@ -32,6 +32,8 @@ export interface UrlBarProps {
   /** Where that base came from — `api`, `environment`, `workspace` — shown on the prefix's title. */
   readonly baseSource?: string | undefined;
   readonly sending: boolean;
+  /** An event-stream response is arriving — Cancel reads *Stop* instead, same button, same handler. */
+  readonly live?: boolean;
   readonly onMethodChange: (method: string) => void;
   readonly onUrlChange: (url: string) => void;
   readonly onSend: () => void;
@@ -49,6 +51,7 @@ export function UrlBar({
   basePrefix,
   baseSource,
   sending,
+  live = false,
   onMethodChange,
   onUrlChange,
   onSend,
@@ -158,9 +161,14 @@ export function UrlBar({
       </div>
 
       {sending ? (
-        <Button variant="secondary" data-testid="rest-send" onClick={onCancel} title="Cancel (Esc)">
+        <Button
+          variant="secondary"
+          data-testid="rest-send"
+          onClick={onCancel}
+          title={live ? 'Stop the stream (Esc)' : 'Cancel (Esc)'}
+        >
           <Square size={12} aria-hidden="true" />
-          Cancel
+          {live ? 'Stop' : 'Cancel'}
         </Button>
       ) : (
         <Button

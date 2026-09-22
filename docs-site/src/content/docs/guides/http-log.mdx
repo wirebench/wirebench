@@ -114,8 +114,9 @@ selected row, to open its menu:
 - **Copy as cURL (POSIX)** / **Copy as cURL (PowerShell)** — the request as it was actually sent.
 - **Copy URL**, **Copy request headers**, **Copy response headers**, **Copy response body**.
 - **Resend** — sends the saved request behind the row as it is *now*, not as it was when logged.
-  Off when the row wasn't from a saved request, the request no longer exists, or (for a streaming
-  gRPC method) resending needs the editor instead.
+  Off when the row wasn't from a saved request, the request no longer exists, or the row's response
+  was a streaming one (a server-streaming or bidirectional gRPC method, a WebSocket session, or a
+  REST response that was an event stream) — those need the editor instead.
 - **Open request** — opens the saved request's tab. Off when the request no longer exists.
 
 A failed send has no response, so its response-copying actions are off.

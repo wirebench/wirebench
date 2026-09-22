@@ -20,3 +20,11 @@ export {
   type UrlProblem,
 } from './url.js';
 export type { KeyValueEntry } from './model.js';
+export {
+  createSseParser,
+  eventStreamDocument,
+  isEventStream,
+  serializeEventStream,
+  type SseParser,
+  type SseRow,
+} from './sse.js';

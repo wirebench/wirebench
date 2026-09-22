@@ -250,7 +250,16 @@ export { createDispatcher, createSingleConnectionDispatcher, sendHttp } from './
 export { FAILED_REQUEST_BODY_CAP_BYTES, failedRequestOf } from './http/failed-request.js';
 export type { FailedRequest } from './http/failed-request.js';
 export { buildRawRequest, buildRawResponse } from './http/raw-capture.js';
-export type { HttpErrorCode, HttpExchange, HttpRequest, ProxyOptions, Timings, TlsOptions } from './http/types.js';
+export type {
+  HttpErrorCode,
+  HttpExchange,
+  HttpRequest,
+  HttpStreamHook,
+  HttpStreamSink,
+  ProxyOptions,
+  Timings,
+  TlsOptions,
+} from './http/types.js';
 export { isExcluded, parseSystemProxy, resolveProxyFor } from './http/proxy.js';
 export type { SystemProxyResolution } from './http/proxy.js';
 export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
@@ -363,7 +372,11 @@ export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from 
 export { expandRestSendInput } from './rest/expand.js';
 export type { ExpandRestOptions } from './rest/expand.js';
 export { decodeRestResponse, sendRest } from './rest/send.js';
-export type { RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export type { RestEventStream, RestExchange, RestSendInput, RestSendRequest, RestSendSettings } from './rest/send.js';
+export { createSseParser, eventStreamDocument, isEventStream, serializeEventStream } from './rest/sse.js';
+export type { SseParser, SseRow } from './rest/sse.js';
+export { capSseRows, createSseRowStore, SSE_HISTORY_LIMITS, SSE_SUMMARY_LIMITS } from './rest/sse-transcript.js';
+export type { SseRowStore, SseTranscript } from './rest/sse-transcript.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
@@ -625,6 +638,7 @@ export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export {
   appendHistory,
   generateHistoryId,
+  historySseOf,
   historyWsOf,
   normalizeHistoryEntry,
   openHistory,
@@ -638,7 +652,9 @@ export type {
   HistoryHeader,
   HistoryListQuery,
   HistoryOptions,
+  HistorySse,
   HistoryWs,
+  RestEventStreamLike,
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
