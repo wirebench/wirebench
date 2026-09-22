@@ -108,14 +108,38 @@ describe('applyRestUpdate', () => {
     expect(result.requestsAdded).toBe(0);
   });
 
-  it('SC-1: an untouched url follows while an edited one is kept (same contract key)', () => {
-    // The contract key is method + path, so the url only differs when the user edited it; an untouched
-    // one equal to the old-generated url is re-written to the new-generated one (identical here).
+  it('SC-1: an edited url is kept', () => {
     const old = doc([op()]);
-    const api = edit(imported(old), find(imported(old), 'get', '/pets').id, (r) => r);
-    const result = applyRestUpdate(api, old, old);
-    expect(find(result.api, 'get', '/pets').url).toBe('/pets');
-    expect(result.requestsRewritten).toBe(0);
+    const next = doc([op({ parameters: [{ name: 'q', in: 'query', example: '1' }] })]);
+    let api = imported(old);
+    api = edit(api, find(api, 'get', '/pets').id, (r) => ({ ...r, url: '/v2/pets?mine=1' }));
+    const result = applyRestUpdate(api, old, next);
+    const req = find(result.api, 'get', '/pets');
+    expect(req.url).toBe('/v2/pets?mine=1');
+    expect(req.query).toEqual([{ name: 'q', value: '1', enabled: false }]);
+  });
+
+  it('does not write back an absent base URL or server list as an undefined key', () => {
+    const old = doc([op()]);
+    const { baseUrl, servers, ...bare } = imported(old);
+    void baseUrl;
+    void servers;
+    const result = applyRestUpdate(bare as RestApi, old, doc([op()])).api;
+    expect(Object.keys(result)).not.toContain('baseUrl');
+    expect(Object.keys(result)).not.toContain('servers');
+    expect(Object.keys(result)).not.toContain('auth');
+  });
+
+  it('follows only the first of two untouched rows with the same name', () => {
+    const old = doc([op({ parameters: [{ name: 'a', in: 'query', example: '1' }] })]);
+    const next = doc([op({ parameters: [{ name: 'a', in: 'query', example: '2' }] })]);
+    let api = imported(old);
+    api = edit(api, find(api, 'get', '/pets').id, (r) => ({ ...r, query: [r.query[0]!, r.query[0]!] }));
+    const result = applyRestUpdate(api, old, next);
+    expect(find(result.api, 'get', '/pets').query).toEqual([
+      { name: 'a', value: '2', enabled: false },
+      { name: 'a', value: '1', enabled: false },
+    ]);
   });
 
   it('SC-2: an edited parameter value, body and auth are kept; user rows are kept', () => {

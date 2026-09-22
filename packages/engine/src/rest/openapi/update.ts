@@ -201,13 +201,16 @@ function mergeRows(
   const rows: KeyValueEntry[] = [];
   let removed = 0;
   let changed = false;
+  // Only the first untouched row of a name follows; a duplicate of it is the user's and stays.
+  const replaced = new Set<string>();
   for (const row of current) {
     const key = rowKey(row, caseless);
     const generated = oldRows.get(key);
-    if (generated === undefined || !sameRow(row, generated)) {
+    if (generated === undefined || !sameRow(row, generated) || replaced.has(key)) {
       rows.push(row);
       continue;
     }
+    replaced.add(key);
     const replacement = newRows.get(key);
     if (replacement === undefined) {
       removed += 1;
@@ -340,10 +343,16 @@ export function applyRestUpdate(
   }
 
   // API level: the same follow rule, against what the old document mapped to.
-  const followed: { baseUrl?: string; servers?: RestApi['servers'] } = {};
-  if (result.baseUrl === oldMapped.baseUrl) followed.baseUrl = nextMapped.baseUrl;
-  if (sameStructure(result.servers, oldMapped.servers)) followed.servers = nextMapped.servers;
-  result = { ...result, ...followed };
+  // A value absent on both sides stays absent rather than coming back as an `undefined` key.
+  if (result.baseUrl === oldMapped.baseUrl && (nextMapped.baseUrl as string | undefined) !== undefined) {
+    result = { ...result, baseUrl: nextMapped.baseUrl };
+  }
+  if (
+    sameStructure(result.servers, oldMapped.servers) &&
+    (nextMapped.servers as RestApi['servers'] | undefined) !== undefined
+  ) {
+    result = { ...result, servers: nextMapped.servers };
+  }
   if (sameStructure(result.auth, oldMapped.auth) && !sameStructure(result.auth, nextMapped.auth)) {
     const { auth, ...rest } = result;
     void auth;
