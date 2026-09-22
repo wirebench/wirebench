@@ -8,6 +8,7 @@
 import type { IpcError } from '../../../../shared/ipc.js';
 import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
+import type { RestLiveState } from '../../../state/exchanges.js';
 
 /** The colour class for a status code, by its class. */
 export function statusToneClass(status: number): string {
@@ -27,10 +28,28 @@ export interface StatusLineProps {
   readonly exchange?: RestExchangeSummary | undefined;
   readonly error?: IpcError | undefined;
   readonly sending?: boolean;
+  /** An event stream still arriving: its status and running counts, before the exchange exists. */
+  readonly live?: RestLiveState | undefined;
+}
+
+/** `12 events · last id 7`, the part of the line an event stream adds. */
+export function streamCountsText(events: number, lastEventId: string): string {
+  const parts = [`${String(events)} event${events === 1 ? '' : 's'}`];
+  if (lastEventId !== '') parts.push(`last id ${lastEventId}`);
+  return parts.join(' · ');
+}
+
+/** The newest event row's last-event-id, read from the end: a live half holds thousands of rows. */
+function liveLastEventId(live: RestLiveState): string {
+  for (let at = live.rows.length - 1; at >= 0; at -= 1) {
+    const row = live.rows[at]!;
+    if (row.kind === 'event') return row.lastEventId;
+  }
+  return '';
 }
 
 /** The `200 OK · 12 ms · 1.2 KB · HTTP/1.1` line. */
-export function StatusLine({ exchange, error, sending = false }: StatusLineProps) {
+export function StatusLine({ exchange, error, sending = false, live }: StatusLineProps) {
   if (error !== undefined) {
     return (
       <p
@@ -40,6 +59,19 @@ export function StatusLine({ exchange, error, sending = false }: StatusLineProps
         title={error.message}
       >
         <span className="font-medium">{error.code}</span> · {error.message}
+      </p>
+    );
+  }
+  if (exchange === undefined && live !== undefined) {
+    // Not a live region: it changes with every event, and a screen reader would read each one.
+    return (
+      <p data-testid="rest-response-status" className="truncate px-2 font-mono text-xs text-fg-muted">
+        {live.status !== undefined && (
+          <span className={`font-medium ${statusToneClass(live.status)}`}>{live.status}</span>
+        )}
+        {live.status !== undefined && ' · '}
+        {streamCountsText(live.counts.events, liveLastEventId(live))}
+        {live.counts.bytes > 0 && ` · ${formatBytes(live.counts.bytes)}`}
       </p>
     );
   }
@@ -69,6 +101,12 @@ export function StatusLine({ exchange, error, sending = false }: StatusLineProps
       {exchange.http.httpVersion !== undefined && ` · HTTP/${exchange.http.httpVersion}`}
       {exchange.methodChanged && <span className="text-status-warning">{' · redirected as GET'}</span>}
       {exchange.http.truncated === true && <span className="text-status-warning">{' · truncated'}</span>}
+      {exchange.stream !== undefined &&
+        ` · ${streamCountsText(exchange.stream.counts.events, exchange.stream.lastEventId)}`}
+      {exchange.stream?.endedBy === 'client' && ' · stopped'}
+      {exchange.stream?.endedBy === 'error' && (
+        <span className="text-status-danger">{` · ended: ${exchange.stream.error ?? 'connection lost'}`}</span>
+      )}
     </p>
   );
 }

@@ -3064,6 +3064,23 @@ export const historyEntrySchema = z.object({
       error: z.string().optional(),
     })
     .optional(),
+  /**
+   * The event-stream record of a REST send whose response was `text/event-stream`: the engine's
+   * `HistorySse`, capped the way a WebSocket session's frames are.
+   */
+  sse: z
+    .object({
+      rows: z.array(sseRowWireSchema),
+      counts: z.object({ events: z.number(), comments: z.number(), retries: z.number(), bytes: z.number() }),
+      lastEventId: z.string(),
+      endedBy: z.enum(['server', 'client', 'error']),
+      error: z.string().optional(),
+      /** Set only when the cap actually trimmed something (rows, or just a payload). */
+      truncated: z.boolean().optional(),
+      /** Every row missing from `rows` compared to the live stream. */
+      omittedRows: z.number().optional(),
+    })
+    .optional(),
   sizeBytes: z.number(),
   tags: z.array(z.string()).optional(),
 });
