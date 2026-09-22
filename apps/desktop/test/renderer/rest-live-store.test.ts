@@ -65,6 +65,14 @@ function startSend(): Promise<void> {
   return useExchangesStore.getState().sendRest('rest-1');
 }
 
+/** Starts a send and opens its event stream, as main's `open` event does once headers arrive. */
+function startStream(): string {
+  void startSend();
+  const sendId = sendIdOf();
+  live({ kind: 'open', sendId, status: 200, headers: { 'content-type': 'text/event-stream' } });
+  return sendId;
+}
+
 describe('applyRestLive', () => {
   it('appends each row to the send it belongs to, in arrival order', () => {
     void startSend();
@@ -81,8 +89,7 @@ describe('applyRestLive', () => {
   });
 
   it('keeps running counts as rows arrive', () => {
-    void startSend();
-    const sendId = sendIdOf();
+    const sendId = startStream();
 
     live({ kind: 'row', sendId, row: row({ index: 0, kind: 'event', size: 4 }) });
     live({ kind: 'row', sendId, row: { kind: 'comment', index: 1, at: 1, size: 2, text: ': ping' } });
@@ -97,8 +104,7 @@ describe('applyRestLive', () => {
   });
 
   it('drops the oldest rows past WS_LIVE_FRAME_LIMIT, keeping the running counts rising', () => {
-    void startSend();
-    const sendId = sendIdOf();
+    const sendId = startStream();
 
     for (let index = 0; index < WS_LIVE_FRAME_LIMIT + 10; index += 1) {
       live({ kind: 'row', sendId, row: row({ index, size: 1 }) });
@@ -111,8 +117,7 @@ describe('applyRestLive', () => {
   });
 
   it('ignores a row whose index is already at the tail, whatever hands it over', () => {
-    void startSend();
-    const sendId = sendIdOf();
+    const sendId = startStream();
     const one = row({ index: 0, size: 3 });
 
     live({ kind: 'row', sendId, row: one });
@@ -128,8 +133,7 @@ describe('applyRestLive', () => {
     await useExchangesStore.getState().sendRest('rest-1');
     const first = sendIdOf();
 
-    void startSend();
-    const second = sendIdOf();
+    const second = startStream();
     expect(second).not.toBe(first);
 
     live({ kind: 'row', sendId: first, row: row({ data: 'stale' }) });
@@ -151,7 +155,7 @@ describe('applyRestLive', () => {
   });
 
   it('ignores an event for a send no request is running', () => {
-    void startSend();
+    startStream();
     live({ kind: 'row', sendId: 'nobody-is-listening', row: row() });
 
     expect(useExchangesStore.getState().restByRequest['rest-1']?.live?.rows).toEqual([]);
@@ -162,6 +166,78 @@ describe('applyRestLive', () => {
     await useExchangesStore.getState().sendRest('rest-1');
 
     expect(useExchangesStore.getState().restByRequest['rest-1']?.live).toBeUndefined();
+  });
+});
+
+describe('the live half exists only for an event stream', () => {
+  it('is absent on a plain send until main says a stream opened', () => {
+    void startSend();
+    const sendId = sendIdOf();
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.live).toBeUndefined();
+
+    // A row before `open` has nothing to land in.
+    live({ kind: 'row', sendId, row: row() });
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.live).toBeUndefined();
+
+    live({ kind: 'open', sendId, status: 200, headers: {} });
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.live).toEqual({
+      status: 200,
+      headers: {},
+      rows: [],
+      counts: { events: 0, comments: 0, retries: 0, bytes: 0 },
+    });
+  });
+
+  it('is not created by an open for another send', () => {
+    void startSend();
+    live({ kind: 'open', sendId: 'someone-else', status: 200, headers: {} });
+    expect(useExchangesStore.getState().restByRequest['rest-1']?.live).toBeUndefined();
+  });
+});
+
+describe('cancelOpenRestSends', () => {
+  it('cancels every send still in flight and leaves a finished one alone', async () => {
+    const sendId = startStream();
+    useExchangesStore.setState((state) => ({
+      restByRequest: { ...state.restByRequest, 'rest-2': { status: 'done', sendId: 'finished' } },
+    }));
+
+    await useExchangesStore.getState().cancelOpenRestSends();
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith({ sendId });
+  });
+
+  it('cancels only the requests it was given', async () => {
+    const sendId = startStream();
+
+    await useExchangesStore.getState().cancelOpenRestSends(['rest-other']);
+    expect(cancel).not.toHaveBeenCalled();
+
+    await useExchangesStore.getState().cancelOpenRestSends(['rest-1']);
+    expect(cancel).toHaveBeenCalledWith({ sendId });
+  });
+});
+
+describe('an open send does not outlive what replaces or removes it', () => {
+  it('a second send cancels the first one still in flight', () => {
+    const first = startStream();
+    void startSend();
+    expect(cancel).toHaveBeenCalledWith({ sendId: first });
+    expect(sendIdOf()).not.toBe(first);
+  });
+
+  it('clearing the request cancels its send in flight', () => {
+    const sendId = startStream();
+    useExchangesStore.getState().clearRestRequest('rest-1');
+    expect(cancel).toHaveBeenCalledWith({ sendId });
+    expect(useExchangesStore.getState().restByRequest['rest-1']).toBeUndefined();
+  });
+
+  it('clearing a finished request cancels nothing', async () => {
+    await useExchangesStore.getState().sendRest('rest-1');
+    useExchangesStore.getState().clearRestRequest('rest-1');
+    expect(cancel).not.toHaveBeenCalled();
   });
 });
 

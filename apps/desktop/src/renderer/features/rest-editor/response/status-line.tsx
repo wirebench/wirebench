@@ -89,8 +89,16 @@ export function StatusLine({ exchange, error, sending = false, live }: StatusLin
   const bodyBytes = base64ByteLength(exchange.http.bodyBase64);
   const totalBytes = base64ByteLength(exchange.http.rawResponseBase64);
 
+  // A stream's end is not news worth interrupting for — it was on screen all along — unless it
+  // failed; every other finished send is announced as it always was.
+  const announce = exchange.stream === undefined || exchange.stream.endedBy === 'error';
+
   return (
-    <p role="status" data-testid="rest-response-status" className="truncate px-2 font-mono text-xs text-fg-muted">
+    <p
+      {...(announce ? { role: 'status' } : {})}
+      data-testid="rest-response-status"
+      className="truncate px-2 font-mono text-xs text-fg-muted"
+    >
       <span className={`font-medium ${statusToneClass(exchange.http.status)}`}>
         {exchange.http.status} {exchange.http.statusText}
       </span>

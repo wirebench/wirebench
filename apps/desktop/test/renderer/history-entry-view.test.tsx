@@ -65,6 +65,14 @@ describe('an event-stream entry in History', () => {
     expect(screen.queryByLabelText('History response body')).toBeNull();
   });
 
+  it('says the stream ended on an error, in the summary line', () => {
+    useHistoryStore.setState({ entries: [sseEntry({ endedBy: 'error', error: 'socket hang up' })], total: 1 });
+    render(<HistoryEntryView historyId="h-sse" />);
+    const line = screen.getByTestId('sse-history-status').textContent ?? '';
+    expect(line).toContain('ended: socket hang up');
+    expect(line).not.toContain('stopped');
+  });
+
   it('says how many rows from the middle were not kept, from the record', () => {
     useHistoryStore.setState({ entries: [sseEntry({ truncated: true, omittedRows: 1234 })], total: 1 });
     render(<HistoryEntryView historyId="h-sse" />);

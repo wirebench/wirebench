@@ -375,6 +375,14 @@ export interface ExchangesStore extends ExchangesSnapshot {
   /** Folds one `rest.live` event into the send whose event-stream response it belongs to. */
   readonly applyRestLive: (event: RestLiveEvent) => void;
   /**
+   * Cancels every REST send still in flight (`sending`), or only those of `requestIds`. The REST
+   * counterpart of {@link closeOpenWsSessions}: an event stream holds its socket until stopped, so
+   * leaving a workspace or removing a project must not leave one running behind it.
+   *
+   * The sends are read synchronously, so a caller may reset the store straight after.
+   */
+  readonly cancelOpenRestSends: (requestIds?: readonly string[]) => Promise<void>;
+  /**
    * Makes one gRPC call, the request and its unsaved draft named; main resolves everything else.
    * `interactive` keeps the request side open afterwards, for {@link pushGrpcMessage} and
    * {@link halfCloseGrpc}; without it the call is written and half-closed at once, as before.
@@ -829,13 +837,19 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       useProblemsStore.getState().clearSource('expansion', requestId);
       useProblemsStore.getState().clearSource('send', requestId);
 
+      // A send this one replaces must not keep streaming unseen: its state is about to be dropped.
+      void get()
+        .cancelOpenRestSends([requestId])
+        .catch(() => undefined);
+
       const sendId = crypto.randomUUID();
       update((draft) => {
+        // No live half yet: only an `open` event says the response is an event stream, and a plain
+        // response must read as an ordinary send until it arrives.
         draft.restByRequest[requestId] = {
           status: 'sending',
           sendId,
           startedAt: new Date().toISOString(),
-          live: { rows: [], counts: { events: 0, comments: 0, retries: 0, bytes: 0 } },
         };
       });
 
@@ -881,6 +895,26 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       });
     },
 
+    cancelOpenRestSends: async (requestIds) => {
+      // Collected before anything is awaited: the caller may reset this state as soon as it returns.
+      const open = Object.entries(get().restByRequest).filter(
+        ([requestId, state]) =>
+          (requestIds === undefined || requestIds.includes(requestId)) &&
+          state.status === 'sending' &&
+          state.sendId !== undefined,
+      );
+      // One send refusing to cancel must not leave the rest of them running.
+      await Promise.all(
+        open.map(async ([, state]) => {
+          try {
+            await ipc().request.cancel({ sendId: state.sendId! });
+          } catch {
+            // Nothing to report: the state this cancel was tidying is being dropped anyway.
+          }
+        }),
+      );
+    },
+
     cancelRest: async (requestId) => {
       const entry = get().restByRequest[requestId];
       if (entry?.sendId === undefined) {
@@ -890,6 +924,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     clearRestRequest: (requestId) => {
+      void get()
+        .cancelOpenRestSends([requestId])
+        .catch(() => undefined);
       update((draft) => {
         delete draft.restByRequest[requestId];
       });
@@ -904,17 +941,22 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         const [, state] = found;
         // An event for a send this request has already replaced, or one whose exchange has
         // already arrived, is dropped rather than written over the newer state.
-        if (state.status !== 'sending' || state.live === undefined) {
+        if (state.status !== 'sending') {
           return;
         }
-        switch (event.kind) {
-          case 'open':
-            state.live.status = event.status;
-            state.live.headers = event.headers;
-            return;
-          case 'row':
-            pushLiveRow(state.live, event.row);
-            return;
+        if (event.kind === 'open') {
+          // The live half starts here: until main reports an event-stream response the send is an
+          // ordinary one, shown as "Sending…" with Cancel.
+          state.live = {
+            status: event.status,
+            headers: event.headers,
+            rows: [],
+            counts: { events: 0, comments: 0, retries: 0, bytes: 0 },
+          };
+          return;
+        }
+        if (state.live !== undefined) {
+          pushLiveRow(state.live, event.row);
         }
       });
     },

@@ -908,7 +908,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   const forgetRestRequest = (requestId: string): void => {
     useDraftsStore.getState().discardRestRequest(requestId);
     useEditorsStore.getState().close(`rest:${requestId}`);
-    useExchangesStore.getState().clearRequest(requestId);
+    // Also cancels a send still in flight, so a deleted request cannot leave an event stream open.
+    useExchangesStore.getState().clearRestRequest(requestId);
   };
 
   /** The gRPC counterpart of {@link forgetRestRequest}. */

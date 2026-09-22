@@ -340,6 +340,49 @@ describe('RestResponsePane with an event stream', () => {
     expect(status.getAttribute('aria-live')).toBeNull();
   });
 
+  it('offers Headers beside Events while live, from the headers the stream opened with', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane
+          requestId="rest-1"
+          state={{
+            status: 'sending',
+            sendId: 'send-1',
+            live: {
+              status: 200,
+              headers: { 'content-type': 'text/event-stream' },
+              rows: SSE_ROWS,
+              counts: { events: 1, comments: 1, retries: 0, bytes: 9 },
+            },
+          }}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Headers' }));
+    expect(screen.getByTestId('rest-response-headers').textContent).toContain('text/event-stream');
+  });
+
+  it('reads as an ordinary send until a stream opens', () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <RestResponsePane requestId="rest-1" state={{ status: 'sending', sendId: 'send-1' }} />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull();
+    expect(screen.queryByText('No events yet.')).toBeNull();
+    const status = screen.getByTestId('rest-response-status').textContent ?? '';
+    expect(status).toContain('Sending');
+    expect(status).not.toContain('events');
+  });
+
+  it('does not announce a finished stream, only one that failed', () => {
+    mount(streamExchange({ endedBy: 'server' }));
+    expect(screen.getByTestId('rest-response-status').getAttribute('role')).toBeNull();
+    cleanup();
+    mount(streamExchange({ endedBy: 'error', error: 'socket hang up' }));
+    expect(screen.getByTestId('rest-response-status').getAttribute('role')).toBe('status');
+  });
+
   it('hands Query the events document as JSON', () => {
     queryViewProps.mockReset();
     mount(streamExchange());

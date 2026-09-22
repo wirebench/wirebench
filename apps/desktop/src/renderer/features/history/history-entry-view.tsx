@@ -246,6 +246,7 @@ function SseHistoryBody({
   if (status !== undefined) parts.push(String(status));
   parts.push(streamCountsText(sse.counts.events, sse.lastEventId));
   if (sse.endedBy === 'client') parts.push('stopped');
+  if (sse.endedBy === 'error') parts.push(`ended: ${sse.error ?? 'connection lost'}`);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-row shrink-0 items-center border-b border-hairline">
@@ -253,7 +254,9 @@ function SseHistoryBody({
           {parts.join(' · ')}
         </p>
       </div>
-      {sse.error !== undefined && <p className="px-2 py-1 text-xs text-status-danger">{sse.error}</p>}
+      {sse.error !== undefined && sse.endedBy !== 'error' && (
+        <p className="px-2 py-1 text-xs text-status-danger">{sse.error}</p>
+      )}
       {sse.truncated === true && (
         <p data-testid="sse-history-truncated" role="note" className="px-2 py-1 text-xs text-status-warning">
           {sseTruncationNote(sse)}

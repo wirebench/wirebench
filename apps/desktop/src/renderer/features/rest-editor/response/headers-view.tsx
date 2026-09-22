@@ -6,13 +6,20 @@ import { Copy } from 'lucide-react';
 import { InspectorIconButton } from '../../request-editor/inspectors/inspector-strip.js';
 import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 
-export interface ResponseHeadersViewProps {
-  readonly exchange: RestExchangeSummary;
-}
+/**
+ * A finished exchange, or — while an event stream is still arriving — the headers it opened with,
+ * which are all there is before the exchange exists.
+ */
+export type ResponseHeadersViewProps =
+  | { readonly exchange: RestExchangeSummary; readonly headers?: undefined }
+  | { readonly exchange?: undefined; readonly headers: Readonly<Record<string, string>> };
 
 /** The Headers tab. */
-export function ResponseHeadersView({ exchange }: ResponseHeadersViewProps) {
-  const rawHeaders = exchange.http.rawHeaders ?? Object.entries(exchange.http.headers);
+export function ResponseHeadersView({ exchange, headers }: ResponseHeadersViewProps) {
+  const rawHeaders =
+    exchange !== undefined
+      ? (exchange.http.rawHeaders ?? Object.entries(exchange.http.headers))
+      : Object.entries(headers);
   const asText = rawHeaders.map(([name, value]) => `${name}: ${value}`).join('\n');
 
   return (

@@ -108,6 +108,10 @@ export function RestEditor({ requestId }: RestEditorProps) {
   );
 
   const onSend = useCallback(() => {
+    // Enter in the URL field reaches here too: a send already in flight is stopped, not doubled.
+    if (useExchangesStore.getState().restByRequest[requestId]?.status === 'sending') {
+      return;
+    }
     void sendRest(requestId);
   }, [sendRest, requestId]);
 

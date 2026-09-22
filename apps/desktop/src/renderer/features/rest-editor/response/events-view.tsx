@@ -111,7 +111,11 @@ export function EventsView({ rows, droppedRows, omittedRows, readOnly = false }:
     end = Math.min(visible.length, start + span);
   }
   const shown = visible.slice(start, end);
-  const selectedRow = selected === undefined ? undefined : rows.find((row) => row.index === selected);
+  // Memoised: a live stream re-renders on every row, and a linear find over thousands each time adds up.
+  const selectedRow = useMemo(
+    () => (selected === undefined ? undefined : rows.find((row) => row.index === selected)),
+    [rows, selected],
+  );
   const optionId = (index: number): string => `${idPrefix}-row-${String(index)}`;
   const activeShown = selected !== undefined && shown.some((row) => row.index === selected);
 
@@ -236,6 +240,9 @@ const EventRow = memo(function EventRow({
 }) {
   const muted = row.kind !== 'event';
   const chip = row.kind === 'event' ? row.event : row.kind;
+  // On the selection every part reads in the default foreground: the quieter tokens (and the
+  // accent) fall short of contrast on the accent-muted background.
+  const quiet = selected ? 'text-fg-default' : 'text-fg-subtle';
   return (
     <li
       id={id}
@@ -251,23 +258,25 @@ const EventRow = memo(function EventRow({
         selected ? 'bg-accent-muted text-fg-default' : 'hover:bg-surface-raised'
       }`}
     >
-      <span className="w-20 shrink-0 text-fg-subtle">{formatFrameTime(row.at)}</span>
+      <span className={`w-20 shrink-0 ${quiet}`}>{formatFrameTime(row.at)}</span>
       <span
         data-testid="sse-row-chip"
         className={`max-w-32 shrink-0 truncate rounded-sm border px-1 text-2xs ${
-          muted ? 'border-hairline-strong text-fg-subtle' : 'border-hairline-strong text-accent'
+          selected
+            ? 'border-hairline-strong text-fg-default'
+            : muted
+              ? 'border-hairline-strong text-fg-subtle'
+              : 'border-hairline-strong text-accent'
         }`}
       >
         {chip}
       </span>
       {row.kind === 'event' && row.id !== undefined && (
-        <span className="max-w-24 shrink-0 truncate text-fg-subtle" title={`id ${row.id}`}>
+        <span className={`max-w-24 shrink-0 truncate ${quiet}`} title={`id ${row.id}`}>
           {row.id}
         </span>
       )}
-      <span className={`min-w-0 flex-1 truncate ${muted ? 'text-fg-subtle' : 'text-fg-default'}`}>
-        {rowPreview(row)}
-      </span>
+      <span className={`min-w-0 flex-1 truncate ${muted ? quiet : 'text-fg-default'}`}>{rowPreview(row)}</span>
     </li>
   );
 });

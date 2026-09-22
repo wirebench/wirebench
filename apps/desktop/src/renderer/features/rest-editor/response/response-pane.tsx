@@ -8,7 +8,7 @@
  * *Save response* goes through a channel that takes only the send id: the bytes stay in main and the
  * file is chosen by the user in a native dialog, exactly as a SOAP attachment's save does.
  */
-import { Suspense, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
 import { Tabs } from '../../../components/tabs.js';
@@ -57,9 +57,18 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
   const isStream = stream !== undefined || live !== undefined;
   const activeTab: TabId = isStream ? (tab === 'body' ? 'events' : tab) : tab === 'events' ? 'body' : tab;
 
+  // Built once per set of rows, not on every render of a pane that re-renders per event.
+  const queryDocument = useMemo(() => (stream !== undefined ? eventsDocument(stream.rows) : undefined), [stream]);
+  // While live only Events and the Headers the stream opened with exist; the rest need the exchange.
+  const liveTab: TabId = tab === 'headers' ? 'headers' : 'events';
+
   /** The tab counts that are worth showing before the tab is opened. */
   const available = TABS.filter((item) =>
-    live !== undefined ? item.id === 'events' : isStream ? item.id !== 'body' : item.id !== 'events',
+    live !== undefined
+      ? item.id === 'events' || item.id === 'headers'
+      : isStream
+        ? item.id !== 'body'
+        : item.id !== 'events',
   );
   const items = available.map((item) => {
     if (item.id === 'events') {
@@ -111,9 +120,13 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
 
       {live !== undefined ? (
         <>
-          <Tabs label="Response tabs" items={items} active="events" onSelect={setTab} />
+          <Tabs label="Response tabs" items={items} active={liveTab} onSelect={setTab} />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <EventsView rows={live.rows} droppedRows={live.droppedRows} />
+            {liveTab === 'events' ? (
+              <EventsView rows={live.rows} droppedRows={live.droppedRows} />
+            ) : (
+              <ResponseHeadersView headers={live.headers ?? {}} />
+            )}
           </div>
         </>
       ) : exchange === undefined ? (
@@ -149,9 +162,9 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
                 {/* The same view the SOAP response uses, over whichever document this response is:
                     XPath 3.1 covers JSON through its maps, arrays and `?` lookup, so a JSON body
                     needs no second query language. A body with no text form has nothing to query. */}
-                {stream !== undefined ? (
+                {queryDocument !== undefined ? (
                   <Suspense fallback={<p className="p-3 text-sm text-fg-subtle">Loading…</p>}>
-                    <QueryView requestId={requestId} xml={eventsDocument(stream.rows)} documentKind="json" />
+                    <QueryView requestId={requestId} xml={queryDocument} documentKind="json" />
                   </Suspense>
                 ) : exchange.text === '' ? (
                   <p className="p-3 text-sm text-fg-subtle">
