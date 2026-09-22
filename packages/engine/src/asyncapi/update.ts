@@ -80,7 +80,7 @@ function reasonsFor(
   const ca = old.channels.find((c) => c.key === a.channel);
   const cb = next.channels.find((c) => c.key === b.channel);
   const reasons: AsyncApiChangeReason[] = [];
-  if (a.channel !== b.channel || !same(ca?.address, cb?.address) || !same(ca?.parameters, cb?.parameters)) {
+  if (!same(ca?.address, cb?.address) || !same(ca?.parameters, cb?.parameters)) {
     reasons.push('address');
   }
   const keysA = a.messages.map((m) => m.key);
@@ -102,12 +102,16 @@ function reasonsFor(
 export function planAsyncApiUpdate(old: AsyncApiDocument, next: AsyncApiDocument): AsyncApiUpdatePlan {
   const oldOps = new Map(old.operations.map((o) => [o.key, o]));
   const nextOps = new Map(next.operations.map((o) => [o.key, o]));
-  const added = next.operations.filter((o) => !oldOps.has(o.key)).map(opRef);
-  const removed = old.operations.filter((o) => !nextOps.has(o.key)).map(opRef);
+  // Requests are linked by channel, so an operation that moved to another channel key is, as applying
+  // sees it, removed from the old channel's request and added to the new one's — not an address change.
+  const sameChannel = (a: AsyncApiOperation | undefined, b: AsyncApiOperation | undefined) =>
+    a !== undefined && b !== undefined && a.channel === b.channel;
+  const added = next.operations.filter((o) => !sameChannel(oldOps.get(o.key), o)).map(opRef);
+  const removed = old.operations.filter((o) => !sameChannel(o, nextOps.get(o.key))).map(opRef);
   const changed: { op: AsyncApiOpRef; reasons: AsyncApiChangeReason[] }[] = [];
   for (const b of next.operations) {
     const a = oldOps.get(b.key);
-    if (a === undefined) continue;
+    if (a === undefined || !sameChannel(a, b)) continue;
     const reasons = reasonsFor(old, next, a, b);
     if (reasons.length > 0) changed.push({ op: opRef(b), reasons });
   }

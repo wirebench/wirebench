@@ -100,4 +100,39 @@ describe('applyAsyncApiUpdate', () => {
     expect(again.requestsAdded).toHaveLength(0);
     expect(countRequests(again.api)).toBe(countRequests(back.api));
   });
+
+  it('a renamed channel: the plan reports what applying does (old orphaned and kept, new added)', () => {
+    const rename = (c: string) => (c === 'userChat' ? 'room' : c);
+    const renamed = {
+      ...old,
+      channels: old.channels.map((c) => ({ ...c, key: rename(c.key) })),
+      operations: old.operations.map((o) => ({ ...o, channel: rename(o.channel) })),
+    };
+    const plan = planAsyncApiUpdate(old, renamed);
+    expect(plan.removed.map((o) => [o.key, o.channel])).toEqual([
+      ['sendChat', 'userChat'],
+      ['sendChat#reply', 'userChat'],
+      ['onChat', 'userChat'],
+    ]);
+    expect(plan.added.map((o) => [o.key, o.channel])).toEqual([
+      ['sendChat', 'room'],
+      ['sendChat#reply', 'room'],
+      ['onChat', 'room'],
+    ]);
+    expect(plan.changed).toEqual([]);
+    const { api } = mapAsyncApi(old, { newId: seqIds() });
+    const result = applyAsyncApiUpdate(api, old, renamed, { newId: seqIds('n') });
+    const gone = findByChannel(result.api, 'userChat')!;
+    expect(gone.orphaned).toBe(true);
+    expect(result.requestsOrphaned).toEqual([gone.id]);
+    expect(result.requestsAdded).toEqual([findByChannel(result.api, 'room')!.id]);
+  });
+
+  it('a #reply operation on the same channel does not make a second request', () => {
+    expect(old.operations.map((o) => [o.key, o.channel])).toContainEqual(['sendChat#reply', 'userChat']);
+    const { api } = mapAsyncApi(old, { newId: seqIds() });
+    expect(wsApiRequests(api).filter((r) => r.contract?.channel === 'userChat')).toHaveLength(1);
+    const result = applyAsyncApiUpdate(api, old, next, { newId: seqIds('n') });
+    expect(wsApiRequests(result.api).filter((r) => r.contract?.channel === 'userChat')).toHaveLength(1);
+  });
 });
