@@ -28,3 +28,14 @@ export {
   type SseParser,
   type SseRow,
 } from './sse.js';
+export {
+  applyJsonFormEdit,
+  buildJsonForm,
+  toWireSchema,
+  type JsonFormEdit,
+  type JsonFormKind,
+  type JsonFormNode,
+  type JsonFormOptions,
+  type JsonFormValueType,
+} from './json-form.js';
+export type { JsonSchema, JsonValue } from './openapi/model.js';
