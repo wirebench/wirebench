@@ -1,6 +1,6 @@
 # Bearer, API-key and OAuth2 auth for SOAP owners — design
 
-Issue: #43 · Date: 2026-09-22 · Status: draft for review
+Issue: #43 · Date: 2026-09-22 · Status: implemented; evidence in `docs/success-criteria.md`, rows SC-O1–SC-O4
 
 Builds on: the REST client design (`docs/specs/2026-09-13-wirebench-rest-client-design.md`, §3.5 and the
 §15.11 amendment), ADR-0003 (project folder format), ADR-0004 (secrets outside project files),
@@ -177,8 +177,8 @@ Coordination: if another branch bumps to 5 first, this one rebases to 6 — the 
   parse unchanged, round-trip), migration 4 → 5 fixture, `effectiveAuth` matrix, `applySoapAuth` (bearer,
   custom scheme, oauth2, api-key header, api-key query with and without an existing query/fragment, caller
   `Authorization` wins, Basic/NTLM pass-through), `sendSoapRequest` against the local stub server (header
-  arrives, query arrives, `wsa:To` unchanged), `resolveSoapAuth`, `prepareSoap` (bearer resolves, OAuth2
-  refused).
+  arrives, query arrives, `wsa:To` unchanged), `resolveSoapAuth`, `prepareSoap` (bearer resolves, a
+  client-credentials token is fetched, authorization code refused).
 - Desktop unit: `authFor` returns token schemes, `send-with-history` fetches a token for OAuth2 and reports
   `prepare` failures, `soapAuthOf` + `configOf` fallback, endpoint ids indexed, wire schemas, mutation
   normaliser, `asSoapAuth`, the inspector renders `AuthFields` with six types, redaction of a query key.

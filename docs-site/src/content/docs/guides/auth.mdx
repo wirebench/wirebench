@@ -14,8 +14,7 @@ before any request-level auth applies. Every credential you type goes through th
 ## Request auth (REST and SOAP)
 
 A REST request, folder or API — and a SOAP interface, endpoint or request — can each configure
-their own auth, or inherit from whatever's above them. REST offers the full set; SOAP offers
-Basic and NTLM (plus Bearer, API key and OAuth2 at the endpoint/interface level).
+their own auth. Every scheme below is available at all six levels.
 
 | Scheme | Fields |
 | --- | --- |
@@ -28,8 +27,8 @@ Basic and NTLM (plus Bearer, API key and OAuth2 at the endpoint/interface level)
 <Steps>
 
 1. Open the request, folder or API and go to its **Auth** tab (REST) or **Auth** inspector (SOAP).
-2. Pick a type from the dropdown, or leave it on **Inherit** — REST requests and folders show
-   what they'd inherit from, right above the form.
+2. Pick a type from the dropdown, or leave it on **Inherit** (REST) or **Not configured** (SOAP)
+   — REST requests and folders show what they'd inherit from, right above the form.
 3. Fill in the fields. Anything that stores a secret (password, token, client secret) opens the
    secret entry dialog instead of a plain text box.
 
@@ -38,6 +37,24 @@ Basic and NTLM (plus Bearer, API key and OAuth2 at the endpoint/interface level)
 A SOAP request's Auth inspector also reports which level actually supplies the credentials it
 will send — its own, its endpoint's, or its interface's — so you can tell at a glance why a
 request authenticates the way it does.
+
+### SOAP: request, endpoint, interface
+
+SOAP has no **Inherit** type: the endpoint's mode decides how a request and its endpoint
+combine, and the interface's credentials apply when neither configures any. An endpoint in
+**Override** mode replaces the request's credentials with its own whenever it has some. In
+**Complement** mode, the request's own credentials come first. If both sides are Basic or NTLM,
+the endpoint fills in only the fields the request leaves blank. With any other scheme, the
+endpoint's credentials apply only when the request has none, or has **None**.
+
+A Bearer token or header API key is added to the HTTP request, next to the SOAP headers. An
+explicit `Authorization` header on the request still wins, so a request never sends two
+credentials. A query-string API key is appended to the endpoint URL; the envelope, and its
+WS-Addressing `To`, are unchanged. The key is masked everywhere Wirebench shows the URL (History,
+the HTTP log, HAR exports), and a cURL export includes it only while show-secrets is on. OAuth 2
+works as described below, with the token status panel under the fields.
+
+WS-Security is separate and combines with any of these schemes.
 
 ### Folder-level auth (REST)
 
@@ -67,6 +84,10 @@ otherwise the panel just says a token exists and when it expires.
 Turn on **Remember the refresh token** to keep a refresh token in the secret store across
 sessions, so re-opening the project doesn't force a fresh sign-in. Turning it off deletes the
 stored refresh token.
+
+The CLI runner (`wirebench run`) obtains a client-credentials token itself, for REST, gRPC and
+SOAP alike, reading the client secret from the request's environment variable. It refuses the
+authorization-code grant, since a pipeline has no browser to sign in with.
 
 ## WS-Security (SOAP)
 

@@ -833,6 +833,8 @@ untouched).
     that deserves its own review rather than a corner of the auth-UI task. **Deferred** to the roadmap entry the
     §3.5 parenthetical already pointed at; the shared form offers SOAP owners only what the format can store
     (`SOAP_AUTH_TYPES`), so nothing silently drops a token in the meantime.
+    — _Built by #43_ (2026-09-22), see `docs/specs/2026-09-22-soap-owner-auth-design.md`: all six schemes at every
+    SOAP owner, format 5.
 
 ## 16. Risks
 
