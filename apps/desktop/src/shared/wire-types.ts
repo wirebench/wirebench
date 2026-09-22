@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { MAX_SEND_ENVIRONMENTS } from './multi-env-limits.js';
 
 /** The longest URL/path an import source may carry — well past any real one, and bounded. */
 export const MAX_IMPORT_LOCATION_CHARS = 4096;
@@ -1860,8 +1861,7 @@ export const requestSendRestRequestSchema = z.object({
 });
 export type RequestSendRestRequest = z.infer<typeof requestSendRestRequestSchema>;
 
-/** The most environments one `request.sendToEnvironments` fans out to. */
-export const MAX_SEND_ENVIRONMENTS = 10;
+export { MAX_SEND_ENVIRONMENTS };
 
 /**
  * Request payload for `request.sendToEnvironments`: one saved request sent under several of the

@@ -11,7 +11,7 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
-import { MAX_SEND_ENVIRONMENTS } from '../../../shared/wire-types.js';
+import { MAX_SEND_ENVIRONMENTS } from '../../../shared/multi-env-limits.js';
 import type { EnvSelection, PickerEnvironment } from './env-picker.js';
 
 export type MultiEnvKind = 'soap' | 'rest';

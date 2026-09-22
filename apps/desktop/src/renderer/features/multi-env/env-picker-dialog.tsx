@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
-import { MAX_SEND_ENVIRONMENTS } from '../../../shared/wire-types.js';
+import { MAX_SEND_ENVIRONMENTS } from '../../../shared/multi-env-limits.js';
 import { canSend, initialSelection, pickBaseline, type EnvSelection, type PickerEnvironment } from './env-picker.js';
 
 export interface EnvPickerDialogProps {
