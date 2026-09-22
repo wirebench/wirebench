@@ -4,7 +4,8 @@
  * the pattern rules cannot know: the secret *values* main itself handed to a send.
  *
  * `GetSecret`'s masking contract says every value a host's getter returns must be masked. The
- * desktop getter (`projectSecretGetter`) records each one here with {@link recordSecretValue}, and
+ * desktop getter (`projectSecretGetter`) records each `${secret:name}` value here with
+ * {@link recordSecretValue} (auth values are masked by the rules for where they go), and
  * every helper below masks recorded values too — so a `${secret:name}` value sent in an ordinary
  * header, a URL or an envelope shows as `<redacted>` in the HTTP log and History exactly as an
  * `Authorization` header does. The set lives for the session in main only, and is never written

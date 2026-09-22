@@ -98,6 +98,10 @@ button. Review opens the list:
 **Save anyway** on a manual save doesn't keep what it found, so with *Commit on save* on, the
 commit that follows it is held.
 
+A **Pull** commits your changes first, so while they carry a possible secret it's refused with
+*Review the possible secrets in the Sync panel before pulling* — as is the pull a rejected push
+makes. Sharing a workspace commits and pushes every file, so **Share** runs the same review first.
+
 ## Conflicts
 
 When a merge leaves conflicted files, the sync banner offers **Resolve…**, which opens the

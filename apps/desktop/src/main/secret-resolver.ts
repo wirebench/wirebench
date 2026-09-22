@@ -25,8 +25,11 @@ export type SecretLookup = Pick<SecretStore, 'get' | 'findByLabel'>;
 /**
  * The `GetSecret` for sends of one project: a `secret:<name>` pseudo-ref reads the entry labelled
  * {@link secretStoreLabel} for `projectId` (nothing, with no project), any other ref reads the store
- * directly. Every value it returns is passed to `record` first — the engine's masking contract,
- * which main keeps by recording into `redact.ts`.
+ * directly. Every token value it returns is passed to `record` first — the engine's masking
+ * contract, which main keeps by recording into `redact.ts`, since a token can sit anywhere. An auth
+ * value is not recorded: it only ever goes out where the header, Basic, password and body-key rules
+ * mask it already, and masking it everywhere for the session would rewrite ordinary text on disk
+ * (a password `admin` in `/admin/users` or `"role":"admin"` in a History body).
  */
 export function projectSecretGetter(
   store: SecretLookup,
@@ -35,13 +38,14 @@ export function projectSecretGetter(
 ): GetSecret {
   return async (ref) => {
     const name = parseSecretPseudoRef(ref);
-    let value: string | undefined;
     if (name === undefined) {
-      value = await store.get(ref);
-    } else if (projectId !== undefined) {
-      const stored = await store.findByLabel(secretStoreLabel(projectId, name));
-      value = stored === undefined ? undefined : await store.get(stored);
+      return await store.get(ref);
     }
+    if (projectId === undefined) {
+      return undefined;
+    }
+    const stored = await store.findByLabel(secretStoreLabel(projectId, name));
+    const value = stored === undefined ? undefined : await store.get(stored);
     if (value !== undefined) {
       record(value);
     }

@@ -155,6 +155,21 @@ describe('useSyncStore', () => {
     expect(showToast).toHaveBeenCalledWith('No network.');
   });
 
+  it('a pull refused while a commit is held for secrets toasts why', async () => {
+    installWirebenchApi({
+      sync: {
+        pull: vi.fn().mockResolvedValue({
+          ok: false,
+          error: { code: 'sync-uncommitted', message: 'Review the possible secrets in the Sync panel before pulling.' },
+        }),
+      },
+    });
+
+    await useSyncStore.getState().pull();
+
+    expect(showToast).toHaveBeenCalledWith('Review the possible secrets in the Sync panel before pulling.');
+  });
+
   it('treats sync-no-remote and sync-stopped as expected, without a toast', async () => {
     installWirebenchApi({
       sync: {

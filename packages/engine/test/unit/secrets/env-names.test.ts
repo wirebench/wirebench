@@ -21,4 +21,11 @@ describe('secret needs', () => {
     ]);
     expect(envVariablesFor({ ref: 'sec_1' })).toEqual(['WIREBENCH_SECRET_SEC_1']);
   });
+
+  it('reads a ${secret:name} pseudo-ref from WIREBENCH_SECRET_<NAME> alone', () => {
+    expect(envVariablesFor({ ref: 'secret:demo_basic', envName: 'DEMO_BASIC' })).toEqual([
+      'WIREBENCH_SECRET_DEMO_BASIC',
+    ]);
+    expect(envVariablesFor({ ref: 'secret:demo_basic' })).toEqual(['WIREBENCH_SECRET_DEMO_BASIC']);
+  });
 });

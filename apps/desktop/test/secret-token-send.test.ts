@@ -110,11 +110,11 @@ describe('projectSecretGetter', () => {
     expect(await getterFor('p1')(ref)).toBe('fake-password-not-real');
   });
 
-  it('records every value it hands out, so the log shows it redacted', async () => {
+  it('records every token value it hands out, so the log shows it redacted', async () => {
     await store.set('fake-recorded-not-real-1', { label: secretStoreLabel('p1', 'recorded') });
-    const ref = await store.set('fake-recorded-not-real-2');
+    await store.set('fake-recorded-not-real-2', { label: secretStoreLabel('p1', 'recorded_2') });
     await getterFor('p1')('secret:recorded');
-    await getterFor('p1')(ref);
+    await getterFor('p1')('secret:recorded_2');
 
     for (const value of ['fake-recorded-not-real-1', 'fake-recorded-not-real-2']) {
       expect(redactHeaders({ 'X-Plain': `k ${value}` })).toEqual({ 'X-Plain': 'k <redacted>' });
@@ -138,6 +138,29 @@ describe('projectSecretGetter', () => {
     });
     expect(JSON.stringify(history)).not.toContain('fake-recorded-not-real');
     expect(history.request.envelopeXml).toBe('{"key":"<redacted>"}');
+  });
+
+  it('does not record an auth value, which its header, password and body-key rules already mask', async () => {
+    // A short auth password is ordinary text elsewhere: recording it would rewrite every History
+    // body and URL that happens to contain it.
+    const ref = await store.set('admin');
+    await store.set('fake-token-value-not-real', { label: secretStoreLabel('p1', 'x') });
+    expect(await getterFor('p1')(ref)).toBe('admin');
+    await getterFor('p1')('secret:x');
+
+    const history = buildRestHistoryEntry('p1', {
+      requestId: 'r1',
+      requestName: 'R',
+      apiName: 'A',
+      folderPath: '',
+      url: 'https://h.test/admin/users',
+      method: 'POST',
+      requestHeaders: {},
+      requestBody: '{"role":"admin","note":"fake-token-value-not-real"}',
+      durationMs: 1,
+    });
+    expect(history.request.envelopeXml).toBe('{"role":"admin","note":"<redacted>"}');
+    expect(redactUrl('https://h.test/admin/users')).toBe('https://h.test/admin/users');
   });
 });
 

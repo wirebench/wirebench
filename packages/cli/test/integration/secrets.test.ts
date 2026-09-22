@@ -130,7 +130,8 @@ describe('${secret:name} tokens', () => {
   it('exits 3 naming the variable, sending nothing, when it is unset', async () => {
     const { code, stdout, stderr } = await tokenRun({});
     expect(code).toBe(3);
-    expect(stdout + stderr).toContain('WIREBENCH_SECRET_DEMO_BASIC');
+    expect(stdout + stderr).toContain('Set WIREBENCH_SECRET_DEMO_BASIC to run "demo/secure".');
+    expect(stdout + stderr).not.toContain('WIREBENCH_SECRET_SECRET_');
     expect(demo.requests).toEqual([]);
   });
 
@@ -138,5 +139,14 @@ describe('${secret:name} tokens', () => {
     const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure']);
     expect(code).toBe(3);
     expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s+secret "demo_basic"\s+demo\/secure/);
+  });
+
+  it('secrets list does not count a variable the run never reads as set', async () => {
+    // WIREBENCH_SECRET_SECRET_DEMO_BASIC is what the pseudo-ref would map to by the ref rule.
+    const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure'], {
+      WIREBENCH_SECRET_SECRET_DEMO_BASIC: credential,
+    });
+    expect(code).toBe(3);
+    expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s/);
   });
 });

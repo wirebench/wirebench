@@ -202,9 +202,12 @@ async function requireSecret(ref: string | undefined, getSecret: GetSecret): Pro
   return value;
 }
 
-/** The message for a `secret-missing` error on a `${secret:name}` token with no value on this machine. */
+/**
+ * The message for a `secret-missing` error on a `${secret:name}` token with no value on this machine.
+ * There is no screen for typing a named secret's value; a save's secret review is how one is stored.
+ */
 export function secretTokenMissingMessage(name: string): string {
-  return `The secret "${name}" is not on this machine — set it in Secrets.`;
+  return `The secret "${name}" is not on this machine — put its value where the token is and choose Move to secret when you save.`;
 }
 
 /**

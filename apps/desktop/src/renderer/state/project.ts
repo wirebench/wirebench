@@ -158,6 +158,11 @@ export interface ProjectStore extends ProjectSnapshot {
    * review was cancelled and nothing was written.
    */
   readonly save: (projectId?: string, options?: SaveOptions) => Promise<boolean>;
+  /**
+   * Writes main's model of one project as it stands, leaving staged request edits staged: what a
+   * commit's secret review uses after a Move, since those edits were never reviewed.
+   */
+  readonly saveModel: (projectId: string) => Promise<void>;
   readonly noteChangedOnDisk: (projectId: string, paths: readonly string[]) => void;
   readonly dismissChangedOnDisk: (projectId: string) => void;
   /**
@@ -1075,6 +1080,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
       return true;
     },
+
+    saveModel: saveOne,
 
     noteChangedOnDisk: (projectId, paths) => {
       update((draft) => {

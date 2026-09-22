@@ -321,12 +321,13 @@ export const useSecretReviewStore = create<SecretReviewState>((set, get) => {
 /**
  * A Move rewrites the model, but a commit takes the files: each project a Move rewrote is saved
  * before the commit goes ahead, or it would carry the value the review just moved out. A failed
- * save is `cancel`, with a toast, for the same reason.
+ * save is `cancel`, with a toast, for the same reason. Only main's model is written: staged
+ * request edits were never scanned, so they stay staged rather than slip into the commit.
  */
 async function writeMoved(projectIds: readonly string[]): Promise<SecretReviewOutcome> {
   try {
     for (const projectId of projectIds) {
-      await useProjectStore.getState().save(projectId);
+      await useProjectStore.getState().saveModel(projectId);
     }
     return 'proceed';
   } catch (error) {

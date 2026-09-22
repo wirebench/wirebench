@@ -259,10 +259,12 @@ function pushUnresolved(
 /**
  * The text a resolved reference contributes to the output. When entitizing is on, the value is
  * XML-escaped — but only at the outermost reference (`outer === undefined`), so a property whose
- * value itself expands another property is escaped once rather than once per nesting level.
+ * value itself expands another property is escaped once rather than once per nesting level. A
+ * `${secret:name}` token (`scope` `Secret`) is never escaped itself: its value goes out exactly as
+ * it was stored, which for one moved out of an envelope is XML text already.
  */
-function substituted(ctx: ExpandContext, outer: OuterSpan | undefined, value: string): string {
-  return ctx.entitize && outer === undefined ? entitizeValue(value) : value;
+function substituted(ctx: ExpandContext, outer: OuterSpan | undefined, value: string, scope?: string): string {
+  return ctx.entitize && outer === undefined && scope !== 'Secret' ? entitizeValue(value) : value;
 }
 
 /**
@@ -331,7 +333,12 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
-      out += substituted(ctx, outer, expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]));
+      out += substituted(
+        ctx,
+        outer,
+        expandAt(value, depth + 1, [...stack, key], ctx, effectiveOuter, [...via, key]),
+        scope,
+      );
       continue;
     }
 

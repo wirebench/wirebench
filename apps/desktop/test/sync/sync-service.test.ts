@@ -997,6 +997,85 @@ describe('SyncService — commits held for secrets', () => {
     await expect(h.service.fetch()).resolves.toMatchObject({ held: { findings: 1 } });
   });
 
+  it('a pull while held refuses to commit the held changes, and neither merges nor releases the hold', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+
+    const error = await rejectionOf(h.service.pull());
+
+    expect(isWirebenchError(error) && error.code).toBe('sync-uncommitted');
+    expect(isWirebenchError(error) && error.message).toBe(
+      'Review the possible secrets in the Sync panel before pulling.',
+    );
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).not.toContain('merge');
+    expect(h.service.status().held).toEqual({ findings: 1 });
+  });
+
+  it('a push rejected while held does not commit the held changes to pull', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1, ahead: 1 });
+    h.backend.pushScript.push(() =>
+      Promise.reject(
+        new WirebenchError('git-failed', 'git push failed.', {
+          details: { stderr: ' ! [rejected]        HEAD -> main (fetch first)' },
+        }),
+      ),
+    );
+
+    const error = await rejectionOf(h.service.push());
+
+    expect(isWirebenchError(error) && error.code).toBe('sync-uncommitted');
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+    expect(h.backend.calls).not.toContain('merge');
+  });
+
+  it('setIdentity holds the automatic commit it retries while findings exist, then commits it on release', async () => {
+    const scans = new FakeScans();
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+    h.backend.identityValue = undefined;
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.identityNeeded).toBe(1);
+
+    // A secret was pasted and saved while the identity dialog was open.
+    scans.findings = 1;
+    await h.service.setIdentity('Ada', 'ada@example.test');
+
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    scans.findings = 0;
+    scans.change();
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+  });
+
+  it('setIdentity still retries a manual commit with its own message while findings exist', async () => {
+    const scans = new FakeScans();
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.identityValue = undefined;
+    await rejectionOf(h.service.commit('Tidy the calculator'));
+
+    scans.findings = 1;
+    await h.service.setIdentity('Ada', 'ada@example.test');
+
+    expect(h.backend.commits).toEqual(['Tidy the calculator']);
+  });
+
   it('stop() unsubscribes from scan changes', async () => {
     const scans = new FakeScans();
     const h = harness({ autoFetchSeconds: 0 }, scans.deps());

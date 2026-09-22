@@ -78,12 +78,12 @@ function stubIpc(...scans: (readonly SecretFindingWire[])[]) {
   const commit = vi.fn().mockResolvedValue({ ok: true, value: { ...STATUS, uncommitted: 0, ahead: 1 } });
   const log = vi.fn().mockResolvedValue({ ok: true, value: { entries: [] } });
   const conflicts = vi.fn().mockResolvedValue({ ok: true, value: { conflicts: [] } });
-  installWirebenchApi({
+  const api = installWirebenchApi({
     project: { save },
     secretScan: { scan, keep, move },
     sync: { commit, log, conflicts },
   });
-  return { scan, keep, move, save, commit };
+  return { api, scan, keep, move, save, commit };
 }
 
 beforeEach(() => {
@@ -160,6 +160,24 @@ describe('a manual commit reviews the open projects for secrets first', () => {
     expect(ipc.save.mock.invocationCallOrder[0]).toBeLessThan(ipc.commit.mock.invocationCallOrder[0]!);
   });
 
+  it('writes only main’s model after a Move: a staged SOAP draft is neither committed nor written', async () => {
+    const ipc = stubIpc([FINDING], []);
+    const mutate = vi.fn().mockResolvedValue({ ok: true, value: { project: projectWire() } });
+    Object.assign(ipc.api.project, { mutate });
+    useProjectStore.setState({ projectOf: { 'req-2': 'p1' } });
+    useDraftsStore.getState().stageRequest('req-2', { envelopeXml: '<unreviewed/>' });
+
+    const committing = useSyncStore.getState().commit();
+    await screen.findByRole('alertdialog');
+    await userEvent.click(screen.getByRole('button', { name: 'Move all' }));
+    await committing;
+
+    expect(ipc.save).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(useDraftsStore.getState().isRequestDirty('req-2')).toBe(true);
+    expect(ipc.commit).toHaveBeenCalledTimes(1);
+  });
+
   it('does not save a project for a Keep alone', async () => {
     const ipc = stubIpc([FINDING], []);
 
@@ -218,5 +236,34 @@ describe('the Sync panel’s held-commit banner', () => {
 
     expect((await screen.findByTestId('sync-held-banner')).textContent).toContain('Commit held — 1 possible secret');
     expect(screen.getByTestId('sync-held-banner').textContent).not.toContain('secrets');
+  });
+});
+
+describe('sharing a workspace reviews the open projects for secrets first', () => {
+  function stubShare(...scans: (readonly SecretFindingWire[])[]) {
+    const ipc = stubIpc(...scans);
+    const share = vi.fn().mockResolvedValue({ ok: true, value: { workspace: workspaceWire() } });
+    Object.assign(ipc.api.workspace, { share });
+    return { ...ipc, share };
+  }
+
+  it('shares without a dialog when nothing is found', async () => {
+    const ipc = stubShare([]);
+
+    await expect(useWorkspaceStore.getState().share('https://example.test/repo.git', 'main')).resolves.toBe(true);
+
+    expect(ipc.scan).toHaveBeenCalledWith({ projectId: 'p1' });
+    expect(ipc.share).toHaveBeenCalledWith({ remote: 'https://example.test/repo.git', branch: 'main' });
+  });
+
+  it('does not share on Cancel', async () => {
+    const ipc = stubShare([FINDING]);
+
+    const sharing = useWorkspaceStore.getState().share('https://example.test/repo.git', 'main');
+    await screen.findByRole('alertdialog');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await expect(sharing).resolves.toBe(false);
+    expect(ipc.share).not.toHaveBeenCalled();
   });
 });

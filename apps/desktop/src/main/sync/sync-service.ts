@@ -277,6 +277,10 @@ export class SyncService {
       if (pending === undefined) {
         return;
       }
+      // An automatic commit is held like any other; a manual one (its own message) goes ahead.
+      if (pending.message === undefined && (await this.holdForSecrets(pending))) {
+        return;
+      }
       try {
         await this.commitThenMaybePush(pending);
       } catch (error) {
@@ -534,6 +538,10 @@ export class SyncService {
     if (fetched.uncommitted > 0) {
       if (!this.deps.settings().commitOnSave) {
         throw new WirebenchError('sync-uncommitted', 'Commit or discard your local changes before pulling.');
+      }
+      // The commit a pull makes first is automatic too: it must not carry held secrets.
+      if (await this.holdForSecrets({ message: undefined, autosave: false, push: true })) {
+        throw new WirebenchError('sync-uncommitted', 'Review the possible secrets in the Sync panel before pulling.');
       }
       await this.commitNow(undefined, { autosave: false, push: false });
     }

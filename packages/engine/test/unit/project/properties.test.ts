@@ -435,6 +435,21 @@ describe('${secret:name} expansion', () => {
     ]);
   });
 
+  it('substitutes a secret verbatim even when entitizing, as it was stored', () => {
+    // Moved out of an envelope, the value was already XML text: escaping it again would change it.
+    const result = expand(
+      '<p>${secret:x}</p>',
+      { project: {}, global: {}, secrets: { x: 'p&amp;ss' } },
+      { entitize: true },
+    );
+    expect(result.text).toBe('<p>p&amp;ss</p>');
+  });
+
+  it('still escapes a property that holds a token once, as it did the value before the move', () => {
+    const scopes: PropertyScopes = { project: { pass: '${secret:x}' }, global: {}, secrets: { x: 'p&ss' } };
+    expect(expand('<p>${pass}</p>', scopes, { entitize: true }).text).toBe('<p>p&amp;ss</p>');
+  });
+
   it('leaves the $${secret:x} escape literal', () => {
     const result = expand('$${secret:x}', { project: {}, global: {}, secrets: { x: 'nope' } });
     expect(result.text).toBe('${secret:x}');

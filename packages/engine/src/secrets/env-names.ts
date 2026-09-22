@@ -8,6 +8,7 @@
  */
 
 import type { AuthConfig, EndpointAuth } from '../project/model.js';
+import { parseSecretPseudoRef, secretEnvName } from './secret-token.js';
 
 /** The prefix every secret-carrying environment variable name starts with. */
 export const SECRET_ENV_PREFIX = 'WIREBENCH_SECRET_';
@@ -48,9 +49,15 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
 
 /**
  * The variables a host reads for one secret, in order: the declared name, then the reference
- * itself. The reference form exists so a project nobody has annotated can still run in CI.
+ * itself. The reference form exists so a project nobody has annotated can still run in CI. A
+ * `${secret:name}` token's pseudo-ref has a stable name already, so it is read from
+ * `WIREBENCH_SECRET_<NAME>` alone.
  */
 export function envVariablesFor(secret: Pick<SecretNeed, 'ref' | 'envName'>): string[] {
+  const name = parseSecretPseudoRef(secret.ref);
+  if (name !== undefined) {
+    return [`${SECRET_ENV_PREFIX}${secretEnvName(name)}`];
+  }
   const byRef = `${SECRET_ENV_PREFIX}${secret.ref.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   return secret.envName !== undefined ? [`${SECRET_ENV_PREFIX}${secret.envName}`, byRef] : [byRef];
 }

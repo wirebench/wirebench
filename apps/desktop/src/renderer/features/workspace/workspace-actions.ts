@@ -180,11 +180,10 @@ export const workspaceActions = {
     }
   },
 
-  /** Shares the open local workspace as a git repository. `false` when main refused. */
+  /** Shares the open local workspace as a git repository. `false` when cancelled or main refused. */
   async share(remote?: string, branch?: string): Promise<boolean> {
     try {
-      await useWorkspaceStore.getState().share(remote, branch);
-      return true;
+      return await useWorkspaceStore.getState().share(remote, branch);
     } catch (error) {
       report(error, 'Could not share the workspace');
       return false;
