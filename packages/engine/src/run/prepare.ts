@@ -14,9 +14,10 @@ import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
+import { isEndpointAuth } from '../project/endpoints.js';
 import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
-import type { Attachment, AttachmentSource, EndpointAuth, Project, PropertyMap } from '../project/model.js';
+import type { Attachment, AttachmentSource, Project, PropertyMap } from '../project/model.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
@@ -248,11 +249,6 @@ function restFileResolver(context: RunContext): (source: AttachmentSource) => Pr
         );
 }
 
-/** Narrows a `SoapOwnerAuth` to the `EndpointAuth` arm (Basic/NTLM/none), as `endpoints.ts` does. */
-function isEndpointAuth(auth: ReturnType<typeof soapEffectiveAuth>): auth is EndpointAuth | undefined {
-  return auth === undefined || auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm';
-}
-
 async function prepareSoap(selected: SoapSelected, context: RunContext): Promise<PreparedSend> {
   const { iface, request } = selected;
   const resolved = resolveEndpoint(context.project, context.environmentId, iface, request);
@@ -264,7 +260,10 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   // Basic/NTLM only for now: a SOAP send applying a token scheme lands in a later task (see the
   // owner-auth design's D3/D4); a Bearer/API-key/OAuth2 owner resolves to no credentials here.
   const owner = soapEffectiveAuth(selected);
-  const auth = await resolveEndpointAuth(isEndpointAuth(owner) ? owner : undefined, context.getSecret);
+  const auth = await resolveEndpointAuth(
+    owner !== undefined && isEndpointAuth(owner) ? owner : undefined,
+    context.getSecret,
+  );
   const base = toSendInput({
     request: {
       properties: request.properties,

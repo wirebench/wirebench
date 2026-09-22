@@ -6,8 +6,12 @@
 
 import type { EndpointAuth, SoapOwnerAuth } from './model.js';
 
-/** Narrows a {@link SoapOwnerAuth} to the {@link EndpointAuth} arm (Basic/NTLM/none). */
-function isEndpointAuth(auth: SoapOwnerAuth): auth is EndpointAuth {
+/**
+ * Narrows a {@link SoapOwnerAuth} to the {@link EndpointAuth} arm (Basic/NTLM/none) — the arms
+ * with username/password fields to merge, and the ones the transport authenticates itself.
+ * Exported so every site that has to tell them from the token schemes shares one definition.
+ */
+export function isEndpointAuth(auth: SoapOwnerAuth): auth is EndpointAuth {
   return auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm';
 }
 
