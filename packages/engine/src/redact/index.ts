@@ -101,6 +101,28 @@ export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: re
 }
 
 /**
+ * Masks the query of a raw request line (`GET /calc?key=secret HTTP/1.1`) by the same rules as
+ * {@link redactUrl}, `extraParams` included. The target is usually origin-form (a path), so it is
+ * parsed against a placeholder origin and the origin taken off again. Anything that is not a
+ * request line — a response's status line, a header — is returned unchanged.
+ */
+function redactRequestLine(line: string, extraParams?: readonly string[]): string {
+  const match = /^(\S+) (\S*\?\S*) (HTTP\/\d(?:\.\d)?)$/.exec(line);
+  if (match === null) {
+    return line;
+  }
+  const [, method, target = '', version] = match;
+  const originForm = target.startsWith('/');
+  const base = 'http://request-line.invalid';
+  const url = originForm ? `${base}${target}` : target;
+  const redacted = redactUrl(url, { extraParams: extraParams ?? [] });
+  if (redacted === url) {
+    return line;
+  }
+  return `${method} ${originForm ? redacted.slice(base.length) : redacted} ${version}`;
+}
+
+/**
  * The redaction pass for a response's attachment list. Nothing in `{index, contentId,
  * contentType, size, name}` carries a secret today, so this is a copy — it exists as the one
  * call site so that when a part's `Content-Disposition` (or a signed-URL-shaped name) does need
@@ -319,7 +341,10 @@ function bodyIsMaskableText(headerBlock: string): boolean {
  * `opts.encoding` says whether `input`/the return value is `'text'` (default) or a `'base64'`
  * string, so callers can pass the wire's `rawRequestBase64`/`rawResponseBase64` straight through.
  */
-export function redactRawHttp(input: string, opts?: { show?: boolean; encoding?: 'text' | 'base64' }): string {
+export function redactRawHttp(
+  input: string,
+  opts?: { show?: boolean; encoding?: 'text' | 'base64'; extraParams?: readonly string[] },
+): string {
   if (opts?.show) {
     return input;
   }
@@ -339,7 +364,9 @@ export function redactRawHttp(input: string, opts?: { show?: boolean; encoding?:
   // Split keeping the terminators so `\r\n` and `\n` mixes survive the round trip verbatim.
   const redactedHeaderBlock = headerBlock
     .split(/(\r\n|\n)/)
-    .map((part, index) => (index % 2 === 0 ? redactHeaderLine(part) : part))
+    .map((part, index) =>
+      index === 0 ? redactRequestLine(part, opts?.extraParams) : index % 2 === 0 ? redactHeaderLine(part) : part,
+    )
     .join('');
 
   // XML first (a `wsse:Password` element), then JSON and form bodies by key. A compressed body is

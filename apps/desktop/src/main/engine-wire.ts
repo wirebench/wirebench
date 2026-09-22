@@ -200,8 +200,13 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
  * set (the session "show secrets" toggle). Nothing crossing IPC carries a real secret by
  * default: the engine's own in-memory state is never touched by this.
  */
-function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): HttpExchangeWire {
+function toHttpExchangeWire(
+  http: HttpExchange,
+  opts?: { show?: boolean; keyParams?: readonly string[] },
+): HttpExchangeWire {
   const show = opts?.show ?? false;
+  // The request line carries the query, so an API key sent in it is masked there as in `url`.
+  const urlOpts = { show, ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}) };
   return {
     status: http.status,
     statusText: http.statusText,
@@ -209,7 +214,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
     bodyBase64: toBase64(http.body),
     rawBodyBase64: toBase64(http.rawBody),
-    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { show, encoding: 'base64' }),
+    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
     httpVersion: http.httpVersion,
@@ -218,7 +223,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     redirects: http.redirects.map((redirect) => ({ ...redirect })),
     ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
-      url: http.request.url,
+      url: redactUrl(http.request.url, urlOpts),
       method: http.request.method,
       headers: redactHeaders(http.request.headers, { show }),
     },
@@ -304,7 +309,10 @@ export function toRestExchangeSummary(
     durationMs: exchange.durationMs,
     // A `RestExchange` *is* an `HttpExchange` with the decoded body added, so the same projection
     // the SOAP path uses applies to it directly.
-    http: toHttpExchangeWire(exchange, { show }),
+    http: toHttpExchangeWire(exchange, {
+      show,
+      ...(context.keyParams !== undefined ? { keyParams: context.keyParams } : {}),
+    }),
     url: redactUrl(exchange.request.url, {
       show,
       ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
