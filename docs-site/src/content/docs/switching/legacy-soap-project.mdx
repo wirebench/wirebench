@@ -34,7 +34,8 @@ the importers guide. It reads the file from disk only; a pasted copy is refused.
 | A request's username otherwise | Basic auth with the username. Preemptive stays preemptive | |
 | Project properties | Project properties with the same names and values | [Environments and properties](/wirebench/guides/environments/) |
 | Environments, with their properties and endpoint overrides | Environments with the same properties and endpoint overrides | [Endpoint overrides](/wirebench/guides/environments/#endpoint-overrides) |
-| `${#Project#name}`, `${#Global#name}`, `${#System#name}`, `${#Env#name}` | Kept as written. These scopes exist in Wirebench too | [Property syntax](/wirebench/reference/property-syntax/) |
+| `${#Project#name}` where an imported environment defines `name` | Rewritten to `${name}`, so it follows the active environment | [Property syntax](/wirebench/reference/property-syntax/) |
+| `${#Project#name}`, `${#Global#name}`, `${#System#name}`, `${#Env#name}` otherwise | Kept as written. These scopes exist in Wirebench too | [Property syntax](/wirebench/reference/property-syntax/) |
 | Scripts, on any element | Saved as they are under `imported-scripts/` in the project folder, and listed in the report. They are never run | |
 
 A request whose operation is no longer in the WSDL is kept, marked as orphaned, and noted in the
@@ -60,11 +61,11 @@ report.
 | `${#TestCase#name}`, `${#TestSuite#name}` and other scopes Wirebench doesn't have | Kept as written, but they resolve to nothing. The import does not report them; sending the request does | Change them to `${name}`, and define `name` as a property |
 | An encrypted project file | Refused | Open it in the tool that wrote it, save it without a password, and import that copy |
 
-<Aside type="caution" title="Environments and ${#Project#…}">
-Environment values are imported as environment variables. A request that reads
-`${#Project#name}` always gets the **project's** value, whichever environment is active. To make the
-request follow the environment, change the reference to `${name}` (which checks the active
-environment first) or to `${#Env#name}`.
+<Aside type="note" title="Environments and ${#Project#…}">
+A `${#Project#name}` reference is rewritten to `${name}` during import when at least one imported
+environment defines `name`, so the request follows whichever environment is active, the same as it
+did before the import. References you type after importing are not changed; write `${name}` (or
+`${#Env#name}`) yourself if you want them to follow the environment too.
 </Aside>
 
 <Aside type="caution" title="Secrets kept in properties">
