@@ -718,7 +718,7 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
+export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesIn } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
@@ -1083,6 +1083,13 @@ export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, toSendAut
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
 export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
 export type { SecretNeed } from './secrets/env-names.js';
+export {
+  SECRET_NAME_PATTERN,
+  secretEnvName,
+  secretPseudoRef,
+  secretToken,
+  parseSecretPseudoRef,
+} from './secrets/secret-token.js';
 
 export {
   REDACTED_MARKER,

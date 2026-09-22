@@ -4,6 +4,7 @@ import {
   expand,
   expandSendInput,
   hasExpansions,
+  secretNamesIn,
   type PropertyScopes,
 } from '../../../src/project/properties.js';
 import type { SoapSendInput } from '../../../src/types.js';
@@ -400,5 +401,78 @@ describe('enabledProperties', () => {
 
   it('can disable every entry', () => {
     expect(enabledProperties({ a: '1', b: '2' }, ['a', 'b'])).toEqual({});
+  });
+});
+
+describe('${secret:name} expansion', () => {
+  it('expands from scopes.secrets', () => {
+    const result = expand('${secret:billing_key}', { project: {}, global: {}, secrets: { billing_key: 's3cret' } });
+    expect(result.text).toBe('s3cret');
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('is unresolved (never empty string) when the name is absent from scopes.secrets', () => {
+    const result = expand('${secret:billing_key}', { project: {}, global: {}, secrets: {} });
+    expect(result.text).toBe('${secret:billing_key}');
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({ scope: 'Secret', name: 'billing_key', code: 'missing' }),
+    ]);
+  });
+
+  it('is unresolved when scopes.secrets is not provided at all', () => {
+    const result = expand('${secret:billing_key}', { project: {}, global: {} });
+    expect(result.text).toBe('${secret:billing_key}');
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({ scope: 'Secret', name: 'billing_key', code: 'missing' }),
+    ]);
+  });
+
+  it('is unresolved for an invalid name', () => {
+    const result = expand('${secret:has-dash}', { project: {}, global: {}, secrets: { 'has-dash': 'x' } });
+    expect(result.text).toBe('${secret:has-dash}');
+    expect(result.unresolved).toEqual([
+      expect.objectContaining({ scope: 'Secret', name: 'has-dash', code: 'missing' }),
+    ]);
+  });
+
+  it('leaves the $${secret:x} escape literal', () => {
+    const result = expand('$${secret:x}', { project: {}, global: {}, secrets: { x: 'nope' } });
+    expect(result.text).toBe('${secret:x}');
+    expect(result.unresolved).toEqual([]);
+  });
+});
+
+describe('secretNamesIn', () => {
+  it('finds a name in a literal ${secret:name} token', () => {
+    expect(secretNamesIn('Bearer ${secret:billing_key}')).toEqual(['billing_key']);
+  });
+
+  it('returns no names, and does not throw, with no scopes and no token', () => {
+    expect(secretNamesIn('plain text')).toEqual([]);
+  });
+
+  it('follows a ${name} property value that itself holds a token', () => {
+    const scopes: PropertyScopes = { project: { auth: '${secret:billing_key}' }, global: {} };
+    expect(secretNamesIn('${auth}', scopes)).toEqual(['billing_key']);
+  });
+
+  it('follows an explicit ${#Project#x} property value', () => {
+    const scopes: PropertyScopes = { project: { auth: '${secret:billing_key}' }, global: {} };
+    expect(secretNamesIn('${#Project#auth}', scopes)).toEqual(['billing_key']);
+  });
+
+  it('collects names from more than one token, de-duplicated', () => {
+    const scopes: PropertyScopes = { project: {}, global: {} };
+    expect(secretNamesIn('${secret:a} ${secret:b} ${secret:a}', scopes)).toEqual(['a', 'b']);
+  });
+
+  it('terminates on a property cycle instead of looping forever', () => {
+    const scopes: PropertyScopes = { project: { a: '${#Project#b}', b: '${#Project#a}' }, global: {} };
+    expect(secretNamesIn('${#Project#a}', scopes)).toEqual([]);
+  });
+
+  it('ignores an unresolvable property reference', () => {
+    const scopes: PropertyScopes = { project: {}, global: {} };
+    expect(secretNamesIn('${missing}', scopes)).toEqual([]);
   });
 });

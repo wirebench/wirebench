@@ -12,6 +12,7 @@
  */
 
 import { entitizeValue } from '../soap/transforms.js';
+import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import type { PropertyMap } from './model.js';
 import type { SoapSendInput } from '../types.js';
 
@@ -30,6 +31,12 @@ export interface PropertyScopes {
   readonly global: PropertyMap;
   /** Defaults to `process.env` when omitted. */
   readonly system?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Secret values keyed by name, for the `${secret:name}` token. Resolved by the caller (main
+   * from the keychain-backed store, the CLI from `WIREBENCH_SECRET_<NAME>`) and injected here so
+   * expansion itself stays synchronous and pure.
+   */
+  readonly secrets?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -105,6 +112,9 @@ function parseExpr(inner: string): ParsedExpr {
       }
     }
   }
+  if (inner.startsWith('secret:')) {
+    return { scope: 'Secret', name: inner.slice('secret:'.length) };
+  }
   return { scope: undefined, name: inner };
 }
 
@@ -120,6 +130,8 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
       return scopes.global[name];
     case 'System':
       return (scopes.system ?? process.env)[name];
+    case 'Secret':
+      return SECRET_NAME_PATTERN.test(name) ? scopes.secrets?.[name] : undefined;
     default:
       return undefined;
   }
@@ -399,6 +411,58 @@ export function expand(text: string, scopes: PropertyScopes, options?: ExpandOpt
     return true;
   });
   return { text: out, unresolved: ctx.unresolved, used };
+}
+
+/**
+ * The `secret:name` values reached from `text`: every `${secret:name}` token found directly, plus
+ * any reached by following `${name}` and `${#Scope#name}` property references whose stored value
+ * itself expands (or is) a secret token. Reuses the same tokenizer/lookup helpers as {@link expand},
+ * and is cycle-safe the same way (a visited `scope#name` is never revisited on a given path).
+ * `scopes` is optional — with none given, only literal `${secret:name}` tokens in `text` are found.
+ */
+export function secretNamesIn(text: string, scopes?: PropertyScopes): string[] {
+  const found = new Set<string>();
+
+  function visit(current: string, stack: readonly string[], depth: number): void {
+    if (depth > DEFAULT_MAX_DEPTH) {
+      return;
+    }
+    for (const token of tokenize(current)) {
+      if (token.kind !== 'expr') {
+        continue;
+      }
+      const { scope, name } = parseExpr(token.inner);
+      if (scope === 'Secret') {
+        if (SECRET_NAME_PATTERN.test(name)) {
+          found.add(name);
+        }
+        continue;
+      }
+      if (scopes === undefined) {
+        continue;
+      }
+      let value: string | undefined;
+      let key: string;
+      if (scope !== undefined) {
+        value = lookupInScope(scope, name, scopes);
+        key = `${scope}#${name}`;
+      } else {
+        const shorthand = lookupShorthand(name, scopes);
+        if (shorthand === undefined) {
+          continue;
+        }
+        value = shorthand.value;
+        key = `${shorthand.scope}#${name}`;
+      }
+      if (value === undefined || stack.includes(key)) {
+        continue;
+      }
+      visit(value, [...stack, key], depth + 1);
+    }
+  }
+
+  visit(text, [], 0);
+  return [...found];
 }
 
 /** True when `text` contains at least one (non-escaped) `${` sequence. */
