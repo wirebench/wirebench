@@ -189,6 +189,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         basePrefix={relative ? (api?.baseUrl ?? undefined) : undefined}
         baseSource={baseSourceLabel(resolved.source)}
         sending={sending}
+        live={exchange?.live !== undefined}
         onMethodChange={(method) => {
           stage({ method });
         }}
