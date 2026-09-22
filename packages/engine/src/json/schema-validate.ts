@@ -140,6 +140,8 @@ interface Budget {
   problems: JsonSchemaProblem[];
   maxProblems: number;
   stopped: boolean;
+  /** Set when the node cap (not the problem cap) is what stopped the walk. */
+  outOfNodes: boolean;
 }
 
 /** A `Budget` that shares the outer walk's node counter but collects into its own problem list —
@@ -157,7 +159,23 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
     problems: [],
     maxProblems,
     stopped: false,
+    outOfNodes: false,
   };
+}
+
+/**
+ * Tries one combinator branch. A branch that ran out of nodes proved nothing either way: the stop
+ * is carried to the outer walk (which then gives no combinator verdict) and `undefined` returned.
+ */
+function tryBranch(value: unknown, sub: unknown, path: string, budget: Budget): boolean | undefined {
+  const trial = branchBudget(budget, 1);
+  walk(value, sub, path, trial);
+  if (trial.outOfNodes) {
+    budget.stopped = true;
+    budget.outOfNodes = true;
+    return undefined;
+  }
+  return trial.problems.length === 0;
 }
 
 /** Validates `value` against `schema`, returning every problem found (bounded by `options`). */
@@ -172,6 +190,7 @@ export function validateJsonSchema(
     problems: [],
     maxProblems: options?.maxProblems ?? MAX_VALIDATE_PROBLEMS,
     stopped: false,
+    outOfNodes: false,
   };
   walk(value, schema, '', budget);
   if (budget.stopped && budget.problems.at(-1)?.keyword !== 'budget' && budget.problems.length < budget.maxProblems) {
@@ -217,6 +236,7 @@ function hasRoom(budget: Budget): boolean {
   }
   if (budget.nodes >= budget.maxNodes) {
     budget.stopped = true;
+    budget.outOfNodes = true;
     return false;
   }
   budget.nodes += 1;
@@ -441,30 +461,33 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
     }
   }
   if (Array.isArray(schema.anyOf) && !budget.stopped) {
-    const anyPasses = schema.anyOf.some((sub: unknown) => {
-      const trial = branchBudget(budget, 1);
-      walk(value, sub, path, trial);
-      return trial.problems.length === 0;
-    });
+    let anyPasses = false;
+    for (const sub of schema.anyOf as unknown[]) {
+      const passed = tryBranch(value, sub, path, budget);
+      if (passed === undefined) break;
+      if (passed) {
+        anyPasses = true;
+        break;
+      }
+    }
     if (!anyPasses && !budget.stopped) {
       report(budget, path, 'anyOf', 'value matches none of the allowed schemas');
     }
   }
   if (Array.isArray(schema.oneOf) && !budget.stopped) {
-    const matches = schema.oneOf.filter((sub: unknown) => {
-      const trial = branchBudget(budget, 1);
-      walk(value, sub, path, trial);
-      return trial.problems.length === 0;
-    }).length;
+    let matches = 0;
+    for (const sub of schema.oneOf as unknown[]) {
+      const passed = tryBranch(value, sub, path, budget);
+      if (passed === undefined) break;
+      if (passed) matches += 1;
+    }
     if (matches !== 1 && !budget.stopped) {
       report(budget, path, 'oneOf', `value matches ${matches} of the allowed schemas, not exactly one`);
     }
   }
   if (isPlainObject(schema.not) && !budget.stopped) {
-    const trial = branchBudget(budget, 1);
-    walk(value, schema.not, path, trial);
-    const notPasses = trial.problems.length === 0;
-    if (notPasses && !budget.stopped) {
+    const notPasses = tryBranch(value, schema.not, path, budget);
+    if (notPasses === true && !budget.stopped) {
       report(budget, path, 'not', 'value matches the disallowed schema');
     }
   }

@@ -96,3 +96,24 @@ describe('additionalItems', () => {
     expect(validateJsonSchema(['a', 'x'], s)[0]?.keyword).toBe('type');
   });
 });
+
+describe('a combinator branch that runs out of nodes', () => {
+  // Twenty strings: walking them against `items` costs more nodes than the budget allows.
+  const many = Array.from({ length: 20 }, () => 'x');
+  const expensive = { type: 'array', items: { type: 'string' } };
+
+  it('is neither a match nor a mismatch for oneOf: no oneOf verdict, only the budget stop', () => {
+    const problems = validateJsonSchema(many, { oneOf: [{ type: 'array' }, expensive] }, { maxNodes: 10 });
+    expect(problems.map((p) => p.keyword)).toEqual(['budget']);
+  });
+
+  it('is not a pass for anyOf: the stop is reported instead of a silent success', () => {
+    const problems = validateJsonSchema(many, { anyOf: [expensive, { type: 'string' }] }, { maxNodes: 10 });
+    expect(problems.map((p) => p.keyword)).toEqual(['budget']);
+  });
+
+  it('is not a pass for not: no not verdict, only the budget stop', () => {
+    const problems = validateJsonSchema(many, { not: expensive }, { maxNodes: 10 });
+    expect(problems.map((p) => p.keyword)).toEqual(['budget']);
+  });
+});
