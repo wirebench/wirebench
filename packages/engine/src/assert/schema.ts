@@ -1,7 +1,14 @@
 import { z } from 'zod';
+import { GRPC_STATUS_NAMES } from '../grpc/status.js';
 
 const name = z.string().min(1).optional();
-const statusValue = z.union([z.number().int().min(100).max(599), z.string().regex(/^[1-5]xx$/)]);
+const grpcStatusNames = Object.values(GRPC_STATUS_NAMES) as [string, ...string[]];
+const statusValue = z.union([
+  z.number().int().min(100).max(599),
+  z.number().int().min(0).max(16),
+  z.string().regex(/^[1-5]xx$/),
+  z.enum(grpcStatusNames),
+]);
 
 const statusSchema = z.looseObject({
   type: z.literal('status'),

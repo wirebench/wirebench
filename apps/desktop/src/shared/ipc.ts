@@ -133,6 +133,7 @@ import {
   historyListRequestSchema,
   historyListResponseSchema,
   historyResendRequestSchema,
+  historyResendGrpcRequestSchema,
   globalsRemoveRequestSchema,
   globalsSetEnabledRequestSchema,
   globalsSetRequestSchema,
@@ -678,6 +679,7 @@ export const channels = {
     get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
     resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
+    resendGrpc: defineChannel('history.resendGrpc', historyResendGrpcRequestSchema, grpcExchangeSummarySchema),
   },
   xml: {
     completions: defineChannel('xml.completions', xmlCompletionsRequestSchema, xmlCompletionsResponseSchema),

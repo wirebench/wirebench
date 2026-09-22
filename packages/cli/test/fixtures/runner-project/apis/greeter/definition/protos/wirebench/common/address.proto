@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package wirebench.common;
+
+// A postal address, imported by the greeter to prove cross-file references resolve.
+message Address {
+  string city = 1;
+  string country = 2;
+}

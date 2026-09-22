@@ -182,11 +182,11 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   const { project, environment, selected } = loaded;
   const needs = secretNeedsOf(selected, project);
   const secrets = createEnvSecrets(needs, io.env);
-  const output = createMaskedReporters(
-    buildReporters(args, io),
-    () => createSecretMasker(secrets.values()),
-    (raw) => explainMissingSecret(raw, needs),
-  );
+  // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
+  // one as it arrives, and every mask built after that — they are built per result — hides it.
+  const tokens = new Set<string>();
+  const maskNow = (): ((text: string) => string) => createSecretMasker([...secrets.values(), ...tokens]);
+  const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainMissingSecret(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
 
   const controller = new AbortController();
@@ -210,6 +210,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
         insecure: args.insecure,
         proxyFor,
         signal: controller.signal,
+        onSecretValue: (value) => tokens.add(value),
       },
       {
         bail: args.bail,
@@ -221,7 +222,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   } catch (error) {
     // An unexpected failure is printed by `main`; its message must not carry a value either.
     if (error instanceof Error) {
-      error.message = createSecretMasker(secrets.values())(error.message);
+      error.message = maskNow()(error.message);
     }
     throw error;
   } finally {

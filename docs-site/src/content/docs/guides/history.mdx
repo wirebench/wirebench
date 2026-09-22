@@ -29,7 +29,23 @@ protocol badge, its name and operation, the endpoint's host, its status and its 
 
 Click the **↻** button on a row (or **Re-send** on an open entry's tab) to send it again. This
 resends the original request as recorded — it doesn't reopen the request for editing first. The
-result appears as a new History entry.
+result appears as a new History entry. SOAP and gRPC entries can be re-sent; a REST or WebSocket
+call is sent again from its request.
+
+### Re-send a gRPC call
+
+A gRPC call goes out through the request it came from, as that request is now: its target under
+the active environment, TLS, metadata and credentials. The method and the request messages come
+from the entry, so the same messages are sent even if the request's message text has changed since.
+
+- A unary or server-streaming call sends its one message. A server stream runs until the server
+  closes it.
+- A client-streaming or bidirectional call sends every message it recorded — including the ones
+  pushed while the call was open — in their original order, then closes its side. The replay
+  doesn't keep the original timing: the server receives all the messages at once, before any
+  response.
+- If the request the call came from has been deleted, the entry can't be re-sent: History keeps
+  neither the TLS identity nor the `.proto` set the call needs.
 
 ## Diff two runs
 
@@ -62,8 +78,8 @@ per-row delete — only a full clear.
 ## Limits
 
 - A REST request whose response was an event stream (see [REST](/wirebench/guides/rest-client/#event-streams))
-  is recorded with its events, capped at both ends; re-sending from History is offered for SOAP entries
-  only.
+  is recorded with its events, capped at both ends; re-sending from History is offered for SOAP and
+  gRPC entries only.
 - History is per-workspace and stored on disk, so it survives closing and reopening Wirebench.
 - Only the recorded request and response bodies are diffed or shown — History doesn't replay
   timings, connection details or raw headers; that detail lives in the HTTP Log for the session
