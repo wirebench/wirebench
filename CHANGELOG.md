@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Bearer, API-key and OAuth2 auth for SOAP.** A SOAP interface, endpoint or request can now use any
+  of the auth schemes a REST owner can: Basic, NTLM, a Bearer token, an API key in a header or the
+  query string, or OAuth2 (client credentials, or authorization code with PKCE), with the token
+  status panel under the fields. Tokens and header keys go on the HTTP request beside the SOAP
+  headers, and an explicit `Authorization` header still wins. A query key is appended to the endpoint
+  URL and masked in History, the HTTP log and HAR. Secrets stay references into the keychain, as
+  for REST. `wirebench run` resolves the new schemes too, including a client-credentials token. The
+  request's Auth inspector is now the shared form, so a request holding a token scheme opens as that
+  scheme. See [`docs/specs/2026-09-22-soap-owner-auth-design.md`](docs/specs/2026-09-22-soap-owner-auth-design.md).
+
+  **Project format moves to version 5.** A Basic/NTLM-only project loads, sends and saves exactly as
+  before, apart from the version stamp. But because this format drops unknown keys on save,
+  **saving a project with this version writes `formatVersion: 5`, and an older Wirebench refuses
+  to open it** (`format-too-new`).
+
 - **Snapshot regression.** A SOAP or REST response can be saved as a snapshot, a golden file
   (`<Request>.golden.yaml`) beside the request. The response pane's new **Snapshot** tab compares every later
   response with it by meaning: JSON by key and index with numbers by value, XML by namespace and local name

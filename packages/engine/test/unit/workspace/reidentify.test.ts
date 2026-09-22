@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { reidentifyProject } from '../../../src/workspace/reidentify.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import type { Project } from '../../../src/project/model.js';
+import type { Project, SoapOwnerAuth } from '../../../src/project/model.js';
 import { fixedIds, sampleProject } from '../project/fixture.js';
 
 /** Every entity id in `project`, in the order `reidentifyProject` visits them. */
@@ -30,22 +30,30 @@ function allIds(project: Project): string[] {
   return ids;
 }
 
+/** `passwordRef`, present only on the Basic/NTLM arm of {@link SoapOwnerAuth}. */
+function passwordRefOf(auth: SoapOwnerAuth | undefined): string | undefined {
+  return auth?.type === 'basic' || auth?.type === 'ntlm' ? auth.passwordRef : undefined;
+}
+
 /** Every string value that looks like a `secretRef`/`passwordRef`/sha256 attachment source, by path, for before/after comparison. */
 function secretValues(project: Project): string[] {
   const values: string[] = [];
   for (const iface of project.interfaces) {
-    if (iface.auth?.passwordRef !== undefined) {
-      values.push(iface.auth.passwordRef);
+    const ifaceRef = passwordRefOf(iface.auth);
+    if (ifaceRef !== undefined) {
+      values.push(ifaceRef);
     }
     for (const endpoint of iface.endpoints) {
-      if (endpoint.auth?.passwordRef !== undefined) {
-        values.push(endpoint.auth.passwordRef);
+      const endpointRef = passwordRefOf(endpoint.auth);
+      if (endpointRef !== undefined) {
+        values.push(endpointRef);
       }
     }
     for (const operation of iface.operations) {
       for (const request of operation.requests) {
-        if (request.auth?.passwordRef !== undefined) {
-          values.push(request.auth.passwordRef);
+        const requestRef = passwordRefOf(request.auth);
+        if (requestRef !== undefined) {
+          values.push(requestRef);
         }
         for (const attachment of request.attachments) {
           if (attachment.source.kind === 'cache') {

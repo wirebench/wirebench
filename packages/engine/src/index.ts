@@ -325,6 +325,7 @@ export type {
   PropertyMap,
   RequestDef,
   RequestProperties,
+  SoapOwnerAuth,
   SoapRequestDef,
   WsaConfig,
   WssRef,
@@ -346,6 +347,8 @@ export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawC
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
 export type { AppliedAuth } from './rest/auth.js';
+export { applySoapAuth } from './soap/auth.js';
+export type { SoapAppliedAuth } from './soap/auth.js';
 export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
 export type { CookieMatchOptions } from './rest/cookies.js';
 export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
@@ -605,6 +608,7 @@ export {
   environmentFileSchema,
   keyValueEntrySchema,
   interfaceFileSchema,
+  soapOwnerAuthSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
@@ -724,7 +728,7 @@ export type {
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
-export { effectiveAuth } from './project/endpoints.js';
+export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
 export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
 // ---------------------------------------------------------------------------
@@ -1083,7 +1087,13 @@ export type { GrpcReflectInput, GrpcReflectedProtoSet, GrpcReflectionResult } fr
 export { GRPC_COMMAND_REDACTED, grpcToCommand } from './grpc/command.js';
 export type { GrpcToCommandOptions } from './grpc/command.js';
 
-export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, toSendAuth } from './secrets/resolve.js';
+export {
+  resolveAuthConfig,
+  resolveEndpointAuth,
+  resolveSoapAuth,
+  secretMissingMessage,
+  toSendAuth,
+} from './secrets/resolve.js';
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
 export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
 export type { SecretNeed } from './secrets/env-names.js';

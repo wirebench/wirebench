@@ -52,20 +52,30 @@ describe('AuthFields', () => {
     expect(options()?.[0]).toBe('Inherit');
   });
 
-  it('offers a SOAP owner only what the project format can persist for it', () => {
+  it('offers a SOAP owner all six schemes but never Inherit', () => {
     installWirebenchApi();
     render(<AuthFields scope="Endpoint" types={SOAP_AUTH_TYPES} auth={undefined} onChange={vi.fn()} />);
 
     const options = [...screen.getByLabelText(/authentication type/).querySelectorAll('option')].map(
       (option) => option.textContent,
     );
-    expect(options).toEqual(['Not configured', 'None', 'Basic', 'NTLM']);
+    expect(options).toEqual(['Not configured', 'None', 'Basic', 'NTLM', 'Bearer token', 'API key', 'OAuth2']);
   });
 
-  it('clears rather than corrupts when narrowing something a SOAP owner cannot hold', () => {
-    // Unreachable through the form — the offer is restricted — but the direction matters.
-    expect(asSoapAuth({ type: 'basic', username: 'ada' })).toEqual({ type: 'basic', username: 'ada' });
-    expect(asSoapAuth({ type: 'bearer', tokenRef: 'ref-1' })).toBeNull();
+  it('passes the six SOAP schemes through and maps inherit to null', () => {
+    const six: AuthConfigWire[] = [
+      { type: 'none' },
+      { type: 'basic', username: 'ada' },
+      { type: 'ntlm', domain: 'D' },
+      { type: 'bearer', tokenRef: 'ref-1' },
+      { type: 'api-key', name: 'X-Key', in: 'query', valueRef: 'ref-2' },
+      { type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t', clientId: 'c', scopes: [] },
+    ];
+    for (const auth of six) {
+      expect(asSoapAuth(auth)).toEqual(auth);
+    }
+    // Unreachable through a SOAP form — the offer has no Inherit — but the direction matters.
+    expect(asSoapAuth({ type: 'inherit' })).toBeNull();
     expect(asSoapAuth(null)).toBeNull();
   });
 

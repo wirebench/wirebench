@@ -9,10 +9,10 @@ import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type {
   AuthConfig,
-  EndpointAuth,
   Environment,
   Interface,
   Project,
+  SoapOwnerAuth,
   SoapRequestDef,
   WssRef,
 } from '../../../src/project/model.js';
@@ -25,7 +25,7 @@ import type { WsaConfigPatch } from '../../../src/wsa/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 
 interface ProjectOptions {
-  readonly soapAuth?: EndpointAuth;
+  readonly soapAuth?: SoapOwnerAuth;
   readonly endpoints?: Interface['endpoints'];
   readonly envelopeXml?: string;
   readonly soap?: Partial<SoapRequestDef>;
@@ -187,6 +187,45 @@ describe('prepareSend — SOAP', () => {
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
     });
+  });
+
+  it('resolves a bearer owner through the secret getter', async () => {
+    const project = makeProject({ soapAuth: { type: 'bearer', tokenRef: 'sec_1' } });
+    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ type: 'bearer', token: 'pw' });
+  });
+
+  it("refuses a SOAP owner's authorization-code grant the same way a REST one is refused", async () => {
+    const project = makeProject({ soapAuth: oauth('authorization-code') as SoapOwnerAuth });
+    await expect(
+      prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({
+      code: 'auth-grant-unsupported',
+      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      details: { path: soapOf(project).path },
+    });
+  });
+
+  it("sends a SOAP owner's client-credentials token, fetched with the run's timeout and masked", async () => {
+    const project = makeProject({ soapAuth: oauth('client-credentials') as SoapOwnerAuth });
+    const sent: HttpRequest[] = [];
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      soapOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        timeoutMs: 1234,
+        fetchToken: (request) => {
+          sent.push(request);
+          return Promise.resolve(tokenExchange('tok-s'));
+        },
+        onSecretValue: (value) => seen.push(value),
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-s' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ url: 'https://auth.test/token', timeoutMs: 1234 });
+    expect(seen).toContain('tok-s');
   });
 
   it('refuses a request with no endpoint anywhere', async () => {

@@ -106,6 +106,9 @@ export interface ProjectRouter {
   /** The credentials configured on one API, folder or REST request — its own, not its chain's. */
   restAuthOf(...args: Parameters<ProjectHost['restAuthOf']>): ReturnType<ProjectHost['restAuthOf']>;
 
+  /** The credentials configured on one SOAP interface, endpoint or request — its own, not its effective ones. */
+  soapAuthOf(...args: Parameters<ProjectHost['soapAuthOf']>): ReturnType<ProjectHost['soapAuthOf']>;
+
   /** What History names a REST send by: the request, its API, and its folder path. */
   restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
   restContractFor(...args: Parameters<ProjectHost['restContractFor']>): ReturnType<ProjectHost['restContractFor']>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { effectiveAuth } from '../../../src/project/endpoints.js';
-import type { EndpointAuth } from '../../../src/project/model.js';
+import type { EndpointAuth, SoapOwnerAuth } from '../../../src/project/model.js';
 
 const NONE: EndpointAuth = { type: 'none' };
 const REQUEST: EndpointAuth = { type: 'basic', username: 'req', passwordRef: 'ref-req', preemptive: true };
@@ -77,3 +77,42 @@ describe('effectiveAuth', () => {
 function describeAuth(auth: EndpointAuth | undefined): string {
   return auth === undefined ? 'undefined' : auth.type === 'none' ? 'none' : `basic(${auth.username ?? ''})`;
 }
+
+describe('effectiveAuth with token schemes', () => {
+  const BEARER: SoapOwnerAuth = { type: 'bearer', tokenRef: 'tok' };
+  const API_KEY: SoapOwnerAuth = { type: 'api-key', name: 'k', in: 'header', valueRef: 'v' };
+  const OAUTH2: SoapOwnerAuth = {
+    type: 'oauth2',
+    grant: 'client-credentials',
+    tokenUrl: 'https://t',
+    clientId: 'c',
+    scopes: [],
+    clientAuth: 'body',
+    pkce: false,
+  };
+
+  it('complement: a request none takes the endpoint bearer', () => {
+    expect(effectiveAuth(NONE, BEARER, 'complement')).toEqual(BEARER);
+  });
+
+  it('complement: a request bearer beats an endpoint basic', () => {
+    expect(effectiveAuth(BEARER, ENDPOINT, 'complement')).toEqual(BEARER);
+  });
+
+  it('complement: basic over basic still merges fields', () => {
+    expect(effectiveAuth({ type: 'basic', username: 'req' }, ENDPOINT, 'complement')).toEqual({
+      type: 'basic',
+      username: 'req',
+      passwordRef: 'ref-end',
+      preemptive: false,
+    });
+  });
+
+  it('override: an endpoint api-key beats a request bearer', () => {
+    expect(effectiveAuth(BEARER, API_KEY, 'override')).toEqual(API_KEY);
+  });
+
+  it('falls back to an interface oauth2', () => {
+    expect(effectiveAuth(undefined, undefined, 'complement', OAUTH2)).toBe(OAUTH2);
+  });
+});

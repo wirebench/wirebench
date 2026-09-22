@@ -5,10 +5,12 @@
  * behaviour.
  */
 
-import { failedRequestOf, isWirebenchError } from '@wirebench/engine';
+import { failedRequestOf, isEndpointAuth, isWirebenchError, resolveSoapAuth } from '@wirebench/engine';
+import type { OAuth2Auth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
+import type { OAuth2Service } from './oauth2.js';
 import type { ProjectRouter } from './project-router.js';
 import type { PropertyScopes } from '@wirebench/engine';
 import type {
@@ -29,7 +31,8 @@ export type HistorySendProject = Pick<ProjectRouter, 'scopesFor' | 'authFor' | '
   // the secret store, which is why it cannot live on the synchronous send input.
   // `proxyFor` is optional for the same reason, and async besides: resolving the proxy password
   // means a round trip to the OS keychain.
-  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor'>>;
+  // `tlsFor` is optional too: it only feeds the OAuth2 token request, which then uses the defaults.
+  Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor' | 'tlsFor'>>;
 
 /** Dependencies for {@link sendAndRecordHistory}. */
 export interface SendWithHistoryDeps {
@@ -49,6 +52,13 @@ export interface SendWithHistoryDeps {
    * caller can broadcast `exchange.failed`. Omitted in tests that don't care.
    */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
+  /**
+   * The app's OAuth2 token service, for a SOAP owner configured with OAuth2. Omitted in tests
+   * that never send one, which then send no token rather than quietly obtaining one.
+   */
+  readonly oauth2?: Pick<OAuth2Service, 'accessToken'>;
+  /** Resolves the client secret and remembered refresh token an OAuth2 token request needs. */
+  readonly getSecret?: (ref: string) => Promise<string | undefined>;
 }
 
 /** The label used when the send's `requestId` is unknown or no longer exists. */
@@ -90,18 +100,41 @@ export async function sendAndRecordHistory(
   const requestId = request.requestId;
   const owner = requestId === undefined ? undefined : deps.project.projectId(requestId);
   const auth = requestId !== undefined ? deps.project.authFor(requestId) : undefined;
+  // The one query parameter an API key may travel in, so the URL is masked wherever it is shown
+  // or stored even when the key is called something the redactor has never heard of.
+  const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : undefined;
   const attachments = requestId !== undefined ? deps.project.sendAttachmentsFor?.(requestId) : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;
   let proxy: Awaited<ReturnType<NonNullable<HistorySendProject['proxyFor']>>> | undefined;
+  let accessToken: string | undefined;
   try {
     wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
     // Resolved per send rather than per session: the exclude list is evaluated against *this*
     // URL, and a system proxy can change under the app while it is running.
     proxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, request.input.endpoint);
+    // Obtained here rather than in the engine service, as for REST: it needs a browser, a loopback
+    // listener and a cache. A grant that would have to open a window refuses instead, and the user
+    // presses *Get new token*. Same TLS and proxy as the send itself.
+    if (auth?.type === 'oauth2' && deps.oauth2 !== undefined && requestId !== undefined) {
+      const tls = await deps.project.tlsFor?.(requestId);
+      accessToken = await deps.oauth2.accessToken(auth, {
+        credentials: await oauth2Credentials(deps, auth),
+        ...(tls !== undefined ? { tls: withoutUndefined(tls) } : {}),
+        ...(proxy !== undefined ? { proxy: withoutUndefined(proxy) } : {}),
+      });
+    }
+    // A token scheme whose reference points at nothing is refused here, before the wire, so it is
+    // a `prepare` row rather than a send History records — the same place REST refuses one. The
+    // engine service resolves again for the send; Basic/NTLM keep their own, unchanged path.
+    if (auth !== undefined && !isEndpointAuth(auth) && deps.getSecret !== undefined) {
+      const getSecret = deps.getSecret;
+      await resolveSoapAuth(auth, (ref) => getSecret(ref), accessToken !== undefined ? { accessToken } : {});
+    }
   } catch (error) {
-    // Before the request was built: the WS-Security password or the proxy lookup failed. The row
-    // says it never went on the wire; History is not written (nothing was sent).
+    // Before the request was built: the WS-Security password, the proxy lookup or the OAuth2
+    // token request failed. The row says it never went on the wire; History is not written
+    // (nothing was sent).
     reportSendFailed(deps.onSendFailed, () =>
       failedExchangeOf({
         sendId: request.sendId,
@@ -114,6 +147,7 @@ export async function sendAndRecordHistory(
         durationMs: Date.now() - prepareStartedAt,
         error,
         stage: 'prepare',
+        keyParams,
       }),
     );
     throw error;
@@ -124,6 +158,8 @@ export async function sendAndRecordHistory(
       scopes: requestId === undefined ? (deps.adHocScopes?.() ?? EMPTY_SCOPES) : deps.project.scopesFor(requestId),
       showSecrets: deps.showSecrets?.get() ?? false,
       ...(auth !== undefined ? { auth } : {}),
+      ...(accessToken !== undefined ? { accessToken } : {}),
+      ...(keyParams !== undefined ? { keyParams } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
       ...(wss !== undefined ? { wss } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
@@ -148,10 +184,36 @@ export async function sendAndRecordHistory(
         durationMs,
         error,
         captured: failedRequestOf(error),
+        keyParams,
       }),
     );
     throw error;
   }
+}
+
+/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
+async function oauth2Credentials(
+  deps: SendWithHistoryDeps,
+  config: OAuth2Auth,
+): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
+  const read = async (ref: string | undefined): Promise<string | undefined> =>
+    ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
+  const clientSecret = await read(config.clientSecretRef);
+  const refreshToken = await read(config.refreshTokenRef);
+  return {
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
+    ...(refreshToken !== undefined ? { refreshToken } : {}),
+  };
+}
+
+/**
+ * Drops the keys whose value came over as `undefined`: the wire's TLS and proxy shapes allow
+ * present-and-undefined fields, the token service's (`exactOptionalPropertyTypes`) do not.
+ */
+function withoutUndefined<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
 }
 
 /**

@@ -107,3 +107,17 @@ migration is "no APIs, no folders, no REST requests" — and is rewritten at ver
 save. As before, this is **one-way**: a 1.1.0 build cannot open a project this build has saved,
 because it sees `formatVersion: 3` and refuses it with its "created by a newer version of
 Wirebench" error, whether or not the project actually holds an API.
+
+**Update (2026-09-22, token auth for SOAP owners): `formatVersion: 5`.** A SOAP interface,
+endpoint or request's `auth` field can now hold `bearer`, `api-key` or `oauth2` — previously
+offered to REST owners only — with the exact shapes `bearerAuthSchema`, `apiKeyAuthSchema` and
+`oauth2AuthSchema` already define, plaintext-secret rejection included. `inherit` stays refused at
+all three SOAP sites: a SOAP owner still has nothing above it to inherit from, so the chain stays
+request → endpoint (override/complement) → interface. The new schema
+(`soapOwnerAuthSchema`) is a plain union reusing the REST arms rather than a copy, so this policy
+statement's own rule about additive fields applies unchanged: new keys (`tokenRef`, `valueRef`,
+`clientId`, …) and new enum values on an existing field are still a breaking read for an older
+build, which would otherwise fail the narrower schema with a confusing "invalid project file"
+error instead of the clean "created by a newer version of Wirebench" one. The 4 → 5 migration is a
+stamp — no data moves, proved by a version-4 fixture whose save changes only the `formatVersion`
+line.

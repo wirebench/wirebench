@@ -11,6 +11,7 @@ import type { HttpExchange, HttpRequest } from './http/types.js';
 import { expandSendInput } from './project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
 import { sendWithAuth } from './http/auth/apply.js';
+import { applySoapAuth } from './soap/auth.js';
 import { headerValue, mergeHeaders } from './http/headers.js';
 import { charsetOf } from './soap/charset.js';
 import {
@@ -25,7 +26,7 @@ import { applyWsaHeaders, effectiveAction } from './wsa/headers.js';
 import { applyOutgoingWss } from './wss/apply.js';
 import { processIncomingWss } from './wss/incoming/index.js';
 import type { WssResult } from './wss/incoming/index.js';
-import type { AuthSummary, SoapExchange, SoapSendInput } from './types.js';
+import type { AuthSummary, SendAuth, SoapExchange, SoapSendInput } from './types.js';
 
 /**
  * Sends `input.envelopeXml` to `input.endpoint` over HTTP, computing the
@@ -79,6 +80,13 @@ export async function sendSoapRequest(
     effectiveInput = expanded.input;
     unresolved = expanded.unresolved;
   }
+
+  // Token credentials become headers or a query parameter now, after expansion so a `${token}`
+  // has resolved. The keyed endpoint is used only on the wire: WS-Addressing's `wsa:To` below
+  // keeps the configured endpoint, so an API key never lands inside the envelope.
+  const authApplied = applySoapAuth(effectiveInput.endpoint, effectiveInput.headers, effectiveInput.auth);
+  const wireEndpoint = authApplied.endpoint;
+  effectiveInput = withTransportAuth({ ...effectiveInput, headers: authApplied.headers }, authApplied.transportAuth);
 
   const problems: SoapProblem[] = [];
 
@@ -163,7 +171,7 @@ export async function sendSoapRequest(
 
   const timeoutMs = effectiveInput.timeoutMs ?? 60_000;
   const request: HttpRequest = {
-    url: effectiveInput.endpoint,
+    url: wireEndpoint,
     method: 'POST',
     headers,
     body,
@@ -241,4 +249,14 @@ export async function sendSoapRequest(
         }
       : {}),
   };
+}
+
+/** The input with `auth` replaced by only what the transport handles (Basic/NTLM), or removed. */
+function withTransportAuth(input: SoapSendInput, transportAuth: SendAuth | undefined): SoapSendInput {
+  if (transportAuth !== undefined) {
+    return { ...input, auth: transportAuth };
+  }
+  const copy: { -readonly [K in keyof SoapSendInput]: SoapSendInput[K] } = { ...input };
+  delete copy.auth;
+  return copy;
 }

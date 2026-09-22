@@ -55,6 +55,9 @@ export function registerExchangeChannels(cache: ExchangeCache, showSecrets: { ge
         details: { sendId: request.sendId },
       });
     }
-    return Promise.resolve(redactExchangeSummary(summary, { show: showSecrets.get() }));
+    const keyParams = cache.getExchange(request.sendId)?.keyParams;
+    return Promise.resolve(
+      redactExchangeSummary(summary, { show: showSecrets.get(), ...(keyParams !== undefined ? { keyParams } : {}) }),
+    );
   });
 }

@@ -46,7 +46,7 @@ import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
-import { redactHeaders, redactXml } from '../redact.js';
+import { REDACTED_MARKER, redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
@@ -197,7 +197,9 @@ export interface RequestChannelDeps {
    * configuration. Omitted in tests that never send one, which then send no token at all rather
    * than quietly obtaining one.
    */
-  readonly oauth2?: Pick<OAuth2Service, 'accessToken'>;
+  readonly oauth2?: Pick<OAuth2Service, 'accessToken'> &
+    // Read by the SOAP cURL export, which uses a cached token but never obtains one.
+    Partial<Pick<OAuth2Service, 'status'>>;
   /**
    * Resolves one keychain reference, for the client secret and the remembered refresh token an
    * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
@@ -514,17 +516,30 @@ async function curl(
   if (live === undefined) {
     throw unknownRequest(request.requestId);
   }
+  // The export applies the owner's credentials exactly as a send would (`applySoapAuth`, inside
+  // `effectiveSendInput`). An OAuth2 token is never fetched for it: one already cached is used,
+  // otherwise `Authorization` is left out and a note says so.
   const auth = deps.project.authFor(request.requestId);
+  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
   const effective = await service.effectiveSendInput(live, {
     scopes: deps.project.scopesFor(request.requestId),
     ...(auth !== undefined ? { auth } : {}),
+    ...(accessToken !== undefined ? { accessToken } : {}),
   });
   const show = deps.showSecrets?.get() ?? false;
-  const headers = redactHeaders(effective.headers ?? {}, { show });
+  const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
+  // A header API key may be called anything, so its header is masked by name as well.
+  const headerKey = auth?.type === 'api-key' && auth.in === 'header' ? auth.name.toLowerCase() : undefined;
+  const headers = Object.fromEntries(
+    Object.entries(redactHeaders(effective.headers ?? {}, { show })).map(([name, value]) => [
+      name,
+      !show && name.toLowerCase() === headerKey ? REDACTED_MARKER : value,
+    ]),
+  );
   const envelopeXml = redactXml(effective.envelopeXml, { show });
   const command = soapToCurl(
     {
-      endpoint: effective.endpoint,
+      endpoint: redactUrl(effective.endpoint, { show, extraParams: keyParams }),
       envelopeXml,
       soapVersion: effective.soapVersion,
       ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
@@ -544,6 +559,9 @@ async function curl(
   const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
     notes.push('WS-Security is not included in the cURL command.');
+  }
+  if (auth?.type === 'oauth2' && accessToken === undefined) {
+    notes.push('No OAuth2 access token is cached, so the Authorization header is not included; press Get new token.');
   }
   if (count > 0) {
     notes.push(`${String(count)} attachment(s) are not included in the cURL command.`);
@@ -924,6 +942,15 @@ async function recordRest(
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);
   }
+}
+
+/**
+ * The access token already cached for `config`, if one is still valid — never a new one. An export
+ * must not open a browser or call a token endpoint behind the user's back.
+ */
+function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
+  const status = deps.oauth2?.status?.(config, { showSecrets: true });
+  return status?.state === 'valid' ? status.token : undefined;
 }
 
 /** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
