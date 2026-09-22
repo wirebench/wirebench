@@ -56,6 +56,8 @@ import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerSnapshotChannels } from './ipc/snapshot.js';
+import { SnapshotStore } from './snapshot-store.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
@@ -443,6 +445,12 @@ void app.whenReady().then(() => {
   });
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
+  registerSnapshotChannels(
+    new SnapshotStore((requestId) => {
+      const projectId = workspaceService.projectId(requestId);
+      return projectId === undefined ? undefined : workspaceService.hostFor(projectId).savedProject();
+    }),
+  );
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerLogChannels({
     showSecrets: showSecretsFlag,

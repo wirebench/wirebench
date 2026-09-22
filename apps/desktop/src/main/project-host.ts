@@ -937,6 +937,11 @@ export class ProjectHost {
     return this.open?.project;
   }
 
+  /** The open project's model and the folder it is saved in, or `undefined` when none is open. */
+  savedProject(): { readonly project: Project; readonly dir: string } | undefined {
+    return this.open === undefined ? undefined : { project: this.open.project, dir: this.open.dir };
+  }
+
   private require(): OpenProject {
     if (this.open === undefined) {
       throw new ProjectError('no-project', 'No project is open');
