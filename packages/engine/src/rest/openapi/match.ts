@@ -41,7 +41,26 @@ function relativePath(url: string, baseUrls: readonly string[]): string {
     return url.slice(variable[0].length);
   }
   const origin = ORIGIN.exec(url);
-  return origin === null ? url : url.slice(origin[0].length);
+  const path = origin === null ? url : url.slice(origin[0].length);
+  // No base matched whole, as when the URL is sent to another host (staging, a mock) than the
+  // servers name: a base's own path prefix (`/v1`) is still not part of the operation's path.
+  const prefixes = bases
+    .map((base) => basePath(base))
+    .filter((prefix) => prefix.length > 0)
+    .sort((a, b) => b.length - a.length);
+  for (const prefix of prefixes) {
+    if (path === prefix || path.startsWith(`${prefix}/`)) {
+      return path.slice(prefix.length);
+    }
+  }
+  return path;
+}
+
+/** A base URL's path after its origin, or after a leading variable standing for one (`{scheme}://…` stays opaque). */
+function basePath(base: string): string {
+  const origin = ORIGIN.exec(base) ?? LEADING_VARIABLE.exec(base);
+  if (origin !== null) return trimSlash(base.slice(origin[0].length));
+  return base.startsWith('/') ? trimSlash(base) : '';
 }
 
 function segments(path: string): string[] {
@@ -78,7 +97,8 @@ function literalMatch(declared: readonly string[], actual: readonly string[]): n
 /**
  * The one operation `method` and `url` call. As in OpenAPI, a concrete path wins over a templated
  * one: of several matches, the one with the most literal segments; `undefined` on a tie or no match.
- * A URL whose host matches no server still matches by path, once its origin is dropped.
+ * A URL whose host matches no server still matches by path, once its origin is dropped and, if it
+ * starts with one, a server's own path prefix.
  * `baseUrls` are the API's servers and base URL; the longest one the URL starts with is stripped.
  */
 export function matchOperation(

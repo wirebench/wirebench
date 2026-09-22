@@ -71,4 +71,21 @@ describe('matchOperation', () => {
       path: '/pets',
     });
   });
+
+  it("strips a server's path prefix from a URL sent to another host", () => {
+    const bases = ['https://api.example.com/v1', 'https://{region}.example.com/v2', '/v3'];
+    expect(matchOperation(operations, 'GET', 'https://staging.example.com/v1/pets/1', bases)).toEqual({
+      method: 'get',
+      path: '/pets/{petId}',
+    });
+    expect(matchOperation(operations, 'GET', 'http://localhost:9000/v2/pets', bases)).toEqual({
+      method: 'get',
+      path: '/pets',
+    });
+    expect(matchOperation(operations, 'GET', 'http://localhost:9000/v3/stores/open', bases)).toEqual({
+      method: 'get',
+      path: '/stores/open',
+    });
+    expect(matchOperation(operations, 'GET', 'https://staging.example.com/v1x/pets', bases)).toBeUndefined();
+  });
 });
