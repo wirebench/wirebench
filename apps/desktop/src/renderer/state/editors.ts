@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { EditorLayout } from '../features/request-editor/layout.js';
+import type { EnvSendResult } from '../../shared/wire-types.js';
 
 /** Which fields the Form view shows. Owned here, not by the request pane's component state, so
  * it survives a tab switch or a remount (e.g. the pane unmounting while its tab stays open in
@@ -55,7 +56,8 @@ export interface EditorTab {
     | 'grpc-request'
     | 'grpc-api'
     | 'ws-request'
-    | 'ws-api';
+    | 'ws-api'
+    | 'env-compare';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -88,6 +90,14 @@ export interface EditorTab {
     readonly rightLabel: string;
     readonly leftXml: string;
     readonly rightXml: string;
+  };
+  /**
+   * Set when `kind` is `'env-compare'`: one multi-environment send's results and its baseline.
+   * Session only — like `diff`, the tab is never persisted.
+   */
+  readonly envCompare?: {
+    readonly baselineId: string;
+    readonly results: readonly EnvSendResult[];
   };
 }
 

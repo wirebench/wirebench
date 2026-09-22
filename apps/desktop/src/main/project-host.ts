@@ -490,10 +490,11 @@ export class ProjectHost {
     project: Project,
     iface: Interface,
     request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+    envId?: string,
   ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     if (context === undefined) {
-      return resolveEndpoint(project, project.activeEnvironmentId, iface, request);
+      return resolveEndpoint(project, envId ?? project.activeEnvironmentId, iface, request);
     }
     return resolveWorkspaceEndpoint({
       workspace: context.workspace,
@@ -502,6 +503,76 @@ export class ProjectHost {
       iface,
       request,
     });
+  }
+
+  /**
+   * Whether `envId` is absent (meaning the active environment) or names one of the open
+   * project's environments. A named environment the project lacks resolves nothing rather than
+   * silently falling back to the active one.
+   */
+  private knowsEnvironment(project: Project, envId: string | undefined): boolean {
+    if (envId === undefined) {
+      return true;
+    }
+    const context = this.workspaceContext?.();
+    const environments = context === undefined ? project.environments : context.workspace.environments;
+    return environments.some((environment) => environment.id === envId);
+  }
+
+  /**
+   * The workspace context resolution reads under `envId`. With no `envId` it is the context as
+   * it stands, so every existing caller is untouched. Inside a workspace the environments that
+   * apply are the *workspace's*, so a named `envId` is a workspace environment id: the returned
+   * context is a copy of the workspace with that environment active — the real workspace, and
+   * its active environment, are never changed. `undefined` outside a workspace.
+   */
+  private workspaceContextFor(
+    envId: string | undefined,
+  ): { readonly workspace: Workspace; readonly projectSlug: string } | undefined {
+    const context = this.workspaceContext?.();
+    if (context === undefined || envId === undefined) {
+      return context;
+    }
+    return { ...context, workspace: { ...context.workspace, activeEnvironmentId: envId } };
+  }
+
+  /**
+   * The environments a request of this project can be sent under, in order, and the active
+   * one: the workspace's when the project is open inside one (its own environments' ids mean
+   * nothing to resolution there), else the project's. What *Send to environments…* names and
+   * validates its environment ids against.
+   */
+  sendEnvironments(): { environments: { id: string; name: string }[]; activeId: string | undefined } {
+    if (this.open === undefined) {
+      return { environments: [], activeId: undefined };
+    }
+    const context = this.workspaceContext?.();
+    const source =
+      context === undefined
+        ? { environments: this.open.project.environments, activeId: this.open.project.activeEnvironmentId }
+        : { environments: context.workspace.environments, activeId: context.workspace.activeEnvironmentId };
+    return {
+      environments: [...source.environments]
+        .sort((a, b) => a.order - b.order)
+        .map((environment) => ({ id: environment.id, name: environment.name })),
+      activeId: source.activeId,
+    };
+  }
+
+  /**
+   * The URL a send of `requestId` goes to under `envId` (the active environment when absent),
+   * without changing which environment is active. `undefined` when no project is open, the
+   * request or the environment is unknown, or no endpoint resolves.
+   */
+  endpointFor(requestId: string, envId?: string): string | undefined {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    return this.resolveEndpointFor(this.open.project, location.iface, location.request, envId).url;
   }
 
   /**
@@ -544,8 +615,9 @@ export class ProjectHost {
       readonly envelopeXml?: string;
       readonly headers?: Record<string, string>;
     },
+    envId?: string,
   ): SoapSendInputWire | undefined {
-    if (this.open === undefined) {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
       return undefined;
     }
     const location = findRequest(this.open.project, requestId);
@@ -553,7 +625,7 @@ export class ProjectHost {
       return undefined;
     }
     const { iface, request } = location;
-    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request).url;
+    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request, envId).url;
     if (endpoint === undefined) {
       return undefined;
     }
@@ -767,11 +839,11 @@ export class ProjectHost {
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     if (context !== undefined) {
       // Inside a workspace the active environment is the *workspace's*, and the project
-      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`,
-      // which only ever names a project environment, has nothing to select here.
+      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`
+      // names a workspace environment here, resolved without changing the active one.
       return resolveWorkspaceScopes({
         workspace: context.workspace,
         project: this.open.project,
@@ -1442,22 +1514,22 @@ export class ProjectHost {
    * and the TLS identity is resolved separately, so the same result can feed the cURL export and
    * the preflight badge without touching the keychain.
    */
-  restSend(requestId: string, draft?: RestRequestPatchWire): RestSendResolution | undefined {
-    if (this.open === undefined) {
+  restSend(requestId: string, draft?: RestRequestPatchWire, envId?: string): RestSendResolution | undefined {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
       return undefined;
     }
     const project = this.open.project;
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     const preferences = this.prefs();
     return resolveRestSend({
       project,
       requestId,
       ...(draft !== undefined ? { draft } : {}),
-      scopes: this.scopesFor(),
+      scopes: this.scopesFor(envId),
       ...(preferences !== undefined ? { preferences } : {}),
       resolveBaseUrl: (api) =>
         context === undefined
-          ? resolveApiBaseUrl(project, project.activeEnvironmentId, api)
+          ? resolveApiBaseUrl(project, envId ?? project.activeEnvironmentId, api)
           : resolveWorkspaceApiBaseUrl({
               workspace: context.workspace,
               project,
@@ -1987,7 +2059,7 @@ export class ProjectHost {
     return { ...(ca !== undefined ? { ca: [...ca] } : {}), ...(trustInvalid ? { rejectUnauthorized: false } : {}) };
   }
 
-  async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+  async tlsFor(requestId: string, envId?: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1996,7 +2068,8 @@ export class ProjectHost {
     const ca = await this.trustAnchors();
     const trustInvalid =
       location !== undefined &&
-      this.resolveEndpointFor(this.open.project, location.iface, location.request).endpoint?.trustInvalid === true;
+      this.resolveEndpointFor(this.open.project, location.iface, location.request, envId).endpoint?.trustInvalid ===
+        true;
     if (identity === undefined && ca === undefined && !trustInvalid) {
       return undefined;
     }

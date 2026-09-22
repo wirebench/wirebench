@@ -96,6 +96,8 @@ export interface ProjectRouter {
   ): ReturnType<ProjectHost['sendAttachmentsFor']>;
   dumpFileFor(...args: Parameters<ProjectHost['dumpFileFor']>): ReturnType<ProjectHost['dumpFileFor']>;
   tlsFor(...args: Parameters<ProjectHost['tlsFor']>): ReturnType<ProjectHost['tlsFor']>;
+  /** The environments a request can be sent under: its workspace's, else its project's. */
+  sendEnvironments(requestId: string): ReturnType<ProjectHost['sendEnvironments']>;
 
   /** Resolves one REST send: base URL, expansion, credentials as refs, settings. */
   restSend(...args: Parameters<ProjectHost['restSend']>): ReturnType<ProjectHost['restSend']>;

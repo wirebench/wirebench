@@ -60,6 +60,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       generate: fail('request.generate'),
       send: fail('request.send'),
       cancel: fail('request.cancel'),
+      sendToEnvironments: fail('request.sendToEnvironments'),
       preflight: fail('request.preflight'),
       recreate: fail('request.recreate'),
       curl: fail('request.curl'),

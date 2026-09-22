@@ -30,6 +30,7 @@ import { RestBreadcrumb } from './rest-breadcrumb.js';
 import { SettingsTab } from './settings-tab.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
+import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -213,6 +214,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
           void cancelRest(requestId);
         }}
         sendShortcut={shortcutFor('rest.send', platform)}
+        menu={<SendToEnvironmentsButton requestId={requestId} kind="rest" />}
       />
 
       {layout.mode === 'tabs' ? (

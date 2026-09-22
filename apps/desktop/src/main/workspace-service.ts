@@ -2434,6 +2434,11 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  sendEnvironments(requestId: string): ReturnType<ProjectRouter['sendEnvironments']> {
+    return this.hostOfEntity(requestId).sendEnvironments();
+  }
+
+  /** @inheritdoc */
   restSend(...args: Parameters<ProjectRouter['restSend']>): ReturnType<ProjectRouter['restSend']> {
     return this.hostOfEntity(args[0]).restSend(...args);
   }
