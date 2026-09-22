@@ -242,6 +242,8 @@ function sanitize(raw: string): string {
   return /^[0-9]/.test(name) ? `_${name}` : name;
 }
 
+const BODY_FIELD = 'body field ';
+
 /**
  * The name offered for `finding`: its header, query, metadata, field or property name, sanitised
  * to `snake_case` (else a name from its rule), made unique against `taken` ignoring case with a
@@ -251,7 +253,10 @@ export function proposeSecretName(finding: SecretFinding, taken: ReadonlySet<str
   const { location } = finding;
   let source = 'name' in location ? location.name : '';
   if (source === '' && location.kind === 'rest-body' && location.field !== undefined) {
-    source = /body field (.*)$/.exec(finding.label)?.[1] ?? '';
+    // The field name ends the label (`… › body field <name>`); sliced rather than matched, so a
+    // label the project's own names make long cannot make this slow.
+    const at = finding.label.indexOf(BODY_FIELD);
+    source = at === -1 ? '' : finding.label.slice(at + BODY_FIELD.length);
   }
   const base = sanitize(source) || RULE_NAMES[finding.rule];
   const lower = new Set([...taken].map((t) => t.toLowerCase()));

@@ -203,6 +203,15 @@ describe('proposeSecretName', () => {
     ).toBe('aws_access_key');
   });
 
+  it('reads a form field name from a long label in linear time', () => {
+    const form = restProject({ body: { kind: 'form', fields: [kv('client_secret', 'FAKEs')] } });
+    const f = find(form);
+    const label = `body field ${'body field a'.repeat(50_000)}`;
+    const started = performance.now();
+    expect(proposeSecretName({ ...f, label }, new Set())).toMatch(/^body_field_a/);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
   it('de-duplicates against taken names ignoring case', () => {
     const f = find(project({ properties: { password: 'changeme' } }));
     expect(proposeSecretName(f, new Set(['PASSWORD', 'password_2']))).toBe('password_3');
