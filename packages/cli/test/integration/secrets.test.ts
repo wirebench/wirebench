@@ -1,3 +1,6 @@
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FIXTURE, runCli, startDemoServer } from './helpers.js';
 import type { DemoServer } from './helpers.js';
@@ -91,5 +94,49 @@ describe('wirebench secrets list', () => {
     const { code, stdout } = await runCli(['secrets', 'list', FIXTURE, '-e', 'local', 'demo/ok']);
     expect(code).toBe(0);
     expect(stdout).toContain('No secrets needed.');
+  });
+});
+
+describe('${secret:name} tokens', () => {
+  const credential = base64('svc:hunter2-long');
+  let dir: string;
+
+  beforeAll(async () => {
+    // The secure request, sending its credential as a header token instead of through auth.
+    dir = await mkdtemp(join(tmpdir(), 'wirebench-cli-token-'));
+    await cp(FIXTURE, dir, { recursive: true });
+    const file = join(dir, 'apis', 'demo', 'requests', 'secure.request.yaml');
+    const yaml = (await readFile(file, 'utf8')).replace(
+      /auth:\n(?: {2}.*\n)+/,
+      'auth:\n  type: none\nheaders:\n  - enabled: true\n    name: Authorization\n    value: Basic ${secret:demo_basic}\n',
+    );
+    await writeFile(file, yaml);
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const tokenRun = (env: Record<string, string>): ReturnType<typeof runCli> =>
+    runCli(['run', dir, '-e', 'local', '--var', `baseUrl=${demo.url}`, '-v', 'demo/secure'], env);
+
+  it('sends the value from WIREBENCH_SECRET_<NAME> and never prints it', async () => {
+    const { code, stdout, stderr } = await tokenRun({ WIREBENCH_SECRET_DEMO_BASIC: credential });
+    expect(code).toBe(0);
+    expect(demo.secureAuth).toEqual([`Basic ${credential}`]);
+    expect(stdout + stderr).not.toContain(credential);
+  });
+
+  it('exits 3 naming the variable, sending nothing, when it is unset', async () => {
+    const { code, stdout, stderr } = await tokenRun({});
+    expect(code).toBe(3);
+    expect(stdout + stderr).toContain('WIREBENCH_SECRET_DEMO_BASIC');
+    expect(demo.requests).toEqual([]);
+  });
+
+  it('secrets list names the variable', async () => {
+    const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure']);
+    expect(code).toBe(3);
+    expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s+secret "demo_basic"\s+demo\/secure/);
   });
 });

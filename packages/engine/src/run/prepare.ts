@@ -22,7 +22,7 @@ import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveAuthConfig, resolveEndpointAuth, toSendAuth } from '../secrets/resolve.js';
+import { resolveAuthConfig, resolveEndpointAuth, resolveSecretTokens, toSendAuth } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import { toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
@@ -32,6 +32,7 @@ import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
 import { createWssContext } from '../wss/model.js';
 import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { secretNamesInValue } from './secret-needs.js';
 import type { SelectedRequest } from './select.js';
 
 /** Everything a run supplies around the saved requests it sends. */
@@ -66,6 +67,15 @@ type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 function scopesFor(context: RunContext): PropertyScopes {
   const scopes = resolveScopes(context.project, context.environmentId, {}, process.env);
   return { ...scopes, env: { ...(scopes.env ?? {}), ...context.overrides } };
+}
+
+/**
+ * `scopes` with the value of every `${secret:name}` token `input` reaches. Each value comes from
+ * `getSecret`, so a host that masks what it hands out (the CLI's `createEnvSecrets`) masks these too.
+ */
+async function withSecrets(input: unknown, scopes: PropertyScopes, getSecret: GetSecret): Promise<PropertyScopes> {
+  const names = secretNamesInValue(input, scopes);
+  return names.length === 0 ? scopes : { ...scopes, secrets: await resolveSecretTokens(names, getSecret) };
 }
 
 function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
@@ -287,13 +297,14 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
     ...(wss !== undefined ? { wss } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   };
+  const withTokens = await withSecrets(input, scopes, context.getSecret);
   // Refused here, before the wire: the engine would report the same refs on the exchange, but by
   // then a half-expanded envelope has already been sent to somebody's service.
-  const { unresolved } = expandSendInput(input, scopes);
+  const { unresolved } = expandSendInput(input, withTokens);
   if (unresolved.length > 0) {
     throw unresolvedError(selected.path, unresolved);
   }
-  return { kind: 'soap', input, scopes };
+  return { kind: 'soap', input, scopes: withTokens };
 }
 
 async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedSend> {
@@ -329,7 +340,8 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  const { input, unresolved } = expandRestSendInput(unexpanded, scopes, {
+  const withTokens = await withSecrets(unexpanded, scopes, context.getSecret);
+  const { input, unresolved } = expandRestSendInput(unexpanded, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
   if (unresolved.length > 0) {

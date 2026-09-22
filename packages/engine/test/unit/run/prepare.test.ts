@@ -375,3 +375,47 @@ describe('prepareSend — REST', () => {
     });
   });
 });
+
+describe('prepareSend — ${secret:name} tokens', () => {
+  const tokenSecrets = (ref: string): Promise<string | undefined> =>
+    Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined);
+
+  it('expands a REST token from the getter, asking for it by pseudo-ref', async () => {
+    const project = makeProject({ restUrl: '${baseUrl}/invoices/{id}?key=${secret:billing_key}' });
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      restOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        getSecret: (ref) => {
+          seen.push(ref);
+          return tokenSecrets(ref);
+        },
+      }),
+    );
+    expect(prepared.kind === 'rest' && prepared.input.request.url).toContain('key=ghp_FAKEvalue');
+    expect(seen).toEqual(['secret:billing_key']);
+  });
+
+  it('expands a SOAP token reached through a property, and returns it in the scopes', async () => {
+    const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
+    const prepared = await prepareSend(
+      soapOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        overrides: { key: '${secret:billing_key}' },
+        getSecret: tokenSecrets,
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.scopes.secrets).toEqual({ billing_key: 'ghp_FAKEvalue' });
+  });
+
+  it('refuses a token with no value as secret-missing, naming the secret', async () => {
+    const project = makeProject({ restUrl: '${baseUrl}/x?key=${secret:nope}' });
+    await expect(prepareSend(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
+      code: 'secret-missing',
+      message: 'The secret "nope" is not on this machine — set it in Secrets.',
+      details: { ref: 'secret:nope' },
+    });
+  });
+});

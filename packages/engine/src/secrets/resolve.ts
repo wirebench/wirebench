@@ -7,6 +7,7 @@
 import { WirebenchError } from '../errors.js';
 import type { AuthConfig, EndpointAuth } from '../project/model.js';
 import type { SendAuth } from '../types.js';
+import { secretPseudoRef } from './secret-token.js';
 
 /** Turns a `secretRef` into its value. The one seam every host fills in: a keychain, or `process.env`. */
 export type GetSecret = (ref: string) => Promise<string | undefined>;
@@ -161,4 +162,35 @@ async function requireSecret(ref: string | undefined, getSecret: GetSecret): Pro
     });
   }
   return value;
+}
+
+/** The message for a `secret-missing` error on a `${secret:name}` token with no value on this machine. */
+export function secretTokenMissingMessage(name: string): string {
+  return `The secret "${name}" is not on this machine — set it in Secrets.`;
+}
+
+/**
+ * The values of the `${secret:name}` tokens a send uses, keyed by name, for `PropertyScopes.secrets`.
+ * Each name resolves through `getSecret` as the pseudo-ref `secret:<name>`; a missing one refuses
+ * the send rather than expanding to nothing.
+ *
+ * @throws WirebenchError `secret-missing`, with the pseudo-ref as `details.ref`
+ */
+export async function resolveSecretTokens(
+  names: Iterable<string>,
+  getSecret: GetSecret,
+): Promise<Record<string, string>> {
+  const values: Record<string, string> = {};
+  for (const name of names) {
+    if (Object.hasOwn(values, name)) {
+      continue;
+    }
+    const ref = secretPseudoRef(name);
+    const value = await getSecret(ref);
+    if (value === undefined) {
+      throw new WirebenchError('secret-missing', secretTokenMissingMessage(name), { details: { ref, name } });
+    }
+    values[name] = value;
+  }
+  return values;
 }

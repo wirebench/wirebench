@@ -26,4 +26,10 @@ describe('createEnvSecrets', () => {
     await secrets.getSecret('sec_demo');
     expect(secrets.values()).toEqual(['named']);
   });
+  it('reads a ${secret:name} token from WIREBENCH_SECRET_<NAME> and remembers it for masking', async () => {
+    const secrets = createEnvSecrets([], { WIREBENCH_SECRET_BILLING_KEY: 'ghp_FAKEtoken' });
+    expect(await secrets.getSecret('secret:billing_key')).toBe('ghp_FAKEtoken');
+    expect(secrets.values()).toEqual(['ghp_FAKEtoken']);
+    expect(await secrets.getSecret('secret:other')).toBeUndefined();
+  });
 });

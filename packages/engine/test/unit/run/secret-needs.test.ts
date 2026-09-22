@@ -151,3 +151,38 @@ describe('secretNeedsOf', () => {
     expect(needsOf(project({ apis: [api] }))).toEqual([]);
   });
 });
+
+describe('secretNeedsOf — ${secret:name} tokens', () => {
+  it('lists each token a request reaches, directly or through a project property, merged across requests', () => {
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      requests: [
+        createRestRequest('a', { id: 'r-a', url: '/a?k=${secret:billing_key}' }),
+        createRestRequest('b', { id: 'r-b', url: '/b?k=${key}' }),
+      ],
+    });
+    const p = { ...project({ apis: [api] }), properties: { key: '${secret:billing_key}' } };
+    const needs = needsOf(p);
+    expect(needs).toHaveLength(1);
+    expect(needs[0]).toMatchObject({
+      ref: 'secret:billing_key',
+      envName: 'BILLING_KEY',
+      purpose: 'secret "billing_key"',
+    });
+    expect(needs[0]?.usedBy).toHaveLength(2);
+  });
+
+  it('lists a SOAP envelope token beside the auth need', () => {
+    const p = project({
+      interfaces: [
+        iface(soapRequest({ envelopeXml: '<E>${secret:soap_key}</E>' }), {
+          type: 'basic',
+          username: 'svc',
+          passwordRef: 'sec_iface',
+        }),
+      ],
+    });
+    expect(needsOf(p).map((need) => need.ref)).toEqual(['secret:soap_key', 'sec_iface']);
+  });
+});
