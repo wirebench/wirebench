@@ -238,14 +238,72 @@ export interface SecretScanSessionsDeps {
   /** The host of an open project; throws for a project that is not open (`WorkspaceService.hostFor`). */
   readonly host: (projectId: string) => SecretScanHost;
   readonly store: SecretScanStore;
+  /**
+   * Suspends `projectId`'s autosave until the returned release is called (`ProjectHost.holdAutosave`);
+   * throws for a project that is not open. Without it, {@link SecretScanSessions.hold} holds nothing.
+   */
+  readonly holdAutosave?: (projectId: string) => () => void;
 }
 
 /** The {@link SecretScanSession} of every open project, made on first use and dropped on close. */
 export class SecretScanSessions {
   private readonly sessions = new Map<string, SecretScanSession>();
   private readonly listeners = new Set<() => void>();
+  /** The autosave holds a review has taken, by hold id, with the renderer that took each. */
+  private readonly holds = new Map<string, { readonly owner: number; readonly release: () => void }>();
+  private nextHold = 0;
 
   constructor(private readonly deps: SecretScanSessionsDeps) {}
+
+  /**
+   * Suspends autosave for `projectIds` while a review of them is open, so the edit a manual save
+   * just committed is not written before the person has answered; returns the id to release it by.
+   * `owner` names the renderer that asked ({@link releaseOwner} drops its holds when it goes away).
+   * All or nothing: a project that is not open throws, and the holds already taken are released.
+   */
+  hold(projectIds: readonly string[], owner: number): string {
+    const releases: (() => void)[] = [];
+    try {
+      for (const projectId of projectIds) {
+        const release = this.deps.holdAutosave?.(projectId);
+        if (release !== undefined) {
+          releases.push(release);
+        }
+      }
+    } catch (error) {
+      for (const release of releases) {
+        release();
+      }
+      throw error;
+    }
+    this.nextHold += 1;
+    const id = `hold-${this.nextHold}`;
+    this.holds.set(id, {
+      owner,
+      release: () => {
+        for (const release of releases) {
+          release();
+        }
+      },
+    });
+    return id;
+  }
+
+  /** Ends one hold: autosave resumes, and a project still dirty is written after the usual debounce. */
+  release(holdId: string): void {
+    const hold = this.holds.get(holdId);
+    this.holds.delete(holdId);
+    hold?.release();
+  }
+
+  /** Ends every hold `owner` took: its window closed, crashed or reloaded, and will never release them. */
+  releaseOwner(owner: number): void {
+    for (const [id, hold] of [...this.holds]) {
+      if (hold.owner === owner) {
+        this.release(id);
+      }
+    }
+  }
 
   /**
    * How many unkept findings `projectId` has now; 0 for a project that is not open. Makes no

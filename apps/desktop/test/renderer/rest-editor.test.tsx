@@ -285,6 +285,30 @@ describe('RestEditor', () => {
   });
 });
 
+describe('RestEditor Mod+S in the body editor', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    useDraftsStore.getState().reset();
+    useEditorsStore.getState().reset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('is a manual save, so the project is reviewed for secrets first', () => {
+    seed(restRequestWire({ body: { kind: 'raw', language: 'json', text: '{}' } }));
+    const saveRestRequest = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ saveRestRequest });
+    mount();
+    fireEvent.click(screen.getByRole('tab', { name: 'Body' }));
+
+    fireEvent.keyDown(screen.getByLabelText('Request body'), { key: 's', ctrlKey: true });
+
+    expect(saveRestRequest).toHaveBeenCalledWith('rest-1', { manual: true });
+  });
+});
+
 describe('mergeQuery', () => {
   it('takes the enabled rows from the URL and keeps the switched-off ones', () => {
     expect(

@@ -374,3 +374,55 @@ describe('SecretScanSessions', () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('SecretScanSessions autosave holds', () => {
+  function holding() {
+    const released: string[] = [];
+    const held: string[] = [];
+    const registry = new SecretScanSessions({
+      host: () => memoryHost(seeded()),
+      store: new SecretStore(dir, fakeCrypto()),
+      holdAutosave: (projectId) => {
+        if (projectId === 'closed') {
+          throw new Error('not open');
+        }
+        held.push(projectId);
+        return () => {
+          released.push(projectId);
+        };
+      },
+    });
+    return { registry, held, released };
+  }
+
+  it('holds every named project and releases them all by the id it returned', () => {
+    const { registry, held, released } = holding();
+
+    const id = registry.hold(['p1', 'p2'], 1);
+    expect(held).toEqual(['p1', 'p2']);
+    expect(released).toEqual([]);
+
+    registry.release(id);
+    registry.release(id);
+    expect(released).toEqual(['p1', 'p2']);
+  });
+
+  it('holds nothing when one project is not open', () => {
+    const { registry, released } = holding();
+
+    expect(() => registry.hold(['p1', 'closed'], 1)).toThrow('not open');
+    expect(released).toEqual(['p1']);
+  });
+
+  it('releases only the holds of the renderer that went away', () => {
+    const { registry, released } = holding();
+    registry.hold(['p1'], 1);
+    const other = registry.hold(['p2'], 2);
+
+    registry.releaseOwner(1);
+    expect(released).toEqual(['p1']);
+
+    registry.release(other);
+    expect(released).toEqual(['p1', 'p2']);
+  });
+});

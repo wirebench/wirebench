@@ -981,12 +981,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   };
 
   /**
-   * Whether a save of `projectIds` may write: always, unless it is manual — then only once the
-   * secret review says so. Called after the staged edits are committed, because main scans its
-   * own model and the edit being saved is exactly what must be in it.
+   * Runs `prepare` — committing the staged edits the save is about to write — and says whether the
+   * save may go ahead: when `prepare` did, unless the save is manual; then only once the secret
+   * review says so. A manual save hands `prepare` to the review, which runs it only once the review
+   * is sure to run: after it has taken main's autosave hold, so the committed edit is not
+   * autosaved behind the dialog, and not at all when another review is open and this one is
+   * refused — the edit then stays staged, its tab still marked unsaved. It is committed before
+   * the scan because main scans its own model and the edit being saved is exactly what must be
+   * in it.
    */
-  const reviewed = async (projectIds: readonly string[], options: SaveOptions | undefined): Promise<boolean> =>
-    options?.manual !== true || (await reviewSecrets('save', projectIds)) === 'proceed';
+  const reviewed = async (
+    projectIds: readonly string[],
+    options: SaveOptions | undefined,
+    prepare: () => Promise<boolean>,
+  ): Promise<boolean> =>
+    options?.manual === true ? (await reviewSecrets('save', projectIds, prepare)) === 'proceed' : await prepare();
 
   /**
    * The shared shape of the per-request saves: commit the request's staged edit (when it has
@@ -1001,16 +1010,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     options: SaveOptions | undefined,
   ): Promise<void> => {
     const projectId = ownerOf(requestId);
-    if (!staged) {
-      if (get().projects[projectId]?.dirty === true && (await reviewed([projectId], options))) {
-        await saveOne(projectId);
-      }
+    if (!staged && get().projects[projectId]?.dirty !== true) {
       return;
     }
-    if (!(await commit())) {
-      return;
-    }
-    if (await reviewed([projectId], options)) {
+    if (await reviewed([projectId], options, staged ? commit : () => Promise.resolve(true))) {
       await saveOne(projectId);
     }
   };
@@ -1052,12 +1055,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // main's model — which has never seen them — and every unsaved request edit is silently
       // left behind with its tab still marked. Sequentially, because each commit mutates main
       // and applies the snapshot it returns.
-      for (const requestId of useDraftsStore.getState().dirtyRequestIds()) {
-        if (ids.includes(get().projectOf[requestId] ?? '')) {
-          await get().commitRequest(requestId);
+      const commitDrafts = async (): Promise<boolean> => {
+        for (const requestId of useDraftsStore.getState().dirtyRequestIds()) {
+          if (ids.includes(get().projectOf[requestId] ?? '')) {
+            await get().commitRequest(requestId);
+          }
         }
-      }
-      if (!(await reviewed(ids, options))) {
+        return true;
+      };
+      if (!(await reviewed(ids, options, commitDrafts))) {
         return false;
       }
       // Every project is saved even when one fails, and the first failure is what the caller

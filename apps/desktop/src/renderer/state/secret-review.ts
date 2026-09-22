@@ -57,7 +57,10 @@ interface SecretReviewState {
   readonly review: SecretReview | null;
   readonly setName: (key: string, name: string) => void;
   readonly setReplace: (key: string, replace: boolean) => void;
-  /** Moves these rows' findings into the store, then re-scans. Refused while any name is invalid. */
+  /**
+   * Moves these rows' findings into the store, then re-scans. Refused while any name is invalid,
+   * or while two of these rows in one project share a name ({@link nameClashes}).
+   */
   readonly move: (keys: readonly string[]) => Promise<void>;
   readonly moveAll: () => Promise<void>;
   /** Leaves these rows' findings in place for the session, then re-scans. */
@@ -79,6 +82,20 @@ export function secretNameError(name: string): string | undefined {
 /** True when Move to `row.name` would overwrite a stored value, so the person must say so. */
 export function needsReplace(review: SecretReview, row: SecretReviewRow): boolean {
   return row.nameTaken || (review.storedNames[row.projectId] ?? []).includes(row.name);
+}
+
+/**
+ * The rows whose name another row of the same project also uses. Moving them together would store
+ * one value under the name and report the other taken — then offer to replace, overwriting the
+ * first. So the dialog flags them, and one Move call refuses to take two of them at once.
+ */
+export function nameClashes(rows: readonly SecretReviewRow[]): ReadonlySet<string> {
+  const byName = new Map<string, string[]>();
+  for (const row of rows) {
+    const name = `${row.projectId}\u0000${row.name}`;
+    byName.set(name, [...(byName.get(name) ?? []), row.key]);
+  }
+  return new Set([...byName.values()].filter((keys) => keys.length > 1).flat());
 }
 
 function rowKey(projectId: string, findingId: string): string {
@@ -221,7 +238,11 @@ export const useSecretReviewStore = create<SecretReviewState>((set, get) => {
     const review = get().review;
     const rows = review?.rows.filter((row) => keys.includes(row.key)) ?? [];
     // The buttons are disabled as well; this is the rule itself, for any other caller.
-    if (rows.length === 0 || rows.some((row) => secretNameError(row.name) !== undefined)) {
+    if (
+      rows.length === 0 ||
+      rows.some((row) => secretNameError(row.name) !== undefined) ||
+      nameClashes(rows).size > 0
+    ) {
       return;
     }
     await act(async () => {
@@ -314,29 +335,54 @@ async function writeMoved(projectIds: readonly string[]): Promise<SecretReviewOu
   }
 }
 
+/** What a refused review says: the open dialog is where the answer is still wanted. */
+export const REVIEW_OPEN_MESSAGE = 'Finish the open secret review first';
+
 /**
  * Reviews `projectIds` (every open project by default) for plain-text secrets before a manual
  * save or commit, and says whether it should go ahead.
+ *
+ * `prepare` runs once this review holds the slot, before the scan: a save commits its staged edits
+ * there, since main scans its own model. False from it is `cancel` (it has said why itself).
  *
  * Nothing found: `proceed`, with nothing shown. Otherwise the review dialog opens and this settles
  * when the person answers it. A failed scan is `cancel`, with a toast: going ahead unchecked is
  * exactly what the review is there to prevent, and the save can simply be tried again.
  *
+ * While it runs, main's autosave is held for `projectIds` (`secretScan.hold`), so the edit under
+ * review is not written behind the dialog. It is released when this settles, whatever the answer —
+ * after a Cancel the project is still dirty, and with autosave on it is written after the usual
+ * debounce: autosave writes without asking (the spec's decision 8). The hold only stops it
+ * overtaking the person's answer.
+ *
  * One review at a time. A call while another is open — or still scanning — is refused with
- * `cancel` straight away and scans nothing: the open dialog is the question on screen, and its
- * answer belongs to the save (or commit) that asked it. Folding a second caller into that answer
- * would let a "Save anyway" stand for a commit nobody reviewed.
+ * `cancel` and a toast straight away: it neither runs `prepare` nor scans, so a refused save leaves
+ * its staged edit staged and its tab marked unsaved. The open dialog is the question on screen,
+ * and its answer belongs to the save (or commit) that asked it. Folding a second caller into that
+ * answer would let a "Save anyway" stand for a commit nobody reviewed.
  */
 export async function reviewSecrets(
   mode: SecretReviewMode,
   projectIds: readonly string[] = Object.keys(useProjectStore.getState().projects),
+  prepare?: () => Promise<boolean>,
 ): Promise<SecretReviewOutcome> {
   if (active) {
+    showToast(REVIEW_OPEN_MESSAGE);
     return 'cancel';
   }
   active = true;
   moved = new Set();
+  let holdId: string | undefined;
   try {
+    try {
+      holdId = unwrap(await ipc().secretScan.hold({ projectIds: [...projectIds] })).holdId;
+    } catch (error) {
+      showToast(`Could not check for secrets: ${messageOf(error)}`);
+      return 'cancel';
+    }
+    if (prepare !== undefined && !(await prepare())) {
+      return 'cancel';
+    }
     let scanned: Scanned;
     try {
       scanned = await scan(projectIds);
@@ -362,5 +408,11 @@ export async function reviewSecrets(
     return outcome === 'proceed' && mode === 'commit' ? await writeMoved([...moved]) : outcome;
   } finally {
     active = false;
+    if (holdId !== undefined) {
+      // Best effort: main also drops the hold when this window goes away.
+      await ipc()
+        .secretScan.release({ holdId })
+        .catch(() => undefined);
+    }
   }
 }

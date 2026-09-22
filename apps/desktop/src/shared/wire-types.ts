@@ -3380,6 +3380,17 @@ export const secretScanMoveResponseSchema = z
   .object({ moved: z.array(z.string()), stale: z.array(z.string()), nameTaken: z.array(z.string()) })
   .strict();
 
+/**
+ * Request payload for `secretScan.hold`: suspend autosave for these projects while their review is
+ * open, so a manual save's edit is not written before the person answers. Released by
+ * `secretScan.release`, or by main when the window that asked goes away.
+ */
+export const secretScanHoldRequestSchema = z.object({ projectIds: z.array(z.string()) });
+export const secretScanHoldResponseSchema = z.object({ holdId: z.string() }).strict();
+/** Request payload for `secretScan.release`: autosave resumes for the held projects. */
+export const secretScanReleaseRequestSchema = z.object({ holdId: z.string() });
+export const secretScanReleaseResponseSchema = z.object({});
+
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
 

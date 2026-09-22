@@ -5,6 +5,8 @@ import { SecretReviewDialog } from '../../src/renderer/components/secret-review-
 import { reviewSecrets, useSecretReviewStore } from '../../src/renderer/state/secret-review.js';
 import type { SecretReviewOutcome } from '../../src/renderer/state/secret-review.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { wrapHandler } from '../../src/main/ipc/envelope.js';
+import { channels } from '../../src/shared/ipc.js';
 import type { SecretFindingWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
@@ -126,7 +128,7 @@ describe('reviewSecrets', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
-  it('lists each finding with its label, rule and preview — never a value', async () => {
+  it('lists each finding with its label, rule and preview', async () => {
     fakeMain([
       finding('a', 'Billing API › GET /invoices › header Authorization'),
       finding('b', 'Project property api_password', {
@@ -144,8 +146,51 @@ describe('reviewSecrets', () => {
     expect(within(first).getByText('fak… (25 chars)')).toBeTruthy();
     expect(within(first).getByRole<HTMLInputElement>('textbox').value).toBe('a_token');
     expect(within(rowFor('api_password')).getByText('Sensitive name')).toBeTruthy();
-    expect(document.body.textContent).not.toContain(FAKE_VALUE);
     expect(screen.getByRole('button', { name: 'Save anyway' })).toBeTruthy();
+  });
+
+  it('never gets a value to show: a scan answer carrying one fails the channel schema on its way out of main', async () => {
+    // The scan answer goes through main's real envelope for the real channel, as `ipcMain.handle`
+    // runs it. A session that leaked the value would be refused there, and the review cancels the
+    // save rather than open on something it cannot trust.
+    const leaky = wrapHandler(channels.secretScan.scan, () =>
+      Promise.resolve({
+        findings: [{ ...finding('a', 'header Authorization'), value: FAKE_VALUE }],
+        proposedNames: { a: 'a_token' },
+        storedNames: [],
+      }),
+    );
+    installWirebenchApi({
+      secretScan: {
+        scan: vi.fn().mockImplementation(async (request: unknown) => await leaky(request)),
+      },
+    });
+
+    await expect(reviewSecrets('save', ['p1'])).resolves.toBe('cancel');
+
+    expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/^Could not check for secrets: /));
+    expect(JSON.stringify(showToast.mock.calls)).not.toContain(FAKE_VALUE);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.body.textContent).not.toContain(FAKE_VALUE);
+  });
+
+  it('opens on the same answer once it carries only the preview', async () => {
+    const honest = wrapHandler(channels.secretScan.scan, () =>
+      Promise.resolve({
+        findings: [finding('a', 'header Authorization')],
+        proposedNames: { a: 'a_token' },
+        storedNames: [],
+      }),
+    );
+    installWirebenchApi({
+      secretScan: {
+        scan: vi.fn().mockImplementation(async (request: unknown) => await honest(request)),
+      },
+    });
+
+    await openReview();
+
+    expect(within(rowFor('header Authorization')).getByText('fak… (25 chars)')).toBeTruthy();
   });
 
   it('says "Commit anyway" when it runs before a commit', async () => {
@@ -239,6 +284,54 @@ describe('reviewSecrets', () => {
     });
   });
 
+  it('flags two rows given the same name before Move all, rather than letting the second replace the first', async () => {
+    const main = fakeMain([finding('a', 'header Authorization'), finding('b', 'header X-Api-Key')]);
+    await openReview();
+    const second = within(rowFor('header X-Api-Key')).getByRole('textbox');
+
+    await userEvent.clear(second);
+    await userEvent.type(second, 'a_token');
+
+    for (const label of ['header Authorization', 'header X-Api-Key']) {
+      expect(within(rowFor(label)).getByText(/another row uses this name/i)).toBeTruthy();
+    }
+    const moveAll = screen.getByRole<HTMLButtonElement>('button', { name: 'Move all' });
+    expect(moveAll.disabled).toBe(true);
+    await userEvent.click(moveAll);
+    await act(async () => {
+      await useSecretReviewStore.getState().moveAll();
+    });
+    expect(main.move).not.toHaveBeenCalled();
+    expect(within(rowFor('header X-Api-Key')).queryByRole('checkbox')).toBeNull();
+
+    // A different name clears it on both rows.
+    await userEvent.type(second, '_2');
+    expect(screen.queryByText(/another row uses this name/i)).toBeNull();
+    expect(moveAll.disabled).toBe(false);
+  });
+
+  it('does not count the same name in two projects as a clash', async () => {
+    const scan = vi.fn().mockImplementation((request: { projectId: string }) =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          findings: [finding(`${request.projectId}-a`, `header Authorization in ${request.projectId}`)],
+          proposedNames: { [`${request.projectId}-a`]: 'token' },
+          storedNames: [],
+        },
+      }),
+    );
+    installWirebenchApi({ secretScan: { scan } });
+
+    act(() => {
+      void reviewSecrets('save', ['p1', 'p2']);
+    });
+    await screen.findByRole('alertdialog');
+
+    expect(screen.queryByText(/another row uses this name/i)).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Move all' }).disabled).toBe(false);
+  });
+
   it('shows the replace option up front for a name this project already stores', async () => {
     fakeMain([finding('a', 'header Authorization')], { storedNames: ['a_token'] });
     await openReview();
@@ -312,6 +405,61 @@ describe('reviewSecrets', () => {
     await expect(outcome).resolves.toBe('cancel');
   });
 
+  it('announces row messages and notices politely, and describes each row button by its row', async () => {
+    const main = fakeMain([finding('a', 'header Authorization'), finding('b', 'header X-Api-Key')]);
+    main.takeName('a_token');
+    await openReview();
+    const row = rowFor('header Authorization');
+
+    for (const name of ['Move to secret', 'Keep']) {
+      const button = within(row).getByRole('button', { name });
+      const describedBy = button.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)?.textContent).toBe('header Authorization');
+    }
+
+    // The live region is there before the message, so the message is announced when it lands.
+    const status = within(row).getByRole('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toBe('');
+    await userEvent.click(within(row).getByRole('button', { name: 'Move to secret' }));
+    await waitFor(() => {
+      expect(within(rowFor('header Authorization')).getByRole('status').textContent).toMatch(
+        /already has a stored value/i,
+      );
+    });
+
+    const notices = within(screen.getByRole('alertdialog'))
+      .getAllByRole('status')
+      .filter((element) => element.closest('[data-testid="secret-review-row"]') === null);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('moves focus to the next row’s name when a row goes', async () => {
+    fakeMain([finding('a', 'header Authorization'), finding('b', 'header X-Api-Key')]);
+    await openReview();
+
+    await userEvent.click(within(rowFor('header Authorization')).getByRole('button', { name: 'Keep' }));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('secret-review-row')).toHaveLength(1);
+    });
+    expect(document.activeElement).toBe(within(rowFor('header X-Api-Key')).getByRole('textbox'));
+  });
+
+  it('moves focus to the first footer button when the last row goes', async () => {
+    fakeMain([finding('a', 'header Authorization'), finding('b', 'header X-Api-Key')]);
+    await openReview();
+
+    await userEvent.click(within(rowFor('header X-Api-Key')).getByRole('button', { name: 'Keep' }));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('secret-review-row')).toHaveLength(1);
+    });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move all' }));
+  });
+
   it('keeps focus inside the dialog while it is open', async () => {
     fakeMain([finding('a', 'header Authorization'), finding('b', 'header X-Api-Key')]);
     await openReview();
@@ -335,6 +483,7 @@ describe('reviewSecrets', () => {
 
     await expect(reviewSecrets('commit', ['p1'])).resolves.toBe('cancel');
 
+    expect(showToast).toHaveBeenCalledWith('Finish the open secret review first');
     expect(main.scan).toHaveBeenCalledTimes(1);
     expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Save anyway' })).toBeTruthy();

@@ -294,6 +294,7 @@ const workspaceService = new WorkspaceService({
 const secretScans: SecretScanSessions = new SecretScanSessions({
   host: (projectId) => workspaceService.hostFor(projectId),
   store: secretStore,
+  holdAutosave: (projectId) => workspaceService.hostFor(projectId).holdAutosave(),
 });
 
 // The product name, set before `ready` so the macOS application menu (`role: 'appMenu'`) and

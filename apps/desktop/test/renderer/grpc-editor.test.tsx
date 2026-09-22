@@ -212,6 +212,33 @@ describe('GrpcEditor', () => {
   });
 });
 
+describe('GrpcEditor Mod+S in the message editor', () => {
+  beforeEach(() => {
+    grpcDefinition.mockReset().mockResolvedValue({
+      ok: true,
+      value: { services: [GREETER], files: [], source: '/protos/greeter.proto', fetchedAt: 'now', roots: [] },
+    });
+    installWirebenchApi({ api: { grpcDefinition } });
+    useDraftsStore.getState().reset();
+    useEditorsStore.getState().reset();
+    seed();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('is a manual save, so the project is reviewed for secrets first', () => {
+    const saveGrpcRequest = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ saveGrpcRequest });
+    mount();
+
+    fireEvent.keyDown(screen.getByLabelText('Request message'), { key: 's', ctrlKey: true });
+
+    expect(saveGrpcRequest).toHaveBeenCalledWith('grpc-1', { manual: true });
+  });
+});
+
 describe('call bar helpers', () => {
   it('spells a method as its path and finds it back', () => {
     const method = GREETER.methods[0]!;

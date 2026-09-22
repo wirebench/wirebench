@@ -171,6 +171,9 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       scan: vi.fn().mockResolvedValue({ ok: true, value: { findings: [], proposedNames: {}, storedNames: [] } }),
       keep: fail('secretScan.keep'),
       move: fail('secretScan.move'),
+      // A review holds autosave while it is open, and releases it when it settles.
+      hold: vi.fn().mockResolvedValue({ ok: true, value: { holdId: 'hold-1' } }),
+      release: vi.fn().mockResolvedValue({ ok: true, value: {} }),
     },
     xml: {
       completions: fail('xml.completions'),

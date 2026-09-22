@@ -3,6 +3,7 @@
  * The `secretScan.*` channels: routed to the named project's session, and validated on the way out
  * so that a finding carrying its value can never reach the renderer, even from a faulty session.
  */
+import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerSecretScanChannels } from '../src/main/ipc/secret-scan.js';
 import type { SecretScanSession, SecretScanSessions } from '../src/main/secret-scan-session.js';
@@ -17,12 +18,12 @@ vi.mock('electron', () => ({
   },
 }));
 
-function invoke(channel: string, payload: unknown): Promise<unknown> {
+function invoke(channel: string, payload: unknown, sender: unknown = {}): Promise<unknown> {
   const handler = handlers.get(channel);
   if (handler === undefined) {
     throw new Error(`${channel} was never registered`);
   }
-  return handler({ sender: {} }, payload);
+  return handler({ sender }, payload);
 }
 
 const FINDING = {
@@ -33,16 +34,27 @@ const FINDING = {
   preview: 'fak… (24 chars)',
 } as const;
 
-function register(session: Partial<SecretScanSession>): { projects: string[] } {
+function register(
+  session: Partial<SecretScanSession>,
+  holds: Partial<Pick<SecretScanSessions, 'hold' | 'release' | 'releaseOwner'>> = {},
+): { projects: string[] } {
   const projects: string[] = [];
-  const sessions: Pick<SecretScanSessions, 'session'> = {
+  const sessions: Pick<SecretScanSessions, 'session' | 'hold' | 'release' | 'releaseOwner'> = {
     session: (projectId) => {
       projects.push(projectId);
       return session as SecretScanSession;
     },
+    hold: holds.hold ?? (() => 'hold-1'),
+    release: holds.release ?? (() => undefined),
+    releaseOwner: holds.releaseOwner ?? (() => undefined),
   };
   registerSecretScanChannels(sessions);
   return { projects };
+}
+
+/** A renderer as main sees it: an id, and the lifecycle events `hold` listens for. */
+function fakeSender(id: number): EventEmitter & { id: number } {
+  return Object.assign(new EventEmitter(), { id });
 }
 
 beforeEach(() => {
@@ -102,4 +114,37 @@ describe('secretScan channels', () => {
     expect(result.ok).toBe(false);
     expect(move).not.toHaveBeenCalled();
   });
+
+  it('holds autosave for the named projects on behalf of the renderer that asked, and releases by id', async () => {
+    const hold = vi.fn().mockReturnValue('hold-7');
+    const release = vi.fn();
+    register({}, { hold, release });
+    const sender = fakeSender(3);
+
+    expect(await invoke('secretScan.hold', { projectIds: ['p1', 'p2'] }, sender)).toEqual({
+      ok: true,
+      value: { holdId: 'hold-7' },
+    });
+    expect(hold).toHaveBeenCalledWith(['p1', 'p2'], 3);
+    expect(await invoke('secretScan.release', { holdId: 'hold-7' }, sender)).toEqual({ ok: true, value: {} });
+    expect(release).toHaveBeenCalledWith('hold-7');
+  });
+
+  it.each(['destroyed', 'render-process-gone', 'did-navigate'])(
+    "drops a renderer's holds when it goes away (%s), so autosave cannot stay off",
+    async (event) => {
+      const releaseOwner = vi.fn();
+      register({}, { releaseOwner });
+      const sender = fakeSender(5);
+      await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
+      // A second hold from the same window does not stack listeners.
+      await invoke('secretScan.hold', { projectIds: ['p1'] }, sender);
+      expect(releaseOwner).not.toHaveBeenCalled();
+
+      sender.emit(event);
+
+      expect(releaseOwner).toHaveBeenCalledTimes(1);
+      expect(releaseOwner).toHaveBeenCalledWith(5);
+    },
+  );
 });

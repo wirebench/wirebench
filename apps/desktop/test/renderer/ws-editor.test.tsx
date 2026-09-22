@@ -282,6 +282,17 @@ describe('the WebSocket commands', () => {
     expect(saveWsRequest).toHaveBeenCalledWith('ws-1', { manual: true });
   });
 
+  it('Mod+S in the saved-message editor is a manual save too', () => {
+    const saveWsRequest = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ saveWsRequest });
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Greeting' }));
+
+    fireEvent.keyDown(screen.getByLabelText('Saved message'), { key: 's', ctrlKey: true });
+
+    expect(saveWsRequest).toHaveBeenCalledWith('ws-1', { manual: true });
+  });
+
   it('copies the command line, the draft included', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
