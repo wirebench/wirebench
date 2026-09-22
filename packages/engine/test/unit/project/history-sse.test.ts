@@ -89,6 +89,13 @@ describe('history: rest event stream', () => {
     expect(sse.rows).toHaveLength(2);
   });
 
+  it('rows the live store already dropped mark the entry truncated, even with no cap cutting anything', () => {
+    const sse = historySseOf(makeStream({ rows: [makeRow(0), makeRow(1)], droppedRows: 5, truncated: false }));
+    expect(sse.truncated).toBe(true);
+    expect(sse.omittedRows).toBe(5);
+    expect(sse.rows).toHaveLength(2);
+  });
+
   it('a small, uncapped stream sets neither truncated nor omittedRows', () => {
     const sse = historySseOf(makeStream({ rows: [makeRow(0), makeRow(1)] }));
     expect(sse.truncated).toBeUndefined();
@@ -104,19 +111,35 @@ describe('history: rest event stream', () => {
     expect(sse.error).toBe('ECONNRESET');
   });
 
-  it('the search haystack matches an entry by its event data', async () => {
+  it('the search haystack matches an entry by its event data and event name', async () => {
     const dir = await tempProjectDir();
     const file = join(dir, 'history.jsonl');
     const handle = await openHistory(file);
     const stream = makeStream({
-      rows: [makeRow(0, { data: 'temperature-spike-detected' })],
+      rows: [makeRow(0, { data: 'temperature-spike-detected', event: 'sensor-alert' })],
       counts: { events: 1, comments: 0, retries: 0, bytes: 10 },
     });
     const entry = makeEntry({ requestName: 'Sensors', sse: historySseOf(stream) });
     await handle.append(entry);
 
     expect(handle.list({ query: 'temperature-spike' }).map((e) => e.id)).toEqual([entry.id]);
+    expect(handle.list({ query: 'sensor-alert' }).map((e) => e.id)).toEqual([entry.id]);
     expect(handle.list({ query: 'no-such-text' })).toEqual([]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('a comment row is not indexed for search', async () => {
+    const dir = await tempProjectDir();
+    const file = join(dir, 'history.jsonl');
+    const handle = await openHistory(file);
+    const stream = makeStream({
+      rows: [{ kind: 'comment', index: 0, at: 0, size: 10, text: 'keep-alive-marker' }],
+      counts: { events: 0, comments: 1, retries: 0, bytes: 10 },
+    });
+    const entry = makeEntry({ requestName: 'Sensors', sse: historySseOf(stream) });
+    await handle.append(entry);
+
+    expect(handle.list({ query: 'keep-alive-marker' })).toEqual([]);
     await rm(dir, { recursive: true, force: true });
   });
 });

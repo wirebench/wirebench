@@ -243,7 +243,7 @@ function matches(entry: HistoryEntry, needle: string): boolean {
     entry.status !== undefined ? String(entry.status) : '',
     entry.fault?.reason ?? '',
     ...(entry.tags ?? []),
-    ...(entry.sse?.rows.map((row) => (row.kind === 'event' ? row.data : row.kind === 'comment' ? row.text : '')) ?? []),
+    ...(entry.sse?.rows.flatMap((row) => (row.kind === 'event' ? [row.event, row.data] : [])) ?? []),
   ]
     .join('\n')
     .toLowerCase();
@@ -407,7 +407,10 @@ export function historyWsOf(exchange: WsExchange): HistoryWs {
 export function historySseOf(stream: RestEventStreamLike): HistorySse {
   const capped = capSseRows(stream.rows, SSE_HISTORY_LIMITS);
   const totalOmitted = stream.droppedRows + stream.omittedRows + capped.omittedRows;
-  const truncated = stream.truncated || capped.truncated;
+  // `stream.truncated`/`capped.truncated` only say whether a *cap* had to cut something; a live
+  // stream can also have rows the in-memory store already evicted (`droppedRows`) with neither cap
+  // ever needing to trim anything further, which is still an incomplete transcript.
+  const truncated = totalOmitted > 0 || stream.truncated || capped.truncated;
   return {
     rows: capped.rows,
     counts: stream.counts,
