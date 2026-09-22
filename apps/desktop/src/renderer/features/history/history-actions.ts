@@ -19,10 +19,27 @@ function comparableXml(entry: HistoryEntryWire): string {
 }
 
 /**
- * Whether History can re-send an entry. Only SOAP: main replays a send as a SOAP send input, and
- * refuses every other kind (an entry with no kind predates the other protocols and is SOAP).
+ * Whether History can re-send an entry: SOAP and gRPC. REST and WebSocket resend from their
+ * request instead (an entry with no kind predates the other protocols and is SOAP).
  */
 export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind'>): boolean {
+  const kind = entry.kind ?? 'soap';
+  return kind === 'soap' || kind === 'grpc';
+}
+
+/** Re-sends one history entry through its protocol's channel, toasting the code on failure. */
+export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'kind'>): Promise<void> {
+  const result =
+    entry.kind === 'grpc'
+      ? await ipc().history.resendGrpc({ id: entry.id })
+      : await ipc().history.resend({ id: entry.id });
+  if (!result.ok) {
+    showToast(result.error.code);
+  }
+}
+
+/** Only SOAP entries are what `history.resendLast` replays. */
+function isSoapEntry(entry: Pick<HistoryEntryWire, 'kind'>): boolean {
   return (entry.kind ?? 'soap') === 'soap';
 }
 
@@ -35,7 +52,7 @@ export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind'>): bo
  */
 export async function resendLastHistoryEntry(): Promise<void> {
   const entries = useHistoryStore.getState().entries;
-  const entry = entries.find(canResendHistoryEntry);
+  const entry = entries.find(isSoapEntry);
   if (entry === undefined) {
     showToast('Nothing to re-send: only a SOAP entry can be re-sent from History.');
     return;

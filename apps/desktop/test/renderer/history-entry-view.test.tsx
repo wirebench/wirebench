@@ -3,11 +3,15 @@
  * line, and a banner worded from the record itself when the transcript was cut.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { HistoryEntryView } from '../../src/renderer/features/history/history-entry-view.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+
+const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast, ToastViewport: () => null }));
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -108,5 +112,32 @@ describe('an event-stream entry in History', () => {
     expect(screen.getByTestId('sse-history-truncated').textContent).toBe(
       'Some payloads were not kept either; their events show their size.',
     );
+  });
+});
+
+describe('re-sending a gRPC entry from its tab', () => {
+  function grpcEntry(): HistoryEntryWire {
+    return { ...sseEntry(), id: 'h-grpc', kind: 'grpc', method: undefined, sse: undefined, requestName: 'SayHello' };
+  }
+
+  it('replays it through history.resendGrpc with its id', async () => {
+    const resendGrpc = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    installWirebenchApi({ history: { resendGrpc } });
+    useHistoryStore.setState({ entries: [grpcEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-grpc" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+    expect(resendGrpc).toHaveBeenCalledWith({ id: 'h-grpc' });
+  });
+
+  it('toasts the error code when the re-send fails', async () => {
+    showToast.mockClear();
+    const resendGrpc = vi.fn().mockResolvedValue({ ok: false, error: { code: 'GRPC_REQUEST_GONE', message: 'gone' } });
+    installWirebenchApi({ history: { resendGrpc } });
+    useHistoryStore.setState({ entries: [grpcEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-grpc" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('GRPC_REQUEST_GONE'));
   });
 });

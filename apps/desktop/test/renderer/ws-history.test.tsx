@@ -111,8 +111,8 @@ describe('a WebSocket entry in History', () => {
   });
 });
 
-describe('re-send in History is SOAP only', () => {
-  it('offers ↻ on a SOAP row (or one with no kind) and not on REST, gRPC or WebSocket rows', () => {
+describe('re-send in History is SOAP and gRPC only', () => {
+  it('offers ↻ on a SOAP row (or one with no kind) and a gRPC row, and not on REST or WebSocket rows', () => {
     const base = wsEntry();
     const soap = { ...base, id: 's', kind: 'soap' as const, requestName: 'Soap', ws: undefined };
     const legacy = { ...base, id: 'l', kind: undefined, requestName: 'Legacy', ws: undefined };
@@ -122,24 +122,32 @@ describe('re-send in History is SOAP only', () => {
     render(<HistoryView />);
     expect(screen.getByRole('button', { name: 'Re-send Soap' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Re-send Legacy' })).toBeTruthy();
-    for (const name of ['Rest', 'Grpc', 'Lobby']) {
+    expect(screen.getByRole('button', { name: 'Re-send Grpc' })).toBeTruthy();
+    for (const name of ['Rest', 'Lobby']) {
       expect(screen.queryByRole('button', { name: `Re-send ${name}` })).toBeNull();
     }
   });
 
-  it('offers Re-send in a SOAP entry’s tab and not in a REST one’s', () => {
+  it('offers Re-send in a SOAP or gRPC entry’s tab and not in a REST or WebSocket one’s', () => {
     const base = wsEntry();
     useHistoryStore.setState({
       entries: [
         { ...base, id: 's', kind: 'soap', ws: undefined },
+        { ...base, id: 'g', kind: 'grpc', ws: undefined },
         { ...base, id: 'r', kind: 'rest', ws: undefined },
+        base,
       ],
-      total: 2,
+      total: 4,
     });
-    const { unmount } = render(<HistoryEntryView historyId="s" />);
-    expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
-    unmount();
-    render(<HistoryEntryView historyId="r" />);
-    expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+    for (const id of ['s', 'g']) {
+      const { unmount } = render(<HistoryEntryView historyId={id} />);
+      expect(screen.getByRole('button', { name: 'Re-send' })).toBeTruthy();
+      unmount();
+    }
+    for (const id of ['r', base.id]) {
+      const { unmount } = render(<HistoryEntryView historyId={id} />);
+      expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+      unmount();
+    }
   });
 });
